@@ -70,6 +70,256 @@ private final class TransportInflightRead: @unchecked Sendable {
     }
 }
 
+/// Two response slots shared by the playback reader and all its clones. A slot
+/// stays reserved until its underlying read finishes, including after cancellation.
+/// Only completed byte-source reads enter the cache; HTTP validation stays in
+/// the transport. At most 16 MiB is reserved for responses, plus 2 MiB of small
+/// probes across the clone tree. This excludes the caller's output buffers and
+/// the source's independently owned prepared cache.
+private final class TransportRangePipeline: @unchecked Sendable {
+    static let maximumRangeBytes = 8 * 1024 * 1024
+    private static let maximumSlots = 2
+    private static let maximumProbeBytes = 256 * 1024
+    private static let maximumProbes = 8
+    private static let minimumPrefetchBytes = 1024 * 1024
+
+    private final class Slot: @unchecked Sendable {
+        let owner: UUID
+        let epoch: UUID
+        let offset: Int64
+        let length: Int
+        let onFailure: @Sendable () -> Void
+        var task: Task<Void, Never>?
+        var result: Result<Data, Error>?
+        var cancelled = false
+        var borrowed = false
+
+        init(owner: UUID, epoch: UUID, offset: Int64, length: Int,
+             onFailure: @escaping @Sendable () -> Void) {
+            self.owner = owner
+            self.epoch = epoch
+            self.offset = offset
+            self.length = length
+            self.onFailure = onFailure
+        }
+
+        func contains(_ position: Int64) -> Bool {
+            let count: Int
+            if case .success(let data)? = result { count = data.count } else { count = length }
+            return position >= offset && position - offset < Int64(count)
+        }
+
+        var hasValidatedBytes: Bool {
+            if case .success? = result { return true }
+            return false
+        }
+    }
+
+    private let condition = NSCondition()
+    private var slots: [Slot] = []
+    private var probes: [(owner: UUID, offset: Int64, data: Data)] = []
+    private var peakReservedBytes = 0
+    private var peakActiveRequests = 0
+    private var waitingReaders = 0
+
+    var statistics: (
+        slots: Int, reservedBytes: Int, probeBytes: Int, peakReservedBytes: Int, peakActiveRequests: Int, waitingReaders: Int
+    ) {
+        condition.lock()
+        defer { condition.unlock() }
+        return (slots.count, slots.reduce(0) { $0 + $1.length },
+                probes.reduce(0) { $0 + $1.data.count }, peakReservedBytes, peakActiveRequests, waitingReaders)
+    }
+
+    /// `consume` runs before releasing the slot, so another reader cannot evict
+    /// a response still being copied. No caller retains a pipeline-sized buffer.
+    func read(
+        owner: UUID, epoch: UUID, cursor: MediaTransportSourceCursor,
+        offset: Int64, length: Int, maximumRangeBytes: Int, byteSize: Int64,
+        isCurrent: () -> Bool, onFailure: @escaping @Sendable () -> Void,
+        consume: (Data, Int64) -> Int32
+    ) -> Int32 {
+        condition.lock()
+        defer { condition.unlock() }
+        var selected: Slot?
+        var waitingForCapacity = false
+        defer {
+            if waitingForCapacity { waitingReaders -= 1 }
+        }
+        while selected == nil {
+            guard isCurrent() else { return -1 }
+            if let index = probes.lastIndex(where: {
+                $0.owner == owner && offset >= $0.offset && offset - $0.offset < Int64($0.data.count)
+            }) {
+                let probe = probes.remove(at: index)
+                probes.append(probe)
+                return consume(probe.data, probe.offset)
+            }
+            if let existing = slots.first(where: {
+                $0.owner == owner && !$0.cancelled && !$0.borrowed
+                    && ($0.epoch == epoch || $0.hasValidatedBytes) && $0.contains(offset)
+            }) {
+                selected = existing
+            } else if makeRoom() {
+                // A short positive cache boundary can leave a gap before an
+                // already queued successor. Fill that gap, never skip/overlap it.
+                let nextStart = slots.filter {
+                    $0.owner == owner && !$0.cancelled && $0.offset > offset
+                }.map(\.offset).min()
+                let boundedLength = nextStart.map { min(length, Int($0 - offset)) } ?? length
+                selected = start(
+                    owner: owner, epoch: epoch, cursor: cursor, offset: offset,
+                    length: boundedLength, byteSize: byteSize, onFailure: onFailure
+                )
+            } else {
+                if !waitingForCapacity {
+                    waitingForCapacity = true
+                    waitingReaders += 1
+                }
+                // A foreground request from a clone may displace speculation,
+                // but cannot admit a third response before cancellation drains.
+                if let speculative = slots.first(where: {
+                    !$0.borrowed && !$0.cancelled && $0.result == nil
+                }) {
+                    speculative.cancelled = true
+                    let task = speculative.task
+                    condition.unlock()
+                    task?.cancel()
+                    condition.lock()
+                } else {
+                    condition.wait()
+                }
+            }
+        }
+        guard let slot = selected else { return -1 }
+        if waitingForCapacity {
+            waitingReaders -= 1
+            waitingForCapacity = false
+        }
+        slot.borrowed = true
+        defer {
+            slot.borrowed = false
+            slots.removeAll { $0.cancelled && $0.result != nil && !$0.borrowed }
+            condition.broadcast()
+        }
+
+        // Start the adjacent response while the foreground response is still
+        // pending. It is independently completed and never joined to this one.
+        if waitingReaders == 0, slot.length >= Self.minimumPrefetchBytes, isCurrent(), !slot.cancelled {
+            let availableCount: Int
+            if case .success(let data)? = slot.result { availableCount = data.count }
+            else { availableCount = slot.length }
+            let end = slot.offset + Int64(availableCount)
+            if end < byteSize,
+               !slots.contains(where: { $0.owner == owner && !$0.cancelled && $0.contains(end) }),
+               makeRoom() {
+                let nextLength = min(availableCount * 4, maximumRangeBytes, Int(min(byteSize - end, Int64(Int.max))))
+                if nextLength > 0 {
+                    _ = start(
+                        owner: owner, epoch: epoch, cursor: cursor, offset: end,
+                        length: nextLength, byteSize: byteSize, onFailure: onFailure
+                    )
+                }
+            }
+        }
+        while slot.result == nil {
+            guard isCurrent(), !slot.cancelled else { return -1 }
+            condition.wait()
+        }
+        guard isCurrent(), !slot.cancelled, case .success(let data)? = slot.result else { return -1 }
+        return consume(data, slot.offset)
+    }
+
+    /// Caller holds `condition`. Completed unborrowed responses are LRU slots.
+    private func makeRoom() -> Bool {
+        if slots.count < Self.maximumSlots { return true }
+        guard let index = slots.firstIndex(where: { !$0.borrowed && $0.result != nil }) else { return false }
+        slots.remove(at: index)
+        return true
+    }
+
+    /// Caller holds `condition`. Exactly one byte-source read per slot.
+    private func start(
+        owner: UUID, epoch: UUID, cursor: MediaTransportSourceCursor,
+        offset: Int64, length: Int, byteSize: Int64,
+        onFailure: @escaping @Sendable () -> Void
+    ) -> Slot {
+        let slot = Slot(owner: owner, epoch: epoch, offset: offset, length: length, onFailure: onFailure)
+        slots.append(slot)
+        peakReservedBytes = max(peakReservedBytes, slots.reduce(0) { $0 + $1.length })
+        peakActiveRequests = max(peakActiveRequests, slots.filter { $0.result == nil }.count)
+        slot.task = Task.detached(priority: .userInitiated) { [self] in
+            let result: Result<Data, Error>
+            do {
+                try Task.checkCancellation()
+                let data = try await cursor.read(at: offset, length: length)
+                try Task.checkCancellation()
+                guard data.count <= length else {
+                    throw MediaTransportError.protocolViolation(reason: "source exceeded requested read length")
+                }
+                guard !data.isEmpty || offset >= byteSize else {
+                    throw MediaTransportError.protocolViolation(reason: "source ended before declared byte size")
+                }
+                result = .success(data)
+            } catch {
+                result = .failure(error)
+            }
+            complete(slot, result: result)
+        }
+        return slot
+    }
+
+    private func complete(_ slot: Slot, result: Result<Data, Error>) {
+        condition.lock()
+        slot.task = nil
+        var cancellations: [Task<Void, Never>] = []
+        if slot.cancelled {
+            slot.result = .failure(MediaTransportError.cancelled)
+        } else {
+            slot.result = result
+            switch result {
+            case .success(let data):
+                if !data.isEmpty, data.count <= Self.maximumProbeBytes {
+                    probes.removeAll { $0.owner == slot.owner && $0.offset == slot.offset }
+                    probes.append((slot.owner, slot.offset, data))
+                    if probes.count > Self.maximumProbes { probes.removeFirst() }
+                }
+            case .failure:
+                // Failure is terminal for this reader epoch, even if it arrived
+                // speculatively. Never turn rejection/truncation into EOF/retry.
+                slot.onFailure()
+                for other in slots where other.owner == slot.owner && other.epoch == slot.epoch
+                    && other !== slot && other.result == nil && !other.cancelled {
+                    other.cancelled = true
+                    if let task = other.task { cancellations.append(task) }
+                }
+            }
+        }
+        slots.removeAll { $0.cancelled && $0.result != nil && !$0.borrowed }
+        condition.broadcast()
+        condition.unlock()
+        cancellations.forEach { $0.cancel() }
+    }
+
+    func cancel(owner: UUID, epoch: UUID? = nil, discardCompleted: Bool = false) {
+        condition.lock()
+        let affected = slots.filter { $0.owner == owner && (epoch == nil || $0.epoch == epoch) }
+        var cancellations: [Task<Void, Never>] = []
+        for slot in affected where slot.result == nil {
+            slot.cancelled = true
+            if let task = slot.task { cancellations.append(task) }
+        }
+        if discardCompleted {
+            for slot in affected { slot.cancelled = true }
+            probes.removeAll { $0.owner == owner }
+        }
+        slots.removeAll { $0.cancelled && $0.result != nil && !$0.borrowed }
+        condition.broadcast()
+        condition.unlock()
+        cancellations.forEach { $0.cancel() }
+    }
+}
+
 /// Explicit playback teardown must also close clones still held by preview hosts.
 private final class TransportReaderGroup: @unchecked Sendable {
     private final class WeakReader {
@@ -118,6 +368,11 @@ public final class TransportIOReader: IOReader, @unchecked Sendable {
         var probeWindows: [(start: Int64, data: Data)] = []
         var pendingRead: TransportInflightRead?
         var demandRead: TransportInflightRead?
+        var pipelineEpoch = UUID()
+        var pipelineDemand: UUID?
+        var pipelineFailed = false
+        var pipelineWindowEnd: Int64 = -1
+        var pipelineWindowSize = 0
 
         /// Bytes of `bufferData` available from `position` forward, or 0 on a miss.
         func bufferedAhead(from offset: Int64) -> Int {
@@ -143,7 +398,10 @@ public final class TransportIOReader: IOReader, @unchecked Sendable {
     private let cursor: MediaTransportSourceCursor
     private let lease: MediaTransportSourceLease
     private let resolvedSource: MediaTransportResolvedSource?
+    private let usesPreparedSource: Bool
     private let readerGroup: TransportReaderGroup
+    private let rangePipeline: TransportRangePipeline?
+    private let pipelineOwner = UUID()
     private let readerState = OSAllocatedUnfairLock(initialState: ReaderState())
     private let avseekSize: Int32 = 65_536
 
@@ -159,6 +417,30 @@ public final class TransportIOReader: IOReader, @unchecked Sendable {
     private let readAheadWindow: Int
     private let maxBackendChunk: Int
 
+    static func rangePipelineEnabled(environment: [String: String]? = nil) -> Bool {
+        #if DEBUG
+        return (environment ?? ProcessInfo.processInfo.environment)["PLOZZ_WEBDAV_RANGE_PIPELINE"] != "0"
+        #else
+        return true
+        #endif
+    }
+
+    private static func makeRangePipeline(
+        transportScheme: String?,
+        environment: [String: String]? = nil
+    ) -> TransportRangePipeline? {
+        if ["http", "https"].contains(transportScheme?.lowercased() ?? ""),
+           rangePipelineEnabled(environment: environment) {
+            return TransportRangePipeline()
+        }
+        return nil
+    }
+
+    var usesRangePipeline: Bool { rangePipeline != nil }
+    var rangePipelineStatistics: (
+        slots: Int, reservedBytes: Int, probeBytes: Int, peakReservedBytes: Int, peakActiveRequests: Int, waitingReaders: Int
+    )? { rangePipeline?.statistics }
+
     public convenience init(source: TransportByteSource, discImageProbeEnabled: Bool = true) {
         self.init(
             source: source,
@@ -167,25 +449,44 @@ public final class TransportIOReader: IOReader, @unchecked Sendable {
         )
     }
 
-    init(source: TransportByteSource, readAheadWindow: Int, discImageProbeEnabled: Bool = true) {
+    init(
+        source: TransportByteSource, readAheadWindow: Int,
+        maximumReadAheadSize: Int = TransportIOReader.maximumReadAheadWindow,
+        usesPreparedSource: Bool = false,
+        discImageProbeEnabled: Bool = true,
+        transportScheme: String? = nil,
+        environment: [String: String]? = nil
+    ) {
         self.discImageProbeEnabled = discImageProbeEnabled
         let lease = MediaTransportSourceLease(source: source)
         self.lease = lease
         self.resolvedSource = nil
+        self.usesPreparedSource = usesPreparedSource
         self.cursor = lease.makeCursor()!
         self.readAheadWindow = max(1, readAheadWindow)
-        self.maxBackendChunk = min(max(1, lease.preferredReadSize), Self.maximumReadAheadWindow)
+        self.maxBackendChunk = min(
+            max(1, lease.preferredReadSize), max(1, maximumReadAheadSize), Self.maximumReadAheadWindow
+        )
+        self.rangePipeline = Self.makeRangePipeline(transportScheme: transportScheme, environment: environment)
         self.readerGroup = TransportReaderGroup()
         _ = readerGroup.register(self)
     }
 
-    public init(resolvedSource: MediaTransportResolvedSource, discImageProbeEnabled: Bool = true) {
+    /// The pinned session supplies transport identity, not a format hint or
+    /// a second account lookup. The bounded range pipeline
+    /// applies to cold and prepared HTTP(S) files, never other transports.
+    public init(
+        resolvedSource: MediaTransportResolvedSource,
+        discImageProbeEnabled: Bool = true
+    ) {
         self.discImageProbeEnabled = discImageProbeEnabled
         self.resolvedSource = resolvedSource
+        self.usesPreparedSource = resolvedSource.wasPrepared
         self.lease = resolvedSource.sourceLease
         self.cursor = resolvedSource.sourceLease.makeCursor()!
         self.readAheadWindow = Self.defaultReadAheadWindow
         self.maxBackendChunk = min(max(1, lease.preferredReadSize), Self.maximumReadAheadWindow)
+        self.rangePipeline = Self.makeRangePipeline(transportScheme: resolvedSource.transportIdentifier)
         self.readerGroup = TransportReaderGroup()
         _ = readerGroup.register(self)
     }
@@ -195,6 +496,9 @@ public final class TransportIOReader: IOReader, @unchecked Sendable {
         lease: MediaTransportSourceLease,
         resolvedSource: MediaTransportResolvedSource?,
         readAheadWindow: Int,
+        maxBackendChunk: Int,
+        rangePipeline: TransportRangePipeline?,
+        usesPreparedSource: Bool,
         discImageProbeEnabled: Bool,
         readerGroup: TransportReaderGroup
     ) {
@@ -203,7 +507,9 @@ public final class TransportIOReader: IOReader, @unchecked Sendable {
         self.lease = lease
         self.resolvedSource = resolvedSource
         self.readAheadWindow = readAheadWindow
-        self.maxBackendChunk = min(max(1, lease.preferredReadSize), Self.maximumReadAheadWindow)
+        self.maxBackendChunk = maxBackendChunk
+        self.rangePipeline = rangePipeline
+        self.usesPreparedSource = usesPreparedSource
         self.readerGroup = readerGroup
     }
 
@@ -214,6 +520,9 @@ public final class TransportIOReader: IOReader, @unchecked Sendable {
     public func read(_ buffer: UnsafeMutablePointer<UInt8>?, size: Int32) -> Int32 {
         guard let buffer, size > 0 else { return 0 }
         let requestedLength = Int(size)
+        if let rangePipeline {
+            return readPipeline(rangePipeline, into: buffer, requestedLength: requestedLength)
+        }
 
         // Fast path: serve from the in-memory read-ahead window without touching
         // the transport. `.hit` copies bytes out and advances the cursor.
@@ -239,6 +548,69 @@ public final class TransportIOReader: IOReader, @unchecked Sendable {
         case .miss(let offset):
             return fetchAndServe(into: buffer, offset: offset, requestedLength: requestedLength)
         }
+    }
+
+    private func readPipeline(
+        _ pipeline: TransportRangePipeline,
+        into buffer: UnsafeMutablePointer<UInt8>, requestedLength: Int
+    ) -> Int32 {
+        let request = readerState.withLock { state -> (offset: Int64, epoch: UUID, demand: UUID, length: Int)? in
+            guard !state.isClosed, !state.pipelineFailed, state.pipelineDemand == nil else { return nil }
+            let demand = UUID()
+            state.pipelineDemand = demand
+            let maximum = min(maxBackendChunk, TransportRangePipeline.maximumRangeBytes)
+            let previous = state.pipelineWindowEnd == state.position ? state.pipelineWindowSize : 0
+            var window = previous > 0 ? min(previous * 4, maximum) : Self.probeWindowSize
+            let remaining = max(0, lease.byteSize - state.position)
+            if !discImageProbeEnabled, requestedLength >= Self.containerProbeWindowSize,
+               remaining <= Self.defaultReadAheadWindow {
+                window = max(window, Int(remaining))
+            }
+            let length = min(max(requestedLength, window), maximum, Int(min(remaining, Int64(Int.max))))
+            return (state.position, state.pipelineEpoch, demand, length)
+        }
+        guard let request else { return -1 }
+        defer {
+            readerState.withLock { state in
+                if state.pipelineDemand == request.demand { state.pipelineDemand = nil }
+            }
+        }
+        guard request.offset < lease.byteSize else { return 0 }
+        return pipeline.read(
+            owner: pipelineOwner, epoch: request.epoch, cursor: cursor,
+            offset: request.offset, length: request.length,
+            maximumRangeBytes: min(maxBackendChunk, TransportRangePipeline.maximumRangeBytes),
+            byteSize: lease.byteSize,
+            isCurrent: { [self] in
+                readerState.withLock {
+                    !$0.isClosed && !$0.pipelineFailed && $0.pipelineEpoch == request.epoch
+                        && $0.pipelineDemand == request.demand && $0.position == request.offset
+                }
+            },
+            onFailure: { [weak self] in
+                self?.readerState.withLock { state in
+                    if state.pipelineEpoch == request.epoch { state.pipelineFailed = true }
+                }
+            },
+            consume: { [self] data, start in
+                readerState.withLock { state in
+                    guard !state.isClosed, !state.pipelineFailed, state.pipelineEpoch == request.epoch,
+                          state.pipelineDemand == request.demand, state.position == request.offset else { return -1 }
+                    let delta = Int(request.offset - start)
+                    guard delta >= 0, delta < data.count else { return -1 }
+                    let count = min(requestedLength, data.count - delta)
+                    data.withUnsafeBytes { raw in
+                        buffer.update(
+                            from: raw.baseAddress!.advanced(by: delta).assumingMemoryBound(to: UInt8.self), count: count
+                        )
+                    }
+                    state.position += Int64(count)
+                    state.pipelineWindowEnd = start + Int64(data.count)
+                    state.pipelineWindowSize = data.count
+                    return Int32(count)
+                }
+            }
+        )
     }
 
     /// Small, scattered disc probes must not fetch movie-sized windows. Grow
@@ -346,15 +718,15 @@ public final class TransportIOReader: IOReader, @unchecked Sendable {
 
     private func start(_ operation: TransportInflightRead) {
         let chunkSize = maxBackendChunk
+        let returnsPreparedBoundary = usesPreparedSource && !operation.isPrefetch
         let task = Task.detached(priority: .userInitiated) { [cursor] in
             do {
                 guard !operation.isCancelled else { throw MediaTransportError.cancelled }
                 var assembled = Data()
                 var cursorOffset = operation.offset
-                // Fill the window with bounded reads, concatenating partial reads
-                // (a backend may cap each read below the chunk size). Stop only on
-                // an empty read (EOF / nothing more) or cancellation; the demux
-                // re-reads any remainder and short reads are handled downstream.
+                // Preserve validated prepared boundaries instead of waiting for
+                // uncached bytes just to fill a speculative-sized demand window.
+                // Prefetch still fills its advertised range before adoption.
                 while assembled.count < operation.length {
                     try Task.checkCancellation()
                     let want = min(chunkSize, operation.length - assembled.count)
@@ -369,6 +741,7 @@ public final class TransportIOReader: IOReader, @unchecked Sendable {
                         assembled.append(piece)
                     }
                     cursorOffset += Int64(piece.count)
+                    if returnsPreparedBoundary, piece.count < want { break }
                 }
                 try Task.checkCancellation()
                 operation.finish(.success(assembled))
@@ -381,6 +754,9 @@ public final class TransportIOReader: IOReader, @unchecked Sendable {
 
 
     public func seek(offset: Int64, whence: Int32) -> Int64 {
+        if let rangePipeline {
+            return seekPipeline(rangePipeline, offset: offset, whence: whence)
+        }
         let result = readerState.withLock { state -> (Int64, TransportInflightRead?) in
             guard !state.isClosed else { return (-1, nil) }
             let candidate: Int64
@@ -421,7 +797,48 @@ public final class TransportIOReader: IOReader, @unchecked Sendable {
         return result.0
     }
 
+    private func seekPipeline(_ pipeline: TransportRangePipeline, offset: Int64, whence: Int32) -> Int64 {
+        let result = readerState.withLock { state -> (Int64, UUID?) in
+            guard !state.isClosed else { return (-1, nil) }
+            let candidate: Int64
+            switch whence {
+            case Int32(SEEK_SET): candidate = offset
+            case Int32(SEEK_CUR):
+                let (value, overflow) = state.position.addingReportingOverflow(offset)
+                guard !overflow else { return (-1, nil) }
+                candidate = value
+            case Int32(SEEK_END):
+                let (value, overflow) = lease.byteSize.addingReportingOverflow(offset)
+                guard !overflow else { return (-1, nil) }
+                candidate = value
+            case avseekSize: return (lease.byteSize, nil)
+            default: return (-1, nil)
+            }
+            guard candidate >= 0 else { return (-1, nil) }
+            guard candidate != state.position else { return (candidate, nil) }
+            state.position = candidate
+            let previousEpoch = state.pipelineEpoch
+            state.pipelineEpoch = UUID()
+            state.pipelineDemand = nil
+            state.pipelineFailed = false
+            return (candidate, previousEpoch)
+        }
+        if let epoch = result.1 { pipeline.cancel(owner: pipelineOwner, epoch: epoch) }
+        return result.0
+    }
+
     public func cancel() {
+        if let rangePipeline {
+            let epoch = readerState.withLock { state in
+                let previousEpoch = state.pipelineEpoch
+                state.pipelineEpoch = UUID()
+                state.pipelineDemand = nil
+                state.pipelineFailed = false
+                return previousEpoch
+            }
+            rangePipeline.cancel(owner: pipelineOwner, epoch: epoch)
+            return
+        }
         let pending = readerState.withLock { state in
             let pending = state.pendingRead
             state.pendingRead = nil
@@ -442,6 +859,9 @@ public final class TransportIOReader: IOReader, @unchecked Sendable {
             lease: lease,
             resolvedSource: resolvedSource,
             readAheadWindow: readAheadWindow,
+            maxBackendChunk: maxBackendChunk,
+            rangePipeline: rangePipeline,
+            usesPreparedSource: usesPreparedSource,
             discImageProbeEnabled: discImageProbeEnabled,
             readerGroup: readerGroup
         )
@@ -463,6 +883,9 @@ public final class TransportIOReader: IOReader, @unchecked Sendable {
         }
         guard shouldRelease else { return }
         cancel()
+        if let rangePipeline {
+            rangePipeline.cancel(owner: pipelineOwner, discardCompleted: true)
+        }
         cursor.close()
     }
 

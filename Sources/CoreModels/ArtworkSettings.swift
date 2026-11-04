@@ -136,8 +136,10 @@ public struct ArtworkSettings: Codable, Equatable, Sendable {
         case .library: false
         case .online: true
         case .recommended:
-            area == .home || area == .recommendedHero || area == .continueWatching
-                || (area == .details && [.homeHero, .detailBackdrop, .logo].contains(placement))
+            placement != .squareHero && (
+                area == .home || area == .recommendedHero || area == .continueWatching
+                    || (area == .details && [.homeHero, .detailBackdrop, .logo].contains(placement))
+            )
         }
     }
 

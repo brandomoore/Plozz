@@ -26,12 +26,30 @@ public enum MediaSourceDisplayName {
             // Only join continuation text when it completes a file, not another description field.
             return name(from: hasMediaExtension(wrapped) ? wrapped : release)
         }
+        if lines.count > 1, !value.contains("://"), !value.contains("?") {
+            let trimmed = lines.map { $0.trimmingCharacters(in: .whitespaces) }
+            let files = Set(trimmed.filter(hasMediaExtension))
+            if files.count == 1, let file = files.first {
+                return name(from: file)
+            }
+            if let fieldsStart = trimmed.firstIndex(where: isDescriptionField) {
+                // Structured descriptions can have a decorated title but no filename.
+                // Keep that title, not repeated language, quality or source-status rows.
+                return trimmed[..<fieldsStart].lazy
+                    .filter { !$0.isEmpty && !isResolutionHeader($0) }
+                    .compactMap { name(from: undecoratedTitle($0)) }
+                    .first
+            }
+        }
         // A bare key/value query is not a display label, even without a URL prefix.
         let isQueryOnly = value.range(
             of: #"^[^/?&#\\:\s=]+\s*="#, options: .regularExpression
         ) != nil
         guard isQueryOnly || value.contains("?") || value.contains("://")
-                || value.hasPrefix("//") || value.hasPrefix("file:") else { return value }
+                || value.hasPrefix("//") || value.hasPrefix("file:") else {
+            guard let component = basename(value), !isOpaqueComponent(component) else { return nil }
+            return value
+        }
         // Raw line breaks make Foundation re-escape existing percent sequences.
         // Remove display wrapping before decoding, never decode the result twice.
         let locator = value.components(separatedBy: .newlines).joined()
@@ -40,10 +58,41 @@ public enum MediaSourceDisplayName {
         }
         if !components.path.hasSuffix("/"),
            let fileName = basename(components.path),
-           !(fileName as NSString).pathExtension.isEmpty {
+           hasMediaExtension(fileName) {
             return fileName
         }
         return queryFileName(from: components)
+    }
+
+    private static func isDescriptionField(_ line: String) -> Bool {
+        line.range(
+            of: #"^(?:Audio(?: languages?)?|Languages?|Langues?|Subtitles?|Sous[ -]?titres?)\s*[:•|]\s*"#,
+            options: [.regularExpression, .caseInsensitive]
+        ) != nil
+    }
+
+    private static func isResolutionHeader(_ line: String) -> Bool {
+        // Ratings use partial circles, emoji variation selectors and fractions,
+        // not just full circles. Require the entire suffix to be decoration.
+        line.range(
+            of: #"^(?:[248]K|[0-9]{3,4}[pi]|UHD|FHD|HD|SD)[\s\p{S}\p{P}\p{M}\p{No}]*$"#,
+            options: [.regularExpression, .caseInsensitive]
+        ) != nil
+    }
+
+    private static func undecoratedTitle(_ line: String) -> String {
+        func isDecoration(_ character: Character) -> Bool {
+            character.isWhitespace || "•·|".contains(character)
+                || character.unicodeScalars.first?.properties.isEmojiPresentation == true
+        }
+        var title = line[...]
+        if title.first == "[", let end = title.firstIndex(of: "]") {
+            let remainder = title[title.index(after: end)...].drop(while: \.isWhitespace)
+            if remainder.first?.unicodeScalars.first?.properties.isEmojiPresentation == true {
+                title = remainder
+            }
+        }
+        return String(title.drop(while: isDecoration))
     }
 
     private static func queryFileName(from components: URLComponents) -> String? {
@@ -56,7 +105,7 @@ public enum MediaSourceDisplayName {
             guard let value = nonempty(item.value),
                   !value.hasPrefix("//"), !value.contains("?"),
                   value.rangeOfCharacter(from: .controlCharacters) == nil,
-                  let fileName = basename(value) else { return nil }
+                  let fileName = basename(value), !isOpaqueComponent(fileName) else { return nil }
             let windowsPath = value.range(of: #"^[A-Za-z]:[\\/]"#, options: .regularExpression) != nil
             guard URLComponents(string: value)?.scheme == nil || windowsPath else { return nil }
             candidates.insert(fileName)
@@ -204,9 +253,29 @@ public enum MediaSourceDisplayName {
         return trimmed.isEmpty ? nil : trimmed
     }
 
+    private static func isOpaqueComponent(_ value: String) -> Bool {
+        // Preserve real filenames, Unicode and prose. Only long, unbroken
+        // identifier-shaped components are excluded from display.
+        guard !hasMediaExtension(value) else { return false }
+        let unwrapped = value.components(separatedBy: .newlines).joined()
+        guard unwrapped.utf8.count >= 64,
+              unwrapped.range(of: #"^[A-Za-z0-9_.=\-]+$"#, options: .regularExpression) != nil else {
+            return false
+        }
+        return unwrapped.split(separator: ".").contains { segment in
+            guard segment.utf8.count >= 64 else { return false }
+            return segment.allSatisfy(\.isHexDigit)
+                || (segment.contains(where: \.isUppercase)
+                    && segment.contains(where: \.isLowercase)
+                    && segment.contains(where: \.isNumber))
+        }
+    }
+
     private static func hasMediaExtension(_ value: String) -> Bool {
         ["mkv", "mp4", "m4v", "avi", "mov", "wmv", "ts", "m2ts", "mts",
-         "webm", "mpg", "mpeg", "vob", "iso", "strm", "flv"]
+         "webm", "mpg", "mpeg", "vob", "iso", "strm", "flv", "m2t", "3gp", "3g2",
+         "ogv", "asf", "rm", "rmvb", "mp3", "m4a", "m4b", "aac", "flac", "wav",
+         "aif", "aiff", "ogg", "oga", "opus", "wma", "mka", "m3u", "m3u8", "mpd"]
             .contains((value as NSString).pathExtension.lowercased())
     }
 }

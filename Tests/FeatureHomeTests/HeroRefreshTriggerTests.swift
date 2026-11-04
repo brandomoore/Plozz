@@ -5,6 +5,128 @@ import XCTest
 @testable import FeatureHome
 
 final class HeroRefreshTriggerTests: XCTestCase {
+    @MainActor
+    func testLibraryVisibilityResetRetainsStatusOnlyWithinTheSameRequestContext() throws {
+        var cached = MediaItem(
+            id: "discovery:movie:42", title: "Movie", kind: .movie,
+            providerIDs: ["Tmdb": "42"], discoverySources: [.tmdb],
+            availability: .unknown, locallyValidatedPlayableSource: false
+        )
+        for sameContext in [false, true] {
+            let runtime = HomeHeroRuntimeState()
+            var available = cached
+            available.availability = .available
+            runtime.items = [available]
+            runtime.requestStatusContext = "profile/server-a"
+            runtime.resetForLibraryVisibility(
+                disabledKeys: ["plex:movies"], cached: [cached], settings: .default,
+                requestContext: sameContext ? "profile/server-a" : "profile/server-b"
+            )
+            XCTAssertTrue(runtime.items.isEmpty, "Old playback ownership must be retired.")
+            let restored = try XCTUnwrap(runtime.cachedItems.first)
+            XCTAssertEqual(restored.availability, sameContext ? .available : .unknown)
+            XCTAssertEqual(restored.heroCTA(seerConnected: true), sameContext ? .unavailable : .request)
+            XCTAssertFalse(restored.hasPlayableLibraryTarget())
+        }
+        let runtime = HomeHeroRuntimeState()
+        cached.availability = .processing
+        cached.downloadProgress = 0.4
+        runtime.items = [cached]
+        runtime.cachedItems = [cached]
+        runtime.requestStatusContext = "profile/server-a"
+        runtime.synchronizeRequestContext("profile/server-b")
+        for item in runtime.items + runtime.cachedItems {
+            XCTAssertEqual(item.availability, .unknown)
+            XCTAssertNil(item.downloadProgress)
+            XCTAssertEqual(item.heroCTA(seerConnected: true), .request)
+        }
+    }
+
+    func testRequestContextChangeRestartsVerificationNotOnlyWatchHistory() {
+        var settings = HeroSettings.default
+        settings.sources = [.featured]
+        let first = HeroRecomputeKey(
+            content: .init(), settings: settings, randomLibraries: [], requestContextID: "server-a"
+        )
+        let second = HeroRecomputeKey(
+            content: .init(), settings: settings, randomLibraries: [], requestContextID: "server-b"
+        )
+        XCTAssertNotEqual(first, second)
+        XCTAssertFalse(first.matchesIgnoringExternalRefresh(second))
+    }
+
+    func testLibraryIndexPublicationReverifiesFeaturedForEveryHeroStyleAndWatchFilter() {
+        for style in [HeroStyle.carousel, .heroShowcase, .followsFocus] {
+            for hideWatched in [false, true] {
+                var settings = HeroSettings.default
+                settings.style = style
+                settings.sources = [.featured]
+                settings.hideWatched = hideWatched
+                let before = HeroRecomputeKey(
+                    content: .init(), settings: settings, randomLibraries: [],
+                    identityIndexRevision: 1
+                )
+                let after = HeroRecomputeKey(
+                    content: .init(), settings: settings, randomLibraries: [],
+                    identityIndexRevision: 2
+                )
+                XCTAssertNotEqual(before, after)
+                XCTAssertFalse(before.matchesIgnoringExternalRefresh(after),
+                               "Watch-state-only enrichment cannot establish discovery ownership.")
+                XCTAssertTrue(before.matchesConfiguration(after),
+                              "Keep the existing carousel visible during library verification.")
+            }
+        }
+    }
+
+    func testLibraryIndexPublicationDoesNotRecurateDisabledDiscovery() {
+        for mode in 0..<3 {
+            var settings = HeroSettings.default
+            settings.sources = [.featured]
+            switch mode {
+            case 0: settings.isEnabled = false
+            case 1: settings.sources = [.continueWatching]
+            default: settings.discoverySources = []
+            }
+            let before = HeroRecomputeKey(
+                content: .init(), settings: settings, randomLibraries: [], identityIndexRevision: 1
+            )
+            let after = HeroRecomputeKey(
+                content: .init(), settings: settings, randomLibraries: [], identityIndexRevision: 2
+            )
+            XCTAssertEqual(before, after)
+        }
+    }
+
+    @MainActor
+    func testHeroShowcaseCuratesTheFullHeroRatherThanOnlyDiscovery() {
+        var settings = HeroSettings.default
+        settings.style = .heroShowcase
+        settings.sources = [.watchlist, .randomFromLibrary]
+        settings.showsDiscoverRow = false
+        XCTAssertEqual(HomeView.curationSettings(for: settings), settings)
+        XCTAssertTrue(settings.followsFocus)
+    }
+
+    @MainActor
+    func testHeroShowcaseStillExcludesWatchedFeaturedTitles() {
+        var settings = HeroSettings.default
+        settings.style = .heroShowcase
+        settings.sources = [.featured]
+        settings.hideWatched = true
+        var item = MediaItem(id: "watched-featured", title: "Watched", kind: .movie)
+        item.isPlayed = true
+        item.hasBeenPlayed = true
+        let runtime = HomeHeroRuntimeState()
+        runtime.cachedItems = [item]
+        runtime.cachedKey = .init(settings: settings)
+        let key = HeroRecomputeKey(content: .init(), settings: settings, randomLibraries: [])
+        XCTAssertTrue(HomeHeroDisplayResolver.resolve(
+            runtime: runtime, key: key, settings: settings,
+            continueWatching: [], watchlist: [], curator: HeroCurator()
+        ).isEmpty)
+    }
+
     func testKidsPolicyDisablesShowcaseDiscoveryAndRejectsPreviouslyLoadedSlides() {
         var settings = HeroSettings.default
         settings.style = .followsFocus

@@ -3150,6 +3150,11 @@ final class ItemDetailViewModelTests: XCTestCase {
         XCTAssertEqual(vm.trailers.map(\.id), ["t1"])
         XCTAssertEqual(vm.trailers.first?.sourceAccountID, "acct-9")
         XCTAssertFalse(vm.trailers.first?.isYouTubeTrailer ?? true)
+        vm.applyWatchedState(.init(
+            itemIDs: ["t1"], scopedItemIDs: ["acct-9:t1"], resumePosition: 15
+        ))
+        XCTAssertEqual(vm.trailers.first?.resumePosition, 15)
+        XCTAssertNil(vm.state.value?.item.resumePosition)
     }
 
     func testSeriesExtrasAggregateShowAndSeasonsWithoutCrawlingEpisodes() async {

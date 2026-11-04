@@ -70,7 +70,7 @@ private struct LiveTVProfileSourceAccessGate<Content: View>: View {
                 content { [weak access] in access?.canManage ?? false }
             } else if let unrestrictedContent {
                 VStack(alignment: .leading, spacing: 24) {
-                    SettingsSectionGroup("TV sources") {
+                    SettingsSectionGroup(SettingsCopy.tvSources) {
                         Button("Unlock TV sources", systemImage: "lock") { unlocking = true }
                             .buttonStyle(SettingsFormButtonStyle())
                             .accessibilityIdentifier("live-tv-unlock-sources")

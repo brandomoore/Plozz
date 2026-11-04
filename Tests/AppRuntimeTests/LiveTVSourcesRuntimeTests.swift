@@ -7,6 +7,21 @@ import XCTest
 
 @MainActor
 final class LiveTVSourcesRuntimeTests: XCTestCase {
+    func testDestroyingRuntimeInvalidatesRetainedCatalog() async throws {
+        let fixture = try SourcesRuntimeFixture()
+        defer { fixture.removeOwnedFiles() }
+        try await fixture.seed()
+        var runtime: LiveTVSourcesRuntime? = fixture.runtime()
+        await runtime?.restore()
+        let catalog = try XCTUnwrap(runtime?.catalog)
+        XCTAssertTrue(catalog.isPresentationCurrent)
+        weak var releasedRuntime = runtime
+        runtime = nil
+        XCTAssertNil(releasedRuntime)
+        XCTAssertFalse(catalog.isPresentationCurrent)
+        XCTAssertFalse(catalog.isCurrent)
+    }
+
     func testCancelledSourceRetryDoesNotCreateAPageError() async throws {
         let gate = SourcesRuntimeLoadGate()
         let fixture = try SourcesRuntimeFixture(gate: gate)

@@ -230,7 +230,7 @@ public struct RootView: View {
     }
 
     private var nextFeatureIntroduction: FeatureIntroduction? {
-        [.navigationStyles, .homeLayout].first {
+        [.navigationStyles].first {
             featureIntroductionStore.needsPresentation($0)
         }
     }
@@ -262,6 +262,7 @@ public struct RootView: View {
         guard !showsStartupLogo else { return [] }
         var requests: [RootPresentationCoordinator.Destination] = []
         let flow = appState.profileFlow
+        guard !flow.profilePickerOwnsAuthorization || !flow.isPresentingProfileSelection else { return [] }
         if !flow.isForegroundLocked, flow.pendingLockedProfile != nil || flow.pendingParentalSwitch != nil
             || (flow.pendingSetupProfile == nil && !librarySelectionOwnsPlexPIN
                 && appState.plexHomeUsers.pendingPlexPINRequest != nil) {
@@ -377,10 +378,6 @@ public struct RootView: View {
                 switch introduction {
                 case .navigationStyles:
                     SelectNavigationStyleView(appState: appState) { dismissFeatureIntroduction(introduction) }
-                case .homeLayout:
-                    SelectHomeLayoutView(hero: appState.profileSettings.heroSettingsModel) {
-                        dismissFeatureIntroduction(introduction)
-                    }
                 default:
                     EmptyView()
                 }
@@ -579,7 +576,7 @@ public struct RootView: View {
             // survives and the auth screen can behave as an overlay.
             if showsStartupLogo {
                 launchView
-            } else if appState.allowsStandalonePlayback && appState.profileFlow.isChoosingProfile
+            } else if appState.allowsStandalonePlayback && appState.profileFlow.isPresentingProfileSelection
                 && !appState.profileFlow.isForegroundLocked {
                 // Standalone can resume profile confirmation without a server.
                 // A remembered locked profile must still be selected/unlocked
@@ -588,7 +585,9 @@ public struct RootView: View {
                     appState: appState,
                     canCancel: appState.profileFlow.isProfileSelectionCancelable
                 )
-            } else if let setupProfile = appState.profileFlow.pendingSetupProfile {
+            } else if let setupProfile = appState.profileFlow.pendingSetupProfile,
+                      !(appState.profileFlow.profilePickerOwnsAuthorization
+                        && appState.profileFlow.isPresentingProfileSelection) {
                 ProfileSetupFlowView(
                     appState: appState,
                     profile: setupProfile,
@@ -614,7 +613,7 @@ public struct RootView: View {
 
             case .ready:
                 ZStack {
-                if appState.profileFlow.isChoosingProfile && !appState.profileFlow.isForegroundLocked {
+                if appState.profileFlow.isPresentingProfileSelection && !appState.profileFlow.isForegroundLocked {
                     ProfileSelectionView(appState: appState, canCancel: appState.profileFlow.isProfileSelectionCancelable)
                         .transition(.opacity)
                 } else if showsMarkerPreview, !appState.profilesModel.activeProfile.isKids {
@@ -849,6 +848,10 @@ public struct RootView: View {
         .environment(appState.profileSettings.contentRatingModel)
         .environment(\.plozzShowsContentRatings, appState.profileSettings.contentRatingModel.showsRatings)
         .environment(\.familyGuidanceProvider, appState.familyGuidance)
+        .detailPlaybackPreparationEnvironment(
+            appState.detailPlaybackPreparation,
+            accountIDs: appState.accountsProviders.resolvedActiveAccounts.map(\.account.id)
+        )
         .environment(\.detailHeaderSettings, appState.profileSettings.detailPageModel)
         .environment(appState.profileSettings.libraryPresentationModel)
         .environment(\.libraryPresentationLoader, LibraryPresentationLoader(
@@ -905,6 +908,8 @@ public struct RootView: View {
         // Injected so deep settings screens can read household profile
         // state without another argument on an already ~60-argument chain.
         .environment(appState.profilesModel)
+        .environment(appState.profileSettings.navigationStyleModel)
+        .environment(appState.guidePreparation)
         .environment(glassPerformance)
         .environment(displayVeil)
         #if os(tvOS)
@@ -925,6 +930,10 @@ public struct RootView: View {
         .environment(\.colorScheme, resolvedPalette.isLight ? .light : .dark)
         .transientStatusOverlay(
             presenter: appState.transientStatusPresenter,
+            palette: resolvedPalette
+        )
+        .guidePreparationOverlay(
+            model: appState.guidePreparation, presenter: appState.transientStatusPresenter,
             palette: resolvedPalette
         )
         // Resumes setup that was abandoned part-way — quit mid-flow, or synced
@@ -953,6 +962,10 @@ public struct RootView: View {
             onDismiss: rootPresentationDidDismiss
         ) {
             rootPresentationContent
+                .guidePreparationOverlay(
+                    model: appState.guidePreparation, presenter: appState.transientStatusPresenter,
+                    palette: resolvedPalette
+                )
                 .environment(\.themePalette, resolvedPalette)
                 .environment(\.gradientBackgroundsEnabled, appState.profileSettings.themeModel.gradientEnabled)
                 .environment(\.colorScheme, resolvedPalette.isLight ? .light : .dark)
@@ -978,6 +991,12 @@ public struct RootView: View {
         }
         .onChange(of: appState.crashReportingModel.isEnabled) { _, _ in
             reconcileCrashReporting()
+        }
+        .onChange(of: appState.isActiveProfileAuthorized) { _, authorized in
+            if authorized { appState.retryWatchOutboxIfAllowed() }
+        }
+        .onChange(of: appState.profilesModel.activeProfileID) { _, _ in
+            appState.retryWatchOutboxIfAllowed()
         }
         .onReceive(NotificationCenter.default.publisher(for: MainThreadStallProbe.contextDidChange)) { _ in
             crashReporting.setScreen(CrashReportScreen(context: MainThreadStallProbe.context))
@@ -1032,6 +1051,7 @@ public struct RootView: View {
                     #endif
                 },
                 onBackgroundWorkAllowed: { allowed in
+                    appState.setWatchRetryActive(allowed)
                     appState.mediaShare.setBackgroundWorkAllowed(allowed)
                     appState.accountsProviders.setTrackerHistorySyncForeground(allowed)
                     if allowed { Task { await appState.synchronizeTrackerHistoryOnForeground() } }
@@ -1116,7 +1136,6 @@ private enum OnboardingPage: Equatable {
     case selectSeerr
     case selectTheme
     case selectNavigation
-    case selectHomeLayout
 
     init(
         step: OnboardingStep,
@@ -1140,8 +1159,6 @@ private enum OnboardingPage: Equatable {
             self = .selectTheme
         case .selectNavigation:
             self = .selectNavigation
-        case .selectHomeLayout:
-            self = .selectHomeLayout
         }
     }
 
@@ -1155,7 +1172,6 @@ private enum OnboardingPage: Equatable {
         case .selectSeerr: 5
         case .selectTheme: 6
         case .selectNavigation: 7
-        case .selectHomeLayout: 8
         }
     }
 
@@ -1177,8 +1193,6 @@ private enum OnboardingPage: Equatable {
             "selectTheme"
         case .selectNavigation:
             "selectNavigation"
-        case .selectHomeLayout:
-            "selectHomeLayout"
         }
     }
 }
@@ -1441,14 +1455,9 @@ private struct OnboardingPageContent: View {
         case .selectNavigation:
             SelectNavigationStyleView(
                 appState: appState,
-                onContinue: { appState.finishNavigationSelection() }
-            )
-        case .selectHomeLayout:
-            SelectHomeLayoutView(
-                hero: appState.profileSettings.heroSettingsModel,
                 onContinue: {
                     onAppearanceSelected?()
-                    appState.finishHomeLayoutSelection()
+                    appState.finishNavigationSelection()
                 }
             )
         }
@@ -1593,11 +1602,6 @@ private struct ProfileSetupFlowView: View {
         case .navigation:
             SelectNavigationStyleView(
                 appState: appState,
-                onContinue: { stage = .homeLayout }
-            )
-        case .homeLayout:
-            SelectHomeLayoutView(
-                hero: appState.profileSettings.heroSettingsModel,
                 onContinue: {
                     appState.completeProfileAppearanceSetup(for: profile.id)
                     onAppearanceSelected()
@@ -1629,7 +1633,6 @@ private enum ProfileSetupStage {
     case seerr
     case theme
     case navigation
-    case homeLayout
     case lock
 }
 
@@ -1642,7 +1645,8 @@ struct ForegroundProfileGateView: View {
         let flow = appState.profileFlow
         ZStack {
             AppBackground(palette: palette).ignoresSafeArea()
-            if flow.pendingLockedProfile != nil || flow.pendingParentalSwitch != nil
+            if !flow.profilePickerOwnsAuthorization,
+               flow.pendingLockedProfile != nil || flow.pendingParentalSwitch != nil
                 || appState.plexHomeUsers.pendingPlexPINRequest != nil {
                 ProfileAccessGateView(appState: appState, onCancel: flow.cancelForegroundProfileSelection)
             } else {
@@ -1664,17 +1668,48 @@ struct ForegroundProfileGateView: View {
 /// Persistent profile-entry gate: profile PIN first, Plex PIN second when needed.
 ///
 /// Captures the PIN chain before switching clears `pendingLockedProfile`.
-private struct ProfileAccessGateView: View {
+struct ProfileAccessGateView: View {
     let appState: AppState
+    private let selectedProfile: Profile?
     private let onCancel: (() -> Void)?
 
     @Environment(\.themePalette) private var palette
+    @Environment(\.pinProfileTransition) private var profileTransition
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var expectsTwoPINs: Bool
+    @State private var retainedStep: Step?
 
-    init(appState: AppState, onCancel: (() -> Void)? = nil) {
+    private enum Step: Equatable {
+        case parental(Profile)
+        case profile(Profile)
+        case plex(PlexHomeUsersModel.PlexPINRequest)
+    }
+
+    private static func pendingStep(_ app: AppState) -> Step? {
+        if let profile = app.profileFlow.pendingParentalSwitch { return .parental(profile) }
+        if let profile = app.profileFlow.pendingLockedProfile { return .profile(profile) }
+        return app.plexHomeUsers.pendingPlexPINRequest.map(Step.plex)
+    }
+
+    private var displayedStep: Step? {
+        let pending = Self.pendingStep(appState)
+        guard profileTransition != nil else { return pending }
+        if profileTransition?.isSource == false { return retainedStep }
+        if case .profile = retainedStep, case .plex = pending,
+           appState.plexHomeUsers.plexPINEntryAvailability == .checking {
+            return retainedStep
+        }
+        // The outgoing identity must survive cancellation long enough to move
+        // back to its tile; clearing authorization must still disable its keys.
+        return pending ?? retainedStep
+    }
+
+    init(appState: AppState, selectedProfile: Profile? = nil, onCancel: (() -> Void)? = nil) {
         self.appState = appState
+        self.selectedProfile = selectedProfile
         self.onCancel = onCancel
-        let profile = appState.profileFlow.pendingLockedProfile
+        _retainedStep = State(initialValue: Self.pendingStep(appState))
+        let profile = selectedProfile ?? appState.profileFlow.pendingLockedProfile
         _expectsTwoPINs = State(initialValue:
             profile?.isLocked == true
                 && profile?.lock?.matchesPlexPIN != true
@@ -1687,8 +1722,10 @@ private struct ProfileAccessGateView: View {
             // Remains behind BOTH steps, so even the content cross-fade can never
             // reveal Home.
             AppBackground(palette: palette).ignoresSafeArea()
+                .opacity(profileTransition == nil ? 1 : 0)
 
-            if let target = appState.profileFlow.pendingParentalSwitch {
+            switch displayedStep {
+            case let .parental(target):
                 // Comes first: this gate decides whether you may leave the
                 // child's profile at all, before any question about the profile
                 // you're heading for.
@@ -1699,8 +1736,8 @@ private struct ProfileAccessGateView: View {
                     onCancel: { (onCancel ?? appState.profileFlow.cancelParentalSwitch)() }
                 )
                 .id("parental-pin")
-                .transition(.opacity)
-            } else if let profile = appState.profileFlow.pendingLockedProfile {
+                .transition(profileTransition == nil ? .opacity : .identity)
+            case let .profile(profile):
                 ProfileLockPINView(
                     profile: profile,
                     errorMessage: appState.profileFlow.profileLockError,
@@ -1708,16 +1745,18 @@ private struct ProfileAccessGateView: View {
                     sequenceStep: expectsTwoPINs
                         ? .init(current: 1, total: 2)
                         : nil,
+                    isSubmitting: appState.profileFlow.pendingLockedProfile == nil,
                     onSubmit: { await appState.profileFlow.submitProfileLockPIN($0) },
                     onCancel: { (onCancel ?? appState.profileFlow.cancelProfileLockPrompt)() }
                 )
                 .id("profile-pin")
-                .transition(.opacity)
-            } else if let request = appState.plexHomeUsers.pendingPlexPINRequest {
+                .transition(profileTransition == nil ? .opacity : .identity)
+            case let .plex(request):
                 PlexPINEntryView(
                     appState: appState,
                     userName: request.homeUserName,
                     avatarURLString: request.homeUserAvatarURL,
+                    selectedProfile: selectedProfile,
                     sequenceStep: expectsTwoPINs
                         ? .init(current: 2, total: 2)
                         : nil,
@@ -1726,12 +1765,18 @@ private struct ProfileAccessGateView: View {
                     onCancel: { (onCancel ?? appState.plexHomeUsers.cancelPlexPIN)() }
                 )
                 .id("plex-pin")
-                .transition(.opacity)
+                .transition(profileTransition == nil ? .opacity : .identity)
+            case nil:
+                EmptyView()
             }
         }
+        .disabled(Self.pendingStep(appState) == nil)
+        .onChange(of: displayedStep, initial: true) { _, step in
+            if let step { retainedStep = step }
+        }
         .animation(
-            .easeInOut(duration: 0.2),
-            value: appState.profileFlow.pendingLockedProfile?.id
+            reduceMotion ? nil : .easeInOut(duration: 0.2),
+            value: profileTransition != nil ? nil : appState.profileFlow.pendingLockedProfile?.id
         )
     }
 }
@@ -1769,12 +1814,14 @@ struct PlexPINEntryView: View {
     let appState: AppState
     let userName: String
     let avatarURLString: String?
+    var selectedProfile: Profile? = nil
     var sequenceStep: PINSequenceStep? = nil
     var dismissOnSuccess: Bool = true
     let onSubmit: (String) -> Void
     let onCancel: () -> Void
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.pinProfileTransition) private var profileTransition
 
     var body: some View {
         let pendingRequest = appState.plexHomeUsers.pendingPlexPINRequest
@@ -1792,7 +1839,7 @@ struct PlexPINEntryView: View {
             } else {
                 PINEntryScaffold(
                     title: "Enter your Plex PIN",
-                    name: Text(verbatim: userName),
+                    name: Text(verbatim: selectedProfile?.name ?? userName),
                     showsLock: true,
                     errorMessage: appState.plexHomeUsers.plexPINError,
                     isSubmitting: appState.plexHomeUsers.isSubmittingPlexPIN,
@@ -1817,21 +1864,28 @@ struct PlexPINEntryView: View {
                         onCancel()
                     }
                 ) {
-                    PINBadge {
-                        if let url = avatarURLString.flatMap(URL.init(string:)) {
-                            AsyncImage(url: url) { phase in
-                                switch phase {
-                                case let .success(image):
-                                    image.resizable().scaledToFill()
-                                default:
-                                    PlexPINFallbackGlyph()
+                    if let selectedProfile {
+                        ProfileAvatarView(
+                            profile: selectedProfile,
+                            size: profileTransition?.avatarSize ?? PINLayout.badgeSize
+                        )
+                    } else {
+                        PINBadge {
+                            if let url = avatarURLString.flatMap(URL.init(string:)) {
+                                AsyncImage(url: url) { phase in
+                                    switch phase {
+                                    case let .success(image):
+                                        image.resizable().scaledToFill()
+                                    default:
+                                        PlexPINFallbackGlyph()
+                                    }
                                 }
+                            } else {
+                                PlexPINFallbackGlyph()
                             }
-                        } else {
-                            PlexPINFallbackGlyph()
                         }
+                        .frame(width: PINLayout.badgeSize, height: PINLayout.badgeSize)
                     }
-                    .frame(width: PINLayout.badgeSize, height: PINLayout.badgeSize)
                 }
                 .id([pendingRequest?.id, pendingRequest?.accountID, pendingRequest?.homeUserID])
             }

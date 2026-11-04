@@ -10,19 +10,15 @@ final class SpatialAudioLayoutTests: XCTestCase {
                        [.sevenOneFour, .nineOneSix])
     }
 
-    func testUnconfiguredDeviceDoesNotWriteOrChangeSavedSpatialChoices() throws {
+    func testLegacyLayoutDoesNotChangePlaybackSettings() throws {
         try withDefaults { defaults in
             let store = SpatialAudioLayoutStore(defaults: defaults)
             for namespace: String? in [nil, "guest"] {
                 let playback = PlaybackSettingsStore(defaults: defaults, namespace: namespace)
-                for enabled in [false, true] {
-                    var settings = PlaybackSettings.default
-                    settings.trueHDAtmosEnabled = enabled
-                    playback.save(settings)
-                    XCTAssertEqual(store.load(), .nineOneSix)
-                    XCTAssertEqual(playback.load().trueHDAtmosEnabled, enabled)
-                    XCTAssertNil(defaults.object(forKey: SpatialAudioLayoutStore.storageKey))
-                }
+                playback.save(.default)
+                XCTAssertEqual(store.load(), .nineOneSix)
+                XCTAssertEqual(playback.load(), .default)
+                XCTAssertNil(defaults.object(forKey: SpatialAudioLayoutStore.storageKey))
             }
         }
     }

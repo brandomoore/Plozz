@@ -1,3 +1,4 @@
+import CoreModels
 import Foundation
 #if canImport(FoundationNetworking)
 import FoundationNetworking
@@ -91,6 +92,12 @@ public struct WebDAVClient: Sendable {
             trustPolicy: trustPolicy,
             maxResponseBytes: limits.maxResponseBytes
         )
+        if sessionKey.role != .scanner || response.statusCode != 207 {
+            HandoffDiagnostics.emit(
+                "webdav PROPFIND depth=\(depth == .zero ? 0 : 1) role=\(sessionKey.role.rawValue)"
+                    + " resource=\(HandoffDiagnostics.correlationID(path)) status=\(response.statusCode) bytes=\(data.count)"
+            )
+        }
         try validateAuthenticationStatus(response)
         guard response.statusCode == 207 else {
             throw TransportError.protocolError(status: response.statusCode, detail: "expected 207 Multi-Status from PROPFIND")
@@ -122,7 +129,8 @@ public struct WebDAVClient: Sendable {
         credential: WebDAVCredential,
         trustPolicy: TrustPolicy,
         prefetch: Bool = false,
-        reportDeliveryConnectionFailure: Bool = false
+        reportDeliveryConnectionFailure: Bool = false,
+        allowUnvalidatedPlayback: Bool = false
     ) async throws -> RangeProbeResult {
         let (result, anonymous) = try await executeMediaGET(
             requestBuilder: { RangeProbe.probeRequest(url: $0, prefetch: prefetch) },
@@ -152,7 +160,9 @@ public struct WebDAVClient: Sendable {
             headers: headers,
             bodyLength: data.count,
             resourceURL: resourceURL,
-            prefetch: prefetch
+            prefetch: prefetch,
+            allowUnvalidatedPlayback: allowUnvalidatedPlayback && anonymous
+                && sessionKey.role == .playback && TransportOrigin(url: resourceURL) != root.origin
         ) {
         case .success(let result):
             return RangeProbeResult(
@@ -164,6 +174,12 @@ public struct WebDAVClient: Sendable {
                 initialData: prefetch ? data : Data()
             )
         case .failure(let error):
+            HandoffDiagnostics.emit(
+                "webdav PROBE_REJECTED failure=\(error) anonymous=\(anonymous) prefetch=\(prefetch) "
+                    + RangeProbe.diagnosticSummary(
+                        status: response.statusCode, headers: headers, bodyLength: data.count
+                    )
+            )
             throw error
         }
     }
@@ -182,6 +198,11 @@ public struct WebDAVClient: Sendable {
         trustPolicy: TrustPolicy,
         maxReadBytes: Int64 = RangeProbe.defaultMaxReadBytes
     ) async throws -> Data {
+        if representation.validator == .unvalidatedPlayback {
+            guard representation.usesAnonymousSession, sessionKey.role == .playback else {
+                throw TransportError.seekableRequiresValidator
+            }
+        }
         let builtRequest: URLRequest
         guard url.absoluteString == representation.resourceURL.absoluteString else {
             throw TransportError.sourceChanged(reason: "read URL did not match the probed resource")
@@ -252,6 +273,12 @@ public struct WebDAVClient: Sendable {
         case .success:
             return data
         case .failure(let error):
+            HandoffDiagnostics.emit(
+                "webdav READ_REJECTED failure=\(error) anonymous=\(representation.usesAnonymousSession) "
+                    + RangeProbe.diagnosticSummary(
+                        status: response.statusCode, headers: headers, bodyLength: data.count
+                    )
+            )
             throw error
         }
     }
@@ -284,6 +311,10 @@ public struct WebDAVClient: Sendable {
             trustPolicy: trustPolicy,
             maxResponseBytes: limits.maxResponseBytes
         )
+        HandoffDiagnostics.emit(
+            "webdav PROPFIND depth=0 role=\(sessionKey.role.rawValue)"
+                + " resource=\(HandoffDiagnostics.correlationID(path)) status=\(response.statusCode) bytes=\(data.count)"
+        )
         try validateAuthenticationStatus(response)
         guard response.statusCode == 207 else {
             throw TransportError.protocolError(status: response.statusCode, detail: "expected 207 Multi-Status from PROPFIND")
@@ -309,6 +340,22 @@ public struct WebDAVClient: Sendable {
             WebDAVPathPolicy.isSelfEntry(resolvedPath: $0.resolvedPath, requestPath: finalPath)
         }
         guard selfEntries.count == 1, let entry = selfEntries.first else {
+            HandoffDiagnostics.emit(
+                "webdav STAT_REJECTED check=self-entry entries=\(entries.count) matches=\(selfEntries.count)"
+            )
+            if let first = selfEntries.first, selfEntries.count > 1 {
+                let others = selfEntries.dropFirst()
+                HandoffDiagnostics.emit(
+                    "webdav STAT_CONFLICT"
+                        + " pathEqual=\(others.allSatisfy { $0.resolvedPath == first.resolvedPath })"
+                        + " kindEqual=\(others.allSatisfy { $0.isCollection == first.isCollection })"
+                        + " sizeEqual=\(others.allSatisfy { $0.contentLength == first.contentLength })"
+                        + " etagEqual=\(others.allSatisfy { $0.etag == first.etag })"
+                        + " strongETag=\(selfEntries.allSatisfy { $0.etag?.isValidStrongValidator == true })"
+                        + " modifiedEqual=\(others.allSatisfy { $0.lastModified == first.lastModified })"
+                        + " typeEqual=\(others.allSatisfy { $0.contentType == first.contentType })"
+                )
+            }
             throw TransportError.malformedMultistatus(
                 reason: "Depth:0 PROPFIND did not return exactly the queried resource (\(selfEntries.count) self-entries)"
             )
@@ -353,6 +400,70 @@ public struct WebDAVClient: Sendable {
     }
 
     // MARK: - Shared execution path
+
+    /// Downloads a validator-free delivery grant as one response, never ranges.
+    /// The caller discards every incomplete attempt instead of reusing its bytes.
+    public func streamWholeDelivery(
+        representation: RangeProbeResult,
+        sessionKey: TransportSessionKey,
+        consume: @escaping @Sendable (Data) async throws -> Void
+    ) async throws {
+        guard representation.validator == .unvalidatedPlayback,
+              representation.usesAnonymousSession, sessionKey.role == .playback,
+              let origin = TransportOrigin(url: representation.resourceURL), origin.isSecure,
+              origin != sessionKey.origin,
+              representation.totalLength > 0, representation.totalLength <= Int64(Int.max) else {
+            throw TransportError.seekableRequiresValidator
+        }
+        let expected = representation.totalLength
+        let url = representation.resourceURL
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+        request.setValue("identity", forHTTPHeaderField: "Accept-Encoding")
+        let session = try await registry.mediaSession(for: sessionKey, origin: origin)
+        let stream = TransportResponseStream(consume: consume)
+        try await withTaskCancellationHandler {
+            do {
+                let result = try await session.data(
+                    for: request, maxResponseBytes: Int(expected), followRedirects: false, stream: stream
+                ) { response in
+                    guard response.url?.absoluteString == url.absoluteString else {
+                        throw TransportError.sourceChanged(reason: "whole response URL changed")
+                    }
+                    guard response.statusCode == 200 else {
+                        throw TransportError.protocolError(status: response.statusCode, detail: "expected a whole-file response")
+                    }
+                    if let encoding = response.value(forHTTPHeaderField: "Content-Encoding"),
+                       encoding.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() != "identity" {
+                        throw TransportError.rangeValidationFailed(reason: "whole response used content encoding")
+                    }
+                    if response.expectedContentLength >= 0, response.expectedContentLength != expected {
+                        throw TransportError.sourceChanged(reason: "whole response size changed")
+                    }
+                    guard response.value(forHTTPHeaderField: "Content-Range") == nil else {
+                        throw TransportError.rangeValidationFailed(reason: "unexpected partial response")
+                    }
+                }
+                guard result.response.statusCode == 200 else {
+                    throw TransportError.protocolError(status: result.response.statusCode, detail: "whole response refused")
+                }
+                try await stream.finish(expectedBytes: expected)
+                try Task.checkCancellation()
+            } catch {
+                stream.cancel()
+                // Join admitted writes before the caller discards its partial file.
+                // Preserve consumer failures (e.g. disk full) over URL cancellation.
+                do { try await stream.finish() } catch is CancellationError {
+                } catch {
+                    throw error
+                }
+                throw error
+            }
+        } onCancel: {
+            stream.cancel()
+        }
+    }
 
     private func executeMediaGET(
         requestBuilder: (URL) -> URLRequest,

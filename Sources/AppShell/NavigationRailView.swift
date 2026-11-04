@@ -447,6 +447,8 @@ struct NavigationRailView: View {
             item(.search, symbol: "magnifyingglass", label: Text(Self.searchTitle))
         case .watchlist:
             item(.watchlist, symbol: "bookmark.fill", label: Text(Self.watchlistTitle))
+        case .discover:
+            item(.discover, symbol: "sparkles", label: Text("Discover"))
         case .liveTV:
             item(
                 .liveTV, symbol: "antenna.radiowaves.left.and.right",

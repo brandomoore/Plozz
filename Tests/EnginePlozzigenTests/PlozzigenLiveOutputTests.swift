@@ -1,9 +1,38 @@
 import AetherEngine
 import CoreModels
+import FeaturePlayback
 import XCTest
 @testable import EnginePlozzigen
 
 final class PlozzigenLiveOutputTests: XCTestCase {
+    @MainActor
+    func testFirstFrameReleasesChannelAudioWithoutWaitingForProgressReporting() async throws {
+        let url = try XCTUnwrap(Bundle.module.url(
+            forResource: "no-chapters", withExtension: "mp4", subdirectory: "Fixtures"
+        ))
+        let decoder = try PlozzigenVideoEngine()
+        let channel = LibraryLiveChannelEngine(engine: decoder)
+        defer { channel.stop() }
+        var readinessChanges = 0
+        channel.onLiveOutputReadinessChanged = { readinessChanges += 1 }
+        await channel.load(
+            request: PlaybackRequest(item: .init(id: "channel", title: "Fixture", kind: .movie), streamURL: url),
+            startPosition: 0
+        )
+        let deadline = ContinuousClock.now + .seconds(20)
+        while !channel.hasPresentedVideoFrame, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertTrue(channel.hasPresentedVideoFrame)
+        let audioDeadline = ContinuousClock.now + .seconds(1)
+        while readinessChanges == 0, ContinuousClock.now < audioDeadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertEqual(readinessChanges, 1, "The initially muted output must become audible at first-frame readiness.")
+        channel.stop()
+        await channel.drainTransport()
+    }
+
     func testEveryCushionPreservesRoutingStorageAndAudioPolicy() throws {
         for path in ["live.ts", "live.m3u8"] {
             let url = try XCTUnwrap(URL(string: "https://example.invalid/\(path)"))
@@ -75,6 +104,13 @@ final class PlozzigenLiveOutputTests: XCTestCase {
                     to: &options)
                 XCTAssertFalse(options.panelIsInHDRMode)
                 XCTAssertTrue(options.attemptsHDRMasterOnUnprovenPanel)
+                #if os(tvOS)
+                XCTAssertEqual(options.displayCriteriaOwner, suppressesDisplayMatching ? .host : .engine)
+                #else
+                XCTAssertEqual(options.displayCriteriaOwner, .engine)
+                #endif
+                XCTAssertEqual(options.suppressDisplayCriteria, suppressesDisplayMatching)
+                XCTAssertEqual(options.matchContentEnabled, !suppressesDisplayMatching)
             }
         }
     }

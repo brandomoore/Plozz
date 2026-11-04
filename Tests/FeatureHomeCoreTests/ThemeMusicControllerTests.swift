@@ -6,6 +6,30 @@ import XCTest
 
 @MainActor
 final class ThemeMusicControllerTests: XCTestCase {
+    func testDestroyingPreviewPausesRetainedPlayerAndRemovesSample() async throws {
+        var controller: ThemeMusicController? = ThemeMusicController()
+        await controller?.preview(
+            owner: UUID(), volume: .low, resolve: { nil }, authenticatedHTTPResolver: nil
+        )
+        let player = try XCTUnwrap(controller?.player)
+        let asset = try XCTUnwrap(player.currentItem?.asset as? AVURLAsset)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: asset.url.path))
+        weak var releasedController = controller
+        controller = nil
+        XCTAssertNil(releasedController)
+        XCTAssertEqual(player.rate, 0)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: asset.url.path))
+    }
+
+    func testLastReferenceCanBeReleasedOffMainActor() async {
+        await Task.detached {
+            var controller: ThemeMusicController? = await ThemeMusicController()
+            weak var releasedController = controller
+            controller = nil
+            XCTAssertNil(releasedController)
+        }.value
+    }
+
     func testDetailMutePreservesPlayerVolumeAndSurvivesInactivity() async throws {
         let controller = ThemeMusicController()
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("theme-mute-\(UUID()).wav")

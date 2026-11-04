@@ -11,6 +11,67 @@ import XCTest
 
 @MainActor
 final class SettingsDetailNavigationHostedTests: XCTestCase {
+    func testFullScreenResultDismissalPreservesQueryAndReturnSource() async throws {
+        let deadline = ContinuousClock.now + .seconds(5)
+        while !UIApplication.shared.connectedScenes.contains(where: { $0.activationState == .foregroundActive }),
+              ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        for reducedMotion in [false, true] {
+            let navigation = SettingsNavigationModel()
+            navigation.beginSearch()
+            navigation.searchQuery = "au"
+            let window = UIWindow(windowScene: scene)
+            let host = UIHostingController(rootView:
+                SettingsWorkspace(navigation: navigation) {
+                    Button("Search") {}
+                } detail: { _ in
+                    Button("Result") {}
+                }
+                .environment(\.plozzNavigationStyle, .sidebar)
+                .environment(\._accessibilityReduceMotion, reducedMotion)
+            )
+            window.rootViewController = host
+            window.makeKeyAndVisible()
+            defer {
+                host.dismiss(animated: false)
+                window.isHidden = true
+                window.rootViewController = nil
+                previous?.makeKeyAndVisible()
+            }
+            for _ in 0..<2 {
+                let source = UUID()
+                navigation.pages.push(.searchResult("autoplay-next-episode"), sourceID: source)
+                let presented = ContinuousClock.now + .seconds(5)
+                while (host.presentedViewController == nil
+                    || host.presentedViewController?.isBeingPresented == true
+                    || navigation.pages.isTransitioning), ContinuousClock.now < presented {
+                    try await Task.sleep(for: .milliseconds(20))
+                }
+                XCTAssertNotNil(host.presentedViewController)
+                XCTAssertFalse(navigation.pages.isTransitioning)
+                navigation.enteringDetail = false
+                navigation.focusInDetail = true
+                let categoryRequest = navigation.sidebarFocusRequest
+                navigation.pages.pop()
+                let dismissed = ContinuousClock.now + .seconds(5)
+                while (host.presentedViewController != nil || navigation.pages.isTransitioning),
+                      ContinuousClock.now < dismissed {
+                    try await Task.sleep(for: .milliseconds(20))
+                }
+                XCTAssertNil(host.presentedViewController)
+                XCTAssertEqual(navigation.pages.returnSourceID, source)
+                XCTAssertGreaterThan(navigation.pages.returnGeneration, 0)
+                XCTAssertEqual(navigation.sidebarFocusRequest, categoryRequest)
+                XCTAssertTrue(navigation.isSearching)
+                XCTAssertEqual(navigation.searchQuery, "au")
+            }
+        }
+    }
+
     func testTopBarSettingsSlidesWithoutChangingScrollGeometry() async throws {
         let deadline = ContinuousClock.now + .seconds(5)
         while !UIApplication.shared.connectedScenes.contains(where: { $0.activationState == .foregroundActive }),

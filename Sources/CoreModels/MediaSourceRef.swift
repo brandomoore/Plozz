@@ -51,8 +51,10 @@ public struct MediaSourceRef: Codable, Hashable, Identifiable, Sendable {
     /// merge ran without a locality-aware resolver (treated as the middle tier).
     public var locality: SourceLocality?
     /// This server's selectable versions for the title. Empty until a detail
-    /// fetch populates them (rows/cards never carry versions), so a server can be
+    /// fetch populates them (most rows/cards omit versions), so a server can be
     /// chosen before its file list is known (the server default plays).
+    /// Share cards with external links retain their source inventory so a link
+    /// is never mistaken for a playable server default.
     public var versions: [MediaVersion]
     /// Provider-stated edition of this physical item, including single-file items.
     public var edition: String?

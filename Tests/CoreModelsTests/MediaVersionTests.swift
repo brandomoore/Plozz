@@ -455,6 +455,99 @@ final class MediaVersionTests: XCTestCase {
         XCTAssertFalse(row.supplementalFacts.contains("Remux"))
     }
 
+    func testOpaqueSourceComponentsCannotBecomeDisplayFilenames() {
+        let signed = String(repeating: "Ab7_xQ4-", count: 20) + "." + String(repeating: "Cd8_Rs5-", count: 6)
+        let digest = String(repeating: "a1b2c3d4", count: 8)
+        for token in [signed, digest] {
+            for input in [
+                token,
+                "/stream/\(token)",
+                "https://media.example/stream/\(token)?token=fixture",
+                "https://media.example/stream?filename=\(token)",
+                "📁 \(token)\n🌐 English",
+                String(token.prefix(40)) + "\n" + String(token.dropFirst(40))
+            ] {
+                XCTAssertNil(MediaSourceDisplayName.name(from: input), input)
+                XCTAssertNil(MediaSourceDisplayName.fileName(from: input), input)
+            }
+            XCTAssertEqual(
+                MediaSourceDisplayName.fileName(
+                    from: "https://media.example/\(token)?filename=Episode.1080p.WEB-DL.mkv"
+                ),
+                "Episode.1080p.WEB-DL.mkv"
+            )
+        }
+        XCTAssertNil(MediaSourceDisplayName.fileName(from: "https://media.example/stream.php"))
+        XCTAssertEqual(
+            MediaSourceDisplayName.fileName(from: "https://media.example/stream.php?filename=Episode.mkv"),
+            "Episode.mkv"
+        )
+    }
+
+    func testOpaqueCachedNamesFallBackWithoutChangingStoredValuesOrVersionFacts() throws {
+        let token = String(repeating: "Ab7_xQ4-", count: 20) + "." + String(repeating: "Cd8_Rs5-", count: 6)
+        let locale = Locale(identifier: "en_US")
+        let description = "1080p\n📁 Episode.S02E01.1080p.WEB-DL.mkv"
+        for rawName in [token, "https://media.example/stream/\(token)"] {
+            let version = MediaVersion(
+                id: "original-source", name: description, fileName: rawName,
+                height: 1080, sizeBytes: 3_700_000_000, videoCodec: "h264", videoRange: "SDR",
+                audioCodec: "aac", audioChannels: 2,
+                sourceMetadata: .init(
+                    fileName: rawName, video: .init(codec: "h264", height: 1080, videoRange: "SDR"),
+                    audioLanguages: ["fra"]
+                )
+            ).qualified(accountID: "account", itemID: "item")
+            let cached = try JSONDecoder().decode(MediaVersion.self, from: JSONEncoder().encode(version))
+            let row = MediaVersion.PickerPresentation(cached, locale: locale)
+            XCTAssertEqual(row.releaseName, "Episode.S02E01.1080p.WEB-DL.mkv")
+            XCTAssertEqual(row.audioLanguages, ["French"])
+            XCTAssertTrue(row.formatBadges.contains { $0.label == "1080p" })
+            XCTAssertTrue(row.formatBadges.contains { $0.label == "H.264" })
+            XCTAssertTrue(row.formatBadges.contains { $0.label == "AAC" })
+            XCTAssertEqual(cached.fileName, rawName)
+            XCTAssertEqual(cached.sourceMetadata?.fileName, rawName)
+            XCTAssertEqual(cached.name, description)
+            XCTAssertEqual(cached.sizeBytes, 3_700_000_000)
+            XCTAssertEqual(cached.id, version.id)
+            XCTAssertEqual(cached.playbackMediaSourceID, "original-source")
+        }
+        let metadataFallback = MediaVersion(
+            id: "metadata", name: token, fileName: token,
+            sourceMetadata: .init(fileName: "Readable.mkv")
+        )
+        XCTAssertEqual(MediaVersion.PickerPresentation(metadataFallback).releaseName, "Readable.mkv")
+        let unknown = MediaVersion(id: "unknown", name: token, fileName: token)
+        let row = MediaVersion.PickerPresentation(unknown)
+        XCTAssertNil(unknown.displayLabel)
+        XCTAssertNil(unknown.menuTitle)
+        XCTAssertNil(unknown.editionLabel)
+        XCTAssertNil(unknown.sourceQualityLabel)
+        XCTAssertNil(row.releaseName)
+        XCTAssertNil(row.summaryWithoutBadges)
+    }
+
+    func testSourceFilenameValidationPreservesReadableAndInternationalNames() {
+        let longName = String(repeating: "A.Very.Long.Movie.Title.", count: 8) + "2160p.WEB-DL-GROUP.mkv"
+        let hashedFile = String(repeating: "a1b2c3d4", count: 8) + ".mkv"
+        let names = [
+            longName, hashedFile,
+            "Le.Fabuleux.Destin.d’Amélie.Édition.spéciale.mkv",
+            "千と千尋の神隠し.特別版.mkv", "رحلة.إلى.القمر.mkv",
+            "Movie.Title.Extended.2160p.WEB-DL.DDP5.1.H265-GROUP",
+            "A complete restored presentation of the original movie with an alternate opening",
+            "Film.mkv", "Film.3gp", "Film.ogv", "Concert.flac", "Music.mp3",
+            "Chapter.m4b", "Recording.wav", "Stream.m3u8", "Stream.mpd"
+        ]
+        for name in names {
+            XCTAssertEqual(MediaSourceDisplayName.name(from: name), name)
+            XCTAssertEqual(MediaSourceDisplayName.fileName(from: name), name)
+        }
+        for name in [longName, hashedFile, "Film.3gp", "Concert.flac", "Music.mp3", "Stream.m3u8", "Stream.mpd"] {
+            XCTAssertEqual(MediaSourceDisplayName.fileName(from: "https://media.example/\(name)"), name)
+        }
+    }
+
     func testMultilineSourceDescriptionUsesItsMarkedReleaseFilename() {
         let providerName = """
         [Source] Remote
@@ -504,6 +597,140 @@ final class MediaVersionTests: XCTestCase {
             MediaSourceDisplayName.name(from: "📁 Incomplete\n🌐 English\nAnother.mkv"),
             "Incomplete"
         )
+    }
+
+    func testStructuredDescriptionsKeepTheTitleWithoutDecorativeMetadataRows() throws {
+        for fields in [
+            "Languages: English\nSubtitles: French",
+            "Langues : English · French\nSous titres : French · English"
+        ] {
+            let description = "4K ●●●●●\r\n[SRC] ⚡ · Example S02 · E04\r\n\(fields)\r\nGroup · Source · 9GB"
+            let version = MediaVersion(
+                id: "original-source", name: description, fileName: description,
+                height: 2160, sizeBytes: 9_000_000_000, videoCodec: "hevc",
+                videoRange: "DOVI", audioCodec: "eac3", audioChannels: 6,
+                sourceMetadata: .init(
+                    video: .init(codec: "hevc", height: 2160, videoRange: "DOVI"),
+                    audioLanguages: ["eng", "fra"]
+                )
+            ).qualified(accountID: "account", itemID: "episode")
+            let cached = try JSONDecoder().decode(MediaVersion.self, from: JSONEncoder().encode(version))
+            let row = MediaVersion.PickerPresentation(cached, locale: Locale(identifier: "en_US"))
+            XCTAssertEqual(row.releaseName, "Example S02 · E04")
+            XCTAssertEqual(row.summaryWithoutBadges, "9 GB")
+            XCTAssertEqual(row.audioLanguages, ["English", "French"])
+            XCTAssertTrue(row.formatBadges.contains { $0.label == "4K" })
+            XCTAssertTrue(row.formatBadges.contains { $0.label == "HEVC" })
+            XCTAssertEqual(cached.name, description)
+            XCTAssertEqual(cached.fileName, description)
+            XCTAssertEqual(cached.playbackMediaSourceID, "original-source")
+            XCTAssertEqual(cached.id, version.id)
+        }
+        XCTAssertEqual(
+            MediaSourceDisplayName.name(from: "1080p\n[Director's Cut] Film\nAudio: English"),
+            "[Director's Cut] Film"
+        )
+        XCTAssertEqual(
+            MediaSourceDisplayName.name(from: "1080p\n[Director's Cut] · Film\nAudio: English"),
+            "[Director's Cut] · Film"
+        )
+        XCTAssertEqual(
+            MediaSourceDisplayName.name(from: "4K restoration of Film\nLanguages: English"),
+            "4K restoration of Film"
+        )
+        XCTAssertNil(MediaSourceDisplayName.name(from: "4K ●\nLanguages: English\nSubtitles: French"))
+        XCTAssertNil(MediaVersion.PickerPresentation(.init(
+            id: "metadata-only", name: "4K ●\nLanguages: English\nSubtitles: French", height: 2160
+        )).releaseName)
+    }
+
+    func testMultilineDescriptionsPreferAnUnmarkedFilenameAndPreservePlainNames() {
+        let filename = "Épisode.S02E04.2160p.WEB-DL.DDP5.1.HEVC-GROUP.mkv"
+        let description = "4K ●\n[SRC] ⚡ · Episode S02 · E04\nAudio: English\n\(filename)"
+        XCTAssertEqual(MediaSourceDisplayName.fileName(from: description), filename)
+        XCTAssertEqual(
+            MediaVersion.PickerPresentation(.init(id: "file", name: description)).releaseName, filename
+        )
+        for name in [
+            "Film.2160p.WEB-DL.DDP5.1.HEVC-GROUP.mkv",
+            "Film 2160p WEB-DL DDP5 1 HEVC-GROUP.mkv",
+            "[Extended] Film.mkv",
+            "Festival presentation\nRestored opening credits"
+        ] {
+            XCTAssertEqual(MediaSourceDisplayName.name(from: name), name)
+        }
+    }
+
+    func testStructuredDescriptionsSkipPartialRatingHeadersBeforeTheReleaseTitle() throws {
+        let locale = Locale(identifier: "en_US")
+        for header in ["4K ●●◐", "1080p ◐", "1080p ●◐", "4K ◑◒◓", "4K ★★★½", "4K ⭐️⭐️", "4K (●●◐)"] {
+            let description = "\(header)\r\n[SRC] ⚡ · Example S02 · E07\r\nLangues : English\r\nSous titres : French"
+            let locator = "https://media.example/stream/" + String(repeating: "Ab7_xQ4-", count: 20)
+            for fileName in [description, locator] {
+                let version = MediaVersion(
+                    id: "original-source", name: description, fileName: fileName,
+                    height: 2160, sizeBytes: 10_900_000_000, videoCodec: "hevc",
+                    videoRange: "DOVI", audioCodec: "eac3", audioChannels: 6,
+                    sourceMetadata: .init(
+                        fileName: fileName, video: .init(codec: "hevc", height: 2160, videoRange: "DOVI"),
+                        audioLanguages: ["eng"]
+                    )
+                ).qualified(accountID: "account", itemID: "episode")
+                let cached = try JSONDecoder().decode(MediaVersion.self, from: JSONEncoder().encode(version))
+                let row = MediaVersion.PickerPresentation(cached, locale: locale)
+                XCTAssertEqual(row.releaseName, "Example S02 · E07", header)
+                XCTAssertEqual(row.summaryWithoutBadges, "10.9 GB", header)
+                XCTAssertTrue(row.formatBadges.contains { $0.label == "4K" })
+                XCTAssertEqual(row.audioLanguages, ["English"])
+                XCTAssertEqual(cached.name, description)
+                XCTAssertEqual(cached.fileName, fileName)
+                XCTAssertEqual(cached.sourceMetadata?.fileName, fileName)
+                XCTAssertEqual(cached.playbackMediaSourceID, "original-source")
+                XCTAssertEqual(cached.id, version.id)
+            }
+            XCTAssertNil(MediaSourceDisplayName.name(from: "\(header)\nLanguages: English"), header)
+        }
+        for title in ["4K restoration of Film", "1080p: Director's Cut", "4K.Extended.mkv", "4K 2026"] {
+            XCTAssertEqual(
+                MediaSourceDisplayName.name(from: "\(title)\nLanguages: English"), title
+            )
+        }
+    }
+
+    func testPickerPreservesFullDottedAndSpacedReleaseFilenames() throws {
+        let cases = [
+            "MobLand.S02E04.2160p.ATV.WEB-DL.DDP5.1.Atmos.DV.HDR.H.265.DUAL-BiOMA.mkv",
+            "MobLand S02E04 2160p ATV WEB-DL DDP5 1 Atmos DV HDR H 265 DUAL-BiOMA.mkv",
+            "MobLand.S02E04.MULTi.2160p.WEB-DL.DDP5.1.H265-R3MiX.mkv",
+            "A.Movie.2026.2160p.WEB-DL.HEVC-GROUP.mkv",
+            "Épisode_spécial.S02E04-E05.Première.Partie.MULTi.1080p.WEB-DL.H264-GROUPE.mkv",
+            "千と千尋の神隠し.2160p.WEB-DL.HEVC-GROUP.mkv",
+            "Film.REPACK.2160p.WEB-DL.HEVC-GROUP.mkv",
+            "Film.2160p.WEB-DL.PROPER.HEVC-GROUP.mkv",
+            "Film.2160p.WEB-DL.mkv",
+            "Film.Directors.Cut.2160p.WEB-DL.mkv"
+        ]
+        for original in cases {
+            let version = MediaVersion(
+                id: "original-source", fileName: original, height: 2160, videoCodec: "hevc",
+                sourceMetadata: .init(fileName: original, audioLanguages: ["eng"])
+            ).qualified(accountID: "account", itemID: "episode")
+            let cached = try JSONDecoder().decode(MediaVersion.self, from: JSONEncoder().encode(version))
+            let row = MediaVersion.PickerPresentation(cached)
+            XCTAssertEqual(row.releaseName, original)
+            XCTAssertEqual(
+                MediaSourceDisplayName.wrappingFileName(try XCTUnwrap(row.releaseName))
+                    .replacingOccurrences(of: "\u{200B}", with: ""),
+                original
+            )
+            XCTAssertEqual(cached.fileName, original)
+            XCTAssertEqual(cached.sourceMetadata?.fileName, original)
+            XCTAssertEqual(cached.playbackMediaSourceID, "original-source")
+            XCTAssertEqual(cached.id, version.id)
+        }
+        let locator = "https://media.example/stream?filename=MobLand.S02E04.2160p.WEB-DL.HEVC-BiOMA.mkv"
+        let row = MediaVersion.PickerPresentation(.init(id: "query", fileName: locator))
+        XCTAssertEqual(row.releaseName, "MobLand.S02E04.2160p.WEB-DL.HEVC-BiOMA.mkv")
     }
 
     func testFileSizeUsesAtMostOneFractionDigit() {

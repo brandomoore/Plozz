@@ -9,9 +9,72 @@ import Vision
 import XCTest
 @testable import AppShelliOS
 
+private struct SettingsLanguageScopeProbe: View {
+    @Environment(\.locale) private var locale
+    let update: (String?) -> Void
+
+    var body: some View {
+        Color.clear.frame(height: 1)
+            .onChange(of: locale, initial: true) { _, value in
+                update(value.language.languageCode?.identifier)
+            }
+    }
+}
+
 @MainActor
 final class SettingsCommunityPresentationTests: XCTestCase {
     private var capturedImages: [CGImage] = []
+
+    func testLanguagePickerUsesAppOwnedModelWithoutAnInheritedEnvironment() async throws {
+        let suite = "SettingsLanguage-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = AppLanguageSettingsStore(defaults: defaults)
+        store.save(.explicit("en"))
+        let language = AppLanguageSettingsModel(store: store)
+        let app = PlozziOSAppModel(appLanguage: language)
+        XCTAssertTrue(app.appLanguage === language)
+
+        let deadline = ContinuousClock.now + .seconds(5)
+        while !UIApplication.shared.connectedScenes.contains(where: { $0.activationState == .foregroundActive }),
+              ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
+        var observedLanguage: String?
+        window.rootViewController = UIHostingController(rootView:
+            VStack {
+                AppLanguageScope(model: app.appLanguage) {
+                    SettingsLanguageScopeProbe { observedLanguage = $0 }
+                }
+                // Deliberately outside the scope: Settings can be hosted separately.
+                List { PlozziOSSettingsLanguagePicker(appLanguage: app.appLanguage) }
+            }
+            .environment(\.locale, Locale(identifier: "en_US"))
+        )
+        window.makeKeyAndVisible()
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        for code in ["en", "de"] {
+            app.appLanguage.language = .explicit(code)
+            try await waitForHostedLayout(window)
+            let text = try recognizedText(in: window, name: "settings-language-\(code)")
+            XCTAssertTrue(text.contains(try XCTUnwrap(language.language.endonym)), text)
+            XCTAssertEqual(observedLanguage, code)
+            XCTAssertEqual(store.load(), .explicit(code))
+        }
+        app.appLanguage.language = .system
+        try await waitForHostedLayout(window)
+        XCTAssertEqual(observedLanguage, "en")
+        XCTAssertEqual(store.load(), .system)
+    }
 
     func testCategoryTitlesAlignIncludingScreensAndNavigation() throws {
         for (width, textSize) in [(320.0, DynamicTypeSize.large), (390.0, .accessibility3), (500.0, .large)] {
@@ -105,7 +168,6 @@ final class SettingsCommunityPresentationTests: XCTestCase {
             window.frame = CGRect(origin: .zero, size: size)
             window.rootViewController = UIHostingController(rootView:
                 PlozziOSSettingsView(appModel: model, onClose: {}, systemColorScheme: .dark)
-                    .environment(AppLanguageSettingsModel())
                     .environment(\.horizontalSizeClass, .compact)
                     .environment(\.dynamicTypeSize, textSize)
                     .environment(\.locale, Locale(identifier: "en_US"))
@@ -290,7 +352,6 @@ final class SettingsCommunityPresentationTests: XCTestCase {
                     onClose: {},
                     systemColorScheme: light ? .light : .dark
                 )
-                .environment(AppLanguageSettingsModel())
                 .environment(\.horizontalSizeClass, .compact)
                 let text = try await renderedText(
                     content, size: size, light: light,
@@ -315,7 +376,6 @@ final class SettingsCommunityPresentationTests: XCTestCase {
                 let content = PlozziOSSettingsView(
                     appModel: model, onClose: {}, systemColorScheme: light ? .light : .dark
                 )
-                .environment(AppLanguageSettingsModel())
                 .environment(\.horizontalSizeClass, .regular)
                 let text = try await renderedText(
                     content, size: size, light: light,

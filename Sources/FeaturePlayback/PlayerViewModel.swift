@@ -565,6 +565,7 @@ public final class PlayerViewModel {
     /// writes against it until playback ends — a mid-play drain can never disturb
     /// the now-playing session. Idempotent on the receiver. Defaults to a no-op.
     private let onPlaybackStarted: @Sendable () -> Void
+    private let scrobblesLibraryItem: Bool
 
     /// Periodic mid-playback convergence hook, called roughly every
     /// ``checkpointInterval`` seconds of continuous play with the current position
@@ -690,6 +691,9 @@ public final class PlayerViewModel {
         self.seriesIDResolver = seriesIDResolver
         self.onPlaybackStopped = onPlaybackStopped
         self.onPlaybackStarted = onPlaybackStarted
+        self.scrobblesLibraryItem = (offlineItem ?? episodeItem).map {
+            !$0.isExtra && !$0.isTrailer && !$0.isYouTubeTrailer
+        } ?? true
         self.onPlaybackCheckpoint = onPlaybackCheckpoint
         self.checkpointInterval = checkpointInterval
         self.adoptedResolved = adoptedResolved
@@ -728,6 +732,7 @@ public final class PlayerViewModel {
             itemID: itemID,
             scrobbler: scrobbler,
             checkpointInterval: checkpointInterval,
+            scrobblesLibraryItem: scrobblesLibraryItem,
             onCheckpoint: onPlaybackCheckpoint,
             onTrackerPlayback: onTrackerPlayback
         )
@@ -1001,10 +1006,10 @@ public final class PlayerViewModel {
         guard let neighborResolver else { return }
         let (prev, next) = await neighborResolver()
         guard !didStop else { return }
-        previousEpisode = prev
-        nextEpisode = next
-        controls.infoCard.hasPreviousEpisode = prev != nil
-        controls.infoCard.hasNextEpisode = next != nil
+        previousEpisode = prev?.opensExternalSource == true ? nil : prev
+        nextEpisode = next?.opensExternalSource == true ? nil : next
+        controls.infoCard.hasPreviousEpisode = previousEpisode != nil
+        controls.infoCard.hasNextEpisode = nextEpisode != nil
         nowPlaying?.refresh()
         if playlistContext == nil { nextEpisodeCoordinator.updateUpNextCard() }
         // Eagerly prefetch the next episode's resolved stream when the provider's
@@ -1012,7 +1017,7 @@ public final class PlayerViewModel {
         // moment it's known, for a near-instant hand-off. Jellyfin (a
         // session-minting POST) defers to the hand-off window instead; see
         // ``NextEpisodeCoordinator/maybeStartWindowedNextPrefetch(trigger:)``.
-        if next != nil, playlistContext == nil {
+        if nextEpisode != nil, playlistContext == nil {
             if provider.kind.playbackInfoIsIdempotent {
                 nextEpisodeCoordinator.startNextEpisodePrefetch(trigger: "eager")
             } else {
@@ -1809,8 +1814,6 @@ public final class PlayerViewModel {
     ) async {
         endTemporarySpeedBoost()
         var request = request
-        request.trueHDAtmosEnabled = playbackSettings.trueHDAtmosEnabled
-        request.dolbyVisionFELEnabled = playbackSettings.dolbyVisionFELEnabled
         dynamicRangeLoadGeneration &+= 1
         let rangeLoadGeneration = dynamicRangeLoadGeneration
         controls.infoCard.chapters = MediaChapter.normalized(request.chapters, duration: request.item.runtime)
@@ -3136,6 +3139,7 @@ extension PlayerViewModel: EngineHandoffCoordinatorHost {
         let stage: PlaybackDiagnosticReport.Stage = request == nil ? .preparation
             : engine.hasPresentedVideoFrame ? .playback : .opening
         let route = stage == .preparation ? nil : engine.diagnosticRoute
+        let pipeline = stage == .preparation ? nil : PlaybackPipelineSnapshot(engine.liveTelemetry)
         // Pin the failing item and attempt before a retry or teardown replaces either.
         let item = stage == .preparation ? nil : engine.nowPlayingPlayer?.currentItem
         let initialEvidence = PlaybackFailureEvidence(
@@ -3144,7 +3148,8 @@ extension PlayerViewModel: EngineHandoffCoordinatorHost {
         )
         journal.record(
             .failed, session: diagnosticSession, attempt: diagnosticAttempt, facts: diagnosticFacts,
-            elapsed: elapsed, route: route, failure: failure, stage: stage, evidence: initialEvidence
+            elapsed: elapsed, route: route, failure: failure, stage: stage, evidence: initialEvidence,
+            pipeline: pipeline
         )
         guard let item else { return }
         Task {
@@ -3154,7 +3159,7 @@ extension PlayerViewModel: EngineHandoffCoordinatorHost {
             if evidence.nativeErrors.isEmpty { evidence.nativeErrors = initialEvidence.nativeErrors }
             journal.record(
                 .failureEvidence, session: session, attempt: attempt, facts: facts, elapsed: elapsed,
-                route: route, failure: failure, stage: stage, evidence: evidence
+                route: route, failure: failure, stage: stage, evidence: evidence, pipeline: pipeline
             )
         }
     }

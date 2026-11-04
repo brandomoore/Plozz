@@ -178,6 +178,114 @@ final class TrackLabelingTests: XCTestCase {
         XCTAssertEqual(label, TrackLabel(base: .content("English - Dolby Digital - 5.1")))
     }
 
+    func testExplicitFrenchAudioVersionsSurviveAcrossAppLocales() {
+        for version in ["VFQ", "VFF", "VFI", "VFB", "VQ", "VOF", "VOQ"] {
+            for localeID in ["en", "fr", "es"] {
+                let locale = Locale(identifier: localeID)
+                let language = TrackLabeling.languageName(forCode: "fr", in: locale)!
+                let label = TrackLabeling.audioLabel(
+                    displayTitle: "[\(version.lowercased())] (Default)", language: "fra",
+                    codec: "dts", channels: 6, trackID: 8, locale: locale
+                )
+                XCTAssertEqual(label, TrackLabel(
+                    base: .content(language), qualifiers: [.audioVersion(version), .format("DTS 5.1")]
+                ))
+            }
+        }
+        XCTAssertEqual(
+            TrackLabeling.audioLabel(displayTitle: "French VFQ", language: "fr", trackID: 8,
+                                    locale: Locale(identifier: "fr")),
+            TrackLabel(base: .content("Français"), qualifiers: [.audioVersion("VFQ")])
+        )
+    }
+
+    func testAudioVersionsAreExplicitWholeTokensAndNeverGuessed() {
+        for title in ["French", "Track 1", "VF2", "FR2", "VOSTFR", "encoderVFQ", "VFQuality", "VFQ2"] {
+            XCTAssertEqual(
+                TrackLabeling.audioLabel(displayTitle: title, language: "fr", trackID: 1,
+                                        locale: Locale(identifier: "en")),
+                TrackLabel(base: .content("French")), title
+            )
+        }
+        XCTAssertEqual(
+            TrackLabeling.audioLabel(displayTitle: "VFQ / vfq", language: "fr", isCommentary: true,
+                                    trackID: 1, locale: Locale(identifier: "en")),
+            TrackLabel(base: .content("French"), qualifiers: [.audioVersion("VFQ"), .commentary])
+        )
+        XCTAssertEqual(
+            TrackLabeling.audioLabel(displayTitle: "French VFQ", language: "fr", trackID: 1,
+                                    locale: Locale(identifier: "en")),
+            TrackLabel(base: .content("French VFQ"))
+        )
+        XCTAssertEqual(
+            TrackLabeling.audioLabel(displayTitle: "VFQ", language: nil, trackID: 1,
+                                    locale: Locale(identifier: "en")),
+            TrackLabel(base: .content("VFQ")), "A title tag must not manufacture a language code."
+        )
+    }
+
+    func testExplicitRegionalAndExtendedAudioLanguagesRemainDistinct() {
+        let cases = [
+            ("fr-CA", "French (Canada)"), ("fra_CA", "French (Canada)"),
+            ("fr-FR", "French (France)"), ("pt-BR", "Portuguese (Brazil)"),
+            ("pt-PT", "Portuguese (Portugal)"), ("es-419", "Spanish (Latin America)"),
+            ("es-ES", "Spanish (Spain)"), ("zh-yue", "Cantonese"), ("yue", "Cantonese"),
+            ("cmn", "Chinese (cmn)"), ("zh-Hant", "Chinese, Traditional"),
+            ("sr-Cyrl", "Serbian (Cyrillic)"), ("en-US-u-ca-buddhist", "English (United States)")
+        ]
+        for (code, expected) in cases {
+            XCTAssertEqual(
+                TrackLabeling.audioLabel(displayTitle: "Track 1", language: code, trackID: 1,
+                                        locale: Locale(identifier: "en")),
+                TrackLabel(base: .content(expected)), code
+            )
+        }
+        XCTAssertEqual(
+            TrackLabeling.audioLabel(displayTitle: "French Commentary", language: "fr-CA",
+                                    trackID: 1, locale: Locale(identifier: "en")),
+            TrackLabel(base: .content("French (Canada) Commentary"))
+        )
+        XCTAssertEqual(
+            TrackLabeling.audioLabel(displayTitle: "French (Canada)", language: "fr-CA",
+                                    trackID: 1, locale: Locale(identifier: "en")),
+            TrackLabel(base: .content("French (Canada)"))
+        )
+        XCTAssertEqual(
+            TrackLabeling.audioLabel(displayTitle: "VFQ", language: "fr-CA", trackID: 1,
+                                    locale: Locale(identifier: "fr")),
+            TrackLabel(base: .content("Français (Canada)"), qualifiers: [.audioVersion("VFQ")])
+        )
+    }
+
+    func testVersionEnrichmentRetainsProviderTagsWithoutOverwritingEngineFacts() {
+        let provider = MediaTrack(id: 3, kind: .audio, displayTitle: "VFQ", language: "fra")
+        for title in ["French", "AC3 5.1", "Director's Mix"] {
+            let engine = MediaTrack(id: 3, kind: .audio, displayTitle: title, language: "fr")
+            let merged = engine.enriched(withProvider: provider)
+            XCTAssertEqual(merged.displayTitle, "\(title) VFQ")
+            XCTAssertEqual(merged.id, engine.id)
+            XCTAssertEqual(merged.language, engine.language)
+            XCTAssertEqual(merged.enriched(withProvider: provider).displayTitle, merged.displayTitle)
+        }
+        let explicit = MediaTrack(id: 3, kind: .audio, displayTitle: "French VFF", language: "fr")
+        XCTAssertEqual(explicit.enriched(withProvider: provider).displayTitle, explicit.displayTitle)
+        let differentLanguage = MediaTrack(id: 3, kind: .audio, displayTitle: "English", language: "en")
+        XCTAssertEqual(differentLanguage.enriched(withProvider: provider).displayTitle, "English")
+        let subtitle = MediaTrack(id: 3, kind: .subtitle, displayTitle: "French", language: "fr")
+        XCTAssertEqual(subtitle.enriched(withProvider: provider).displayTitle, "French")
+    }
+
+    func testRegionalDisplayDoesNotChangeLanguageOrdering() {
+        let tracks = [
+            MediaTrack(id: 1, kind: .audio, displayTitle: "VFQ", language: "fr-CA"),
+            MediaTrack(id: 2, kind: .audio, displayTitle: "VFF", language: "fr-FR"),
+            MediaTrack(id: 3, kind: .audio, displayTitle: "Portuguese", language: "pt-BR")
+        ]
+        XCTAssertEqual(tracks.sortedByPreferredLanguage(["fr-FR"]).map(\.id), [1, 2, 3])
+        XCTAssertEqual(LanguageMatch.normalized("zh-yue"), "zh")
+        XCTAssertEqual(LanguageMatch.normalized("pt-BR"), "pt")
+    }
+
     func testAudioLabelLeadsWithLanguageWhenTitleOmitsIt() {
         // Release-group/encoder titles ("[HR] 5.1 Channels (Doc_Ramen)") look
         // "rich" but carry no language, so the resolved language must lead instead

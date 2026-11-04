@@ -79,6 +79,9 @@ public protocol MediaProvider: Sendable {
     /// return a placeholder that could bypass the version picker.
     func playbackItem(id: String) async throws -> MediaItem
 
+    /// Resolve a user-imported external title without opening a playback engine.
+    func externalMediaLink(for itemID: String, mediaSourceID: String?) async throws -> ExternalMediaLink
+
     /// Trailers / preview clips for an item (movie or series).
     ///
     /// Returned items are ordinary playable `MediaItem`s whose `id` resolves to a
@@ -198,6 +201,10 @@ public protocol MediaProvider: Sendable {
         sections: [ServerHomeSection], limit: Int, excludingLibraryIDs: Set<String>
     ) async -> [String: Result<[MediaItem], AppError>]
 
+    func serverHomeContent(
+        sections: [ServerHomeSection], limit: Int, excludingLibraryIDs: Set<String>
+    ) async -> [String: Result<ServerHomeRowContent, AppError>]
+
     // MARK: Search
 
     /// Search the user's libraries for items matching a free-text query.
@@ -243,6 +250,13 @@ public protocol MediaProvider: Sendable {
     /// default that ignores the id, so this is fully additive — existing
     /// conformers and test doubles need no changes.
     func playbackInfo(for itemID: String, mediaSourceID: String?, forceTranscode: Bool) async throws -> PlaybackRequest
+
+    /// Resolve only an already selected file for bounded detail preparation.
+    /// Never discovers versions, downloads sidecars or starts a playback session.
+    /// Unsupported providers return nil; ordinary Play still uses playbackInfo.
+    func playbackPreparationLocator(
+        for itemID: String, mediaSourceID: String
+    ) async throws -> NetworkFileLocator?
 
     /// Report progress so the server keeps resume points in sync.
     func reportPlayback(_ progress: PlaybackProgress, event: PlaybackEvent) async throws
@@ -490,6 +504,9 @@ public enum MediaProviderURLIdentity {
 // doubles) inherit safe no-ops, so adding the capability never forces every
 // conformer to implement it.
 public extension MediaProvider {
+    func externalMediaLink(for itemID: String, mediaSourceID: String?) async throws -> ExternalMediaLink {
+        throw AppError.unknown("This source does not support external title links.")
+    }
     var catalogIdentityRequiresEnrichment: Bool { false }
     var catalogResumeRequiresEnrichment: Bool { false }
     var playbackInventoryRequiresEnrichment: Bool { false }
@@ -599,6 +616,13 @@ public extension MediaProvider {
         return results
     }
 
+    func serverHomeContent(
+        sections: [ServerHomeSection], limit: Int, excludingLibraryIDs: Set<String>
+    ) async -> [String: Result<ServerHomeRowContent, AppError>] {
+        await serverHomeItems(sections: sections, limit: limit, excludingLibraryIDs: excludingLibraryIDs)
+            .mapValues { $0.map { ServerHomeRowContent(items: $0) } }
+    }
+
     /// Default: cannot query by person, so a person page shows no library credits
     /// for this source rather than failing. Jellyfin/Emby (`PersonIds`), Plex
     /// (`actor`) and the share catalog (its persisted cast) override this.
@@ -701,6 +725,10 @@ public extension MediaProvider {
     func playbackInfo(for itemID: String, mediaSourceID: String?, forceTranscode: Bool) async throws -> PlaybackRequest {
         try await playbackInfo(for: itemID, forceTranscode: forceTranscode)
     }
+
+    func playbackPreparationLocator(
+        for itemID: String, mediaSourceID: String
+    ) async throws -> NetworkFileLocator? { nil }
 
     /// Default: classify locality from the session's persisted `baseURL` host.
     /// Correct for single-URL backends (Jellyfin, manually-entered hosts); Plex

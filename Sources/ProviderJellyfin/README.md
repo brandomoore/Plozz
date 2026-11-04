@@ -389,7 +389,7 @@ native-only remux path, and required conversions.
 This ownership was cross-checked against
 [Sodalite's stream selection](https://github.com/superuser404notfound/Sodalite/blob/31799bde53e2d93384216b3f9b2523600896ef2b/Sodalite/Player/PlaybackStreamSelection.swift),
 [Swiftfin's playback builder](https://github.com/jellyfin/Swiftfin/blob/b0cb3127b1cef57b6508581be1cfe9addd5539a2/Shared/Objects/MediaPlayerManager/MediaPlayerItem/MediaPlayerItem%2BBuild.swift),
-and the [linked engine's pipeline contract](https://github.com/brandomoore/AetherEngine/blob/c1ce4cf48bad416e6be5230032a2b7f332e833d8/docs/architecture.md).
+and the [linked engine's pipeline contract](https://github.com/brandomoore/AetherEngine/blob/45e37ed2e6b66ea520229a6fb8b0f973fe155fda/docs/architecture.md).
 These are protocol/design references, not copied implementations. Client
 differences do not establish the cause of an individual playback failure.
 
@@ -427,6 +427,19 @@ identical PlaybackInfo requests with no range, SDR, and HDR constraints. Its
 defines `VideoRange`; Jellyfin's
 [`StreamInfo`](https://github.com/jellyfin/jellyfin/blob/v10.11.0/MediaBrowser.Model/Dlna/StreamInfo.cs)
 reads the codec-specific `rangetype` option.
+
+Real-media verification must inspect the encoded samples, not just these request
+parameters or the master playlist. Emby 4.10.2.0 was observed returning eight-bit
+H.264 and HEVC with PQ/BT.2020 signaling even when SDR was explicitly requested.
+An HEVC Main 10 request likewise does not prove ten-bit output. The test user's
+own session exposes the actual encoder in `TranscodingInfo`; that is stronger
+evidence than assuming hardware acceleration from a client preference. Server
+tone-mapping and encoder settings remain server-owned.
+
+The opt-in iOS `ServerLiveTranscodingTests` exercises real provider negotiation,
+decoded output, sustained native playback, and the presenting layer. See
+[live Emby checks](../../docs/testing-policy.md#live-emby-transcoding) for scope
+and simulator limitations.
 
 ## Watch-state writes
 

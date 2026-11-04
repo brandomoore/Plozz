@@ -18,6 +18,67 @@ import CoreNetworking
 /// captions stayed perfectly correct — which is what made it read as an artwork
 /// bug rather than a URL one.
 final class PlexAbsoluteArtworkURLTests: XCTestCase {
+    func testSelectedSquareBackgroundIsSeparateFromPosterAndLandscapeArtwork() async throws {
+        for path in [
+            "/library/metadata/42/squareArt/123",
+            "https://metadata-static.plex.tv/square.jpg"
+        ] {
+            let http = StubHTTPClient()
+            http.stub(pathSuffix: "/library/metadata/42", json: """
+            {"MediaContainer":{"Metadata":[{
+              "ratingKey":"42","type":"movie","title":"Movie",
+              "thumb":"/library/metadata/42/thumb/1","art":"/library/metadata/42/art/2",
+              "Image":[
+                {"type":"coverPoster","url":"/library/metadata/42/thumb/1"},
+                {"type":"backgroundSquare","url":"\(path)"},
+                {"type":"clearLogo","url":"/library/metadata/42/clearLogo/3"}
+              ]
+            }]}}
+            """)
+            let provider = PlexProvider(session: makeProvider().session, http: http)
+            let item = try await provider.item(id: "42")
+            let references = item.artworkReferences(for: .squareHero)
+            XCTAssertEqual(references.count, 1)
+            guard case .remote(let url) = try XCTUnwrap(references.first) else {
+                return XCTFail("Expected remote square artwork")
+            }
+            XCTAssertNotEqual(url, item.posterURL)
+            XCTAssertNotEqual(url, item.backdropURL)
+            XCTAssertFalse(item.artworkReferences(for: .homeHero).contains(.remote(url)))
+            XCTAssertNotNil(item.logoURL)
+            if path.hasPrefix("https://") {
+                XCTAssertEqual(url.absoluteString, path)
+                XCTAssertNil(URLComponents(url: url, resolvingAgainstBaseURL: false)?.query)
+            } else {
+                XCTAssertEqual(url.host, "plex.host")
+                let query = try XCTUnwrap(URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems)
+                let inner = try XCTUnwrap(query.first { $0.name == "url" }?.value)
+                let source = try XCTUnwrap(URLComponents(string: inner))
+                XCTAssertEqual(source.path, path)
+                XCTAssertEqual(source.queryItems?.first { $0.name == "X-Plex-Token" }?.value, "SERVER-TOKEN")
+                XCTAssertEqual(query.first { $0.name == "X-Plex-Token" }?.value, "SERVER-TOKEN")
+            }
+            let restored = try JSONDecoder().decode(MediaItem.self, from: JSONEncoder().encode(item))
+            XCTAssertEqual(restored.artworkReferences(for: .squareHero), references)
+        }
+    }
+
+    func testAbsentOrEmptySquareArtDoesNotPromotePosters() async throws {
+        for images in ["[]", #"[{"type":"backgroundSquare","url":""},{"type":"coverPoster","url":"/poster"}]"#] {
+            let http = StubHTTPClient()
+            http.stub(pathSuffix: "/library/metadata/42", json: """
+            {"MediaContainer":{"Metadata":[{
+              "ratingKey":"42","type":"movie","title":"Movie",
+              "art":"/library/metadata/42/art/2","Image":\(images)
+            }]}}
+            """)
+            let provider = PlexProvider(session: makeProvider().session, http: http)
+            let item = try await provider.item(id: "42")
+            XCTAssertTrue(item.artworkReferences(for: .squareHero).isEmpty)
+            XCTAssertFalse(item.artworkReferences(for: .homeHero).isEmpty)
+        }
+    }
+
     private func makeClient(
         baseURL: URL = URL(string: "https://plex.host:32400")!
     ) -> PlexClient {
@@ -194,6 +255,40 @@ final class PlexAbsoluteArtworkURLTests: XCTestCase {
                 maxWidth: 500
             )
         )
+    }
+
+    func testHistoricalArtworkOriginsRemainLiveAndServerScoped() throws {
+        let serverID = UUID().uuidString
+        let key = "plex.artwork-origins.\(serverID)"
+        defer { UserDefaults.standard.removeObject(forKey: key) }
+        let current = URL(string: "https://current.test/plex")!
+        let previous = URL(string: "https://previous.test/old-proxy")!
+        let provider = makeProvider(baseURL: current, serverID: serverID)
+        let other = makeProvider(baseURL: current, serverID: UUID().uuidString)
+        let direct = previous.appendingPathComponent("library/metadata/42/thumb/123")
+        var transcode = URLComponents(url: previous.appendingPathComponent("photo/:/transcode"),
+                                      resolvingAgainstBaseURL: false)!
+        transcode.queryItems = [URLQueryItem(name: "url", value: direct.absoluteString)]
+        let saved = [direct, try XCTUnwrap(transcode.url)]
+
+        for url in saved {
+            XCTAssertFalse(provider.ownsPersistedImageURL(url))
+            XCTAssertNil(provider.reauthenticatedImageURL(url, maxWidth: 500))
+        }
+        UserDefaults.standard.set([previous.absoluteString], forKey: key)
+        for url in saved {
+            XCTAssertTrue(provider.ownsPersistedImageURL(url))
+            let signed = try XCTUnwrap(provider.reauthenticatedImageURL(url, maxWidth: 500))
+            XCTAssertEqual(signed.host, current.host)
+            XCTAssertTrue(signed.absoluteString.contains("SERVER-TOKEN"))
+            XCTAssertFalse(other.ownsPersistedImageURL(url))
+            XCTAssertNil(other.reauthenticatedImageURL(url, maxWidth: 500))
+        }
+        UserDefaults.standard.removeObject(forKey: key)
+        for url in saved {
+            XCTAssertFalse(provider.ownsPersistedImageURL(url))
+            XCTAssertNil(provider.reauthenticatedImageURL(url, maxWidth: 500))
+        }
     }
 
     func testProviderReauthenticatesDiscoverArtworkWithDiscoverToken() throws {

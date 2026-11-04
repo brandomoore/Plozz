@@ -11,6 +11,7 @@ struct NavigationContentFocusRequester: UIViewRepresentable {
     let onCompleted: (UInt64, Bool) -> Void
     var returnFocus: ReturnFocus?
     var restoresPreviousFocus = false
+    var onDirectionalEntry: (() -> Void)?
 
     func makeUIView(context: Context) -> RequestView {
         let view = RequestView()
@@ -25,6 +26,7 @@ struct NavigationContentFocusRequester: UIViewRepresentable {
         view.onCompleted = onCompleted
         returnFocus?.marker = view
         view.returnFocus = restoresPreviousFocus ? returnFocus : nil
+        view.onDirectionalEntry = onDirectionalEntry
         view.request = request
     }
 
@@ -32,6 +34,7 @@ struct NavigationContentFocusRequester: UIViewRepresentable {
         view.request = nil
         view.onCompleted = nil
         view.returnFocus = nil
+        view.onDirectionalEntry = nil
     }
 
     @MainActor
@@ -72,9 +75,9 @@ struct NavigationContentFocusRequester: UIViewRepresentable {
         }
 
         private static func isVisible(_ item: any UIFocusItem, relativeTo marker: UIView) -> Bool {
-            guard let frame = NavigationRowFocusRequester.frame(of: item, relativeTo: marker),
-                  !frame.isEmpty, !frame.isNull, !frame.isInfinite else { return false }
-            return marker.bounds.contains(CGPoint(x: frame.midX, y: frame.midY))
+            // Directional guards are transient input targets, not return destinations.
+            // Restoring the hero's Left guard would immediately reopen navigation.
+            NavigationContentFocusRequester.eligibleFrame(of: item, relativeTo: marker) != nil
         }
     }
 
@@ -82,9 +85,15 @@ struct NavigationContentFocusRequester: UIViewRepresentable {
         var isRightToLeft = false
         var onCompleted: ((UInt64, Bool) -> Void)?
         var returnFocus: ReturnFocus?
+        var onDirectionalEntry: (() -> Void)? {
+            didSet { updateDirectionalEntryOwner() }
+        }
+        private weak var directionalEntryOwner: NavigationRailFocusHostController?
+        private var pendingDirectionalEntry: UUID?
         var request: UInt64? {
             didSet {
                 guard request != oldValue else { return }
+                if request != nil { HeroFocusDiagnostics.entry("request-installed") }
                 stop()
                 updateObservation()
                 schedule()
@@ -95,6 +104,7 @@ struct NavigationContentFocusRequester: UIViewRepresentable {
 
         override func didMoveToWindow() {
             super.didMoveToWindow()
+            updateDirectionalEntryOwner()
             updateObservation()
             if window == nil { stop() } else { schedule() }
         }
@@ -102,6 +112,40 @@ struct NavigationContentFocusRequester: UIViewRepresentable {
         override func layoutSubviews() {
             super.layoutSubviews()
             schedule()
+        }
+
+        private func updateDirectionalEntryOwner() {
+            let owner = window != nil && onDirectionalEntry != nil
+                ? NavigationRailFocusHostController.containing(self) : nil
+            if directionalEntryOwner !== owner {
+                if directionalEntryOwner?.directionalContentEntry === self {
+                    directionalEntryOwner?.directionalContentEntry = nil
+                }
+                directionalEntryOwner = owner
+            }
+            owner?.directionalContentEntry = self
+            if owner == nil { pendingDirectionalEntry = nil }
+        }
+
+        func scheduleDirectionalEntry() {
+            guard pendingDirectionalEntry == nil, onDirectionalEntry != nil, request == nil,
+                  let window, let system = UIFocusSystem.focusSystem(for: window),
+                  let source = system.focusedItem else { return }
+            let token = UUID()
+            pendingDirectionalEntry = token
+            HeroFocusDiagnostics.entry("directional-down-queued")
+            // Leave UIKit's focus-validation stack before changing the shell gate.
+            DispatchQueue.main.async { [weak self, weak window, weak source] in
+                guard let self, self.pendingDirectionalEntry == token else { return }
+                self.pendingDirectionalEntry = nil
+                guard let window, self.window === window, let source,
+                      UIFocusSystem.focusSystem(for: window)?.focusedItem === source,
+                      self.directionalEntryOwner?.isNavigationFocused == true,
+                      self.request == nil else { return }
+                HeroFocusDiagnostics.emit("topbar.entry directional-down")
+                HeroFocusDiagnostics.entry("directional-down")
+                self.onDirectionalEntry?()
+            }
         }
 
         private func updateObservation() {
@@ -142,27 +186,37 @@ struct NavigationContentFocusRequester: UIViewRepresentable {
                 complete(request, didFocus: false)
                 return
             }
+            HeroFocusDiagnostics.emit("sidebar.content frame-ready")
+            HeroFocusDiagnostics.entry("frame-ready")
             window.layoutIfNeeded()
+            HeroFocusDiagnostics.emit("sidebar.content layout-ready")
+            HeroFocusDiagnostics.entry("layout-ready")
             guard self.request == request, self.window === window else { return }
             let previous = returnFocus?.target(relativeTo: self)
             let selection = previous.map { EntrySelection(target: $0, isPending: false) }
                 ?? NavigationContentFocusRequester.entrySelection(
                     in: window, relativeTo: self, isRightToLeft: isRightToLeft
                 )
+            HeroFocusDiagnostics.emit("sidebar.content selection-ready pending=\(selection.isPending)")
+            HeroFocusDiagnostics.entry(selection.isPending ? "selection-pending" : "selection-ready")
             // A loading page will wake this request when its entry regions change.
             // Do not focus its toolbar first and then visibly redirect into content.
             guard !selection.isPending else { return }
             guard let target = selection.target else {
+                HeroFocusDiagnostics.entry("target-missing")
                 PlozzLog.app.debug("New navigation page has no visible focus target yet")
                 complete(request, didFocus: false)
                 return
             }
             guard let owner = NavigationRailFocusHostController.containing(self) else {
+                HeroFocusDiagnostics.entry("owner-missing")
                 PlozzLog.app.error("Navigation content has no shared native focus owner")
                 complete(request, didFocus: false)
                 return
             }
+            HeroFocusDiagnostics.entry("native-request")
             let didFocus = owner.requestFocus(to: target, using: system)
+            HeroFocusDiagnostics.entry(didFocus ? "native-accepted" : "native-rejected")
             HeroFocusDiagnostics.emit("sidebar.content request=\(request) previous=\(String(describing: previous)) target=\(String(describing: target)) focused=\(String(describing: system.focusedItem)) success=\(didFocus)")
             if !didFocus {
                 PlozzLog.app.debug("New navigation page rejected its first-content focus request")

@@ -3,6 +3,14 @@ import XCTest
 @testable import FeatureHomeCore
 
 final class PlayerVersionSelectionTests: XCTestCase {
+    func testExternalSourcesAreNeverOfferedAsInPlayerVersions() {
+        var item = movie("one", edition: "Theatrical")
+        item.versions.append(.init(id: "title.strmlnk", container: "strmlnk"))
+        XCTAssertEqual(PlayerVersionSelection.versions(for: item).count, 2)
+        XCTAssertNil(PlayerVersionSelection.selecting("title.strmlnk", in: item))
+        let selected = item.selectingVersion("title.strmlnk")
+        XCTAssertNil(DetailPlaybackPreparationCandidate(selected, allowsMultipleVersions: true))
+    }
     func testSDRAlternativesRequireKnownRangeAndExplicitSelection() throws {
         var item = movie("one", edition: "Theatrical").selectingVersion("file-2")
         item.versions[0].videoRange = "SDR"

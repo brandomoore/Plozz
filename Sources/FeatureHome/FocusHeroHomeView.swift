@@ -326,8 +326,8 @@ final class FocusHeroModel {
         return rows.indices.contains(index) ? rowHeights[rows[index].id] ?? 0 : 0
     }
 
-    /// The first row rests at offset zero so native navigation recognizes Home's
-    /// top edge. Subtract the same origin from the spacer and every destination.
+    /// Local row offset zero is the first row. The hybrid native-sidebar layout
+    /// adds its hidden hero above this origin in both spacing and destinations.
     func scrollOrigin(in rows: [FocusHeroRow]) -> CGFloat {
         guard let first = rows.first else { return 0 }
         return min(
@@ -388,6 +388,7 @@ struct FocusHeroHomeView<RowContent: View>: View {
     let enrich: FocusHeroMetadata.Enrich?
     let minimumDetailsTop: CGFloat?
     let onReturnToTop: () -> Void
+    let featuredHero: ((Bool) -> AnyView)?
     let rowContent: (FocusHeroRow, FocusHeroRowReporter) -> RowContent
 
     init(
@@ -399,6 +400,7 @@ struct FocusHeroHomeView<RowContent: View>: View {
         enrich: FocusHeroMetadata.Enrich? = nil,
         minimumDetailsTop: CGFloat? = nil,
         onReturnToTop: @escaping () -> Void = {},
+        featuredHero: ((Bool) -> AnyView)? = nil,
         @ViewBuilder rowContent: @escaping (FocusHeroRow, FocusHeroRowReporter) -> RowContent
     ) {
         self.rows = rows
@@ -409,38 +411,46 @@ struct FocusHeroHomeView<RowContent: View>: View {
         self.enrich = enrich
         self.minimumDetailsTop = minimumDetailsTop
         self.onReturnToTop = onReturnToTop
+        self.featuredHero = featuredHero
         self.rowContent = rowContent
     }
 
     @State private var model = FocusHeroModel()
     @State private var metadata = FocusHeroMetadata()
+    @State private var featuredState = HeroShowcaseState()
     @Environment(\.plozzArtworkPolicy) private var artworkPolicy
 
     // Reads nothing from `model`: this body builds the rows, and must not run
     // again when the pinned row or the hero title changes.
     var body: some View {
         ZStack(alignment: .topLeading) {
-            FocusHeroBackdropLayer(
-                model: model,
-                navigationStyle: navigationStyle,
-                isFrontmost: isFrontmost
-            )
-            .environment(\.plozzArtworkArea, artworkPolicy.heroPolicy.area)
-            FocusHeroColumn(
-                model: model,
-                metadata: metadata,
-                enrich: enrich,
-                settings: settings,
-                spoilerSettings: spoilerSettings,
-                navigationStyle: navigationStyle,
-                rows: rows,
-                minimumDetailsTop: minimumDetailsTop
-            )
-            .environment(\.plozzArtworkArea, artworkPolicy.heroPolicy.area)
-            FocusHeroScrollingRows(rows: rows, model: model, rowContent: rowContent, onReturnToTop: onReturnToTop)
-                .ignoresSafeArea(.container, edges: .trailing)
-                .environment(\.plozzRowTitleTightening, FocusHeroLayout.rowTitleTightening)
-                .environment(\.plozzCardCaptionIsShowcase, true)
+            if let featuredHero {
+                HeroShowcaseStage(
+                    state: featuredState, model: model, rows: rows,
+                    hero: AnyView(HeroShowcaseFeaturedContent(state: featuredState, content: featuredHero)),
+                    showcase: AnyView(HeroShowcaseFeaturedContent(state: featuredState) { active in
+                        AnyView(showcaseDetails(active: active && isFrontmost))
+                    }),
+                    rowContent: AnyView(HeroShowcaseNativeRows(
+                        state: featuredState, usesNativeSidebar: navigationStyle == .sidebar
+                    ) { inset in
+                        AnyView(scrollingRows(topInset: inset))
+                    }),
+                    usesNativeSidebar: navigationStyle == .sidebar
+                )
+                .overlay(alignment: .topLeading) {
+                    HeroShowcaseFeaturedContent(state: featuredState) { active in
+                        AnyView(HeroShowcaseReturnCue(
+                            model: model, rows: rows,
+                            isActive: active && isFrontmost
+                        ))
+                    }
+                    .allowsHitTesting(false)
+                }
+            } else {
+                showcaseDetails(active: isFrontmost)
+                scrollingRows()
+            }
             FocusHeroArtworkPrefetch(rows: rows, model: model, metadata: metadata, isFrontmost: isFrontmost)
                 .environment(\.plozzArtworkArea, artworkPolicy.heroPolicy.area)
         }
@@ -458,6 +468,39 @@ struct FocusHeroHomeView<RowContent: View>: View {
             guard let enrich else { return }
             await metadata.prefetch(rows.map { Array($0.items.prefix(16)) }, using: enrich)
         }
+    }
+
+    private func showcaseDetails(active: Bool) -> some View {
+        ZStack(alignment: .topLeading) {
+            FocusHeroBackdropLayer(
+                model: model,
+                navigationStyle: navigationStyle,
+                isFrontmost: active
+            )
+            .environment(\.plozzArtworkArea, artworkPolicy.heroPolicy.area)
+            FocusHeroColumn(
+                model: model,
+                metadata: metadata,
+                enrich: enrich,
+                settings: settings,
+                spoilerSettings: spoilerSettings,
+                navigationStyle: navigationStyle,
+                rows: rows,
+                minimumDetailsTop: minimumDetailsTop
+            )
+            .modifier(HeroShowcaseForeground(surface: .showcase))
+            .environment(\.plozzArtworkArea, artworkPolicy.heroPolicy.area)
+        }
+    }
+
+    private func scrollingRows(topInset: CGFloat = 0) -> some View {
+        FocusHeroScrollingRows(rows: rows, model: model, rowContent: rowContent, topInset: topInset, onReturnToTop: {
+            if featuredHero != nil { featuredState.returnToHero?() }
+            onReturnToTop()
+        })
+        .ignoresSafeArea(.container, edges: .trailing)
+        .environment(\.plozzRowTitleTightening, FocusHeroLayout.rowTitleTightening)
+        .environment(\.plozzCardCaptionIsShowcase, true)
     }
 }
 
@@ -731,6 +774,7 @@ struct FocusHeroScrollingRows<RowContent: View>: View {
     let rows: [FocusHeroRow]
     let model: FocusHeroModel
     let rowContent: (FocusHeroRow, FocusHeroRowReporter) -> RowContent
+    var topInset: CGFloat = 0
     var onReturnToTop: () -> Void = {}
     var body: some View {
         FocusHeroMotionSurface(
@@ -745,9 +789,9 @@ struct FocusHeroScrollingRows<RowContent: View>: View {
         let bottom = FocusHeroLayout.rowsBottom(rowSpacing: FocusHeroLayout.rowSpacing)
         return ScrollView(.vertical) {
             FocusHeroRowStack(rows: rows, model: model, rowContent: rowContent)
-                .padding(.top, bottom - model.scrollOrigin(in: rows))
+                .padding(.top, bottom - model.scrollOrigin(in: rows) + topInset)
                 .padding(.bottom, FocusHeroLayout.screenHeight - bottom)
-                .background(FocusHeroScrollPosition(model: model, rows: rows, onReturnToTop: onReturnToTop))
+                .background(FocusHeroScrollPosition(model: model, rows: rows, topInset: topInset, onReturnToTop: onReturnToTop))
         }
         .scrollIndicators(.hidden)
         .scrollClipDisabled()
@@ -760,6 +804,7 @@ struct FocusHeroScrollingRows<RowContent: View>: View {
 private struct FocusHeroScrollPosition: View {
     let model: FocusHeroModel
     let rows: [FocusHeroRow]
+    let topInset: CGFloat
     let onReturnToTop: () -> Void
 
     var body: some View {
@@ -769,6 +814,7 @@ private struct FocusHeroScrollPosition: View {
             rowID: model.resolvedActiveRowID(in: rows),
             y: model.top(ofRowAt: index, in: rows, rowSpacing: spacing)
                 + model.activeHeight(in: rows) - model.scrollOrigin(in: rows),
+            contentOrigin: topInset,
             motion: model.motion,
             height: model.activeHeight(in: rows),
             heightStops: model.heightStops(in: rows),
@@ -1068,6 +1114,7 @@ private final class FocusHeroTransformMotion {
 struct FocusHeroNativeScrollPosition: UIViewRepresentable {
     let rowID: String?
     let y: CGFloat
+    var contentOrigin: CGFloat = 0
     var motion: FocusHeroRowMotion? = nil
     var height: CGFloat? = nil
     var heightStops: [FocusHeroHeightStop] = []
@@ -1088,7 +1135,8 @@ struct FocusHeroNativeScrollPosition: UIViewRepresentable {
         motion?.rowOffsets = rowOffsets
         view.navigation = context.environment.plozzTopNavigationScroll
         view.onReturnToTop = onReturnToTop
-        view.move(to: y, rowID: rowID, heightChanged: heightChanged)
+        view.move(to: y, rowID: rowID, heightChanged: heightChanged, contentOrigin: contentOrigin)
+        view.bindShowcaseMotion(context.environment.heroShowcaseMotion)
     }
 
     static func dismantleUIView(_ view: PositionView, coordinator: ()) {
@@ -1114,6 +1162,10 @@ struct FocusHeroNativeScrollPosition: UIViewRepresentable {
         private var wasScrollEnabled = true
         private var rowID: String?
         private var y: CGFloat = 0
+        private var contentOrigin: CGFloat = 0
+        private var navigationOffset: CGFloat = 0
+        private var navigationProgress: CGFloat?
+        private weak var showcaseMotion: HeroShowcaseScrollMotion?
         private var offsetObservation: NSKeyValueObservation?
         private var isStepping = false
 
@@ -1131,21 +1183,27 @@ struct FocusHeroNativeScrollPosition: UIViewRepresentable {
             bindScrollView()
         }
 
-        func move(to y: CGFloat, rowID: String?, heightChanged: Bool = false) {
-            let changed = self.y != y || self.rowID != rowID
+        func move(to y: CGFloat, rowID: String?, heightChanged: Bool = false, contentOrigin: CGFloat = 0) {
+            let contentChanged = self.y - self.contentOrigin != y || self.rowID != rowID
+            let originDelta = contentOrigin - self.contentOrigin
+            let changed = contentChanged || originDelta != 0
             let animated = self.rowID != nil && self.rowID != rowID
             self.rowID = rowID
-            self.y = y
+            self.y = y + contentOrigin
+            self.contentOrigin = contentOrigin
+            // Padding and bounds move together; existing additive springs keep
+            // their distance, clock and velocity in row-local coordinates.
+            compositorTarget += originDelta
             bindScrollView()
             guard let scroller else { return }
             if changed || (heightChanged && isMoving) {
-                moveWithCompositor(in: scroller, animated: animated)
+                moveWithCompositor(in: scroller, animated: animated, updateViewport: contentChanged || heightChanged)
             } else {
                 rowMotion?.applyTargets(animated: isMoving)
             }
         }
 
-        private func moveWithCompositor(in scroller: UIScrollView, animated: Bool) {
+        private func moveWithCompositor(in scroller: UIScrollView, animated: Bool, updateViewport: Bool) {
             let beganAt = CACurrentMediaTime()
             let timing = FocusHeroLayout.rowSpring
             scrollSteps.removeAll { scroller.layer.animation(forKey: $0.key) == nil }
@@ -1186,8 +1244,10 @@ struct FocusHeroNativeScrollPosition: UIViewRepresentable {
                     scrollSteps.append(ScrollStep(key: key, distance: distance))
                 }
                 CATransaction.commit()
-                rowMotion?.applyTargets(animated: true)
-                rowMotion?.followViewport(from: departure, to: y, velocity: velocity)
+                if updateViewport {
+                    rowMotion?.applyTargets(animated: true)
+                    rowMotion?.followViewport(from: departure - contentOrigin, to: y - contentOrigin, velocity: velocity)
+                }
             } else {
                 for step in scrollSteps { scroller.layer.removeAnimation(forKey: step.key) }
                 scrollSteps.removeAll()
@@ -1207,7 +1267,7 @@ struct FocusHeroNativeScrollPosition: UIViewRepresentable {
                 }
             } else {
                 stopNavigationFrames()
-                navigation?.update(offset: y, source: navigationScrollID)
+                reportNavigation(offset: y)
             }
         }
 
@@ -1217,16 +1277,51 @@ struct FocusHeroNativeScrollPosition: UIViewRepresentable {
                 return
             }
             let finished = !isMoving || CACurrentMediaTime() >= navigationDeadline
-            navigation?.update(
-                offset: finished ? y : scroller.layer.presentation()?.bounds.origin.y ?? y,
-                source: navigationScrollID
-            )
+            reportNavigation(offset: finished ? y : scroller.layer.presentation()?.bounds.origin.y ?? y)
             if finished { stopNavigationFrames() }
         }
 
         private func stopNavigationFrames() {
             navigationFrames?.invalidate()
             navigationFrames = nil
+        }
+
+        func bindShowcaseMotion(_ motion: HeroShowcaseScrollMotion?) {
+            if showcaseMotion !== motion {
+                showcaseMotion?.unbindNavigation(self)
+                showcaseMotion = motion
+            }
+            if navigation != nil, scroller != nil, window != nil {
+                motion?.bindNavigation(self)
+            } else {
+                motion?.unbindNavigation(self)
+            }
+        }
+
+        func updateNavigationOffset(_ offset: CGFloat, progress: CGFloat? = nil) {
+            guard navigationOffset != offset || navigationProgress != progress else { return }
+            navigationOffset = offset
+            navigationProgress = progress
+            reportNavigation(offset: isMoving ? scroller?.layer.presentation()?.bounds.origin.y ?? y : y)
+        }
+
+        func animateNavigation(from progress: CGFloat, spring: Spring, key: String) {
+            navigation?.animateStage(
+                from: progress, spring: spring, key: key, source: navigationScrollID
+            )
+        }
+
+        func stopNavigationAnimation() {
+            navigation?.stopStageAnimations(source: navigationScrollID)
+        }
+
+        private func reportNavigation(offset: CGFloat) {
+            navigation?.update(
+                offset: offset + navigationOffset, source: navigationScrollID,
+                stageTransition: navigationProgress.map {
+                    TopNavigationScroll.StageTransition(offset: navigationOffset, progress: $0)
+                }
+            )
         }
 
         private func returnToTop() {
@@ -1240,18 +1335,23 @@ struct FocusHeroNativeScrollPosition: UIViewRepresentable {
             scroller?.setContentOffset(.zero, animated: false)
             isStepping = false
             onReturnToTop?()
+            // Back admits navigation immediately, rather than waiting for the hero.
+            showcaseMotion?.finishNavigation()
         }
 
         private func bindNavigation() {
             guard registeredNavigation !== navigation else { return }
             registeredNavigation?.unregister(source: navigationScrollID)
             registeredNavigation = navigation
-            navigation?.register(source: navigationScrollID, offset: y) { [weak self] in
+            navigation?.register(source: navigationScrollID, offset: y + navigationOffset) { [weak self] in
                 self?.returnToTop()
             }
+            reportNavigation(offset: y)
         }
 
-        func stop() {
+        func stop(preservingMotion: Bool = false) {
+            showcaseMotion?.unbindNavigation(self)
+            if !preservingMotion { showcaseMotion = nil }
             stopNavigationFrames()
             registeredNavigation?.unregister(source: navigationScrollID)
             registeredNavigation = nil
@@ -1277,14 +1377,14 @@ struct FocusHeroNativeScrollPosition: UIViewRepresentable {
 
         private func bindScrollView() {
             guard window != nil else {
-                stop()
+                stop(preservingMotion: true)
                 return
             }
             var ancestor = superview
             while let view = ancestor {
                 if let scrollView = view as? UIScrollView {
                     if scroller !== scrollView {
-                        stop()
+                        stop(preservingMotion: true)
                         scroller = scrollView
                         wasScrollEnabled = scrollView.isScrollEnabled
                         // The row owns its exact resting destination, while UIKit
@@ -1300,6 +1400,7 @@ struct FocusHeroNativeScrollPosition: UIViewRepresentable {
                         scrollView.isScrollEnabled = false
                     }
                     bindNavigation()
+                    bindShowcaseMotion(showcaseMotion)
                     return
                 }
                 ancestor = view.superview
@@ -1316,6 +1417,8 @@ private struct FocusHeroBackdropLayer: View {
     let isFrontmost: Bool
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.plozzArtworkPolicy) private var artworkPolicy
+    @Environment(\.heroShowcaseMotion) private var showcaseMotion
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         // Two thirds of the screen, top right, at a backdrop's own shape: the
@@ -1323,6 +1426,8 @@ private struct FocusHeroBackdropLayer: View {
         // (under the title) and behind the rows at the bottom.
         let width = FocusHeroLayout.screenWidth * FocusHeroLayout.artWidthFraction
         let height = width / FocusHeroLayout.artAspectRatio
+        let topOverscan = reduceMotion ? 0
+            : (showcaseMotion?.distance ?? 0) * HeroShowcaseScrollMotion.backdropTravelFraction
         if let subject = model.subject {
             HomeHeroBackdrop(
                 references: references(for: subject),
@@ -1331,6 +1436,7 @@ private struct FocusHeroBackdropLayer: View {
                 forward: model.movingForward,
                 width: width,
                 height: height,
+                topOverscan: topOverscan,
                 scrimTone: colorScheme == .dark ? .black : .white,
                 scrimOpacity: isFrontmost ? 1 : 0,
                 transition: .crossfade,

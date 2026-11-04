@@ -354,6 +354,10 @@ final class PublicMetaDBLiveTVTests: XCTestCase {
     }
 
     func testSavedConnectionAfterRelaunch() throws {
+        if app.buttons["Don't Share"].waitForExistence(timeout: 3) {
+            try PublicMetaDBLiveNavigation.select(app.buttons["Don't Share"], moving: .right)
+        }
+        try PublicMetaDBLiveNavigation.openSettings(in: app)
         try assertConnected()
         app.terminate()
         app.launch()

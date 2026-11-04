@@ -55,9 +55,7 @@ final class HomeRowTests: XCTestCase {
     func testContinueWatchingSelectionUsesPreferenceWithoutChangingOtherRows() {
         for kind in HomeRowKind.allCases {
             let row = HomeRow(kind: kind)
-            XCTAssertEqual(
-                row.playsOnSelect(continueWatchingAction: .default), kind == .continueWatching
-            )
+            XCTAssertFalse(row.playsOnSelect(continueWatchingAction: .default))
             XCTAssertEqual(
                 row.playsOnSelect(continueWatchingAction: .play), kind == .continueWatching
             )

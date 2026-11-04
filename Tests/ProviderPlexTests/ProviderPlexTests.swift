@@ -503,6 +503,23 @@ final class PlexProviderMappingTests: XCTestCase {
         }
     }
 
+    func testAudioMappingPreservesRawVersionTitle() throws {
+        let provider = PlexProvider(session: makeSession(), http: StubHTTPClient())
+        let dto = try JSONDecoder.plozz.decode(PlexStream.self, from: Data(
+            #"{"index":3,"streamType":2,"codec":"dca","channels":6,"languageTag":"fr","language":"French","extendedDisplayTitle":"French DTS 5.1","title":"VFQ"}"#.utf8
+        ))
+        let track = try provider.map(stream: dto, itemID: "movie", mediaSourceID: "file")
+        XCTAssertEqual(track.id, 3)
+        XCTAssertEqual(track.language, "fr")
+        XCTAssertEqual(track.displayTitle, "French DTS 5.1 VFQ")
+        XCTAssertEqual(
+            TrackLabeling.audioLabel(displayTitle: track.displayTitle, language: track.language,
+                                    codec: track.codec, channels: track.channels, trackID: track.id,
+                                    locale: Locale(identifier: "fr")),
+            TrackLabel(base: .content("Français"), qualifiers: [.audioVersion("VFQ"), .format("DTS 5.1")])
+        )
+    }
+
     private func makeSession() -> UserSession {
         UserSession(
             server: MediaServer(id: "srv", name: "Home", baseURL: URL(string: "https://plex.host:32400")!, provider: .plex),
@@ -555,6 +572,7 @@ final class PlexProviderMappingTests: XCTestCase {
 
         XCTAssertEqual(trailers.map(\.id), ["e1"])
         XCTAssertEqual(trailers.first?.title, "Trailer")
+        XCTAssertEqual(trailers.first?.isTrailer, true)
         XCTAssertEqual(trailers.first?.kind, .video)
     }
 
@@ -2407,9 +2425,71 @@ final class PlexAuthClientTests: XCTestCase {
         PlexAuthClient(deviceProfile: PlexDeviceProfile(clientIdentifier: "dev1"), http: stub, probeHTTP: UnreachableProbe())
     }
 
-    func testDefaultDeviceProfileReportsMinimumSupportedTVOS() {
+    func testDefaultDeviceProfileReportsRuntimeIdentity() {
         let profile = PlexDeviceProfile(clientIdentifier: "device")
-        XCTAssertEqual(profile.headers()["X-Plex-Platform-Version"], "18.0")
+        let headers = profile.headers()
+        let version = ProcessInfo.processInfo.operatingSystemVersion
+        let expectedVersion = version.patchVersion == 0
+            ? "\(version.majorVersion).\(version.minorVersion)"
+            : "\(version.majorVersion).\(version.minorVersion).\(version.patchVersion)"
+        XCTAssertEqual(headers["X-Plex-Platform-Version"], expectedVersion)
+        XCTAssertEqual(headers["X-Plex-Version"], AppVersionIdentity.current.marketingVersion)
+        XCTAssertEqual(headers["X-Plex-Client-Identifier"], "device")
+        XCTAssertEqual(headers["X-Plex-Device-Name"], DeviceDisplayName.current(fallback: profile.device))
+        #if os(tvOS)
+        XCTAssertEqual(headers["X-Plex-Platform"], "tvOS")
+        XCTAssertEqual(headers["X-Plex-Device"], "Apple TV")
+        #elseif os(iOS)
+        XCTAssertEqual(headers["X-Plex-Platform"], "iOS")
+        XCTAssertTrue(["iPhone", "iPad"].contains(profile.device))
+        #endif
+    }
+
+    func testDeviceFamiliesDistinguishPhoneTabletAndTV() {
+        XCTAssertEqual(PlexDeviceProfile.deviceFamily(modelIdentifier: "iPhone18,4"), "iPhone")
+        XCTAssertEqual(PlexDeviceProfile.deviceFamily(modelIdentifier: "iPad16,6"), "iPad")
+        XCTAssertEqual(PlexDeviceProfile.deviceFamily(modelIdentifier: "AppleTV14,1"), "Apple TV")
+        XCTAssertEqual(PlexDeviceProfile.deviceFamily(modelIdentifier: "FutureDevice1,1"), "FutureDevice1,1")
+        XCTAssertEqual(PlexDeviceProfile.deviceFamily(modelIdentifier: ""), "Apple device")
+    }
+
+    func testExplicitDeviceIdentityReachesAuthAndTimelineRequests() async throws {
+        let profile = PlexDeviceProfile(
+            product: "Plozz",
+            version: "2026.11.2",
+            device: "iPad",
+            platform: "iOS",
+            platformVersion: "27.1",
+            deviceName: "Living Room iPad",
+            clientIdentifier: "existing-install"
+        )
+        let expected = [
+            "Accept": "application/json",
+            "X-Plex-Product": "Plozz",
+            "X-Plex-Version": "2026.11.2",
+            "X-Plex-Device": "iPad",
+            "X-Plex-Platform": "iOS",
+            "X-Plex-Platform-Version": "27.1",
+            "X-Plex-Device-Name": "Living Room iPad",
+            "X-Plex-Client-Identifier": "existing-install"
+        ]
+        XCTAssertEqual(profile.headers(), expected)
+        let stub = StubHTTPClient()
+        stub.stub(pathSuffix: "/api/v2/pins", json: #"{"id":42,"code":"CODE","authToken":null}"#)
+        _ = try await PlexAuthClient(deviceProfile: profile, http: stub).createPin()
+        XCTAssertEqual(stub.sentHeaders.last, expected)
+
+        stub.stub(pathSuffix: "/:/timeline", json: "{}")
+        let client = PlexClient(
+            baseURL: URL(string: "https://plex.example")!,
+            deviceProfile: profile,
+            token: "TOKEN",
+            http: stub
+        )
+        try await client.reportTimeline(
+            ratingKey: "1", playSessionID: nil, state: "playing", timeMs: 1000, durationMs: 10000
+        )
+        XCTAssertEqual(stub.sentHeaders.last, expected.merging(["X-Plex-Token": "TOKEN"]) { _, new in new })
     }
 
     func testAuthorizationURLCarriesPinAndDeviceIdentity() {

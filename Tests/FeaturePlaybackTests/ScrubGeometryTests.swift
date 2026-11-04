@@ -7,6 +7,25 @@ import XCTest
 /// up steeply (so a fast flick crosses far more of the runtime), the result is
 /// directional in the pan, and the position stays clamped to the runtime.
 final class ScrubGeometryTests: XCTestCase {
+    #if canImport(SwiftUI)
+    func testLiveTouchPreviewCapPreservesLargerVODPreviewAndFitsSmallViewports() {
+        for viewport in [CGSize(width: 844, height: 390), CGSize(width: 390, height: 844),
+                         CGSize(width: 1024, height: 768)] {
+            let live = PlayerTouchLayout.scrubPreviewSize(availableSize: viewport, maximumWidth: 180)
+            let vod = PlayerTouchLayout.scrubPreviewSize(availableSize: viewport)
+            XCTAssertEqual(live.width, 180)
+            XCTAssertEqual(live.height, 101.25)
+            XCTAssertGreaterThan(vod.width, live.width)
+            XCTAssertLessThanOrEqual(vod.width, 360)
+        }
+        let narrow = PlayerTouchLayout.scrubPreviewSize(
+            availableSize: CGSize(width: 200, height: 300), maximumWidth: 180
+        )
+        XCTAssertEqual(narrow.width, 158)
+        XCTAssertEqual(PlayerTouchLayout.scrubPreviewSize(availableSize: .zero, maximumWidth: 180), .zero)
+    }
+    #endif
+
     private let tuning = ScrubGeometry.Tuning(
         baseSecondsPerPoint: 0.18,
         accelOnsetSpeed: 500,

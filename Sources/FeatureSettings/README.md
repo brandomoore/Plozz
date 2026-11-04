@@ -156,6 +156,15 @@ uses a native date picker; TV currently uses native ISO-8601 text entry with
 explicit time-zone validation. Shared mutation state blocks double submission,
 cancels on exit and prevents immediate retries of uncertain writes.
 
+On iPad, selecting a different sidebar category discards the previous category's
+entire pushed detail stack. The reset targets the native detail navigation
+controller, not the split view, preserving sidebar scroll position and search.
+Profile changes and parental relocking also invalidate the detail identity.
+Mobile disclosure and action rows share `settingsActionRow()` from CoreUI;
+composite controls retain separate minimum touch targets with
+`settingsControlTarget()`. Per-view customization menus respond across their
+whole title/value row, not only the value. Native toggles remain independent.
+
 ## Settings search
 
 Settings search is local: queries are neither saved nor sent to a service or log.
@@ -194,8 +203,20 @@ On iPhone, returning from a result restores the query and keyboard. Dismissing
 the keyboard leaves the query visible and clearable; it does not end search.
 The compact Settings root places its large heading inside the scrolling content,
 below the toolbar. Scrolling past the heading shows the inline navigation title.
-TV uses the existing retained
-Settings page stack and native remote text entry. `SettingsSearchLanding` and
+TV has a native search field in its own card at the top of Settings. Selecting
+it opens remote text entry immediately, without pushing a search page. The
+settings cards fade into suggestions/results in the same scrolling column;
+Reduce Motion skips the fade. Dismissing the keyboard leaves search available,
+and Back from the results clears the query and restores the settings cards and
+search-field focus. Result destinations use the existing retained Settings page
+stack, preserving the query and selected result on return. Native sidebar
+full-screen dismissal retains the source row and restores its focus only after
+the cover finishes dismissing, rather than resetting focus to the search field. Profile or
+authorization changes clear search along with the page stack.
+TV result buttons use `SettingsFormButtonStyle` for the standard row height and
+content insets inside the focus highlight, with `SettingsIconLabelStyle` keeping
+titles aligned across different symbols. Result labels add no extra padding.
+`SettingsSearchLanding` and
 `settingsSearchAnchor` reveal the existing control without changing its value.
 On mobile, the brief landing highlight covers the complete padded row, not just
 its label or picker. Grouped rows own the highlight and their corner clipping;
@@ -238,6 +259,11 @@ TV search anchors belong to visible menu triggers, not their unopened options.
 Hero source groups register both their toggle and dependent targets, so offscreen
 Collections and other sources can be created before their landing cue starts.
 Every indexed entry needs an available route and a matching control anchor.
+On TV, Hero and Row style have separate search destinations. Showcase sizing
+and inline ratings open Row style; when Classic hides those controls, search
+focuses the Showcase choice without changing it. Hidden Hero controls similarly
+lead to its On preview. The standalone Discovery row leads to Hero Off when
+the featured Hero is active, then to the row's enable switch when necessary.
 Search labels distinguish localized app copy from verbatim provider names;
 indexing resolves resources for the current locale without translating brands.
 Disabled prerequisite controls can register dependent targets with `fallbackFor`;
@@ -255,6 +281,8 @@ have exact control keys/counts; reusable renderer and presentation boundaries
 also retain their control structure. A new control, arbitrary uncatalogued
 anchor, missing destination anchor, stale exclusion or changed boundary fails.
 Review a failure rather than accepting the current inventory as a new baseline.
+When extracting connection-setup subviews, keep their files traversable and
+update only the reviewed control keys and counts, not broad component exemptions.
 Runtime navigation, provider access, lazy reveal and native focus still require
 behavioral tests; static coverage is not proof that a screen works.
 
@@ -379,7 +407,7 @@ Playback's **Prefer lossless audio** toggle uses one short helper:
 **Turn off for surround sound over regular HDMI ARC, which requires compressed audio.**
 It defaults on for new and upgrading devices and is shared by Plozz
 profiles on that device, not synced to other audio setups. Off selects the
-ordinary compatibility-surround bridge; the spatial-height setting is separate.
+ordinary compatibility-surround bridge. Height-channel conversion is disabled.
 
 Title navigation uses native page opening and closing. The former
 **Zoom when opening titles** setting is removed, and saved values are ignored.
@@ -460,24 +488,16 @@ with schematic Home Screen previews. A slightly larger solid-white tile marks
 the focused app, without an icon. Posters stays the default; full-screen explains
 tvOS's swipe-up expansion and retains the same two item limits.
 
-Playback > Advanced also contains **Dolby Vision FEL (experimental)** on TV,
-iPhone and iPad. This is a profile-scoped, default-off preference, unlike the
-device-wide external-player choice. It applies to new built-in on-demand sessions
-and travels through profile settings transfer. Its short helper warns that it
-may impact performance. On iOS/iPadOS and tvOS before 26 it also warns that
-FEL disables spatial audio; ordinary channel audio still plays. On OS 26+,
-eligible FEL tracks can retain spatial audio when the Spatial audio setting is on.
-Live playback, shared players and muted previews do not opt in.
+Playback > Advanced retains the device-wide external-player choice on TV,
+iPhone and iPad. The experimental Dolby Vision FEL control is removed, and the
+engine's dual-layer reconstruction component is disabled. Old saved or transferred
+FEL preferences are ignored; normal Dolby Vision playback remains unchanged.
 See [playback engines](../../docs/playback-engines.md#dolby-vision-fel) for eligibility
 and output limits.
 
-On tvOS and iOS/iPadOS 26+, Playback > Advanced also offers **Rendering layout** in a native
-menu: 5.1.2, 5.1.4, 7.1.2, 7.1.4 and the default 9.1.6. This device-local choice
-is shared by profiles, excluded from profile transfer and read on each new load.
-It does not enable Spatial audio or alter saved On/Off choices. The helper
-discloses that DTS:X heights require 7.1.4 or 9.1.6; smaller layouts retain
-ordinary channel playback for those tracks. This is a rendering bed, not a
-speaker-detection setting.
+The former height-channel switch and **Rendering layout** picker are also removed,
+including their Settings search results. Legacy profile flags and device layout
+values cannot enable conversion.
 
 **Remember audio language per series** stores only the selected language, not a
 specific audio track or format. Its label needs no explanatory footer.
@@ -485,8 +505,8 @@ specific audio track or format. Its label needs no explanatory footer.
 On TV, related control groups can share one section heading through
 `SettingsConnectedControlGroups`: an 8pt gap and tighter 8pt facing corners keep
 them connected, while the section's outer corners retain the standard radius.
-Audio language controls share the first group; Prefer lossless audio and Spatial
-audio share the second, retaining their independent preferences and helpers.
+Audio language controls share the first group; Prefer lossless audio occupies
+the second, retaining its device-local preference and helper.
 Autoplay switches share a group, separate from the Up Next card and its
 conditional timing control. These use the existing surfaces and native controls,
 without an enclosing card or changing the independent settings.
@@ -523,20 +543,13 @@ profile-scoped and travel through settings transfer. Community-marker attributio
 and identifier sharing appear as a short caption attached to its switch, without
 a separate section footer.
 
-The **Spatial audio (height channel support)** switch is available on tvOS and iOS/iPadOS 26 and later. Its
-profile-scoped `trueHDAtmosEnabled` preference defaults on, preserves saved Off
-choices and travels through profile transfer. It applies to new supported
-on-demand sessions, not live streams, shared players or muted previews. The
-helper identifies TrueHD Atmos and DTS:X as inputs, PCM rendering and lossy
-AirPlay output. Format names describe compatibility, not certification,
-lossless passthrough, or patent clearance.
-FEL can use the same spatial conversion on these platforms; source eligibility and
-fallback remain engine-owned. Unsupported platforms
-keep ordinary channel playback; directly compatible spatial audio is unaffected.
-Compatible AirPods use the system's spatial rendering automatically when enabled
-in the OS; Plozz does not override Spatial Audio or head-tracking preferences.
-Feature descriptions use neutral spatial-audio wording; track
-metadata, diagnostics and legal notices retain accurate format and dependency names.
+Height-channel conversion is disabled in both the adapter and the engine's
+package traits. Older `trueHDAtmosEnabled` values are ignored when decoding
+profile preferences and omitted on the next save; other preferences and profile
+transfers remain intact. Ordinary surround audio and directly compatible native
+spatial audio remain available. Plozz does not override the OS's Spatial Audio
+or head-tracking preferences. Track metadata, diagnostics and legal notices
+retain accurate format and dependency names.
 See [spatial audio](../../docs/playback-engines.md#spatial-audio) for limitations.
 
 Playback > Advanced > External player is a device-only, default-off preference
@@ -612,7 +625,7 @@ watch history and planning-list behavior are documented in
   the native action inline with the scrolling page title and Back control.
   Editing remains available for one row so it can be removed; movement does not.
   Presets and reordering never change page appearance. Showcase's fixed Discovery
-  row links back to Home layout rather than pretending to be reorderable.
+  row links back to Row style rather than pretending to be reorderable.
   Shared Continue Watching settings remain accessible when its Home row is hidden.
   Home → Filtering groups two independent switches under **Hide watched content**:
   **Recently Added** (off by default) and **Hero & discovery** (on by default).
@@ -694,7 +707,7 @@ watch history and planning-list behavior are documented in
   One full-width Add row action appears below Preset and above the editable rows.
   A centered plus-and-label, native capsule style, and vertical spacing distinguish
   the action from the editable rows. Edit/Done switches to native movement controls
-  with no Hidden drop zone. Hero and Showcase remain on their separate layout page.
+  with no Hidden drop zone. Hero and Row style remain separate Home settings.
   Mobile uses the shared page inset without extra gutters.
   Add row separates **From a collection** from **Available rows** not already
   shown. Empty results omit the empty heading; discovery failures show source
@@ -719,23 +732,33 @@ watch history and planning-list behavior are documented in
   provider mark beside each library's second-line server label, including personal
   collection sources. Featured previews share the live card's artwork, logo and
   metadata layout without starting playback in Settings. Reorder menus include Move to top
-  and Move to bottom within the movable sections, never above Home layout.
+  and Move to bottom within the movable sections.
   On TV, picked-up rows retain native focus during rapid directional presses
   and held Up/Down; reaching an edge does not move focus out of the list.
   Home's latest section warnings also appear here with Details and Retry.
   These are transient results fenced by profile, account, effective viewer,
   credentials, and the loaded Home settings; catalog discovery is not treated
   as evidence that the actual Home content request succeeded.
-  Continue Watching owns its merge and artwork controls. Hero owns its sources
-  and presentation, including the existing TV Home Layout/Showcase options.
+  Continue Watching owns its merge and artwork controls. TV Hero owns its
+  enabled state, sources, sizing, rotation, ratings, and trailers. Its On/Off
+  preview cards use the shared settings selection style; Off previews the current
+  Classic or Showcase rows without changing that preference. Row style has
+  Showcase followed by Classic preview cards independent of Hero, with Showcase
+  sizing and inline rating controls below, rather than a Ratings subpage.
+  Standalone Showcase also exposes Discovery and its
+  providers, respecting Kids policy. These controls map to existing persisted
+  hero style/enabled fields without resetting content preferences. Mobile keeps
+  its Hero controls and carousel presentation. Fresh TV profiles default to
+  Hero + Showcase; existing saved choices remain unchanged.
   Continue Watching groups artwork, playback details and labels before their shared
   Recommended-page scope note; Include Next Up and selection behavior follow.
   Showcase groups Ratings and Discovery with their dependent controls.
-  **Center button action** on TV and **When tapping an item** on iPhone/iPad
+  **Center button action** on TV and **Tap action** on iPhone/iPad
   select **Play** or **Open detail page** for Home's movie/episode cards.
-  Play remains the default for fresh and existing profiles. The choice uses the
-  existing profile-scoped Home settings store and profile transfer; it does not
-  change artwork or Live TV shortcuts.
+  Open detail page is the default when no action has been saved. Existing saved
+  choices remain unchanged. Episodes open their own detail page, not the parent
+  show's page. The choice uses the existing profile-scoped Home settings store
+  and profile transfer; it does not change artwork or Live TV shortcuts.
   On Apple TV this setting controls the center button only; the remote's
   Play/Pause button always starts the focused Continue Watching movie or episode.
   Helper text below the control describes Play/Pause, with its filled circular
@@ -1118,7 +1141,12 @@ watch history and planning-list behavior are documented in
   submitting any diagnostics; automatic crash reports are unchanged.
   Each submission appears in Sentry's User Feedback inbox with the required message,
   linked to the diagnostic event in Issues and its `plozz-diagnostics.json`
-  attachment. No name or email is collected. The privacy filter retains only the
+  attachment. The playback section includes the last three independently
+  preserved failed attempts, including late native evidence and numeric engine
+  telemetry, in both Debug and Release. Successful retries and routine journal
+  churn do not erase them; they expire after 48 hours. This is allowlisted
+  structured evidence, not an upload of local free-form log files.
+  No name or email is collected. The privacy filter retains only the
   feedback message, custom source,
   and valid associated event ID, not identity or arbitrary feedback fields.
   Success means SDK handoff, not server acknowledgment; inactive reporting or a

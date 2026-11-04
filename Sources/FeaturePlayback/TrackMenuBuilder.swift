@@ -241,7 +241,7 @@ enum TrackMenuBuilder {
             resource = .init("Commentary", comment: "Audio/subtitle track qualifier for a commentary track.")
         case .autoDetected:
             resource = .init("auto", comment: "Subtitle track qualifier appended when the shown language was guessed from the file's content rather than tagged by the provider.")
-        case .format(let value):
+        case .format(let value), .audioVersion(let value):
             return .init(content: value)
         case .channelCount(let channels):
             resource = .init(

@@ -218,12 +218,28 @@ struct PresentationHostApp: App {
         WindowGroup {
             if ProcessInfo.processInfo.arguments.contains("--tracker-history-import-fixture") {
                 TrackerHistoryImportFixture()
+            } else if let page = ProcessInfo.processInfo.arguments.first(where: { $0.hasPrefix("--onboarding-page=") }) {
+                MobileServerOnboardingFixture(
+                    page: String(page.dropFirst("--onboarding-page=".count)), presentsAsSheet: true
+                )
+                    .environment(\.themePalette, ProcessInfo.processInfo.arguments.contains("--light")
+                                 ? ThemePalette.light : .dark)
+                    .preferredColorScheme(ProcessInfo.processInfo.arguments.contains("--light") ? .light : .dark)
+                    .dynamicTypeSize(ProcessInfo.processInfo.arguments.contains("--large-text") ? .accessibility5 : .large)
+            } else if ProcessInfo.processInfo.arguments.contains("--continue-watching-details-fixture") {
+                ContinueWatchingDetailsFixture()
+            } else if ProcessInfo.processInfo.arguments.contains("--search-keyboard-fixture") {
+                SearchKeyboardInteractionFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--diagnostics-sharing-fixture") {
                 DiagnosticsSharingFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--source-settings") {
                 SourceOnboardingFixture()
+            } else if ProcessInfo.processInfo.arguments.contains("--poster-zoom-fixture") {
+                PosterZoomFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--featured-card-fixture") {
                 FeaturedCardInteractionFixture()
+            } else if ProcessInfo.processInfo.arguments.contains("--discover-fixture") {
+                DiscoverBrowseFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--collection-settings-fixture") {
                 CollectionSettingsInteractionFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--hero-request-controls-fixture") {
@@ -264,6 +280,8 @@ struct PresentationHostApp: App {
                 ProfileSelectionInteractionFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--profile-picker-fixture") {
                 ProfilePickerInteractionFixture()
+            } else if ProcessInfo.processInfo.arguments.contains("--download-selection-fixture") {
+                DownloadSelectionFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--downloads-interaction-fixture") {
                 DownloadsInteractionFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--iptv-removal-fixture") {

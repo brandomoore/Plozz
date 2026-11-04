@@ -165,6 +165,28 @@ struct HomeHeroInteractionFixture: View {
                 )
             } rows: {
                 Text("Below the hero").accessibilityIdentifier("hero-following-row")
+                if ProcessInfo.processInfo.arguments.contains("--poster-home-menu") {
+                    PlozziOSHomeMediaCard(
+                        item: HeroInteractionProvider.slides[1], isLandscape: true,
+                        interaction: .play, showsSeriesArtwork: true,
+                        provider: HeroInteractionProvider(kind: .emby)
+                    )
+                    .frame(width: 300)
+                    .accessibilityIdentifier("home-menu-poster")
+                    PlozziOSInlineEpisodeEntry(
+                        episode: HeroInteractionProvider.slides[1],
+                        episodes: [HeroInteractionProvider.slides[1]],
+                        onPlay: { _, _ in playCount += 1 }
+                    )
+                }
+                if ProcessInfo.processInfo.arguments.contains("--poster-home-card") {
+                    PlozziOSHomeMediaCard(
+                        item: HeroInteractionProvider.slides[0], isLandscape: false,
+                        interaction: .openDetail, provider: HeroInteractionProvider(kind: .jellyfin)
+                    )
+                    .frame(width: 150)
+                    .accessibilityIdentifier("home-poster")
+                }
                 Color.clear.frame(height: 1_200)
             }
             .overlay(alignment: .topTrailing) {
@@ -184,6 +206,8 @@ struct HomeHeroInteractionFixture: View {
                 }
             }
             .navigationTitle(usesNativeChrome ? "" : "Home fixture")
+            .plozziOSItemNavigation(appModel: appModel)
+            .plozziOSRailPlay { _ in playCount += 1 }
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(.hidden, for: .navigationBar)
             .toolbar(usesVerticalToolbar ? .visible : .automatic, for: .navigationBar)
@@ -250,7 +274,10 @@ private final class HeroInteractionActions: MediaItemActionHandling {
     var watchlistCount = 0
 
     func actions(for item: MediaItem, context: MediaItemActionContext) -> [MediaItemAction] {
-        [.addToWatchlist]
+        if ProcessInfo.processInfo.arguments.contains("--poster-home-menu"), item.kind == .episode {
+            return [.goToSeason, .goToEpisode]
+        }
+        return [.addToWatchlist]
     }
 
     func perform(_ action: MediaItemAction, on item: MediaItem, context: MediaItemActionContext) {
@@ -276,7 +303,7 @@ private struct HeroInteractionProvider: MediaProvider {
     var session: UserSession { account.session(token: "fixture") }
 
     static var slides: [MediaItem] {
-        [
+        let items = [
             MediaItem(
                 id: "movie", title: "Hero Movie", kind: .movie,
                 overview: "A movie description in the Home hero.",
@@ -286,9 +313,12 @@ private struct HeroInteractionProvider: MediaProvider {
             MediaItem(
                 id: "episode", title: "Hero Episode", kind: .episode,
                 overview: "An episode description in the Home hero.",
-                parentTitle: "Hero Series", seasonNumber: 1, episodeNumber: 2, seriesID: "series"
+                parentTitle: "Hero Series", seasonNumber: 1, episodeNumber: 2, seriesID: "series",
+                backdropURL: ProcessInfo.processInfo.arguments.contains("--hero-native-chrome") ? artworkURL : nil,
+                allowsTitleBasedMetadataMatching: false
             ).taggingSource(ProviderKind.emby.rawValue)
         ]
+        return ProcessInfo.processInfo.arguments.contains("--hero-series-loading") ? [items[1]] : items
     }
 
     func libraries() async throws -> [MediaLibrary] { [] }
@@ -299,9 +329,17 @@ private struct HeroInteractionProvider: MediaProvider {
     }
     func item(id: String) async throws -> MediaItem {
         if id == "series" {
+            if ProcessInfo.processInfo.arguments.contains("--hero-series-loading") {
+                try await Task.sleep(for: .seconds(5))
+                if ProcessInfo.processInfo.arguments.contains("--hero-series-failure") {
+                    throw AppError.notFound
+                }
+            }
             return MediaItem(
                 id: id, title: "Hero Series", kind: .series,
-                overview: "Details for series from \(account.id)"
+                overview: "Details for series from \(account.id)",
+                backdropURL: ProcessInfo.processInfo.arguments.contains("--hero-native-chrome") ? Self.artworkURL : nil,
+                allowsTitleBasedMetadataMatching: false
             ).taggingSource(account.id)
         }
         guard var item = Self.slides.first(where: { $0.id == id && $0.sourceAccountID == account.id }) else {

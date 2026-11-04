@@ -12,6 +12,8 @@ import CoreUI
 /// caller passes a non-nil `onAddProfile` (i.e. from Settings → "Manage
 /// Profiles"); the launch picker hides it.
 public struct ProfilePickerView: View {
+    public static var avatarSize: CGFloat { ProfilePickerLayout.avatarSize }
+    public static var nameFont: Font { ProfilePickerLayout.nameFont }
     private let profiles: [Profile]
     private let activeProfileID: String?
     private let title: LocalizedStringResource
@@ -29,8 +31,17 @@ public struct ProfilePickerView: View {
     private let onCancel: (() -> Void)?
     private let onOpenSettings: (() -> Void)?
     private let showsPINLock: (Profile) -> Bool
+    private let identityNamespace: Namespace.ID?
+    private let isCovered: Bool
+    private let isClearingForHandoff: Bool
+    private let isIdentitySource: Bool
+    private var isTransitioning: Bool { isCovered || isClearingForHandoff || !isEnabled }
+    @Namespace private var fallbackIdentity
+    @State private var selectedForReturnID: String?
 
     @Environment(\.themePalette) private var palette
+    @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     public init(
         profiles: [Profile],
@@ -42,7 +53,11 @@ public struct ProfilePickerView: View {
         onAddKidsProfile: (() -> Void)? = nil,
         onCancel: (() -> Void)? = nil,
         onOpenSettings: (() -> Void)? = nil,
-        showsPINLock: @escaping (Profile) -> Bool = { $0.showsPINLock }
+        showsPINLock: @escaping (Profile) -> Bool = { $0.showsPINLock },
+        identityNamespace: Namespace.ID? = nil,
+        isCovered: Bool = false,
+        isClearingForHandoff: Bool = false,
+        isIdentitySource: Bool = true
     ) {
         self.profiles = profiles
         self.activeProfileID = activeProfileID
@@ -54,6 +69,10 @@ public struct ProfilePickerView: View {
         self.onCancel = onCancel
         self.onOpenSettings = onOpenSettings
         self.showsPINLock = showsPINLock
+        self.identityNamespace = identityNamespace
+        self.isCovered = isCovered
+        self.isClearingForHandoff = isClearingForHandoff
+        self.isIdentitySource = isIdentitySource
     }
 
 
@@ -97,7 +116,8 @@ public struct ProfilePickerView: View {
     /// last-active profile (so resuming is a single click), falling back to the
     /// first profile on a first-ever launch with no active profile.
     private var defaultFocusID: String? {
-        profiles.first { $0.id == activeProfileID }?.id ?? profiles.first?.id
+        profiles.first { $0.id == selectedForReturnID }?.id
+            ?? profiles.first { $0.id == activeProfileID }?.id ?? profiles.first?.id
     }
 
     private var awaitingInitialProfileFocus: Bool {
@@ -154,6 +174,7 @@ public struct ProfilePickerView: View {
             Text(title)
                 .font(.system(size: 56, weight: .bold))
                 .foregroundStyle(palette.primaryText)
+                .modifier(ProfilePickerDeparture(isDeparting: isClearingForHandoff))
 
             // One horizontal run rather than a wrapping grid. Profiles are a
             // short list you scan left-to-right, and a single row keeps the
@@ -164,7 +185,16 @@ public struct ProfilePickerView: View {
                 HStack(alignment: .top, spacing: ProfilePickerLayout.tileSpacing) {
                     ForEach(profiles) { profile in
                         VStack(spacing: 20) {
-                            ProfileTile(profile: profile, showsLock: showsPINLock(profile)) {
+                            ProfileTile(
+                                profile: profile, showsLock: showsPINLock(profile),
+                                isSelected: isTransitioning && profile.id == selectedForReturnID,
+                                identity: PINProfileTransition(
+                                    profileID: reduceMotion ? "static-picker-\(profile.id)" : profile.id,
+                                    namespace: identityNamespace ?? fallbackIdentity,
+                                    isSource: reduceMotion || isIdentitySource || profile.id != selectedForReturnID
+                                )
+                            ) {
+                                selectedForReturnID = profile.id
                                 onSelect(profile)
                             }
                             .focused($focus, equals: .profile(profile.id))
@@ -172,9 +202,16 @@ public struct ProfilePickerView: View {
                             .anchorPreference(key: TileCentersKey.self, value: .center) {
                                 [profile.id: $0]
                             }
+                            .animation(nil) { content in
+                                content.opacity(isCovered && profile.id == selectedForReturnID ? 0 : 1)
+                            }
+                            .modifier(ProfilePickerDeparture(
+                                isDeparting: isClearingForHandoff && profile.id != selectedForReturnID
+                            ))
 
                             if let onEditProfile {
                                 editButton(for: profile, onEdit: onEditProfile)
+                                    .modifier(ProfilePickerDeparture(isDeparting: isClearingForHandoff))
                             }
                         }
                         // Keep each profile's tile and its Edit button in one
@@ -191,6 +228,7 @@ public struct ProfilePickerView: View {
                         )
                         .focused($focus, equals: .add)
                         .disabled(awaitingInitialProfileFocus)
+                        .modifier(ProfilePickerDeparture(isDeparting: isClearingForHandoff))
                     }
                     if let onAddKidsProfile {
                         AddProfileTile(
@@ -201,6 +239,7 @@ public struct ProfilePickerView: View {
                         )
                         .focused($focus, equals: .addKids)
                         .disabled(awaitingInitialProfileFocus)
+                        .modifier(ProfilePickerDeparture(isDeparting: isClearingForHandoff))
                     }
                 }
                 .padding(.horizontal, ProfilePickerLayout.rowPadding)
@@ -216,6 +255,7 @@ public struct ProfilePickerView: View {
                     .disabled(awaitingInitialProfileFocus)
                     .padding(.top, 8)
                     .focusSection()
+                    .modifier(ProfilePickerDeparture(isDeparting: isClearingForHandoff))
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -236,12 +276,19 @@ public struct ProfilePickerView: View {
                 .padding(.horizontal, ProfilePickerLayout.rowPadding)
                 .padding(.top, 32)
                 .focusSection()
+                .modifier(ProfilePickerDeparture(isDeparting: isClearingForHandoff))
             }
         }
+        .disabled(isTransitioning)
         .background {
             ProfilePickerFocusEntry(isPending: awaitingInitialProfileFocus) {
                 if let id = defaultFocusID { focus = .profile(id) }
             }
+            .id(isTransitioning)
+        }
+        .onChange(of: isTransitioning) { _, covered in
+            focus = nil
+            if !covered { hasFocusedProfile = false }
         }
         .onChange(of: focus) { _, target in
             if case .profile? = target {
@@ -422,11 +469,13 @@ private struct TileCentersKey: PreferenceKey {
 private struct ProfileTile: View {
     let profile: Profile
     let showsLock: Bool
+    let isSelected: Bool
+    let identity: PINProfileTransition
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
-            ProfileTileLabel(profile: profile, showsLock: showsLock)
+            ProfileTileLabel(profile: profile, showsLock: showsLock, isSelected: isSelected, identity: identity)
         }
         .plozzCardFocusButtonStyle(
             ProfileTileButtonStyle(), cornerRadius: ProfilePickerLayout.avatarSize / 2,
@@ -435,6 +484,7 @@ private struct ProfileTile: View {
         .plozzCircularFocusStyle()
         .accessibilityLabel(profile.name)
         .accessibilityValue(showsLock ? Text(ProfileLockCopy.title) : Text(verbatim: ""))
+        .accessibilityIdentifier("profile-picker-\(profile.id)")
     }
 }
 
@@ -489,6 +539,8 @@ private extension EnvironmentValues {
 private struct ProfileTileLabel: View {
     let profile: Profile
     let showsLock: Bool
+    let isSelected: Bool
+    let identity: PINProfileTransition
 
     @Environment(\.isFocused) private var isFocused
     @Environment(\.themePalette) private var palette
@@ -497,13 +549,30 @@ private struct ProfileTileLabel: View {
         VStack(spacing: 12) {
             FocusGlassAvatar {
                 ProfileAvatarView(profile: profile, size: ProfilePickerLayout.avatarSize)
+                    .matchedGeometryEffect(
+                        id: identity.avatarID, in: identity.namespace, isSource: identity.isSource
+                    )
             }
 
             ProfileNameLabel(profile: profile, showsLock: showsLock)
                 .font(ProfilePickerLayout.nameFont)
-                .foregroundStyle(isFocused ? palette.primaryText : palette.secondaryText)
+                .foregroundStyle(isFocused || isSelected ? palette.primaryText : palette.secondaryText)
                 .lineLimit(1)
+                .matchedGeometryEffect(
+                    id: identity.nameID, in: identity.namespace, properties: .position, isSource: identity.isSource
+                )
         }
+    }
+}
+
+private struct ProfilePickerDeparture: ViewModifier {
+    let isDeparting: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func body(content: Content) -> some View {
+        content
+            .opacity(isDeparting ? 0 : 1)
+            .offset(y: isDeparting && !reduceMotion ? -12 : 0)
     }
 }
 

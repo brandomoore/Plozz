@@ -104,9 +104,10 @@ SCENARIOS = {
         "suite": "network", "target": "ProviderIPTVTests",
         "test": "IPTVPerformanceProbeTests/testPerformanceLargeGuideBatches",
         "file": "Tests/ProviderIPTVTests/IPTVPerformanceProbeTests.swift",
-        "description": "Two 2,000-channel batches from one 6,000-channel, 48,000-programme XMLTV document above the small-body cache limit.",
+        "description": "Cold indexed import and warm query: two 2,000-channel batches from one 6,000-channel, 48,000-programme XMLTV document.",
         "counters": ["guideBytes", "httpRequests", "downloadedBytes", "parseInvocations",
-                     "retainedRows", "requestedChannels"],
+                     "retainedRows", "requestedChannels", "coldBatchNanoseconds", "warmBatchNanoseconds",
+                     "indexedChannels"],
     },
     "live-tv-schedule-sync": {
         "suite": "core", "target": "FeatureLiveTVCoreTests",
@@ -418,6 +419,13 @@ SCENARIOS = {
         "description": "Update a production mobile Continue Watching rail 24 times with 180 episodes across twelve synthetic source identities and cached artwork.",
         "counters": ["rootUpdates", "items", "accounts", "seriesSourceBuilds"],
     },
+    "mobile-home-loading-scroll": {
+        "suite": "ui", "platforms": ["iOS"],
+        "test": "HomeLoadingLayoutTests/testPerformanceLoadingWhileScrolling",
+        "file": "Tests/iOSPresentationTests/HomeLoadingLayoutTests.swift",
+        "description": "Replace eight production Home skeleton rails during animated vertical scrolling; verify completed loading, scroll targets, and stable page height.",
+        "counters": ["loadedRows", "scrollTargets", "itemsPerRow", "maximumPageHeightChangePoints"],
+    },
     "mobile-preference-sync": {
         "suite": "ui",
         "platforms": ["iOS"],
@@ -432,6 +440,13 @@ SCENARIOS = {
         "file": "Tests/iOSPresentationTests/ProfileSelectionPerformanceTests.swift",
         "description": "Activate sixteen profiles through the mobile app model and verify current Plex PIN gating; measure synchronous selection separately from 5-ms fixture metadata.",
         "counters": ["selections", "selectionMicroseconds", "maxSelectionMicroseconds"],
+    },
+    "mobile-profile-picker-entrance": {
+        "suite": "ui", "platforms": ["iOS"],
+        "test": "ProfilePickerPresentationTests/testPerformanceProfilePickerEntrance",
+        "file": "Tests/iOSPresentationTests/ProfilePickerPresentationTests.swift",
+        "description": "Mount the production sixteen-profile iPad picker and verify heading-first staging, a visible stagger, and settling within 1.5 seconds; measure fresh presentation, not process launch or hardware frame pacing.",
+        "counters": ["profiles", "completedEntrances"],
     },
     "mobile-profile-pin-handoff": {
         "suite": "ui", "platforms": ["iOS"],

@@ -410,6 +410,7 @@ targets:
           - "OpenDyslexic-Bold.otf"
           - "OpenDyslexic-BoldItalic.otf"
         NSLocalNetworkUsageDescription: "Plozz uses your local network to discover media servers and network shares."
+        NSMotionUsageDescription: "Plozz uses device motion to follow your phone's landscape direction during playback."
         NSBonjourServices:
           - _jellyfin._tcp
           - _smb._tcp
@@ -476,6 +477,7 @@ targets:
     sources:
       - path: Tests/FocusHost
       - path: Tests/TrackingPresentationSupport/TrackerHistoryImportFixture.swift
+      - path: Tests/DiscoverPresentationSupport/DiscoverBrowseFixture.swift
       - path: Tests/PlaybackPresentationSupport/PlaybackFailureFixture.swift
       - path: Tests/LiveTVPresentationSupport/IPTVOrganizationFixture.swift
       - path: Tests/LiveTVPresentationSupport/LiveTVCategorySearchFixture.swift
@@ -506,6 +508,9 @@ targets:
     sources:
       - path: Tests/iOSPresentationHost
       - path: Tests/TrackingPresentationSupport/TrackerHistoryImportFixture.swift
+      - path: Tests/DiscoverPresentationSupport/DiscoverBrowseFixture.swift
+      - path: Tests/AuthPresentationSupport/MobileServerOnboardingFixture.swift
+      - path: Tests/AuthPresentationSupport/OnboardingPreviewHTTP.swift
       - path: Tests/FeatureLiveTVRemoteTests/SourceOnboardingFixture.swift
       - path: Tests/PlaybackPresentationSupport/PlaybackFailureFixture.swift
       - path: Tests/LiveTVPresentationSupport/IPTVOrganizationFixture.swift
@@ -527,6 +532,7 @@ targets:
     info:
       path: Tests/iOSPresentationHost/Info.plist
       properties:
+        NSMotionUsageDescription: "Plozz uses device motion to follow your phone's landscape direction during playback."
         BGTaskSchedulerPermittedIdentifiers:
           - "$(PRODUCT_BUNDLE_IDENTIFIER).downloads.*"
         UIBackgroundModes:
@@ -568,7 +574,10 @@ targets:
       - path: Tests/FeatureLiveTVCoreTests/LiveTVPlaybackCoordinatorTests.swift
       - path: Tests/FeatureLiveTVTests/LiveTVGuideRowLayoutTests.swift
       - path: Tests/CoreModelsTests/SettingsHydrationTests.swift
+      - path: Tests/CoreModelsTests/PlaybackOrientationSettingsTests.swift
       - path: Tests/CoreModelsTests/ResumeRewindSettingsTests.swift
+      - path: Tests/CoreModelsTests/SubtitleStylePreferencesTests.swift
+      - path: Tests/CoreModelsTests/SettingsSearchTests.swift
       - path: Tests/CoreModelsTests/ProfileLockPresentationTests.swift
       - path: Tests/FeaturePlaybackTests/SubtitleOverlayGeometryTests.swift
       - path: Tests/FocusIntegrationTests/LiveTVSourcesRuntimeHostedTests.swift
@@ -690,6 +699,7 @@ targets:
     platform: tvOS
     sources:
       - path: Tests/FocusIntegrationTests
+      - path: Tests/EnginePlozzigenTests/SpatialAudioLayoutPreferenceTests.swift
       - path: Tests/HomePresentationSupport
       - path: Tests/TestSupportPerformance
       - path: Tests/PerformancePresentationSupport
@@ -707,6 +717,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.thatcube.Plozz.FocusTests
         GENERATE_INFOPLIST_FILE: YES
+        OTHER_LDFLAGS: "$(inherited) -framework AetherEngine"
         TEST_HOST: "$(BUILT_PRODUCTS_DIR)/PlozzFocusHost.app/FocusHost"
         BUNDLE_LOADER: "$(TEST_HOST)"
     dependencies:

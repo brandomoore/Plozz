@@ -8,6 +8,7 @@ import FeatureAuth
 import FeatureDiscovery
 import FeatureDiscoveryCore
 import FeatureMusic
+import FeatureLiveTVCore
 import FeatureProfiles
 import FeatureSyncSetup
 import FeatureSyncCloud
@@ -48,6 +49,14 @@ import UIKit
 @Observable
 public final class AppState {
     public private(set) var state: SessionState = .launching
+    @ObservationIgnored public lazy var guidePreparation = LiveTVGuidePreparationModel { [weak self] id in
+        guard let self, !self.profileFlow.isChoosingProfile, !self.profileFlow.isForegroundLocked,
+              self.profileFlow.pendingLockedProfile == nil, self.profileFlow.pendingParentalSwitch == nil,
+              !self.profileFlow.activeProfileAwaitsUnlock,
+              self.plexHomeUsers.pendingPlexPINRequest == nil,
+              !self.accountsProviders.activeProfileAwaitsIdentity else { return nil }
+        return self.accountsProviders.liveTVProviderResolver()(id)
+    }
     private let appAdmission: AppAdmissionModel
     @ObservationIgnored private var accountSetupOriginProfileID: String?
 
@@ -109,10 +118,12 @@ public final class AppState {
     }
 
     /// Call only after a user-requested playlist/free-channel setup succeeds.
-    /// This records admission without changing the session or navigation.
+    /// Records admission and reveals Live TV without changing the current destination.
     @discardableResult
     public func recordSuccessfulIPTVSetup() -> Bool {
-        appAdmission.recordStandaloneChoice(isAvailable: Self.isStandalonePlaybackAvailable)
+        let accepted = appAdmission.recordStandaloneChoice(isAvailable: Self.isStandalonePlaybackAvailable)
+        if accepted { profileSettings.navigationStyleModel.showsLiveTV = true }
+        return accepted
     }
 
     /// Provider chosen for the add-account flow currently in progress, so that
@@ -363,9 +374,14 @@ public final class AppState {
     /// per profile so a returning profile never creates a competing writer.
     @ObservationIgnored
     private var watchReconcilers: [String: WatchStateReconciler] = [:]
+    @ObservationIgnored private var watchRetryIsActive = true
+    @ObservationIgnored private lazy var watchOutboxConnectivity = WatchOutboxConnectivity { [weak self] in
+        self?.retryWatchOutboxIfAllowed()
+    }
     @ObservationIgnored
     private var trackerProfileGeneration: UInt64 = 0
     public var watchReconciler: WatchStateReconciler {
+        _ = watchOutboxConnectivity
         let profileID = profilesModel.activeProfileID
         if let existing = watchReconcilers[profileID] { return existing }
         let created = makeWatchReconciler(profileID: profileID)
@@ -582,6 +598,14 @@ public final class AppState {
                     }
                     refresh.post()
                 }
+            },
+            automaticRetryAllowed: { [weak self] in
+                await MainActor.run {
+                    guard let self else { return false }
+                    return self.watchRetryIsActive && self.isActiveProfileAuthorized
+                        && self.profilesModel.activeProfileID == profileID
+                        && self.watchOutboxConnectivity.isConnected
+                }
             }
         )
     }
@@ -663,6 +687,17 @@ public final class AppState {
 
     private var historySyncReaders: [any TrackerHistorySyncReading] {
         [publicMetaDBService, traktService, wetrakrService, simklService, anilistService, malService]
+    }
+
+    func setWatchRetryActive(_ active: Bool) {
+        watchRetryIsActive = active
+        if active { retryWatchOutboxIfAllowed() }
+    }
+
+    func retryWatchOutboxIfAllowed() {
+        guard watchRetryIsActive, isActiveProfileAuthorized,
+              watchOutboxConnectivity.isConnected else { return }
+        drainWatchOutbox()
     }
 
     /// The outbox's not-yet-confirmed mutations, so the Home Continue Watching row
@@ -1543,6 +1578,8 @@ public final class AppState {
                 session: context.session,
                 accountID: context.accountID,
                 credentialRevision: context.credentialRevision,
+                localMediaContext: context.localMediaContext,
+                durableStore: durableLocalStateStore,
                 interactiveHTTP: URLSessionHTTPClient(session: .plozzInteractive),
                 hybridEngineEnabled: HybridPlayback.enabled,
                 connectionRefresh: PlexProvider.connectionRefresh(for: context.session)
@@ -1866,6 +1903,9 @@ public final class AppState {
             registration = try accountsProviders.accountStore.registerAuthenticatedSession(session)
             if registration.previousAccount == nil || activateIPTVAccount {
                 try accountsProviders.includeIPTVAccountInActiveProfile(registration.account)
+                if registration.account.server.provider == .iptv {
+                    profileSettings.navigationStyleModel.showsLiveTV = true
+                }
             }
         } catch {
             PlozzLog.auth.error("Unable to save authenticated account")
@@ -1878,6 +1918,10 @@ public final class AppState {
             previousAccount: registration.previousAccount,
             isFirstRun: isFirstRun
         )
+        if registration.account.server.provider == .iptv,
+           registration.previousAccount == nil || activateIPTVAccount {
+            guidePreparation.start(accountID: registration.account.id)
+        }
         return true
     }
 
@@ -2155,15 +2199,10 @@ public final class AppState {
         apply(.themeSelected)
     }
 
-    /// Advances first-run navigation selection to Home layout.
+    /// Completes appearance setup and reconciles the selected identity.
     public func finishNavigationSelection() {
-        apply(.navigationSelected)
-    }
-
-    /// Reconciles the selected identity after appearance setup.
-    public func finishHomeLayoutSelection() {
         profileFlow.completeAppearanceSetup(for: profilesModel.activeProfileID)
-        apply(.homeLayoutSelected)
+        apply(.navigationSelected)
         plexHomeUsers.ensurePlexIdentityForActiveProfile()
     }
 

@@ -42,6 +42,44 @@ registry.
 
 ## Invariants
 
+- **Discover is optional and adult-profile-only.** Every navigation style uses
+  the shared navigation policy: Seerr configuration enables Discover by default,
+  while explicit Show/Hide choices survive connection changes. Child profiles
+  cannot expose it through navigation customization or a restored selection;
+  a parental Settings unlock does not override this restriction.
+  TV and mobile reuse their existing media rails and detail/request flows.
+  The shared page offers Trending, Popular Movies, Upcoming Movies, Popular
+  Series, and Upcoming Series, with profile-scoped Available now and Hide watched
+  filters in the standard filter menu. Upcoming Series means first premieres,
+  not returning seasons. On iPhone and iPad, the profile action occupies the
+  trailing primary toolbar position, with filters to its left.
+  Available now requires verified access through the
+  active profile's enabled libraries, never Seerr's global availability alone.
+  Available now hides both upcoming feeds and suspends their page requests;
+  turning it off restores their retained pages or loads their first page.
+  Changing filters resets each horizontal rail to its leading edge without
+  discarding fetched pages or resetting the page's vertical scroll.
+  Identity-index updates revalidate loaded cards without resetting pagination.
+  Pending profile-scoped watched changes survive revalidation and pagination;
+  confirmed optimistic changes retire so later server updates remain authoritative.
+  With Seerr disconnected, manually enabled Discover browses public metadata.
+  Public requests reload the household's saved TMDb credential off the UI thread;
+  requesting still requires Seerr. A configured but unreachable Seerr reports
+  retryable errors rather than silently switching services.
+  Rails fetch the next page automatically near the visible trailing edge; there
+  is no manual pagination button. Loading appends skeleton cards inside the
+  rail, never a spinner below it. Empty filtered pages continue while visible,
+  and failures retain an explicit retry action. Seerr's Popular endpoints use
+  its configured locale: their `language` query is an original-language filter,
+  so Plozz must not send its display locale through that parameter.
+
+- **Mobile Settings does not require an inherited language model.** The mobile
+  app model owns the existing app-wide language preference and passes that same
+  instance to the root `AppLanguageScope` and every Settings language picker,
+  including search destinations. A detached Settings presentation cannot trap
+  on a missing observable environment object or create a second preference model.
+  The existing mobile persistence key and tvOS profile-scoped behavior are unchanged.
+
 - **Returning from Settings restores pinned-page focus.** Settings is hosted
   outside the navigation rail. Its Back action uses the same destination
   presentation fence and native content-focus request as selecting a rail
@@ -71,6 +109,48 @@ registry.
   artwork lookup remains bounded to the existing nearby-card window. Changed
   items, artwork/provider preferences, spoilers and presentation restart that
   window; disabled prefetch performs no source preparation.
+
+- **Home adapts to Mac windows without changing iPad layouts.** When running
+  the iOS app on macOS, the regular-width Home hero follows the window height,
+  leaving space for the next row. Its still artwork is top-aligned so wide
+  crops preserve the top of the picture, including during carousel slides and
+  sidebar reflections. Skeletons and trailer-pause thresholds use the same
+  height. Compact layouts, detail pages, and video framing retain their existing
+  behavior.
+
+- **Mac navigation leaves the artwork uncovered.** The iOS-on-Mac tab shell
+  hides the tab-bar background and, on iOS 26 and later, the top scroll-edge
+  effect. Native sidebar, tab, and profile controls remain available with their
+  system appearance. iPhone/iPad backgrounds and other scroll edges are unchanged.
+
+- **Mac rails fit complete cards plus a next-card preview.** Home, library
+  recommendations, related titles, extras, episodes, and cast derive widths from
+  their actual content viewport. `DesktopMediaRailLayout` chooses a whole-card
+  count below density-scaled width limits, then distributes the width while
+  preserving a gap-sized trailing peek. Featured rows use the same inset and
+  heading style, with 4:5 cards; they do not inherit the fixed mobile width.
+  Loading and loaded rows share this geometry. Profile density and Dynamic Type
+  still apply. Hero actions keep their original native large control size and
+  48-point minimum in both glass and reduced-effects presentations.
+  iPhone/iPad and TV retain their existing sizes.
+
+- **Mac hero paging controls** sit at the left/right midpoint only when the
+  carousel has multiple titles. Native buttons use explicit hover recognition
+  and a configured subtle background, since the system pointer highlight is not
+  drawn in iPad-on-Mac. There is no permanent pill. They share the
+  swipe/auto-advance transition path and are disabled during a swipe or transition.
+  iPhone/iPad retain swipe-only manual paging.
+  The compact chevrons are tall and narrow, with a slim rounded hover background.
+  Their lighter glyphs retain 44-by-64-point hit targets and spoken labels;
+  Increase Contrast raises their opacity and Bold Text strengthens their stroke.
+  Increase Contrast and Reduce Transparency make the hovered background opaque.
+  Mouse movement over the Mac hero freezes automatic paging and its gauge until
+  1.5 seconds of pointer inactivity (or pointer exit). Trailers keep playing;
+  trailer-end paging waits until the pause ends. Manual paging remains available.
+  Left/Right keys also page the Mac hero while Home is frontmost and the hero
+  remains in its visible region. Scrolling past that region releases the keys.
+  Editing text or presenting a dialog prevents the hero from taking keyboard
+  input; player keyboard commands remain independent.
 
 - **Preference sync is not a profile switch.** Mobile cloud apply rebuilds active
   settings and track/version preferences without restarting downloads, provider
@@ -169,25 +249,29 @@ registry.
 
 ## Appearance onboarding
 
-Apple TV first-run and new-profile setup share Theme, Navigation, and Home Layout
-choices in that order. Each selection writes to the active profile's existing
-settings model. Continue or Menu accepts the current selection; profile setup
-is not complete until Home Layout is accepted.
+Apple TV first-run and new-profile setup share Theme then Navigation. Continue
+or Menu on Navigation completes appearance setup, including the durable profile
+resume marker and Plex identity reconciliation. There is no Home layout setup
+step or upgrade introduction. Existing navigation introductions remain available.
 
-Existing installations receive a device-local, one-time Home Layout chooser
-after any pending navigation introduction and before release notes. The current
-layout is preselected; dismissing does not reset it or change other profiles.
-Finishing setup also completes these introductions, preventing a duplicate
-prompt on first entry. iPhone and iPad retain their existing carousel layout.
-
-`CoreUI.HomeLayoutOptionCard` supplies the same names and previews to onboarding
-and Settings. Its illustrations omit navigation chrome, since Home layout and
-navigation style are independent choices.
+Fresh profiles use the hero above Showcase rows. Settings > Home exposes
+Hero and Row style independently, backed by the existing profile-scoped
+hero settings. Existing saved layouts are preserved, including older blobs with
+no style field, which still decode as Classic rows with their saved hero choice.
+iPhone and iPad retain their existing carousel presentation.
 
 ## Navigation planning
 
 Settings is a normal destination in all three navigation shells. Its root keeps
 app navigation visible and available; categories and nested pages hide it.
+In the custom pinned and top-bar shells, programmatic destination changes
+use the same rendered-presentation focus handoff as navigation selections.
+Home's See all pages, including Watchlist, instead push onto Home's existing
+navigation path. All three navigation styles hide their top-level controls
+until Back returns to Home; title details opened from a browser return to that
+browser first. These browse pushes suppress native page motion in the same
+transaction as the path change, keeping the outgoing Home page stationary.
+An already pending handoff is preserved, including Back's navigation-focus target.
 Root Back restores navigation focus, while child Back restores its Settings row.
 The top-bar root reserves foreground clearance without moving subpage headers.
 Chrome stays unavailable until a returning Settings page can receive focus.
@@ -237,8 +321,12 @@ highlighted destination. There are no delayed page previews or native tab transi
 Only the selected page and the visited Live TV guide
 are mounted; walking twenty libraries must not retain twenty inactive grids.
 The guide retains its filters while inactive playback is stopped. Account-qualified
-destination IDs keep same-named libraries distinct. Content entry waits for
-presentation through the existing shared focus owner; Back returns to the
+destination IDs keep same-named libraries distinct. A changed destination waits for
+presentation through the existing shared focus owner. Entering the page already
+on screen skips that redundant presentation fence, but still crosses the
+focus-eligibility render commit. After successful entry, moving back to the
+bar does not disable and rebuild the page's controls; new destinations and
+profiles reset that admission. Back returns to the
 selected navigation item. Detail pages hide the strip through `NavigationChromeModel`.
 While Settings owns the shell, hidden navigation cancels focus handoffs and
 cannot overwrite the selected Settings destination.
@@ -247,6 +335,31 @@ is Down for the horizontal strip; Left/Right never trigger a page handoff there.
 Initial focus resolves the selected destination, including a scrolled-off library,
 before allowing neighboring controls. Live TV's first-use preview choice waits
 for explicit content entry; its presentation owns focus until the choice finishes.
+Physical Down starts entry in the bar's native press recognizer, while actual
+focus belongs to that bar, instead of waiting for SwiftUI's move-command delivery.
+Native downward focus proposals also start that same handoff: the shared owner
+must not merely veto geometry and wait for a later move command. This includes
+directional input that does not arrive as an arrow press. The callback runs on
+the next main turn, coalesces repeated proposals, and is cancelled if the shell
+closes entry or focus leaves its source. Other directions remain native, and
+SwiftUI move commands remain a fallback.
+The debug production Home fixture's `--top-bar-entry-probe` exercises the native
+directional gate, press-began delivery and shared entry action over six visits,
+requiring actual hero focus within 200 ms and the visible pill's presentation-layer
+selection scale above 1.04 within 350 ms (the final scale is 1.06). It first
+checks that no stale selected pill remains after returning to navigation.
+It also checks repeated-proposal
+coalescing, cancellation and unrelated directions. The first visit exercises cold
+directional entry. This covers the gate/handler-to-focus path, not physical remote
+transport or device frame pacing.
+Debug builds also retain low-frequency `navigation.entry` milestones in the
+existing bounded playback journal. Static stage names and event-time monotonic
+uptime distinguish input delivery, render admission, layout, target selection,
+native focus acceptance, SwiftUI focus-state delivery and highlight application
+without requiring a diagnostic relaunch. Highlight application is a view update,
+not proof that the compositor has presented it; the fixture measures that separately.
+Release builds do not persist these milestones.
+The entry probe verifies the journal milestones with verbose focus logging disabled.
 Full-bleed Live TV surfaces read the shared top-content inset for guide controls
 and loading placeholders without shrinking expanded playback.
 The common UIKit host propagates a real top safe area through nested stacks.
@@ -334,6 +447,10 @@ swipes. Left at an unresolved content edge opens the sidebar; Right at an
 unresolved sidebar edge returns to the page. Both paths wait for native focus to
 settle and do nothing if it moved or the sidebar's focus state changed. The Home
 hero disables this fallback and requests entry at its own logical leading edge.
+Return-focus capture uses the same content eligibility rules as fresh entry:
+the hero's one-point directional guards are never saved as return destinations.
+Otherwise Hero + Showcase can restore its Left guard and immediately reopen the
+sidebar instead of returning to the hero action row.
 Unchanged focus is not sufficient evidence of unused input. Focus environments
 conforming to `HorizontalNavigationInputOwning` keep horizontal adjustments,
 and presented screens keep input away from the background rail. The native

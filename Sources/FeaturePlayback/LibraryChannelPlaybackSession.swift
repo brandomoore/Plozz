@@ -31,7 +31,11 @@ public enum LibraryChannelHistoryReporting: Sendable {
 public final class LibraryChannelPlaybackSession {
     public let channelID: UUID
     public let engine: any VideoEngine
-    public private(set) var state: LibraryChannelPlaybackState = .idle
+    public private(set) var state: LibraryChannelPlaybackState = .idle {
+        didSet {
+            if state != oldValue { onStateChanged?() }
+        }
+    }
     public private(set) var currentSlot: LibraryChannelSlot?
     public private(set) var isDelayed = false
     public private(set) var isWatching = false
@@ -39,6 +43,7 @@ public final class LibraryChannelPlaybackSession {
     public private(set) var secondsWatched: TimeInterval = 0
     /// Reset pane-derived tracks/cues; this notification must not request another tune.
     @ObservationIgnored public var onSourceReset: (@MainActor () -> Void)?
+    @ObservationIgnored public var onStateChanged: (@MainActor () -> Void)?
     @ObservationIgnored public var onPlaybackFailure: (@MainActor (LibraryChannelError) -> Void)?
     @ObservationIgnored private let schedule: @MainActor @Sendable () -> LibraryChannelSchedule?
     @ObservationIgnored private let provider: @MainActor @Sendable (LibraryChannelItem) -> (any LibraryChannelPlaybackProviding)?
@@ -55,6 +60,9 @@ public final class LibraryChannelPlaybackSession {
     @ObservationIgnored private var authorizationTaskID: UUID?
     @ObservationIgnored private var historyTasks: [UUID: Task<Void, Never>] = [:]
     @ObservationIgnored private var request: PlaybackRequest?
+    @ObservationIgnored private var playbackLease: LibraryChannelPlaybackLease?
+    @ObservationIgnored private var heartbeat: Task<Void, Never>?
+    @ObservationIgnored private var lastHeartbeat: TimeInterval?
     @ObservationIgnored private var generation = UUID()
     @ObservationIgnored private var activeAuthorization: String?
     @ObservationIgnored private var coverage = LibraryChannelWatchCoverage(duration: 0)
@@ -120,6 +128,7 @@ public final class LibraryChannelPlaybackSession {
         task?.cancel()
         timer?.cancel()
         authorizationTask?.cancel()
+        heartbeat?.cancel()
         for task in historyTasks.values { task.cancel() }
     }
 
@@ -241,12 +250,15 @@ public final class LibraryChannelPlaybackSession {
         intendedPause = true
         engine.pause()
         if state != .idle { state = .paused }
+        lastHeartbeat = nil
+        reportTransport()
     }
 
     public func resume() {
         guard let cursor = pausedCursor else { return }
         guard state != .idle else {
             intendedPause = false
+            lastHeartbeat = nil
             isDelayed = false
             pausedCursor = nil
             return
@@ -256,6 +268,7 @@ public final class LibraryChannelPlaybackSession {
             return
         }
         intendedPause = false
+        lastHeartbeat = nil
         coverage.discontinuity()
         if case .paused = state, (currentSlot?.end ?? .distantPast) > cursor, engine.status == .ready {
             if validateAuthorization != nil {
@@ -265,10 +278,12 @@ public final class LibraryChannelPlaybackSession {
                           self.state == .paused, self.engine.status == .ready else { return }
                     self.engine.play()
                     self.state = .playing
+                    self.reportTransport()
                 }
             } else {
                 engine.play()
                 state = .playing
+                reportTransport()
             }
         } else {
             prepare(at: cursor)
@@ -303,6 +318,7 @@ public final class LibraryChannelPlaybackSession {
         sampleHistory()
         generation = UUID()
         let previous = task
+        let lease = takePlaybackLease()
         previous?.cancel()
         timer?.cancel()
         timer = nil
@@ -324,6 +340,8 @@ public final class LibraryChannelPlaybackSession {
             if let previous { await previous.value }
             engine.stop()
             await engine.drainTransport()
+            do { try await lease?.release() }
+            catch { HandoffDiagnostics.emit("LIBRARY_CHANNEL event=cleanupFailed") }
         }
         currentSlot = nil
         request = nil
@@ -387,6 +405,7 @@ public final class LibraryChannelPlaybackSession {
             return
         }
         sampleHistory()
+        reportTransport()
         if !intendedPause, !isDelayed, let slot = currentSlot,
            clock() >= slot.end || clock() < slot.start {
             prepare(at: clock())
@@ -453,16 +472,32 @@ public final class LibraryChannelPlaybackSession {
         engine.onEnded = nil
         engine.onFailure = nil
         engine.pause()
+        let lease = takePlaybackLease()
         onSourceReset?()
-        guard generation == stamp else { return }
+        // Cleanup belongs to this source even if the callback replaces the tune.
+        guard generation == stamp else {
+            Task { try? await lease?.release() }
+            return
+        }
+        let engine = self.engine
         task = Task { @MainActor [weak self] in
             if let previous { await previous.value }
+            if let lease {
+                engine.stop(preserveDisplayMode: true)
+                await engine.drainTransport()
+                do { try await lease.release() }
+                catch {
+                    if let self, self.generation == stamp { self.fail(.sourceUnavailable) }
+                    return
+                }
+            }
             guard let self, !Task.isCancelled, self.generation == stamp else { return }
             await self.load(at: date, stamp: stamp)
         }
     }
 
     private func load(at requestedDate: Date, stamp: UUID) async {
+        var pendingLease: LibraryChannelPlaybackLease?
         do {
             try await validate(stamp)
             guard requestedDate >= clock().addingTimeInterval(-86_400) else { throw LibraryChannelError.historyExpired }
@@ -478,6 +513,9 @@ public final class LibraryChannelPlaybackSession {
             await engine.drainTransport()
             try await validate(stamp)
             var resolved = try await provider.libraryChannelPlayback(for: slot.item)
+            if resolved.playSessionID != nil {
+                pendingLease = LibraryChannelPlaybackLease(provider: provider, request: resolved)
+            }
             try await validate(stamp)
             guard self.provider(slot.item) != nil else { throw LibraryChannelError.sourceUnavailable }
             guard !resolved.isTranscoding, resolved.deliveryMode == .directPlay else {
@@ -486,6 +524,8 @@ public final class LibraryChannelPlaybackSession {
             let target = isDelayed ? pausedCursor ?? requestedDate : clock()
             let resolvedSlot = try schedule.slot(at: target)
             if resolvedSlot.id != slot.id {
+                try await pendingLease?.release()
+                pendingLease = nil
                 prepare(at: target)
                 return
             }
@@ -494,6 +534,8 @@ public final class LibraryChannelPlaybackSession {
             resolved.preferredAudioLanguages = preferredAudioLanguages
             resolved.preferredSubtitleLanguages = preferredSubtitleLanguages
             request = resolved
+            playbackLease = pendingLease
+            pendingLease = nil
             completionProvider = provider
             engine.onEnded = { [weak self] in
                 guard let self, self.generation == stamp,
@@ -523,7 +565,9 @@ public final class LibraryChannelPlaybackSession {
             pendingReconciliation = true
             if engine.status == .ready { reconcileLoaded() }
         } catch is CancellationError {
+            try? await pendingLease?.release()
         } catch {
+            try? await pendingLease?.release()
             guard stamp == generation else { return }
             engine.stop(preserveDisplayMode: true)
             loadingStarted = nil
@@ -737,6 +781,34 @@ public final class LibraryChannelPlaybackSession {
         historyTasks.removeAll()
     }
 
+    private func takePlaybackLease() -> LibraryChannelPlaybackLease? {
+        heartbeat?.cancel()
+        heartbeat = nil
+        lastHeartbeat = nil
+        let lease = playbackLease
+        playbackLease = nil
+        return lease
+    }
+
+    private func reportTransport() {
+        guard let lease = playbackLease, heartbeat == nil,
+              lastHeartbeat.map({ uptime() - $0 >= 10 }) ?? true else { return }
+        let position = engine.currentTime
+        guard position.isFinite, position >= 0 else { return }
+        lastHeartbeat = uptime()
+        let stamp = generation
+        let paused = intendedPause || engine.isPaused
+        heartbeat = Task { @MainActor [weak self] in
+            do { try await lease.report(position: position, isPaused: paused) }
+            catch {
+                if !Task.isCancelled, let self, self.generation == stamp {
+                    self.fail(Self.playbackIssue(error))
+                }
+            }
+            if let self, self.generation == stamp { self.heartbeat = nil }
+        }
+    }
+
     private func fail(_ error: LibraryChannelError) {
         guard state != .unavailable(error) else { return }
         loadingStarted = nil
@@ -747,6 +819,19 @@ public final class LibraryChannelPlaybackSession {
                 + " positionReady=\(engine.isPlaybackPositionReady) position=\(engine.currentTime)"
         )
         state = .unavailable(error)
+        if let lease = takePlaybackLease() {
+            let previous = task
+            previous?.cancel()
+            let engine = self.engine
+            engine.stop(preserveDisplayMode: true)
+            task = Task { @MainActor in
+                await previous?.value
+                engine.stop(preserveDisplayMode: true)
+                await engine.drainTransport()
+                do { try await lease.release() }
+                catch { HandoffDiagnostics.emit("LIBRARY_CHANNEL event=cleanupFailed") }
+            }
+        }
         onPlaybackFailure?(error)
     }
 

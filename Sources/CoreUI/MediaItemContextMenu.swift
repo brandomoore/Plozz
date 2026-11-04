@@ -112,6 +112,45 @@ public extension View {
     func mediaItemContextMenu(for item: MediaItem) -> some View {
         modifier(MediaItemContextMenu(item: item))
     }
+
+    /// Waits for the native menu to dismiss before using this card's navigation origin.
+    func mediaItemMenuNavigation(target: Binding<MediaItem?>) -> some View {
+        modifier(MediaItemMenuNavigation(target: target))
+    }
+}
+
+private struct MediaItemMenuNavigation: ViewModifier {
+    @Binding var target: MediaItem?
+    @Environment(\.mediaItemNavigator) private var navigator
+    #if os(iOS)
+    @Environment(\.mediaArtworkZoomSource) private var artworkSource
+    @Environment(\.mediaItemArtworkNavigator) private var artworkNavigator
+    #endif
+
+    func body(content: Content) -> some View {
+        content.task(id: target) {
+            guard let destination = target else { return }
+            do {
+                try await Task.sleep(for: .milliseconds(450))
+            } catch {
+                return
+            }
+            guard !Task.isCancelled, target == destination else { return }
+            target = nil
+            #if os(iOS)
+            switch destination.kind {
+            case .movie, .series, .season, .episode:
+                if let artworkSource, let artworkNavigator {
+                    artworkNavigator(destination, artworkSource)
+                    return
+                }
+            default:
+                break
+            }
+            #endif
+            navigator?(destination)
+        }
+    }
 }
 
 private struct MediaItemNavigatorScope: ViewModifier {
@@ -225,8 +264,6 @@ public struct MediaItemContextMenu: ViewModifier {
     /// the menu dismiss first, then the task below pushes after a small safety margin.
     @State private var pendingNavigationTarget: MediaItem?
 
-    private static var navigationDismissalDelay: Duration { .milliseconds(450) }
-
     public init(item: MediaItem) {
         self.item = item
     }
@@ -253,17 +290,7 @@ public struct MediaItemContextMenu: ViewModifier {
                     Section { menuButtons(for: setApart) }
                 }
             }
-            .task(id: pendingNavigationTarget) {
-                guard let target = pendingNavigationTarget else { return }
-                do {
-                    try await Task.sleep(for: Self.navigationDismissalDelay)
-                } catch {
-                    return
-                }
-                guard pendingNavigationTarget == target else { return }
-                pendingNavigationTarget = nil
-                navigator?(target)
-            }
+            .mediaItemMenuNavigation(target: $pendingNavigationTarget)
         } else {
             content
         }

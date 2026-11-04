@@ -58,6 +58,80 @@ final class ProfileFlowModelTests: XCTestCase {
         XCTAssertFalse(model.isChoosingProfile)
     }
 
+    func testPickerAuthorizationCancellationPreservesMandatorySelection() async {
+        let (model, profiles) = makeModel()
+        var active = profiles.activeProfile
+        active.replaceLock(with: ProfileLock.make(pin: "2468", iterations: 1))
+        profiles.update(active)
+        model.prepareLaunchPicker()
+        model.selectProfileFromPicker(to: active.id)
+        XCTAssertTrue(model.profilePickerOwnsAuthorization)
+        XCTAssertTrue(model.isPresentingProfileSelection)
+        XCTAssertTrue(model.activeProfileAwaitsUnlock)
+        model.cancelPickerAuthorization()
+        XCTAssertNil(model.pendingLockedProfile)
+        XCTAssertTrue(model.isChoosingProfile)
+        XCTAssertFalse(model.isProfileSelectionCancelable)
+        model.cancelProfileSelection()
+        XCTAssertTrue(model.isChoosingProfile)
+        model.selectProfileFromPicker(to: active.id)
+        let accepted = await model.submitProfileLockPIN("2468")
+        XCTAssertTrue(accepted)
+        XCTAssertFalse(model.isPresentingProfileSelection)
+        model.finishProfilePickerPresentation()
+        XCTAssertFalse(model.profilePickerOwnsAuthorization)
+    }
+
+    func testPickerHandoffRetainsOwnershipThroughLocalAndLivePlexPINs() async throws {
+        let env = try makeEnv(accounts: [("plex", .plex)])
+        env.hub.reloadAccounts()
+        let probe = ForegroundPINProbe()
+        env.plex.plexHomeUsersFetch = { _, _ in
+            [PlexHomeUser(id: "parent", name: "Server name", requiresPIN: true)]
+        }
+        env.plex.plexHomeUserSwitch = { _, pin, _, _ in try await probe.authenticate(pin) }
+        env.plex.plexServerTokenResolve = { _, _, _ in "parent-server" }
+        var profile = env.profiles.activeProfile.settingHomeUserBinding(
+            .init(homeUserID: "parent", name: "Server name", requiresPIN: true), forPlexAccount: "plex"
+        )
+        profile.replaceLock(with: ProfileLock.make(pin: "2468", iterations: 1))
+        env.profiles.update(profile)
+        env.flow.prepareLaunchPicker()
+        env.flow.selectProfileFromPicker(to: profile.id)
+        XCTAssertEqual(env.flow.pendingLockedProfile?.id, profile.id)
+        let localAccepted = await env.flow.submitProfileLockPIN("2468")
+        XCTAssertTrue(localAccepted)
+        XCTAssertFalse(env.flow.isChoosingProfile)
+        XCTAssertTrue(env.flow.isPresentingProfileSelection)
+        XCTAssertTrue(env.flow.profilePickerOwnsAuthorization)
+        await env.plex.waitForPlexPINRequirementCheck()
+        XCTAssertNotNil(env.plex.pendingPlexPINRequest)
+        env.plex.submitPlexPIN("0000")
+        await env.plex.waitForPlexPINRequirementCheck()
+        XCTAssertTrue(env.flow.isPresentingProfileSelection)
+        env.plex.submitPlexPIN("4821")
+        await env.plex.waitForPlexPINRequirementCheck()
+        XCTAssertFalse(env.flow.isPresentingProfileSelection)
+        XCTAssertNil(env.plex.pendingPlexPINRequest)
+    }
+
+    func testForegroundDepartureRevokesPickerPresentationAndPINAttempt() {
+        let (model, profiles) = makeModel()
+        var active = profiles.activeProfile
+        active.replaceLock(with: ProfileLock.make(pin: "2468", iterations: 1))
+        profiles.update(active)
+        profiles.noteProfileUnlocked(active.id)
+        model.lockForForegroundIfNeeded()
+        model.selectProfileFromPicker(to: active.id)
+        XCTAssertTrue(model.profilePickerOwnsAuthorization)
+        model.cancelForegroundProfileSelection()
+        XCTAssertFalse(model.profilePickerOwnsAuthorization)
+        XCTAssertNil(model.pendingLockedProfile)
+        XCTAssertTrue(model.isChoosingProfile)
+        XCTAssertTrue(model.isForegroundLocked)
+        XCTAssertFalse(model.canFinishForegroundUnlock)
+    }
+
     func testPickerSettingsReturnsToCurrentProfileWithoutReactivatingIt() {
         let (model, profiles) = makeModel()
         let selection = profiles.selectionGeneration
@@ -681,27 +755,19 @@ final class ProfileFlowModelTests: XCTestCase {
         XCTAssertEqual(trackerReScopes, 0, "non-active removal must not re-scope trackers")
     }
 
-    /// The documented anti-stale logic in `setAccount(_:includedInActiveProfile:)`:
-    /// it mutates the RESOLVED active set, not the raw stored set. With a stale
-    /// stored set (all stored ids gone → reload fell back to the global set),
-    /// toggling a visible account OFF must actually remove it — not no-op on the
-    /// stale set and then re-expand to every account on the next reload.
-    func testSetAccountTogglesResolvedSetNotStaleStoredSet() throws {
+    func testExplicitlyEnablingOneAccountAfterRemovalDoesNotEnableOthers() throws {
         let env = try makeEnv(accounts: [("a", .jellyfin), ("b", .jellyfin)])
         env.store.setActiveAccountIDs(["a", "b"])                       // global = {a,b}
-        // Stored set is entirely stale (references a since-removed account), so
-        // reloadAccounts resolves via the global-set fallback to {a,b}.
         env.profiles.setActiveAccountIDs(["stale-removed"], for: env.profiles.activeProfileID)
         env.hub.reloadAccounts()
-        XCTAssertTrue(env.flow.isAccountIncludedInActiveProfile("a"))
-        XCTAssertTrue(env.flow.isAccountIncludedInActiveProfile("b"))
+        XCTAssertFalse(env.flow.isAccountIncludedInActiveProfile("a"))
+        XCTAssertFalse(env.flow.isAccountIncludedInActiveProfile("b"))
 
-        env.flow.setAccount("a", includedInActiveProfile: false)
+        env.flow.setAccount("b", includedInActiveProfile: true)
 
-        // Toggling "a" off must stick (operated on the resolved {a,b}); a stored-set
-        // implementation would no-op then re-expand to {a,b}, leaving "a" ON.
         XCTAssertFalse(env.flow.isAccountIncludedInActiveProfile("a"))
         XCTAssertTrue(env.flow.isAccountIncludedInActiveProfile("b"))
+        XCTAssertEqual(env.profiles.storedActiveAccountIDs(for: env.profiles.activeProfileID), ["b"])
     }
 
     /// switchProfile runs the full re-scope: selects the target, re-points trackers,

@@ -38,7 +38,9 @@
     "HeroTrailerControls",
     "HomeFilteringSettingsView",
     "HomeHeroSettingsView",
-    "HomeLayoutPicker",
+    "HomeHeroEnabledPicker",
+    "HomeRowStylePicker",
+    "HomeRowStyleSettingsView",
     "HomeRowPresetPicker",
     "HomeSectionSettingsView",
     "HomeSectionsSettingsView",
@@ -139,6 +141,7 @@
     "Sources/AppShelliOS/PlozziOSStreamingQuality.swift",
     "Sources/AppShelliOS/PlozziOSSyncSetupSettingsView.swift",
     "Sources/AppShelliOS/PlozziOSTrackerSettingsView.swift",
+    "Sources/AppShelliOS/ServerOnboardingViews.swift",
     "Sources/CoreModels/ArtworkSettings.swift",
     "Sources/CoreModels/CardCaptionSettings.swift",
     "Sources/CoreModels/HeroDiscovery.swift",
@@ -189,7 +192,8 @@
     "Sources/FeatureSettings/HeroCollectionPickerView.swift",
     "Sources/FeatureSettings/HeroLogoSizeControl.swift",
     "Sources/FeatureSettings/HeroSettingsControls.swift",
-    "Sources/FeatureSettings/HomeLayoutPicker.swift",
+    "Sources/FeatureSettings/HomeHeroEnabledPicker.swift",
+    "Sources/FeatureSettings/HomeRowStylePicker.swift",
     "Sources/FeatureSettings/HomeRowsSettingsView.swift",
     "Sources/FeatureSettings/HomeSectionSettingsViews.swift",
     "Sources/FeatureSettings/IntegrationsDetailView.swift",
@@ -241,6 +245,7 @@
     "SeparateSettingRow",
     "SettingsCheckList",
     "SettingsCheckableRow",
+    "SettingsControlMenu",
     "SettingsMenuRow",
     "SettingsOptionList",
     "SettingsOptionPicker",
@@ -277,14 +282,16 @@
       "kind": "input",
       "reason": "Reusable preference input; coverage belongs to each configured call site. Its internal control contract is checked separately.",
       "controls": {
-        "Sources/FeatureSettings/CardAppearanceControls.swift|CardCaptionPicker|compactPicker|Picker|\"Labels\"": 1
+        "Sources/FeatureSettings/CardAppearanceControls.swift|CardCaptionPicker|compactPicker|SettingsControlMenu|SettingsMenuLabel(\"Labels\", value: settings.selectedPreset?.displayName ?? \"Custom\")": 1,
+        "Sources/FeatureSettings/CardAppearanceControls.swift|CardCaptionPicker|compactPicker|Picker|EmptyView()": 1
       }
     },
     "CompactWatchIndicatorPicker": {
       "kind": "input",
       "reason": "Reusable preference input; coverage belongs to each configured call site. Its internal control contract is checked separately.",
       "controls": {
-        "Sources/FeatureSettings/CompactWatchIndicatorPicker.swift|CompactWatchIndicatorPicker|compactPicker|Picker|\"Watch indicators\"": 1
+        "Sources/FeatureSettings/CompactWatchIndicatorPicker.swift|CompactWatchIndicatorPicker|compactPicker|SettingsControlMenu|SettingsMenuLabel(\"Watch indicators\", value: selection.displayName)": 1,
+        "Sources/FeatureSettings/CompactWatchIndicatorPicker.swift|CompactWatchIndicatorPicker|compactPicker|Picker|EmptyView()": 1
       }
     },
     "ContentRatingToggle": {
@@ -362,12 +369,19 @@
         "Sources/FeatureSettings/ContinueWatchingNextUpControl.swift|ContinueWatchingNextUpControl|body|Toggle|<dynamic>": 1
       }
     },
+    "SettingsControlMenu": {
+      "kind": "input",
+      "reason": "Native menu trigger with shared mobile hit geometry; configured call sites and their picker contents remain independently inventoried.",
+      "controls": {
+        "Sources/CoreUI/SettingsSectionSurface.swift|SettingsControlMenu|body|Menu|label .frame(maxWidth: .infinity, alignment: .leading) .settingsControlTarget()": 1
+      }
+    },
     "SettingsMenuRow": {
       "kind": "input",
       "reason": "Reusable preference input; coverage belongs to each configured call site. Its internal control contract is checked separately.",
       "controls": {
         "Sources/FeatureSettings/SettingsMenuRow.swift|SettingsMenuRow|body|Menu|SettingsSectionLabel( title: Text(title), icon: icon, assetIcon: nil, value: value, subtitle: subtitle.map(Text.init), accessorySymbol: \"chevron.up.chevron.down\" )": 1,
-        "Sources/FeatureSettings/SettingsMenuRow.swift|SettingsMenuRow|body|Menu|HStack { if let icon { Image(systemName: icon) } value }": 1
+        "Sources/FeatureSettings/SettingsMenuRow.swift|SettingsMenuRow|body|Menu|VStack(alignment: .leading, spacing: 4) { LabeledContent { HStack { if let icon { Image(systemName: icon) } SettingsMenuValue(value) } } label: { Text(title) } if let subtitle { Text(subtitle) .font(.footnote) .plozzForeground(.secondary) .fixedSize(horizontal: false, vertical: true) } }": 1
       }
     },
     "SettingsOptionList": {
@@ -410,7 +424,7 @@
       "kind": "input",
       "reason": "Reusable preference input; coverage belongs to each configured call site. Its internal control contract is checked separately.",
       "controls": {
-        "Sources/FeatureSettings/ViewCustomizationControls.swift|ViewCustomizationMenu|body|Menu|SettingsMenuValue(Text(value)) .frame(minHeight: 44) .contentShape(Rectangle())": 1,
+        "Sources/FeatureSettings/ViewCustomizationControls.swift|ViewCustomizationMenu|body|SettingsControlMenu|ViewCustomizationMenuLabel(id: id, title: title) { SettingsMenuValue(Text(value)) }": 1,
         "Sources/FeatureSettings/ViewCustomizationControls.swift|ViewCustomizationMenu|body|Picker|EmptyView()": 1
       }
     },
@@ -425,7 +439,7 @@
       "kind": "presentation",
       "reason": "The transient search query is not a persisted preference.",
       "controls": {
-        "Sources/FeatureSettings/SettingsSearchResults.swift|SettingsSearchTelevisionView|body|TextField|\"Search settings\"": 1
+        "Sources/FeatureSettings/SettingsSearchResults.swift|SettingsSearchTelevisionView|searchCard|TextField|\"Search settings\"": 1
       }
     },
     "SettingsSplitLayout": {
@@ -845,8 +859,8 @@
       "controls": {
         "Sources/AppShelliOS/AddServerView.swift|PasswordServerSignInView|body|TextField|\"Username\"": 1,
         "Sources/AppShelliOS/AddServerView.swift|PasswordServerSignInView|body|SecureField|\"Password\"": 1,
-        "Sources/AppShelliOS/AddServerView.swift|PasswordServerSignInView|body|Button|if case .submitting = viewModel.phase { ProgressView() .frame(maxWidth: .infinity) } else { Text(\"Sign In\") .frame(maxWidth: .infinity) }": 1,
-        "Sources/AppShelliOS/AddServerView.swift|PasswordServerSignInView|body|Button|\"Use Quick Connect\"": 1
+        "Sources/AppShelliOS/AddServerView.swift|PasswordServerSignInView|body|Button|Group { if case .submitting = viewModel.phase { ProgressView() } else { Text(\"Sign In\") } } .plozzPageActionLabel()": 1,
+        "Sources/AppShelliOS/AddServerView.swift|PasswordServerSignInView|body|Button|Text(\"Use Quick Connect\") .plozzPageActionLabel()": 1
       }
     },
     "ServerAddAddressForm": {
@@ -887,7 +901,7 @@
       "count": 1,
       "reason": "Reopens the normal parental-PIN authorization sheet after cancellation; not a preference input."
     },
-    "Sources/AppShelliOS/AddServerView.swift|AddServerView|body|TextField|\"Server address\"": {
+    "Sources/AppShelliOS/AddServerView.swift|AddServerView|connectionContent|TextField|\"Server address\"": {
       "count": 1,
       "reason": "sensitive_connection_field: Setup flow."
     },
@@ -895,15 +909,15 @@
       "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
       "count": 1
     },
-    "Sources/AppShelliOS/AddServerView.swift|PlexServerSignInView|body|Button|\"Try Again\"": {
+    "Sources/AppShelliOS/AddServerView.swift|PlexServerSignInView|body|Button|Text(\"Try Again\").plozzPageActionLabel()": {
       "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
       "count": 1
     },
-    "Sources/AppShelliOS/AddServerView.swift|QuickConnectServerSignInView|phaseContent|Button|\"Try Again\"": {
+    "Sources/AppShelliOS/AddServerView.swift|QuickConnectServerSignInView|phaseContent|Button|Text(\"Try Again\").plozzPageActionLabel()": {
       "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
       "count": 1
     },
-    "Sources/AppShelliOS/PlozziOSDiagnosticsSettingsView.swift|PlozziOSDiagnosticsSettingsView|body|NavigationLink|Label(\"Recent Activity\", systemImage: \"clock.arrow.circlepath\")": {
+    "Sources/AppShelliOS/PlozziOSDiagnosticsSettingsView.swift|PlozziOSDiagnosticsSettingsView|body|SettingsPageLink|Label(\"Recent Activity\", systemImage: \"clock.arrow.circlepath\")": {
       "reason": "Navigation to an existing editor; its controls are independently discovered.",
       "count": 1
     },
@@ -947,7 +961,7 @@
       "count": 1,
       "reason": "destructive_cache_action: Budget controls remain included."
     },
-    "Sources/AppShelliOS/PlozziOSMetadataSettingsView.swift|PlozziOSMetadataSettingsView|body|NavigationLink|\"Artwork\"": {
+    "Sources/AppShelliOS/PlozziOSMetadataSettingsView.swift|PlozziOSMetadataSettingsView|body|SettingsPageLink|SettingsDisclosureLabel { Text(\"Artwork\") }": {
       "reason": "Navigation to an existing editor; its controls are independently discovered.",
       "count": 1
     },
@@ -1003,7 +1017,7 @@
       ],
       "count": 1
     },
-    "Sources/AppShelliOS/PlozziOSServerSettingsViews.swift|PlozziOSMyLibrariesSettingsView|body|Button|\"Add Server\"": {
+    "Sources/AppShelliOS/PlozziOSServerSettingsViews.swift|PlozziOSMyLibrariesSettingsView|body|Button|<dynamic>": {
       "count": 1,
       "reason": "Explicit navigation, confirmation, reset, connection or diagnostic action; not a preference input."
     },
@@ -1011,11 +1025,11 @@
       "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
       "count": 1
     },
-    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSArtworkSettingsView|body|NavigationLink|\"Metadata Providers (TMDB, TheTVDB…)\"": {
+    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSArtworkSettingsView|body|SettingsPageLink|SettingsDisclosureLabel { Text(\"Metadata Providers (TMDB, TheTVDB…)\") }": {
       "reason": "Navigation to an existing editor; its controls are independently discovered.",
       "count": 1
     },
-    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSDetailPageSettingsView|body|NavigationLink|Text(\"Rating sources & order\")": {
+    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSDetailPageSettingsView|body|SettingsPageLink|SettingsDisclosureLabel { Text(\"Rating sources & order\") }": {
       "reason": "Navigation to an existing editor; its controls are independently discovered.",
       "count": 1
     },
@@ -1027,11 +1041,11 @@
       "count": 1,
       "reason": "preview_action: Does not configure schedule."
     },
-    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSSubtitleSettingsView|body|NavigationLink|\"Customize subtitle style\"": {
+    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSSubtitleSettingsView|body|Button|SettingsDisclosureLabel { Text(\"Customize subtitle style\") }": {
       "reason": "Navigation to an existing editor; its controls are independently discovered.",
       "count": 1
     },
-    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSSubtitleSettingsView|body|NavigationLink|\"Customize Live TV subtitles\"": {
+    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSSubtitleSettingsView|body|Button|SettingsDisclosureLabel { Text(\"Customize Live TV subtitles\") }": {
       "reason": "Navigation to an existing editor; its controls are independently discovered.",
       "count": 1
     },
@@ -1047,11 +1061,11 @@
       "count": 1,
       "reason": "Explicit navigation, confirmation, reset, connection or diagnostic action; not a preference input."
     },
-    "Sources/AppShelliOS/PlozziOSSyncSetupSettingsView.swift|PlozziOSSyncSetupSettingsView|idleList|Button|\"Sync Now\"": {
+    "Sources/AppShelliOS/PlozziOSSyncSetupSettingsView.swift|PlozziOSSyncSetupSettingsView|idleList|Button|Text(\"Sync Now\").settingsControlTarget()": {
       "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
       "count": 1
     },
-    "Sources/AppShelliOS/PlozziOSSyncSetupSettingsView.swift|PlozziOSSyncSetupSettingsView|idleList|NavigationLink|Label( \"Troubleshooting\", systemImage: \"wrench.and.screwdriver\" )": {
+    "Sources/AppShelliOS/PlozziOSSyncSetupSettingsView.swift|PlozziOSSyncSetupSettingsView|idleList|SettingsPageLink|Label( \"Troubleshooting\", systemImage: \"wrench.and.screwdriver\" )": {
       "reason": "Navigation to an existing editor; its controls are independently discovered.",
       "count": 1
     },
@@ -1133,7 +1147,11 @@
     },
     "Sources/CoreUI/SettingsPageNavigation.swift|SettingsPageLink|body|NavigationLink|label": {
       "reason": "Navigation to an existing editor; its controls are independently discovered.",
-      "count": 2
+      "count": 1
+    },
+    "Sources/CoreUI/SettingsPageNavigation.swift|SettingsPageLink|body|Button|label()": {
+      "reason": "Mobile navigation to an existing editor; its controls are independently discovered.",
+      "count": 1
     },
     "Sources/FeatureLiveTV/LibraryChannelEditorView.swift|LibraryChannelCustomSection|body|SettingsPageLink|SettingsDisclosureLabel { Label(\"Create custom channel\", systemImage: \"plus\") }": {
       "reason": "Navigation to an existing editor; its controls are independently discovered.",
@@ -1217,6 +1235,10 @@
     },
     "Sources/FeatureLiveTV/LiveTVSourcesView.swift|LiveTVServerSourceDetails|body|SettingsPageLink|SettingsRowLabel(icon: \"pencil\", title: \"Rename source\", trailing: { LiveTVSourceChevron() })": {
       "reason": "Navigation to an existing editor; its controls are independently discovered.",
+      "count": 1
+    },
+    "Sources/FeatureLiveTV/LiveTVSourcesView.swift|LiveTVServerSourceDetails|body|Button|SettingsRowLabel(icon: \"arrow.clockwise\", title: \"Refresh guide\")": {
+      "reason": "Source-scoped guide refresh action; does not change a preference or source selection.",
       "count": 1
     },
     "Sources/FeatureLiveTV/LiveTVSourcesView.swift|LiveTVServerSourceDetails|body|Button|SettingsRowLabel(icon: \"trash\", title: \"Remove source\")": {
@@ -1344,7 +1366,7 @@
       "count": 1,
       "reason": "Explicit navigation, confirmation, reset, connection or diagnostic action; not a preference input."
     },
-    "Sources/FeatureSettings/ExternalPlayerSettingsView.swift|CustomExternalPlayerControls|body|Button|\"Save and use custom player\"": {
+    "Sources/FeatureSettings/ExternalPlayerSettingsView.swift|CustomExternalPlayerControls|body|Button|Text(\"Save and use custom player\").settingsControlTarget()": {
       "count": 1,
       "reason": "validated_commit_action: Template field is included; activation must not implicitly select or save a player."
     },
@@ -1502,7 +1524,7 @@
       "reason": "Navigation to an existing editor; its controls are independently discovered.",
       "count": 1
     },
-    "Sources/AppShelliOS/AddServerView.swift|AddServerView|body|Button|if isValidating { ProgressView(\"Checking server…\") } else { Text(provider == .plex ? \"Link Plex account\" : \"Continue\") }": {
+    "Sources/AppShelliOS/AddServerView.swift|AddServerView|connectionContent|Button|Group { if isValidating { ProgressView(\"Checking server…\") } else { Text(\"Connect\") } } .plozzPageActionLabel()": {
       "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
       "count": 1
     },
@@ -1510,24 +1532,48 @@
       "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
       "count": 1
     },
-    "Sources/AppShelliOS/AddServerView.swift|ManagedServerDiscoverySection|body|Button|HStack(spacing: 12) { ProviderBrandMark( provider: server.provider, size: 30 ) VStack(alignment: .leading, spacing: 2) { Text(server.name) .foregroundStyle(.primary) Text(server.baseURL.absoluteString) .font(.caption) .plozzForeground(.secondary) .lineLimit(1) } Spacer() Image(systemName: server.provider == .silo ? \"chevron.forward\" : \"arrow.up.backward\") .plozzForeground(.tertiary) }": {
+    "Sources/AppShelliOS/AddServerView.swift|ManagedServerDiscoverySection|body|Button|HStack(spacing: 12) { ProviderBrandMark(provider: server.provider, size: 32) .accessibilityHidden(true) VStack(alignment: .leading, spacing: 4) { Text(verbatim: server.name).font(.headline) Text(verbatim: server.baseURL.absoluteString) .font(.caption).foregroundStyle(.secondary) } .fixedSize(horizontal: false, vertical: true) Spacer(minLength: 8) Image(systemName: \"chevron.forward\") .foregroundStyle(.secondary).accessibilityHidden(true) } .frame(minHeight: 44)": {
       "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
       "count": 1
     },
-    "Sources/AppShelliOS/AddServerView.swift|PlexServerSignInView|body|Button|\"Open Plex to link\"": {
+    "Sources/AppShelliOS/AddServerView.swift|PlexServerSignInView|body|Button|Label(\"Open Plex to link\", systemImage: \"safari\") .plozzPageActionLabel()": {
       "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
       "count": 1
     },
-    "Sources/AppShelliOS/AddServerView.swift|PlexServerSignInView|body|Button|VStack(alignment: .leading) { Text(server.name) Text(server.baseURL.host() ?? server.baseURL.absoluteString) .font(.caption) .plozzForeground(.secondary) }": {
+    "Sources/AppShelliOS/ServerOnboardingViews.swift|PlexServerSelection|body|Button|HStack(spacing: 16) { VStack(alignment: .leading, spacing: 4) { Text(verbatim: server.name).font(.headline) Text(server.isOwned ? \"Owned\" : \"Shared\") .font(.subheadline).foregroundStyle(.secondary) } .fixedSize(horizontal: false, vertical: true) Spacer(minLength: 8) Image(systemName: selected.contains(server.id) ? \"checkmark.circle.fill\" : \"circle\") .font(.title2) .accessibilityHidden(true) } .frame(minHeight: 44)": {
+      "reason": "Selects server connections during explicit Plex account setup; not a saved preference or a search shortcut into credentials.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/AddServerView.swift|QuickConnectServerSignInView|body|Button|Text(\"Use Password\") .plozzPageActionLabel()": {
       "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
       "count": 1
     },
-    "Sources/AppShelliOS/AddServerView.swift|QuickConnectServerSignInView|body|Button|\"Sign in with username and password\"": {
-      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+    "Sources/AppShelliOS/ServerOnboardingViews.swift|ServerProviderChoices|body|Button|HStack(spacing: 16) { ProviderBrandMark(provider: provider, size: 40) .accessibilityHidden(true) Text(verbatim: provider.displayName) .font(.headline) .fixedSize(horizontal: false, vertical: true) Spacer(minLength: 8) Image(systemName: \"chevron.forward\") .font(.footnote.weight(.semibold)) .foregroundStyle(.secondary) .accessibilityHidden(true) } .frame(minHeight: 44)": {
+      "reason": "Chooses the provider for an explicit new source connection; not a preference value.",
       "count": 1
     },
-    "Sources/AppShelliOS/AddServerView.swift|QuickConnectServerSignInView|phaseContent|Button|\"Use Password\"": {
-      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+    "Sources/AppShelliOS/AddServerView.swift|AddServerView|connectionContent|Button|\"Cancel\"": {
+      "reason": "Dismisses the provider-specific connection setup without saving a source.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/AddServerView.swift|ManagedServerSignInView|body|Button|\"Back\"": {
+      "reason": "Returns from authentication to connection setup; not a preference value.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/AddServerView.swift|PlexServerSignInView|body|Button|Text(\"Continue\").plozzPageActionLabel()": {
+      "reason": "Confirms the selected servers during explicit Plex account setup.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/AddServerView.swift|PlexServerSignInView|body|Button|if isNavigationRoot { Text(\"Cancel\") } else { Label(\"Back\", systemImage: \"chevron.backward\").labelStyle(.iconOnly) }": {
+      "reason": "Leaves the current Plex setup step, retaining its existing cancellation confirmation.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/AddServerView.swift|PlexServerSignInView|body|Button|\"Start Over\"": {
+      "reason": "Confirms discarding the incomplete Plex connection setup; not a preference value.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/AddServerView.swift|PlexServerSignInView|body|Button|\"Keep Going\"": {
+      "reason": "Dismisses the cancellation confirmation without abandoning Plex setup.",
       "count": 1
     },
     "Sources/AppShelliOS/PlozziOSDiagnosticsSettingsView.swift|PlozziOSDiagnosticsSettingsView|body|TextField|<dynamic>": {
@@ -1584,7 +1630,7 @@
       ],
       "count": 1
     },
-    "Sources/AppShelliOS/PlozziOSSeerrSettingsView.swift|PlozziOSSeerrSettingsView|connectionFields|Button|HStack { Label( server.baseURL.host ?? server.baseURL.absoluteString, systemImage: \"server.rack\" ) Spacer() if let version = server.version { Text(\"v\\(version)\") .font(.footnote) .plozzForeground(.secondary) } }": {
+    "Sources/AppShelliOS/PlozziOSSeerrSettingsView.swift|PlozziOSSeerrSettingsView|connectionFields|Button|HStack { Label( server.baseURL.host ?? server.baseURL.absoluteString, systemImage: \"server.rack\" ) Spacer() if let version = server.version { Text(\"v\\(version)\") .font(.footnote) .plozzForeground(.secondary) } } .settingsControlTarget()": {
       "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
       "count": 1
     },
@@ -1618,11 +1664,7 @@
       "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
       "count": 1
     },
-    "Sources/AppShelliOS/PlozziOSServerSettingsViews.swift|PlozziOSServersSettingsView|body|NavigationLink|HStack(spacing: 12) { ProviderBrandMark( provider: .mediaShare, size: 24 ) Text(\"Add Network Share\") }": {
-      "reason": "Navigation to an existing editor; its controls are independently discovered.",
-      "count": 1
-    },
-    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSAccountDetailView|body|NavigationLink|Label(\"Plex User\", systemImage: \"person.crop.circle\")": {
+    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSAccountDetailView|body|SettingsPageLink|Label(\"Plex User\", systemImage: \"person.crop.circle\")": {
       "reason": "Navigation to an existing editor; its controls are independently discovered.",
       "count": 1
     },
@@ -1650,59 +1692,59 @@
       "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
       "count": 1
     },
-    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSSettingsCompactMenu|body|NavigationLink|PlozziOSSettingsCategoryLabel( category: category, accounts: appModel.accounts, isAccountIncluded: { appModel.activeAccountIDs( for: appModel.profiles.activeProfileID ).contains($0) } )": {
+    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSSettingsCompactMenu|body|SettingsPageLink|PlozziOSSettingsCategoryLabel( category: category, accounts: appModel.accounts, isAccountIncluded: { appModel.activeAccountIDs( for: appModel.profiles.activeProfileID ).contains($0) } )": {
       "reason": "Navigation to an existing editor; its controls are independently discovered.",
       "count": 1
     },
-    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSSettingsCompactMenu|body|NavigationLink|Label(KidsProfileCopy.nameAndAvatar, systemImage: \"person.crop.circle\")": {
+    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSSettingsCompactMenu|body|SettingsPageLink|Label(KidsProfileCopy.nameAndAvatar, systemImage: \"person.crop.circle\")": {
       "reason": "Navigation to an existing editor; its controls are independently discovered.",
       "count": 1
     },
-    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSSettingsCompactMenu|body|NavigationLink|Label(KidsProfileCopy.manageProfile, systemImage: \"person.crop.circle\")": {
+    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSSettingsCompactMenu|body|SettingsPageLink|Label(KidsProfileCopy.manageProfile, systemImage: \"person.crop.circle\")": {
       "reason": "Navigation to an existing editor; its controls are independently discovered.",
       "count": 1
     },
-    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSSettingsCompactMenu|body|NavigationLink|PlozziOSSettingsCategoryLabel( category: .libraries, accounts: appModel.accounts, isAccountIncluded: { appModel.activeAccountIDs( for: appModel.profiles.activeProfileID ).contains($0) }, isSealed: isParentalSealed )": {
+    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSSettingsCompactMenu|body|SettingsPageLink|PlozziOSSettingsCategoryLabel( category: .libraries, accounts: appModel.accounts, isAccountIncluded: { appModel.activeAccountIDs( for: appModel.profiles.activeProfileID ).contains($0) }, isSealed: isParentalSealed )": {
       "reason": "Navigation to an existing editor; its controls are independently discovered.",
       "count": 1
     },
-    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSSettingsCompactMenu|body|NavigationLink|Label( KidsProfileCopy.manageProfile, systemImage: isParentalSealed ? \"lock.fill\" : \"person.crop.circle\" )": {
+    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSSettingsCompactMenu|body|SettingsPageLink|Label( KidsProfileCopy.manageProfile, systemImage: isParentalSealed ? \"lock.fill\" : \"person.crop.circle\" )": {
       "reason": "Navigation to an existing editor; its controls are independently discovered.",
       "count": 1
     },
-    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSSettingsCompactMenu|body|NavigationLink|Label(\"Servers\", systemImage: \"externaldrive.connected.to.line.below\")": {
+    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSSettingsCompactMenu|body|SettingsPageLink|Label { Text(SettingsCopy.sources) } icon: { Image(systemName: \"externaldrive.connected.to.line.below\") }": {
       "reason": "Navigation to an existing editor; its controls are independently discovered.",
       "count": 1
     },
-    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSSettingsCompactMenu|body|NavigationLink|Label(\"Profiles\", systemImage: \"person.2\")": {
+    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSSettingsCompactMenu|body|SettingsPageLink|Label(\"Profiles\", systemImage: \"person.2\")": {
       "reason": "Navigation to an existing editor; its controls are independently discovered.",
       "count": 1
     },
-    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSSettingsCompactMenu|body|NavigationLink|Label( KidsProfileCopy.parentalPIN, systemImage: \"figure.and.child.holdinghands\" )": {
+    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSSettingsCompactMenu|body|SettingsPageLink|Label( KidsProfileCopy.parentalPIN, systemImage: \"figure.and.child.holdinghands\" )": {
       "reason": "Navigation to an existing editor; its controls are independently discovered.",
       "count": 1
     },
-    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSSettingsCompactMenu|body|NavigationLink|Label { Text(verbatim: \"Seerr\") } icon: { Image(systemName: \"sparkles.tv\") }": {
+    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSSettingsCompactMenu|body|SettingsPageLink|Label { Text(verbatim: \"Seerr\") } icon: { Image(systemName: \"sparkles.tv\") }": {
       "reason": "Navigation to an existing editor; its controls are independently discovered.",
       "count": 1
     },
-    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSSettingsCompactMenu|body|NavigationLink|Label(\"iCloud Sync\", systemImage: \"icloud\")": {
+    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSSettingsCompactMenu|body|SettingsPageLink|Label(\"iCloud Sync\", systemImage: \"icloud\")": {
       "reason": "Navigation to an existing editor; its controls are independently discovered.",
       "count": 1
     },
-    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSSettingsCompactMenu|body|NavigationLink|Label(\"Downloads\", systemImage: \"arrow.down.circle\")": {
+    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSSettingsCompactMenu|body|SettingsPageLink|Label(\"Downloads\", systemImage: \"arrow.down.circle\")": {
       "reason": "Navigation to an existing editor; its controls are independently discovered.",
       "count": 1
     },
-    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSSettingsCompactMenu|body|NavigationLink|Label(\"Release Notes\", systemImage: \"doc.text\")": {
+    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSSettingsCompactMenu|body|SettingsPageLink|Label(\"Release Notes\", systemImage: \"doc.text\")": {
       "reason": "Navigation to an existing editor; its controls are independently discovered.",
       "count": 1
     },
-    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSSettingsCompactMenu|body|NavigationLink|Label(\"Help & Diagnostics\", systemImage: \"ladybug\")": {
+    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSSettingsCompactMenu|body|SettingsPageLink|Label(\"Help & Diagnostics\", systemImage: \"ladybug\")": {
       "reason": "Navigation to an existing editor; its controls are independently discovered.",
       "count": 1
     },
-    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSSettingsCompactMenu|body|NavigationLink|Label(SettingsCopy.attributions, systemImage: \"doc.text.magnifyingglass\")": {
+    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSSettingsCompactMenu|body|SettingsPageLink|Label(SettingsCopy.attributions, systemImage: \"doc.text.magnifyingglass\")": {
       "reason": "Navigation to an existing editor; its controls are independently discovered.",
       "count": 1
     },
@@ -1733,11 +1775,11 @@
       "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
       "count": 1
     },
-    "Sources/AppShelliOS/PlozziOSSyncSetupSettingsView.swift|PlozziOSSyncSetupSettingsView|idleList|Button|HStack(spacing: 12) { ProviderBrandMark( provider: server.provider, size: 32, mediaShareTransport: server.mediaShareTransportKind ) VStack(alignment: .leading, spacing: 2) { Text(server.serverName).fontWeight(.medium) Text(\"Needs sign-in\") .font(.footnote) .plozzForeground(.secondary) } Spacer(minLength: 0) Image(systemName: \"chevron.forward\") .font(.footnote.weight(.semibold)) .plozzForeground(.tertiary) } .contentShape(Rectangle())": {
+    "Sources/AppShelliOS/PlozziOSSyncSetupSettingsView.swift|PlozziOSSyncSetupSettingsView|idleList|Button|HStack(spacing: 12) { ProviderBrandMark( provider: server.provider, size: 32, mediaShareTransport: server.mediaShareTransportKind ) VStack(alignment: .leading, spacing: 2) { Text(server.serverName).fontWeight(.medium) Text(\"Needs sign-in\") .font(.footnote) .plozzForeground(.secondary) } Spacer(minLength: 0) Image(systemName: \"chevron.forward\") .font(.footnote.weight(.semibold)) .plozzForeground(.tertiary) } .settingsControlTarget() .contentShape(Rectangle())": {
       "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
       "count": 1
     },
-    "Sources/AppShelliOS/PlozziOSSyncSetupSettingsView.swift|PlozziOSSyncSetupSettingsView|idleList|Button|\"Ignore\"": {
+    "Sources/AppShelliOS/PlozziOSSyncSetupSettingsView.swift|PlozziOSSyncSetupSettingsView|idleList|Button|Text(\"Ignore\").settingsControlTarget()": {
       "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
       "count": 1
     },
@@ -1889,7 +1931,7 @@
       "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
       "count": 1
     },
-    "Sources/FeatureLiveTV/LiveTVPlaylistEditor.swift|LiveTVPlaylistEditor|body|Button|Group { if model.isChecking { Text(\"Cancel check\") } else if model.currentReview != nil { Text(\"Save source\") } else if isEditing { Text(\"Save changes\") } else { Text(\"Add source\") } } .frame(maxWidth: .infinity)": {
+    "Sources/FeatureLiveTV/LiveTVPlaylistEditor.swift|LiveTVPlaylistEditor|body|Button|Group { if model.isChecking { Text(\"Cancel check\") } else if model.currentReview != nil { Text(\"Save source\") } else if isEditing { Text(\"Save changes\") } else { Text(SettingsCopy.addTVSource) } } .frame(maxWidth: .infinity)": {
       "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
       "count": 1
     },
@@ -2227,6 +2269,13 @@
       ],
       "count": 1
     },
+    "Sources/FeatureSettings/ExternalPlayerSettingsView.swift|ExternalPlayerChoices|body|Button|if model.settings.player == player { Label { title(player) } icon: { Image(systemName: \"checkmark\") } } else { title(player) }": {
+      "reason": "Native choices for the indexed external-player menu preserve per-option availability; the shared trigger owns reveal and selection.",
+      "covered_by": [
+        "external-player"
+      ],
+      "count": 1
+    },
     "Sources/FeatureSettings/ExternalPlayerSettingsView.swift|ExternalPlayerChoices|body|SettingsCheckableRow|title(player)": {
       "reason": "Configured renderer or contextual choice for the indexed control family; the containing editor owns reveal and selection.",
       "covered_by": [
@@ -2285,7 +2334,7 @@
       ],
       "count": 1
     },
-    "Sources/FeatureSettings/HomeSectionSettingsViews.swift|ContinueWatchingActionControl|body|ViewCustomizationMenu|\"When tapping an item\"": {
+    "Sources/FeatureSettings/HomeSectionSettingsViews.swift|ContinueWatchingActionControl|body|ViewCustomizationMenu|LocalizedStringResource( \"Tap action\", comment: \"Short label for the Continue Watching setting on iPhone and iPad that chooses whether tapping a movie or episode plays it or opens its detail page.\" )": {
       "reason": "Configured renderer or contextual choice for the indexed control family; the containing editor owns reveal and selection.",
       "covered_by": [
         "continue-action"
@@ -2697,7 +2746,7 @@
       "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
       "count": 1
     },
-    "Sources/AppShelliOS/PlozziOSServerSettingsViews.swift|PlozziOSServersSettingsView|body|Button|\"Add Server\"": {
+    "Sources/AppShelliOS/PlozziOSServerSettingsViews.swift|PlozziOSServersSettingsView|body|Button|<dynamic>": {
       "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
       "count": 1
     },
@@ -2845,7 +2894,7 @@
       "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
       "count": 1
     },
-    "Sources/FeatureLiveTV/LiveTVSettingsSourceList.swift|LiveTVSettingsSourceList|body|Button|\"Add source\"": {
+    "Sources/FeatureLiveTV/LiveTVSettingsSourceList.swift|LiveTVSettingsSourceList|body|Button|Label { Text(SettingsCopy.addTVSource) } icon: { Image(systemName: \"plus\") }": {
       "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
       "count": 1
     },

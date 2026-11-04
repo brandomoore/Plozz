@@ -486,13 +486,14 @@ public extension MediaItem {
     /// In-progress fraction (`0..<1`) for a resumable item, or `nil` when it has
     /// not been started or is already finished. Drives the detail Play button's
     /// small progress bar.
-    var resumeProgressFraction: Double? { cardProgressFraction }
+    var resumeProgressFraction: Double? { opensExternalSource ? nil : cardProgressFraction }
 
     /// Bare remaining-time text for an in-progress item (e.g. `20m`), or `nil`
     /// when it is not resumable. Shown inside the detail Play button (the cards
     /// use the longer "… left" form composed by the caller from
     /// ``cardRuntimeText``/``cardRuntimeIsRemaining``).
     var resumeRemainingText: String? {  // l10n:content — formatted duration, not copy
+        guard !opensExternalSource else { return nil }
         guard let runtime = resolvedRuntime, runtime > 0 else { return nil }
         return remainingRuntimeLabel(for: runtime)
     }

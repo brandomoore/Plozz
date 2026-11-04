@@ -30,7 +30,7 @@ public actor LiveTVSourceLoader: LiveTVIndexedSourceLoading {
     public init(configuration suppliedConfiguration: URLSessionConfiguration? = nil) {
         let configuration = suppliedConfiguration ?? URLSessionConfiguration.ephemeral
         configuration.timeoutIntervalForRequest = 30
-        configuration.timeoutIntervalForResource = 120
+        configuration.timeoutIntervalForResource = 600
         configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
         configuration.urlCache = nil
         configuration.httpCookieStorage = nil
@@ -75,10 +75,15 @@ public actor LiveTVSourceLoader: LiveTVIndexedSourceLoading {
             }
             return try parser.parseXML(data: data, channels: channels, now: now)
         }
-        return try await withTaskCancellationHandler {
-            try await task.value
-        } onCancel: {
-            task.cancel()
+        do {
+            return try await withTaskCancellationHandler {
+                try await task.value
+            } onCancel: {
+                task.cancel()
+            }
+        } catch {
+            discardInvalidGuideResponse(error, from: url)
+            throw error
         }
     }
 
@@ -107,11 +112,22 @@ public actor LiveTVSourceLoader: LiveTVIndexedSourceLoading {
             try await cache.removeDownloadedGuide(sourceID: sourceID, sourceURL: url)
             return result
         }
-        return try await cache.importGuide(
-            data: response.data, sourceID: sourceID, channels: channels,
-            provider: LiveTVGuideSource.provider(for: url), now: now,
-            lookbackDays: lookbackDays, lookaheadDays: lookaheadDays, sourceURL: url
-        )
+        do {
+            return try await cache.importGuide(
+                data: response.data, sourceID: sourceID, channels: channels,
+                provider: LiveTVGuideSource.provider(for: url), now: now,
+                lookbackDays: lookbackDays, lookaheadDays: lookaheadDays, sourceURL: url
+            )
+        } catch {
+            discardInvalidGuideResponse(error, from: url)
+            throw error
+        }
+    }
+
+    private func discardInvalidGuideResponse(_ error: any Error, from url: URL) {
+        guard let failure = error as? LiveTVSourceImportError,
+              failure == .invalidGuide || failure == .guideTooLarge else { return }
+        responses.removeValue(forKey: url)
     }
 
     private func download(
@@ -201,10 +217,10 @@ public actor LiveTVSourceLoader: LiveTVIndexedSourceLoading {
                 throw sizeFailure(tooLargeError, limit: .responseHeaderBytes,
                                   observed: response.expectedContentLength, maximum: maximumBytes)
             }
+            let writer = parsesPlaylist ? nil : try TemporaryMappedData.Writer(maximumBytes: maximumBytes)
             var data = Data()
-            if !parsesPlaylist {
-                data.reserveCapacity(min(maximumBytes, max(0, Int(response.expectedContentLength))))
-            }
+            data.reserveCapacity(65_536)
+            var payloadLimit = maximumBytes
             var parser = parsesPlaylist
                 ? LiveTVPlaylistParser(baseURL: response.url ?? url).makeStream() : nil
             var prefix = Data()
@@ -214,9 +230,9 @@ public actor LiveTVSourceLoader: LiveTVIndexedSourceLoading {
                 if Task.isCancelled {
                     throw LiveTVSourceImportError.cancelled
                 }
-                guard received < maximumBytes else {
+                guard received < payloadLimit else {
                     throw sizeFailure(tooLargeError, limit: .responseBodyBytes,
-                                      observed: Int64(received) + 1, maximum: maximumBytes)
+                                      observed: Int64(received) + 1, maximum: payloadLimit)
                 }
                 received += 1
                 if parsesPlaylist {
@@ -231,7 +247,22 @@ public actor LiveTVSourceLoader: LiveTVIndexedSourceLoading {
                     try parser?.append(byte)
                 } else {
                     data.append(byte)
+                    if received == 2, data.starts(with: [0x1f, 0x8b]) {
+                        payloadLimit = XMLTVResourceLimits.compressedBytes
+                        guard response.expectedContentLength <= payloadLimit else {
+                            throw sizeFailure(tooLargeError, limit: .responseHeaderBytes,
+                                              observed: response.expectedContentLength, maximum: payloadLimit)
+                        }
+                    }
+                    if data.count == 65_536 {
+                        try writer?.append(data)
+                        data.removeAll(keepingCapacity: true)
+                    }
                 }
+            }
+            if let writer {
+                try writer.append(data)
+                data = try writer.finish()
             }
             var playlist: LiveTVPlaylistImport?
             if var parser {

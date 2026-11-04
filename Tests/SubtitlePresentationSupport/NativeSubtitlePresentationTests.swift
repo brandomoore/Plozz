@@ -677,10 +677,21 @@ final class NativeSubtitlePresentationTests: XCTestCase {
         model.beginLiveFeed(permitsTimingOffsets: false)
         var cues: [SubtitleCue] = []
         var reselectionUpdates: [[SubtitleCue]]?
-        engine.onSubtitleCues = {
+        let started = ContinuousClock.now
+        var phase = "initial load"
+        var cueHistory: [String] = []
+        engine.onSubtitleCues = { [weak engine] in
             cues = $0
             model.updateLiveCues($0)
             reselectionUpdates?.append($0)
+            let outputs = engine?.underlyingPlayer?.currentItem?.outputs
+                .compactMap { $0 as? AVPlayerItemLegibleOutput } ?? []
+            cueHistory.append(
+                "\(started.duration(to: .now)) \(phase): time=\(engine?.subtitlePresentationTime ?? .nan), "
+                    + "outputs=\(outputs.map { "\(ObjectIdentifier($0))/suppressed=\($0.suppressesPlayerRendering)" }), "
+                    + "cues=\($0)"
+            )
+            if cueHistory.count > 32 { cueHistory.removeFirst() }
         }
         let window = try await mount(engine, subtitles: model, liveClock: true)
         defer { engine.stop(); window.isHidden = true }
@@ -709,6 +720,7 @@ final class NativeSubtitlePresentationTests: XCTestCase {
         let loadedGroup = try await item.asset.loadMediaSelectionGroup(for: .legible)
         let group = try XCTUnwrap(loadedGroup)
 
+        phase = "engine selects Alternate"
         await engine.seek(to: 2.5)
         engine.selectSubtitleTrack(alternate)
         try await waitUntil(
@@ -723,6 +735,7 @@ final class NativeSubtitlePresentationTests: XCTestCase {
         XCTAssertEqual(engine.subtitlePresentationTime, 2.5, accuracy: 1.0 / 24)
         XCTAssertTrue(engine.underlyingPlayer?.currentItem === item)
         let alternateOption = try XCTUnwrap(item.currentMediaSelection.selectedMediaOption(in: group))
+        phase = "engine selects Full"
         engine.selectSubtitleTrack(full)
         try await waitUntil(
             detail: "After reselecting Full: visible=\(model.primary.compactMap(\.text)), "
@@ -745,22 +758,44 @@ final class NativeSubtitlePresentationTests: XCTestCase {
                           "Reselecting the current track must not clear or republish its paused captions.")
         }
         reselectionUpdates = nil
-        let fullOutput = try XCTUnwrap(item.outputs.compactMap { $0 as? AVPlayerItemLegibleOutput }.first)
-        item.select(alternateOption, in: group)
-        try await waitUntil { item.currentMediaSelection.selectedMediaOption(in: group) == alternateOption }
-        engine.selectSubtitleTrack(alternate)
-        let selection = try XCTUnwrap(engine.defaultSubtitleSelectionTask)
-        await selection.value
-        XCTAssertFalse(item.outputs.compactMap { $0 as? AVPlayerItemLegibleOutput }.first === fullOutput,
-                       "A selection changed outside the engine must still fence the old rendition's output.")
-        try await waitUntil { model.primary.compactMap(\.text) == ["Alternate"] }
+        for adoptionDelay in [0, 10, 100, 500] {
+            phase = "prepare Full before \(adoptionDelay)ms adoption"
+            engine.selectSubtitleTrack(full)
+            try await waitUntil { model.primary.compactMap(\.text) == ["Alpha", "Bravo"] }
+            let fullOutput = try XCTUnwrap(item.outputs.compactMap { $0 as? AVPlayerItemLegibleOutput }.first)
+            phase = "external Alternate \(adoptionDelay)ms"
+            item.select(alternateOption, in: group)
+            try await waitUntil { item.currentMediaSelection.selectedMediaOption(in: group) == alternateOption }
+            if adoptionDelay > 0 {
+                try await Task.sleep(for: .milliseconds(adoptionDelay))
+            }
+            phase = "adopt Alternate \(adoptionDelay)ms"
+            engine.selectSubtitleTrack(alternate)
+            let selection = try XCTUnwrap(engine.defaultSubtitleSelectionTask)
+            await selection.value
+            XCTAssertFalse(item.outputs.compactMap { $0 as? AVPlayerItemLegibleOutput }.first === fullOutput,
+                           "A selection changed outside the engine must still fence the old rendition's output.")
+            try await waitUntil(
+                detail: "After adopting external Alternate (\(adoptionDelay)ms): visible=\(model.primary.compactMap(\.text)), "
+                    + "decoded=\(cues), time=\(engine.subtitlePresentationTime), "
+                    + "selected=\(String(describing: item.currentMediaSelection.selectedMediaOption(in: group))), "
+                    + "history=\(cueHistory.joined(separator: "\n"))"
+            ) { model.primary.compactMap(\.text) == ["Alternate"] }
+            XCTAssertTrue(engine.isPaused)
+            XCTAssertEqual(engine.subtitlePresentationTime, 2.5, accuracy: 1.0 / 24)
+        }
+        phase = "explicit Off"
         engine.selectSubtitleTrack(nil)
         try await waitUntil {
             item.currentMediaSelection.selectedMediaOption(in: group) == nil && cues.isEmpty
         }
+        phase = "rapid Alternate then Full"
         engine.selectSubtitleTrack(alternate)
         engine.selectSubtitleTrack(full)
-        try await waitUntil(detail: "The latest rapid track selection must win after explicit Off") {
+        try await waitUntil(
+            detail: "The latest rapid track selection must win after explicit Off. "
+                + "history=\(cueHistory.joined(separator: "\n"))"
+        ) {
             model.primary.compactMap(\.text) == ["Alpha", "Bravo"]
         }
         XCTAssertTrue(engine.isPaused)
@@ -1189,8 +1224,10 @@ final class SubtitleFixtureServer: @unchecked Sendable {
     init(directory: URL) throws {
         bytesPerSecond = nil
         files = try Dictionary(uniqueKeysWithValues: FileManager.default.contentsOfDirectory(
-            at: directory, includingPropertiesForKeys: nil
-        ).map { ($0.lastPathComponent, try Data(contentsOf: $0)) })
+            at: directory, includingPropertiesForKeys: [.isRegularFileKey]
+        ).filter {
+            try $0.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile == true
+        }.map { ($0.lastPathComponent, try Data(contentsOf: $0)) })
         let parameters = NWParameters.tcp
         parameters.requiredLocalEndpoint = .hostPort(host: .ipv4(.loopback), port: .any)
         listener = try NWListener(using: parameters)

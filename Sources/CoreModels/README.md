@@ -105,11 +105,27 @@ checks, not an atomic transaction with either remote service.
   distinguish preparation/opening/playback, and never export raw error text.
   Non-video live responses use fixed HTML/JSON/XML/empty classifications and
   factual messages, not response snippets or inferred credential expiry.
-- `PlaybackDiagnosticJournal` retains up to 256 events / 128 KiB for 48 hours.
+- `PlaybackDiagnosticJournal` retains up to 256 recent events / 128 KiB for 48
+  hours, plus the last three failed attempts independently (64 events / 64 KiB
+  each; the combined persisted journal is capped at 384 KiB). Failure snapshots
+  survive retries, ordinary event churn and relaunch, and accept late native
+  evidence only for their original session/attempt. They expire after 48 hours.
   Optional typed quality, stage and native evidence fields preserve older
   journals; validation applies both on admission and disk restore. The explicit
   Send diagnostics action includes this local journal, without enabling
   automatic on-demand failure uploads or claiming confirmed backend delivery.
+  Release builds retain the same allowlisted snapshots. Their export uses
+  per-submission aliases and relative ages, including only typed errors,
+  formats, routes, timings and bounded numeric engine buffer/frame/cache facts.
+  Engine descriptions, titles, URLs, credentials and raw traces are excluded.
+ - With `PLOZZ_DIAGNOSTICS` and handoff tracing enabled, `HandoffDiagnostics`
+  appends local text to four rotating 1 MiB segments in `Caches/Plozz`.
+  Typed playback failures, startup timeouts and unavailable engines freeze up
+  to 512 KiB of preceding text plus a session/attempt marker; the last three
+  snapshots survive successful retries. Records are capped at 16 KiB, pending
+  writes at 256 KiB / 512 records, and overflow/storage failures go to OSLog.
+  The existing text snapshot API remains capped at 64 KiB. These local cache
+  files are not added to automatic uploads or the structured manual export.
 - Shared decode/encode helpers: `JSONDecoder.plozz`, `JSONEncoder.plozz`.
 - `SearchDiagnosticJournal` retains consent-scoped per-source search outcomes and
   typed request/page evidence for manual reports, separately from general
@@ -199,8 +215,13 @@ readable and retain their original retry-key derivation.
 
 Failed server targets in the watch outbox have independent persisted retry
 deadlines: 30 seconds initially, doubling to a 15-minute maximum, or longer when
-the server explicitly requests it. Existing drain triggers retry once the deadline
-passes; no polling timer is added. Coalescing preserves the cooldown while keeping
+the server explicitly requests it. Both app shells arm one cancellation-safe wake
+for pending work, retry when connectivity returns, and resume delivery on foreground
+or profile admission. Automatic attempts require the active authorized profile and
+a connected network; suspension or force-quit cannot guarantee background delivery.
+The durable queue resumes on the next launch. Empty queues and live-session-only
+targets do not poll. Tracker/expansion work without a target deadline is paced at
+30 seconds. Coalescing preserves the cooldown while keeping
 the latest desired state, and relaunching cannot reset it. Successful destinations
 and tracker mirrors are not held behind a failed server. Cancellation is not a
 server failure, and authorization is still checked before any retry. Legacy
@@ -364,7 +385,9 @@ These display facts never create selectable tracks or change track preferences.
 The compact row highlights a reported preferred language and counts the rest
 (`English | +9` in one chip) without discarding the complete language inventory.
 `MediaSourceDisplayName` formats ordinary filenames, paths and source labels.
-A filename in a URL's path wins over query hints. When the path has no filename,
+A recognized media-file extension in a URL's path wins over query hints;
+an arbitrary dot in a signed path component does not make it a filename.
+When the path has no filename,
 only `filename` and `file_name` query parameters are accepted, decoded once.
 Conflicting hints, control characters, nested URLs and unrelated query fields supply no filename;
 the picker falls back to the server's other labels and technical metadata.
@@ -372,11 +395,30 @@ Optimized app-hosted tests cover query filename display and control-character
 rejection in the same build configuration used by the version picker.
 Bare query text is never shown as a source label. Cached locator-like names are
 cleaned at presentation time without changing stored values, playback locators
-or source IDs. Only the resulting filename supplies release text or
+or source IDs. Long ASCII hash/token-shaped components without a recognized media
+extension are also excluded from raw names and filename hints, including cached basenames. A readable
+source description or metadata filename supplies the fallback; with none, the
+picker omits the release-name line and keeps the known technical facts. This is
+display-only filtering, not token decoding, provider-specific parsing or a network
+lookup. Ordinary long filenames, recognized media files and Unicode names remain
+intact. Only the resulting filename supplies release text or
 filename-derived edition/quality hints.
 Multiline remote-source labels can identify their release file on a folder-marked
 line, including continuation lines through the file extension; presentation
 extracts that filename rather than displaying the entire provider description.
+Unmarked media filenames are also extracted from multiline descriptions. When
+a structured description supplies a decorated title instead of a filename,
+presentation keeps the readable title and omits repeated resolution, language,
+subtitle and source-status rows. Plain filenames and edition labels remain
+intact. This shared display normalization also covers cached version metadata;
+it never rewrites source IDs, playback locators or stored labels.
+Resolution-only headers with decorative ratings (including partial circles and
+emoji variants) cannot replace the readable title below them. Titles that begin
+with a resolution but contain words or ordinary numbers remain intact.
+Version pickers show the full sanitized filename directly, including its original
+separators, technical suffix, release group and extension. Do not abbreviate it
+into an inferred title or hide it behind another action; the exact filename helps
+distinguish releases even when their structured facts and badges match.
 Original Unicode filenames are retained and the shared card wraps them without
 a line cap. Extensionless URL endpoints are not release filenames,
 so opaque stream paths cannot override a readable source name. Filename extraction

@@ -27,30 +27,39 @@ struct PlozziOSHomeSkeletonRail: View {
     var showsCaption: Bool = CardCaptionSettings.default.showsLabels
     /// Matches Continue Watching's narrower, deeper series-artwork card shape.
     var showsSeriesArtwork: Bool = false
+    var isLibraryRow = false
 
     var body: some View {
         PlozziOSHomeRailLayout { rail(metrics: $0) }
     }
 
     private func rail(metrics: PlozzMetrics) -> some View {
-        PlozziOSMediaSection(title: title, artworkInset: cardStyle == .framed ? metrics.cardInset : 0) {
+        PlozziOSMediaSection(title: title, artworkInset: !isLibraryRow && cardStyle == .framed ? metrics.cardInset : 0) {
             ScrollView(.horizontal) {
                 // Deliberately NOT lazy: the placeholders are cheap, and a lazy
                 // stack would only materialise the ones already on screen — the
                 // opposite of what a "never show a blank row" placeholder is for.
                 HStack(
                     alignment: .top,
-                    spacing: PlozziOSMediaRailLayout.stackSpacing(
+                    spacing: isLibraryRow ? PlozziOSMediaRailLayout.visibleGap(metrics: metrics) : PlozziOSMediaRailLayout.stackSpacing(
                         metrics: metrics,
                         cardStyle: cardStyle
                     )
                 ) {
                     ForEach(0..<cardCount, id: \.self) { _ in
-                        SkeletonCardView(
-                            style: style == .landscape ? .landscape : .poster,
-                            showsCaption: showsCaption,
-                            showsSeriesArtwork: showsSeriesArtwork
-                        )
+                        if isLibraryRow {
+                            PlozziOSHomeLibraryCard(
+                                library: nil, artworkSource: nil,
+                                width: metrics.usesDesktopSizing ? metrics.landscapeWidth
+                                    : metrics.density.iOSHomeLibraryWidth(horizontalSizeClass: horizontalSizeClass)
+                            )
+                            .environment(\.plozzCardCaptionSettings, CardCaptionSettings(showsLabels: showsCaption))
+                        } else {
+                            SkeletonCardView(
+                                style: style == .landscape ? .landscape : .poster,
+                                showsCaption: showsCaption,
+                                showsSeriesArtwork: showsSeriesArtwork
+                            )
                             .frame(
                                 width: metrics.cardSlotWidth(
                                     for: style,
@@ -58,13 +67,17 @@ struct PlozziOSHomeSkeletonRail: View {
                                     showsSeriesArtwork: showsSeriesArtwork
                                 )
                             )
+                        }
                     }
                 }
             }
             .contentMargins(
                 .horizontal,
-                PlozziOSMediaRailLayout.artworkAlignedInset(
-                    PlozziOSPageLayout.horizontalInset(for: horizontalSizeClass),
+                isLibraryRow ? PlozziOSPageLayout.horizontalInset(
+                    for: horizontalSizeClass, usesDesktopSizing: metrics.usesDesktopSizing
+                ) - (metrics.usesDesktopSizing && cardStyle == .framed ? metrics.cardInset : 0)
+                : PlozziOSMediaRailLayout.artworkAlignedInset(
+                    PlozziOSPageLayout.horizontalInset(for: horizontalSizeClass, usesDesktopSizing: metrics.usesDesktopSizing),
                     metrics: metrics, cardStyle: cardStyle),
                 for: .scrollContent
             )
@@ -88,6 +101,7 @@ struct PlozziOSHomeSkeletonScreen: View {
     let heroActive: Bool
     var logoSize: HeroLogoSize = .default
     var showsPosterCaptions: Bool = CardCaptionSettings.default.showsLabels
+    var showsLibraryCaptions: Bool = CardCaptionSettings.default.showsLabels
     var continueWatchingLayout: ContinueWatchingCardLayout = .landscape
     var continueWatchingShowsSeriesArtwork = true
     var continueWatchingShowsCaption = false
@@ -107,7 +121,9 @@ struct PlozziOSHomeSkeletonScreen: View {
                 showsSeriesArtwork: continueWatchingShowsSeriesArtwork
             )
             PlozziOSHomeSkeletonRail(title: Text(verbatim: " "), style: .poster, showsCaption: showsPosterCaptions)
-            PlozziOSHomeSkeletonRail(title: Text(verbatim: " "), style: .poster, showsCaption: showsPosterCaptions)
+            PlozziOSHomeSkeletonRail(
+                title: Text(verbatim: " "), style: .landscape, showsCaption: showsLibraryCaptions, isLibraryRow: true
+            )
         }
         .scrollDisabled(true)
         .accessibilityLabel("Loading Home")
@@ -129,6 +145,7 @@ struct PlozziOSHomeHeroSkeleton: View {
     @Environment(\.themePalette) private var palette
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.plozziOSHeroContainerHeight) private var heroContainerHeight
+    @Environment(\.plozziOSIsRunningOnMac) private var isRunningOnMac
 
     let style: HeroArtworkStyle
     var logoSize: HeroLogoSize = .default
@@ -148,7 +165,8 @@ struct PlozziOSHomeHeroSkeleton: View {
                     style: style,
                     surfaceRole: .home,
                     dynamicTypeSize: dynamicTypeSize,
-                    containerHeight: heroContainerHeight
+                    containerHeight: heroContainerHeight,
+                    isRunningOnMac: isRunningOnMac
                 )
             )
             .overlay {
@@ -176,13 +194,20 @@ struct PlozziOSHomeHeroSkeleton: View {
         VStack(alignment: isCompact ? .center : .leading, spacing: 9) {
             // Title block — the real hero shows a logo capped at this height, or
             // a two-line .largeTitle. Reserve the same box.
-            bar(width: isCompact ? 260 : 380, height: isCompact ? 95 : 130)
+            if isRunningOnMac {
+                let budget = HeroLogoSizing.Layout.desktop.budget
+                bar(width: budget.width * logoSize.scale, height: budget.height * logoSize.scale)
+            } else {
+                bar(width: isCompact ? 260 : 380, height: isCompact ? 95 : 130)
+            }
             // Genres — .subheadline, one line.
             textBar(font: .subheadline, width: isCompact ? 220 : 300)
             // Overview — .subheadline, up to three lines.
-            textBar(font: .subheadline, width: isCompact ? 300 : 460)
-            textBar(font: .subheadline, width: isCompact ? 280 : 430)
-            textBar(font: .subheadline, width: isCompact ? 200 : 320)
+            textBar(font: .subheadline, width: isRunningOnMac ? 360 : (isCompact ? 300 : 460))
+            textBar(font: .subheadline, width: isRunningOnMac ? 320 : (isCompact ? 280 : 430))
+            if !isRunningOnMac {
+                textBar(font: .subheadline, width: isCompact ? 200 : 320)
+            }
         }
     }
 

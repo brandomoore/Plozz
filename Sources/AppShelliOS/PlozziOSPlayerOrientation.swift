@@ -14,6 +14,11 @@ public enum PlozziOSWindowOrientation {
 
     public static func supportedOrientations(for window: UIWindow?) -> UIInterfaceOrientationMask {
         guard let window else { return .all }
+        return owner(for: window)?.supportedInterfaceOrientations
+            ?? browsingMask(for: window.traitCollection.userInterfaceIdiom, windowSize: window.bounds.size)
+    }
+
+    static func owner(for window: UIWindow) -> PlozziOSOrientationHostingController? {
         var controller = window.rootViewController
         var presentedPlayer: PlozziOSOrientationHostingController?
         while let current = controller {
@@ -22,9 +27,7 @@ public enum PlozziOSWindowOrientation {
             }
             controller = current.presentedViewController
         }
-        return presentedPlayer?.supportedInterfaceOrientations
-            ?? owners.object(forKey: window)?.supportedInterfaceOrientations
-            ?? browsingMask(for: window.traitCollection.userInterfaceIdiom, windowSize: window.bounds.size)
+        return presentedPlayer ?? owners.object(forKey: window)
     }
 
     static func browsingMask(for idiom: UIUserInterfaceIdiom, windowSize: CGSize = .zero) -> UIInterfaceOrientationMask {
@@ -86,6 +89,8 @@ final class PlozziOSPlayerOrientation {
         case .auto: .all
         case .landscape: .landscape
         case .portrait: .portrait
+        case .landscapeLeft: .landscapeRight
+        case .landscapeRight: .landscapeLeft
         }
     }
 
@@ -154,6 +159,18 @@ final class PlozziOSOrientationHostingController: UIHostingController<AnyView> {
     private var requestGeneration = 0
     private var hasAppeared = false
     private var geometryTask: Task<Void, Error>?
+    private let slideTransition = PlozziOSPlayerSlideTransition()
+    private var landscapeDirection = PlozziOSLandscapeDirection()
+    private var landscapeTarget: UIInterfaceOrientation?
+    private var motionSuspended = false
+
+    var tracksLandscapeMotion: Bool {
+        guard let window = viewIfLoaded?.window else { return false }
+        return hasAppeared && !motionSuspended && orientation.host === self
+            && orientation.isAvailable && orientation.isPlaybackActive && orientation.preference == .landscape
+            && window.isKeyWindow && PlozziOSWindowOrientation.owner(for: window) === self
+            && window.windowScene?.activationState == .foregroundActive
+    }
 
     init(
         rootView: AnyView, orientation: PlozziOSPlayerOrientation,
@@ -172,6 +189,14 @@ final class PlozziOSOrientationHostingController: UIHostingController<AnyView> {
         super.init(rootView: rootView)
         modalPresentationStyle = .fullScreen
         orientation.host = self
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(suspendLandscapeMotion),
+            name: UIApplication.willResignActiveNotification, object: nil
+        )
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(resumeLandscapeMotion),
+            name: UIApplication.didBecomeActiveNotification, object: nil
+        )
     }
 
     @MainActor required dynamic init?(coder: NSCoder) {
@@ -179,14 +204,32 @@ final class PlozziOSOrientationHostingController: UIHostingController<AnyView> {
     }
 
     override var supportedInterfaceOrientations: UIInterfaceOrientationMask {
-        !ownsWindowOrientation && hasPendingPresentation ? .all : orientation.supportedMask
+        if isBeingPresented, orientation.isPlaybackActive { return orientation.supportedMask }
+        let requested = orientation.supportedMask
+        guard !ownsWindowOrientation, !isBeingDismissed, hasPendingPresentation,
+              let scene = (viewIfLoaded?.window ?? presentingViewController?.viewIfLoaded?.window)?.windowScene,
+              let current = PlozziOSPlayerOrientation.mask(for: currentInterfaceOrientation(scene)) else {
+            return requested
+        }
+        // Let an existing pre-play sheet finish in its current orientation,
+        // without unlocking unrelated orientations when a playback menu opens.
+        return requested.union(current)
     }
 
     override var preferredInterfaceOrientationForPresentation: UIInterfaceOrientation {
+        if orientation.supportedMask == .landscapeLeft { return .landscapeLeft }
+        if orientation.supportedMask == .landscapeRight { return .landscapeRight }
+        if orientation.supportedMask == .landscape {
+            switch UIDevice.current.orientation {
+            case .landscapeLeft: return .landscapeRight
+            case .landscapeRight: return .landscapeLeft
+            default: break
+            }
+        }
         let current = presentingViewController?.view.window?.windowScene?.effectiveGeometry.interfaceOrientation
         if let current, let mask = PlozziOSPlayerOrientation.mask(for: current),
-           !mask.intersection(orientation.requestedMask).isEmpty { return current }
-        return orientation.requestedMask == .landscape ? .landscapeRight : .portrait
+           !mask.intersection(orientation.supportedMask).isEmpty { return current }
+        return orientation.supportedMask == .landscape ? .landscapeRight : .portrait
     }
 
     override func viewDidAppear(_ animated: Bool) {
@@ -201,6 +244,7 @@ final class PlozziOSOrientationHostingController: UIHostingController<AnyView> {
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         refreshAvailability()
+        updateLandscapeMotion()
         reportInterfaceOrientation()
     }
 
@@ -231,12 +275,14 @@ final class PlozziOSOrientationHostingController: UIHostingController<AnyView> {
 
     override func viewDidDisappear(_ animated: Bool) {
         super.viewDidDisappear(animated)
+        PlozziOSLandscapeMotion.shared.stop(for: self)
         // An embedded live owner can be covered by its own controls without ending playback.
         if isBeingDismissed || (!ownsWindowOrientation && presentingViewController == nil) { tearDown() }
     }
 
     func tearDown() {
         hasAppeared = false
+        stopLandscapeMotion()
         requestGeneration += 1
         geometryTask?.cancel()
         geometryTask = nil
@@ -244,6 +290,26 @@ final class PlozziOSOrientationHostingController: UIHostingController<AnyView> {
             orientation.host = nil
         }
         releaseWindowOrientation()
+    }
+
+    func prepareForDismissal() {
+        hasAppeared = false
+        stopLandscapeMotion()
+        requestGeneration += 1
+        geometryTask?.cancel()
+        geometryTask = nil
+        if orientation.isAvailable, let window = viewIfLoaded?.window,
+           view.bounds.width > view.bounds.height,
+           PlozziOSWindowOrientation.browsingMask(
+               for: window.traitCollection.userInterfaceIdiom, windowSize: window.bounds.size
+           ) == .portrait {
+            if !UIAccessibility.isReduceMotionEnabled, slideTransition.prepare(view) {
+                transitioningDelegate = slideTransition
+            } else {
+                modalTransitionStyle = .crossDissolve
+            }
+        }
+        invalidateOrientationPreferences()
     }
 
     private func releaseWindowOrientation() {
@@ -285,6 +351,7 @@ final class PlozziOSOrientationHostingController: UIHostingController<AnyView> {
                 releaseWindowOrientation()
             }
         }
+        updateLandscapeMotion()
         invalidateOrientationPreferences()
         guard hasAppeared, orientation.isAvailable, let scene = view.window?.windowScene,
               scene.activationState == .foregroundActive else { return }
@@ -303,7 +370,7 @@ final class PlozziOSOrientationHostingController: UIHostingController<AnyView> {
                       self.hasAppeared, self.orientation.isAvailable,
                       self.viewIfLoaded?.window?.windowScene === scene,
                       scene.activationState == .foregroundActive else { return }
-                let mask = self.orientation.supportedMask
+                let mask = self.geometryMask
                 if let current = PlozziOSPlayerOrientation.mask(for: self.currentInterfaceOrientation(scene)),
                    !mask.intersection(current).isEmpty {
                     self.orientation.clearGeometryFailure()
@@ -335,6 +402,52 @@ final class PlozziOSOrientationHostingController: UIHostingController<AnyView> {
 
     private var canRequestGeometry: Bool {
         !hasPendingPresentation && transitionCoordinator == nil && viewIfLoaded?.window?.isKeyWindow == true
+    }
+
+    private var geometryMask: UIInterfaceOrientationMask {
+        if orientation.isPlaybackActive, orientation.preference == .landscape,
+           let landscapeTarget, let mask = PlozziOSPlayerOrientation.mask(for: landscapeTarget) {
+            return mask
+        }
+        return orientation.supportedMask
+    }
+
+    func receiveLandscapeGravity(x: Double, y: Double, z: Double) {
+        guard tracksLandscapeMotion, !hasPendingPresentation else {
+            landscapeDirection = .init()
+            return
+        }
+        guard let direction = landscapeDirection.update(x: x, y: y, z: z),
+              landscapeTarget != direction else { return }
+        landscapeTarget = direction
+        applyOrientation()
+    }
+
+    private func updateLandscapeMotion() {
+        if tracksLandscapeMotion {
+            PlozziOSLandscapeMotion.shared.start(for: self)
+        } else {
+            stopLandscapeMotion()
+        }
+    }
+
+    private func stopLandscapeMotion() {
+        PlozziOSLandscapeMotion.shared.stop(for: self)
+        landscapeDirection = .init()
+        landscapeTarget = nil
+    }
+
+    @objc private func suspendLandscapeMotion() {
+        motionSuspended = true
+        stopLandscapeMotion()
+        requestGeneration += 1
+        geometryTask?.cancel()
+        geometryTask = nil
+    }
+
+    @objc private func resumeLandscapeMotion() {
+        motionSuspended = false
+        applyOrientation()
     }
 
     private var hasPendingPresentation: Bool {
@@ -598,9 +711,17 @@ struct PlozziOSPlayerPresentation<Content: View>: UIViewControllerRepresentable 
             if let host {
                 guard request?.id == presentedID else {
                     transitioning = true
+                    if let transition = host.transitionCoordinator,
+                       transition.animate(alongsideTransition: nil, completion: { [weak self] _ in
+                           self?.transitioning = false
+                           self?.reconcile()
+                       }) {
+                        return
+                    }
                     let window = host.viewIfLoaded?.window
-                    host.tearDown()
+                    host.prepareForDismissal()
                     host.dismiss(animated: true) { [weak self] in
+                        host.tearDown()
                         guard let self else { return }
                         self.host = nil
                         self.presentedID = nil
@@ -620,7 +741,13 @@ struct PlozziOSPlayerPresentation<Content: View>: UIViewControllerRepresentable 
             var presenter: UIViewController = anchor
             while let parent = presenter.parent { presenter = parent }
             guard presenter.presentedViewController == nil, !presenter.isBeingDismissed else { return }
-            let orientation = PlozziOSPlayerOrientation(preference: preference, isPlaybackActive: false)
+            let orientation = PlozziOSPlayerOrientation(preference: preference, isPlaybackActive: true)
+            if let window = presenter.view.window {
+                orientation.updateAvailability(PlozziOSPlayerOrientation.supportsPreference(
+                    idiom: presenter.traitCollection.userInterfaceIdiom,
+                    windowSize: window.bounds.size, screenSize: window.screen.bounds.size
+                ))
+            }
             orientation.close = { [weak self] in self?.close(request.id) }
             let host = PlozziOSOrientationHostingController(
                 rootView: makeContent(request, orientation), orientation: orientation

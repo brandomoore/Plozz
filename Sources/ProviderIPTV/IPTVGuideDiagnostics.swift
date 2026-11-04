@@ -9,6 +9,7 @@ final class IPTVGuideDiagnostics {
     enum Endpoint: String { case xtream = "get_simple_data_table", xmltv }
     enum Fallback: String { case empty, malformed, unavailable }
     enum Stage: String { case lookup, request, download, parse }
+    enum RedirectFailure: String { case invalidDestination, downgrade, credentials }
 
     final class Request: @unchecked Sendable {
         private let lock = NSLock()
@@ -20,6 +21,8 @@ final class IPTVGuideDiagnostics {
         private var bytes = 0
         private var cached = false
         private var reusedFailure = false
+        private var redirects = 0
+        private var redirectFailure: RedirectFailure?
 
         func requesting() {
             lock.withLock {
@@ -40,7 +43,9 @@ final class IPTVGuideDiagnostics {
 
         func consumed(_ count: Int) { lock.withLock { bytes += count } }
         func parsing() { lock.withLock { stage = .parse } }
-        func reuseMissingGuide() { lock.withLock { reusedFailure = true } }
+        func redirected() { lock.withLock { redirects += 1 } }
+        func blockedRedirect(_ reason: RedirectFailure) { lock.withLock { redirectFailure = reason } }
+        func reuseGuideFailure() { lock.withLock { reusedFailure = true } }
         func cacheHit(bytes: Int) {
             lock.withLock {
                 cached = true
@@ -59,6 +64,7 @@ final class IPTVGuideDiagnostics {
                     + " rows=\(rows.map(String.init) ?? "unknown") reason=\(failure?.reason.rawValue ?? "none")"
                     + " networkCode=\(failure?.networkCode.map(String.init) ?? "unknown")"
                     + " reusedFailure=\(reusedFailure)"
+                    + " redirects=\(redirects) redirectBlocked=\(redirectFailure?.rawValue ?? "none")"
                     + " elapsedMs=\(IPTVGuideDiagnostics.milliseconds(since: started))"
             }
         }

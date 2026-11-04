@@ -31,7 +31,7 @@ struct LiveTVSourcesNavigationFixture: View {
                     } else {
                         ScrollView {
                             VStack(alignment: .leading, spacing: 24) {
-                                SettingsPageHeader("Sources")
+                                SettingsPageHeader(SettingsCopy.tvSources)
                                 LiveTVShellSourcesContent(
                                     runtime: fixture.runtime, library: fixture.library,
                                     accounts: fixture.accounts, connectServer: nil, didConfigurePlaylist: {}

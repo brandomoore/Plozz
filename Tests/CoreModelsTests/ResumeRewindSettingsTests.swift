@@ -77,13 +77,10 @@ final class ResumeRewindSettingsTests: XCTestCase {
 
     func testOffIsZeroSeconds() {
         XCTAssertEqual(ResumeRewindInterval.off.seconds, 0)
-        XCTAssertEqual(ResumeRewindInterval.off.title, "0 sec",
-                       "Off reads as 0 sec so the range shows as 0–60 seconds")
     }
 
     func testSixtySecondMaximum() {
         XCTAssertEqual(ResumeRewindInterval.sixty.seconds, 60)
-        XCTAssertEqual(ResumeRewindInterval.sixty.title, "60 sec")
         XCTAssertEqual(ResumeRewindInterval.allCases.map(\.rawValue).max(), 60,
                        "60s is the largest preset")
     }
@@ -97,10 +94,13 @@ final class ResumeRewindSettingsTests: XCTestCase {
         )
     }
 
-    func testTitleReadsAsSeconds() {
-        XCTAssertEqual(ResumeRewindInterval.off.title, "0 sec")
-        XCTAssertEqual(ResumeRewindInterval.one.title, "1 sec")
-        XCTAssertEqual(ResumeRewindInterval.twentyFive.title, "25 sec")
+    func testTitleFormatsEveryPresetAsSecondsInCurrentLocale() {
+        for interval in ResumeRewindInterval.allCases {
+            let expected = Duration.seconds(interval.rawValue).formatted(
+                .units(allowed: [.seconds], width: .abbreviated).locale(.current)
+            )
+            XCTAssertEqual(interval.title, expected)
+        }
     }
 
     func testFormattedIntervalTitlesUseExplicitAppLocale() {

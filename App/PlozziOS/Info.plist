@@ -68,6 +68,8 @@
 	<string>Plozz uses the camera to scan the setup code shown on your other device.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Plozz uses your local network to discover media servers and network shares.</string>
+	<key>NSMotionUsageDescription</key>
+	<string>Plozz uses device motion to follow your phone's landscape direction during playback.</string>
 	<key>OMDBAPIKey</key>
 	<string>$(OMDB_API_KEY)</string>
 	<key>PlozzDevelopmentFeature</key>

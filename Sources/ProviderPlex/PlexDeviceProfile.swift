@@ -1,4 +1,5 @@
 import Foundation
+import CoreModels
 
 /// Stable identity Plozz presents to Plex.tv and Plex Media Servers.
 ///
@@ -22,20 +23,57 @@ public struct PlexDeviceProfile: Sendable, Hashable {
 
     public init(
         product: String = "Plozz",
-        version: String = "1.0",
-        device: String = "Apple TV",
-        platform: String = "tvOS",
-        platformVersion: String = "18.0",
-        deviceName: String = "Plozz",
+        version: String = AppVersionIdentity.current.marketingVersion,
+        device: String? = nil,
+        platform: String? = nil,
+        platformVersion: String? = nil,
+        deviceName: String? = nil,
         clientIdentifier: String
     ) {
         self.product = product
         self.version = version
-        self.device = device
-        self.platform = platform
-        self.platformVersion = platformVersion
-        self.deviceName = deviceName
+        self.device = device ?? Self.currentDevice
+        self.platform = platform ?? Self.currentPlatform
+        let osVersion = ProcessInfo.processInfo.operatingSystemVersion
+        self.platformVersion = platformVersion ?? (osVersion.patchVersion == 0
+            ? "\(osVersion.majorVersion).\(osVersion.minorVersion)"
+            : "\(osVersion.majorVersion).\(osVersion.minorVersion).\(osVersion.patchVersion)")
+        self.deviceName = deviceName ?? DeviceDisplayName.current(fallback: self.device)
         self.clientIdentifier = clientIdentifier
+    }
+
+    private static var currentPlatform: String {
+        #if os(tvOS)
+        "tvOS"
+        #elseif os(iOS)
+        "iOS"
+        #elseif os(macOS)
+        "macOS"
+        #else
+        "Unknown"
+        #endif
+    }
+
+    private static var currentDevice: String {
+        #if targetEnvironment(simulator)
+        let model = ProcessInfo.processInfo.environment["SIMULATOR_MODEL_IDENTIFIER"] ?? ""
+        #else
+        var info = utsname()
+        uname(&info)
+        let bytes = Mirror(reflecting: info.machine).children
+            .compactMap { $0.value as? Int8 }
+            .prefix { $0 != 0 }
+            .map { UInt8(bitPattern: $0) }
+        let model = String(decoding: bytes, as: UTF8.self)
+        #endif
+        return deviceFamily(modelIdentifier: model)
+    }
+
+    static func deviceFamily(modelIdentifier: String) -> String {
+        if modelIdentifier.hasPrefix("iPhone") { return "iPhone" }
+        if modelIdentifier.hasPrefix("iPad") { return "iPad" }
+        if modelIdentifier.hasPrefix("AppleTV") { return "Apple TV" }
+        return modelIdentifier.isEmpty ? "Apple device" : modelIdentifier
     }
 
     /// The `X-Plex-*` headers (plus `Accept`) sent on every request. When a

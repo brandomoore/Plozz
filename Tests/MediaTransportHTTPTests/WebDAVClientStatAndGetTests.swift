@@ -1,3 +1,4 @@
+import CoreModels
 import XCTest
 @testable import MediaTransportHTTP
 @testable import TestSupportNetworking
@@ -36,6 +37,107 @@ final class WebDAVClientStatAndGetTests: XCTestCase {
     }
 
     // MARK: - stat (Depth:0)
+
+    private func duplicateResponse(properties: String) -> String {
+        """
+        <D:response><D:href>/dav/Movie.mkv</D:href>
+          <D:propstat><D:prop>\(properties)</D:prop>
+            <D:status>HTTP/1.1 200 OK</D:status>
+          </D:propstat>
+        </D:response>
+        """
+    }
+
+    private var duplicateProperties: String {
+        """
+        <D:resourcetype/><D:getcontentlength>4096</D:getcontentlength>
+        <D:getetag>"private-validator"</D:getetag>
+        <D:getlastmodified>Mon, 01 Jan 2024 00:00:00 GMT</D:getlastmodified>
+        <D:getcontenttype>video/x-matroska</D:getcontenttype>
+        """
+    }
+
+    func testIdenticalDuplicateFileIsUsableForListingAndStat() async throws {
+        let origin = TransportOrigin(url: URL(string: "https://nas.example.com/")!)!
+        let root = makeRoot(origin: origin)
+        let client = makeClient()
+        let response = duplicateResponse(properties: duplicateProperties)
+        let sibling = response.replacingOccurrences(of: "Movie.mkv", with: "Sibling.mkv")
+        let payload = Data("<D:multistatus xmlns:D=\"DAV:\">\(response)\(sibling)\(response)</D:multistatus>".utf8)
+        for role: TransportRole in [.metadata, .playback] {
+            let key = try makeKey(origin: origin, role: role)
+            StubURLProtocol.queue(StubResponse(statusCode: 207, body: payload), for: origin.url(path: "/dav/")!)
+            let listing = try await client.listChildren(
+                root: root, path: "/dav/", depth: .one, sessionKey: key, credential: .anonymous, trustPolicy: .system
+            )
+            XCTAssertEqual(listing.map(\.resolvedPath), ["/dav/Movie.mkv", "/dav/Sibling.mkv"])
+            StubURLProtocol.queue(StubResponse(statusCode: 207, body: payload), for: origin.url(path: "/dav/Movie.mkv")!)
+            let entry = try await client.properties(
+                root: root, path: "/dav/Movie.mkv", sessionKey: key, credential: .anonymous, trustPolicy: .system
+            )
+            XCTAssertEqual(entry, listing.first)
+            XCTAssertEqual(entry.contentLength, 4096)
+            XCTAssertEqual(entry.etag?.rawValue, "\"private-validator\"")
+        }
+    }
+
+    func testConflictingDuplicatesStillRejectStatAndReportOnlyFieldAgreement() async throws {
+        let wasEnabled = HandoffDiagnostics.isEnabled
+        HandoffDiagnostics.setEnabled(true)
+        defer { HandoffDiagnostics.setEnabled(wasEnabled) }
+        let origin = TransportOrigin(url: URL(string: "https://nas.example.com/")!)!
+        let root = makeRoot(origin: origin)
+        let variants = [
+            ("4096", "8192", "sizeEqual=false"),
+            ("private-validator", "different-private-validator", "etagEqual=false"),
+            ("video/x-matroska", "video/mp4", "typeEqual=false"),
+            ("<D:resourcetype/>", "<D:resourcetype><D:collection/></D:resourcetype>", "kindEqual=false"),
+            ("<D:getetag>\"private-validator\"</D:getetag>", "", "etagEqual=false")
+        ]
+        for (old, new, diagnostic) in variants {
+            let first = duplicateResponse(properties: duplicateProperties)
+            let second = duplicateResponse(properties: duplicateProperties.replacingOccurrences(of: old, with: new))
+            let payload = Data("<D:multistatus xmlns:D=\"DAV:\">\(first)\(second)\(first)</D:multistatus>".utf8)
+            StubURLProtocol.queue(StubResponse(statusCode: 207, body: payload), for: origin.url(path: "/dav/Movie.mkv")!)
+            do {
+                _ = try await makeClient().properties(
+                    root: root, path: "/dav/Movie.mkv", sessionKey: makeKey(origin: origin),
+                    credential: .anonymous, trustPolicy: .system
+                )
+                XCTFail("Conflicting metadata must not become a usable stat: \(diagnostic)")
+            } catch let error as TransportError {
+                guard case .malformedMultistatus = error else { return XCTFail("Unexpected \(error)") }
+            }
+            let line = try XCTUnwrap(HandoffDiagnostics.persistentPlaybackLogText()
+                .components(separatedBy: "\n").last { $0.contains("webdav STAT_CONFLICT") })
+            XCTAssertTrue(line.contains(diagnostic), line)
+            XCTAssertFalse(line.contains("private"))
+            XCTAssertFalse(line.contains("Movie"))
+            XCTAssertFalse(line.contains("example"))
+        }
+    }
+
+    func testConflictingDatesWithoutStrongIdentityStillRejectStat() async throws {
+        let origin = TransportOrigin(url: URL(string: "https://nas.example.com/")!)!
+        for replacement in ["<D:getetag>W/\"private-validator\"</D:getetag>", ""] {
+            let properties = duplicateProperties.replacingOccurrences(
+                of: "<D:getetag>\"private-validator\"</D:getetag>", with: replacement
+            )
+            let first = duplicateResponse(properties: properties)
+            let second = duplicateResponse(properties: properties.replacingOccurrences(of: "00:00:00", with: "00:00:01"))
+            let payload = Data("<D:multistatus xmlns:D=\"DAV:\">\(first)\(second)</D:multistatus>".utf8)
+            StubURLProtocol.queue(StubResponse(statusCode: 207, body: payload), for: origin.url(path: "/dav/Movie.mkv")!)
+            do {
+                _ = try await makeClient().properties(
+                    root: makeRoot(origin: origin), path: "/dav/Movie.mkv",
+                    sessionKey: makeKey(origin: origin), credential: .anonymous, trustPolicy: .system
+                )
+                XCTFail("Date-based identity remains ambiguous")
+            } catch let error as TransportError {
+                guard case .malformedMultistatus = error else { return XCTFail("Unexpected \(error)") }
+            }
+        }
+    }
 
     func testPropertiesReturnsSelfEntryForFile() async throws {
         let origin = TransportOrigin(url: URL(string: "https://nas.example.com/")!)!

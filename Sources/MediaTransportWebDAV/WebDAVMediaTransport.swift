@@ -134,7 +134,7 @@ final class WebDAVMediaTransportSession: MediaTransportSession, @unchecked Senda
     func isHealthy() async -> Bool { true }
 }
 
-final class WebDAVMediaTransportFileSystem: MediaTransportFileSystem, @unchecked Sendable {
+final class WebDAVMediaTransportFileSystem: MediaTransportPreparationWarmingFileSystem, @unchecked Sendable {
     static let maximumSmallFileSize = 16 * 1_024 * 1_024
 
     private let client: WebDAVClient
@@ -251,6 +251,7 @@ final class WebDAVMediaTransportFileSystem: MediaTransportFileSystem, @unchecked
             // Without DAV metadata, only that exact resource is comparable
             // across opens; signed delivery URLs must not become locator state.
             guard probe.resourceURL.absoluteString == url.absoluteString else {
+                HandoffDiagnostics.emit("webdav OPEN_REJECTED check=redirected-file-without-dav-validator")
                 throw MediaTransportError.unsupportedRange(
                     reason: "redirected WebDAV files require a stable DAV metadata validator"
                 )
@@ -291,6 +292,49 @@ final class WebDAVMediaTransportFileSystem: MediaTransportFileSystem, @unchecked
     }
 
     func openSource(for locator: NetworkFileLocator) async throws -> MediaTransportSourceLease {
+        MediaTransportSourceLease(source: try await openByteSource(for: locator))
+    }
+
+    func prepareSource(for locator: NetworkFileLocator) async throws -> MediaTransportSourceLease {
+        let source = try await openByteSource(for: locator)
+        let container = (locator.relativePath as NSString).pathExtension.lowercased()
+        let includesTail = ["mp4", "m4v", "mov", "mkv", "webm"]
+            .contains(container)
+        let prepared = try await source.preparingOpeningBytes(
+            includeTail: includesTail,
+            maximumCachedBytes: (container == "iso" ? 64 : 40) * 1024 * 1024
+        )
+        return MediaTransportSourceLease(source: prepared)
+    }
+
+    func openPreparationSource(for locator: NetworkFileLocator) async throws -> MediaTransportSourceLease {
+        let source = try await openByteSource(for: locator)
+        let isDisc = (locator.relativePath as NSString).pathExtension.lowercased() == "iso"
+        return MediaTransportSourceLease(
+            source: source.allowingPreparation(maximumCachedBytes: (isDisc ? 64 : 40) * 1024 * 1024)
+        )
+    }
+
+    func warmPreparedSource(
+        for locator: NetworkFileLocator, source: any MediaTransportByteSource
+    ) async throws {
+        let container = (locator.relativePath as NSString).pathExtension.lowercased()
+        // The native disc probe discovers ISO extents; do not put a speculative
+        // multi-megabyte prefix ahead of its first useful metadata read.
+        guard container != "iso" else { return }
+        try await WebDAVByteSource.warmOpeningBytes(
+            source: source, includeTail: ["mp4", "m4v", "mov", "mkv", "webm"].contains(container)
+        )
+    }
+
+    func revalidatePreparedSource(for locator: NetworkFileLocator) async throws {
+        try validateLocator(locator)
+        try Task.checkCancellation()
+        _ = try await validatedOpeningMetadata(for: locator)
+        try Task.checkCancellation()
+    }
+
+    private func validateLocator(_ locator: NetworkFileLocator) throws {
         guard locator.accountID == accountID,
               locator.credentialRevision == credentialRevision else {
             throw MediaTransportError.invalidInput(reason: "locator session mismatch")
@@ -298,10 +342,15 @@ final class WebDAVMediaTransportFileSystem: MediaTransportFileSystem, @unchecked
         guard locator.representation.consistency == .changeDetecting,
               locator.representation.identity.kind == .strongETag
                 || locator.representation.identity.kind == .modificationTime else {
+            HandoffDiagnostics.emit("webdav OPEN_REJECTED check=unsupported-locator-validator")
             throw MediaTransportError.unsupportedRange(
                 reason: "WebDAV playback requires an ETag or modification-time representation"
             )
         }
+    }
+
+    private func openByteSource(for locator: NetworkFileLocator) async throws -> WebDAVByteSource {
+        try validateLocator(locator)
         let absolute = try absolutePath(forRelative: locator.relativePath)
         guard let url = root.origin.url(path: absolute) else {
             throw MediaTransportError.invalidInput(reason: "could not build WebDAV URL")
@@ -326,19 +375,12 @@ final class WebDAVMediaTransportFileSystem: MediaTransportFileSystem, @unchecked
         for locator: NetworkFileLocator,
         url: URL,
         reportDeliveryConnectionFailure: Bool = false
-    ) async throws -> MediaTransportSourceLease {
+    ) async throws -> WebDAVByteSource {
         try Task.checkCancellation()
         // Revalidate the stable DAV identity before opening a delivery grant.
         // This also protects resumed downloads whose locator was persisted.
-        let metadata = try await openingMetadata(relativePath: locator.relativePath)
-        let current = metadata.entry
+        let metadata = try await validatedOpeningMetadata(for: locator)
         let identity = locator.representation.identity
-        let identityMatches = identity.kind == .strongETag
-            ? current.strongETag == identity.value
-            : current.modifiedAt == identity.modifiedAt
-        guard current.kind == .file, identityMatches, current.size == locator.representation.size else {
-            throw MediaTransportError.sourceChanged(reason: "WebDAV metadata changed since locator creation")
-        }
         let probe: RangeProbeResult
         if let discovered = metadata.probe {
             probe = discovered
@@ -346,11 +388,15 @@ final class WebDAVMediaTransportFileSystem: MediaTransportFileSystem, @unchecked
             probe = try await probeFile(
                 url, prefetch: sessionKey.role == .playback
                     && locator.representation.size >= RangeProbe.initialReadByteCount,
-                reportDeliveryConnectionFailure: reportDeliveryConnectionFailure
+                reportDeliveryConnectionFailure: reportDeliveryConnectionFailure,
+                allowUnvalidatedPlayback: sessionKey.role == .playback
             )
         }
         guard probe.totalLength == locator.representation.size else {
             throw MediaTransportError.sourceChanged(reason: "WebDAV representation changed since scan")
+        }
+        if probe.validator == .unvalidatedPlayback {
+            HandoffDiagnostics.emit("webdav PLAYBACK_COMPATIBILITY mode=unvalidated-delivery persistentReuse=false")
         }
         // A delivery host can use a different validator namespace. Only
         // compare DAV/GET validators when they describe the same origin.
@@ -362,23 +408,39 @@ final class WebDAVMediaTransportFileSystem: MediaTransportFileSystem, @unchecked
                 throw MediaTransportError.sourceChanged(reason: "WebDAV GET modification time changed")
             }
         }
-        let source = WebDAVByteSource(
+        return WebDAVByteSource(
             client: client,
             representation: probe,
             sessionKey: sessionKey,
             credential: credential,
             trustPolicy: trustPolicy
         )
-        return MediaTransportSourceLease(source: source)
+    }
+
+    private func validatedOpeningMetadata(
+        for locator: NetworkFileLocator
+    ) async throws -> (entry: RemoteFileEntry, probe: RangeProbeResult?) {
+        let metadata = try await openingMetadata(relativePath: locator.relativePath)
+        let current = metadata.entry
+        let identity = locator.representation.identity
+        let identityMatches = identity.kind == .strongETag
+            ? current.strongETag == identity.value
+            : current.modifiedAt == identity.modifiedAt
+        guard current.kind == .file, identityMatches, current.size == locator.representation.size else {
+            throw MediaTransportError.sourceChanged(reason: "WebDAV metadata changed since locator creation")
+        }
+        return metadata
     }
 
     private func probeFile(
-        _ url: URL, prefetch: Bool = false, reportDeliveryConnectionFailure: Bool = false
+        _ url: URL, prefetch: Bool = false, reportDeliveryConnectionFailure: Bool = false,
+        allowUnvalidatedPlayback: Bool = false
     ) async throws -> RangeProbeResult {
         try await client.probeRange(
             root: root, url: url, sessionKey: sessionKey, credential: credential,
             trustPolicy: trustPolicy, prefetch: prefetch,
-            reportDeliveryConnectionFailure: reportDeliveryConnectionFailure
+            reportDeliveryConnectionFailure: reportDeliveryConnectionFailure,
+            allowUnvalidatedPlayback: allowUnvalidatedPlayback
         )
     }
 

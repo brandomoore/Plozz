@@ -36,6 +36,9 @@ public struct ItemDetailView: View {
     private let stackDepth: DetailStackDepth?
     @State private var pageIdentity = UUID()
     @State private var isPageVisible = false
+    @State private var playbackPreparation = DetailPlaybackPreparationCoordinator()
+    @State private var preparationSourceSwitch = UUID()
+    @State private var isPreparationSourceSwitching = false
     /// Fast/local trailer resolver. A nil result leaves the static detail hero;
     /// online YouTube autoplay remains deliberately out of the first version.
     private let heroTrailerResolver: HeroTrailerResolving
@@ -208,6 +211,7 @@ public struct ItemDetailView: View {
                 SeriesDetailView(
                     series: detail.item,
                     hasChildOnTop: hasChildOnTop,
+                    preparationIsActive: isTrailerOwner && !isPreparationSourceSwitching,
                     seasons: detail.children.filter { $0.kind == .season },
                     looseEpisodes: detail.children.filter { $0.kind == .episode },
                     viewModel: viewModel,
@@ -232,7 +236,7 @@ public struct ItemDetailView: View {
                         // its season+episode NUMBER across the switch (per-server
                         // ids differ). Movies already switch in place via state
                         // override; this brings series to parity.
-                        Task { await viewModel.switchToSource(accountID: source.accountID) }
+                        switchPreparationSource(source.accountID)
                     },
                     onSelectRelated: onSelectChild,
                     initialSeasonID: initialSeasonID ?? viewModel.preselectedSeasonID ?? initialEpisode?.seasonID,
@@ -279,6 +283,11 @@ public struct ItemDetailView: View {
         // it for seeded opens stranded series pages with no seasons/episodes/Play
         // button. load() guards against flashing `.loading` over a seeded hero.
         .task { await viewModel.load() }
+        .detailPlaybackPreparation(
+            for: preparationItem,
+            isActive: isTrailerOwner && !isPreparationSourceSwitching,
+            coordinator: playbackPreparation
+        )
         .alert("Couldn't load versions", isPresented: Binding(
             get: { viewModel.playbackInventoryRetryError != nil },
             set: { if !$0 { viewModel.playbackInventoryRetryError = nil } }
@@ -612,6 +621,10 @@ public struct ItemDetailView: View {
         let effectiveSource = effectiveSource(for: detail.item, sources: sources, serverChoices: serverChoices)
         let effectiveVersions = effectiveVersions(for: detail.item, sources: sources, activeAccountID: effectiveSource?.accountID)
         let effectiveVersionID = effectiveVersionID(for: detail.item, in: effectiveVersions)
+        let selectedPlayItem = playItem(
+            for: detail.item, sources: sources, activeAccountID: effectiveSource?.accountID,
+            versionID: effectiveVersionID
+        )
         // A not-in-library Plex Discover title (a Watchlist movie the user doesn't
         // own on any server) resolves to a global Discover stub with nothing to
         // play — so it must NOT offer a dead Play button. The body (overview/cast/
@@ -657,14 +670,13 @@ public struct ItemDetailView: View {
                     DetailHeroView(
                         item: detail.item,
                         heroHeightFraction: detail.children.isEmpty ? 1.0 : 0.8,
-                        // An episode's own page can be reached from Continue
-                        // Watching or Search, where Back leaves the show
-                        // entirely — so offer a way over to it.
+                        // "Go to Episode" can open this page from outside
+                        // the show, so offer a way over to its parent.
                         offersParentNavigation: presentsEpisodeAsSubject,
                         presentsEpisodeStill: presentsEpisodeAsSubject,
                         scheduleLine: discoveryStatusLine,
                         spoilerSettings: spoilerSettings,
-                        playTitle: canPlay ? viewModel.playButtonTitle(for: detail.item) : nil,
+                        playTitle: canPlay ? selectedPlayItem.playActionTitle : nil,
                         onPlay: canPlay ? {
                             // CRITICAL: re-resolve sources/versions from the
                             // view model at FIRE time, not from the body-eval
@@ -682,7 +694,9 @@ public struct ItemDetailView: View {
                             let liveSource = self.effectiveSource(for: detail.item, sources: liveSources, serverChoices: liveServerChoices)
                             let liveVersions = self.effectiveVersions(for: detail.item, sources: liveSources, activeAccountID: liveSource?.accountID)
                             let liveVersionID = self.effectiveVersionID(for: detail.item, in: liveVersions)
-                            onPlay(self.playItem(for: detail.item, sources: liveSources, activeAccountID: liveSource?.accountID, versionID: liveVersionID))
+                            let item = self.playItem(for: detail.item, sources: liveSources, activeAccountID: liveSource?.accountID, versionID: liveVersionID)
+                            if !item.opensExternalSource { playbackPreparation.handoff(item) }
+                            onPlay(item)
                         } : nil,
                         showsPlayPlaceholder: !usesExternalDetail && DetailPlaybackSelection.showsPlayPlaceholder(
                             for: detail.item, hasPlayTarget: canPlay,
@@ -695,9 +709,9 @@ public struct ItemDetailView: View {
                         isRetryingPlaybackInventory: viewModel.isRetryingPlaybackInventory(for: detail.item),
                         allowsDeferredActivation: isPageVisible && !hasChildOnTop,
                         deferredActionOwner: ObjectIdentifier(viewModel),
-                        playProgress: canPlay ? detail.item.resumeProgressFraction : nil,
-                        playRemainingText: canPlay ? detail.item.resumeRemainingText : nil,
-                        playSeasonEpisodeText: canPlay ? HeroForegroundModelBuilder.seasonEpisodeButtonText(for: detail.item) : nil,
+                        playProgress: canPlay ? selectedPlayItem.resumeProgressFraction : nil,
+                        playRemainingText: canPlay ? selectedPlayItem.resumeRemainingText : nil,
+                        playSeasonEpisodeText: canPlay && !selectedPlayItem.opensExternalSource ? HeroForegroundModelBuilder.seasonEpisodeButtonText(for: detail.item) : nil,
                         onPlayTrailer: viewModel.trailers.first.map { trailer in { onPlay(trailer) } },
                         trailerItem: viewModel.trailers.first,
                         versions: usesExternalDetail ? [] : effectiveVersions,
@@ -1024,16 +1038,27 @@ public struct ItemDetailView: View {
     /// Records the user's server choice for this visit and clears the version
     /// override so the newly-selected server re-defaults to its own best version.
     private func selectSource(_ accountID: String) {
+        playbackPreparation.invalidate()
         sourceOverride = accountID
         versionOverride = nil
-        Task {
+        switchPreparationSource(accountID)
+    }
+
+    private func switchPreparationSource(_ accountID: String) {
+        playbackPreparation.invalidate()
+        let generation = UUID()
+        preparationSourceSwitch = generation
+        isPreparationSourceSwitching = true
+        Task { @MainActor in
             await viewModel.switchToSource(accountID: accountID)
+            if preparationSourceSwitch == generation { isPreparationSourceSwitching = false }
         }
     }
 
     /// Records the user's version choice for this visit and remembers it for next
     /// time, keyed per title (per series for an episode).
     private func selectVersion(_ id: String, for item: MediaItem) {
+        playbackPreparation.invalidate()
         versionOverride = id
         guard versionPreferences.shouldRememberVersion(for: item) else { return }
         let key = versionPreferenceKey(for: item)
@@ -1059,6 +1084,19 @@ public struct ItemDetailView: View {
     /// series' key so a whole show remembers one preferred version.
     private func versionPreferenceKey(for item: MediaItem) -> String {
         DetailPlaybackSelection.versionPreferenceKey(for: item)
+    }
+
+    private var preparationItem: MediaItem? {
+        guard !isDiscoveryItem, let item = viewModel.state.value?.item,
+              [.movie, .episode].contains(item.kind),
+              !item.isUpcomingUnaired, !viewModel.hasNoPlaybackStreams(for: item) else { return nil }
+        let sources = viewModel.sources
+        let source = effectiveSource(for: item, sources: sources, serverChoices: serverChoices(from: sources))
+        let versions = effectiveVersions(for: item, sources: sources, activeAccountID: source?.accountID)
+        return playItem(
+            for: item, sources: sources, activeAccountID: source?.accountID,
+            versionID: effectiveVersionID(for: item, in: versions)
+        )
     }
 }
 

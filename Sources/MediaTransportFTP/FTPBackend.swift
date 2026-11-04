@@ -1,6 +1,7 @@
 import CoreModels
 import Foundation
 import MediaTransportCore
+import Network
 
 /// One entry the FTP backend surfaces for a directory child or a `stat`.
 /// For a *file* the transport re-derives an authoritative `size`/`modifiedAt`
@@ -30,9 +31,9 @@ protocol FTPBackend: Sendable {
     /// Opens the control channel, negotiates TLS (per the security policy),
     /// logs in, and prepares the session (`TYPE I`, UTF-8).
     func connect() async throws
-    /// Whether the server affirmed restart support (`REST` in `FEAT`), i.e. can
-    /// do random-access ranged reads for seeking. Queried after `connect()`;
-    /// gates capability advertising + `openSource` fail-closed policy.
+    /// Whether the authenticated server advertised or accepted byte-offset
+    /// restart in binary mode. Queried after `connect()`; gates capability
+    /// advertising and `openSource` without treating missing FEAT as rejection.
     func supportsRestart() async -> Bool
     func list(path: String) async throws -> [FTPBackendEntry]
     func stat(path: String) async throws -> FTPBackendEntry
@@ -65,6 +66,9 @@ func mapFTPError(_ error: Error) -> MediaTransportError {
     if error is CancellationError {
         return .cancelled
     }
+    if let networkError = error as? NWError, case .tls = networkError {
+        return .trust(reason: "FTP TLS negotiation failed")
+    }
     if let protocolError = error as? FTPProtocolError {
         switch protocolError {
         case .tlsRequired:
@@ -82,6 +86,21 @@ func mapFTPError(_ error: Error) -> MediaTransportError {
         }
     }
     return .transport(code: (error as NSError).code)
+}
+
+func isRetryableFTPError(_ error: Error) -> Bool {
+    switch mapFTPError(error) {
+    case .timeout:
+        return true
+    case .transport(let code):
+        return [
+            -1, Int(ECONNRESET), Int(ECONNABORTED), Int(ENOTCONN), Int(EPIPE),
+            Int(ETIMEDOUT), Int(ECONNREFUSED), Int(ENETDOWN), Int(ENETUNREACH),
+            Int(EHOSTUNREACH), 425, 426,
+        ].contains(code)
+    default:
+        return false
+    }
 }
 
 func mapReplyCode(_ code: Int) -> MediaTransportError {

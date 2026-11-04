@@ -21,6 +21,7 @@ public struct PlozziOSRootView: View {
     /// The reader's text size. Feeds `PlozzMetrics` so the shared type/geometry
     /// table rebuilds when it changes (see where the metrics are injected below).
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.plozziOSIsRunningOnMac) private var isRunningOnMac
     @Environment(\.accessibilityReduceTransparency)
     private var systemReduceTransparency
     @State private var appModel = PlozziOSProcessComposition.appModel
@@ -69,6 +70,12 @@ public struct PlozziOSRootView: View {
     public init() {}
 
     public var body: some View {
+        AppLanguageScope(model: appModel.appLanguage) {
+            rootContent
+        }
+    }
+
+    private var rootContent: some View {
         Group {
             if needsDiagnosticConsent {
                 CrashReportingConsentView { enabled in
@@ -109,7 +116,7 @@ public struct PlozziOSRootView: View {
         appModel.crashReportingController.isConfigured && appModel.crashReporting.needsConsent
     }
 
-    private var profileContent: some View {
+    private var appDownloadContent: some View {
         Group {
             if !appModel.canEnterApp {
                 PlozziOSOnboardingView(appModel: appModel)
@@ -141,6 +148,14 @@ public struct PlozziOSRootView: View {
         }
         .scrollContentBackground(.hidden)
         .environment(\.managedProviderSetupRouter, providerSetupRouter)
+        .background { downloadSelectionPresenter }
+        .onChange(of: appModel.isActiveProfileAuthorized) { _, authorized in
+            if !authorized { appModel.pendingDownloadSelection = nil }
+        }
+    }
+
+    private var profileContent: some View {
+        appDownloadContent
         .plozzSheet(item: $providerSetupRouter.reauthenticationAccount) { account in
             PlozziOSAccountReauthenticationView(appModel: appModel, account: account)
                 .presentationSizing(.page)
@@ -290,6 +305,10 @@ public struct PlozziOSRootView: View {
     private var appContent: some View {
         profileContent
         .environment(\.familyGuidanceProvider, appModel.familyGuidance)
+        .detailPlaybackPreparationEnvironment(
+            appModel.detailPlaybackPreparation,
+            accountIDs: appModel.accountsProviders.resolvedActiveAccounts.map(\.account.id)
+        )
         .environment(\.plozzShowsContentRatings, appModel.settings.contentRatings.showsRatings)
         .environment(
             \.versionPickerAudioLanguage,
@@ -299,9 +318,9 @@ public struct PlozziOSRootView: View {
         // when the reader's text size changes, rather than only on relaunch.
         .environment(
             \.plozzMetrics,
-            PlozzMetrics.touch(
+            PlozziOSMediaLayout.metrics(
                 density: appModel.settings.density.density,
-                dynamicTypeSize: dynamicTypeSize
+                dynamicTypeSize: dynamicTypeSize, isRunningOnMac: isRunningOnMac
             )
         )
         .mediaItemActionHandler(appModel.mediaItemActionHandler)
@@ -342,10 +361,15 @@ public struct PlozziOSRootView: View {
         )
         .transientStatusOverlay(
             presenter: appModel.transientStatusPresenter,
-            bottomPadding: 72,
+            palette: resolvedPalette
+        )
+        .guidePreparationOverlay(
+            model: appModel.guidePreparation, presenter: appModel.transientStatusPresenter,
             palette: resolvedPalette
         )
         .environment(appModel)
+        .environment(appModel.settings.navigation)
+        .environment(appModel.guidePreparation)
         .environment(heroTrailerController)
         .themeMusicScope(
             controller: themeMusicController,
@@ -382,7 +406,7 @@ public struct PlozziOSRootView: View {
         ) {
             AddServerView(
                 appModel: appModel,
-                initialProvider: iptvSetup == nil ? serverSetupSeed?.provider ?? .jellyfin : .iptv,
+                initialProvider: iptvSetup == nil ? serverSetupSeed?.provider : .iptv,
                 initialAddress: serverSetupSeed?.candidateBaseURLs.first?.absoluteString ?? "",
                 initialIPTVPlaylist: iptvSetup?.playlist, initialIPTVAccount: iptvSetup?.account,
                 initialIPTVMode: iptvSetup?.mode ?? .playlist
@@ -460,6 +484,18 @@ public struct PlozziOSRootView: View {
         }
         .environment(\.themePalette, resolvedPalette)
         .environment(\.gradientBackgroundsEnabled, appModel.settings.theme.gradientEnabled)
+    }
+
+    @ViewBuilder
+    private var downloadSelectionPresenter: some View {
+        if let item = appModel.pendingDownloadSelection {
+            PlozziOSSingleItemDownloadSheet(item: item) {
+                guard appModel.pendingDownloadSelection?.stablePresentationID == item.stablePresentationID else { return }
+                appModel.pendingDownloadSelection = nil
+            }
+            .environment(appModel)
+            .id(item.stablePresentationID)
+        }
     }
 
     private struct PlozziOSCrashScreenObserver: View {
@@ -766,6 +802,12 @@ private struct PlozziOSScenePhaseEffects: View {
                     Task { await appModel.synchronizeTrackerHistoryOnForeground() }
                 }
             }
+            .onChange(of: appModel.isActiveProfileAuthorized) { _, authorized in
+                if authorized { appModel.retryWatchOutboxIfAllowed() }
+            }
+            .onChange(of: appModel.profiles.activeProfileID) { _, _ in
+                appModel.retryWatchOutboxIfAllowed()
+            }
     }
 }
 
@@ -777,6 +819,7 @@ private struct PendingPairing: Identifiable {
 enum PlozziOSDestination: Identifiable, Hashable {
     case home
     case watchlist
+    case discover
     case liveTV
     case downloads
     case search
@@ -790,6 +833,7 @@ enum PlozziOSDestination: Identifiable, Hashable {
         switch self {
         case .home: "home"
         case .watchlist: "watchlist"
+        case .discover: "discover"
         case .liveTV: "liveTV"
         case .downloads: "downloads"
         case .search: "search"
@@ -803,6 +847,7 @@ enum PlozziOSDestination: Identifiable, Hashable {
         switch rawValue {
         case "home": self = .home
         case "watchlist": self = .watchlist
+        case "discover": self = .discover
         case "liveTV": self = .liveTV
         case "downloads": self = .downloads
         case "search": self = .search
@@ -824,6 +869,7 @@ enum PlozziOSDestination: Identifiable, Hashable {
         switch self {
         case .home: "Home"
         case .watchlist: "Watchlist"
+        case .discover: "Discover"
         case .liveTV: "Live TV"
         case .downloads: "Downloads"
         case .search: "Search"
@@ -837,6 +883,7 @@ enum PlozziOSDestination: Identifiable, Hashable {
         switch self {
         case .home: "house"
         case .watchlist: "bookmark"
+        case .discover: "sparkles"
         case .liveTV: "antenna.radiowaves.left.and.right"
         case .downloads: "arrow.down.circle"
         case .search: "magnifyingglass"
@@ -862,6 +909,22 @@ private struct PlozziOSScreenshotTabRouter: View {
                 onSelect(tab)
                 director.finish(.ok)
             }
+    }
+}
+
+struct PlozziOSMacNavigationBackground: ViewModifier {
+    @Environment(\.plozziOSIsRunningOnMac) private var isRunningOnMac
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if #available(iOS 26.0, *) {
+            content
+                .toolbarBackground(isRunningOnMac ? .hidden : .automatic, for: .tabBar)
+                .scrollEdgeEffectHidden(isRunningOnMac, for: .top)
+        } else {
+            content
+                .toolbarBackground(isRunningOnMac ? .hidden : .automatic, for: .tabBar)
+        }
     }
 }
 
@@ -957,19 +1020,22 @@ struct PlozziOSTabShell: View {
         let navigation = appModel.settings.navigation
         let libraries = appModel.visibleNavigationLibraries
         let libraryKeys = Set(libraries.map(\.key))
-        return navigation.libraryLayout.resolvingAutomaticVisibility(
-            hidden: NavigationDestinationDefaults.iOSAutomaticallyHiddenKeys(
+        return navigation.resolvedLayout(
+            additionallyHiddenKeys: NavigationDestinationDefaults.iOSAutomaticallyHiddenKeys(
                 available: NavigationDestinationDefaults.iOS(visibleLibraries: libraries)
             )
         )
             .sections(
-                available: NavigationDestinationDefaults.iOS(visibleLibraries: libraries),
+                available: navigation.availableNavigationKeys(
+                    NavigationDestinationDefaults.iOS(visibleLibraries: libraries)
+                ),
                 requiredEnabled: navigation.requiredNavigationKeys
             ).enabled
             .compactMap { key -> PlozziOSDestination? in
                 switch key {
                 case NavigationLibraryLayout.homeKey: return .home
                 case NavigationLibraryLayout.watchlistKey: return .watchlist
+                case NavigationLibraryLayout.discoverKey: return .discover
                 case NavigationLibraryLayout.liveTVKey: return .liveTV
                 case NavigationLibraryLayout.searchKey: return .search
                 case NavigationLibraryLayout.downloadsKey: return .downloads
@@ -1123,6 +1189,11 @@ struct PlozziOSTabShell: View {
             .plozziOSItemNavigation(appModel: appModel)
             .toolbarBackground(.hidden, for: .navigationBar)
             .background { AppBackground(palette: palette) }
+        case .discover:
+            PlozziOSDiscoverView(appModel: appModel, onShowSettings: showSettings)
+                .plozziOSItemNavigation(appModel: appModel)
+                .toolbarBackground(.hidden, for: .navigationBar)
+                .background { AppBackground(palette: palette) }
         case .liveTV:
             PlozziOSLiveTVDestination(
                 isActive: effectiveSelectedDestination == .liveTV && !isShowingMorePage,
@@ -1307,6 +1378,7 @@ struct PlozziOSTabShell: View {
         }
 
         .tabViewStyle(.sidebarAdaptable)
+        .modifier(PlozziOSMacNavigationBackground())
         .background {
             PlozziOSSettingsTabAction(
                 tabIndex: tabDestinations.firstIndex(of: .settings),
@@ -1980,7 +2052,7 @@ private struct PlozziOSDestinationView: View {
                 viewModel: sharedHomeViewModel,
                 onShowSettings: onShowSettings
             )
-        case .liveTV, .library, .allLibraries:
+        case .discover, .liveTV, .library, .allLibraries:
             EmptyView()
         case .search:
             PlozziOSSearchView(
@@ -2014,7 +2086,8 @@ private struct PlozziOSDestinationView: View {
 }
 
 struct PlozziOSWatchlistLandingView: View {
-    @Environment(\.mediaItemNavigator) private var navigateToItem
+    @Environment(\.plozzMetrics) private var metrics
+    @Environment(\.mediaItemArtworkNavigator) private var navigateToItem
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.plozziOSIsOverflowDestination) private var isOverflowDestination
     let appModel: PlozziOSAppModel
@@ -2116,7 +2189,7 @@ struct PlozziOSWatchlistLandingView: View {
         } else {
             LazyVGrid(
                 columns: appModel.settings.density.density.iOSPosterGridColumns(
-                    horizontalSizeClass: horizontalSizeClass
+                    horizontalSizeClass: horizontalSizeClass, isRunningOnMac: metrics.usesDesktopSizing
                 ),
                 spacing: 18
             ) {
@@ -2126,8 +2199,8 @@ struct PlozziOSWatchlistLandingView: View {
                 )) { element in
                     switch element {
                     case .item(let item):
-                        Button {
-                            navigateToItem?(item)
+                        MediaArtworkZoomButton(id: item.stablePresentationID) { source in
+                            navigateToItem?(item, source)
                         } label: {
                             PlozziOSPosterCard(
                                 item: item,
@@ -2166,18 +2239,10 @@ private struct PlozziOSHomeLandingView: View {
 
     var body: some View {
         if appModel.accounts.isEmpty {
-            ContentUnavailableView {
-                Label("Build your library", systemImage: "play.rectangle.on.rectangle")
-            } description: {
-                Text("Connect a media server or an NFS network share to start watching.")
-            } actions: {
-                Button("Add Server", action: onAddServer)
-                    .buttonStyle(.borderedProminent)
-                Button("Set Up from Another Device") { showingReceive = true }
-                NavigationLink("Add Network Share") {
-                    PlozziOSAddShareView(appModel: appModel)
-                }
-            }
+            PlozziOSHomeEmptyState(
+                hasAccounts: false, onAddSource: onAddServer,
+                onReceiveSetup: { showingReceive = true }
+            )
             .navigationTitle("Home")
             .toolbarTitleDisplayMode(isOverflowDestination ? .inline : .large)
             .toolbar {

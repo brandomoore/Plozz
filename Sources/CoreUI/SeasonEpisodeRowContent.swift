@@ -3,8 +3,11 @@ import SwiftUI
 
 public struct SeasonEpisodeRowContent<Artwork: View, Status: View, Accessory: View>: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private let number: Int?
     private let title: String? // l10n:content - provider-supplied episode title
+    private let reservesStatusSpace: Bool
+    private let showsStatus: Bool
     private let artwork: Artwork
     private let status: Status
     private let accessory: Accessory
@@ -12,12 +15,16 @@ public struct SeasonEpisodeRowContent<Artwork: View, Status: View, Accessory: Vi
     public init(
         number: Int?,
         title: String?, // l10n:content — episode title, nil when spoiler-protected
+        reservesStatusSpace: Bool = false,
+        showsStatus: Bool = true,
         @ViewBuilder artwork: () -> Artwork,
         @ViewBuilder status: () -> Status,
         @ViewBuilder accessory: () -> Accessory
     ) {
         self.number = number
         self.title = title
+        self.reservesStatusSpace = reservesStatusSpace
+        self.showsStatus = showsStatus
         self.artwork = artwork()
         self.status = status()
         self.accessory = accessory()
@@ -29,32 +36,52 @@ public struct SeasonEpisodeRowContent<Artwork: View, Status: View, Accessory: Vi
             : AnyLayout(HStackLayout(spacing: 12))
         layout {
             artwork
-            VStack(alignment: .leading, spacing: 3) {
-                if let title, !title.isEmpty {
-                    if let number {
-                        Text("Episode \(number)")
+            ZStack(alignment: .leading) {
+                if reservesStatusSpace {
+                    VStack(alignment: .leading, spacing: 3) {
+                        episodeHeading
+                        Text(verbatim: " ").font(.caption)
+                    }
+                    .hidden()
+                    .accessibilityHidden(true)
+                }
+                VStack(alignment: .leading, spacing: 3) {
+                    episodeHeading
+                    if showsStatus {
+                        status
+                            .lineLimit(reservesStatusSpace && !dynamicTypeSize.isAccessibilitySize ? 1 : nil)
                             .font(.caption)
                             .foregroundStyle(Color.secondary)
+                            .transition(.opacity)
                     }
-                    Text(verbatim: title)
-                        .foregroundStyle(Color.primary)
-                } else if let number {
-                    Text("Episode \(number)")
-                        .foregroundStyle(Color.primary)
-                } else {
-                    Text("Episode")
-                        .foregroundStyle(Color.primary)
                 }
-                status
-                    .font(.caption)
-                    .foregroundStyle(Color.secondary)
             }
+            .animation(reservesStatusSpace && !reduceMotion ? .easeInOut(duration: 0.2) : nil, value: showsStatus)
             .lineLimit(nil)
             .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .leading)
             accessory
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    @ViewBuilder
+    private var episodeHeading: some View {
+        if let title, !title.isEmpty {
+            if let number {
+                Text("Episode \(number)")
+                    .font(.caption)
+                    .foregroundStyle(Color.secondary)
+            }
+            Text(verbatim: title)
+                .foregroundStyle(Color.primary)
+        } else if let number {
+            Text("Episode \(number)")
+                .foregroundStyle(Color.primary)
+        } else {
+            Text("Episode")
+                .foregroundStyle(Color.primary)
+        }
     }
 }
 

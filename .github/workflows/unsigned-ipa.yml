@@ -1,0 +1,49 @@
+name: Unsigned IPA
+
+on:
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: Device platform
+        type: choice
+        options: [both, ios, tvos]
+        default: both
+      runner:
+        description: Available macOS runner label with Xcode 27 or later
+        type: string
+        default: xcode-27
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Unsigned ${{ matrix.platform }}
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: ${{ inputs.platform == 'both' && fromJSON('["ios","tvos"]') || fromJSON(format('["{0}"]', inputs.platform)) }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install XcodeGen if missing
+        run: command -v xcodegen || brew install xcodegen
+      - name: Build unsigned device app
+        id: build
+        env:
+          PLATFORM: ${{ matrix.platform }}
+        run: tools/build-unsigned-ipa.sh "$PLATFORM"
+      - name: Upload unsigned IPA and provenance
+        uses: actions/upload-artifact@v4
+        with:
+          name: Plozz-${{ matrix.platform }}-unsigned
+          path: |
+            ${{ steps.build.outputs.ipa_path }}
+            ${{ steps.build.outputs.receipt_path }}
+          if-no-files-found: error
+          retention-days: 7

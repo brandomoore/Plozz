@@ -8,7 +8,12 @@ public enum HeroSettingsPage: String, CaseIterable {
 
     var title: LocalizedStringResource {
         switch self {
-        case .titles: "Hero content sources"
+        case .titles:
+            #if os(tvOS)
+            "Content sources"
+            #else
+            "Hero content sources"
+            #endif
         case .ratings: "Ratings"
         case .trailers: "Trailers"
         case .discovery: "Discovery"
@@ -51,12 +56,16 @@ public struct HeroSettingsControls: View {
 
     public var body: some View {
         @Bindable var hero = hero
+        #if os(tvOS)
+        HomeHeroEnabledPicker(settings: $hero.settings)
+        #else
         HeroSettingsGroup(searchTargets: ["hero-enabled"] + enableTargets) {
             Toggle("Show hero", isOn: $hero.settings.isEnabled)
                 .accessibilityIdentifier("hero-enabled")
                 .settingsSearchAnchor("hero-enabled", fallbackFor: enableTargets)
         }
-        if hero.settings.isEnabled {
+        #endif
+        if showsControls {
             HeroSettingsGroup {
                 HeroLogoSizeControl(size: $hero.settings.logoSize, textSize: $hero.settings.textSize, surface: .home)
             }
@@ -69,8 +78,16 @@ public struct HeroSettingsControls: View {
         }
     }
 
+    private var showsControls: Bool {
+        #if os(tvOS)
+        hero.settings.spotlightEnabled
+        #else
+        hero.settings.isEnabled
+        #endif
+    }
+
     private var enableTargets: [String] {
-        hero.settings.isEnabled ? [] : SettingsSearchCatalog.carouselHeroTargets
+        showsControls ? [] : SettingsSearchCatalog.carouselHeroTargets
     }
 }
 
@@ -127,24 +144,29 @@ private struct HeroAutomaticChangeControls: View {
     }
 }
 
-private struct HeroRatingControls: View {
+struct HeroRatingControls: View {
+    var isShowcase = false
     @Environment(HeroSettingsModel.self) private var hero
 
     var body: some View {
         @Bindable var hero = hero
-        HeroSettingsGroup(searchTargets: SettingsSearchCatalog.targets(on: .heroRatings)) {
+        HeroSettingsGroup(searchTargets: isShowcase
+            ? ["showcase-ratings", "showcase-age", "showcase-rating-count"]
+            : SettingsSearchCatalog.targets(on: .heroRatings)) {
             Toggle("Show ratings", isOn: $hero.settings.showsRatings)
                 .accessibilityIdentifier("hero-ratings")
                 .modifier(ViewCustomizationRowFocus(id: "hero-ratings"))
                 .settingsSearchAnchor(
-                    "hero-ratings", fallbackFor: hero.settings.showsRatings ? [] : ["hero-age", "hero-rating-count"]
+                    isShowcase ? "showcase-ratings" : "hero-ratings",
+                    fallbackFor: hero.settings.showsRatings ? []
+                        : (isShowcase ? ["showcase-age", "showcase-rating-count"] : ["hero-age", "hero-rating-count"])
                 )
             if hero.settings.showsRatings {
                 Toggle("Show Common Sense age", isOn: $hero.settings.ratingPreferences.showsHeaderFamilyGuidance)
                     .accessibilityIdentifier("hero-common-sense-age")
-                    .settingsSearchAnchor("hero-age")
+                    .settingsSearchAnchor(isShowcase ? "showcase-age" : "hero-age")
                 HeaderReviewScoreCountPicker(settings: $hero.settings.ratingPreferences)
-                    .settingsSearchAnchor("hero-rating-count")
+                    .settingsSearchAnchor(isShowcase ? "showcase-rating-count" : "hero-rating-count")
             }
         }
     }
@@ -156,7 +178,7 @@ private struct HeroTrailerControls: View {
     var body: some View {
         @Bindable var background = background
         HeroSettingsGroup(searchTargets: SettingsSearchCatalog.targets(on: .heroTrailers)) {
-            Toggle("Play trailer behind the hero", isOn: $background.settings.homeTrailerEnabled)
+            Toggle(trailerLabel, isOn: $background.settings.homeTrailerEnabled)
                 .accessibilityIdentifier("hero-trailers")
                 .modifier(ViewCustomizationRowFocus(id: "hero-trailers"))
                 .settingsSearchAnchor(
@@ -168,6 +190,14 @@ private struct HeroTrailerControls: View {
                     .settingsSearchAnchor("hero-trailers-muted")
             }
         }
+    }
+
+    private var trailerLabel: LocalizedStringResource {
+        #if os(tvOS)
+        "Play trailers"
+        #else
+        "Play trailer behind the hero"
+        #endif
     }
 }
 
@@ -189,7 +219,7 @@ struct HeroSettingsLink: View {
             } label: {
                 label
             }
-            .buttonStyle(.plain)
+            .settingsActionRow()
             .navigationDestination(isPresented: $isPresented) {
                 HeroSettingsScreen(page: page, libraries: libraries, accounts: accounts)
                     .environment(hero)

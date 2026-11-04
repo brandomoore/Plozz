@@ -291,6 +291,7 @@ struct LargeNativeNavigationFixture: View {
         switch destination {
         case .home: "Home"
         case .watchlist: "Watchlist"
+        case .discover: "Discover"
         case .liveTV: "Live TV"
         case .search: "Search"
         case .music: "Music"

@@ -43,7 +43,9 @@ final class SettingsSearchTests: XCTestCase {
             "bottom of video": "subtitle-reference",
             "bottom of screen": "subtitle-reference",
             "vertical offset": "subtitle-position",
-            "position on screen": "subtitle-position"
+            "position on screen": "subtitle-position",
+            "auto move away from controls": "subtitle-avoid-controls",
+            "live auto move away from controls": "live-subtitle-avoid-controls"
         ]
         for (query, id) in queries {
             XCTAssertEqual(index.results(for: query).first?.id, id, query)
@@ -105,6 +107,24 @@ final class SettingsSearchTests: XCTestCase {
         let remembered = SettingsSearchCatalog.entry(id: "subtitle-remember")
         XCTAssertEqual(remembered?.destinationPage(on: .phone), .playback)
         XCTAssertEqual(remembered?.destinationPage(on: .television), .subtitles)
+    }
+
+    func testRowStyleSearchIsSeparateFromHeroAndOnlyAvailableOnTV() {
+        let targets = [
+            "home-layout", "showcase-logo-size", "showcase-text-size", "showcase-ratings",
+            "showcase-age", "showcase-rating-count", "showcase-discovery-row"
+        ]
+        let television = SettingsSearchCatalog.entries(on: .television)
+        for id in targets {
+            XCTAssertEqual(television.first { $0.id == id }?.page, .homeRowStyle, id)
+            XCTAssertFalse(SettingsSearchCatalog.carouselHeroTargets.contains(id), id)
+            for platform: SettingsSearchEntry.Platform in [.phone, .tablet] {
+                XCTAssertFalse(SettingsSearchCatalog.entries(on: platform).contains { $0.id == id }, id)
+            }
+        }
+        XCTAssertEqual(SettingsSearchCatalog.entry(id: "hero-ratings")?.page, .heroRatings)
+        XCTAssertEqual(SettingsSearchCatalog.entry(id: "hero-enabled")?.page, .hero)
+        XCTAssertEqual(SettingsSearchCatalog.entry(id: "home-row-style")?.page, .home)
     }
 
     func testModelBackedFamiliesAreExhaustive() {
@@ -180,11 +200,8 @@ final class SettingsSearchTests: XCTestCase {
                 XCTAssertFalse(entry.isAvailable(on: platform, osVersion: 27, isKids: true), entry.id)
             }
         }
-        for id in ["spatial-audio", "spatial-layout"] {
-            let entry = SettingsSearchCatalog.entry(id: id)
-            XCTAssertNotNil(entry)
-            XCTAssertFalse(entry?.isAvailable(on: .television, osVersion: 25) ?? true)
-            XCTAssertTrue(entry?.isAvailable(on: .television, osVersion: 26) ?? false)
+        for id in ["spatial-audio", "spatial-layout", "dolby-fel"] {
+            XCTAssertNil(SettingsSearchCatalog.entry(id: id))
         }
         XCTAssertTrue(SettingsSearchPage.accountLibraries.requiresParentalAuthorization)
         XCTAssertTrue(SettingsSearchPage.profileSettings.requiresParentalAuthorization)

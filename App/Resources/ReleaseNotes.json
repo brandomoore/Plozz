@@ -2,6 +2,284 @@
   "schemaVersion": 1,
   "releases": [
     {
+      "id": "release/070",
+      "version": "2026.11.3",
+      "marketingVersion": "2026.10.30",
+      "build": 70,
+      "releasedAt": "2026-11-03",
+      "sections": [
+        {
+          "category": "New",
+          "items": [
+            "Discover browsing, filters and Seerr requests. Not available in child profiles.",
+            {
+              "text": "Automatic and fixed landscape directions on iPhone.",
+              "platforms": ["iOS"]
+            }
+          ]
+        },
+        {
+          "category": "Updated",
+          "items": [
+            {
+              "text": "Live TV design and search updates.",
+              "platforms": ["iOS"]
+            },
+            {
+              "text": "Updated fonts in See all pages.",
+              "platforms": ["iOS"]
+            },
+            "More useful playback diagnostic reports.",
+            "Removed height-channel audio conversion and experimental Dolby Vision FEL playback."
+          ]
+        },
+        {
+          "category": "Fixed",
+          "items": [
+            "Playback and navigation crash fixes on older systems.",
+            "Corrected landscape collection covers in See all pages.",
+            "Corrected version-title formatting.",
+            {
+              "text": "Fixed Showcase background cropping.",
+              "platforms": ["tvOS"]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "release/069.2",
+      "version": "2026.11.3",
+      "marketingVersion": "2026.10.30",
+      "build": "69.2",
+      "releasedAt": "2026-11-03",
+      "sections": [
+        {
+          "category": "Updated",
+          "items": [
+            {
+              "text": "Larger, more consistent touch targets in Settings.",
+              "platforms": ["iOS"]
+            }
+          ]
+        },
+        {
+          "category": "Fixed",
+          "items": [
+            {
+              "text": "Fixed iPad Settings ignoring category changes while a subpage is open.",
+              "platforms": ["iOS"]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "release/069.1",
+      "version": "2026.11.3",
+      "marketingVersion": "2026.10.30",
+      "build": "69.1",
+      "releasedAt": "2026-11-03",
+      "sections": [
+        {
+          "category": "Fixed",
+          "items": [
+            "Fixed WebDAV playback failing when a server lists the same file more than once."
+          ]
+        }
+      ]
+    },
+    {
+      "id": "release/069",
+      "version": "2026.11.3",
+      "marketingVersion": "2026.10.30",
+      "build": 69,
+      "releasedAt": "2026-11-03",
+      "sections": [
+        {
+          "category": "New",
+          "items": [
+            {
+              "text": "Import .strmlnk files from network shares to open titles in supported apps.",
+              "platforms": ["tvOS"]
+            },
+            {
+              "text": "Import .strmlnk files from network shares to open titles in supported apps or websites.",
+              "platforms": ["iOS"]
+            },
+            "Choose whether subtitles move away from playback controls, with less movement when enabled.",
+            {
+              "text": "On Mac, browse Home hero titles with onscreen arrows or arrow keys; automatic paging pauses while you interact.",
+              "platforms": ["iOS"]
+            }
+          ]
+        },
+        {
+          "category": "Updated",
+          "items": [
+            "Continue Watching opens the show with your selected episode. Saved Play preferences are preserved.",
+            "Cleaner filenames and titles in version pickers.",
+            "More reliable video-format information when a transcode starts slowly.",
+            {
+              "text": "Better hero framing and card sizing on Mac, with See all for longer Home and Related rows.",
+              "platforms": ["iOS"]
+            },
+            {
+              "text": "The player opens immediately while video loads, with smoother orientation changes when opening and closing.",
+              "platforms": ["iOS"]
+            }
+          ]
+        },
+        {
+          "category": "Fixed",
+          "items": [
+            "Fixed missing Plex Home rows when Match server receives incomplete shelf information.",
+            "Fixed Home offering Request for titles already available on the server.",
+            "Fixed Silo Continue Watching failing when a previously watched title has been removed.",
+            "Preserved regional language names and dubbing labels in audio menus.",
+            "Improved WebDAV playback compatibility with redirected streaming sources.",
+            {
+              "text": "Fixed Back navigation and focus restoration in Home's See all pages.",
+              "platforms": ["tvOS"]
+            },
+            {
+              "text": "Fixed returning from pinned navigation when using Hero with Showcase rows.",
+              "platforms": ["tvOS"]
+            },
+            {
+              "text": "Fixed audio track changes not taking effect during Plex transcoding.",
+              "platforms": ["iOS"]
+            },
+            {
+              "text": "Fixed audio menus interrupting landscape playback on iPhone.",
+              "platforms": ["iOS"]
+            },
+            {
+              "text": "Auto-crop black bars now uses the full player area.",
+              "platforms": ["iOS"]
+            },
+            {
+              "text": "Compact Home and detail heroes now use Plex's square artwork when available.",
+              "platforms": ["iOS"]
+            },
+            {
+              "text": "Fixed shifting Home artwork and brief black loading screens when opening show details.",
+              "platforms": ["iOS"]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "release/068.1",
+      "version": "2026.11.2",
+      "marketingVersion": "2026.10.30",
+      "build": "68.1",
+      "releasedAt": "2026-11-02",
+      "sections": [
+        {
+          "category": "Fixed",
+          "items": [
+            {
+              "text": "Fixed a crash when opening Settings.",
+              "platforms": ["iOS"]
+            },
+            "Fixed incorrect device and version information in Plex."
+          ]
+        }
+      ]
+    },
+    {
+      "id": "release/068",
+      "version": "2026.11.2",
+      "marketingVersion": "2026.10.30",
+      "build": 68,
+      "releasedAt": "2026-11-02",
+      "sections": [
+        {
+          "category": "New",
+          "items": [
+            "Search Settings and jump directly to a control.",
+            "Browse full Home rows with sorting and filtering.",
+            "Position subtitles relative to the bottom of the video.",
+            "Optional Auto-crop black bars for supported playback.",
+            "Create Plozz channels from native Silo libraries.",
+            "Browse collections alongside movies, following your server's settings when browsing all movies by name.",
+            "Refresh TV guides separately, with download and processing progress.",
+            {
+              "text": "Combine the Home Hero with Showcase rows.",
+              "platforms": ["tvOS"]
+            },
+            {
+              "text": "Hold Left or Right to start scanning; click again to increase speed.",
+              "platforms": ["tvOS"]
+            }
+          ]
+        },
+        {
+          "category": "Updated",
+          "items": [
+            "Continue Watching opens episode details by default. Saved Play preferences are preserved.",
+            "Quicker WebDAV playback after viewing a title's details.",
+            "More detailed source-format labels in audio track menus.",
+            "More stable title logos while details load.",
+            "Removed the repeated opening-channel message.",
+            {
+              "text": "Smoother Home, profile, and PIN transitions.",
+              "platforms": ["tvOS"]
+            },
+            {
+              "text": "More responsive playback controls and scrub previews.",
+              "platforms": ["tvOS"]
+            },
+            {
+              "text": "Top Shelf artwork preparation no longer blocks Home's interface.",
+              "platforms": ["tvOS"]
+            },
+            {
+              "text": "Streamlined Add Source and sign-in screens, including Plex server selection.",
+              "platforms": ["iOS"]
+            },
+            {
+              "text": "Artwork zoom transitions when opening and returning from details.",
+              "platforms": ["iOS"]
+            },
+            {
+              "text": "Browse sorting and filtering stay in the navigation toolbar.",
+              "platforms": ["iOS"]
+            },
+            {
+              "text": "Dismiss the Search keyboard by tapping outside or scrolling.",
+              "platforms": ["iOS"]
+            }
+          ]
+        },
+        {
+          "category": "Fixed",
+          "items": [
+            "Fixed channel previews playing audio before video was ready.",
+            "Improved recovery from interrupted IPTV guide downloads and partial guide failures.",
+            "Fixed playback rejection on seekable FTP servers with incomplete feature information.",
+            "Improved FTP and implicit FTPS seeking and recovery after interrupted transfers.",
+            "Fixed empty Emby Home rows for libraries and watch history.",
+            "Fixed encoded stream identifiers appearing as version filenames.",
+            "Fixed stale audio information in Playback Diagnostics after switching tracks.",
+            "Fixed movies inheriting the audio-mixing settings used by previews.",
+            "Fixed account removal re-enabling sources excluded from a profile.",
+            "Fixed dark overlaps in translucent subtitle edges.",
+            {
+              "text": "Fixed unnecessary stream restarts when opening ready SDR channel previews, with smoother fades for HDR transitions.",
+              "platforms": ["tvOS"]
+            },
+            {
+              "text": "Fixed Home shifting as rows finish loading.",
+              "platforms": ["iOS"]
+            }
+          ]
+        }
+      ]
+    },
+    {
       "id": "release/067.4",
       "version": "2026.10.30",
       "marketingVersion": "2026.10.30",

@@ -1233,7 +1233,7 @@ private actor SourcesCatalogLoadGate {
     }
 }
 
-private struct CacheFixture {
+struct CacheFixture {
     let directory: URL
     let secure = IndexedCacheSecureStore()
     let cache: LiveTVIndexedCache
@@ -1264,7 +1264,7 @@ private struct CacheFixture {
     }
 }
 
-private final class IndexedCacheSecureStore: SecureStoring, @unchecked Sendable {
+final class IndexedCacheSecureStore: SecureStoring, @unchecked Sendable {
     private let lock = NSLock()
     private var values: [String: String] = [:]
     var valuesJoined: String {

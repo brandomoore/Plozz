@@ -886,7 +886,8 @@ struct DetailHeroView: View, Equatable {
                     // stops at the text column instead of flexing past it — see
                     // ``heroLogoBox``.
                     maxWidth: heroLogoBox.width,
-                    maxHeight: heroLogoBox.height
+                    maxHeight: heroLogoBox.height,
+                    presentationPolicy: .whenResolved
                 ) {
                     titleText(hideText: hideText)
                 }
@@ -1442,7 +1443,10 @@ struct DetailHeroView: View, Equatable {
                         onLight: playButtonHasFocus || colorScheme == .light,
                         isPlaceholder: action == nil,
                         isLoading: pendingPrimaryAction?.kind == .play,
-                        separatesEpisodeText: (actionItem ?? item).startsWatching
+                        separatesEpisodeText: (actionItem ?? item).startsWatching,
+                        systemImage: (versions.first(where: { $0.id == selectedVersionID })
+                            ?? (versions.allSatisfy(\.isExternalSource) ? versions.first : nil))?.isExternalSource == true
+                            ? "arrow.up.forward.app" : "play.fill"
                     )
                 }
             }

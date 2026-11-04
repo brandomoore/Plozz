@@ -55,6 +55,26 @@ household multi-user UI on top of `CoreModels.ProfileStore`.
 
 ## Invariants
 
+- **Continuous tvOS PIN handoff.** Selecting a profile retains the picker behind
+  its parental, local, and Plex authorization steps. Its avatar and name share
+  the mobile PIN transition; Plex verification keeps the selected Plozz identity.
+  The surrounding picker elements fade and lift away before the identity moves.
+  Animation completion, not a timer, advances that handoff; cancelled or replaced
+  selections cannot advance it. The name and lock keep their picker typography.
+  Recency changes do not move the source tile during authorization. The covered
+  picker cannot receive input or accessibility focus. Menu cancels authorization
+  immediately but retains the PIN identity as a geometry follower until it has
+  moved back to the original tile. Only then do the surrounding controls reappear
+  and normal visible-layout focus entry resume, without a timed correction.
+  Reduce Motion removes the handoff movement, and TV keys appear immediately so
+  native focus cannot land on an invisible key. Presentation ownership does not
+  unlock a profile: existing local, parental, and live Plex checks still decide
+  access, including cancellation and foreground reauthorization.
+- **Account selections survive removals.** An explicit profile selection only
+  admits its locally present accounts. Deleting its last selected account,
+  locally or everywhere, leaves no active sources instead of enabling excluded
+  household accounts. Saved IDs remain available for sync and reconnection;
+  only a profile that has never chosen a subset inherits the household defaults.
 - **tvOS profile selection on return.** Automatically Sign In is the only
   device-wide access preference. When it is on, warm returns keep the current
   profile authorized. When it is off, `CoreModels.ProfileReturnPolicy` derives
@@ -166,16 +186,28 @@ household multi-user UI on top of `CoreModels.ProfileStore`.
   its same-profile presentation until dismissal before rebuilding covered content;
   a different active profile still invalidates that presentation. A proposed
   binding is still saved only after authentication succeeds.
-- **Visible mobile entrance.** Launch waits for native presentation to finish;
-  the cancellable in-app switcher starts during presentation instead of adding
-  another pause afterward. Overlapping 450 ms native smooth springs use a subtle
+- **Visible mobile entrance.** Launch waits for native presentation, an active
+  window scene, and a committed starting frame before beginning its animation
+  clock. A short-lived display link stops after that frame; it is cancelled when
+  the picker leaves. The heading uses a 450 ms fade/lift/scale, then the avatar
+  cascade starts. The grid keeps its own hidden state until the heading's native
+  animation completes and the grid has committed a starting frame. Do not start
+  both phases with one boolean plus an animation delay: profiles materialized
+  during the heading would otherwise be inserted already visible.
+  The cancellable in-app switcher starts during presentation instead of adding
+  another pause afterward. Overlapping 450 ms native smooth springs grow tiles
+  from 30% size and zero opacity to full size and opacity, preserving the subtle
   lift and 90 ms between profiles for households of up to six. Larger households
   shorten every interval so the last profile starts within 450 ms; Add tiles
-  continue the same cadence. All visual starts share one presentation transaction,
+  continue the same cadence. All avatar starts share one grid-reveal transaction,
   rather than waiting on separate task wake-ups; tasks only admit input when
-  each tile starts appearing. Sixteen profiles should settle within one second.
+  each tile starts appearing. Sixteen profiles should settle within one second
+  of the cascade (about 1.5 seconds at launch).
   Never clamp later delays into a batch. Reduce Motion reveals everything
   immediately; newly realized offscreen cells do not wait through earlier slots.
+  The launch-only staging does not defer startup or authorization work. Avatars
+  use their normal rendering path, without forced offscreen rasterization. The
+  presentation probe verifies sequencing, not physical cold-start frame pacing.
 - **Native editor controls.** On tvOS, the scrollable editor keeps its title
   separate from one center-aligned row of Back, Delete, and save/revert actions.
   The navigation owner still supplies Back and its focus-restoration behavior.

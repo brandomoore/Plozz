@@ -4,6 +4,19 @@ import CoreUI
 import FeatureHomeCore
 import SwiftUI
 
+#if os(iOS)
+private struct FeaturedArtworkSelectionKey: EnvironmentKey {
+    static let defaultValue: ((MediaItem, MediaArtworkZoomSource) -> Void)? = nil
+}
+
+private extension EnvironmentValues {
+    var featuredArtworkSelection: ((MediaItem, MediaArtworkZoomSource) -> Void)? {
+        get { self[FeaturedArtworkSelectionKey.self] }
+        set { self[FeaturedArtworkSelectionKey.self] = newValue }
+    }
+}
+#endif
+
 public struct FeaturedMediaRow: View {
     private let title: Text
     private let items: [MediaItem]
@@ -29,8 +42,28 @@ public struct FeaturedMediaRow: View {
     @Environment(\.plozzPinnedSidebarActive) private var pinnedSidebarActive
     @Environment(\.plozzMetrics) private var metrics
     @Environment(\.plozzRowTitleTightening) private var titleTightening
+    @Environment(\.themePalette) private var palette
     private var onBrowse: (() -> Void)?
     private var usesRowBrowsing = false
+    private var isLoading = false
+
+    public func loading(_ loading: Bool) -> Self {
+        var copy = self
+        copy.isLoading = loading
+        return copy
+    }
+
+    #if os(iOS)
+    private var onSelectArtwork: ((MediaItem, MediaArtworkZoomSource) -> Void)?
+
+    public func artworkNavigation(
+        _ action: @escaping (MediaItem, MediaArtworkZoomSource) -> Void
+    ) -> Self {
+        var copy = self
+        copy.onSelectArtwork = action
+        return copy
+    }
+    #endif
 
     public func browsingRow(_ action: (() -> Void)?) -> Self {
         var copy = self
@@ -68,16 +101,23 @@ public struct FeaturedMediaRow: View {
         false
         #endif
     }
-    private var inset: CGFloat { television ? PlozzTheme.Metrics.screenPadding : 20 }
-    private var cardSpacing: CGFloat { television ? 32 : 16 }
+    private var inset: CGFloat {
+        metrics.usesDesktopSizing ? DesktopMediaRailLayout.pageInset : (television ? PlozzTheme.Metrics.screenPadding : 20)
+    }
+    private var cardSpacing: CGFloat {
+        metrics.usesDesktopSizing ? metrics.cardSpacing : (television ? 32 : 16)
+    }
     private var size: CGSize {
-        FeaturedCardLayout.size(
+        if metrics.usesDesktopSizing {
+            return DesktopMediaRailLayout.featuredSize(in: viewportWidth, metrics: metrics)
+        }
+        return FeaturedCardLayout.size(
             viewportWidth: viewportWidth - (television ? navigationContentInset : 0),
             television: television
         )
     }
     private var candidate: MediaItem? {
-        guard isActive, scenePhase == .active, !reduceMotion,
+        guard !isLoading, isActive, scenePhase == .active, !reduceMotion,
               settings.homeTrailerEnabled, !controller.isPlaybackSuppressed,
               television || (priority != nil && isSettled) else { return nil }
         let id = television ? focusedID : (selectedID ?? items.first?.stablePresentationID)
@@ -108,9 +148,9 @@ public struct FeaturedMediaRow: View {
             HStack {
                 if let onBrowse {
                     BrowseRowHeading(title: title) { coordinator.stop(); onBrowse() }
-                        .font(.title2.bold())
+                        .font(metrics.usesDesktopSizing ? .title3.weight(.semibold) : .title2.bold())
                 } else {
-                    title.font(.title2.bold())
+                    title.font(metrics.usesDesktopSizing ? .title3.weight(.semibold) : .title2.bold())
                 }
                 Spacer()
                 if !usesRowBrowsing, let onSeeAll {
@@ -122,13 +162,29 @@ public struct FeaturedMediaRow: View {
             }
             .padding(.horizontal, inset)
             #endif
-            if items.isEmpty {
+            if items.isEmpty && !isLoading {
                 Text("No titles in this collection.")
                     .plozzForeground(.secondary)
                     .padding(.leading, inset + (television ? navigationContentInset : 0))
                     .padding(.trailing, inset)
             }
-            if !items.isEmpty || onBrowse != nil {
+            if isLoading {
+                ScrollView(.horizontal) {
+                    HStack(spacing: cardSpacing) {
+                        ForEach(0..<(metrics.usesDesktopSizing
+                            ? max(3, Int(ceil(viewportWidth / (size.width + cardSpacing))) + 1) : 3), id: \.self) { _ in
+                            RoundedRectangle(cornerRadius: 24)
+                                .fill(palette.fill)
+                                .frame(width: size.width, height: size.height)
+                        }
+                    }
+                    .padding(.vertical, television ? metrics.railShadowClearance : 4)
+                }
+                .contentMargins(.horizontal, inset, for: .scrollContent)
+                .scrollDisabled(true)
+                .shimmering()
+                .accessibilityHidden(true)
+            } else if !items.isEmpty || onBrowse != nil {
                 rail
             }
         }
@@ -211,6 +267,14 @@ public struct FeaturedMediaRow: View {
             .padding(.vertical, television ? metrics.railShadowClearance : 4)
         }
         #if os(iOS)
+        .environment(\.featuredArtworkSelection, { item, source in
+            coordinator.stop()
+            if let onSelectArtwork {
+                onSelectArtwork(item, source)
+            } else {
+                onSelect(item)
+            }
+        })
         .contentMargins(.horizontal, inset, for: .scrollContent)
         #endif
         .scrollIndicators(.hidden)
@@ -236,6 +300,9 @@ private struct FeaturedMediaCard: View {
     let onSelect: () -> Void
     @PlozzCardFocus private var focused: Bool
     @Environment(\.plozzCardFocusStyle) private var focusStyle
+    #if os(iOS)
+    @Environment(\.featuredArtworkSelection) private var artworkNavigator
+    #endif
 
     private func artwork(usesNativeClipping: Bool = false) -> FeaturedCardArtwork<some View> {
         FeaturedCardArtwork(
@@ -253,12 +320,19 @@ private struct FeaturedMediaCard: View {
             .mediaItemContextMenu(for: item)
             .onChange(of: focused) { _, value in onFocus(value) }
         #else
-        Button(action: onSelect) {
+        MediaArtworkZoomButton(id: item.stablePresentationID) { source in
+            if let artworkNavigator {
+                artworkNavigator(item, source)
+            } else {
+                onSelect()
+            }
+        } label: {
             artwork()
                 .contentShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                .mediaArtworkZoomSource(cornerRadius: 20)
+                .mediaItemContextMenu(for: item)
         }
             .buttonStyle(.plain)
-            .mediaItemContextMenu(for: item)
         #endif
     }
 

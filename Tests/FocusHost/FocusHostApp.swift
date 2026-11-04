@@ -3,7 +3,7 @@ import UIKit
 import CoreUI
 import CoreModels
 import FeaturePlayback
-import FeatureSettings
+@testable import FeatureSettings
 
 @main
 struct FocusHostApp: App {
@@ -13,6 +13,10 @@ struct FocusHostApp: App {
                 TrackerHistoryImportFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--publicmetadb-pairing-fixture") {
                 PublicMetaDBPairingFixture()
+            } else if ProcessInfo.processInfo.arguments.contains("--discover-fixture") {
+                DiscoverBrowseFixture()
+            } else if ProcessInfo.processInfo.arguments.contains("--profile-pin-transition-fixture") {
+                ProfilePINTransitionFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--large-native-navigation-fixture") {
                 LargeNativeNavigationFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--reorder-input-fixture") {
@@ -63,8 +67,6 @@ struct FocusHostApp: App {
                 EpisodeRowRemoteFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--subtitle-style-input-fixture") {
                 SubtitleStyleInputFixture()
-            } else if ProcessInfo.processInfo.arguments.contains("--home-layout-onboarding-fixture") {
-                HomeLayoutOnboardingFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--plex-home-onboarding-fixture") {
                 PlexHomeOnboardingFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--library-showcase-fixture") {
@@ -178,8 +180,16 @@ private struct HomeSectionsEditorFixture: View {
 
     var body: some View {
         NavigationStack {
-            HomeRowsSettingsView(libraries: [], accounts: [], visibility: visibility)
-                .frame(width: SettingsFormMetrics.pageWidth)
+            Group {
+                if ProcessInfo.processInfo.arguments.contains("--row-style-page") {
+                    HomeRowStyleSettingsView(libraries: [], accounts: [])
+                } else if ProcessInfo.processInfo.arguments.contains("--spotlight-page") {
+                    HomeHeroSettingsView(libraries: [], accounts: [], visibility: visibility)
+                } else {
+                    HomeRowsSettingsView(libraries: [], accounts: [], visibility: visibility)
+                }
+            }
+            .frame(width: SettingsFormMetrics.pageWidth)
         }
         .environment(HeroSettingsModel(store: InMemoryHeroSettingsStore()))
         .environment(HeroBackgroundSettingsModel(store: InMemoryHeroBackgroundSettingsStore()))

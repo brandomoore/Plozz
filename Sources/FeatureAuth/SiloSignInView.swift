@@ -16,18 +16,22 @@ public struct SiloSignInView: View {
     @Environment(\.themePalette) private var palette
     private let server: MediaServer
     private let onCancel: () -> Void
+    private let showsCancelButton: Bool
 
     public init(server: MediaServer, deviceID: String, verificationOnly: Bool = false,
+                showsCancelButton: Bool = true,
                 onAuthenticated: @escaping (UserSession) throws -> Void, onCancel: @escaping () -> Void) {
         self.init(viewModel: SiloAuthViewModel(server: server, deviceID: deviceID,
                                              verificationOnly: verificationOnly, onAuthenticated: onAuthenticated),
-                  server: server, onCancel: onCancel)
+                  server: server, showsCancelButton: showsCancelButton, onCancel: onCancel)
     }
 
-    public init(viewModel: SiloAuthViewModel, server: MediaServer, onCancel: @escaping () -> Void) {
+    public init(viewModel: SiloAuthViewModel, server: MediaServer,
+                showsCancelButton: Bool = true, onCancel: @escaping () -> Void) {
         _model = State(initialValue: viewModel)
         self.server = server
         self.onCancel = onCancel
+        self.showsCancelButton = showsCancelButton
     }
 
     public var body: some View {
@@ -61,6 +65,18 @@ public struct SiloSignInView: View {
         .padding(.top, 60)
         .padding(.bottom, 40)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        #elseif os(iOS)
+        ScrollView {
+            VStack(spacing: 28) {
+                header
+                content
+                if showsCancelButton { cancelButton }
+            }
+            .frame(maxWidth: 640)
+            .frame(maxWidth: .infinity)
+        }
+        .scrollDismissesKeyboard(.interactively)
+        .settingsPageSurface(horizontalInset: 20)
         #else
         GeometryReader { geometry in
             ScrollView {
@@ -81,7 +97,13 @@ public struct SiloSignInView: View {
 
     private var header: some View {
         VStack(spacing: 14) {
-            if !isChoosingProfile { ProviderBrandMark(provider: .silo, size: 80) }
+            if !isChoosingProfile {
+                #if os(tvOS)
+                ProviderBrandMark(provider: .silo, size: 80)
+                #else
+                ProviderBrandMark(provider: .silo, size: 72)
+                #endif
+            }
             OnboardingHeader(
                 Text(title),
                 subtitle: isChoosingProfile ? Text("Choose your user on \(server.name).") : nil
@@ -91,9 +113,18 @@ public struct SiloSignInView: View {
 
     private var cancelButton: some View {
         Button(role: .cancel, action: cancel) {
+            #if os(tvOS)
             Text("Cancel").frame(minWidth: 200)
+            #else
+            Text("Cancel").frame(maxWidth: .infinity).plozzPageActionLabel()
+            #endif
         }
+        #if os(tvOS)
         .buttonStyle(.bordered)
+        #else
+        .plozzPageActionButton(role: .secondary)
+        .controlSize(.large)
+        #endif
         .focused($focused, equals: .cancel)
     }
 
@@ -157,13 +188,33 @@ public struct SiloSignInView: View {
                     .frame(maxWidth: 400)
                     .onSubmit { model.submitPIN(profile) }
                 if let error = model.pinError { Text(error).foregroundStyle(.red) }
-                Button("Continue") { model.submitPIN(profile) }
+                Button {
+                    model.submitPIN(profile)
+                } label: {
+                    Text("Continue")
+                        .plozzPageActionLabel()
+                }
+                    #if os(tvOS)
                     .buttonStyle(.borderedProminent)
                     .foregroundStyle(palette.onAccent)
+                    #else
+                    .plozzPageActionButton()
+                    .controlSize(.large)
+                    #endif
                     .focused($focused, equals: .confirm)
                     .disabled(model.pin.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                Button("Choose another profile") { model.chooseAnotherProfile() }
+                Button {
+                    model.chooseAnotherProfile()
+                } label: {
+                    Text("Choose another profile")
+                        .plozzPageActionLabel()
+                }
+                    #if os(tvOS)
                     .buttonStyle(.bordered)
+                    #else
+                    .plozzPageActionButton(role: .secondary)
+                    .controlSize(.large)
+                    #endif
                     .focused($focused, equals: .profiles)
             }
         case .expired:
@@ -172,17 +223,37 @@ public struct SiloSignInView: View {
                     .foregroundStyle(.secondary)
                 Text("Get a new code to continue. No server has been added.")
                     .multilineTextAlignment(.center)
-                Button("Get a new code") { model.start() }
+                Button {
+                    model.start()
+                } label: {
+                    Text("Get a new code")
+                        .plozzPageActionLabel()
+                }
+                    #if os(tvOS)
                     .buttonStyle(.borderedProminent)
                     .foregroundStyle(palette.onAccent)
+                    #else
+                    .plozzPageActionButton()
+                    .controlSize(.large)
+                    #endif
                     .focused($focused, equals: .retry)
             }
         case let .error(message):
             VStack(spacing: 20) {
                 Text(message).multilineTextAlignment(.center)
-                Button("Try Again") { model.retry() }
+                Button {
+                    model.retry()
+                } label: {
+                    Text("Try Again")
+                        .plozzPageActionLabel()
+                }
+                    #if os(tvOS)
                     .buttonStyle(.borderedProminent)
                     .foregroundStyle(palette.onAccent)
+                    #else
+                    .plozzPageActionButton()
+                    .controlSize(.large)
+                    #endif
                     .focused($focused, equals: .retry)
             }
         }
@@ -199,6 +270,7 @@ private struct SiloPairingCard: View {
     @Environment(\.openURL) private var openURL
     @Environment(\.themePalette) private var palette
     @State private var browserFailed = false
+    @State private var showsAnotherDevice = false
 
     var body: some View {
         VStack(spacing: 24) {
@@ -226,17 +298,17 @@ private struct SiloPairingCard: View {
             .fixedSize(horizontal: false, vertical: true)
             #else
             VStack(spacing: 16) {
-                Text("Approve Plozz in your browser, then return here. We'll continue automatically.")
-                    .multilineTextAlignment(.center)
                 Button {
                     browserFailed = false
-                    openURL(approvalURL) { accepted in browserFailed = !accepted }
+                    openURL(approvalURL) { accepted in
+                        browserFailed = !accepted
+                        if !accepted { showsAnotherDevice = true }
+                    }
                 } label: {
                     Label("Open Silo to approve", systemImage: "arrow.up.forward.app")
-                        .foregroundStyle(palette.onAccent)
-                        .frame(maxWidth: .infinity)
+                        .plozzPageActionLabel()
                 }
-                .buttonStyle(.borderedProminent)
+                .plozzPageActionButton()
                 .controlSize(.large)
                 if browserFailed {
                     Text("The browser couldn't open. Use the address below or scan the code with another device.")
@@ -244,7 +316,16 @@ private struct SiloPairingCard: View {
                         .multilineTextAlignment(.center)
                 }
                 SiloMatchPhrase(match: code)
-                DisclosureGroup("Use another device") {
+                Button {
+                    showsAnotherDevice.toggle()
+                } label: {
+                    Label("Use another device", systemImage: "qrcode")
+                        .plozzPageActionLabel()
+                }
+                .plozzPageActionButton(role: .secondary)
+                .controlSize(.large)
+                .accessibilityValue(showsAnotherDevice ? Text("Expanded") : Text("Collapsed"))
+                if showsAnotherDevice {
                     VStack(spacing: 24) {
                         SiloPairingQRCode(url: approvalURL, size: 220)
                         SiloPairingInstructions(
@@ -255,7 +336,7 @@ private struct SiloPairingCard: View {
                     .padding(.vertical, 12)
                 }
             }
-            .frame(maxWidth: 520)
+            .frame(maxWidth: .infinity)
             #endif
         }
         .onChange(of: approvalURL) { _, _ in browserFailed = false }
@@ -329,7 +410,11 @@ private struct SiloMatchPhrase: View {
     let match: String
     var body: some View {
         Label {
+            #if os(iOS)
+            Text("Check Silo shows \(Text(verbatim: match).bold())")
+            #else
             Text("Before approving, check that Silo shows \(Text(verbatim: match).bold()).")
+            #endif
         } icon: {
             Image(systemName: "checkmark.shield")
         }

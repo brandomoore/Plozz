@@ -344,7 +344,7 @@ public struct ShareProvider: MediaLibraryQueryProviding, MediaFileBrowsing {
             guard let item = await store.item(id: id) else {
                 throw AppError.unknown("Item not found on share: \(id)")
             }
-            return await watchState.stamp(item)
+            return try await resolvingExternalLinks(in: await watchState.stamp(item))
         }
         // Indexed items (movies/series/seasons/episodes) resolve from the catalog;
         // raw file-tree ids (`share:root`, `d:`) fall back to the live browser.
@@ -353,7 +353,7 @@ public struct ShareProvider: MediaLibraryQueryProviding, MediaFileBrowsing {
             stamped.item = extra.supportsResume
                 ? await watchState.stamp(extra.item)
                 : extra.playbackItem
-            return stamped.item
+            return stamped.playbackItem
         }
         if let indexed = await catalog.item(id: id) {
             // A user just opened this — fast-track its enrichment ahead of the
@@ -363,13 +363,56 @@ public struct ShareProvider: MediaLibraryQueryProviding, MediaFileBrowsing {
                 accountKey: localMediaContext.accountID,
                 itemID: id
             )
-            playbackSource.measureStreamProbeIfEnabled(itemID: id)
-            return await watchState.stamp(indexed)
+            if !indexed.opensExternalSource {
+                playbackSource.measureStreamProbeIfEnabled(itemID: id)
+            }
+            return try await resolvingExternalLinks(in: await watchState.stamp(indexed))
         }
         guard let item = await store.item(id: id) else {
             throw AppError.unknown("Item not found on share: \(id)")
         }
-        return await watchState.stamp(item)
+        return try await resolvingExternalLinks(in: await watchState.stamp(item))
+    }
+
+    private func resolvingExternalLinks(in item: MediaItem) async throws -> MediaItem {
+        var result = item
+        for index in result.versions.indices where result.versions[index].isExternalSource {
+            try Task.checkCancellation()
+            guard let path = result.versions[index].playbackMediaSourceID else { continue }
+            do {
+                result.versions[index].externalLink = try await readExternalLink(path)
+            } catch {
+                if error is CancellationError || Task.isCancelled { throw CancellationError() }
+                PlozzLog.playback.error("share.external-link unavailable or invalid")
+            }
+        }
+        return result
+    }
+
+    private func readExternalLink(_ path: String) async throws -> ExternalMediaLink {
+        guard ShareMediaParser.isExternalLinkFile(path) else {
+            throw AppError.unknown("This source is not an external title link.")
+        }
+        let data = try await store.readFile(path, maximumBytes: ExternalMediaLink.maximumFileBytes)
+        try Task.checkCancellation()
+        return try ExternalMediaLink(contents: data)
+    }
+
+    public func externalMediaLink(for itemID: String, mediaSourceID: String?) async throws -> ExternalMediaLink {
+        let catalog = await self.catalog
+        let item: MediaItem
+        if let indexed = await catalog.item(id: itemID) {
+            item = indexed
+        } else if let browsed = await store.item(id: itemID) {
+            item = browsed
+        } else {
+            throw AppError.notFound
+        }
+        let selected = item.selectingVersion(mediaSourceID).externalSourceVersion
+        guard let path = selected?.playbackMediaSourceID else {
+            throw AppError.unknown("The selected external source is no longer available.")
+        }
+        return try await readExternalLink(path)
     }
 
     public func trailers(for itemID: String) async throws -> [MediaItem] {
@@ -629,6 +672,38 @@ public struct ShareProvider: MediaLibraryQueryProviding, MediaFileBrowsing {
     /// `movie:<key>` with no chosen version plays its best default file; a bare
     /// `f:<rel>` (raw browser / episode) plays directly.
     public func playbackInfo(for itemID: String, mediaSourceID: String?, forceTranscode: Bool) async throws -> PlaybackRequest {
+        let started = Date()
+        let requestID = UUID().uuidString
+        let transport = MediaShareTransportKind(mediaShareScheme: session.server.baseURL.scheme)?.rawValue ?? "unknown"
+        let context = "sharePlayback request=\(requestID) transport=\(transport)"
+            + " item=\(HandoffDiagnostics.correlationID(itemID)) explicitVersion=\(mediaSourceID != nil)"
+        var stage = "selection"
+        HandoffDiagnostics.emit("\(context) stage=\(stage) event=start")
+        do {
+            let request = try await resolvePlaybackInfo(
+                for: itemID, mediaSourceID: mediaSourceID,
+                onStage: {
+                    stage = $0
+                    HandoffDiagnostics.emit("\(context) stage=\(stage) event=start")
+                }
+            )
+            HandoffDiagnostics.emit("\(context) event=ready elapsed=\(HandoffDiagnostics.ms(started))")
+            return request
+        } catch {
+            let code = SharePlaybackSourceService.diagnosticErrorCode(error)
+            let event = error is CancellationError || (error as? MediaTransportError) == .cancelled
+                || Task.isCancelled ? "cancelled" : "failed"
+            let diagnostic = "\(context) stage=\(stage) event=\(event) error=\(code)"
+                + " elapsed=\(HandoffDiagnostics.ms(started))"
+            HandoffDiagnostics.emit(diagnostic)
+            if event == "failed" { PlozzLog.playback.error("\(diagnostic)") }
+            throw error
+        }
+    }
+
+    private func resolvePlaybackInfo(
+        for itemID: String, mediaSourceID: String?, onStage: (String) -> Void
+    ) async throws -> PlaybackRequest {
         let isPersonalVideos = libraryConfiguration?.contentType == .personalVideos
         let catalog: (any ShareCatalogReading)?
         if isPersonalVideos {
@@ -675,7 +750,16 @@ public struct ShareProvider: MediaLibraryQueryProviding, MediaFileBrowsing {
         } else {
             throw AppError.unknown("Item is not directly playable: \(itemID)")
         }
-        let locator = try await playbackSource.networkFileLocator(for: relPath)
+        guard !ShareMediaParser.isExternalLinkFile(relPath) else {
+            throw AppError.unknown("Open this title in its external app instead of playing it in Plozz.")
+        }
+        onStage("locator")
+        let opening = try await playbackSource.playbackOpening(
+            for: relPath,
+            reuseDirectoryMetadata: ["http", "https"].contains(session.server.baseURL.scheme?.lowercased() ?? "")
+        )
+        let locator = opening.locator
+        onStage("item")
         let item = try await item(id: canonicalItemID)
         // Resume from the newest canonical/legacy member-file state so a movie
         // watched before version grouping still resumes after the upgrade.
@@ -723,9 +807,11 @@ public struct ShareProvider: MediaLibraryQueryProviding, MediaFileBrowsing {
         // Surface any text sidecar subtitles sitting next to the video (and in a
         // sibling Subs/Subtitles folder) as selectable tracks. Best-effort: a
         // listing/read failure just yields no sidecars rather than blocking play.
+        onStage("sidecars")
         let subtitleTracks = try await playbackSource.discoverSidecarSubtitles(
             forVideoRelPath: relPath,
-            exactStemOnly: isExtra
+            exactStemOnly: isExtra,
+            directoryEntries: opening.directoryEntries
         )
         try Task.checkCancellation()
         return PlaybackRequest(
@@ -739,6 +825,34 @@ public struct ShareProvider: MediaLibraryQueryProviding, MediaFileBrowsing {
             serverName: session.server.name,
             sourceFileName: (relPath as NSString).lastPathComponent
         )
+    }
+
+    public static func exactFileRelativePath(for item: MediaItem) -> String? {
+        ShareCatalogID.relPath(forFileID: item.id)
+    }
+
+    public func playbackPreparationLocator(
+        for itemID: String, mediaSourceID: String
+    ) async throws -> NetworkFileLocator? {
+        guard !ShareMediaParser.isExternalLinkFile(mediaSourceID) else { return nil }
+        guard ["http", "https"].contains(session.server.baseURL.scheme?.lowercased() ?? "") else {
+            return nil
+        }
+        try Task.checkCancellation()
+        if let filePath = ShareCatalogID.relPath(forFileID: itemID) {
+            guard filePath == mediaSourceID else {
+                throw MediaTransportError.sourceChanged(reason: "prepared file selection changed")
+            }
+        } else {
+            let catalog = await self.catalog
+            let canonicalID = await catalog.canonicalItemID(itemID)
+            guard let item = await catalog.item(id: canonicalID),
+                  item.versions.contains(where: { $0.id == mediaSourceID }) else {
+                throw MediaTransportError.sourceChanged(reason: "prepared version selection changed")
+            }
+        }
+        try Task.checkCancellation()
+        return try await playbackSource.networkFileLocator(for: mediaSourceID)
     }
 
     /// Thin forwarder retained for direct tests of the representation-identity
@@ -833,9 +947,11 @@ extension ShareProvider: InteractiveBrowseActivityReporting {
 extension ShareProvider: SupplementalStreamFactsProviding {
     public func supplementalStreamFacts(for item: MediaItem) async -> ProbedStreamFacts? {
         guard !Task.isCancelled,
+              !item.opensExternalSource,
               item.kind == .movie || item.kind == .episode || item.kind == .video,
               let streamProber,
               let relativePath = await probeRelativePath(for: item),
+              !ShareMediaParser.isExternalLinkFile(relativePath),
               let locator = try? await networkFileLocator(for: relativePath) else {
             return nil
         }

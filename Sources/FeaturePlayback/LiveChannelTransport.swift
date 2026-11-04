@@ -2351,6 +2351,10 @@ private struct LiveChannelScrubThumbnail: View {
     private static let lift: CGFloat = 34
     #else
     private static let width: CGFloat = 200
+    /// AVPlayerViewController's scrub preview size: live previews are a
+    /// glance at where the scrub lands, and VOD's larger box covered half a
+    /// landscape iPhone.
+    private static let touchWidth: CGFloat = 180
     private static let border: CGFloat = 6
     private static let corner: CGFloat = 10
     private static let lift: CGFloat = 22
@@ -2358,8 +2362,8 @@ private struct LiveChannelScrubThumbnail: View {
 
     var body: some View {
         #if os(iOS)
-        let size = PlayerTouchLayout.scrubPreviewSize(availableSize: availableSize)
-        PlayerTouchScrubPreview(image: image, availableSize: availableSize)
+        let size = PlayerTouchLayout.scrubPreviewSize(availableSize: availableSize, maximumWidth: Self.touchWidth)
+        PlayerTouchScrubPreview(image: image, availableSize: availableSize, maximumWidth: Self.touchWidth)
             .position(
                 x: min(max(knobX, size.width / 2), max(size.width / 2, barWidth - size.width / 2)),
                 y: -(Self.lift + size.height / 2)

@@ -389,11 +389,7 @@ final class ServerToggleTests: XCTestCase {
         XCTAssertFalse(state.profileFlow.isAccountIncludedInActiveProfile("b"))
     }
 
-    /// A profile may retain ids for accounts that were removed and later
-    /// re-added. AppState resolves that stale-only selection to the current
-    /// household set; toggling must mutate that resolved set, not the stale raw
-    /// value, or removing a visible account becomes a no-op.
-    func testTurningOffServerRepairsStaleStoredSelection() throws {
+    func testDeletingLastSelectedServerKeepsExcludedServersOff() throws {
         let accountStore = AccountStore(
             secureStore: InMemorySecureStore()
         )
@@ -401,20 +397,22 @@ final class ServerToggleTests: XCTestCase {
         try accountStore.add(account(id: "b", host: "b.example.com"), token: "token-b")
 
         let profiles = ProfilesModel(store: ProfileStore(defaults: makeDefaults()))
-        profiles.setActiveAccountIDs(["removed-account"], for: profiles.activeProfileID)
+        profiles.setActiveAccountIDs(["a"], for: profiles.activeProfileID)
 
         let state = AppState(accountStore: accountStore, profilesModel: profiles)
         state.bootstrap()
         XCTAssertTrue(state.profileFlow.isAccountIncludedInActiveProfile("a"))
-        XCTAssertTrue(state.profileFlow.isAccountIncludedInActiveProfile("b"))
+        XCTAssertFalse(state.profileFlow.isAccountIncludedInActiveProfile("b"))
 
-        state.profileFlow.setAccount("a", includedInActiveProfile: false)
+        state.removeAccount(id: "a")
 
         XCTAssertFalse(state.profileFlow.isAccountIncludedInActiveProfile("a"))
-        XCTAssertTrue(state.profileFlow.isAccountIncludedInActiveProfile("b"))
+        XCTAssertFalse(state.profileFlow.isAccountIncludedInActiveProfile("b"))
+        XCTAssertTrue(state.accountsProviders.homeAccounts.isEmpty)
+        XCTAssertNil(state.accountsProviders.primaryActiveAccount)
         XCTAssertEqual(
             Set(profiles.storedActiveAccountIDs(for: profiles.activeProfileID) ?? []),
-            ["b"]
+            ["a"]
         )
     }
 

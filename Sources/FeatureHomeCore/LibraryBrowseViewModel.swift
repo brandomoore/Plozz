@@ -1216,7 +1216,9 @@ public final class LibraryBrowseViewModel {
         }
         switch watchingResult.result {
         case .success(let items):
-            let scoped = items.filter { provider.contains($0, inLibrary: libraryID) }
+            let scoped = items.filter {
+                provider.contains($0, inLibrary: libraryID) && ContinueWatchingPolicy.admits($0)
+            }
             if !scoped.isEmpty {
                 sections.append(LibrarySection(
                     id: "continueWatching", title: "Continue Watching", localizedTitle: "Continue Watching",

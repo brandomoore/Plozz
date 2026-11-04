@@ -21,7 +21,9 @@ public enum PlayerVersionSelection {
     public static func versions(for item: MediaItem) -> [MediaVersion] {
         DetailPlaybackSelection.versions(
             for: item, sources: item.sources, activeAccountID: item.sourceAccountID
-        ).filter { $0.sourceAccountID == nil || $0.sourceAccountID == item.sourceAccountID }
+        ).filter {
+            !$0.isExternalSource && ($0.sourceAccountID == nil || $0.sourceAccountID == item.sourceAccountID)
+        }
     }
 
     public static func isSelected(_ version: MediaVersion, item: MediaItem, mediaSourceID: String?) -> Bool {

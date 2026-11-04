@@ -10,20 +10,25 @@ public struct BrowseRowHeading: View {
     }
 
     public var body: some View {
-        Button(action: action) {
-            HStack(spacing: 6) {
-                title.fixedSize(horizontal: false, vertical: true)
-                Image(systemName: "chevron.forward")
-                    .font(.body.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .accessibilityHidden(true)
-            }
-            .frame(minHeight: 44, alignment: .leading)
-            .contentShape(Rectangle())
+        let label = HStack(spacing: 6) {
+            title.fixedSize(horizontal: false, vertical: true)
+            Image(systemName: "chevron.forward")
+                .font(.body.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel(title)
-        .accessibilityAddTraits(.isHeader)
-        .accessibilityIdentifier("home-row-see-all")
+        // Keep the native hit target without making a loaded heading taller than its placeholder.
+        label.hidden()
+            .overlay {
+                Button(action: action) {
+                    label
+                        .frame(minHeight: 44, alignment: .leading)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(title)
+                .accessibilityAddTraits(.isHeader)
+                .accessibilityIdentifier("home-row-see-all")
+            }
     }
 }

@@ -166,7 +166,7 @@ public struct M3UPlaylistParser: Sendable {
         private var entryCount = 0
         private var skippedEntryCount = 0
         private var fallbackNumber = 0
-        private var importedIDs = Set<String>()
+        private var importedIndexes: [String: Int] = [:]
         private var declaredGuideURLs: [URL] = []
 
         fileprivate init(parser: M3UPlaylistParser, indexesCatalog: Bool = false) {
@@ -289,7 +289,7 @@ public struct M3UPlaylistParser: Sendable {
                     || directive == "#EXT-X-TARGETDURATION:"
                 channels.removeAll(keepingCapacity: false)
                 catalogEntries.removeAll(keepingCapacity: false)
-                importedIDs.removeAll(keepingCapacity: false)
+                importedIndexes.removeAll(keepingCapacity: false)
                 pending = nil
                 pendingHeaders.removeAll()
                 return
@@ -365,7 +365,30 @@ public struct M3UPlaylistParser: Sendable {
             let digestInput = [tvgID ?? "", entry.name, streamURL.absoluteString].joined(separator: "\u{1F}")
             let digest = DigestHex.encode(SHA256.hash(data: Data(digestInput.utf8)))
             let channelID = "iptv-\(digest)"
-            guard indexesCatalog || importedIDs.insert(channelID).inserted else { skippedEntryCount += 1; return }
+            if !indexesCatalog, let index = importedIndexes[channelID] {
+                let existing = channels[index]
+                if existing.streamURL?.absoluteString == streamURL.absoluteString,
+                   existing.httpHeaders == entry.headers {
+                    var seen = Set(existing.groups.map { $0.lowercased() })
+                    let mergedGroups = existing.groups + groups.filter {
+                        seen.insert($0.lowercased()).inserted
+                    }
+                    if mergedGroups.count != existing.groups.count {
+                        channels[index] = M3UPlaylistChannel(
+                            id: existing.id, number: existing.number, name: existing.name,
+                            category: existing.category, symbol: existing.symbol,
+                            accent: existing.accent, tagline: existing.tagline,
+                            logoURL: existing.logoURL, streamURL: existing.streamURL,
+                            logoNeedsDarkBackground: existing.logoNeedsDarkBackground,
+                            guideID: existing.guideID, guideName: existing.guideName,
+                            httpHeaders: existing.httpHeaders, language: existing.language,
+                            country: existing.country, groups: mergedGroups
+                        )
+                    }
+                }
+                skippedEntryCount += 1
+                return
+            }
             let channel = M3UPlaylistChannel(
                 id: channelID, number: parser.validChannelNumber(entry.attributes["tvg-chno"])
                     ?? parser.validChannelNumber(entry.attributes["channel-number"]) ?? fallbackNumber,
@@ -385,6 +408,7 @@ public struct M3UPlaylistParser: Sendable {
                     hasExplicitName: !entry.name.isEmpty
                 ))
             } else {
+                importedIndexes[channelID] = channels.count
                 channels.append(channel)
             }
         }

@@ -111,6 +111,11 @@ public actor WatchStateReconciler {
     private let onPersistenceFailure: @Sendable () -> Void
     private let onServerStateApplied: @Sendable (WatchMutation) -> Void
     private let onAuthorizationRejection: @Sendable (UUID, WatchMutationAuthorizationError) -> Void
+    private let automaticRetryAllowed: (@Sendable () async -> Bool)?
+    private let retrySleeper: @Sendable (TimeInterval) async throws -> Void
+    private var retryTask: Task<Void, Never>?
+    private var retryDate: Date?
+    private var retryGeneration: UInt64 = 0
 
     private var state: WatchOutboxState
     private var isDraining = false
@@ -156,7 +161,11 @@ public actor WatchStateReconciler {
         expansionRetryWindow: TimeInterval = 7 * 24 * 3600,
         onPersistenceFailure: @escaping @Sendable () -> Void = {},
         onServerStateApplied: @escaping @Sendable (WatchMutation) -> Void = { _ in },
-        onAuthorizationRejection: @escaping @Sendable (UUID, WatchMutationAuthorizationError) -> Void = { _, _ in }
+        onAuthorizationRejection: @escaping @Sendable (UUID, WatchMutationAuthorizationError) -> Void = { _, _ in },
+        automaticRetryAllowed: (@Sendable () async -> Bool)? = nil,
+        retrySleeper: @escaping @Sendable (TimeInterval) async throws -> Void = {
+            try await Task.sleep(for: .seconds($0))
+        }
     ) {
         self.store = store
         self.applier = applier
@@ -168,6 +177,8 @@ public actor WatchStateReconciler {
         self.onPersistenceFailure = onPersistenceFailure
         self.onServerStateApplied = onServerStateApplied
         self.onAuthorizationRejection = onAuthorizationRejection
+        self.automaticRetryAllowed = automaticRetryAllowed
+        self.retrySleeper = retrySleeper
         self.state = store.load()
         for mutation in state.pending {
             for target in mutation.optimisticTargets {
@@ -175,6 +186,10 @@ public actor WatchStateReconciler {
                 state.sourceClocks[key] = max(state.sourceClocks[key] ?? .distantPast, mutation.capturedAt)
             }
         }
+    }
+
+    deinit {
+        retryTask?.cancel()
     }
 
     /// Number of mutations still awaiting drain — for diagnostics / tests.
@@ -335,6 +350,7 @@ public actor WatchStateReconciler {
         _ mutation: WatchMutation,
         onPersisted: @Sendable () -> Void = {}
     ) async -> Bool {
+        defer { scheduleAutomaticRetry() }
         var mutation = mutation
         if let authorization = mutation.authorization {
             do {
@@ -697,6 +713,7 @@ public actor WatchStateReconciler {
             let waiters = drainWaiters
             drainWaiters = []
             for waiter in waiters { waiter.resume() }
+            scheduleAutomaticRetry()
         }
 
         repeat {
@@ -793,6 +810,63 @@ public actor WatchStateReconciler {
                 persist()
             }
         } while drainRequestedWhileDraining
+    }
+
+    private func scheduleAutomaticRetry() {
+        guard automaticRetryAllowed != nil, !isDraining else { return }
+        let currentDate = now()
+        var dates: [Date] = []
+        for mutation in state.pending {
+            for target in mutation.targets where !liveSessions.contains(
+                LiveSession(target: target, serverScope: mutation.serverScope)
+            ) {
+                dates.append(mutation.targetRetries[target.id]?.notBefore ?? currentDate)
+            }
+            if mutation.expansionPending || mutation.traktPending || mutation.traktProgress != nil
+                || mutation.simklPending || mutation.wetrakrPending
+                || mutation.anilistPending || mutation.malPending {
+                dates.append(currentDate)
+            }
+        }
+        guard let earliest = dates.min() else {
+            retryGeneration &+= 1
+            retryTask?.cancel()
+            retryTask = nil
+            retryDate = nil
+            return
+        }
+        // Tracker failures and blocked identities have no target deadline. Pace
+        // them too, and never let frequent playback checkpoints postpone a wake.
+        let date = max(earliest, currentDate.addingTimeInterval(30))
+        if let retryDate, retryDate <= date { return }
+        retryGeneration &+= 1
+        let generation = retryGeneration
+        retryTask?.cancel()
+        retryDate = date
+        let sleeper = retrySleeper
+        retryTask = Task { [weak self] in
+            do {
+                try await sleeper(date.timeIntervalSince(currentDate))
+                try Task.checkCancellation()
+            } catch is CancellationError {
+                return
+            } catch {
+                FanoutDiagnostics.emit("watch retry wake failed: \(error)")
+                return
+            }
+            await self?.retryAutomatically(generation: generation)
+        }
+    }
+
+    private func retryAutomatically(generation: UInt64) async {
+        guard generation == retryGeneration, !Task.isCancelled else { return }
+        retryTask = nil
+        retryDate = nil
+        guard let automaticRetryAllowed,
+              await automaticRetryAllowed(),
+              generation == retryGeneration,
+              !Task.isCancelled else { return }
+        await drain()
     }
 
     /// Applies a single mutation in place: each remaining server target, then the

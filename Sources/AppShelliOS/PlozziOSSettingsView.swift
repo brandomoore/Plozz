@@ -4,6 +4,7 @@ import CoreModels
 import CoreNetworking
 import CoreUI
 import FeaturePlayback
+import FeatureLiveTV
 import FeatureAuth
 import FeatureProfiles
 import FeatureSettings
@@ -98,9 +99,13 @@ struct PlozziOSSettingsView: View {
         .background { SettingsPageBackground() }
         .transientStatusOverlay(
             presenter: appModel.transientStatusPresenter,
-            bottomPadding: 24,
             palette: palette
         )
+        .guidePreparationOverlay(
+            model: appModel.guidePreparation, presenter: appModel.transientStatusPresenter,
+            palette: palette
+        )
+        .environment(appModel.guidePreparation)
         .environment(\.themePalette, palette)
         .environment(\.colorScheme, palette.isLight ? .light : .dark)
         .tint(palette.primaryText)
@@ -114,7 +119,7 @@ struct PlozziOSSettingsView: View {
         ) {
             AddServerView(
                 appModel: appModel,
-                initialProvider: iptvSetup == nil ? addUserServer?.provider ?? .jellyfin : .iptv,
+                initialProvider: iptvSetup == nil ? addUserServer?.provider : .iptv,
                 initialAddress: addUserServer?.baseURL.absoluteString ?? "",
                 initialIPTVPlaylist: iptvSetup?.playlist, initialIPTVAccount: iptvSetup?.account,
                 initialIPTVMode: iptvSetup?.mode ?? .playlist
@@ -234,6 +239,7 @@ private enum PlozziOSSettingsDestination: Hashable {
 private struct PlozziOSProfileSettingsSection<Row: View, Management: View>: View {
     let profileName: String
     let showsParentalControls: Bool
+    let appLanguage: AppLanguageSettingsModel
     @ViewBuilder let row: (ProfileSettingsCategory) -> Row
     @ViewBuilder let management: () -> Management
 
@@ -241,7 +247,8 @@ private struct PlozziOSProfileSettingsSection<Row: View, Management: View>: View
         SettingsSectionGroup(verbatim: profileName) {
             ForEach(ProfileSettingsCategory.allCases) { category in
                 if category == .language {
-                    PlozziOSSettingsLanguagePicker()
+                    PlozziOSSettingsLanguagePicker(appLanguage: appLanguage)
+                        .settingsActionRow()
                         .settingsSearchAnchor("language")
                 } else if category == .libraries {
                     if !showsParentalControls { row(category) }
@@ -287,12 +294,11 @@ struct PlozziOSSettingsCategoryLabel: View {
     }
 }
 
-private struct PlozziOSSettingsLanguagePicker: View {
-    @Environment(AppLanguageSettingsModel.self) private var appLanguage
+struct PlozziOSSettingsLanguagePicker: View {
+    @Bindable var appLanguage: AppLanguageSettingsModel
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
-        @Bindable var appLanguage = appLanguage
         Menu {
             Picker("Language", selection: $appLanguage.language) {
                 ForEach(AppLanguage.available()) { language in
@@ -399,7 +405,10 @@ private struct PlozziOSProfileSettingsPage: View {
         case .trackers:
             PlozziOSTrackerSettingsView(appModel: appModel)
         case .language:
-            List { PlozziOSSettingsLanguagePicker().settingsSearchAnchor("language") }
+            List {
+                PlozziOSSettingsLanguagePicker(appLanguage: appModel.appLanguage)
+                    .settingsSearchAnchor("language")
+            }
                 .settingsPageSurface()
                 .navigationTitle("Language")
         }
@@ -507,7 +516,8 @@ private struct PlozziOSSettingsSplitView: View {
 
                     PlozziOSProfileSettingsSection(
                         profileName: appModel.profiles.activeProfile.name,
-                        showsParentalControls: showsParentalControlsSection
+                        showsParentalControls: showsParentalControlsSection,
+                        appLanguage: appModel.appLanguage
                     ) { category in
                         Button {
                             selection = .profile(category)
@@ -519,7 +529,7 @@ private struct PlozziOSSettingsSplitView: View {
                                 ).contains($0) }
                             )
                         }
-                        .buttonStyle(.plain)
+                        .settingsActionRow()
                         .accessibilityIdentifier("settings-category-\(category.rawValue)")
                     } management: {
                         if showsParentalControlsSection {
@@ -567,7 +577,7 @@ private struct PlozziOSSettingsSplitView: View {
                         SettingsSectionGroup(deviceSettingsTitle) {
                             settingsRow(
                                 .servers,
-                                title: "Servers",
+                                title: SettingsCopy.sources,
                                 systemImage: "externaldrive.connected.to.line.below"
                             )
                             Button {
@@ -580,7 +590,7 @@ private struct PlozziOSSettingsSplitView: View {
                                     )
                                     .contentShape(Rectangle())
                             }
-                            .buttonStyle(.plain)
+                            .settingsActionRow()
                             // Household-level, so it sits here rather than on a
                             // profile — one PIN for everyone, not a property of
                             // any one person. Matches tvOS.
@@ -631,6 +641,7 @@ private struct PlozziOSSettingsSplitView: View {
                             Button("Sign Out of All Accounts", role: .destructive) {
                                 confirmSignOutAll = true
                             }
+                            .settingsActionRow()
                         }
                     }
                     // Hidden until Developer Mode is unlocked (tap Version seven
@@ -643,9 +654,11 @@ private struct PlozziOSSettingsSplitView: View {
                                 appModel.resetToFirstRunForDebugging()
                                 onClose()
                             }
+                            .settingsActionRow()
                             Button("Turn Off Developer Mode", role: .destructive) {
                                 developerMode.disable()
                             }
+                            .settingsActionRow()
                         }
                         PlozziOSDeveloperInfoSection()
                     }
@@ -661,13 +674,14 @@ private struct PlozziOSSettingsSplitView: View {
             NavigationStack {
                 ZStack {
                     SettingsPageBackground()
-                    Group {
-                        settingsDetail
-                    }
+                    settingsDetail
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .id(detailIdentity)
+                .background {
+                    SettingsCategoryNavigationReset(identity: detailIdentity)
+                }
             }
-            .id(selection)
             .toolbar(removing: .sidebarToggle)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -746,7 +760,7 @@ private struct PlozziOSSettingsSplitView: View {
                 .contentShape(Rectangle())
             }
         }
-        .buttonStyle(.plain)
+        .settingsActionRow()
     }
 
     private func settingsRow(
@@ -779,7 +793,20 @@ private struct PlozziOSSettingsSplitView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .settingsActionRow()
+    }
+
+    private struct DetailIdentity: Equatable, Hashable {
+        let destination: PlozziOSSettingsDestination?
+        let profileID: String
+        let isParentalUnlocked: Bool
+    }
+
+    private var detailIdentity: DetailIdentity {
+        DetailIdentity(
+            destination: selection, profileID: appModel.profiles.activeProfileID,
+            isParentalUnlocked: isParentalUnlocked
+        )
     }
 
     @ViewBuilder
@@ -1059,9 +1086,10 @@ private struct PlozziOSSettingsCompactMenu: View {
 
                 PlozziOSProfileSettingsSection(
                     profileName: appModel.profiles.activeProfile.name,
-                    showsParentalControls: showsParentalControlsSection
+                    showsParentalControls: showsParentalControlsSection,
+                    appLanguage: appModel.appLanguage
                 ) { category in
-                    NavigationLink {
+                    SettingsPageLink {
                         PlozziOSProfileSettingsPage(
                             category: category, appModel: appModel, onAddServer: onAddServer,
                             onAddUser: onAddUser, canManageProviders: !isParentalSealed
@@ -1074,10 +1102,11 @@ private struct PlozziOSSettingsCompactMenu: View {
                             ).contains($0) }
                         )
                     }
+                    .settingsActionRow()
                     .accessibilityIdentifier("settings-category-\(category.rawValue)")
                 } management: {
                     if showsParentalControlsSection {
-                        NavigationLink {
+                        SettingsPageLink {
                             PlozziOSProfileAppearancePage(
                                 appModel: appModel,
                                 profileID: appModel.profiles.activeProfileID
@@ -1085,8 +1114,9 @@ private struct PlozziOSSettingsCompactMenu: View {
                         } label: {
                             Label(KidsProfileCopy.nameAndAvatar, systemImage: "person.crop.circle")
                         }
+                        .settingsActionRow()
                     } else if appModel.profiles.activeProfile.isKids {
-                        NavigationLink {
+                        SettingsPageLink {
                             PlozziOSProfileSettingsView(
                                 appModel: appModel,
                                 profileID: appModel.profiles.activeProfileID
@@ -1094,6 +1124,7 @@ private struct PlozziOSSettingsCompactMenu: View {
                         } label: {
                             Label(KidsProfileCopy.manageProfile, systemImage: "person.crop.circle")
                         }
+                        .settingsActionRow()
                     }
                 }
 
@@ -1104,7 +1135,7 @@ private struct PlozziOSSettingsCompactMenu: View {
                         // Stable rows; the GATE is inside the destination. Swapping
                         // the link on `isParentalSealed` made a correct PIN delete
                         // the page the user was standing on.
-                        NavigationLink {
+                        SettingsPageLink {
                             PlozziOSParentalGate(
                                 appModel: appModel,
                                 isSealed: isParentalSealed,
@@ -1125,7 +1156,8 @@ private struct PlozziOSSettingsCompactMenu: View {
                                 isSealed: isParentalSealed
                             )
                         }
-                        NavigationLink {
+                        .settingsActionRow()
+                        SettingsPageLink {
                             PlozziOSParentalGate(
                                 appModel: appModel,
                                 isSealed: isParentalSealed,
@@ -1143,6 +1175,7 @@ private struct PlozziOSSettingsCompactMenu: View {
                                 systemImage: isParentalSealed ? "lock.fill" : "person.crop.circle"
                             )
                         }
+                        .settingsActionRow()
                     } footer: {
                         if !isParentalSealed {
                             Text(KidsProfileCopy.parentalControlsOpen)
@@ -1155,15 +1188,20 @@ private struct PlozziOSSettingsCompactMenu: View {
                 // everything).
                 if !appModel.profiles.activeProfile.isKids {
                     SettingsSectionGroup(deviceSettingsTitle) {
-                        NavigationLink {
+                        SettingsPageLink {
                             PlozziOSServersSettingsView(
                                 appModel: appModel,
                                 onAddServer: onAddServer
                             )
                         } label: {
-                            Label("Servers", systemImage: "externaldrive.connected.to.line.below")
+                            Label {
+                                Text(SettingsCopy.sources)
+                            } icon: {
+                                Image(systemName: "externaldrive.connected.to.line.below")
+                            }
                         }
-                        NavigationLink {
+                        .settingsActionRow()
+                        SettingsPageLink {
                             PlozziOSProfilesView(
                                 appModel: appModel,
                                 onClose: { dismiss() },
@@ -1172,8 +1210,9 @@ private struct PlozziOSSettingsCompactMenu: View {
                         } label: {
                             Label("Profiles", systemImage: "person.2")
                         }
+                        .settingsActionRow()
                         // Household-level, so it sits here rather than on a profile.
-                        NavigationLink {
+                        SettingsPageLink {
                             PlozziOSParentalPINSettingsView(appModel: appModel)
                         } label: {
                             Label(
@@ -1181,8 +1220,9 @@ private struct PlozziOSSettingsCompactMenu: View {
                                 systemImage: "figure.and.child.holdinghands"
                             )
                         }
+                        .settingsActionRow()
 
-                        NavigationLink {
+                        SettingsPageLink {
                             PlozziOSSeerrSettingsView(appModel: appModel)
                         } label: {
                             Label {
@@ -1191,12 +1231,14 @@ private struct PlozziOSSettingsCompactMenu: View {
                                 Image(systemName: "sparkles.tv")
                             }
                         }
+                        .settingsActionRow()
 
-                        NavigationLink {
+                        SettingsPageLink {
                             PlozziOSSyncSetupSettingsView(appModel: appModel)
                         } label: {
                             Label("iCloud Sync", systemImage: "icloud")
                         }
+                        .settingsActionRow()
                         // This link needs an explicit destination to keep neighboring actions independent.
                         Button {
                             showMetadata = true
@@ -1205,23 +1247,25 @@ private struct PlozziOSSettingsCompactMenu: View {
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .contentShape(Rectangle())
                         }
-                        .buttonStyle(.plain)
-                        NavigationLink {
+                        .settingsActionRow()
+                        SettingsPageLink {
                             PlozziOSDownloadSettingsView(model: appModel.downloads)
                         } label: {
                             Label("Downloads", systemImage: "arrow.down.circle")
                         }
+                        .settingsActionRow()
                     } footer: {
                         Text(everyoneScopeFooter)
                     }
                 }
 
                 PlozziOSSettingsVersionSection(isKidsProfile: appModel.profiles.activeProfile.isKids) {
-                    NavigationLink {
+                    SettingsPageLink {
                         ReleaseNotesSettingsView(model: .shared)
                     } label: {
                         Label("Release Notes", systemImage: "doc.text")
                     }
+                    .settingsActionRow()
                 }
                 PlozziOSCommunitySettingsSection()
                 PlozziOSMoreAppsSettingsSection()
@@ -1231,7 +1275,7 @@ private struct PlozziOSSettingsCompactMenu: View {
                 }
 
                 SettingsSectionGroup("Support") {
-                    NavigationLink {
+                    SettingsPageLink {
                         PlozziOSDiagnosticsSettingsView(
                             appModel: appModel,
                             model: appModel.settings.diagnostics,
@@ -1240,15 +1284,18 @@ private struct PlozziOSSettingsCompactMenu: View {
                     } label: {
                         Label("Help & Diagnostics", systemImage: "ladybug")
                     }
-                    NavigationLink {
+                    .settingsActionRow()
+                    SettingsPageLink {
                         PlozziOSAttributionsView()
                     } label: {
                         Label(SettingsCopy.attributions, systemImage: "doc.text.magnifyingglass")
                     }
+                    .settingsActionRow()
                     if !appModel.accounts.isEmpty, !appModel.profiles.activeProfile.isKids {
                         Button("Sign Out of All Accounts", role: .destructive) {
                             confirmSignOutAll = true
                         }
+                        .settingsActionRow()
                     }
                 }
 
@@ -1260,9 +1307,11 @@ private struct PlozziOSSettingsCompactMenu: View {
                             appModel.resetToFirstRunForDebugging()
                             dismiss()
                         }
+                        .settingsActionRow()
                         Button("Turn Off Developer Mode", role: .destructive) {
                             developerMode.disable()
                         }
+                        .settingsActionRow()
                     }
                     PlozziOSDeveloperInfoSection()
                 }
@@ -1444,7 +1493,7 @@ private struct PlozziOSSettingsSearchDestination: View {
         switch entry.destinationPage(on: UIDevice.current.userInterfaceIdiom == .phone ? .phone : .tablet) {
         case .playback: profilePage(.playback)
         case .playbackAdvanced:
-            PlaybackAdvancedSettingsView(playback: appModel.settings.playback)
+            PlaybackAdvancedSettingsView()
         case .streamingAdvanced:
             if appModel.accountsProviders.resolvedActiveAccounts.contains(where: {
                 $0.provider is any StreamingQualityProviding
@@ -1523,7 +1572,7 @@ private struct PlozziOSSettingsSearchDestination: View {
             )
         case .navigation: PlozziOSNavigationSettingsView(appModel: appModel)
         case .home, .hero, .heroContent, .heroRatings, .heroTrailers, .heroDiscovery,
-             .heroLibraries, .heroCollections, .homeRows, .homeFiltering, .homeLabels, .continueWatching:
+             .heroLibraries, .heroCollections, .homeRows, .homeRowStyle, .homeFiltering, .homeLabels, .continueWatching:
             PlozziOSHomeSettingsView(
                 hero: appModel.settings.hero, heroBackground: appModel.settings.heroBackground,
                 cards: appModel.settings.cardStyle, visibility: appModel.settings.homeVisibility,
@@ -1695,7 +1744,7 @@ private struct PlozziOSProfilesView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .contentShape(Rectangle())
                     }
-                    .buttonStyle(.plain)
+                    .settingsActionRow()
                     // Deliberately no swipe-to-delete or context-menu delete.
                     // Both called `removeProfile` directly, which skipped the
                     // target profile's own PIN and its confirmation — so a locked
@@ -1712,6 +1761,7 @@ private struct PlozziOSProfilesView: View {
                 Button("Add Profile", systemImage: "person.badge.plus") {
                     showingAddProfile = true
                 }
+                .settingsActionRow()
                 // Full-size row, so the control is as prominent as what it acts
                 // on. Long-press already reaches editing; this is the version
                 // someone can find without knowing to try.
@@ -1723,6 +1773,7 @@ private struct PlozziOSProfilesView: View {
                         systemImage: isEditingProfiles ? "checkmark.circle" : "pencil"
                     )
                 }
+                .settingsActionRow()
             }
         }
         .settingsPageSurface()
@@ -1807,7 +1858,7 @@ struct PlozziOSAccountDetailView: View {
 
             if account.server.provider == .plex {
                 SettingsSectionGroup("Plex Home") {
-                    NavigationLink {
+                    SettingsPageLink {
                         PlozziOSPlexHomeUserSettingsView(
                             appModel: appModel,
                             account: account
@@ -1815,6 +1866,7 @@ struct PlozziOSAccountDetailView: View {
                     } label: {
                         Label("Plex User", systemImage: "person.crop.circle")
                     }
+                    .settingsActionRow()
                 }
             }
 
@@ -1834,10 +1886,12 @@ struct PlozziOSAccountDetailView: View {
                     Button("Sign In Again", systemImage: "arrow.clockwise") {
                         providerSetupRouter.reauthenticationAccount = account
                     }
+                    .settingsActionRow()
                 }
                 Button("Remove Server", role: .destructive) {
                     confirmRemoval = true
                 }
+                .settingsActionRow()
             }
         }
         .settingsPageSurface()
@@ -1906,6 +1960,7 @@ private struct PlozziOSShareScanSection: View {
                 .clipped()
 
             Button("Scan Now", systemImage: "arrow.clockwise", action: onScan)
+                .settingsActionRow()
                 .disabled(isBusy)
         }
         .transaction { transaction in
@@ -1962,6 +2017,7 @@ struct PlozziOSAppearanceSettingsView: View {
                     Button { destination = page } label: {
                         SettingsDisclosureLabel { Text(page.title) }
                     }
+                    .settingsActionRow()
                     .accessibilityIdentifier("appearance-\(page.rawValue)")
                 }
             }
@@ -1984,6 +2040,40 @@ struct PlozziOSAppearanceSettingsView: View {
                 )
             case .circadian:
                 PlozziOSNightShiftSettingsView(model: appModel.settings.nightShift)
+            }
+        }
+    }
+}
+
+/// Split-view detail stacks retain view-driven pushes when their root changes.
+/// Pop only that native stack; keep the sidebar's search and scroll state alive.
+private struct SettingsCategoryNavigationReset<Identity: Equatable>: UIViewControllerRepresentable {
+    let identity: Identity
+
+    func makeUIViewController(context: Context) -> Controller { Controller() }
+
+    func updateUIViewController(_ controller: Controller, context: Context) {
+        controller.update(identity)
+    }
+
+    final class Controller: UIViewController {
+        private var identity: Identity?
+
+        func update(_ identity: Identity) {
+            let changed = self.identity != nil && self.identity != identity
+            self.identity = identity
+            guard changed else { return }
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.identity == identity else { return }
+                guard let navigation = self.navigationController else { return }
+                if let transition = navigation.transitionCoordinator {
+                    transition.animate(alongsideTransition: nil) { [weak self, weak navigation] _ in
+                        guard self?.identity == identity else { return }
+                        navigation?.popToRootViewController(animated: false)
+                    }
+                } else {
+                    navigation.popToRootViewController(animated: false)
+                }
             }
         }
     }
@@ -2043,10 +2133,12 @@ private struct PlozziOSScreensNavigationSettingsView: View {
                 Button { destination = .navigation } label: {
                     SettingsDisclosureLabel { Text(Page.navigation.title) }
                 }
+                .settingsActionRow()
                 .accessibilityIdentifier("screens-navigation")
                 Button { destination = .allScreens } label: {
                     SettingsDisclosureLabel { Text(Page.allScreens.title) }
                 }
+                .settingsActionRow()
                 .accessibilityIdentifier("screens-all-screens")
             }
             SettingsSectionGroup {
@@ -2054,6 +2146,7 @@ private struct PlozziOSScreensNavigationSettingsView: View {
                     Button { destination = page } label: {
                         SettingsDisclosureLabel { Text(page.title) }
                     }
+                    .settingsActionRow()
                     .accessibilityIdentifier("screens-\(page.rawValue)")
                 }
             }
@@ -2203,14 +2296,18 @@ struct PlozziOSArtworkSettingsView: View {
                                     .foregroundStyle(.secondary)
                             }
                         }
+                        .settingsActionRow()
                         .accessibilityIdentifier("artwork-metadata-providers")
                     } else {
-                        NavigationLink("Metadata Providers (TMDB, TheTVDB…)") {
+                        SettingsPageLink {
                             PlozziOSMetadataSettingsView(
                                 appModel: appModel, deps: appModel.makeMetadataSettingsDependencies(),
                                 returnsToArtwork: true
                             )
+                        } label: {
+                            SettingsDisclosureLabel { Text("Metadata Providers (TMDB, TheTVDB…)") }
                         }
+                        .settingsActionRow()
                         .accessibilityIdentifier("artwork-metadata-providers")
                     }
                 } footer: {
@@ -2335,11 +2432,12 @@ private struct PlozziOSDetailPageSettingsView: View {
                 if detailPage.settings.showsHeaderRatings {
                     HeaderReviewScoreCountPicker(settings: $detailPage.settings).settingsSearchAnchor("detail-rating-count")
                 }
-                NavigationLink {
+                SettingsPageLink {
                     PlozziOSDetailRatingPriorityView(model: detailPage)
                 } label: {
-                    Text("Rating sources & order")
+                    SettingsDisclosureLabel { Text("Rating sources & order") }
                 }
+                .settingsActionRow()
             }
             .settingsSearchGroup(["detail-ratings", "detail-rating-count"])
             SettingsSectionGroup("Age recommendation") {
@@ -2461,6 +2559,7 @@ struct PlozziOSPlaybackSettingsView: View {
                             Text($0.title).tag($0)
                         }
                     }
+                    .pickerStyle(.menu)
                     .accessibilityIdentifier("playback-orientation")
                     .settingsSearchAnchor("player-orientation")
                 }
@@ -2601,14 +2700,14 @@ struct PlozziOSPlaybackSettingsView: View {
             SettingsSectionGroup("Audio") {
                 LosslessAudioControl()
                     .settingsSearchAnchor("lossless-audio")
-                SpatialAudioControl(isOn: $model.settings.trueHDAtmosEnabled)
-                    .settingsSearchAnchor("spatial-audio")
             }
-            .settingsSearchGroup(["lossless-audio", "spatial-audio"])
+            .settingsSearchGroup(["lossless-audio"])
             SettingsSectionGroup {
                 Button { showsAdvancedPlayback = true } label: {
                     SettingsDisclosureLabel { Text("Advanced") }
                 }
+                .settingsActionRow()
+                .accessibilityIdentifier("playback-advanced")
             }
         }
         .settingsPageSurface()
@@ -2620,7 +2719,7 @@ struct PlozziOSPlaybackSettingsView: View {
             PlozziOSAdvancedStreamingSettings(settings: $model.settings.streaming, support: streamingSupport)
         }
         .navigationDestination(isPresented: $showsAdvancedPlayback) {
-            PlaybackAdvancedSettingsView(playback: model)
+            PlaybackAdvancedSettingsView()
         }
     }
 
@@ -2668,6 +2767,8 @@ private struct PlozziOSSubtitleSettingsView: View {
     @Bindable var behavior: SubtitleBehaviorModel
     @Bindable var policy: SubtitlePolicyModel
     @Bindable var style: SubtitleStyleModel
+    @State private var showsSubtitleStyle = false
+    @State private var showsLiveSubtitleStyle = false
 
     private static let policyCategories: [SubtitleContentCategory] =
         [.movie, .tvShow, .anime]
@@ -2675,9 +2776,11 @@ private struct PlozziOSSubtitleSettingsView: View {
     var body: some View {
         List {
             SettingsSectionGroup("Appearance") {
-                NavigationLink("Customize subtitle style") {
-                    SubtitleStyleSettingsView(style: $style.style)
+                Button { showsSubtitleStyle = true } label: {
+                    SettingsDisclosureLabel { Text("Customize subtitle style") }
                 }
+                .settingsActionRow()
+                .accessibilityIdentifier("subtitle-style")
             }
             SettingsSectionGroup("Live TV subtitle style") {
                 Toggle("Use a separate style for Live TV", isOn: $style.usesSeparateLiveTVStyle)
@@ -2686,9 +2789,11 @@ private struct PlozziOSSubtitleSettingsView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 if style.usesSeparateLiveTVStyle {
-                    NavigationLink("Customize Live TV subtitles") {
-                        SubtitleStyleSettingsView(style: $style.resolvedLiveTVStyle, isLiveTV: true)
+                    Button { showsLiveSubtitleStyle = true } label: {
+                        SettingsDisclosureLabel { Text("Customize Live TV subtitles") }
                     }
+                    .settingsActionRow()
+                    .accessibilityIdentifier("live-subtitle-style")
                 }
             }
             .settingsSearchGroup(["live-subtitle-style"])
@@ -2777,6 +2882,12 @@ private struct PlozziOSSubtitleSettingsView: View {
         }
         .settingsPageSurface()
         .navigationTitle("Subtitles")
+        .navigationDestination(isPresented: $showsSubtitleStyle) {
+            SubtitleStyleSettingsView(style: $style.style)
+        }
+        .navigationDestination(isPresented: $showsLiveSubtitleStyle) {
+            SubtitleStyleSettingsView(style: $style.resolvedLiveTVStyle, isLiveTV: true)
+        }
     }
 
     private var baseRule: SubtitlePolicy.Rule {
@@ -3086,7 +3197,7 @@ private struct PlozziOSProfileIdentityHeader: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .settingsActionRow()
     }
 }
 

@@ -5,8 +5,10 @@ import CoreModels
 import CoreNetworking
 import CoreUI
 import CrashReporting
+import EnginePlozzigen
 import FeatureAuthCore
 import FeatureHomeCore
+import FeatureLiveTVCore
 import FeatureProfiles
 import FeatureSettings
 import FeatureSyncSetup
@@ -33,6 +35,13 @@ import UIKit
 @Observable
 final class PlozziOSAppModel {
     private let appAdmission: AppAdmissionModel
+    @ObservationIgnored lazy var guidePreparation = LiveTVGuidePreparationModel { [weak self] id in
+        guard let self, !self.mustChooseProfile, !self.activeProfileNeedsUnlock,
+              self.lockedSwitch == nil, self.parentalSwitch == nil,
+              self.plexHomeUsers.pendingPlexPINRequest == nil,
+              !self.accountsProviders.activeProfileAwaitsIdentity else { return nil }
+        return self.accountsProviders.liveTVProviderResolver()(id)
+    }
 
     static var isStandalonePlaybackAvailable: Bool {
         true
@@ -79,10 +88,12 @@ final class PlozziOSAppModel {
     }
 
     /// Call only after a user-requested playlist/free-channel setup succeeds.
-    /// This records admission without changing first-run setup or navigation.
+    /// Records admission and reveals Live TV without changing the current destination.
     @discardableResult
     func recordSuccessfulIPTVSetup() -> Bool {
-        appAdmission.recordStandaloneChoice(isAvailable: Self.isStandalonePlaybackAvailable)
+        let accepted = appAdmission.recordStandaloneChoice(isAvailable: Self.isStandalonePlaybackAvailable)
+        if accepted { settings.navigation.showsLiveTV = true }
+        return accepted
     }
 
     private struct HeroTrailerCacheEntry {
@@ -406,6 +417,7 @@ final class PlozziOSAppModel {
     let malService: MALService
     let crashReporting: CrashReportingSettingsModel
     let crashReportingController: CrashReportingController
+    let appLanguage: AppLanguageSettingsModel
     private(set) var requiresLaunchProfileSelection: Bool
     private(set) var settings: PlozziOSSettingsModel
     @ObservationIgnored
@@ -436,6 +448,7 @@ final class PlozziOSAppModel {
     private(set) var seriesTrackStore: SeriesTrackPreferenceStore
     private(set) var versionPreferences: VersionPreferenceStore
     private(set) var downloads: PlozziOSDownloadsModel
+    var pendingDownloadSelection: MediaItem?
     private(set) var pendingLibrarySelection: PendingLibrarySelection?
     private(set) var pendingFirstRunStep: FirstRunStep?
     /// Drives the app to a named screen for an automated capture run. Inert unless
@@ -536,7 +549,11 @@ final class PlozziOSAppModel {
                 .some(self.downloads.cachedRecord(forSelectedVersionOf: item)?.menuState)
             },
             performDownloadAction: { [unowned self] action, item in
-                Task { await self.performDownloadMenuAction(action, on: item) }
+                let profileID = self.profiles.activeProfileID
+                Task {
+                    guard self.profiles.activeProfileID == profileID else { return }
+                    await self.performDownloadMenuAction(action, on: item)
+                }
             },
             makeActionConfirmation: { [unowned self] in self.makeLibraryActionFeedback() },
             makeWatchlistFailureFeedback: { [unowned self] in self.makeLibraryActionFeedback(onCompletion: .error) }
@@ -560,6 +577,9 @@ final class PlozziOSAppModel {
     @ObservationIgnored private var queuedLibrarySelectionBeginsFirstRun = false
     @ObservationIgnored private var postAddPresentationGeneration: UInt64 = 0
     @ObservationIgnored private var watchReconcilers: [String: WatchStateReconciler] = [:]
+    @ObservationIgnored private lazy var watchOutboxConnectivity = WatchOutboxConnectivity { [weak self] in
+        self?.retryWatchOutboxIfAllowed()
+    }
     @ObservationIgnored var universalWatchlistReconciler: WatchlistReconciler?
     @ObservationIgnored var universalWatchlistMutationStore: DurableWatchlistMutationStore?
     @ObservationIgnored var universalWatchlistNativeView: NativeWatchlistView = .empty
@@ -596,6 +616,7 @@ final class PlozziOSAppModel {
     )
 
     private var watchReconciler: WatchStateReconciler {
+        _ = watchOutboxConnectivity
         let profileID = profiles.activeProfileID
         if let existing = watchReconcilers[profileID] {
             return existing
@@ -610,8 +631,10 @@ final class PlozziOSAppModel {
     init(
         appAdmissionStore: any AppAdmissionStoring = AppAdmissionStore(),
         accountStore suppliedAccountStore: AccountStore? = nil,
-        profileStore: (any ProfilePersisting)? = nil
+        profileStore: (any ProfilePersisting)? = nil,
+        appLanguage: AppLanguageSettingsModel? = nil
     ) {
+        self.appLanguage = appLanguage ?? AppLanguageSettingsModel()
         let appAdmission = AppAdmissionModel(store: appAdmissionStore)
         self.appAdmission = appAdmission
         let authenticatedHTTPResolver = ManagedAuthenticatedHTTPResolver()
@@ -631,7 +654,8 @@ final class PlozziOSAppModel {
         }
         let mediaShareRuntime = DefaultMediaShareRuntime.make(
             accountStore: accountStore,
-            artworkCacheLifecycle: PlozziOSMediaShareArtworkCacheLifecycle()
+            artworkCacheLifecycle: PlozziOSMediaShareArtworkCacheLifecycle(),
+            sourcePreparer: PlozzigenNetworkFileStreamProber.preparePlaybackSource
         )
         ArtworkImageCache.shared.configure(
             networkFileService: mediaShareRuntime.artworkNetworkFileService
@@ -1160,6 +1184,7 @@ final class PlozziOSAppModel {
         sceneSessionIDs = sceneSessionIDs.filter { connected.contains($0.key) }
         if let transition = applicationLifecycle.replaceScenes(scenes) {
             applicationIsActive = transition.isActive
+            if transition.isActive { retryWatchOutboxIfAllowed() }
         }
     }
 
@@ -1859,6 +1884,7 @@ final class PlozziOSAppModel {
     }
 
     private func transitionDownloads(to profileID: String) {
+        pendingDownloadSelection = nil
         let outgoing = downloads
         outgoing.beginProfileTransition()
         downloads = PlozziOSDownloadsModel(
@@ -2240,6 +2266,12 @@ final class PlozziOSAppModel {
         Task { await reconciler.drain() }
     }
 
+    func retryWatchOutboxIfAllowed() {
+        guard applicationIsActive, isActiveProfileAuthorized,
+              watchOutboxConnectivity.isConnected else { return }
+        drainWatchOutbox()
+    }
+
     func pendingWatchMutations() async -> [WatchMutation] {
         let profileID = profiles.activeProfileID
         let pending = await watchReconciler.snapshot().pending
@@ -2404,6 +2436,14 @@ final class PlozziOSAppModel {
                         } catch { return }
                     }
                     refresh.post()
+                }
+            },
+            automaticRetryAllowed: { [weak self] in
+                await MainActor.run {
+                    guard let self else { return false }
+                    return self.applicationIsActive && self.isActiveProfileAuthorized
+                        && self.profiles.activeProfileID == profileID
+                        && self.watchOutboxConnectivity.isConnected
                 }
             }
         )
@@ -2886,6 +2926,8 @@ final class PlozziOSAppModel {
             let isFirstRun = existingIDs.isEmpty
                 && !profiles.firstRunProfileSetupComplete
             var addedAccounts: [Account] = []
+            var addedLiveTV = false
+            var guideAccountIDs: [String] = []
             for session in sessions {
                 let registration = try accountStore.registerAuthenticatedSession(session)
                 let account = registration.account
@@ -2893,6 +2935,8 @@ final class PlozziOSAppModel {
                 clearRemovalTombstone(for: account.id)
                 if registration.previousAccount == nil || activateIPTVAccount {
                     try accountsProviders.includeIPTVAccountInActiveProfile(account)
+                    addedLiveTV = addedLiveTV || account.server.provider == .iptv
+                    if account.server.provider == .iptv { guideAccountIDs.append(account.id) }
                 }
                 if registration.previousAccount == nil {
                     addedAccounts.append(account)
@@ -2905,8 +2949,10 @@ final class PlozziOSAppModel {
                 }
             } ?? false
             accountError = nil
+            if addedLiveTV { settings.navigation.showsLiveTV = true }
             reloadAccountsAndCrashContext()
             selectNewlyAddedUserIfNeeded(from: addedAccounts)
+            for id in guideAccountIDs { guidePreparation.start(accountID: id) }
             identityIndex.warmIdentityIndex()
             if isFirstRun, let account = addedAccounts.first {
                 profiles.seedDefaultProfileIdentity(

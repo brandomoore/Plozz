@@ -25,7 +25,7 @@ high-capability language model, then treated as untrusted batch input. Agents ne
 5. Only the importer writes the repository catalogs.
 
 `tools/l10n-source-snapshot.json` fingerprints the source text, translator
-comment, English variation structure, and three permission prompts from the
+comment, English variation structure, and permission prompts from the
 last completed pass. That catches changed semantic-key values and permission
 copy even when a non-English localization still exists under the same key.
 
@@ -78,7 +78,8 @@ right-to-left layout and logical navigation symbols.
 
 A model-generated language can ship when:
 
-1. It has all catalog keys and all three permission prompts.
+1. It has all catalog keys and every registered permission prompt, including
+   local-network access, camera scanning, and playback motion on iOS.
 2. A separate reviewer completed a full independent review.
 3. The importer passes placeholder, plural, locale-tag, state, and key-set
    validation.

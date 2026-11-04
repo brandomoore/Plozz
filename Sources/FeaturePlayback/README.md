@@ -40,6 +40,19 @@ bounded language-match/accessibility flags without track titles or URLs.
 - **View model / view** —
   - `PlayerViewModel` orchestrates engine lifecycle, audio/subtitle
     selection, scrub state, resume, and progress reporting.
+  - Resume progress is saved independently of Continue Watching eligibility:
+    `ContinueWatchingPolicy` requires 5% of the duration, bounded to 5–60 seconds
+    (60 seconds when duration is unknown). Provider-supported trailer progress
+    is preserved, but trailers never appear in Continue Watching, converge onto their parent,
+    or scrobble their parent's identity to trackers.
+    This client-side visibility rule does not override server resume policies.
+    Plex can accept a short progress write without retaining a resume offset;
+    live verification observed that behavior at 60 seconds and below.
+    Plex trailers and special features additionally retain a device-local,
+    profile/account/server-viewer-scoped resume fallback; ordinary movies and
+    episodes remain server-managed. See ProviderPlex's extra resume contract.
+    Tracker playback samples honor the same original-item and resolved-extra
+    exclusions as scrobbling, without suppressing provider progress reports.
   - `PlayerView` + `CustomPlayerContainer` host the engine's vended
     bare video surface and overlay the shared transport chrome.
 - **Subtitle rendering** — `SubtitleOverlayView` draws in-app captions from
@@ -319,6 +332,30 @@ Native and tvOS track menus share `TrackLabeling` and `TrackMenuBuilder`.
 Bare language titles no longer suppress known codec/channel facts, for example
 `English (Opus 5.1)`. Custom names and commentary are retained, existing format
 facts are not duplicated, and unknown formats are not invented.
+Explicit French audio-version tags (`VFQ`, `VFF`, `VFI`, `VFB`, `VQ`, `VOF`,
+`VOQ`) survive generated server titles, matching-track provider enrichment, and
+app-locale changes. These are source-authored community conventions, rendered
+verbatim, not codec names or proof of a particular dub inferred from `fr`.
+For example, `fr` plus `VFQ` and DTS six-channel metadata becomes
+`French (VFQ, DTS 5.1)`. A container's existing version tag takes precedence over
+conflicting provider hints. Release-wide counts such as `VF2`, subtitle labels
+such as `VOSTFR`, and encoder-name substrings do not identify an audio version.
+
+Audio display preserves explicit BCP 47 details, including Brazilian/European
+Portuguese (`pt-BR`/`pt-PT`), Latin American/Spain Spanish (`es-419`/`es-ES`),
+Canadian/France French (`fr-CA`/`fr-FR`), and Cantonese (`yue`/`zh-yue`).
+If the OS collapses an explicit tag such as Mandarin `cmn` to a macrolanguage
+name, the supplied tag remains visible. Script subtags describe writing, not
+proof of an audio dialect; generic `zh`, `fr`, `es`, or `pt` never acquires an
+inferred regional version. Language matching, preferred ordering, selection IDs,
+and subtitle formatting are unchanged. Locale extensions such as calendar
+preferences are not audio-language details. This preserves metadata actually
+supplied by the provider/engine, not distinctions missing from that metadata.
+
+Conventions: [French version tags](https://github.com/TRaSH-Guides/Guides/blob/master/includes/cf-descriptions/french-vfq.md),
+[BCP 47 language tags](https://www.w3.org/International/articles/language-tags/),
+and [Matroska language handling](https://mkvtoolnix.download/doc/mkvmerge.html#mkvmerge.language_handling).
+
 Audio labels retain per-track codec profiles and confirmed spatial-format flags:
 for example `Dolby TrueHD Atmos`, `Dolby Digital+ Atmos`, or
 `DTS-HD MA + DTS:X IMAX`. These identify the encoded source independently of
@@ -330,6 +367,33 @@ and channel information from the already-playing asset, rather than manufacturin
 language-only tracks. Single tracks are exposed as metadata without offering a
 redundant switch. Synthetic native-selection IDs remain separate from provider
 IDs and still route through AVPlayer's own selection group or muxed tracks.
+
+Live TV channel selection does not display an "Opening [channel]" toast in the
+guide or player. Existing in-player loading indicators, playback errors, retry
+actions, and cancellation on navigation remain unchanged.
+
+The retained channel engine keeps output muted until the current source has
+finished loading and its first-frame signal permits presentation. Scheduled
+programme boundaries and live-clock reconciliation close the same gate; decoder
+playback continues underneath it. Readiness changes are pushed immediately, not
+delayed until the watch-reporting timer. Readiness never overrides the requested mute,
+pause intent, or multiview audio owner. Confirmed audio-only output uses its own
+readiness signal; external playback retains the engine's receiver-readiness
+contract rather than waiting for a local video layer.
+
+On tvOS, opening a fullscreen HDR channel uses the same probe-aware fade as
+movies and episodes. The local veil reaches black before enabling display
+matching; playback and display-settle signals govern its reveal, with the
+existing bounded fallback. Returning to the guide fades the player first, then
+engages the root display veil before restoring fixed-output preview playback.
+The retained preview clears its local exit veil after collapse. Profile
+dynamic-range and frame-rate fade preferences apply; guide channel browsing,
+secondary multiview panes, and mobile playback do not acquire an HDMI veil.
+Ready SDR preview/fullscreen transitions still use the in-place engine path.
+Live loads publish generation-fenced source range after probing and when native
+HLS discovers its video description later. The native mount's provisional SDR
+default is not evidence; confirmed source facts release the probe-aware veil
+without waiting for its safety timeout.
 
 Mobile transport buttons, timelines, and tabs use native **clear** Liquid Glass,
 without tint or a colored backing. Like AVKit video chrome, their symbols and
@@ -494,14 +558,21 @@ drags seek on release. Channel/source changes and overlay teardown cancel pendin
 preview work and discard outgoing frames.
 
 Native HLS previews use bounded segment prefixes, not a second persistent player.
-Channel headers are restricted to their original origin; foreign-origin redirects
-and unsupported encryption/layouts omit the preview without affecting playback.
+Relative playlist URLs resolve against the final serving URL after redirects.
+CDN requests and redirects retain User-Agent, Referer and Origin; credential
+headers remain restricted to the original origin. Every redirect hop rejects
+HTTPS-to-HTTP downgrades, including after an initial HTTP request upgrades.
+If a selected preview rendition is refused, subsequent previews can follow
+AVPlayer's playing playlist; cancelling a request does not discard that selection.
+Unsupported encryption/layouts omit the preview without affecting playback.
 Byte-range playlists and playlists switching initialization maps currently omit
 previews. Segments are capped at 2 MiB, playlists at 512 KiB, initialization files
 at 2 MiB, and identity keys at 16 bytes. Truncated frames are never intentionally
 shown; unsupported or oversized resources leave the preview unavailable.
 The decoded-image cache holds 32 entries; init and key caches each hold at most
 eight. Reduced-transparency/performance presentation retains the non-glass frame.
+On iPhone/iPad, Live TV previews are capped at 180 points wide and still shrink
+to fit small viewports. VOD retains its existing 360-point maximum.
 
 ## Playback completion reporting
 
@@ -628,24 +699,46 @@ reveal/fade behavior; hidden playback positions are not frozen.
 ## Mobile player orientation
 
 The iPhone full-screen on-demand and expanded Live TV players read the active profile's
-`PlaybackSettings.orientation` (Landscape by default, Auto, or Portrait).
+`PlaybackSettings.orientation`: Follow device orientation, Portrait, Landscape auto
+(the default), Landscape left, or Landscape right, in one flat native settings menu.
 The existing playback-settings store and profile snapshot transfer carry the
 preference; it has no effect on iPad, tvOS, or inline trailers.
-Landscape permits either sideways direction. Compact iPhone browsing stays
+Landscape auto permits either sideways direction and follows stable sideways
+gravity even with iOS Rotation Lock enabled. One shared Core Motion source samples
+at 5 Hz only for the active compact-phone landscape player. Two consecutive
+unambiguous sideways readings are required; upright, face-up/down, and uncertain
+readings retain the current side. Motion data stays in memory and is neither stored
+nor transmitted. Native menu presentation defers side changes; backgrounding,
+dismissal, ownership loss, and other preferences stop motion tracking.
+Fixed left/right choices refer to the top of the phone, not UIKit's oppositely
+named interface-orientation constants. They never follow physical rotation.
+Compact iPhone browsing stays
 portrait, including the guide when no eligible preview is playing. Expanded phone
 windows with at least 600 points in both dimensions follow system rotation,
 like iPad; opening a larger display does not itself request fullscreen playback.
 
 Orientation is configured only in Settings > Playback, never in the player's
-options menu. Explicitly saved Auto or Portrait choices remain unchanged when
-loading existing profiles; older settings without an orientation use Landscape.
-The on-demand cover stays portrait while loading versions and showing
-the first-use question or pre-play version picker. The saved rotation preference
-activates only after that gate completes; cancelling or failing the gate never
-forces rotation. Episode/version handoffs retain the preference once playback starts.
+options menu. Existing persisted `auto`, `portrait`, and `landscape` values remain
+compatible; `landscape` now displays as Landscape auto. Older settings without an
+orientation still use that default. Both fixed directions use the same
+profile-scoped persistence and transfer path.
+The player opens immediately in the saved orientation, before version loading or
+stream preparation. The first-use question and initial version picker use the
+shared chooser directly inside that player, not a second sheet that can rotate
+during presentation or dismissal. There is no extra browsing-screen loading overlay.
+No stream or engine opens while a version choice is pending. Cancelling the choice
+closes the player; profile/server session checks still gate playback. Episode/version
+handoffs retain the preference. Loading and ready controls share the same top-leading
+Close button and insets.
 The mobile presentation owner supplies the shared player's dismissal action.
 Failure-screen Back and end-of-playback dismissal use that same owner as the
 mobile X button, rather than a SwiftUI dismiss action outside a SwiftUI cover.
+On compact iPhone windows, closing a landscape player releases its orientation
+policy as dismissal begins. A UIKit transition snapshot preserves the outgoing
+screen coordinates and slides the player away while revealing already-upright
+browsing. Reduced Motion, or an unavailable snapshot, uses the native crossfade.
+Portrait exits retain the native slide transition. An existing native transition
+finishes before dismissal starts; iPad and expanded phone windows keep system rotation.
 
 The actual presented UIKit hosting controller owns on-demand orientations.
 Live TV keeps one window-scoped owner while its destination is active, without
@@ -662,7 +755,7 @@ the coordinator's current authorization and source checks.
 Native options menus and Custom zoom controls retain the
 expanded player's window restriction, including when a presentation temporarily
 covers its embedded owner; only removing that owner ends its policy.
-Auto follows accepted system interface rotation rather than forcing rotation from
+Follow device orientation follows accepted system interface rotation rather than forcing rotation from
 sensor notifications, preserving system rotation lock. Playback ownership never
 applies a different window's or inactive profile's preference. Closing on-demand
 playback also restores the browsing policy.
@@ -670,8 +763,11 @@ iPad follows system rotation and offers no app orientation control, preserving
 multitasking. iPadOS refuses forced Portrait/Landscape changes in multitasking
 mode, even when a window fills the display.
 Rotation waits for native presentation transitions, including dismissal of the
-pre-play sheet, rather than racing the selection continuation. Transient geometry
-rejections are logged and retried at most three times within a bounded reconciliation
+pre-play sheet, rather than racing the selection continuation. A pending
+presentation permits only the requested playback orientations plus the current
+interface orientation needed to finish an existing sheet. Opening a native audio
+or options menu must not unlock portrait during landscape playback. Transient
+geometry rejections are logged and retried at most three times within a bounded reconciliation
 window; they never replace the saved preference with Auto or show a window-management
 toast. Dismissal, ownership changes, and newer requests cancel stale reconciliation.
 Returning to the foreground rechecks the active player's orientation.
@@ -905,6 +1001,13 @@ the selected speed without replacing the player. Automatic buffering cannot
 predict an arbitrary encoder pause or compensate for a server that cannot
 sustain playback; this fixture does not validate a real server's capacity.
 
+Converted-stream format inspection waits up to 60 seconds for the current
+AVPlayer item to become ready before starting its five-second track-probing
+window. Cold server encoders must not consume that window before media arrives.
+Failed or replaced items stop the probe; missing formats stay unknown rather
+than being inferred from request flags. This affects measured codec and dynamic
+range reporting, not playback buffering or the server's conversion policy.
+
 Plex renditions opt into a session-scoped keepalive every ten seconds after
 playback starts, including while paused or buffering. It does not depend on
 position changes, scan a library, update watch progress, or scrobble to Trakt.
@@ -951,23 +1054,19 @@ step, not the original recording's fidelity, resampling/downmixing, or the
 receiver's final output. In particular, stream-copy of a lossy source is not
 labelled lossless. The same shared rows follow live pipeline changes on both
 platforms, without changing audio selection or conversion behavior.
-On tvOS and iOS/iPadOS 26+, the profile's default-on **Spatial audio** choice requests a
-device-selected intermediate bed for supported on-demand playback. It defaults
-to 9.1.6; Playback > Advanced offers all five engine layouts. The engine chooses
-24-bit PCM at load, or lossy APAC over AirPlay. Diagnostics label the actual
-rendered PCM pipeline **Rendered to PCM**, distinct from ordinary **Decoded to PCM**.
-This is not a speaker inventory or bitstream passthrough. DTS:X heights require
-7.1.4 or 9.1.6; other layouts retain channel playback. Saved Off choices survive.
-`PlayerViewModel` captures the active preference for initial and handoff loads;
-live streams, shared players, muted previews and unsupported OS versions stay off.
-The engine owns source eligibility and fallback. On these supported platforms,
-software/FEL playback can use the same spatial-audio choice; older OS versions keep channel PCM.
+Height-channel conversion and experimental Dolby Vision FEL reconstruction are
+disabled in load options and excluded by engine package traits. Their controls,
+search results and request fields are removed; legacy saved profile values are
+ignored. Ordinary surround audio, standard Dolby Vision playback and native
+E-AC-3/JOC stream-copy remain unchanged. Software playback uses channel PCM.
+Diagnostic parsing still recognizes historical rendered-PCM and APAC labels;
+those labels do not imply that Plozz enables the corresponding conversion.
 Both native and Plozzigen engines declare multichannel content to the audio session.
 Compatible AirPods use Apple's spatial rendering and head-tracking preferences;
 Plozz does not force either setting or require an AirPods-specific toggle.
 Stream-copy and software-decoding routes retain the engine's own labels.
-The software route's compressed E-AC-3/JOC renderer is also **No re-encoding**;
-it is not mislabeled as PCM or inferred from the source badge.
+If an engine reports compressed E-AC-3/JOC, its label is **No re-encoding**,
+not inferred from the source badge or mislabeled as PCM.
 The row is unknown until the engine publishes a pipeline and follows track
 changes, fallbacks, and teardown. Do not infer it from the Atmos source badge,
 channel count or requested bridge mode, or parse the label to make
@@ -1103,6 +1202,10 @@ AetherEngine analysis measures encoded borders in SDR, HDR10/HDR10+, HLG, and
 Dolby Vision output, using existing frames
 and no additional decoder or stream. It scales and translates the original surface
 uniformly, including asymmetric borders, and caps automatic magnification at 2x.
+The detected picture fits the full player bounds, not the safe area, preserving
+its aspect ratio without deliberately trimming picture content. Video may extend
+behind the Dynamic Island or other display cutouts; controls retain their safe-area
+placement. Aspect-ratio differences can still leave bars.
 Unknown, stale, unsupported or invalid measurements use Normal. Sparse detection
 can miss changing edge content; fitting is best effort, not a guarantee against
 clipping tickers or burned-in captions. Dark or uninformative frames cannot
@@ -1368,12 +1471,19 @@ while the title fades, preventing subtitles from dropping into its empty space.
 The normal transport reserves its full title-to-tabs band, including gaps between
 controls: a short title must not let centered captions stay beneath the timeline.
 Info/Cast and full appearance editing release that reserved clearance.
-On iPhone and iPad, the visible center transport also reserves the band down to
-the bottom controls, so lower captions move above the play/pause and skip row
-rather than into its buttons or the space below it. Top controls are measured
-separately. A mobile caption moves only when the complete text/dual-lane block
+On iPhone, iPad and Mac, the visible center transport reserves only its actual
+buttons, leaving the space between them and the bottom controls available.
+Captions move only enough to clear intersecting controls, not automatically
+above the center row. Top controls are measured separately.
+A mobile caption moves only when the complete text/dual-lane block
 or movable artwork fits above every obstruction; otherwise its original
 position is retained, without a partial lift. TV placement is unchanged.
+**Auto-Move Away from Controls** in subtitle appearance enables this adjustment by
+default. Turning it off preserves the chosen text, dual-lane and movable bitmap
+positions while controls are shown. It does not change font/style matching to
+the device, authored fixed artwork, or the user's saved offsets. The preference
+uses the existing profile style, including independent Live TV overrides, and
+is available in Settings and the in-player editors on both platforms.
 Hiding the controls restores normal placement; style
 editing, previews, and saved position values are unchanged. The normal dialogue
 percentage remains screen-relative. Captions already encoded into video pixels

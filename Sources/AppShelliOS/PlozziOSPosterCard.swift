@@ -3,6 +3,20 @@ import CoreModels
 import CoreUI
 import SwiftUI
 
+enum PlozziOSMediaLayout {
+    static func metrics(
+        density: UIDensity, dynamicTypeSize: DynamicTypeSize, isRunningOnMac: Bool
+    ) -> PlozzMetrics {
+        isRunningOnMac
+            ? .desktop(density: density, dynamicTypeSize: dynamicTypeSize)
+            : .touch(density: density, dynamicTypeSize: dynamicTypeSize)
+    }
+
+    static func episodeWidth(metrics: PlozzMetrics, sizeClass: UserInterfaceSizeClass?) -> CGFloat {
+        metrics.usesDesktopSizing ? metrics.landscapeWidth : (sizeClass == .regular ? 360 : 300)
+    }
+}
+
 struct PlozziOSPosterCard: View {
     let item: MediaItem?
     var style: PosterCardView.Style = .poster
@@ -61,8 +75,16 @@ extension UIDensity {
     }
 
     func iOSPosterGridColumns(
-        horizontalSizeClass: UserInterfaceSizeClass?
+        horizontalSizeClass: UserInterfaceSizeClass?,
+        isRunningOnMac: Bool = false
     ) -> [GridItem] {
+        if isRunningOnMac {
+            let metrics = PlozzMetrics.desktop(density: self)
+            return [GridItem(
+                .adaptive(minimum: metrics.posterWidth, maximum: metrics.posterWidth * 1.18),
+                spacing: metrics.gridSpacing
+            )]
+        }
         let minimumWidth = if horizontalSizeClass == .regular {
             max(108, CGFloat(144 * scale))
         } else {
@@ -80,10 +102,27 @@ extension UIDensity {
         ]
     }
 
+    func iOSLandscapeGridColumns(
+        horizontalSizeClass: UserInterfaceSizeClass?,
+        isRunningOnMac: Bool = false
+    ) -> [GridItem] {
+        if isRunningOnMac {
+            let metrics = PlozzMetrics.desktop(density: self)
+            return [GridItem(
+                .adaptive(minimum: metrics.landscapeWidth, maximum: metrics.landscapeWidth * 1.18),
+                spacing: metrics.gridSpacing
+            )]
+        }
+        return [GridItem(.adaptive(minimum: horizontalSizeClass == .regular ? 240 : 160), spacing: 12)]
+    }
+
     func iOSHomeLibraryWidth(
-        horizontalSizeClass: UserInterfaceSizeClass?
+        horizontalSizeClass: UserInterfaceSizeClass?,
+        isRunningOnMac: Bool = false
     ) -> CGFloat {
-        max(164, CGFloat((horizontalSizeClass == .regular ? 260 : 220) * scale))
+        isRunningOnMac
+            ? PlozzMetrics.desktop(density: self).landscapeWidth
+            : max(164, CGFloat((horizontalSizeClass == .regular ? 260 : 220) * scale))
     }
 }
 #endif

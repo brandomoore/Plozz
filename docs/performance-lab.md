@@ -91,6 +91,23 @@ from a fixed 5 ms Plex metadata delay, checks that every selection reaches the
 PIN gate, and verifies tokens remain denied. It measures activation work, not
 rendered frame pacing or physical-device network latency.
 
+`mobile-profile-picker-entrance` mounts the production sixteen-profile touch
+picker in an iPad-sized window. It verifies the heading appears before avatars,
+a visible stagger, and substantially settled avatars within 1.5 seconds (450 ms
+for the heading, then one second for the cascade, after the starting frame). CPU measurements include
+hosting, native presentation, rendered captures, and heading recognition.
+This is repeated fresh-view presentation, not a cold process launch, connected
+startup workload, GPU measurement, or physical-device frame-pacing verdict.
+
+`mobile-home-loading-scroll` replaces eight production skeleton rails with
+20-item media rails while UIKit animates the production Home vertical scroll
+view. It requires all rows to finish, the final scroll destination to be reached,
+and no page-height change. It uses synthetic items without remote artwork:
+this is loading-layout and app-process CPU evidence, not provider/network,
+image-decoding, full Home startup, or presented-frame/FPS evidence.
+`HomeLoadingLayoutTests` separately checks empty-row removal, insertion, content
+insets, library/featured placeholders, and existing heading geometry.
+
 `mobile-home-rail-prefetch` updates the real mobile Continue Watching rail 24
 times with the same 180 metadata-rich episodes across twelve synthetic account
 identities. Artwork is preloaded into the test cache and online providers are
@@ -371,7 +388,12 @@ five times, then changes the inputs; full encoding count must fall without
 suppressing that final change. Neither scenario measures CloudKit delivery.
 `guide-large-batches` downloads a generated 23.8 MB, 48,000-programme XMLTV file
 for two 2,000-channel batches. Request/byte reductions must preserve all 32,000
-requested rows; parse count is separate. It uses loopback, not a real provider.
+requested rows; parse count is separate. It now includes encrypted indexing of
+all 6,000 candidate channels, with separate cold-first-batch and warm-second-batch
+timings. Generation identity verifies one completed import across both queries.
+The older fixture parsed twice without persistence; comparing total time includes
+the new full-catalog write cost, not just a warm-cache speedup. It uses loopback,
+not a real provider, and does not measure rendered scrolling or physical devices.
 
 `collection-discovery` runs the production Jellyfin collection provider over
 356 native collections, with 5-ms synthetic request latency. The fixture retains

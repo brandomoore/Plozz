@@ -604,7 +604,8 @@ struct CatalogReadQueries {
               bind: { self.bindText($0, 1, library.rawValue) }) { total = Int(sqlite3_column_int64($0, 0)) }
         var items: [MediaItem] = []
         query("""
-        SELECT rel_path, title, kind, library, year, series_title, series_key, season, episode
+        SELECT rel_path, title, kind, library, year, series_title, series_key, season, episode,
+               basename, size
         FROM assets WHERE library=? AND kind='episode'
         ORDER BY series_key, season, episode, rel_path LIMIT ? OFFSET ?;
         """, bind: {
@@ -809,7 +810,8 @@ struct CatalogReadQueries {
         guard db != nil else { return [] }
         var out: [MediaItem] = []
         query("""
-        SELECT rel_path, title, series_title, season, episode, library, year FROM assets
+        SELECT rel_path, title, kind, library, year, series_title, series_key, season, episode,
+               basename, size FROM assets
         WHERE series_key=? AND kind='episode' AND COALESCE(season,1)=?
         ORDER BY COALESCE(episode, 999999), sort_title, rel_path;
         """, bind: { self.bindText($0, 1, seriesKey); sqlite3_bind_int64($0, 2, Int64(season)) }) { stmt in
@@ -1370,6 +1372,7 @@ struct CatalogReadQueries {
         """,
               bind: { self.bindText($0, 1, groupKey) }) { stmt in
             let rel = self.columnText(stmt, 0) ?? ""
+            guard !ShareMediaParser.isExternalLinkFile(rel) else { return }
             let h = Self.resolutionHeight(fromName: self.columnText(stmt, 1) ?? "") ?? 0
             let sz = sqlite3_column_int64(stmt, 2)
             if best == nil || h > best!.height || (h == best!.height && sz > best!.size) {
@@ -1480,7 +1483,10 @@ struct CatalogReadQueries {
     /// edition (Director's Cut, …) and source quality (Remux/BluRay/WEB-DL). The
     /// version `id` is the file's rel-path, threaded back as the `mediaSourceID`.
     private static func movieVersion(relPath: String, basename: String, size: Int64) -> MediaVersion {
-        MediaVersion(
+        if ShareMediaParser.isExternalLinkFile(relPath) {
+            return MediaVersion(id: relPath, fileName: basename, container: "strmlnk")
+        }
+        return MediaVersion(
             id: relPath,
             name: (basename as NSString).deletingPathExtension,
             fileName: basename,
@@ -1752,9 +1758,11 @@ struct CatalogReadQueries {
         _ items: [MediaItem],
         artworkKeys: [String: String]? = nil
     ) -> [MediaItem] {
+        let items = withExternalSourceInventory(items)
         guard normalizedMetadataReady, hasAnyLocalMetadata() else {
             return withLocalArtwork(items, artworkKeys: artworkKeys)
         }
+
         let keyed = items.map { item in (item, localMetadataKey(for: item, precomputed: artworkKeys)) }
         let itemIDs = Array(Set(keyed.compactMap { $0.1 })).sorted()
         guard !itemIDs.isEmpty else { return withLocalArtwork(items, artworkKeys: artworkKeys) }
@@ -1764,6 +1772,41 @@ struct CatalogReadQueries {
             guard let key, let fields = rows[key], !fields.isEmpty else { return item }
             return ShareCatalogReadProjection.applyLocalMetadata(item, fields)
         }, artworkKeys: artworkKeys)
+    }
+
+    private func withExternalSourceInventory(_ items: [MediaItem]) -> [MediaItem] {
+        let keys = Array(Set(items.filter { $0.versions.isEmpty }.compactMap {
+            ShareCatalogID.movieKey(forMovieID: $0.id)
+        }))
+        var linkGroups: [String] = []
+        forEachQueryBatch(keys) { batch in
+            let placeholders = Array(repeating: "?", count: batch.count).joined(separator: ",")
+            query("""
+            SELECT DISTINCT COALESCE(movie_group_key, movie_key) FROM assets
+            WHERE COALESCE(movie_group_key, movie_key) IN (\(placeholders))
+              AND LOWER(rel_path) LIKE '%.strmlnk';
+            """, bind: { statement in
+                for (offset, key) in batch.enumerated() {
+                    self.bindText(statement, Int32(offset + 1), key)
+                }
+            }) { statement in
+                if let key = self.columnText(statement, 0) { linkGroups.append(key) }
+            }
+        }
+        let grouped = baseMovieItems(groupKeys: linkGroups)
+        return items.map { item in
+            guard item.versions.isEmpty else { return item }
+            var copy = item
+            if let key = ShareCatalogID.movieKey(forMovieID: item.id) {
+                copy.versions = grouped[key]?.item.versions ?? []
+            } else if let path = ShareCatalogID.relPath(forFileID: item.id),
+                      ShareMediaParser.isExternalLinkFile(path) {
+                copy.versions = [Self.movieVersion(
+                    relPath: path, basename: (path as NSString).lastPathComponent, size: 0
+                )]
+            }
+            return copy
+        }
     }
 
     private func withLocalArtwork(

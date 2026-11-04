@@ -28,9 +28,9 @@ public protocol WatchStateProviding: Sendable {
 ///
 /// The cross-server watch outbox can queue a played write and drain it much later
 /// (server asleep, app offline, or the account still resolving at launch). A
-/// server-backed provider (Plex, Jellyfin) doesn't care — its server owns
-/// recency — so it conforms to ``WatchStateProviding`` alone. A local store (the
-/// SMB share) must stamp the write with `capturedAt` so a late-draining *stale*
+/// fully server-backed provider does not need this timestamp for its writes.
+/// A local store (including Plex's profile-local extra fallback) must stamp
+/// the write with `capturedAt` so a late-draining *stale*
 /// played write can't clobber genuinely newer resume / in-progress state.
 ///
 /// Detected at runtime via `provider as? PlayedStateWriting` (preferred over the

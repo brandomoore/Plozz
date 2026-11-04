@@ -2,6 +2,31 @@ import XCTest
 @testable import MediaTransportHTTP
 
 final class TransportSessionDelegateTests: XCTestCase {
+    func testStreamingBackpressureRejectsExcessPendingBytesAndJoinsCancellation() async throws {
+        let started = expectation(description: "Slow consumer")
+        let stopped = expectation(description: "Consumer cancelled")
+        let session = URLSession(configuration: .ephemeral)
+        defer { session.invalidateAndCancel() }
+        let task = session.dataTask(with: URL(string: "https://fixture.invalid")!)
+        task.cancel()
+        let stream = TransportResponseStream { _ in
+            started.fulfill()
+            defer { stopped.fulfill() }
+            try await Task.sleep(for: .seconds(30))
+        }
+        stream.append(Data(repeating: 1, count: 1024), task: task)
+        await fulfillment(of: [started], timeout: 2)
+        stream.append(Data(repeating: 1, count: 4 * 1024 * 1024), task: task)
+        stream.cancel()
+        do {
+            try await stream.finish()
+            XCTFail("Slow consumers must not permit unbounded buffering")
+        } catch let error as TransportError {
+            XCTAssertEqual(error, .responseTooLarge(limitBytes: 4 * 1024 * 1024))
+        }
+        await fulfillment(of: [stopped], timeout: 1)
+    }
+
     private let origin = TransportOrigin(url: URL(string: "https://nas.example.com/")!)!
 
     func testAnonymousMediaNeverAnswersPasswordChallenges() {

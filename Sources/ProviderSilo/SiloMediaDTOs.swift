@@ -109,6 +109,10 @@ struct SiloFileVersion: Decodable, Sendable {
     let file_size: Int64
     let duration: Double
     let bitrate: Int
+    let presentation_kind: String?
+    let presentation_part_total: Int?
+    let multi_episode_start: Int?
+    let multi_episode_end: Int?
     let video_tracks: [SiloVideoTrack]?
     let audio_tracks: [SiloAudioTrack]?
     let subtitle_tracks: [SiloSubtitleTrack]?

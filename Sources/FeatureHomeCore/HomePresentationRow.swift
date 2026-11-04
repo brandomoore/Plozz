@@ -13,11 +13,18 @@ public struct HomePresentationRow: Identifiable, Equatable, Sendable {
     public var id: HomeRowID { choice.id }
 
     public var canBrowse: Bool {
+        supportsBrowsing()
+    }
+
+    /// A loaded-count threshold changes the browse action, not the rail's items or paging.
+    public func supportsBrowsing(loadedItemThreshold: Int? = nil) -> Bool {
         switch source {
         case let .home(row):
-            return row.hasMore && !row.items.isEmpty && row.loadingPlaceholderCount == 0 && row.failure == nil
+            return (loadedItemThreshold.map { row.items.count > $0 } ?? row.hasMore) && !row.items.isEmpty
+                && row.loadingPlaceholderCount == 0 && row.failure == nil
         case let .library(row):
-            return row.section.hasMore && !row.section.items.isEmpty && !row.isLoading
+            return (loadedItemThreshold.map { row.section.items.count > $0 } ?? row.section.hasMore)
+                && !row.section.items.isEmpty && !row.isLoading
                 && row.failure == nil && row.issue == nil
         case .liveTV:
             return false
@@ -72,10 +79,6 @@ public struct HomePresentationRow: Identifiable, Equatable, Sendable {
             return Self(choice: choice, source: .home(row))
         }
         var available = rows.filter { $0.kind != .libraries }.compactMap(entry)
-        if !liveTV.recentChannels.isEmpty, !rows.contains(where: { $0.kind == .continueWatching }),
-           let recent = entry(HomeRow(kind: .continueWatching)) {
-            available.insert(recent, at: 0)
-        }
         if !liveTV.channels.isEmpty, let choice = shared.first(where: { $0.id == .liveTV }) {
             available.append(Self(choice: choice, source: .liveTV(liveTV.channels)))
         }
@@ -171,7 +174,6 @@ public struct HomePresentationRow: Identifiable, Equatable, Sendable {
                 switch existing.source {
                 case let .home(row):
                     if !row.items.isEmpty || !row.libraries.isEmpty { continue }
-                    if row.kind == .continueWatching, !liveTV.recentChannels.isEmpty { continue }
                 case let .library(row):
                     if !row.section.items.isEmpty || row.isLoading { continue }
                     browseItem = row.browseItem

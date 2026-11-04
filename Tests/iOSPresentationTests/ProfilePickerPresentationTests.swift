@@ -1,5 +1,6 @@
 #if os(iOS)
 import CoreModels
+import CoreNetworking
 @testable import CoreUI
 import SwiftUI
 import UIKit
@@ -104,7 +105,8 @@ final class ProfilePickerPresentationTests: XCTestCase {
         XCTAssertEqual(PlozziOSProfilePickerEntrance.delay(at: 15, profileCount: 16), 0.45, accuracy: 0.001)
         XCTAssertEqual(PlozziOSProfilePickerEntrance.delay(at: 17, profileCount: 16), 0.51, accuracy: 0.001)
         XCTAssertEqual(PlozziOSProfilePickerEntrance.duration, 0.45)
-        XCTAssertEqual(PlozziOSProfilePickerEntrance.initialScale, 0.96)
+        XCTAssertEqual(PlozziOSProfilePickerEntrance.headingDuration, 0.45)
+        XCTAssertEqual(PlozziOSProfilePickerEntrance.initialScale, 0.3)
         XCTAssertEqual(PlozziOSProfilePickerEntrance.initialOffset, 8)
         let model = PickerMotionFixtureModel()
         try await withWindow(
@@ -118,10 +120,15 @@ final class ProfilePickerPresentationTests: XCTestCase {
             let first = try self.brightness(entering, x: 70, y: 70)
             let last = try self.brightness(entering, x: 70, y: 190)
             XCTAssertGreaterThan(first, last + 20, "The first tile must lead the later tile.")
+            XCTAssertGreaterThan(
+                first, try self.brightness(entering, x: 30, y: 70) + 20,
+                "The tile must grow into its final bounds rather than only fade at full size."
+            )
             try await Task.sleep(for: .seconds(2))
             let settled = self.capture(window, name: "picker-motion-settled")
             XCTAssertGreaterThan(try self.brightness(settled, x: 70, y: 70), 245)
             XCTAssertGreaterThan(try self.brightness(settled, x: 70, y: 190), 245)
+            XCTAssertGreaterThan(try self.brightness(settled, x: 30, y: 70), 245)
             XCTAssertLessThan(try self.brightness(settled, x: 17, y: 70), 5)
         }
         let reduced = PickerMotionFixtureModel()
@@ -145,20 +152,185 @@ final class ProfilePickerPresentationTests: XCTestCase {
         )
         XCTAssertGreaterThan(progress.cascading, 1_000, "Some avatars must already be appearing.")
         XCTAssertLessThan(progress.cascading, progress.settled * 9 / 10, "The cascade must not appear all at once.")
+        XCTAssertEqual(progress.headingPhase, 0, "The heading must appear before any avatar.")
+        XCTAssertGreaterThan(progress.headingProgress, 0.05)
+        XCTAssertLessThan(progress.headingProgress, 0.9, "The heading itself must visibly animate.")
         XCTAssertGreaterThan(
-            progress.oneSecond, progress.settled * 95 / 100,
-            "Six profiles must be substantially settled within one second of presentation."
+            progress.completed, progress.settled * 95 / 100,
+            "Six profiles must settle within 1.5 seconds, including the heading entrance."
         )
     }
 
-    func testSixteenProfilesSettleWithinOneSecond() async throws {
+    func testRootPickerShowsHeadingThenAnimatedAvatars() async throws {
+        let progress = try await measureProductionEntrance(
+            count: 6, isSwitcher: false, size: .init(width: 768, height: 1024), asRoot: true
+        )
+        XCTAssertEqual(progress.headingPhase, 0, "The initial screen must reveal its heading before avatars.")
+        XCTAssertGreaterThan(progress.headingProgress, 0.05)
+        XCTAssertLessThan(progress.headingProgress, 0.9, "The initial heading must not appear fully formed.")
+        XCTAssertGreaterThan(progress.cascading, 1_000)
+        XCTAssertLessThan(progress.cascading, progress.settled * 9 / 10,
+                          "The initial screen must animate, not insert fully visible avatars.")
+        XCTAssertGreaterThan(progress.completed, progress.settled * 95 / 100)
+    }
+
+    func testProfilesArrivingDuringHeadingStillJoinTheCascade() async throws {
+        let progress = try await measureProductionEntrance(
+            count: 6, isSwitcher: false, size: .init(width: 768, height: 1024),
+            profilesArriveDuringHeading: true
+        )
+        XCTAssertEqual(progress.headingPhase, 0, "Newly materialized profiles must still start hidden.")
+        XCTAssertGreaterThan(progress.cascading, 1_000)
+        XCTAssertLessThan(progress.cascading, progress.settled * 9 / 10,
+                          "Startup updates must not skip the remaining avatars' entrance.")
+        XCTAssertGreaterThan(progress.completed, progress.settled * 95 / 100)
+    }
+
+    func testLaunchObserverWaitsForItsWindowAndWarmSwitcherStartsImmediately() {
+        var launchStarts = 0
+        let launch = ProfilePickerPresentationObserver.Observer(startsDuringPresentation: false) {
+            launchStarts += 1
+        }
+        launch.loadViewIfNeeded()
+        launch.viewDidAppear(false)
+        XCTAssertEqual(launchStarts, 0, "Appearance alone cannot start a launch animation without a visible window.")
+        launch.cancelPendingEntrance()
+
+        var switcherStarts = 0
+        let switcher = ProfilePickerPresentationObserver.Observer(startsDuringPresentation: true) {
+            switcherStarts += 1
+        }
+        switcher.loadViewIfNeeded()
+        switcher.viewIsAppearing(false)
+        switcher.viewDidAppear(false)
+        XCTAssertEqual(switcherStarts, 1)
+        switcher.cancelPendingEntrance()
+    }
+
+    func testLaunchObserverCancelsBeforeItsFirstFrame() async throws {
+        try await withWindow(Color.black, size: .init(width: 390, height: 844)) { window in
+            var starts = 0
+            let observer = ProfilePickerPresentationObserver.Observer(startsDuringPresentation: false) {
+                starts += 1
+            }
+            window.rootViewController = observer
+            window.layoutIfNeeded()
+            observer.viewDidAppear(false)
+            observer.cancelPendingEntrance()
+            try await Task.sleep(for: .milliseconds(100))
+            XCTAssertEqual(starts, 0)
+        }
+    }
+
+    func testObserverCanBecomeReadyAfterPresentationBegins() {
+        var starts = 0
+        let observer = ProfilePickerPresentationObserver.Observer(
+            startsDuringPresentation: true, isReady: false
+        ) {
+            starts += 1
+        }
+        observer.loadViewIfNeeded()
+        observer.viewIsAppearing(false)
+        observer.viewDidAppear(false)
+        XCTAssertEqual(starts, 0)
+        observer.isReady = true
+        XCTAssertEqual(starts, 1)
+        observer.isReady = true
+        XCTAssertEqual(starts, 1, "Readiness updates must not replay the entrance.")
+        observer.cancelPendingEntrance()
+    }
+
+    func testPerformanceProfilePickerEntrance() async throws {
+        try PerformanceProbe.requireEnabled()
+        try await PerformanceProbe.measure(self, scenario: "mobile-profile-picker-entrance") {
+            let progress = try await self.measureProductionEntrance(
+                count: 16, isSwitcher: false, size: .init(width: 768, height: 1024)
+            )
+            XCTAssertLessThan(progress.cascading, progress.settled * 9 / 10)
+            XCTAssertEqual(progress.headingPhase, 0)
+            XCTAssertGreaterThan(progress.completed, progress.settled * 95 / 100)
+            return ["profiles": 16, "completedEntrances": 1]
+        }
+    }
+
+    func testPickerPreservesPhotoEmojiAndSymbolAvatars() async throws {
+        let url = try XCTUnwrap(URL(string: "https://profile-picker.example.invalid/\(UUID()).png"))
+        let image = UIGraphicsImageRenderer(size: .init(width: 100, height: 100)).image { context in
+            UIColor.red.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 100, height: 100))
+        }
+        let cache = try XCTUnwrap(ArtworkSession.shared.configuration.urlCache)
+        let requestURL = ArtworkImageVariant.musicThumbnail.requestURL(for: url)
+        let request = URLRequest(url: requestURL)
+        let response = try XCTUnwrap(HTTPURLResponse(
+            url: requestURL, statusCode: 200, httpVersion: nil,
+            headerFields: ["Content-Type": "image/png", "Cache-Control": "max-age=3600"]
+        ))
+        cache.storeCachedResponse(
+            CachedURLResponse(response: response, data: try XCTUnwrap(image.pngData())), for: request
+        )
+        defer { cache.removeCachedResponse(for: request) }
+        let decoded = await ArtworkImageCache.shared.image(for: url, variant: .musicThumbnail)
+        _ = try XCTUnwrap(decoded)
+
+        var photo = Profile(id: "photo", name: "Photo", colorIndex: 2)
+        photo.avatarImageURL = url.absoluteString
+        var emoji = Profile(id: "emoji", name: "Emoji")
+        emoji.avatarEmoji = "\u{1F34E}"
+        let symbol = Profile(id: "symbol", name: "Symbol", avatarSymbol: "person.fill", colorIndex: 0)
+        for profile in [photo, emoji, symbol] {
+            try await withWindow(
+                PlozziOSProfilePickerView(
+                    profiles: [profile], activeProfileID: profile.id, onSelect: { _ in }
+                )
+                    .environment(\.themePalette, .pureBlack)
+                    .environment(\.gradientBackgroundsEnabled, false)
+                    .preferredColorScheme(.dark),
+                size: .init(width: 390, height: 844)
+            ) { window in
+                try await Task.sleep(for: .seconds(1))
+                XCTAssertGreaterThan(
+                    try self.redPixelCount(self.capture(window, name: "picker-avatar-\(profile.id)")), 500,
+                    "The avatar's original colored content must remain visible in the picker."
+                )
+            }
+        }
+    }
+
+    func testEntranceContinuesWhileMainThreadIsBusy() async throws {
+        let model = PickerMotionFixtureModel()
+        try await withWindow(
+            PickerMotionFixture(model: model), size: .init(width: 240, height: 360)
+        ) { window in
+            try await Task.sleep(for: .milliseconds(100))
+            model.isPresented = true
+            try await Task.sleep(for: .milliseconds(100))
+            let before = try self.brightness(self.capture(window, afterUpdates: false), x: 70, y: 70)
+            Self.simulateBusyMainThread()
+            let during = try self.brightness(self.capture(window, afterUpdates: false), x: 70, y: 70)
+            let data = try JSONSerialization.data(withJSONObject: [
+                "before": before, "afterMainThreadStall": during
+            ], options: [.sortedKeys])
+            let attachment = XCTAttachment(data: data, uniformTypeIdentifier: "public.json")
+            attachment.name = "profile-entrance-main-thread-stall"
+            attachment.lifetime = .keepAlways
+            self.add(attachment)
+            XCTAssertGreaterThan(during, before + 30, "The committed entrance should advance without another UI update.")
+        }
+    }
+
+    private static func simulateBusyMainThread() {
+        Thread.sleep(forTimeInterval: 0.18)
+    }
+
+    func testSixteenProfilesSettleWithinOneSecondOfCascade() async throws {
         let progress = try await measureProductionEntrance(
             count: 16, isSwitcher: false, size: .init(width: 768, height: 1024)
         )
         XCTAssertLessThan(progress.cascading, progress.settled * 9 / 10)
         XCTAssertGreaterThan(
-            progress.oneSecond, progress.settled * 95 / 100,
-            "Larger households must not stretch the profile cascade beyond one second."
+            progress.completed, progress.settled * 95 / 100,
+            "Sixteen profiles must settle within 1.5 seconds, including the heading entrance."
         )
     }
 
@@ -172,7 +344,33 @@ final class ProfilePickerPresentationTests: XCTestCase {
             progress.initial, progress.settled * 9 / 10,
             "Starting sooner must not coalesce the whole cascade into an immediate reveal."
         )
-        XCTAssertGreaterThan(progress.oneSecond, progress.settled * 95 / 100)
+        XCTAssertGreaterThan(progress.completed, progress.settled * 95 / 100)
+    }
+
+    func testHeadingAndAvatarsIgnoreLaunchDelayWithReduceMotion() async throws {
+        try await withWindow(
+            VStack(spacing: 20) {
+                Color.white.frame(width: 100, height: 40)
+                    .modifier(PlozziOSProfilePickerHeadingEntrance(
+                        isPresented: false, isLaunch: true, reduceMotion: true
+                    ))
+                Color.white.frame(width: 100, height: 100)
+                    .modifier(PlozziOSProfilePickerEntrance(
+                        isPresented: false, position: 15, profileCount: 16,
+                        reduceMotion: true
+                    ))
+            }
+                .padding(20)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .background(.black)
+                .ignoresSafeArea(),
+            size: .init(width: 240, height: 360)
+        ) { window in
+            try await Task.sleep(for: .milliseconds(100))
+            let image = self.capture(window, name: "heading-first-reduce-motion")
+            XCTAssertGreaterThan(try self.brightness(image, x: 70, y: 40), 245)
+            XCTAssertGreaterThan(try self.brightness(image, x: 70, y: 130), 245)
+        }
     }
 
     func testPINKeyCascadeRevealsInOrderAndHonorsReduceMotion() async throws {
@@ -247,43 +445,69 @@ final class ProfilePickerPresentationTests: XCTestCase {
     }
 
     private func measureProductionEntrance(
-        count: Int, isSwitcher: Bool, size: CGSize = .init(width: 390, height: 844)
-    ) async throws -> (initial: Int, cascading: Int, oneSecond: Int, settled: Int) {
+        count: Int, isSwitcher: Bool, size: CGSize = .init(width: 390, height: 844),
+        asRoot: Bool = false, profilesArriveDuringHeading: Bool = false
+    ) async throws -> (
+        initial: Int, headingPhase: Int, headingProgress: Double, cascading: Int, completed: Int, settled: Int
+    ) {
         let profiles = (0..<count).map {
             Profile(id: "motion-\($0)", name: "Viewer \($0)", avatarSymbol: "person.fill", colorIndex: 0)
         }
-        var result = (initial: 0, cascading: 0, oneSecond: 0, settled: 0)
-        try await withWindow(Color.black.ignoresSafeArea(), size: size) { window in
-            let picker = UIHostingController(rootView:
-                PlozziOSProfilePickerView(
-                    profiles: profiles, activeProfileID: profiles[0].id, onSelect: { _ in },
-                    onCancel: isSwitcher ? {} : nil
-                )
-                    .environment(\.themePalette, .pureBlack)
-                    .environment(\.gradientBackgroundsEnabled, false)
-                    .preferredColorScheme(.dark)
-            )
-            picker.modalPresentationStyle = .fullScreen
-            let presenter = try XCTUnwrap(window.rootViewController)
-            await withCheckedContinuation { continuation in
-                presenter.present(picker, animated: true) { continuation.resume() }
+        var result = (initial: 0, headingPhase: 0, headingProgress: 0.0, cascading: 0, completed: 0, settled: 0)
+        let model = PickerArrivalFixtureModel()
+        model.profiles = profilesArriveDuringHeading ? Array(profiles.prefix(2)) : profiles
+        let content = PickerArrivalFixture(
+            model: model, activeProfileID: profiles[0].id, isSwitcher: isSwitcher
+        )
+            .environment(\.themePalette, .pureBlack)
+            .environment(\.gradientBackgroundsEnabled, false)
+            .environment(\.locale, Locale(identifier: "en"))
+            .preferredColorScheme(.dark)
+        try await withWindow(
+            asRoot ? AnyView(content) : AnyView(Color.black.ignoresSafeArea()), size: size
+        ) { window in
+            if !asRoot {
+                let picker = UIHostingController(rootView: content)
+                picker.modalPresentationStyle = .fullScreen
+                let presenter = try XCTUnwrap(window.rootViewController)
+                await withCheckedContinuation { continuation in
+                    presenter.present(picker, animated: true) { continuation.resume() }
+                }
             }
+            if asRoot { window.layoutIfNeeded() }
+            let entering = self.capture(window, name: "production-picker-entering", afterUpdates: asRoot)
             let start = ContinuousClock.now
-            let entering = self.capture(window, name: "production-picker-entering", afterUpdates: false)
-            try await Task.sleep(for: .milliseconds(400))
+            if profilesArriveDuringHeading {
+                try await Task.sleep(until: start.advanced(by: .milliseconds(100)), clock: .continuous)
+                model.profiles = profiles
+            }
+            try await Task.sleep(until: start.advanced(by: .milliseconds(200)), clock: .continuous)
+            let heading = self.capture(window, name: "production-picker-heading", afterUpdates: false)
+            try await Task.sleep(
+                until: start.advanced(by: .milliseconds(isSwitcher ? 400 : 800)), clock: .continuous
+            )
             let cascading = self.capture(window, name: "production-picker-cascading", afterUpdates: false)
-            try await Task.sleep(until: start.advanced(by: .seconds(1)), clock: .continuous)
-            let oneSecond = self.capture(window, name: "production-picker-one-second", afterUpdates: false)
+            try await Task.sleep(
+                until: start.advanced(by: .milliseconds(isSwitcher ? 1_000 : 1_500)), clock: .continuous
+            )
+            let completed = self.capture(window, name: "production-picker-completed", afterUpdates: false)
             try await Task.sleep(until: start.advanced(by: .seconds(2.4)), clock: .continuous)
             let settled = self.capture(window, name: "production-picker-settled")
             let early = try self.redPixelCount(entering)
+            let headingPixels = try self.redPixelCount(heading)
             let middle = try self.redPixelCount(cascading)
-            let nearEnd = try self.redPixelCount(oneSecond)
+            let nearEnd = try self.redPixelCount(completed)
             let final = try self.redPixelCount(settled)
+            let headingBounds = try XCTUnwrap(try self.recognizedText(settled).first {
+                $0.topCandidates(1).first?.string.contains("watching") == true
+            }).boundingBox
+            let headingProgress = try self.meanBrightness(heading, in: headingBounds)
+                / self.meanBrightness(settled, in: headingBounds)
             let samples: [String: Any] = [
                 "profileCount": count, "isSwitcher": isSwitcher,
-                "initialPixels": early, "cascadingPixels": middle,
-                "oneSecondPixels": nearEnd, "settledPixels": final
+                "initialPixels": early, "headingPhasePixels": headingPixels, "cascadingPixels": middle,
+                "headingProgress": headingProgress,
+                "completedPixels": nearEnd, "settledPixels": final
             ]
             let progress = XCTAttachment(
                 data: try JSONSerialization.data(withJSONObject: samples, options: [.sortedKeys]),
@@ -293,7 +517,11 @@ final class ProfilePickerPresentationTests: XCTestCase {
             progress.lifetime = .keepAlways
             self.add(progress)
             XCTAssertGreaterThan(final, 10_000, "The actual shared avatars must be rendered.")
-            result = (early, middle, nearEnd, final)
+            XCTAssertTrue(
+                try self.recognize(heading).contains { $0.contains("watching") },
+                "The heading must be visible while its entrance is still in progress."
+            )
+            result = (early, headingPixels, headingProgress, middle, nearEnd, final)
         }
         return result
     }
@@ -365,11 +593,36 @@ final class ProfilePickerPresentationTests: XCTestCase {
     }
 
     private func recognize(_ image: UIImage) throws -> [String] {
+        try recognizedText(image).compactMap { $0.topCandidates(1).first?.string }
+    }
+
+    private func recognizedText(_ image: UIImage) throws -> [VNRecognizedTextObservation] {
         let request = VNRecognizeTextRequest()
         request.recognitionLevel = .accurate
         request.recognitionLanguages = ["en-US"]
         try VNImageRequestHandler(cgImage: XCTUnwrap(image.cgImage)).perform([request])
-        return request.results?.compactMap { $0.topCandidates(1).first?.string } ?? []
+        return request.results ?? []
+    }
+
+    private func meanBrightness(_ image: UIImage, in normalizedBounds: CGRect) throws -> Double {
+        let cg = try XCTUnwrap(image.cgImage)
+        XCTAssertEqual(cg.bitsPerPixel, 32)
+        let data = try XCTUnwrap(cg.dataProvider?.data)
+        let bytes = try XCTUnwrap(CFDataGetBytePtr(data))
+        let minX = max(0, Int(normalizedBounds.minX * CGFloat(cg.width)))
+        let maxX = min(cg.width, Int(normalizedBounds.maxX * CGFloat(cg.width)))
+        let minY = max(0, Int((1 - normalizedBounds.maxY) * CGFloat(cg.height)))
+        let maxY = min(cg.height, Int((1 - normalizedBounds.minY) * CGFloat(cg.height)))
+        XCTAssertGreaterThan(maxX, minX)
+        XCTAssertGreaterThan(maxY, minY)
+        var total = 0
+        for y in minY..<maxY {
+            for x in minX..<maxX {
+                let offset = y * cg.bytesPerRow + x * 4
+                total += Int(bytes[offset]) + Int(bytes[offset + 1]) + Int(bytes[offset + 2])
+            }
+        }
+        return Double(total) / Double((maxX - minX) * (maxY - minY) * 3)
     }
 
     private func brightness(_ image: UIImage, x: Int, y: Int) throws -> Int {
@@ -401,6 +654,24 @@ final class ProfilePickerPresentationTests: XCTestCase {
 @MainActor @Observable
 private final class PickerMotionFixtureModel {
     var isPresented = false
+}
+
+@MainActor @Observable
+private final class PickerArrivalFixtureModel {
+    var profiles: [Profile] = []
+}
+
+private struct PickerArrivalFixture: View {
+    let model: PickerArrivalFixtureModel
+    let activeProfileID: String
+    let isSwitcher: Bool
+
+    var body: some View {
+        PlozziOSProfilePickerView(
+            profiles: model.profiles, activeProfileID: activeProfileID,
+            onSelect: { _ in }, onCancel: isSwitcher ? {} : nil
+        )
+    }
 }
 
 private struct PickerMotionFixture: View {

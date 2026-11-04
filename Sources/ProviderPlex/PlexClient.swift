@@ -432,10 +432,9 @@ public struct PlexClient: Sendable {
     private func decodeStreamEnriched<T: Decodable>(
         _ type: T.Type,
         path: String,
-        query: [URLQueryItem],
-        preservingContainers: Bool = false
+        query: [URLQueryItem]
     ) async throws -> T {
-        let streamParameter = preservingContainers ? "includeOptionalElements" : "includeElements"
+        let streamParameter = "includeElements"
         let enriched = Endpoint(
             path: path,
             queryItems: query + [URLQueryItem(name: streamParameter, value: "Stream")],
@@ -727,11 +726,19 @@ public struct PlexClient: Sendable {
         query.append(URLQueryItem(name: "sort", value: try Self.sortQuery(for: sort)))
         query.append(URLQueryItem(name: "includeCollections", value: includeCollections ? "1" : "0"))
         query += try Self.libraryFilterQuery(filters, genreID: genreID)
+        let path = "/library/sections/\(sectionID)/all"
+        if includeCollections {
+            // Even optional Stream enrichment can silently omit collection cards
+            // and reduce totalSize in HTTP 200 responses while keeping members hidden.
+            return try await decode(
+                PlexMediaContainerResponse.self,
+                Endpoint(path: path, queryItems: query, headers: headers)
+            ).MediaContainer
+        }
         return try await decodeStreamEnriched(
             PlexMediaContainerResponse.self,
-            path: "/library/sections/\(sectionID)/all",
-            query: query,
-            preservingContainers: includeCollections
+            path: path,
+            query: query
         ).MediaContainer
     }
 
@@ -801,7 +808,8 @@ public struct PlexClient: Sendable {
 
     func homeShelfPage(key: String, startIndex: Int, limit: Int) async throws
         -> (items: [PlexMetadata], nextOffset: Int?) {
-        guard startIndex >= 0, limit > 0, limit <= PageRequest.defaultLimit,
+        // Native Home recovery also reads the bounded 100-item filtering window.
+        guard startIndex >= 0, limit > 0, limit <= 100,
               startIndex < Int.max - limit,
               let safeKey = Self.homeShelfKey(key), let parts = URLComponents(string: safeKey) else {
             throw AppError.invalidResponse
@@ -828,7 +836,9 @@ public struct PlexClient: Sendable {
         let items = container.Metadata ?? hub?.Metadata ?? []
         let offset = hub == nil ? container.offset ?? startIndex : hub?.offset ?? startIndex
         let total = hub == nil ? container.totalSize : hub?.totalSize
+        let size = hub == nil ? container.size : hub?.size
         guard offset == startIndex, items.count <= limit,
+              size.map({ $0 == items.count }) ?? true,
               total.map({ $0 >= startIndex + items.count }) ?? true,
               !items.isEmpty || total.map({ startIndex >= $0 }) ?? true else {
             throw AppError.invalidResponse
@@ -853,7 +863,7 @@ public struct PlexClient: Sendable {
 
     /// Server promotions, not an import of any client's pinned sidebar.
     func serverHomeHubs(sectionID: String, count: Int) async throws -> [PlexHub] {
-        try await decodeStreamEnriched(
+        let container = try await decodeStreamEnriched(
             PlexMediaContainerResponse.self,
             path: "/hubs/promoted",
             query: [
@@ -861,7 +871,20 @@ public struct PlexClient: Sendable {
                 URLQueryItem(name: "count", value: String(max(1, min(count, 100)))),
                 URLQueryItem(name: "includeGuids", value: "1")
             ]
-        ).MediaContainer.Hub ?? []
+        ).MediaContainer
+        guard let hubs = container.Hub else {
+            guard container.size == 0, (container.totalSize ?? 0) == 0 else {
+                PlozzLog.networking.error("Plex Home promotions omitted their hub payload")
+                throw AppError.invalidResponse
+            }
+            return []
+        }
+        guard container.size.map({ $0 == hubs.count }) ?? true,
+              container.totalSize.map({ $0 == hubs.count }) ?? true else {
+            PlozzLog.networking.error("Plex Home promotions returned an incomplete hub payload")
+            throw AppError.invalidResponse
+        }
+        return hubs
     }
 
     /// `GET /hubs/continueWatching/items` returns both resumes and next episodes
@@ -1820,6 +1843,20 @@ public struct PlexClient: Sendable {
     }
 
     // MARK: URLs
+
+    func selectAudioStream(_ streamID: Int, partID: Int) async throws {
+        let endpoint = Endpoint(
+            method: .put,
+            path: "/library/parts/\(partID)",
+            queryItems: [
+                URLQueryItem(name: "audioStreamID", value: String(streamID)),
+                URLQueryItem(name: "allParts", value: "1")
+            ],
+            headers: headers
+        )
+        _ = try await send(endpoint)
+        try Task.checkCancellation()
+    }
 
     /// Fetches the raw text of a lyrics (or other sidecar) stream by its
     /// server-relative `key` (e.g. `/library/streams/5555`). Plex serves an

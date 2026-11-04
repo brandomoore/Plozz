@@ -73,37 +73,56 @@ enum PlozzigenStreamProbeExecutor {
         finalShutdown: @escaping @Sendable () async -> Void = {},
         operation: @escaping Operation = probe
     ) async -> SourceProbe? {
+        await runBoundedProbe(
+            reader: reader, formatHint: formatHint, limits: limits, budget: suppliedBudget,
+            queue: queue, interrupt: interrupt, finalShutdown: finalShutdown
+        ) { source, engineLimits, cancellation in
+            let packets = packetBudgets(
+                requirements: requirements, wholeProbePackets: limits.packets
+            )
+            return try operation(
+                source, details(for: requirements),
+                AtmosDetectionOptions(
+                    maxPackets: packets.atmos, timeBudget: min(2, engineLimits.timeBudget)
+                ),
+                HDR10PlusDetectionOptions(
+                    maxPackets: packets.hdr, maxBytes: Int64(limits.networkBytes),
+                    timeBudget: engineLimits.timeBudget
+                ),
+                engineLimits, cancellation
+            )
+        }
+    }
+
+    static func runBoundedProbe<Output: Sendable>(
+        reader: any IOReader,
+        formatHint: String? = nil,
+        limits: HDR10PlusProbeLimits,
+        budget suppliedBudget: HDR10PlusProbeBudget? = nil,
+        queue: DispatchQueue = detailQueue,
+        interrupt: (@Sendable () -> Void)? = nil,
+        finalShutdown: @escaping @Sendable () async -> Void = {},
+        operation: @escaping @Sendable (MediaSource, ProbeLimits, ProbeCancellation) throws -> Output
+    ) async -> Output? {
         guard limits.isValid else {
             reader.close()
             await finalShutdown()
             return nil
         }
         let budget = suppliedBudget ?? HDR10PlusProbeBudget(limits: limits)
-        let completion = Completion(
+        let completion = Completion<Output>(
             budget: budget, interrupt: interrupt ?? { reader.cancel() }
         )
         return await withTaskCancellationHandler {
             await withCheckedContinuation { continuation in
                 completion.attach(continuation)
                 queue.async {
-                    var result: SourceProbe?
+                    var result: Output?
                     if completion.begin() {
                         do {
                             let remaining = budget.remainingTime
-                            let packets = packetBudgets(
-                                requirements: requirements, wholeProbePackets: limits.packets
-                            )
                             result = try operation(
                                 .custom(reader, formatHint: formatHint),
-                                details(for: requirements),
-                                AtmosDetectionOptions(
-                                    maxPackets: packets.atmos, timeBudget: min(2, remaining)
-                                ),
-                                HDR10PlusDetectionOptions(
-                                    maxPackets: packets.hdr,
-                                    maxBytes: Int64(limits.networkBytes),
-                                    timeBudget: remaining
-                                ),
                                 limits.engineLimits(remainingTime: remaining),
                                 completion.cancellation
                             )
@@ -133,14 +152,14 @@ enum PlozzigenStreamProbeExecutor {
         }
     }
 
-    private final class Completion: @unchecked Sendable {
+    private final class Completion<Output: Sendable>: @unchecked Sendable {
         let cancellation = ProbeCancellation()
         private let budget: HDR10PlusProbeBudget
         private let interrupt: @Sendable () -> Void
         private let lock = NSLock()
-        private var continuation: CheckedContinuation<SourceProbe?, Never>?
+        private var continuation: CheckedContinuation<Output?, Never>?
         private var finished = false
-        private var result: SourceProbe?
+        private var result: Output?
         private var timer: DispatchSourceTimer?
 
         init(budget: HDR10PlusProbeBudget, interrupt: @escaping @Sendable () -> Void) {
@@ -148,11 +167,11 @@ enum PlozzigenStreamProbeExecutor {
             self.interrupt = interrupt
         }
 
-        func attach(_ continuation: CheckedContinuation<SourceProbe?, Never>) {
+        func attach(_ continuation: CheckedContinuation<Output?, Never>) {
             let timer = DispatchSource.makeTimerSource(queue: .global(qos: .utility))
             timer.setEventHandler { [weak self] in self?.stop() }
             timer.schedule(deadline: .now() + budget.remainingTime)
-            let immediate: (Bool, SourceProbe?) = lock.withLock {
+            let immediate: (Bool, Output?) = lock.withLock {
                 if finished { return (true, result) }
                 self.continuation = continuation
                 self.timer = timer
@@ -179,8 +198,8 @@ enum PlozzigenStreamProbeExecutor {
             finish(nil)
         }
 
-        func finish(_ candidate: SourceProbe?) {
-            let publication: (CheckedContinuation<SourceProbe?, Never>?, SourceProbe?) = lock.withLock {
+        func finish(_ candidate: Output?) {
+            let publication: (CheckedContinuation<Output?, Never>?, Output?) = lock.withLock {
                 guard !finished else { return (nil, nil) }
                 finished = true
                 result = budget.isActive && !cancellation.isCancelled ? candidate : nil

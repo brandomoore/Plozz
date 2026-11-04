@@ -64,6 +64,22 @@ public struct HeroDiscoveryRuntime: Sendable {
         let external = Array(items.lazy
             .filter { $0.kind == .movie || $0.kind == .series }
             .map(Self.publicCandidate))
+        return await resolveLibrarySources(in: external, hideWatched: hideWatched, visibility: visibility)
+    }
+
+    /// Reuses the same live identity verification for dedicated discovery feeds.
+    public func resolveLibrarySources(
+        in candidates: [MediaItem], hideWatched: Bool = false,
+        visibility: HomeLibraryVisibility = .default
+    ) async -> [MediaItem] {
+        guard !Task.isCancelled, await allowsDiscovery() else { return [] }
+        let external = candidates.map { candidate in
+            var item = Self.publicCandidate(candidate)
+            item.availability = candidate.availability ?? .unknown
+            item.downloadProgress = candidate.downloadProgress
+            item.hasRequestDownloadActivity = candidate.hasRequestDownloadActivity
+            return item
+        }
         guard !accountsByID.isEmpty else { return external }
 
         var jobs: [LookupKey] = []

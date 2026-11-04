@@ -34,6 +34,7 @@ import TopShelfKit
 enum HomeTabRoot {
     case home
     case watchlist
+    case discover
     /// One library's grid.
     case library(MediaLibrary)
     /// The combined grid over every browsable library the profile can see.
@@ -49,21 +50,25 @@ private struct PlaylistDetailRoute: Hashable {
 /// the tapped item/library's `sourceAccountID`.
 struct HomeTab: View {
     @State private var trailerOpening = YouTubeTrailerOpening()
+    @State private var externalOpening = ExternalMediaOpening()
+    @Environment(ProfilesModel.self) private var profilesModel: ProfilesModel?
     /// The app's effective language, injected by `AppLanguageScope`. Read here
     /// only to hand to the Top Shelf publisher: that snapshot crosses into
     /// another process, so its titles have to be resolved on this side.
     @Environment(\.locale) private var locale
+    @Environment(\.plozzMetrics) private var metrics
+    @Environment(\.detailPlaybackPreparationAllowed) private var playbackPreparationAllowed
     @Environment(LibraryPresentationSettingsModel.self) private var libraryPresentation
     @Environment(\.plozzArtworkPolicy) private var artworkPolicy
     @Environment(\.plozzShowsContentRatings) private var showsContentRatings
     @Environment(\.mediaItemActionHandler) private var mediaItemActionHandler
-    /// The rail's chrome model, present only under ``NavigationStyle/rail``. This
-    /// stack reports its depth so the rail steps aside on a detail page.
+    /// Custom navigation observes this stack's depth to step aside on pushed pages.
     @Environment(NavigationChromeModel.self) private var navigationChrome: NavigationChromeModel?
     /// What this stack is rooted at: `.home` for the Home destination, a library
     /// for one of the rail's library slots.
     var root: HomeTabRoot = .home
     let accounts: [ResolvedAccount]
+    var isProfileAuthorized: @MainActor () -> Bool = { false }
     /// Every server added to the device, regardless of what this profile has
     /// switched on. Home needs it to tell "no servers yet" from "all off".
     let configuredServerCount: Int
@@ -217,10 +222,44 @@ struct HomeTab: View {
             homeRoot
         case .watchlist:
             watchlistRoot
+        case .discover:
+            discoverRoot
         case let .library(library):
             libraryBrowse(for: library, isNavigationRoot: true)
         case let .allLibraries(libraries):
             allLibrariesBrowse(libraries)
+        }
+    }
+
+    @ViewBuilder
+    private var discoverRoot: some View {
+        if heroSettings.allowsDiscovery, isProfileAuthorized() {
+            let profileID = profilesModel?.activeProfileID
+            let visibility = homeVisibility.visibility
+            DiscoverBrowseView(model: DiscoverRuntime.makeModel(
+                namespace: libraryPreferencesNamespace,
+                accounts: accounts,
+                identitySources: identitySources,
+                visibility: visibility,
+                seer: seer,
+                language: locale.identifier,
+                pendingWatchMutations: pendingWatchMutations,
+                isCurrent: {
+                    heroSettings.allowsDiscovery && isProfileAuthorized()
+                        && profilesModel?.activeProfileID == profileID
+                        && homeVisibility.visibility == visibility
+                }
+            ), isActive: isActiveTab && path.isEmpty) { feed, items, loading, loadMore in
+                MediaRowView(
+                    title: Text(feed.title), items: items,
+                    spoilerSettings: spoilerSettings,
+                    isCovered: !path.isEmpty,
+                    loadingPlaceholderCount: loading ? 6 : 0,
+                    onSelect: { navigate($0) }
+                )
+                .loadingMore(loadMore)
+            }
+            .id("\(seer.connectionRevision)|\(locale.identifier)|\(visibility.disabledKeys.sorted())")
         }
     }
 
@@ -261,15 +300,17 @@ struct HomeTab: View {
                                 item: item, placement: item.kind == .episode ? .seriesPoster : .poster,
                                 policy: policy
                             )
-                            return await source.resolve(variant: .posterCard, maxAspectRatio: 1)?
-                                .image.pngData()
+                            guard let artwork = await source.resolve(variant: .posterCard, maxAspectRatio: 1)
+                            else { return nil }
+                            return await TopShelfArtworkEncoder.shared.data(for: artwork.image, format: .png)
                         },
                         resolveBackdrop: { item in
                             let subject = item.kind == .episode ? ArtworkRouter.seriesArtworkItem(for: item) : item
                             let source = MediaArtworkSource(
                                 item: subject, placements: [.detailBackdrop, .poster], policy: policy
                             )
-                            return await source.resolve(variant: .heroBackdrop)?.image.jpegData(compressionQuality: 0.9)
+                            guard let artwork = await source.resolve(variant: .heroBackdrop) else { return nil }
+                            return await TopShelfArtworkEncoder.shared.data(for: artwork.image, format: .jpeg)
                         }
                     )
                 }
@@ -296,6 +337,7 @@ struct HomeTab: View {
                     heroSettings: heroSettings,
                     identitySources: identitySources
                 ),
+                heroIdentityRevision: identityRevision,
                 heroRequestIdentity: { seer.hasRequestIdentity(for: $0) },
                 heroFeaturedStatusProvider: makeHeroFeaturedStatusProvider(
                     seer: seer
@@ -358,6 +400,7 @@ struct HomeTab: View {
                 onSelectLibrary: { library in
                     path.append(library)
                 },
+                onBrowse: { $0.push(onto: $path, chrome: navigationChrome) },
                 configuredServerCount: configuredServerCount,
                 enabledServerCount: accounts.count
             )
@@ -483,6 +526,31 @@ struct HomeTab: View {
         NavigationStack(path: $path) {
             rootContent
             .modifier(NavigationRailRootContentInset())
+            .navigationDestination(for: HomeBrowseDestination.self) { destination in
+                Group {
+                    switch destination {
+                    case let .row(browser):
+                        HomeRowBrowseView(
+                            model: browser,
+                            columns: browser.style == .landscape
+                                ? Array(metrics.posterColumns.prefix(max(1, metrics.posterColumns.count / 2)))
+                                : metrics.posterColumns
+                        ) { item in
+                            PosterCardView(
+                                item: item, style: browser.style == .landscape ? .landscape : .poster,
+                                spoilerSettings: spoilerSettings
+                            ) {
+                                navigate(item)
+                            }
+                            .navigationEntryFocus(.content)
+                        }
+                    case .watchlist:
+                        watchlistRoot
+                    }
+                }
+                .toolbar(.hidden, for: .tabBar)
+                .environment(\.plozzTopNavigationScroll, nil)
+            }
             .navigationDestination(for: MediaLibrary.self) { library in
                 libraryBrowse(for: library)
             }
@@ -493,6 +561,8 @@ struct HomeTab: View {
             }
             .onChange(of: pendingTitleRoute) { _, _ in consumePendingTitleRoute() }
             .youTubeTrailerOpeningFailures(trailerOpening)
+            .externalMediaOpeningFailures(externalOpening)
+            .onChange(of: accounts.map(\.account.id)) { _, _ in externalOpening.cancel() }
             .onChange(of: artworkPolicy.forArea(.topShelf).identity) { _, _ in
                 if case .home = root { sharedHomeViewModel.publishCurrentContent() }
             }
@@ -666,11 +736,11 @@ struct HomeTab: View {
             // reaches the root content — "Episode Info" worked on Continue
             // Watching and was silently dropped in every pushed detail page.
             .mediaItemNavigator { navigate($0, asOwnSubject: $0.kind == .episode) }
+            .environment(\.detailPlaybackPreparationAllowed, playbackPreparationAllowed && isActiveTab)
         }
         .cinematicDetailNavigation(path: $path)
-        // Under the rail, a pushed page is a detail page — report the depth so the
-        // chrome steps aside and the title page is full-bleed. No-op under the two
-        // native tab styles, which install no chrome model.
+        // All pushed pages, including Home row browsers, share this path so
+        // custom chrome and Back agree about whether Home is still the root.
         .reportsNavigationDepth(path.count, to: navigationChrome)
         // The deep-link watcher lives in its own leaf view. Reading the pending
         // id in *this* body subscribed the whole tab to it, and every publish
@@ -1061,8 +1131,9 @@ struct HomeTab: View {
     /// Pushes a detail page for any item — movies get a Movie Details page (with a
     /// Play button); series/seasons get their children list. A tapped episode is
     /// redirected to its *series* page (fronting that episode) so the user never
-    /// lands on a dead-end single-episode page. Immediate playback is reserved for
-    /// Continue Watching and the detail page's own Play action.
+    /// lands on a single-episode page unless that is the requested destination.
+    /// Playback remains available through the detail page and the optional
+    /// Continue Watching Play action.
     ///
     /// `libraryOrigin` carries the owning `Account.id` when the navigation springs
     /// from a single-server library tile, so the pushed detail (and any movie/
@@ -1073,10 +1144,8 @@ struct HomeTab: View {
     /// Routes a navigation to `item`.
     ///
     /// `asOwnSubject` distinguishes the two ways an episode can be navigated to.
-    /// A menu's "Episode Info" wants the episode's *own* page — its synopsis, air
-    /// date, and the file that would play. Everything else that hands over an
-    /// episode (a deep link, a tapped card) means "show me this episode in
-    /// context", which is the series page with it fronted.
+    /// A menu's "Go to Episode" opens the episode's own page. Ordinary browsing,
+    /// including Continue Watching, shows the series page with that episode fronted.
     private func navigate(
         _ item: MediaItem,
         libraryOrigin: String? = nil,
@@ -1281,6 +1350,20 @@ struct HomeTab: View {
     private func presentPlay(
         _ target: MediaItem, playlistOrigin: VideoPlaylistPlaybackOrigin? = nil
     ) {
+        if target.opensExternalSource {
+            do {
+                let provider = try resolveProvider(target.sourceAccountID, in: accounts)
+                let profileID = profilesModel?.activeProfileID
+                Task {
+                    await externalOpening.open(target, provider: provider) {
+                        profilesModel?.activeProfileID == profileID && isProfileAuthorized()
+                    }
+                }
+            } catch {
+                externalOpening.failed = true
+            }
+            return
+        }
         pendingPlaylistOrigin = playlistOrigin
         if playbackSettings.shouldAskBeforeResuming(at: target.resumePosition) {
             HandoffDiagnostics.emit(

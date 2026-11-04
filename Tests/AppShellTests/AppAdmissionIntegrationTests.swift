@@ -96,6 +96,10 @@ final class AppAdmissionIntegrationTests: XCTestCase {
             homeLibraryVisibilityModel: HomeLibraryVisibilityModel(
                 store: HomeLibraryVisibilityStore(defaults: defaults)
             ),
+            navigationStyleModel: NavigationStyleSettingsModel(
+                store: NavigationStyleSettingsStore(defaults: defaults),
+                layoutStore: NavigationLibraryLayoutStore(defaults: defaults)
+            ),
             appAdmissionStore: admission
         )
         return Harness(state: state, accounts: accounts, profiles: profiles, defaults: defaults)
@@ -141,7 +145,6 @@ final class AppAdmissionIntegrationTests: XCTestCase {
         harness.state.completeFirstRunSeerrSetup()
         harness.state.finishThemeSelection()
         harness.state.finishNavigationSelection()
-        harness.state.finishHomeLayoutSelection()
         XCTAssertFalse(harness.state.profileFlow.hasResumableSetup)
         harness.state.profileFlow.switchProfile(to: selected)
         XCTAssertFalse(harness.state.profileFlow.isPickingAppearanceForNewProfile)
@@ -435,7 +438,6 @@ final class AppAdmissionIntegrationTests: XCTestCase {
         harness.state.completeFirstRunSeerrSetup()
         harness.state.finishThemeSelection()
         harness.state.finishNavigationSelection()
-        harness.state.finishHomeLayoutSelection()
 
         XCTAssertEqual(harness.state.state, .ready)
         XCTAssertTrue(harness.profiles.firstRunProfileSetupComplete)
@@ -500,10 +502,12 @@ final class AppAdmissionIntegrationTests: XCTestCase {
         try harness.accounts.add(Account(id: Account.stableID(for: session), from: session), token: "fixture")
         harness.profiles.setActiveAccountIDs(["media-account"], for: harness.profiles.activeProfileID)
         harness.state.bootstrap()
+        harness.state.profileSettings.navigationStyleModel.showsLiveTV = false
 
         XCTAssertTrue(harness.state.didAuthenticate(session))
 
         XCTAssertEqual(harness.state.accountsProviders.activeAccountIDs, ["media-account"])
+        XCTAssertFalse(harness.state.profileSettings.navigationStyleModel.showsLiveTV)
     }
 
     func testAddingIPTVCannotOverwriteAnUnreadableProfileSelection() throws {
@@ -511,6 +515,7 @@ final class AppAdmissionIntegrationTests: XCTestCase {
         let harness = try makeHarness(profileSetupComplete: true, withAccount: true, profileSecrets: secrets)
         harness.profiles.setActiveAccountIDs(["media-account"], for: harness.profiles.activeProfileID)
         harness.state.bootstrap()
+        harness.state.profileSettings.navigationStyleModel.showsLiveTV = false
         secrets.failMembershipReads = true
         harness.profiles.setActiveAccountIDs(["media-account"], for: harness.profiles.activeProfileID)
         let session = UserSession(
@@ -520,6 +525,7 @@ final class AppAdmissionIntegrationTests: XCTestCase {
         )
 
         XCTAssertFalse(harness.state.didAuthenticate(session))
+        XCTAssertFalse(harness.state.profileSettings.navigationStyleModel.showsLiveTV)
         XCTAssertTrue(harness.state.accountsProviders.navigationAccounts.isEmpty)
 
         secrets.failMembershipReads = false
@@ -527,6 +533,7 @@ final class AppAdmissionIntegrationTests: XCTestCase {
         XCTAssertEqual(harness.profiles.storedActiveAccountIDs(for: harness.profiles.activeProfileID), ["media-account"])
         harness.state.accountsProviders.reloadAccounts()
         XCTAssertTrue(harness.state.didAuthenticate(session, activateIPTVAccount: true))
+        XCTAssertTrue(harness.state.profileSettings.navigationStyleModel.showsLiveTV)
         XCTAssertTrue(harness.state.accountsProviders.activeAccountIDs.contains(Account.stableID(for: session)))
     }
 
@@ -542,12 +549,16 @@ final class AppAdmissionIntegrationTests: XCTestCase {
         harness.profiles.setActiveAccountIDs(["media-account"], for: harness.profiles.activeProfileID)
         let other = harness.profiles.add(name: "Other", activeAccountIDs: ["media-account"])
         harness.state.bootstrap()
+        harness.state.profileSettings.navigationStyleModel.showsLiveTV = false
 
         XCTAssertTrue(harness.state.didAuthenticate(session, activateIPTVAccount: true))
 
         XCTAssertEqual(harness.accounts.loadAccounts().filter { $0.id == id }.count, 1)
         XCTAssertTrue(harness.state.accountsProviders.liveTVServerChoices.contains { $0.id == id })
         XCTAssertEqual(harness.profiles.storedActiveAccountIDs(for: other.id), ["media-account"])
+        XCTAssertTrue(harness.state.profileSettings.navigationStyleModel.showsLiveTV)
+        XCTAssertTrue(NavigationLibraryLayoutStore(defaults: harness.defaults).load()
+            .shownKeys.contains(NavigationLibraryLayout.liveTVKey))
     }
 
     func testNormalLastAccountSignOutStillOnboards() throws {
@@ -564,7 +575,9 @@ final class AppAdmissionIntegrationTests: XCTestCase {
         harness.state.bootstrap()
         let profile = harness.profiles.activeProfile
         let rememberedSelection = harness.profiles.hasRememberedSelection
+        harness.state.profileSettings.navigationStyleModel.showsLiveTV = false
         XCTAssertTrue(harness.state.recordSuccessfulIPTVSetup())
+        XCTAssertTrue(harness.state.profileSettings.navigationStyleModel.showsLiveTV)
         XCTAssertEqual(harness.state.state, .ready)
         XCTAssertEqual(harness.profiles.activeProfile, profile)
         XCTAssertEqual(harness.profiles.hasRememberedSelection, rememberedSelection)
@@ -644,8 +657,6 @@ final class AppAdmissionIntegrationTests: XCTestCase {
         harness.state.finishThemeSelection()
         XCTAssertEqual(harness.state.state, .onboarding(.selectNavigation, canReturnToApp: true))
         harness.state.finishNavigationSelection()
-        XCTAssertEqual(harness.state.state, .onboarding(.selectHomeLayout, canReturnToApp: true))
-        harness.state.finishHomeLayoutSelection()
         XCTAssertEqual(harness.state.state, .ready)
         XCTAssertTrue(harness.state.pendingStandaloneLiveTVEntry)
         XCTAssertTrue(harness.state.consumeStandaloneLiveTVEntryIntent())

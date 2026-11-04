@@ -43,7 +43,14 @@ public enum HandoffDiagnostics {
     /// unified log isn't remotely readable on this toolchain). Opt-in, read once.
     private static let mirrorsStandardOut: Bool =
         ProcessInfo.processInfo.environment["PLZXHAND_STDOUT"] == "1"
-    private static let recorder = LocalRecorder()
+    private static let recorder = PlaybackTraceRecorder(
+        directory: FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first?
+            .appendingPathComponent("Plozz", isDirectory: true)
+    ) { issue in
+        #if canImport(OSLog)
+        logger.error("Playback trace storage: \(issue.rawValue, privacy: .public)")
+        #endif
+    }
 
     /// Emits one already-formatted telemetry line (the `PLZXHAND ` prefix is added).
     /// No-op when disabled.
@@ -54,7 +61,9 @@ public enum HandoffDiagnostics {
         // toggle and it persists to the log store (retrievable via `log show`).
         logger.notice("PLZXHAND \(line, privacy: .public)")
         #endif
+        #if PLOZZ_DIAGNOSTICS
         recorder.append(line)
+        #endif
         if mirrorsStandardOut {
             try? FileHandle.standardOutput.write(contentsOf: Data(("PLZXHAND " + line + "\n").utf8))
         }
@@ -74,10 +83,32 @@ public enum HandoffDiagnostics {
     }
 
     /// Returns the bounded persistent playback journal after pending writes
-    /// finish. This lets the in-app sender collect it without copying the app
-    /// container, which terminates the tvOS process.
+    /// finish. Existing consumers receive at most 64 KiB; the larger archive and
+    /// failure snapshots remain local.
     public static func persistentPlaybackLogText() -> String {
+        #if PLOZZ_DIAGNOSTICS
         recorder.snapshot()
+        #else
+        ""
+        #endif
+    }
+
+    static func preservePlaybackFailure(_ entry: PlaybackDiagnosticJournal.Entry) {
+        #if PLOZZ_DIAGNOSTICS
+        guard isEnabled else { return }
+        recorder.append(playbackFailureLine(entry), failure: true, attempt: entry.attempt, timestamp: entry.timestamp)
+        #endif
+    }
+
+    static func playbackFailureLine(_ entry: PlaybackDiagnosticJournal.Entry) -> String {
+        "playback FAILURE event=\(entry.event.rawValue) session=\(entry.session) attempt=\(entry.attempt)"
+            + " stage=\(entry.stage?.rawValue ?? entry.liveFailure?.stage.rawValue ?? "unknown")"
+            + " provider=\(entry.facts.provider?.rawValue ?? "unknown")"
+            + " engine=\(entry.facts.engine?.rawValue ?? "unknown")"
+            + " code=\(entry.failure?.code.rawValue ?? entry.liveFailure?.engineFailure.rawValue ?? "unknown")"
+            + " domain=\(entry.failure?.domain?.rawValue ?? entry.liveFailure?.domain.rawValue ?? "unknown")"
+            + " nativeCode=\((entry.failure?.nativeCode ?? entry.liveFailure?.code).map(String.init) ?? "none")"
+            + " httpStatus=\((entry.failure?.httpStatus ?? entry.liveFailure?.httpStatus).map(String.init) ?? "none")"
     }
 
     public static func errorCode(_ error: AppError) -> String {
@@ -134,58 +165,4 @@ public enum HandoffDiagnostics {
         func setEnabled(_ value: Bool) { lock.lock(); enabled = value; lock.unlock() }
     }
 
-    /// Debug-only bounded trace at `Library/Caches/Plozz/playback-trace.log`.
-    /// Writes run on a utility queue and never block playback.
-    private final class LocalRecorder: @unchecked Sendable {
-        private let queue = DispatchQueue(
-            label: "com.thatcube.Plozz.HandoffDiagnostics",
-            qos: .utility
-        )
-        private let maximumBytes = 64 * 1024
-
-        func append(_ line: String) {
-            #if PLOZZ_DIAGNOSTICS
-            queue.async {
-                guard let url = Self.traceURL() else { return }
-                var data = (try? Data(contentsOf: url)) ?? Data()
-                let timestamp = String(
-                    format: "%.3f",
-                    Date().timeIntervalSince1970
-                )
-                data.append(Data(("\(timestamp) PLZXHAND \(line)\n").utf8))
-                if data.count > self.maximumBytes {
-                    data = Data(data.suffix(self.maximumBytes))
-                }
-                try? FileManager.default.createDirectory(
-                    at: url.deletingLastPathComponent(),
-                    withIntermediateDirectories: true
-                )
-                try? data.write(to: url, options: .atomic)
-            }
-            #endif
-        }
-
-        func snapshot() -> String {
-            #if PLOZZ_DIAGNOSTICS
-            return queue.sync {
-                guard let url = Self.traceURL(),
-                      let data = try? Data(contentsOf: url) else {
-                    return ""
-                }
-                return String(decoding: data, as: UTF8.self)
-            }
-            #else
-            return ""
-            #endif
-        }
-
-        private static func traceURL() -> URL? {
-            FileManager.default.urls(
-                for: .cachesDirectory,
-                in: .userDomainMask
-            ).first?
-                .appendingPathComponent("Plozz", isDirectory: true)
-                .appendingPathComponent("playback-trace.log")
-        }
-    }
 }

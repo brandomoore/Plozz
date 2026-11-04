@@ -4,7 +4,7 @@ public enum HomeRowFeed: Sendable {
     case latest(libraryIDs: [String]?)
     case nextUp(libraryID: String)
     case recommendation(libraryID: String, kind: MediaItemKind, browseID: String, anchorIDs: [String] = [])
-    case server(ServerHomeSection, excludedLibraryIDs: Set<String>, anchorIDs: [String])
+    case server(ServerHomeSection, excludedLibraryIDs: Set<String>, anchorIDs: [String], browseID: String? = nil)
 }
 
 public struct HomeRowPage: Sendable {
@@ -61,7 +61,7 @@ public extension MediaProvider {
                 throw AppError.notFound
             }
             items = shelf.items
-        case let .server(section, excluded, _):
+        case let .server(section, excluded, _, _):
             items = try await serverHomeItems(section: section, limit: count, excludingLibraryIDs: excluded)
         }
         try Task.checkCancellation()

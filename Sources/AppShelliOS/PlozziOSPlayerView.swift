@@ -88,7 +88,10 @@ struct PlozziOSPlayerView: View {
                 onPlayPause: { keyboardActions.playPause?() }
             )
 
-            if let viewModel {
+            if versionChoice.prompt != nil {
+                PlaybackVersionChoiceView(model: versionChoice)
+                    .plozzDialogSurface()
+            } else if let viewModel {
                 PlayerView(
                     viewModel: viewModel,
                     showDiagnostics: appModel.settings.diagnostics.settings.isEnabled,
@@ -201,7 +204,6 @@ struct PlozziOSPlayerView: View {
                 }
             }
         }
-        .playbackVersionChoice(versionChoice)
         .onChange(of: versionChoice.prompt?.id) { _, id in
             if id != nil { viewModel?.setPaused(true) }
         }
@@ -325,22 +327,13 @@ struct PlozziOSPlayerView: View {
     private var closeButton: some View {
         VStack {
             HStack {
+                PlozziOSPlayerCloseButton(action: dismiss)
                 Spacer()
-                Button {
-                    dismiss()
-                } label: {
-                    Image(systemName: "xmark")
-                        .font(.headline)
-                        .frame(width: 44, height: 44)
-                        .background(.ultraThinMaterial, in: Circle())
-                }
-
-                .accessibilityLabel("Close player")
             }
             Spacer()
         }
         .foregroundStyle(.white)
-        .padding()
+        .modifier(PlayerTouchChromePadding())
     }
 
     private func dismiss() { orientation.close() }
@@ -374,16 +367,16 @@ struct PlozziOSPlayerView: View {
         _ item: MediaItem, session: PlozziOSAppModel.PlaybackSession
     ) async throws -> MediaItem {
         let model = appModel
-        let sourceSnapshot = model.identityIndex.identitySnapshotStore.current
+        let snapshot = model.identityIndex.identitySnapshotStore.current
         let selected = try await versionChoice.prepare(
             item, provider: provider, settings: model.settings.playback,
             preferences: model.versionPreferences,
             offlineResolver: model.downloads.offlineResolver,
             sourceResolver: crossServerSourceResolver(
                 in: model.accountsProviders.resolvedActiveAccounts,
-                identitySources: { sourceSnapshot.sourceRefs(for: $0) }
+                identitySources: { snapshot.sourceRefs(for: $0) }
             ),
-            isCurrent: { model.isCurrentPlaybackSession(session) }
+            isCurrent: { isPresented && model.isCurrentPlaybackSession(session) }
         )
         try Task.checkCancellation()
         guard isPresented, model.isCurrentPlaybackSession(session) else { throw CancellationError() }

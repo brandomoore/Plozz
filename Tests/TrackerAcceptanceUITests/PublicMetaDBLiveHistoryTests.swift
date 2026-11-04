@@ -271,16 +271,22 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
     }
 
     func testMarkSelectedShareShowWatched() throws {
-        try changeSelectedShareShow(played: true)
+        try changeSelectedShareWatchState(played: true, content: "TV Shows")
     }
 
     func testMarkSelectedShareShowUnwatched() throws {
-        try changeSelectedShareShow(played: false)
+        try changeSelectedShareWatchState(played: false, content: "TV Shows")
     }
 
-    private func changeSelectedShareShow(played: Bool) throws {
-        try require(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_SHARE_CONTENT"] == "TV Shows",
-                    "Expected the dedicated share-show acceptance scope")
+    func testMarkSelectedShareMovieUnwatched() throws {
+        try changeSelectedShareWatchState(played: false, content: "Movies")
+    }
+
+    private func changeSelectedShareWatchState(played: Bool, content: String) throws {
+        let environment = ProcessInfo.processInfo.environment
+        try require(environment["PLOZZ_TRACKER_SHARE_CONTENT"] == content
+            && environment["PLOZZ_TRACKER_IMPORT_ACCOUNT"]?.hasPrefix("share:") == true,
+                    "Expected the dedicated share acceptance scope and content type")
         try selectedTitleCard().press(forDuration: 1)
         let action = app.buttons[played ? "Mark as Watched" : "Mark as Unwatched"]
         try tapVisible(action)

@@ -60,7 +60,12 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
 
     // MARK: - VideoEngine State
 
-    public private(set) var status: VideoEngineStatus = .idle
+    public private(set) var status: VideoEngineStatus = .idle {
+        didSet {
+            if status != oldValue { onLiveOutputReadinessChanged?() }
+        }
+    }
+    public var onLiveOutputReadinessChanged: (@MainActor () -> Void)?
     public private(set) var isPaused: Bool = true
     /// Our *intended* transport state — the single source of truth for whether
     /// the user wants to be playing. AetherEngine's "producer-restart" seek tears
@@ -101,12 +106,15 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
     private var nativeSubtitleOutput: NativeSubtitleCueOutput?
     private weak var nativeSubtitleItem: AVPlayerItem?
     private var nativeSubtitleSelectionID: Int?
-    private var lastPipelineDiagnosticUptime: TimeInterval?
+    private var pipelineDiagnosticCadence = PipelineDiagnosticCadence()
     private var usesNativeSubtitleCues: Bool {
         engine.subtitleTracks.first { $0.id == engine.activeSubtitleTrackIndex }?.isNativelyRenderedSubtitle == true
     }
     public var hasPresentedVideoFrame: Bool {
         status == .ready && engine.isSessionReady && engine.hasFirstFrameReadyForDisplay
+    }
+    public func hasRenderedVideoFrame() async -> Bool {
+        await engine.hasRenderedVideoFrame()
     }
     public var isPlaybackPositionReady: Bool {
         status == .ready && engine.isSessionReady && engine.hasFirstFrameReadyForDisplay
@@ -298,6 +306,11 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
         format: VideoFormat,
         generation: UInt
     ) {
+        // Native live HLS returns before inspecting its video track. Its reset
+        // SDR value is not source evidence until a video description arrives.
+        if liveAttemptGate.activeGeneration != nil {
+            guard engine.sourceVideoWidth > 0, engine.sourceVideoHeight > 0 else { return }
+        }
         let range = sourceRange(for: format)
         guard probePublicationGate.record(range, generation: generation) else { return }
         let facts = makeProbedSourceFacts(range: range)
@@ -312,9 +325,10 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
         sourceFormatCancellable = engine.$sourceVideoFormat
             .dropFirst()
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] format in
-                self?.publishProbedSourceFacts(
-                    format: format,
+            .sink { [weak self] _ in
+                guard let self else { return }
+                self.publishProbedSourceFacts(
+                    format: self.engine.sourceVideoFormat,
                     generation: generation
                 )
             }
@@ -372,7 +386,6 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
     private let readAheadPreference: @MainActor () -> PlaybackReadAhead
     private let liveBufferPreference: @MainActor () -> LivePlaybackBuffer
     private let losslessAudioPreference: @MainActor () -> Bool
-    private let spatialAudioLayoutPreference: @MainActor () -> SpatialAudioLayout
     private var liveOutputPolicy = LiveChannelOutputPolicy()
     private var outputPolicyReload: Task<Void, Never>?
     private var outputLoadGeneration = UUID()
@@ -404,8 +417,7 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
         authenticatedHTTPResolver: (any AuthenticatedHTTPResourceResolving)? = nil,
         readAheadPreference: @escaping @MainActor () -> PlaybackReadAhead = { .default },
         liveBufferPreference: @escaping @MainActor () -> LivePlaybackBuffer = { .default },
-        losslessAudioPreference: @escaping @MainActor () -> Bool = { LosslessAudioSettingsStore().load() },
-        spatialAudioLayoutPreference: @escaping @MainActor () -> SpatialAudioLayout = { SpatialAudioLayoutStore().load() }
+        losslessAudioPreference: @escaping @MainActor () -> Bool = { LosslessAudioSettingsStore().load() }
     ) throws {
         self.engine = try AEEngine()
         // Plozz owns its audio session, and on an E-AC-3/Atmos bitstream-passthrough route the HDMI sink
@@ -418,7 +430,6 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
         self.readAheadPreference = readAheadPreference
         self.liveBufferPreference = liveBufferPreference
         self.losslessAudioPreference = losslessAudioPreference
-        self.spatialAudioLayoutPreference = spatialAudioLayoutPreference
         #if canImport(UIKit)
         let surface = AetherPlayerView()
         engine.bind(view: surface)
@@ -683,7 +694,7 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
         defer { finishOutputLoad(outputGeneration, policy: outputPolicy) }
         let liveGeneration = beginLiveAttempt()
         liveDeliveryFailure = PlaybackDeliveryFailure.state(for: url)
-        _ = probePublicationGate.beginLoad()
+        let probeGeneration = probePublicationGate.beginLoad()
         sourceFormatCancellable?.cancel()
         sourceFormatCancellable = nil
         suppressFailureCallbackForForegroundReload = false
@@ -713,7 +724,8 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
             var options = liveLoadOptions(httpHeaders: httpHeaders, url: url, sourceFormat: sourceFormat)
             Self.applyLiveOutputPolicy(outputPolicy, to: &options)
             try await engine.load(url: url, options: options)
-            guard liveAttemptGate.accepts(liveGeneration) else { return }
+            guard liveAttemptGate.accepts(liveGeneration),
+                  probePublicationGate.accepts(probeGeneration), !Task.isCancelled else { return }
             if case .error(let message) = engine.state {
                 reportLiveFailure(
                     message,
@@ -722,6 +734,9 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
                 )
                 return
             }
+            beginObservingLateSourceFormatChanges(generation: probeGeneration)
+            publishProbedSourceFacts(format: engine.sourceVideoFormat, generation: probeGeneration)
+            guard liveAttemptGate.accepts(liveGeneration), !Task.isCancelled else { return }
             stage = .audioSession
             // Aether's load prologue awaits its detached category/multichannel
             // declaration. Activate only after that boundary: the bare
@@ -770,6 +785,9 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
     }
 
     public var supportsConcurrentPlayback: Bool { true }
+    public var isAudioOnlyPlaybackReady: Bool {
+        status == .ready && engine.isSessionReady && engine.playbackBackend == .audio
+    }
 
     public func configureLiveOutput(_ policy: LiveChannelOutputPolicy) {
         if liveOutputPolicy.suppressesDisplayMatching != policy.suppressesDisplayMatching {
@@ -813,6 +831,15 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
               loadedDisplaySuppression != liveOutputPolicy.suppressesDisplayMatching else { return }
         let generation = outputLoadGeneration
         let policy = liveOutputPolicy
+        switch engine.updateDisplayMatching(enabled: !policy.suppressesDisplayMatching) {
+        case .applied:
+            self.loadedDisplaySuppression = policy.suppressesDisplayMatching
+            return
+        case .notReady:
+            return
+        case .requiresReload:
+            break
+        }
         outputPolicyReload = Task { @MainActor [weak self] in
             guard let self else { return }
             defer {
@@ -824,8 +851,7 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
             guard outputLoadGeneration == generation, !Task.isCancelled,
                   liveOutputPolicy.suppressesDisplayMatching == policy.suppressesDisplayMatching else { return }
             do {
-                // Changing load options through Aether's session-preserving reload
-                // keeps the broadcast cursor, pause state and selected tracks.
+                // HDR output changes still need a pipeline rebuild.
                 try await reloadSession(outputPolicy: policy)
                 guard outputLoadGeneration == generation, !Task.isCancelled else { return }
                 self.loadedDisplaySuppression = policy.suppressesDisplayMatching
@@ -856,9 +882,6 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
         }
         let options = Self.onDemandLoadOptions(
             losslessAudioEnabled: losslessAudioPreference(),
-            trueHDAtmosEnabled: request.trueHDAtmosEnabled,
-            spatialAudioLayout: spatialAudioLayoutPreference(),
-            dolbyVisionFELEnabled: request.dolbyVisionFELEnabled,
             outputPolicy: outputPolicy,
             readAhead: isLocalFile || request.suppressOrdinaryWatchReporting
                 ? .default : readAheadPreference()
@@ -868,9 +891,6 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
 
     nonisolated static func onDemandLoadOptions(
         losslessAudioEnabled: Bool = LosslessAudioSettingsStore.defaultEnabled,
-        trueHDAtmosEnabled: Bool = PlaybackSettings.default.trueHDAtmosEnabled,
-        spatialAudioLayout: SpatialAudioLayout = .default,
-        dolbyVisionFELEnabled: Bool = PlaybackSettings.default.dolbyVisionFELEnabled,
         outputPolicy: LiveChannelOutputPolicy = .init(),
         readAhead: PlaybackReadAhead = .default
     ) -> LoadOptions {
@@ -879,9 +899,7 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
             audioBridgeMode: losslessAudioEnabled ? .lossless : .surroundCompat
         )
         options.objectAudioRendering = .off
-        options.preferDualLayerDolbyVision = dolbyVisionFELEnabled
-            && outputPolicy.isAudible && !outputPolicy.sharesAudioSession
-            && !outputPolicy.suppressesDisplayMatching
+        options.preferDualLayerDolbyVision = false
         // Aether uses approximately four-second segments and clamps the maximum
         // to 2,700, retaining its free-space budget and producer backpressure.
         switch readAhead {
@@ -894,26 +912,8 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
         // Explicit durations may exceed the automatic 2 GiB cap. The engine still
         // clamps this request to its available-space limit and shared retention ledger.
         options.sessionCacheByteBudget = readAhead == .automatic ? nil : Int.max
-        #if os(tvOS) || os(iOS)
-        if #available(tvOS 26.0, iOS 26.0, *), trueHDAtmosEnabled,
-           outputPolicy.isAudible, !outputPolicy.sharesAudioSession {
-            // This is the rendering bed, not detected speakers. Aether chooses PCM
-            // or APAC for the route and retains its source/channel fallback.
-            options.objectAudioRendering = .render(spatialSpeakerLayout(spatialAudioLayout))
-        }
-        #endif
         applyLiveOutputPolicy(outputPolicy, to: &options)
         return options
-    }
-
-    nonisolated static func spatialSpeakerLayout(_ layout: SpatialAudioLayout) -> SpatialSpeakerLayout {
-        switch layout {
-        case .fiveOneTwo: .l512
-        case .fiveOneFour: .l514
-        case .sevenOneTwo: .l712
-        case .sevenOneFour: .l714
-        case .nineOneSix: .l916
-        }
     }
 
     func liveLoadOptions(
@@ -955,6 +955,9 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
     }
 
     nonisolated static func applyLiveOutputPolicy(_ policy: LiveChannelOutputPolicy, to options: inout LoadOptions) {
+        #if os(tvOS)
+        options.displayCriteriaOwner = policy.suppressesDisplayMatching ? .host : .engine
+        #endif
         options.suppressDisplayCriteria = policy.suppressesDisplayMatching
         options.matchContentEnabled = !policy.suppressesDisplayMatching
     }
@@ -1745,15 +1748,18 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
     private func recordPipelineDiagnostic(_ telemetry: LiveTelemetry) {
         guard HandoffDiagnostics.isEnabled, engine.videoRoute != .none, engine.state != .ended else { return }
         let now = ProcessInfo.processInfo.systemUptime
-        if let lastPipelineDiagnosticUptime, now - lastPipelineDiagnosticUptime < 2 { return }
-        lastPipelineDiagnosticUptime = now
+        let phase = Self.livePhase(engine.playbackPhase).diagnosticCode
+        let identity = "\(outputLoadGeneration):\(phase):\(engine.videoRoute.rawValue):"
+            + "\(engine.activeAudioTrackIndex ?? -1):\(engine.audioDelivery.rawValue):"
+            + "\(engine.activeSubtitleTrackIndex ?? -1)"
+        guard pipelineDiagnosticCadence.shouldEmit(identity: identity, paused: phase == "paused", now: now) else { return }
         let active = engine.activeAudioTrackIndex.flatMap { id in
             audioTracks.first { $0.id == id }
         }
         HandoffDiagnostics.emit(Self.pipelineDiagnosticLine(
             telemetry: telemetry,
             instance: String(outputLoadGeneration.uuidString.prefix(8)),
-            phase: Self.livePhase(engine.playbackPhase).diagnosticCode,
+            phase: phase,
             route: engine.videoRoute.rawValue,
             position: engine.currentTime,
             engineBuffer: liveTelemetry?.bufferedSecondsAhead,
@@ -1787,6 +1793,11 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
     }
 
     private func observeEngine() {
+        engine.$hasFirstFrameReadyForDisplay
+            .combineLatest(engine.$isSessionReady, engine.$playbackBackend)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.onLiveOutputReadinessChanged?() }
+            .store(in: &cancellables)
         engine.$playbackPhase
             .removeDuplicates()
             .receive(on: DispatchQueue.main)
@@ -1856,8 +1867,18 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
                 self.hasReachedSessionReadiness = true
                 self.applyNativeSubtitleSelection()
                 self.applyAVPlayerSubtitleStyle(to: self.engine.currentAVPlayer)
+                self.reconcileLiveDisplayPolicy()
             }
             .store(in: &cancellables)
+
+        #if os(tvOS)
+        // Native HLS can become ready before its source format and dimensions arrive.
+        engine.$sourceVideoWidth
+            .combineLatest(engine.$sourceVideoHeight, engine.$sourceVideoFormat)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.reconcileLiveDisplayPolicy() }
+            .store(in: &cancellables)
+        #endif
 
         // State → status/isPaused/onEnded/onFailure
         engine.$state

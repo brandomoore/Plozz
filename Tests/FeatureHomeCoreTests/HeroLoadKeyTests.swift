@@ -35,6 +35,9 @@ final class HeroLoadKeyTests: XCTestCase {
         XCTAssertEqual(cold, curation(featured, revision: 0, content: unrelated))
         XCTAssertNotEqual(cold, curation(featured, revision: 1))
         XCTAssertEqual(curation(featured, revision: 1), curation(featured, revision: 1))
+        var unfiltered = featured
+        unfiltered.hideWatched = false
+        XCTAssertNotEqual(curation(unfiltered, revision: 0), curation(unfiltered, revision: 1))
     }
 
     func testIndexUpdatesDoNotRestartDisabledOrNonDiscoveryHeroes() {

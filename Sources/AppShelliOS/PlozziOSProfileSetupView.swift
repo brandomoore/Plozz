@@ -2,6 +2,7 @@
 import AppRuntime
 import CoreModels
 import CoreUI
+import FeatureLiveTV
 import FeatureProfiles
 import FeatureSettings
 import SwiftUI
@@ -20,6 +21,7 @@ import SwiftUI
 struct PlozziOSProfileSetupView: View {
     let appModel: PlozziOSAppModel
     let onDone: () -> Void
+    @Environment(\.themePalette) private var palette
 
     @State private var showingAddServer = false
     @State private var addUserServer: MediaServer?
@@ -51,6 +53,10 @@ struct PlozziOSProfileSetupView: View {
                 .padding(.bottom, 8)
             }
         }
+        .guidePreparationOverlay(
+            model: appModel.guidePreparation, presenter: appModel.transientStatusPresenter,
+            palette: palette
+        )
         // Setup has to finish deliberately: the model releases the watchlist
         // import when it does, so a swipe-away is handled as an explicit cancel
         // rather than being allowed to strand the profile mid-flow.
@@ -64,7 +70,7 @@ struct PlozziOSProfileSetupView: View {
         ) {
             AddServerView(
                 appModel: appModel,
-                initialProvider: addUserServer?.provider ?? .jellyfin,
+                initialProvider: addUserServer?.provider,
                 initialAddress: addUserServer?.baseURL.absoluteString ?? ""
             )
             .presentationSizing(.page)

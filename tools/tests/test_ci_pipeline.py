@@ -97,8 +97,9 @@ class AttributionTests(unittest.TestCase):
             with self.subTest(package=package["identity"]):
                 ref = package["state"].get("version") or package["state"]["revision"]
                 self.assertIn(package["location"].removesuffix(".git") + "/tree/" + ref, attributions)
-        for identity in ("ffmpegbuild", "libdovi", "libtruehd"):
+        for identity in ("ffmpegbuild", "libdovi"):
             self.assertIn(f'`{pins[identity]["version"]}`', notice)
+        self.assertNotIn("libtruehd", pins)
 
     def test_metadata_services_and_bundled_fonts_are_credited(self):
         attributions = (ROOT / "Sources/CoreModels/PlozzAttributions.swift").read_text()
@@ -159,7 +160,7 @@ class WorkflowTests(unittest.TestCase):
                 self.assertIn("    needs: guards\n", block)
                 self.assertEqual(block.count("needs:"), 1)
                 self.assertIn("    runs-on: xcode-27\n", block)
-                timeout = {"app-build": 60, "package-tests": 80, "hosted-focus": 140}[lane]
+                timeout = {"app-build": 60, "package-tests": 80, "hosted-focus": 170}[lane]
                 self.assertIn(f"    timeout-minutes: {timeout}\n", block)
                 self.assertIn(f"          lane: {lane}\n", block)
                 self.assertIn("uses: ./.github/actions/ci-prepare", block)
@@ -205,6 +206,19 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(
             re.findall(r"PLOZZ_FOCUS_TEST_TIMEOUT:\s*([^\n]+)", WORKFLOW + PREPARE),
             ['"5400"'],
+        )
+        self.assertEqual(
+            re.findall(r"PLOZZ_FOCUS_BUILD_TIMEOUT:\s*([^\n]+)", WORKFLOW + PREPARE),
+            ['"3600"'],
+        )
+        hosted_deadlines = [
+            int(re.search(rf'{name}:\s*"(\d+)"', JOBS["hosted-focus"])[1])
+            for name in ("PLOZZ_FOCUS_BUILD_TIMEOUT", "PLOZZ_FOCUS_TEST_TIMEOUT")
+        ]
+        hosted_job_minutes = int(re.search(r"timeout-minutes: (\d+)", JOBS["hosted-focus"])[1])
+        self.assertGreaterEqual(
+            hosted_job_minutes * 60 - sum(hosted_deadlines), 15 * 60,
+            "Keep setup, timeout teardown, and diagnostic uploads outside both hosted deadlines.",
         )
         for lane in ("package-tests", "hosted-focus"):
             before_save = JOBS[lane].split("- name: Save successful trusted caches")[0]

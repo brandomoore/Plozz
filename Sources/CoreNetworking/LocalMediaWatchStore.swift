@@ -1,7 +1,7 @@
 import Foundation
 import CoreModels
 
-/// Local, on-device watch state for a media share.
+/// Local, on-device watch state for media shares and Plex extras.
 ///
 /// Plex/Jellyfin keep watched/resume state on the server, but a plain file share
 /// has no such backend — so the app is the source of truth. This actor persists a
@@ -22,9 +22,9 @@ import CoreModels
 /// never clobbers a newer one, so a stale resume can't resurrect an item a newer
 /// `setPlayed` marked finished.
 ///
-/// Scope: one Keychain envelope per share account and Plozz profile. Watch state
-/// on a local
-/// share is device-local, but profiles never read or overwrite each other's state.
+/// Scope: one Keychain envelope per account, Plozz profile, and optional record
+/// identity. Plex extras use a server/viewer record identity and refresh on access
+/// so credential-refresh providers share ordered state. This history is device-local.
 public actor LocalMediaWatchStore {
     /// One item's persisted watch state.
     public struct Record: Codable, Sendable, Equatable {
@@ -84,23 +84,29 @@ public actor LocalMediaWatchStore {
     }
 
     private static let maximumRecordCount = 2_000
+    private static let persistenceLock = NSLock()
     private let durableStore: DurableLocalStateStore?
     private let durableKey: DurableLocalStateKey?
+    private let refreshOnAccess: Bool
     private var records: [String: Record]?
     private var loadFailed = false
 
     public init(
         localMediaContext: LocalMediaContext,
-        durableStore: DurableLocalStateStore? = nil
+        durableStore: DurableLocalStateStore? = nil,
+        recordID: String = "state",
+        refreshOnAccess: Bool = false
     ) {
         self.durableStore = durableStore
+        self.refreshOnAccess = refreshOnAccess
         do {
             self.durableKey = try DurableLocalStateKey(
                 collection: .localMediaWatch,
                 scope: .source(
                     profileID: localMediaContext.profileID,
                     sourceID: localMediaContext.accountID
-                )
+                ),
+                recordID: recordID
             )
         } catch {
             self.durableKey = nil
@@ -186,25 +192,27 @@ public actor LocalMediaWatchStore {
     /// a position of `0` clears the resume point without changing played state.
     /// Ignored when an existing record is *newer* than `capturedAt` (stale drain).
     public func setResume(_ seconds: TimeInterval, itemID: String, capturedAt: Date, duration: TimeInterval? = nil) {
-        var all = loaded()
-        if let existing = all[itemID], capturedAt < existing.updatedAt { return }
-        let position = max(0, seconds)
-        let played = position > 1 ? false : (all[itemID]?.played ?? false)
-        // Keep a previously-learned duration when this write doesn't carry one (a
-        // resume drained from the outbox has no live player), so the progress bar
-        // survives resume ticks that lack duration.
-        let resolvedDuration = (duration.map { $0 > 0 ? $0 : nil } ?? nil) ?? all[itemID]?.duration
-        all[itemID] = Record(
-            position: position,
-            played: played,
-            updatedAt: capturedAt,
-            duration: resolvedDuration,
-            // Carried, not cleared: `isDismissedFromContinueWatching` compares it
-            // against `updatedAt`, so this write un-hides the title by being newer
-            // — while an out-of-order drain of an OLDER play cannot.
-            dismissedAt: all[itemID]?.dismissedAt
-        )
-        persist(all)
+        Self.persistenceLock.withLock {
+            var all = loaded()
+            if let existing = all[itemID], capturedAt < existing.updatedAt { return }
+            let position = max(0, seconds)
+            let played = position > 1 ? false : (all[itemID]?.played ?? false)
+            // Keep a previously-learned duration when this write doesn't carry one (a
+            // resume drained from the outbox has no live player), so the progress bar
+            // survives resume ticks that lack duration.
+            let resolvedDuration = (duration.map { $0 > 0 ? $0 : nil } ?? nil) ?? all[itemID]?.duration
+            all[itemID] = Record(
+                position: position,
+                played: played,
+                updatedAt: capturedAt,
+                duration: resolvedDuration,
+                // Carried, not cleared: `isDismissedFromContinueWatching` compares it
+                // against `updatedAt`, so this write un-hides the title by being newer
+                // — while an out-of-order drain of an OLDER play cannot.
+                dismissedAt: all[itemID]?.dismissedAt
+            )
+            persist(all)
+        }
     }
 
     /// Takes a title off Continue Watching while keeping the viewer's place.
@@ -214,11 +222,13 @@ public actor LocalMediaWatchStore {
     /// where they were, and does so without anything having to remember to undo
     /// this — the record simply becomes newer than the dismissal.
     public func dismissFromContinueWatching(itemID: String, at date: Date = Date()) {
-        var all = loaded()
-        guard var record = all[itemID] else { return }
-        record.dismissedAt = date
-        all[itemID] = record
-        persist(all)
+        Self.persistenceLock.withLock {
+            var all = loaded()
+            guard var record = all[itemID] else { return }
+            record.dismissedAt = date
+            all[itemID] = record
+            persist(all)
+        }
     }
 
     /// Mark an item played / unplayed. Either way the resume point is cleared
@@ -232,32 +242,41 @@ public actor LocalMediaWatchStore {
     /// Apply a container action in one persistence operation, retaining the
     /// timestamp guard and learned duration independently for every episode file.
     public func setPlayed(_ played: Bool, itemIDs: [String], capturedAt: Date) {
-        var all = loaded()
-        var changed = false
-        for itemID in itemIDs {
-            if let existing = all[itemID], capturedAt < existing.updatedAt { continue }
-            all[itemID] = Record(
-                position: 0, played: played, updatedAt: capturedAt, duration: all[itemID]?.duration
-            )
-            changed = true
+        Self.persistenceLock.withLock {
+            var all = loaded()
+            var changed = false
+            for itemID in itemIDs {
+                if let existing = all[itemID], capturedAt < existing.updatedAt { continue }
+                all[itemID] = Record(
+                    position: 0, played: played, updatedAt: capturedAt, duration: all[itemID]?.duration
+                )
+                changed = true
+            }
+            guard changed else { return }
+            persist(all)
         }
-        guard changed else { return }
-        persist(all)
     }
 
     // MARK: - Persistence
 
     private func loaded() -> [String: Record] {
-        if let records { return records }
+        if let records, !refreshOnAccess || durableStore == nil || loadFailed { return records }
         guard let durableStore, let durableKey else {
             records = [:]
             return [:]
         }
         do {
-            let loaded = try durableStore.load(
+            var loaded = try durableStore.load(
                 PersistedState.self,
                 for: durableKey
             )?.records ?? [:]
+            // Credential refresh can leave an older provider alive. Merge its
+            // memory state with durable state before the next ordered write.
+            if refreshOnAccess, let records {
+                for (id, cached) in records where loaded[id].map({ $0.updatedAt < cached.updatedAt }) ?? true {
+                    loaded[id] = cached
+                }
+            }
             records = loaded
             return loaded
         } catch {

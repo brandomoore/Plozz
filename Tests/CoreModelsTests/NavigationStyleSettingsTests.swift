@@ -3,6 +3,32 @@ import XCTest
 
 final class NavigationStyleSettingsStoreTests: XCTestCase {
     @MainActor
+    func testShowingLiveTVOverridesAutomaticAndExplicitHidingWithoutChangingOtherLayout() {
+        let defaults = makeDefaults()
+        let store = NavigationLibraryLayoutStore(defaults: defaults, namespace: "viewer")
+        let original = NavigationLibraryLayout(
+            order: [NavigationLibraryLayout.searchKey, NavigationLibraryLayout.homeKey],
+            hiddenKeys: [NavigationLibraryLayout.liveTVKey, NavigationLibraryLayout.watchlistKey]
+        )
+        store.save(original)
+        let model = NavigationStyleSettingsModel(
+            store: NavigationStyleSettingsStore(defaults: defaults, namespace: "viewer"), layoutStore: store
+        )
+        model.automaticallyHiddenKeys = NavigationDestinationDefaults.iOSAutomaticallyHiddenKeys
+        XCTAssertFalse(model.showsLiveTV)
+
+        model.showsLiveTV = true
+
+        XCTAssertTrue(model.showsLiveTV)
+        XCTAssertTrue(store.load().shownKeys.contains(NavigationLibraryLayout.liveTVKey))
+        XCTAssertEqual(store.load().order, original.order)
+        XCTAssertEqual(store.load().hiddenKeys, [NavigationLibraryLayout.watchlistKey])
+        XCTAssertEqual(NavigationLibraryLayoutStore(defaults: defaults, namespace: "other").load(), .default)
+        model.showsLiveTV = false
+        XCTAssertFalse(model.showsLiveTV, "A later manual Hide must still be respected.")
+    }
+
+    @MainActor
     func testLibraryOrderingHintsTrackProfileArrangementAndDiscoveryWithoutHidingCards() {
         let defaults = makeDefaults()
         let layoutStore = NavigationLibraryLayoutStore(defaults: defaults, namespace: "viewer")
@@ -265,10 +291,10 @@ final class NavigationStyleSettingsStoreTests: XCTestCase {
             visible: Array(available.prefix(5))
         ).isEmpty)
         XCTAssertEqual(NavigationDestinationDefaults.iPhoneOverflowKeys(visible: available),
-                       Set(available.suffix(2)))
+                       Set(available.dropFirst(4)))
         let reordered = Array(available.reversed())
         XCTAssertEqual(NavigationDestinationDefaults.iPhoneOverflowKeys(visible: reordered),
-                       Set(reordered.suffix(2)))
+                       Set(reordered.dropFirst(4)))
     }
 
     func testMobileDefaultsNeverOverflowEvenWithWatchlistAndKeepTVSettingsVisible() {
@@ -373,7 +399,10 @@ final class NavigationStyleSettingsStoreTests: XCTestCase {
         XCTAssertFalse(model.showsWatchlist)
         XCTAssertFalse(model.showsMusic)
         model.resetLibraryLayout()
-        XCTAssertEqual(model.librarySections(available: available).enabled, available)
+        XCTAssertEqual(model.librarySections(available: available).enabled,
+                       available.filter { $0 != NavigationLibraryLayout.discoverKey })
+        XCTAssertEqual(model.librarySections(available: available).disabled,
+                       [NavigationLibraryLayout.discoverKey])
         XCTAssertTrue(model.showsWatchlist)
         XCTAssertTrue(model.showsMusic)
         XCTAssertEqual(NavigationLibraryLayoutStore(defaults: defaults).load(), .default)

@@ -55,6 +55,8 @@ struct PrototypeBrowser: View {
     @State private var guideHours = Self.initialGuideHours
     @State private var guideWidth: CGFloat = 0
     @State private var timeline = PrototypeTimelineScroll()
+    @State private var appliedPreparationRevision = 0
+    @Environment(LiveTVGuidePreparationModel.self) private var guidePreparation: LiveTVGuidePreparationModel?
     #if os(tvOS)
     @State private var nativeScroll = PrototypeGuideScrollController()
     @ScaledMetric(relativeTo: .subheadline) private var nativeRowHeight = PrototypeLayout.rowHeight
@@ -67,10 +69,16 @@ struct PrototypeBrowser: View {
     @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
     @Environment(\.layoutDirection) private var layoutDirection
 
+    private struct GuideWorkRequest: Equatable {
+        let window: PrototypeServerGuideRequest?
+        let preparationRevision: Int
+    }
+
     var body: some View {
         let guideRequest = serverGuideRequest
         let cachedWindowRequest = cachedGuideRequest
         let generatedWindowRequest = libraryGuideRequest
+        let preparationRevision = guidePreparation?.completionRevision ?? 0
         GeometryReader { geometry in
             let focusReturnTarget = returnTarget
             VStack(spacing: PrototypeLayout.rulerGap) {
@@ -95,21 +103,23 @@ struct PrototypeBrowser: View {
                     ContentUnavailableView {
                         Label("Channels unavailable", systemImage: "wifi.exclamationmark")
                     } description: {
-                        Text("Check your connection or open Sources to review what needs attention.")
+                        Text("Check your connection or open TV Sources to review what needs attention.")
                     } actions: {
                         Button("Retry", action: reload).buttonStyle(PrototypeButtonStyle())
                             .focused($recoveryFocused)
-                        Button("Sources", action: openSources).buttonStyle(PrototypeButtonStyle())
+                        Button(action: openSources) { Text(SettingsCopy.tvSources) }
+                            .buttonStyle(PrototypeButtonStyle())
                     }
                 } else if model.channels.isEmpty {
                     ContentUnavailableView {
                         Label("No channels available", systemImage: "antenna.radiowaves.left.and.right")
                     } description: {
-                        Text("Your enabled sources haven't provided any channels. Open Sources to check their status or add another source.")
+                        Text("Your enabled sources haven't provided any channels. Open TV Sources to check their status or add another source.")
                     } actions: {
                         Button("Refresh channels", action: reload).buttonStyle(PrototypeButtonStyle())
                             .focused($recoveryFocused)
-                        Button("Sources", action: openSources).buttonStyle(PrototypeButtonStyle())
+                        Button(action: openSources) { Text(SettingsCopy.tvSources) }
+                            .buttonStyle(PrototypeButtonStyle())
                     }
                 } else if allChannelsHidden {
                     ContentUnavailableView {
@@ -356,21 +366,23 @@ struct PrototypeBrowser: View {
             pendingFocus = target
             focused = target
         }
-        .task(id: guideRequest) {
+        .task(id: GuideWorkRequest(window: guideRequest, preparationRevision: preparationRevision)) {
             guard let guideRequest else { return }
             try? await Task.sleep(for: .milliseconds(250))
             guard !Task.isCancelled else { return }
             // Block by block, so extending the guide fetches only the new hours
             // instead of re-requesting the whole span as one partly loaded chunk.
             var blockStart = guideRequest.from
+            let force = appliedPreparationRevision != preparationRevision
             while blockStart < guideRequest.to, !Task.isCancelled {
                 let blockEnd = min(guideRequest.to, blockStart.addingTimeInterval(Self.guideStepSeconds))
                 await imports.reloadServerGuides(
                     channelIDs: guideRequest.channels.map(\.id),
-                    from: blockStart, to: blockEnd, into: model
+                    from: blockStart, to: blockEnd, into: model, force: force
                 )
                 blockStart = blockEnd
             }
+            if !Task.isCancelled { appliedPreparationRevision = preparationRevision }
         }
         .task(id: cachedWindowRequest) {
             guard let cachedWindowRequest else { return }
@@ -1054,7 +1066,13 @@ struct PrototypeGuideRow: View {
                                             libraryItem: channel.source == .plozz ? program.libraryItem : nil,
                                             openLibraryItem: openLibraryItem)
                                         Button("Search channels", systemImage: "magnifyingglass", action: controls)
-                                        Button("Sources", systemImage: "antenna.radiowaves.left.and.right", action: sources)
+                                        Button(action: sources) {
+                                            Label {
+                                                Text(SettingsCopy.tvSources)
+                                            } icon: {
+                                                Image(systemName: "antenna.radiowaves.left.and.right")
+                                            }
+                                        }
                                         Button("Guide time", systemImage: "calendar", action: guideTime)
                                         Button("Back to top", systemImage: "arrow.up.to.line", action: top)
                                         Button("Now", systemImage: "clock", action: goToNow)
@@ -1173,7 +1191,13 @@ struct PrototypeGuideRow: View {
                 primaryTitle: selectionAction ?? "Play channel", isSelection: selectionAction != nil,
                 libraryItem: currentLibraryItem, openLibraryItem: openLibraryItem)
             Button("Search channels", systemImage: "magnifyingglass", action: controls)
-            Button("Sources", systemImage: "antenna.radiowaves.left.and.right", action: sources)
+            Button(action: sources) {
+                Label {
+                    Text(SettingsCopy.tvSources)
+                } icon: {
+                    Image(systemName: "antenna.radiowaves.left.and.right")
+                }
+            }
             Button("Back to top", systemImage: "arrow.up.to.line", action: top)
         }
     }
@@ -1273,7 +1297,13 @@ struct PrototypeGuideStation: View {
             )
             Divider()
             Button("Search channels", systemImage: "magnifyingglass", action: controls)
-            Button("Sources", systemImage: "antenna.radiowaves.left.and.right", action: sources)
+            Button(action: sources) {
+                Label {
+                    Text(SettingsCopy.tvSources)
+                } icon: {
+                    Image(systemName: "antenna.radiowaves.left.and.right")
+                }
+            }
             if let guideTime {
                 Button("Guide time", systemImage: "calendar", action: guideTime)
             }

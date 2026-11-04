@@ -35,6 +35,13 @@ final class FTPSocket: @unchecked Sendable {
                     done(.success(()))
                 case .failed(let error):
                     done(.failure(error))
+                case .waiting(let error):
+                    switch error {
+                    case .tls, .posix(.ECONNREFUSED):
+                        done(.failure(error))
+                    default:
+                        break
+                    }
                 case .cancelled:
                     done(.failure(MediaTransportError.cancelled))
                 default:
@@ -72,8 +79,13 @@ final class FTPSocket: @unchecked Sendable {
     }
 
     func cancel() {
-        connection.stateUpdateHandler = nil
         connection.cancel()
+    }
+
+    var usesIPv4: Bool {
+        guard case .hostPort(let host, _) = connection.currentPath?.remoteEndpoint,
+              case .ipv4 = host else { return false }
+        return true
     }
 
     /// Runs an `NWConnection` completion-handler operation with a hard deadline.

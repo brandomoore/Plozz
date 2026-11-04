@@ -281,6 +281,13 @@ final class HDRTransitionModel {
         veilOpacity = 0
     }
 
+    /// Retained players can supersede an exit without destroying their view.
+    func cancelTransition() {
+        if isExiting { finishExit() }
+        isExiting = false
+        lowerVeil()
+    }
+
     // MARK: - Exit (HDR/DV → SDR on leaving playback)
 
     /// Begin the exit transition when leaving playback. `kind` says which display

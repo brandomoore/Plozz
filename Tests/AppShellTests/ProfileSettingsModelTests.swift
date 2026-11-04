@@ -242,7 +242,7 @@ final class ProfileSettingsModelTests: XCTestCase {
         model.cardStyleModel.captions.setOverride(.show, for: .home)
 
         model.rebuild(namespace: other)
-        XCTAssertEqual(model.heroSettingsModel.settings.style, .carousel)
+        XCTAssertEqual(model.heroSettingsModel.settings.style, HeroSettings.default.style)
         XCTAssertEqual(model.heroSettingsModel.settings.logoSize, .default)
         XCTAssertEqual(model.heroSettingsModel.settings.showcaseLogoSize, .default)
         XCTAssertEqual(model.detailPageModel.settings.logoSize, .default)

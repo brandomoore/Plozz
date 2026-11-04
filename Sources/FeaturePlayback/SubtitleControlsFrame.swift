@@ -13,19 +13,7 @@ public final class SubtitleControlsLayout {
         let owner: UUID?
     }
     private var regions: [Entry: CGRect] = [:]
-    public var frames: [CGRect] {
-        var frames = Array(regions.values)
-        #if os(iOS)
-        // Lower captions clear the center row, not the gap between it and the timeline.
-        if let center = frame(for: .centerTransport),
-           let bottom = frames.map(\.maxY).max(), bottom > center.maxY {
-            frames.append(CGRect(
-                x: center.minX, y: center.minY, width: center.width, height: bottom - center.minY
-            ))
-        }
-        #endif
-        return frames
-    }
+    public var frames: [CGRect] { Array(regions.values) }
     /// Convenience for a single transport surface and aggregate inspection.
     /// Collision layout uses `frames`, not this bounding rectangle.
     public var frame: CGRect? {

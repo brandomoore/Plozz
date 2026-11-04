@@ -1,6 +1,7 @@
 #if canImport(UIKit)
 import XCTest
 import UIKit
+import SwiftUI
 import CoreModels
 import CoreUI
 @testable import FeatureHome
@@ -9,6 +10,113 @@ import CoreUI
 
 @MainActor
 final class HomeHeroBackdropTests: XCTestCase {
+    func testBrowseHostKeepsRestingArtworkAtTheScreenTop() async throws {
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 320, height: 180))
+        defer { window.isHidden = true; window.rootViewController = nil }
+        for overscan: CGFloat in [0, 120] {
+            let host = UIHostingController(rootView: HomeHeroBackdrop(
+                urls: [], asyncFallbackURL: nil, slideID: "framing", forward: true,
+                width: 320, height: 180, topOverscan: overscan,
+                scrimTone: .black, transition: .crossfade, scrimStyle: .browse
+            ).frame(width: 320, height: 180, alignment: .topLeading))
+            host.safeAreaRegions = []
+            window.rootViewController = host
+            window.isHidden = false
+            host.view.layoutIfNeeded()
+            func findContainer(_ view: UIView) -> HeroWipeContainerView? {
+                if let container = view as? HeroWipeContainerView { return container }
+                return view.subviews.lazy.compactMap(findContainer).first
+            }
+            let container = try XCTUnwrap(findContainer(host.view))
+            XCTAssertEqual(container.browseTopOverscan, overscan)
+            let top = container.convert(CGPoint(x: 160, y: overscan), to: host.view)
+            XCTAssertEqual(top.y, 0, accuracy: 1, "Transition coverage must not lift the actual image above the screen.")
+        }
+    }
+
+    func testBrowsePreservesArtworkEdgesWithAndWithoutTransitionOverscan() throws {
+        for sourceSize in [CGSize(width: 320, height: 180), CGSize(width: 240, height: 180),
+                           CGSize(width: 360, height: 180)] {
+            let format = UIGraphicsImageRendererFormat()
+            format.scale = 1
+            let artwork = UIGraphicsImageRenderer(size: sourceSize, format: format).image { context in
+                UIColor.blue.setFill()
+                context.fill(CGRect(origin: .zero, size: sourceSize))
+                UIColor.red.setFill()
+                context.fill(CGRect(x: 0, y: 0, width: sourceSize.width, height: 12))
+                UIColor.green.setFill()
+                context.fill(CGRect(x: 0, y: sourceSize.height - 12, width: sourceSize.width, height: 12))
+            }
+            let container = HeroWipeContainerView(bleed: 8, parallaxIn: 1200, driftFraction: 0.625)
+            for overscan: CGFloat in [120, 0, 60] {
+                container.browseTopOverscan = overscan
+                container.slideSize = CGSize(width: 320, height: 180 + overscan)
+                container.frame = CGRect(origin: .zero, size: container.slideSize)
+                container.setInitialImage(artwork)
+                try assertBrowseEdges(container, sourceSize: sourceSize, overscan: overscan)
+                let crossfade = container.prepareCrossfade(incomingImage: artwork)
+                container.animateCrossfade(crossfade)
+                container.finishWipe(crossfade)
+                try assertBrowseEdges(container, sourceSize: sourceSize, overscan: overscan)
+            }
+        }
+    }
+
+    private func assertBrowseEdges(
+        _ container: HeroWipeContainerView, sourceSize: CGSize, overscan: CGFloat,
+        file: StaticString = #filePath, line: UInt = #line
+    ) throws {
+        let scale = min(320 / sourceSize.width, 180 / sourceSize.height)
+        let imageWidth = sourceSize.width * scale
+        let imageHeight = sourceSize.height * scale
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        let rendered = UIGraphicsImageRenderer(size: container.bounds.size, format: format).image { context in
+            container.layer.render(in: context.cgContext)
+        }
+        let bitmap = try XCTUnwrap(rendered.cgImage)
+        var pixels = [UInt8](repeating: 0, count: bitmap.width * bitmap.height * 4)
+        try pixels.withUnsafeMutableBytes { bytes in
+            let context = try XCTUnwrap(CGContext(
+                data: bytes.baseAddress, width: bitmap.width, height: bitmap.height,
+                bitsPerComponent: 8, bytesPerRow: bitmap.width * 4,
+                space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            ))
+            context.draw(bitmap, in: CGRect(x: 0, y: 0, width: bitmap.width, height: bitmap.height))
+        }
+        for x in [320 - imageWidth + 3, 317] {
+            let top = (Int(overscan + 3) * bitmap.width + Int(x)) * 4
+            let bottom = (Int(overscan + imageHeight - 3) * bitmap.width + Int(x)) * 4
+            XCTAssertGreaterThan(pixels[top], 240, "Top edge must remain visible.", file: file, line: line)
+            XCTAssertLessThan(pixels[top + 2], 10, file: file, line: line)
+            XCTAssertGreaterThan(pixels[bottom + 1], 240, "Bottom edge must not be cropped either.", file: file, line: line)
+            if overscan > 0 {
+                for y in [3, Int(overscan - 3)] {
+                    let transition = (y * bitmap.width + Int(x)) * 4
+                    XCTAssertGreaterThan(pixels[transition], 240, "Extend the top edge without a repeated-image seam.", file: file, line: line)
+                    XCTAssertGreaterThan(pixels[transition + 3], 240, "Incoming coverage must not be empty.", file: file, line: line)
+                }
+            }
+        }
+    }
+
+    func testTopOverscanIsOptInAndPreservesTheRestingViewportSize() {
+        let standard = HomeHeroBackdrop(
+            urls: [], asyncFallbackURL: nil, slideID: "standard", forward: true,
+            width: 1280, height: 720, scrimTone: .black
+        )
+        let incoming = HomeHeroBackdrop(
+            references: [], asyncFallbackURL: nil, slideID: "incoming", forward: true,
+            width: 1280, height: 720, topOverscan: 120, scrimTone: .black
+        )
+        XCTAssertEqual(standard.topOverscan, 0)
+        XCTAssertEqual(incoming.topOverscan, 120)
+        XCTAssertEqual(standard.width, incoming.width)
+        XCTAssertEqual(standard.height, incoming.height)
+        XCTAssertEqual(incoming.recedeLift, 0, "Overscan must not start a separate recede animation.")
+    }
+
     func testCarouselRoutesPersistedExternalBackdropsThroughLiveProviderPolicy() async throws {
         let server = try XCTUnwrap(URL(string: "https://library.example.test/hero.jpg"))
         let tmdb = try XCTUnwrap(URL(string: "https://metadata.example.test/tmdb.jpg"))

@@ -172,6 +172,16 @@ public struct HeroMetadataEnricher: Sendable {
                 enriched[index] = playTarget
             }
             let root = detail.root
+            if enriched[index].artworkReferences(for: .squareHero).isEmpty,
+               let square = root.artworkSelections.first(where: { $0.placement == .squareHero }) {
+                enriched[index].artworkSelections.removeAll { $0.placement == .squareHero }
+                enriched[index].artworkSelections.append(square)
+                for case .remote(let url) in square.references {
+                    if let accountID = root.artworkSourceAccountID(for: url) ?? root.sourceAccountID {
+                        enriched[index].recordArtworkSource(accountID: accountID, for: [url])
+                    }
+                }
+            }
             if enriched[index].kind == .episode {
                 enriched[index].providerIDs.mergeSeriesProviderIDs(
                     from: root.providerIDs

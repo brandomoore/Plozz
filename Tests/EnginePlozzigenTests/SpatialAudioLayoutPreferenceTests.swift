@@ -6,27 +6,24 @@ import XCTest
 
 @MainActor
 final class SpatialAudioLayoutPreferenceTests: XCTestCase {
-    func testEveryLayoutMapsToItsEngineBedAndDTSXCapability() {
-        XCTAssertEqual(SpatialAudioLayout.allCases.count, SpatialSpeakerLayout.allCases.count)
-        for layout in SpatialAudioLayout.allCases {
-            let bed = PlozzigenVideoEngine.spatialSpeakerLayout(layout)
-            XCTAssertEqual(bed.rawValue, layout.rawValue)
-            XCTAssertEqual(bed.carriesDTSXOneToOne, layout.supportsDTSXHeights)
-            let rendering = ObjectAudioRendering.render(bed)
-            XCTAssertEqual(rendering.bedFormat(routeFormat: .lpcm), .lpcm)
-            XCTAssertEqual(rendering.bedFormat(routeFormat: .apac), .apac)
-        }
-        XCTAssertEqual(SpatialBedFormat.forRoute(portTypes: ["HDMIOutput"]), .lpcm)
-        XCTAssertEqual(SpatialBedFormat.forRoute(portTypes: ["BluetoothA2DPOutput"]), .lpcm)
-        XCTAssertEqual(SpatialBedFormat.forRoute(portTypes: ["HDMIOutput", "AirPlay"]), .apac)
+    func testOptionalEngineComponentsAreExcluded() {
+        XCTAssertFalse(AetherEngine.OptionalComponent.trueHDObjectAudio.isBuiltIn)
+        XCTAssertFalse(AetherEngine.OptionalComponent.dtsxObjectAudio.isBuiltIn)
+        XCTAssertFalse(AetherEngine.OptionalComponent.dualLayerDolbyVision.isBuiltIn)
+        XCTAssertFalse(AetherEngine.OptionalComponent.dolbyVisionStillReshaping.isBuiltIn)
     }
 
-    func testEachNewLoadUsesDeviceLayoutAcrossProvidersAndDownloads() throws {
-        let suite = "SpatialAudioLayoutPreferenceTests.\(UUID())"
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
-        defer { defaults.removePersistentDomain(forName: suite) }
+    func testStillExtractionRequiresAnOrdinaryBaseLayer() {
+        XCTAssertFalse(FrameDecodeContext.yieldsStill(dolbyVisionNoBaseLayer: true))
+        XCTAssertTrue(FrameDecodeContext.yieldsStill(dolbyVisionNoBaseLayer: false))
+    }
+
+    func testLegacyLayoutsCannotEnableHeightConversionAcrossProvidersAndDownloads() throws {
+        let defaults = UserDefaults.standard
+        let previousLayout = defaults.object(forKey: SpatialAudioLayoutStore.storageKey)
+        defer { defaults.set(previousLayout, forKey: SpatialAudioLayoutStore.storageKey) }
         let store = SpatialAudioLayoutStore(defaults: defaults)
-        let engine = try PlozzigenVideoEngine(spatialAudioLayoutPreference: { store.load() })
+        let engine = try PlozzigenVideoEngine()
         defer { engine.stop() }
         let earlier = engine.onDemandLoadOptions(for: request)
         for layout in SpatialAudioLayout.allCases {
@@ -36,48 +33,36 @@ final class SpatialAudioLayoutPreferenceTests: XCTestCase {
                     var request = request
                     request.sourceProvider = provider
                     request.sourceMetadata = .init(audio: .init(codec: "dts", channels: channels))
-                    assertRendering(engine.onDemandLoadOptions(for: request), layout: layout)
+                    XCTAssertEqual(engine.onDemandLoadOptions(for: request).objectAudioRendering, .off)
                     request.streamURL = URL(fileURLWithPath: "/fixture/download.mkv")
-                    assertRendering(engine.onDemandLoadOptions(for: request), layout: layout)
+                    XCTAssertEqual(engine.onDemandLoadOptions(for: request).objectAudioRendering, .off)
                 }
             }
         }
-        assertRendering(earlier, layout: .nineOneSix)
+        XCTAssertEqual(earlier.objectAudioRendering, .off)
     }
 
-    func testLayoutDoesNotEnableDisabledOrIneligiblePlaybackOrChangeOrdinaryBridge() {
-        for layout in SpatialAudioLayout.allCases {
-            for lossless in [false, true] {
-                let disabled = PlozzigenVideoEngine.onDemandLoadOptions(
-                    losslessAudioEnabled: lossless, trueHDAtmosEnabled: false, spatialAudioLayout: layout
+    func testEveryOutputPolicyKeepsHeightConversionOffAndPreservesOrdinaryBridge() {
+        for lossless in [false, true] {
+            for policy in [
+                LiveChannelOutputPolicy(isAudible: true),
+                .init(isAudible: false),
+                .init(isAudible: true, sharesAudioSession: true),
+                .init(isAudible: false, sharesAudioSession: true)
+            ] {
+                let options = PlozzigenVideoEngine.onDemandLoadOptions(
+                    losslessAudioEnabled: lossless, outputPolicy: policy
                 )
-                XCTAssertEqual(disabled.objectAudioRendering, .off)
-                XCTAssertEqual(disabled.audioBridgeMode, lossless ? .lossless : .surroundCompat)
-                for policy in [
-                    LiveChannelOutputPolicy(isAudible: false),
-                    .init(isAudible: true, sharesAudioSession: true)
-                ] {
-                    let options = PlozzigenVideoEngine.onDemandLoadOptions(
-                        losslessAudioEnabled: lossless, spatialAudioLayout: layout, outputPolicy: policy
-                    )
-                    XCTAssertEqual(options.objectAudioRendering, .off)
-                    XCTAssertEqual(options.audioBridgeMode, disabled.audioBridgeMode)
-                }
-                let enabled = PlozzigenVideoEngine.onDemandLoadOptions(
-                    losslessAudioEnabled: lossless, spatialAudioLayout: layout
-                )
-                assertRendering(enabled, layout: layout)
-                XCTAssertEqual(enabled.audioBridgeMode, disabled.audioBridgeMode)
+                XCTAssertEqual(options.objectAudioRendering, .off)
+                XCTAssertEqual(options.audioBridgeMode, lossless ? .lossless : .surroundCompat)
             }
         }
     }
 
-    func testDefaultSpatialRenderingAlsoAppliesToFELButNeverToLiveStreams() {
-        for fel in [false, true] {
-            let options = PlozzigenVideoEngine.onDemandLoadOptions(dolbyVisionFELEnabled: fel)
-            assertRendering(options, layout: .default)
-            XCTAssertEqual(options.preferDualLayerDolbyVision, fel)
-        }
+    func testHeightConversionStaysOffForOnDemandAndLiveStreams() {
+        let onDemand = PlozzigenVideoEngine.onDemandLoadOptions()
+        XCTAssertEqual(onDemand.objectAudioRendering, .off)
+        XCTAssertFalse(onDemand.preferDualLayerDolbyVision)
         for suffix in ["ts", "m3u8"] {
             let options = PlozzigenVideoEngine.liveLoadOptions(
                 httpHeaders: [:], url: URL(string: "https://example.invalid/live.\(suffix)")
@@ -87,8 +72,7 @@ final class SpatialAudioLayoutPreferenceTests: XCTestCase {
     }
 
     func testActualRenderedPipelineLabelsAreRecognized() {
-        for layout in SpatialAudioLayout.allCases {
-            let bed = PlozzigenVideoEngine.spatialSpeakerLayout(layout)
+        for bed in SpatialSpeakerLayout.allCases {
             for codec in ["truehd", "dts"] {
                 let track = TrackInfo(id: 0, name: "English", codec: codec, language: "en", isDefault: true)
                 for (route, expected): (SoftwareAtmosRoute, LocalizedStringResource) in [
@@ -103,20 +87,6 @@ final class SpatialAudioLayoutPreferenceTests: XCTestCase {
                 }
             }
         }
-    }
-
-    private func assertRendering(
-        _ options: LoadOptions, layout: SpatialAudioLayout,
-        file: StaticString = #filePath, line: UInt = #line
-    ) {
-        #if os(tvOS) || os(iOS)
-        if #available(tvOS 26.0, iOS 26.0, *) {
-            XCTAssertEqual(options.objectAudioRendering,
-                           .render(PlozzigenVideoEngine.spatialSpeakerLayout(layout)), file: file, line: line)
-            return
-        }
-        #endif
-        XCTAssertEqual(options.objectAudioRendering, .off, file: file, line: line)
     }
 
     private var request: PlaybackRequest {

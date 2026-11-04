@@ -111,6 +111,14 @@ reversed or out-of-runtime segments are discarded.
 
 ## Discovery sources
 
+The dedicated Discover destination uses `TMDbDiscoveryProvider.browse` when
+Seerr is not configured. Its five paginated feeds are separate from Home's
+recent-release selection: upcoming movies and first series premieres retain
+future dates. Public candidates do not prove local playback access.
+`AppRuntime.DiscoverRuntime` shares Home's live library-identity verification
+before the page applies Available now or Hide watched. These profile-specific
+results are never written to the public metadata cache.
+
 Featured defaults to a two-calendar-year release window. Full dates use a rolling
 cutoff; year-only metadata retains the boundary year rather than inventing a
 release day. Undated titles do not qualify on popularity alone. This policy does
@@ -177,6 +185,9 @@ Already identified, owned, unsupported, and personal-media items skip this work.
   Hero-specific URL cache keys leave ordinary posters and landscape heroes
   unchanged. Live provider preferences, library-first settings, series identity,
   and the separate overlaid hero logo remain in force.
+  Dedicated server square backgrounds take precedence on compact Home and detail
+  heroes under Recommended or Library artwork preferences. They are not poster
+  substitutes; an explicit online preference still uses this portrait lookup first.
 - **No required user subscription or user-supplied key.** App credentials and
   keyless endpoints coexist; missing credentials disable only their provider.
 - **No UI imports.** Provider and composition logic stay outside the shells.

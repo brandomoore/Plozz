@@ -33,15 +33,18 @@ public struct HomeLayoutSwatch: View {
     private let cornerRadius: CGFloat
     private let logoSize: HeroLogoSize?
     private let textSize: HeroTextSize
+    private let rowsOnly: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     public init(
-        style: HeroStyle, cornerRadius: CGFloat = 16, logoSize: HeroLogoSize? = nil, textSize: HeroTextSize = .default
+        style: HeroStyle, cornerRadius: CGFloat = 16, logoSize: HeroLogoSize? = nil,
+        textSize: HeroTextSize = .default, rowsOnly: Bool = false
     ) {
         self.style = style
         self.cornerRadius = cornerRadius
         self.logoSize = logoSize
         self.textSize = textSize
+        self.rowsOnly = rowsOnly
     }
 
     private static let screen = CGSize(width: 1920, height: 1080)
@@ -51,8 +54,15 @@ public struct HomeLayoutSwatch: View {
             let scale = min(geo.size.width / Self.screen.width, geo.size.height / Self.screen.height)
             ZStack(alignment: .topLeading) {
                 switch style {
-                case .carousel: spotlight
+                case .carousel:
+                    if rowsOnly { classicRows } else { spotlight }
                 case .followsFocus: immersive
+                case .heroShowcase:
+                    spotlight
+                    Image(systemName: "arrow.down")
+                        .font(.system(size: 64, weight: .medium))
+                        .foregroundStyle(.white)
+                        .offset(x: 1720, y: 850)
                 }
             }
             .frame(width: Self.screen.width, height: Self.screen.height, alignment: .topLeading)
@@ -105,6 +115,17 @@ public struct HomeLayoutSwatch: View {
     }
 
     // MARK: Showcase
+
+    private var classicRows: some View {
+        ZStack(alignment: .topLeading) {
+            HomeLayoutPreviewColors.page
+            ForEach(0..<3, id: \.self) { index in
+                let top = 100 + CGFloat(index) * 360
+                block(144, top, 280, 30)
+                cards(y: top + 75, height: 220, focusedFirst: index == 0)
+            }
+        }
+    }
 
     private var immersive: some View {
         let scale = CGFloat(textSize.scale)
@@ -175,7 +196,7 @@ struct HomePreviewBackdrop: View {
         ZStack(alignment: .topLeading) {
             HomeLayoutPreviewColors.page
             switch style {
-            case .carousel:
+            case .carousel, .heroShowcase:
                 HomePreviewArtwork()
                     .frame(width: size.width, height: size.height)
                     .mask(

@@ -21,16 +21,15 @@ embedded in the app bundle as frameworks (`AetherLibavcodec.framework`,
 
 | Component | Source (pinned) | License |
 |---|---|---|
-| AetherEngine (media engine; "Plozzigen") | `github.com/brandomoore/AetherEngine` @ `c1ce4cf48bad416e6be5230032a2b7f332e833d8` | LGPL-3.0 with Apple Store exception |
-| FFmpeg `libav*` (demux / decode / audio bridge / HLS-fMP4 mux) | `github.com/superuser404notfound/FFmpegBuild` @ `3.10.1` (FFmpeg **n8.1.3**) | **LGPL-2.1-or-later** |
+| AetherEngine (media engine; "Plozzigen") | `github.com/brandomoore/AetherEngine` @ `7cd91ee1a55401d59ca385e247a5c6308b7d27ea` | LGPL-3.0 with Apple Store exception |
+| FFmpeg `libav*` (demux / decode / audio bridge / HLS-fMP4 mux) | `github.com/superuser404notfound/FFmpegBuild` @ `3.11.1` (FFmpeg **n8.1.3**) | **LGPL-2.1-or-later** |
 | dav1d 1.5.4 (AV1 software decoder, separate xcframework) | bundled by FFmpegBuild | BSD-2-Clause (permissive) |
 | zimg 3.0.6 (image scaling and color conversion) | bundled by FFmpegBuild | WTFPL |
 | libzvbi 0.2.46 (teletext decoder) | bundled by FFmpegBuild; GPL sources excluded by its build recipe | LGPL-2.0-or-later, conveyed under LGPL-2.1; `ure.c` MIT |
 | libdovi (Dolby Vision RPU parser) | `github.com/superuser404notfound/LibDovi` @ `2.1.0` | MIT |
-| LibTrueHD (decoder and object renderer) | `github.com/superuser404notfound/LibTrueHD` @ `3.1.0` | MIT / Apache-2.0 |
 
 Plozz's own `Package.swift` declares **only** AetherEngine for this stack;
-FFmpegBuild, LibDovi and LibTrueHD are its transitive dependencies (AetherEngine owns their version
+FFmpegBuild and LibDovi are its transitive dependencies (AetherEngine owns their version
 alignment). The concrete pins live in the committed root `Package.resolved`.
 `tools/generate-project.sh` copies that canonical lock into generated Xcode
 projects at
@@ -38,21 +37,25 @@ projects at
 
 ## Engine linkage and LibTrueHD
 
-The pinned fork exports AetherEngine dynamically to separate its two Rust decoder
-runtimes from Plozz's Objective-C/C++ unwind table. Both apps embed and sign
+The pinned fork exports AetherEngine dynamically to separate its decoder
+runtime from Plozz's Objective-C/C++ unwind table. Both apps embed and sign
 `AetherEngine.framework`; FFmpeg remains in separate dynamic frameworks.
 
 [LibTrueHD 3.1.0](https://github.com/superuser404notfound/LibTrueHD/tree/3.1.0)
-is linked into the engine even when its object-audio mode is off. Its C API and
+was linked in earlier builds. Plozz now disables the `TrueHDObjectAudio` and
+`DTSXObjectAudio` package traits; LibTrueHD is no longer resolved or linked.
+Ordinary channel-audio decoding remains available through FFmpeg. LibTrueHD's C API and
 Apple packaging are MIT, copyright Quick104 and Vincent Herbst; the compiled
 truehd and oamd crates are Apache-2.0, copyright Rainbaby and contributors.
 Both apps ship its unmodified `LICENSE`, `LICENSE-APACHE` and `NOTICE` as
 `LibTrueHDLicense.txt`, `LibTrueHDApacheLicense.txt` and `LibTrueHDNotices.txt`.
-The shared acknowledgements page credits the library and exact source tag.
+The shared acknowledgements page retains the library's credit and exact source
+tag, explicitly identifying it as no longer linked. These retained notices do
+not imply that height-channel conversion remains available.
 
 ## FFmpeg license facts
 
-Upstream FFmpeg `libav*` and FFmpegBuild 3.10.1 are **LGPL-2.1-or-later**.
+Upstream FFmpeg `libav*` and FFmpegBuild 3.11.1 are **LGPL-2.1-or-later**.
 The build enables neither `--enable-gpl` nor `--enable-version3`; the exact
 component licenses and notices live in the release's `LICENSES/` directory.
 The build is scoped to demux, decode, selected filters and the AVPlayer bridge.

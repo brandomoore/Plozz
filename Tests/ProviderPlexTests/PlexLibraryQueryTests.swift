@@ -1,4 +1,5 @@
 import CoreModels
+import CoreNetworking
 import Foundation
 import XCTest
 @testable import ProviderPlex
@@ -24,9 +25,66 @@ final class PlexLibraryQueryTests: XCTestCase {
         XCTAssertEqual(http.sentPaths, Array(repeating: "/library/sections/1/all", count: 2))
         for query in http.sentQueryItems {
             XCTAssertTrue(query.contains(.init(name: "includeCollections", value: "1")))
-            XCTAssertTrue(query.contains(.init(name: "includeOptionalElements", value: "Stream")))
-            XCTAssertFalse(query.contains { $0.name == "includeElements" })
+            XCTAssertFalse(query.contains { ["includeElements", "includeOptionalElements"].contains($0.name) })
             XCTAssertTrue(query.contains(.init(name: "type", value: "1")))
+            XCTAssertTrue(query.contains(.init(name: "includeGuids", value: "1")))
+        }
+    }
+
+    func testGroupedBrowseRetainsReplacementCardsWhenStreamEnrichmentSilentlyDropsThem() async throws {
+        let http = StreamSensitiveBrowseHTTPClient()
+        let source = provider(http)
+        let request = PageRequest(limit: 1, collectionPresentation: .serverDefault)
+        let first = try await source.items(in: "1", kind: .movie, page: request)
+        let second = try await source.items(in: "1", kind: .movie, page: request.next())
+
+        XCTAssertEqual(first.items.map(\.id), ["cuts"])
+        XCTAssertEqual(first.items.map(\.kind), [.collection])
+        XCTAssertEqual(first.totalCount, 2)
+        XCTAssertTrue(first.hasMore)
+        XCTAssertEqual(second.items.map(\.id), ["visible-member"])
+        XCTAssertEqual(second.items.first?.resumePosition, 12)
+        XCTAssertEqual(second.startIndex, 1)
+        XCTAssertEqual(second.totalCount, 2)
+        XCTAssertFalse(second.hasMore)
+        let queries = await http.queries
+        XCTAssertEqual(queries.count, 2, "Do not retry HTTP 200 or scan collection membership.")
+        for (offset, query) in queries.enumerated() {
+            XCTAssertTrue(query.contains(.init(name: "X-Plex-Container-Start", value: String(offset))))
+            XCTAssertTrue(query.contains(.init(name: "X-Plex-Container-Size", value: "1")))
+            XCTAssertTrue(query.contains(.init(name: "sort", value: "titleSort:asc")))
+            XCTAssertTrue(query.contains(.init(name: "includeCollections", value: "1")))
+            XCTAssertTrue(query.contains(.init(name: "includeGuids", value: "1")))
+            XCTAssertTrue(query.contains(.init(name: "type", value: "1")))
+        }
+    }
+
+    private actor StreamSensitiveBrowseHTTPClient: HTTPClient {
+        private(set) var queries: [[URLQueryItem]] = []
+
+        func send(_ endpoint: Endpoint, baseURL: URL) async throws -> (Data, HTTPURLResponse) {
+            guard endpoint.path == "/library/sections/1/all" else { throw AppError.notFound }
+            queries.append(endpoint.queryItems)
+            let start = Int(endpoint.queryItems.first { $0.name == "X-Plex-Container-Start" }?.value ?? "") ?? 0
+            let size = Int(endpoint.queryItems.first { $0.name == "X-Plex-Container-Size" }?.value ?? "") ?? 1
+            // The library hides collections by default; "cuts" overrides this to hide its members.
+            var rows = [
+                #"{"ratingKey":"cuts","type":"collection","title":"Cuts","childCount":2}"#,
+                #"{"ratingKey":"visible-member","type":"movie","title":"Visible member","viewOffset":12000}"#
+            ]
+            if endpoint.queryItems.contains(where: {
+                ["includeOptionalElements", "includeElements"].contains($0.name) && $0.value == "Stream"
+            }) {
+                rows.removeFirst()
+            }
+            let page = rows.dropFirst(start).prefix(size)
+            let json = """
+            {"MediaContainer":{"size":\(page.count),"totalSize":\(rows.count),"offset":\(start),
+            "Metadata":[\(page.joined(separator: ","))]}}
+            """
+            return (Data(json.utf8), HTTPURLResponse(
+                url: baseURL, statusCode: 200, httpVersion: nil, headerFields: nil
+            )!)
         }
     }
 
@@ -52,6 +110,10 @@ final class PlexLibraryQueryTests: XCTestCase {
             _ = try await source.items(in: "1", kind: kind, page: request)
             let query = try XCTUnwrap(http.queryItems(forPathSuffix: "/all"))
             XCTAssertEqual(query.first { $0.name == "includeCollections" }?.value, expected)
+            XCTAssertEqual(
+                query.contains(.init(name: "includeElements", value: "Stream")), expected == "0"
+            )
+            XCTAssertFalse(query.contains { $0.name == "includeOptionalElements" })
         }
         _ = try await source.libraryQueryInventory(
             in: "1", kind: .movie, page: .init(collectionPresentation: .serverDefault)
@@ -154,7 +216,7 @@ final class PlexLibraryQueryTests: XCTestCase {
         }
     }
 
-    private func provider(_ http: StubHTTPClient) -> PlexProvider {
+    private func provider(_ http: any HTTPClient) -> PlexProvider {
         PlexProvider(session: UserSession(
             server: MediaServer(id: "plex", name: "Plex", baseURL: URL(string: "https://plex.test")!, provider: .plex),
             userID: "user", userName: "User", deviceID: "device", accessToken: "test"

@@ -3,7 +3,7 @@ import Foundation
 
 public enum LibraryChannelError: Error, Equatable, Sendable {
     case invalidRecipe, invalidSnapshot, emptyCatalog, catalogTooLarge, catalogChanged
-    case authorizationChanged, sourceUnavailable, snapshotUnavailable, historyExpired
+    case authorizationChanged, sourceUnavailable, sourceUnsupported, snapshotUnavailable, historyExpired
     case incompatiblePlaybackMode, mediaChanged, storageFailed, unsupportedVersion
     case publicationConflict, tooManyRevisions
     case unableToJoinLive, playbackFailed
@@ -17,9 +17,10 @@ public enum LibraryChannelError: Error, Equatable, Sendable {
         case .catalogChanged: "The library changed while loading. Preview the channel again."
         case .authorizationChanged: "Your profile or server access changed. Choose the channel again."
         case .sourceUnavailable: "A library used by this channel isn't available to this profile."
+        case .sourceUnsupported: "This source doesn't support Plozz channels."
         case .snapshotUnavailable: "This channel's saved schedule isn't available on this device."
         case .historyExpired: "This earlier program is no longer retained. Go Live to continue."
-        case .incompatiblePlaybackMode: "This file requires a server playback mode that cannot safely separate watch history. Choose another channel."
+        case .incompatiblePlaybackMode: "This playback mode isn't supported for Plozz channels."
         case .mediaChanged: "The scheduled video changed or is unavailable. The next program will start on schedule."
         case .storageFailed: "Your channel couldn't be saved. Existing channels have not been replaced."
         case .unsupportedVersion: "This channel was saved by a newer version of Plozz."
@@ -47,7 +48,7 @@ private enum LibraryChannelIdentifierValidation {
     private static let nativeCharacters = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_."))
     private static let accountCharacters = nativeCharacters.union(CharacterSet(charactersIn: "|"))
 
-    static func isValid(_ value: String, allowingPipe: Bool = false) -> Bool {
+    static func isValid(_ value: String, allowingPipe: Bool = false, allowingColon: Bool = false) -> Bool {
         guard !value.isEmpty, value.utf8.count <= 512 else { return false }
         var needsUnicodeValidation = false
         // Most server identifiers are ASCII; avoid Foundation lookups per byte.
@@ -55,12 +56,14 @@ private enum LibraryChannelIdentifierValidation {
             switch byte {
             case 48...57, 65...90, 97...122, 45, 46, 95: continue
             case 124 where allowingPipe: continue
+            case 58 where allowingColon: continue
             case 128...255: needsUnicodeValidation = true
             default: return false
             }
         }
         guard needsUnicodeValidation else { return true }
-        let allowed = allowingPipe ? accountCharacters : nativeCharacters
+        let base = allowingPipe ? accountCharacters : nativeCharacters
+        let allowed = allowingColon ? base.union(CharacterSet(charactersIn: ":")) : base
         return value.unicodeScalars.allSatisfy(allowed.contains)
     }
 }
@@ -77,7 +80,7 @@ public struct LibraryChannelLibrary: Codable, Hashable, Identifiable, Sendable {
     }
 
     static func isSafeAccountIdentifier(_ value: String) -> Bool {
-        LibraryChannelIdentifierValidation.isValid(value, allowingPipe: true)
+        LibraryChannelIdentifierValidation.isValid(value, allowingPipe: true, allowingColon: true)
     }
 }
 
@@ -243,7 +246,8 @@ public struct LibraryChannelItem: Codable, Hashable, Identifiable, Sendable {
     public static func validateSource(library: LibraryChannelLibrary, serverID: String, userID: String) throws {
         guard Self.isNativeIdentifier(library.libraryID),
               LibraryChannelLibrary.isSafeAccountIdentifier(library.accountID),
-              Self.isNativeIdentifier(serverID), Self.isNativeIdentifier(userID) else {
+              Self.isNativeIdentifier(serverID),
+              LibraryChannelIdentifierValidation.isValid(userID, allowingColon: true) else {
             throw LibraryChannelError.invalidSnapshot
         }
     }

@@ -85,6 +85,8 @@ struct HomeHeroView: View {
     /// animation state out of `HomeView`'s observation surface, so moving between
     /// the hero and Continue Watching no longer invalidates every Home row.
     let recedeModel: HomeHeroRecedeModel
+    var showcaseSuspended = false
+    private var pausedForRows: Bool { receded || showcaseSuspended }
     /// Whether the hero is *receded*: the user has moved focus down onto the
     /// Continue Watching row. When true the content column (logo / metadata /
     /// action buttons / paging dots) lifts up via a transform and the full-bleed,
@@ -492,6 +494,7 @@ struct HomeHeroView: View {
                 Color.clear
             }
         }
+        .modifier(HeroShowcaseForeground(surface: .featured))
         .frame(maxWidth: .infinity, minHeight: frameHeight, alignment: .bottomLeading)
         .background(alignment: .top) {
             // Laid out at the FULL hero height and anchored to the frame's TOP, so
@@ -532,7 +535,7 @@ struct HomeHeroView: View {
         .opacity(heroVisible ? 1 : 0)
         .trackHeroExposure(
             item: current,
-            isVisible: isFrontmost && !receded && heroVisible && metadataVisible
+            isVisible: isFrontmost && !pausedForRows && heroVisible && metadataVisible
                 && seasonPickerItem == nil && !showingSeasonLookupFailure,
             scopeID: exposureScopeID,
             onExposure: onItemExposed
@@ -629,7 +632,7 @@ struct HomeHeroView: View {
             // silently resume the carousel and page behind them — defeating the
             // recede pause. Kept coupled to `pausedAt` (not a bare `!receded` task
             // guard) so `resumeFromRecede()` still resumes cleanly on focus return.
-            if receded { pauseWhileReceded() }
+            if pausedForRows { pauseWhileReceded() }
         }
         // Keep Home told which slide is on screen, so a curation landing in the
         // background folds new media into a free slot rather than over this one.
@@ -710,7 +713,7 @@ struct HomeHeroView: View {
         // Fast/local trailers only: resolution and the three-second still-image
         // lead-in overlap. The same single player persists into detail navigation.
         .task(id: trailerTaskKey) {
-            guard isFrontmost, !trailerController.isFeaturedReserved, backgroundSettings.homeTrailerEnabled,
+            guard isFrontmost, !showcaseSuspended, !trailerController.isFeaturedReserved, backgroundSettings.homeTrailerEnabled,
                   let item = current else {
                 // When detail is pushed over Home, relinquish control without
                 // stopping the shared player — the detail hero owns it now.
@@ -813,6 +816,10 @@ struct HomeHeroView: View {
         // `noteInteraction`), so it never pages out from under an interacting user.
         .task(id: autoAdvanceKey) {
             guard settings.autoAdvance, items.count > 1 else { return }
+            if pausedForRows {
+                pauseWhileReceded()
+                return
+            }
             // Paused (user is interacting): schedule no fire at all. The gauge is
             // frozen at `pausedAt`; resuming bumps `runEpoch` to reschedule here.
             guard pausedAt == nil, !trailerController.isPaused else { return }
@@ -872,7 +879,7 @@ struct HomeHeroView: View {
             ))
             .heroArtworkSource(
                 id: item.id,
-                isActive: isFrontmost
+                isActive: isFrontmost && !showcaseSuspended
             )
         } else {
             Color.clear.frame(width: w, height: height)
@@ -910,11 +917,11 @@ struct HomeHeroView: View {
     }
 
     private var trailerReturnItemID: String? {
-        backgroundSettings.homeTrailerEnabled && !receded && heroVisible ? current?.id : nil
+        backgroundSettings.homeTrailerEnabled && !pausedForRows && heroVisible ? current?.id : nil
     }
 
     private var trailerTaskKey: String {
-        "\(current?.id ?? "-")|\(backgroundSettings.homeTrailerEnabled)|\(isFrontmost)|\(trailerController.isFeaturedReserved)"
+        "\(current?.id ?? "-")|\(backgroundSettings.homeTrailerEnabled)|\(isFrontmost)|\(trailerController.isFeaturedReserved)|\(showcaseSuspended)"
     }
 
     // MARK: - Content column
@@ -1571,6 +1578,7 @@ struct HomeHeroView: View {
                 // the `receded` state (see `.onChange(of: receded)` below), which is
                 // the reliable "focus moved DOWN to Continue Watching" signal.
                 if old == nil {
+                    HeroFocusDiagnostics.entry("hero-focusstate")
                     HeroFocusDiagnostics.emit("focus ENTER hero (row, from outside) | \(hfState())")
                     if let item = current {
                         selectedButton = min(selectedButton, max(0, buttons(for: item).count - 1))
@@ -1592,7 +1600,7 @@ struct HomeHeroView: View {
         // focus returns to the hero. Moving focus UP to the tab bar (or LEFT to the
         // sidebar) does NOT scroll the page down, so `receded` stays false there and
         // the carousel keeps playing — exactly the requested behavior.
-        .onChange(of: receded) { _, isReceded in
+        .onChange(of: pausedForRows) { _, isReceded in
             if isReceded { pauseWhileReceded() } else { resumeFromRecede() }
         }
         .onDisappear {
@@ -1850,8 +1858,11 @@ struct HomeHeroView: View {
         guard let onRequest else { return }
         noteInteraction()
         requestOverrides[item.id] = .pending
+        let context = seasonRequestContext
         Task {
-            if let status = await onRequest(item) {
+            let status = await onRequest(item)
+            guard seasonRequestContext == context else { return }
+            if let status {
                 requestOverrides[item.id] = status
             } else {
                 requestOverrides[item.id] = nil
@@ -1907,6 +1918,7 @@ struct HomeHeroView: View {
         let context = "\(seasonRequestContextID)|\(seerConnected)"
         if seasonRequestContext != context {
             seasonRequestContext = context
+            requestOverrides = [:]
             seasonRequestStates = [:]
             seasonRequestingItems = []
             seasonLookupFailures = []
@@ -2053,9 +2065,10 @@ struct HomeHeroView: View {
                     title: item.resumeProgressFraction != nil ? "Resume" : item.playActionTitle,
                     progress: item.resumeProgressFraction,
                     remainingText: item.resumeRemainingText,
-                    seasonEpisodeText: HeroForegroundModelBuilder.seasonEpisodeButtonText(for: item),
+                    seasonEpisodeText: item.opensExternalSource ? nil : HeroForegroundModelBuilder.seasonEpisodeButtonText(for: item),
                     onLight: selected || colorScheme == .light,
-                    separatesEpisodeText: item.startsWatching
+                    separatesEpisodeText: item.startsWatching,
+                    systemImage: item.opensExternalSource ? "arrow.up.forward.app" : "play.fill"
                 )
                 .font(.system(size: 28, weight: .semibold))
             }
@@ -2315,7 +2328,7 @@ struct HomeHeroView: View {
         // paging while the hero is receded — focus is down on Continue Watching and
         // must not have the carousel page behind it. The `receded` onChange resumes
         // once focus returns to the hero.
-        guard !receded else { return }
+        guard !pausedForRows else { return }
         if pendingTrailerAdvance {
             pendingTrailerAdvance = false
             self.pausedAt = nil

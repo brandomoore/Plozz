@@ -1,4 +1,5 @@
 import CoreModels
+import CryptoKit
 import Foundation
 
 /// A stable, deterministic string form of a ``MediaIdentity`` used to key
@@ -37,18 +38,25 @@ public enum MediaIdentityKey {
         }
     }
 
-    /// A filesystem-safe, collision-free folder name for an identity key
-    /// (base64url of the key's UTF-8, matching ``DurableLocalStateKey``'s
-    /// component encoding).
+    /// A filesystem-safe folder name, preserving legacy base64url names when
+    /// they fit the filesystem's component limit.
     public static func folderName(for identity: MediaIdentity) -> String {
         folderName(forKey: string(for: identity))
     }
 
     /// A filesystem-safe folder name for an already-computed key.
     public static func folderName(forKey key: String) -> String {
-        Data(key.utf8).base64EncodedString()
+        folderName(forKey: key, maximumLength: 255)
+    }
+
+    static func folderName(forKey key: String, maximumLength: Int) -> String {
+        let encoded = Data(key.utf8).base64EncodedString()
             .replacingOccurrences(of: "+", with: "-")
             .replacingOccurrences(of: "/", with: "_")
             .replacingOccurrences(of: "=", with: "")
+        guard encoded.utf8.count > maximumLength else { return encoded }
+        // "." cannot occur in a legacy base64url name.
+        let digest = SHA256.hash(data: Data(key.utf8)).map { String(format: "%02x", $0) }.joined()
+        return "sha256.\(digest)"
     }
 }

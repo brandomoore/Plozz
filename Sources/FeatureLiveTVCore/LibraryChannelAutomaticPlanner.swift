@@ -21,13 +21,14 @@ public struct LibraryChannelAutomaticGenerationSummary: Equatable, Sendable {
 
 public struct LibraryChannelSourceFailure: Equatable, Identifiable, Sendable {
     public enum Reason: String, Sendable {
-        case unreachable, authorization, invalidResponse, unknown
+        case unreachable, authorization, invalidResponse, unsupported, unknown
 
         public var message: LocalizedStringResource {
             switch self {
             case .unreachable: "This server couldn't be reached. Check its address and connection, then retry."
             case .authorization: "This server rejected library access. Check the account's sign-in and permissions."
             case .invalidResponse: "This server's library response couldn't be read. Retry when the server is ready."
+            case .unsupported: "This source doesn't support Plozz channels."
             case .unknown: "This server's libraries couldn't be loaded. Retry to include them."
             }
         }
@@ -46,6 +47,7 @@ public struct LibraryChannelSourceFailure: Equatable, Identifiable, Sendable {
         case AppError.unauthorized, AppError.invalidCredentials: reason = .authorization
         case AppError.decoding, AppError.invalidResponse,
              LibraryChannelError.invalidSnapshot, LibraryChannelError.catalogChanged: reason = .invalidResponse
+        case LibraryChannelError.sourceUnsupported: reason = .unsupported
         default: reason = .unknown
         }
     }

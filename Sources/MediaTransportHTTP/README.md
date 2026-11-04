@@ -35,15 +35,26 @@ and byte-source contracts live in `MediaTransportCore`.
   multistatus/response/propstat/prop positions can supply metadata. Nested
   extension properties cannot replace file identity or mark a file as a folder.
   CDATA and ordinary XML text are handled equivalently.
+  Repeated entries with the same normalized path and identical parsed metadata
+  are collapsed, preserving first-occurrence order for both listing and stat.
+  For files with a size and the same valid strong ETag, a modification-date
+  difference alone also collapses: the ambiguous date is discarded, while the
+  strong ETag remains authoritative. Missing/weak ETags, folders and missing
+  sizes do not qualify for this exception.
+  Conflicting entries remain distinct: stat rejects ambiguous metadata rather
+  than choosing the first file or combining validators from different entries.
+  The entry cap counts responses before deduplication.
 - **Range safety**: identity encoding, exact `206`, matching `Content-Range`
   offsets/total and body length. A bounded GET establishes the actual
   representation's strongest usable validator. Two bytes remain the default;
   playback opening of files at least 256 KiB retains a validated 256 KiB prefix.
-  Reads wholly inside it reuse those exact bytes; every later network read sends
+  Reads wholly inside it reuse those exact bytes; validated network reads send
   `If-Match` for a strong ETag, or `If-Unmodified-Since` for Last-Modified, and
   requires the same response validator. Weak ETags alone are insufficient.
   Missing/changed validators, HTTP 412, changed sizes, ignored ranges and
-  truncated responses fail instead of being treated as usable media.
+  truncated responses fail instead of being treated as usable media. The explicit
+  anonymous-delivery streaming exception below retains range/size checks without
+  claiming content-change detection.
 - **Response buffering**: each task owns one mutable body accumulator under the
   delegate lock. Callback appends must not copy the entire previously received
   body. The byte cap is enforced before appending, and cancellation/errors never
@@ -73,15 +84,15 @@ likewise uses PROPFIND and the collection self-entry, and advertises both
 [Nextcloud trailing-slash correction](https://github.com/videolan/vlc/commit/b815b341c12477566d18e3fcec1cedd190d50614)
 is already covered by Plozz's symmetric self-entry normalization. These are
 behavioral references, not imported code or proof of server interoperability.
-Unlike VLC's general-purpose HTTP file reader, Plozz does not promote weak
-ETags to strong validators or allow validator-free random-access playback.
+Plozz never promotes weak ETags to strong validators. Validator-free delivery
+is a narrowly scoped streaming exception, not a durable file identity.
 
 Directory listing and ordinary stat do not require a validator or read file
 contents. When preparing a locator, `statForOpening` tries a bounded GET if DAV
 metadata lacks both a strong ETag and modification time. This learns a real
 identity without imposing seekability on sidecars. It never invents a timestamp,
-ETag or size. Files with neither a usable GET ETag nor Last-Modified still
-cannot play; validator-free best-effort streaming is not enabled.
+ETag or size. Files with neither a usable DAV identity nor a same-resource GET
+identity still cannot play.
 
 GET-only identity discovery requires the exact stable DAV URL, not a redirected
 resource: equal ETag strings on different resources are not comparable. Redirected
@@ -96,12 +107,43 @@ to the DAV ETag. The actual GET validator is pinned for the source lease.
 Same-origin comparable DAV/GET validators and all declared sizes must agree.
 The probe retains Last-Modified even when a stronger GET ETag is selected for
 reads, so a date-based locator cannot skip its modification-time comparison.
+
+After that DAV identity/size revalidation, playback may accept an anonymous
+HTTPS delivery response with exact ranges but neither ETag nor Last-Modified.
+This explicit `unvalidatedPlayback` mode is disabled by default in the HTTP
+client, for direct DAV responses, and for scanner/metadata/artwork roles. Usable
+validators remain preferred and enforced; malformed or weak-only headers cannot
+enable this exception. Every network read still requires
+the pinned URL, identity encoding, exact 206, offsets, total size and body length;
+there is no URL refresh or redirect following within an active lease. Without
+a validator, **same-size content changes during playback cannot be detected**.
+No timestamp or ETag is fabricated.
+
+These sources expose `supportsPersistentByteReuse == false` through their
+source lease. Ranged playback bytes still cannot enter reusable disk caches or
+resume a partial download. WebDAV additionally implements the separate
+whole-file transfer contract: offline downloads issue one unconditional GET to
+the pinned anonymous HTTPS delivery URL, without reusing the probe prefix.
+Only HTTP 200, identity encoding and an exact complete byte count can succeed;
+redirects, partial responses, changed sizes, cancellation and truncation fail.
+The response is streamed to disk with backpressure, at most 4 MiB / 64 pending
+callbacks, and the existing download rate limiter. No whole-file memory buffer,
+credential forwarding, or relaxed TLS policy is introduced.
+
+Interrupted whole-response downloads discard their partial bytes; every retry
+or resume starts from zero after fresh DAV identity validation and delivery
+resolution. Cancellation drains admitted writes before discarding the file.
+Pause/background and profile retirement keep their existing queue ownership.
+Completed files remain available offline, but no claim is made that validators
+can detect a same-size replacement before the single response begins.
+Ordinary validated sources retain their existing ranged/resumable behavior.
+
 For playback files at least 256 KiB, the opening probe also supplies the first
 media window, avoiding a separate two-byte request followed by a header GET.
-Its complete body, offsets, size and validator are checked before any prefix
+Its complete body, offsets, size and selected validation mode are checked before any prefix
 bytes become readable. The immutable prefix belongs to the source lease, not a
 shared URL cache; cancellation and cursor retirement still apply. Reads crossing
-its boundary use the normal conditional range path. Small files, non-playback
+its boundary use the selected range-validation mode. Small files, non-playback
 roles and GET-only identity discovery keep the two-byte probe. The tradeoff is
 up to 256 KiB retained per source, and potentially unnecessary prefix bytes for
 a consumer that starts elsewhere or requests a larger first window. Remote
@@ -169,6 +211,29 @@ The validator and redirect regression fixtures use synthetic `URLProtocol`
 responses. They do not establish a particular hosted service's ETag behavior,
 redirect chain, real TLS/Basic/Digest interoperability, or a reported playback
 outcome. Those still require a real-server retest.
+
+When handoff diagnostics are enabled, rejected range probes and reads retain
+the transport failure category, HTTP status, byte count, anonymous-delivery
+flag and header classifications in the bounded local playback trace. ETags,
+dates and ranges are classified as missing, invalid or usable (ETags also
+distinguish weak/strong); no raw headers, paths, credentials or delivery URLs
+are recorded. Locator-policy rejections have separate fixed check identifiers.
+
+Share playback preparation also records a per-request ID, hashed item identity,
+transport, elapsed time and the last stage reached (selection, locator, item or
+sidecars). Failures retain allowlisted transport/model/native error codes rather
+than raw descriptions; cancellation remains cancellation. Locator diagnostics
+show listing fallback, file-size presence and validator availability without
+publishing validator values. PROPFIND records depth, role, hashed resource, HTTP
+status and response size; stat self-entry rejection records parsed/matching
+counts and which metadata fields disagree, never their values. Identical duplicate
+responses record a count; successful scanner listings omit per-request traces.
+HTTP adapter errors are recorded before protocol-neutral mapping loses
+their specific category. These diagnostics do not relax validation or introduce
+retries, and contain no response bodies, filenames, URLs or credentials.
+This distinguishes a missing validator from unsupported ranges. Entering the
+streaming exception emits a fixed `PLAYBACK_COMPATIBILITY` diagnostic with
+`persistentReuse=false`; retry behavior is unchanged.
 
 ## Opt-in real-server checks
 

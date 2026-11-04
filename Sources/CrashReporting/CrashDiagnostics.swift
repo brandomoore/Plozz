@@ -7,6 +7,8 @@ import Sentry
 
 /// On-demand technical reports constructed from allowlisted fields.
 /// Raw activity messages and free-form playback traces never become attachments.
+/// The playback export includes independently retained, typed failure snapshots
+/// in both Debug and Release, correlated within this submission only.
 ///
 /// This deliberately piggybacks on the existing opt-in Sentry pipe: it only does
 /// anything when crash reporting is both **configured** (a DSN was baked into the

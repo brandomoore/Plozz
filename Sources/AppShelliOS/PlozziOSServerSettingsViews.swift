@@ -18,9 +18,9 @@ struct PlozziOSServersSettingsView: View {
 
     var body: some View {
         SettingsPageList {
-            SettingsSectionGroup("Servers") {
+            SettingsSectionGroup(SettingsCopy.sources) {
                 if groups.isEmpty {
-                    Text("You’re not signed in to any servers yet.")
+                    Text("No sources have been added yet.")
                         .plozzForeground(.secondary)
                 } else {
                     ForEach(groups, id: \.serverKey) { group in
@@ -34,7 +34,7 @@ struct PlozziOSServersSettingsView: View {
                         } label: {
                             serverRowLabel(group)
                         }
-                        .buttonStyle(.plain)
+                        .settingsActionRow()
                     }
                 }
             } footer: {
@@ -42,21 +42,18 @@ struct PlozziOSServersSettingsView: View {
             }
 
             SettingsSectionGroup {
-                Button("Add Server", systemImage: "plus", action: onAddServer)
-                NavigationLink {
-                    PlozziOSAddShareView(appModel: appModel)
-                } label: {
-                    HStack(spacing: 12) {
-                        ProviderBrandMark(
-                            provider: .mediaShare,
-                            size: 24
-                        )
-                        Text("Add Network Share")
+                Button(action: onAddServer) {
+                    Label {
+                        Text(SettingsCopy.addSource)
+                    } icon: {
+                        Image(systemName: "plus")
                     }
                 }
+                .settingsActionRow()
+                .accessibilityIdentifier("sources-add-source")
             }
         }
-        .navigationTitle("Servers")
+        .navigationTitle(Text(SettingsCopy.sources))
         .navigationDestination(item: $selectedServerKey) { key in
             PlozziOSServerSettingsDetailView(appModel: appModel, serverKey: key)
         }
@@ -137,7 +134,7 @@ private struct PlozziOSServerSettingsDetailView: View {
                             }
                             .contentShape(Rectangle())
                         }
-                        .buttonStyle(.plain)
+                        .settingsActionRow()
                     }
                 } footer: {
                     Text("Removing a sign-in affects every profile on this \(deviceName).")
@@ -149,6 +146,7 @@ private struct PlozziOSServerSettingsDetailView: View {
                             Button("Edit connection", systemImage: "pencil") {
                                 providerSetupRouter.connectIPTV(account: account)
                             }
+                            .settingsActionRow()
                         }
                     }
                 }
@@ -165,6 +163,7 @@ private struct PlozziOSServerSettingsDetailView: View {
                         Button("Remove Server", role: .destructive) {
                             confirmRemoveServer = true
                         }
+                        .settingsActionRow()
                     } footer: {
                         Text("Signs out every account on \(group.serverName).")
                     }
@@ -299,13 +298,26 @@ struct PlozziOSMyLibrariesSettingsView: View {
             }
             if groups.isEmpty {
                 SettingsSectionGroup {
-                    Text("No servers are available on this \(deviceName).")
+                    Text("No sources are available on this \(deviceName).")
                         .plozzForeground(.secondary)
-                    Button("Add Server", systemImage: "plus", action: onAddServer)
                 }
             } else {
                 ForEach(groups, id: \.serverKey) { group in
                     serverGroup(group)
+                }
+            }
+            if presentation == .settings || groups.isEmpty {
+                SettingsSectionGroup {
+                    Button(action: onAddServer) {
+                        Label {
+                            Text(SettingsCopy.addSource)
+                        } icon: {
+                            Image(systemName: "plus")
+                        }
+                    }
+                    .accessibilityIdentifier("libraries-add-source")
+                } footer: {
+                    Text("New sources are available to every profile on this \(deviceName).")
                 }
             }
         }
@@ -456,7 +468,7 @@ struct PlozziOSMyLibrariesSettingsView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .settingsActionRow()
         .accessibilityAddTraits(isOn ? [.isButton, .isSelected] : .isButton)
         .settingsSearchAnchor(
             isSearchTarget ? "profile-library-inclusion" : "profile-library-\(library.id)"
@@ -466,7 +478,7 @@ struct PlozziOSMyLibrariesSettingsView: View {
     @ViewBuilder
     private func identityControl(for group: ServerAccountGroup) -> some View {
         if group.providerKind == .plex, let account = activeAccount(in: group) {
-            NavigationLink {
+            SettingsPageLink {
                 PlozziOSPlexHomeUserSettingsView(
                     appModel: appModel,
                     account: account
@@ -480,6 +492,7 @@ struct PlozziOSMyLibrariesSettingsView: View {
                     Text(plexIdentityName(for: account))
                 }
             }
+            .settingsActionRow()
             .settingsSearchAnchor(
                 group.serverKey == searchGroup(for: "watcher-plex-user")?.serverKey
                     ? "watcher-plex-user" : "watcher-plex-\(group.serverKey)",

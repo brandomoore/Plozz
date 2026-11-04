@@ -63,12 +63,24 @@ struct SiloPlaybackPlan: Decodable, Sendable {
 }
 
 actor SiloPlaybackSessions {
+    struct PendingLibraryStart: Sendable {
+        let attemptID: String
+        let itemID: String
+        let installationID: String
+        let body: Data
+    }
+    private struct PendingLibraryRelease {
+        let itemID: String
+        let installationID: String
+        let stopID: String
+    }
     struct Session: Sendable {
         let itemID: String
         let sourceID: String
         let installationID: String
         let expiry: Date?
         let streamURL: URL
+        var isLibraryChannel = false
         var resources: [String: URL]
         var subtitleCandidates: [String: SiloRemoteSubtitle] = [:]
         var downloadedTracks: [String: MediaTrack] = [:]
@@ -76,6 +88,18 @@ actor SiloPlaybackSessions {
         var stopID: String?
     }
     private var sessions: [String: Session] = [:]
+    private var libraryStarts: [String: PendingLibraryStart] = [:]
+    private var libraryReleases: [String: PendingLibraryRelease] = [:]
+
+    func retainLibraryStart(_ start: PendingLibraryStart) { libraryStarts[start.attemptID] = start }
+    func pendingLibraryStarts() -> [PendingLibraryStart] { Array(libraryStarts.values) }
+    func removeLibraryStart(_ attemptID: String) { libraryStarts[attemptID] = nil }
+
+    func retainLibraryRelease(id: String, itemID: String, installationID: String) {
+        guard libraryReleases[id] == nil else { return }
+        libraryReleases[id] = PendingLibraryRelease(
+            itemID: itemID, installationID: installationID, stopID: UUID().uuidString.lowercased())
+    }
 
     func insert(_ session: Session, id: String) throws {
         guard sessions.count < 128 || sessions[id] != nil else { throw AppError.invalidResponse }
@@ -146,8 +170,9 @@ actor SiloPlaybackSessions {
         return track
     }
 
-    func report(id: String, itemID: String, stopping: Bool) throws -> (String, Int64, String?) {
+    func report(id: String, itemID: String, stopping: Bool, libraryChannel: Bool = false) throws -> (String, Int64, String?) {
         guard var session = sessions[id], session.itemID == itemID else { throw AppError.notFound }
+        guard session.isLibraryChannel == libraryChannel else { throw AppError.unauthorized }
         guard session.stopID == nil || stopping else { throw AppError.cancelled }
         guard session.sequence < Int64.max else { throw AppError.invalidResponse }
         session.sequence += 1
@@ -156,10 +181,23 @@ actor SiloPlaybackSessions {
         return (session.installationID, session.sequence, session.stopID)
     }
 
-    func remove(_ id: String) { sessions[id] = nil }
+    func remove(_ id: String) {
+        sessions[id] = nil
+        libraryReleases[id] = nil
+    }
 
-    func releaseContext(id: String, itemID: String) -> (installationID: String, stopID: String)? {
-        guard var session = sessions[id], session.itemID == itemID else { return nil }
+    func pendingLibraryReleases() -> [(id: String, itemID: String)] {
+        sessions.compactMap { id, session in
+            session.isLibraryChannel && session.stopID != nil ? (id, session.itemID) : nil
+        } + libraryReleases.map { ($0.key, $0.value.itemID) }
+    }
+
+    func releaseContext(id: String, itemID: String, libraryChannel: Bool = false) -> (installationID: String, stopID: String)? {
+        if libraryChannel, let pending = libraryReleases[id], pending.itemID == itemID {
+            return (pending.installationID, pending.stopID)
+        }
+        guard var session = sessions[id], session.itemID == itemID,
+              session.isLibraryChannel == libraryChannel else { return nil }
         if session.stopID == nil { session.stopID = UUID().uuidString.lowercased() }
         sessions[id] = session
         guard let stopID = session.stopID else { return nil }
@@ -182,13 +220,16 @@ extension SiloProvider: ProviderHTTPResourceResolving {
 
     func resolvePlayback(
         for itemID: String, mediaSourceID: String?, forceTranscode: Bool,
-        streaming: StreamingPlaybackOptions?
+        streaming: StreamingPlaybackOptions?, libraryChannel: LibraryChannelItem? = nil
     ) async throws -> PlaybackRequest {
-        let dto: SiloItem = try await client.request("/catalog/items/\(try SiloAPI.pathComponent(itemID))")
+        let dto: SiloItem = try await client.request(
+            "/catalog/items/\(try SiloAPI.pathComponent(itemID))",
+            query: libraryChannel.map { [.init(name: "library_id", value: $0.library.libraryID)] } ?? [])
         let files = dto.versions ?? []
         HandoffDiagnostics.emit("silo playback metadata versions=\(files.count) explicitVersion=\(mediaSourceID != nil)")
         let selected = mediaSourceID.flatMap { id in files.first { $0.file_id == id } } ?? files.first
         guard let selected, mediaSourceID == nil || selected.file_id == mediaSourceID else { throw AppError.notFound }
+        if let libraryChannel { try validateLibraryChannel(libraryChannel, detail: dto, file: selected) }
         let streamingSelection = try streaming.map {
             try SiloStreamingSelection(options: $0, source: selected, forceTranscode: forceTranscode)
         }
@@ -213,6 +254,9 @@ extension SiloProvider: ProviderHTTPResourceResolving {
         guard let installationID = capability.installation_id, !installationID.isEmpty else {
             throw StreamingQualityError.malformedResponse
         }
+        if libraryChannel != nil, !capability.deliveries.contains("original_http") {
+            throw LibraryChannelError.incompatiblePlaybackMode
+        }
         if streamingSelection?.requiresEncoding == true,
            !capability.deliveries.contains("server_transcode_hls") {
             throw StreamingQualityError.serverRefusal("Silo does not offer transcoding on this server.", reason: .transcodingDisabled)
@@ -221,7 +265,8 @@ extension SiloProvider: ProviderHTTPResourceResolving {
         let body = SiloPlaybackStart(
             installation_id: installationID, file_id: selected.file_id, profile_id: credential.profileID,
             capabilities: capabilitiesSnapshot, forceTranscode: forceTranscode,
-            fixedSourceSupported: fixedSourceSupported, streaming: streamingSelection)
+            fixedSourceSupported: fixedSourceSupported, streaming: streamingSelection,
+            libraryChannel: libraryChannel != nil)
         HandoffDiagnostics.emit(
             "silo playback request quality=\(body.quality_preference) "
                 + "encoding=\(streamingSelection?.requiresEncoding ?? forceTranscode) "
@@ -232,9 +277,28 @@ extension SiloProvider: ProviderHTTPResourceResolving {
         // Finish an admitted negotiation even if the view disappears, so its
         // session ID can be released rather than lost to cancellation.
         let negotiation = Task { [client] () throws -> SiloPlaybackDecision in
-            try await client.request("/playback/start", method: .post, body: encodedBody)
+            do {
+                return try await client.request("/playback/start", method: .post, body: encodedBody)
+            } catch {
+                guard libraryChannel != nil,
+                      error is URLError || (error as? AppError) == .serverUnreachable else { throw error }
+                // Native v2 replays the same playback_attempt_id and request digest.
+                // Recover its ownership after a lost response; do not create a new attempt.
+                return try await client.request("/playback/start", method: .post, body: encodedBody)
+            }
         }
-        let decision = try await negotiation.value
+        let decision: SiloPlaybackDecision
+        do {
+            decision = try await negotiation.value
+        } catch {
+            if libraryChannel != nil,
+               error is URLError || (error as? AppError) == .serverUnreachable {
+                await playback.retainLibraryStart(.init(
+                    attemptID: body.playback_attempt_id, itemID: itemID,
+                    installationID: installationID, body: encodedBody))
+            }
+            throw error
+        }
         let terminalReason = decision.terminal?.reason
         let safeReason = terminalReason.flatMap { value -> String? in
             guard value.count <= 80, value.utf8.allSatisfy({ (97...122).contains($0) || $0 == 95 }) else { return nil }
@@ -253,6 +317,12 @@ extension SiloProvider: ProviderHTTPResourceResolving {
             HandoffDiagnostics.emit("silo playback plan sameFile=\(plan.effective_media_file_id == selected.file_id) headers=\(plan.stream.headers.count) refreshNone=\(plan.stream.header_refresh == "none") offset=\(plan.timeline.timeline_offset_seconds) seekable=\(plan.timeline.can_seek_anywhere) original=\(plan.delivery == "original_http") hls=\(plan.delivery == "server_remux_hls" || plan.delivery == "server_transcode_hls")")
             guard plan.effective_media_file_id == selected.file_id else {
                 throw StreamingQualityError.serverRefusal("Silo returned a different file than the selected version. Plozz stopped playback to avoid playing the wrong file.", reason: .sourceMismatch)
+            }
+            if libraryChannel != nil {
+                guard plan.delivery == "original_http",
+                      plan.timeline.source_start_seconds == 0, plan.timeline.player_start_seconds == 0 else {
+                    throw LibraryChannelError.incompatiblePlaybackMode
+                }
             }
             guard plan.stream.headers.isEmpty, plan.stream.header_refresh == "none" else {
                 throw StreamingQualityError.serverRefusal("Silo returned stream headers or header refresh requirements that Plozz does not support.", reason: .unsupportedHeaders)
@@ -305,15 +375,21 @@ extension SiloProvider: ProviderHTTPResourceResolving {
             let expiry = plan.expires_at.flatMap(Self.date)
             guard plan.expires_at == nil || expiry != nil else { throw StreamingQualityError.malformedResponse }
             try await playback.insert(.init(itemID: itemID, sourceID: selected.file_id, installationID: installationID,
-                                            expiry: expiry, streamURL: streamURL, resources: resources,
+                                            expiry: expiry, streamURL: streamURL,
+                                            isLibraryChannel: libraryChannel != nil, resources: resources,
                                             downloadedTracks: downloadedTracks), id: sessionID)
             var item = map(dto)
             item.selectedVersionID = selected.file_id
             item.mediaInfo = metadata(selected)
+            if let libraryChannel {
+                item.runtime = selected.duration
+                item.resumePosition = nil
+                item.libraryID = libraryChannel.library.libraryID
+            }
             var request = PlaybackRequest(
                 item: item, playbackSource: .authenticatedHTTP(stream), playSessionID: sessionID,
                 audioTracks: selected.playbackAudioTracks,
-                subtitleTracks: subtitles, startPosition: streaming?.startPosition ?? item.resumePosition ?? 0,
+                subtitleTracks: subtitles, startPosition: libraryChannel == nil ? streaming?.startPosition ?? item.resumePosition ?? 0 : 0,
                 deliveryMode: mode, sourceMetadata: item.mediaInfo, sourceProvider: .silo,
                 serverName: session.server.name, sourceFileName: selected.file_name)
             // Session-bound stream grants are not offline-download permission.
@@ -321,8 +397,19 @@ extension SiloProvider: ProviderHTTPResourceResolving {
             request.streamingOptions = streaming
             request.streamingSessionID = streaming == nil ? nil : sessionID
             request.negotiatedStreamingVideoCodec = negotiatedCodec
+            request.suppressOrdinaryWatchReporting = libraryChannel != nil
             return request
         } catch {
+            if libraryChannel != nil {
+                if let sessionID = ownedSessionID, !sessionID.isEmpty {
+                    await playback.retainLibraryRelease(
+                        id: sessionID, itemID: itemID, installationID: installationID)
+                    let release = Task { try await releaseLibrarySession(id: sessionID, itemID: itemID) }
+                    do { try await release.value }
+                    catch { PlozzLog.playback.error("Unable to release unsupported Silo channel plan") }
+                }
+                throw error
+            }
             struct Stop: Encodable { let installation_id: String; let stop_id: String }
             if let sessionID = ownedSessionID, !sessionID.isEmpty {
                 do {
@@ -331,6 +418,7 @@ extension SiloProvider: ProviderHTTPResourceResolving {
                         try await client.send("/playback/\(try SiloAPI.pathComponent(sessionID))", method: .delete, body: stopBody)
                     }
                     _ = try await release.value
+                    await playback.remove(sessionID)
                 } catch {
                     PlozzLog.playback.error("Unable to release unsupported Silo playback plan")
                 }
@@ -340,11 +428,16 @@ extension SiloProvider: ProviderHTTPResourceResolving {
     }
 
     public func reportPlayback(_ progress: PlaybackProgress, event: PlaybackEvent) async throws {
+        try await reportSession(progress, event: event, libraryChannel: false)
+    }
+
+    func reportSession(_ progress: PlaybackProgress, event: PlaybackEvent, libraryChannel: Bool) async throws {
         guard let id = progress.playSessionID, progress.positionSeconds.isFinite, progress.positionSeconds >= 0 else {
             throw AppError.invalidResponse
         }
         let stopping = event == .stop
-        let (installation, sequence, stopID) = try await playback.report(id: id, itemID: progress.itemID, stopping: stopping)
+        let (installation, sequence, stopID) = try await playback.report(
+            id: id, itemID: progress.itemID, stopping: stopping, libraryChannel: libraryChannel)
         struct Body: Encodable {
             let installation_id: String
             let sequence: Int64
@@ -434,6 +527,7 @@ struct SiloPlaybackStart: Encodable {
     let metered = false
     let allow_alternate_versions: Bool?
     let start_position: Double
+    let progress_persistence: String?
     let bandwidth_cap_kbps: Int?
     let audio_track_index: Int?
     let subtitle_track_index: Int?
@@ -442,7 +536,7 @@ struct SiloPlaybackStart: Encodable {
 
     init(installation_id: String, file_id: String, profile_id: String, capabilities: MediaCapabilities,
          forceTranscode: Bool, fixedSourceSupported: Bool = true,
-         streaming: SiloStreamingSelection? = nil) {
+         streaming: SiloStreamingSelection? = nil, libraryChannel: Bool = false) {
         self.installation_id = installation_id
         self.file_id = file_id
         self.profile_id = profile_id
@@ -451,6 +545,7 @@ struct SiloPlaybackStart: Encodable {
             + (fixedSourceSupported ? ["fixed_media_file_v1"] : [])
         quality_preference = streaming?.qualityPreference ?? (forceTranscode ? "1080p" : "original")
         start_position = streaming?.options.startPosition ?? 0
+        progress_persistence = libraryChannel ? "client" : nil
         bandwidth_cap_kbps = streaming?.videoBudgetKbps
         audio_track_index = streaming.flatMap { $0.options.selectedAudio(in: $0.source.playbackAudioTracks)?.id }
         subtitle_track_index = streaming.flatMap {
@@ -482,7 +577,7 @@ struct SiloPlaybackStart: Encodable {
                     // The original-file player resolves HDR presentation and
                     // selects audio locally; neither requires server conversion.
                     validated_claims: ["client_managed_dynamic_range_v1", "client_selected_audio_track_v1"]),
-                "hls": Delivery(enabled: true, containers: ["hls", "mp4", "mpegts"], video_codecs: hardwareVideo,
+                "hls": Delivery(enabled: !libraryChannel, containers: ["hls", "mp4", "mpegts"], video_codecs: hardwareVideo,
                                 audio_decode_codecs: ["aac", "ac3", "eac3", "alac"],
                                 max_channels: streaming.flatMap {
                                     $0.requiresEncoding || $0.options.quality != .original ? 2 : nil

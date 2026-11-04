@@ -9,6 +9,15 @@ import XCTest
 final class PlayerVideoZoomTests: XCTestCase {
     private let television = CGRect(x: 0, y: 0, width: 1920, height: 1080)
 
+    func testVideoViewLastReferenceCanBeReleasedOffMainActor() async {
+        await Task.detached {
+            var view: VideoPresentationView? = await VideoPresentationView(frame: .zero)
+            weak var releasedView = view
+            view = nil
+            XCTAssertNil(releasedView)
+        }.value
+    }
+
     func testZoomModeCopyUsesFamiliarNamesAndIdentifiesTheDefaultWithoutDescriptions() {
         XCTAssertEqual(PlayerVideoZoom().mode, .fit)
         XCTAssertEqual(PlayerVideoZoom.Mode.allCases.map { String(localized: $0.title) },
@@ -17,7 +26,7 @@ final class PlayerVideoZoomTests: XCTestCase {
                        ["Normal (Default)", "Crop", "Stretch", "Custom", "Auto-crop black bars"])
     }
 
-    func testPictureFitUsesUniformScaleAndAsymmetricTranslation() throws {
+    func testPictureFitUsesFullBoundsWithUniformScaleAndAsymmetricTranslation() throws {
         let normalized = CGRect(x: 0.05, y: 0.1, width: 0.8, height: 0.65)
         for (bounds, insets) in safeAreaCases {
             let safe = bounds.inset(by: insets)
@@ -26,13 +35,49 @@ final class PlayerVideoZoomTests: XCTestCase {
                 in: bounds, aspectRatio: 16 / 9, fitBounds: safe, activePicture: normalized
             ))
             let active = VideoActivePictureGeometry.map(normalized, into: video)
-            XCTAssertEqual(active.midX, safe.midX, accuracy: 0.001)
-            XCTAssertEqual(active.midY, safe.midY, accuracy: 0.001)
-            XCTAssertTrue(safe.insetBy(dx: -0.001, dy: -0.001).contains(active))
+            XCTAssertEqual(active.midX, bounds.midX, accuracy: 0.001)
+            XCTAssertEqual(active.midY, bounds.midY, accuracy: 0.001)
+            XCTAssertTrue(bounds.insetBy(dx: -0.001, dy: -0.001).contains(active))
+            XCTAssertEqual(max(active.width / bounds.width, active.height / bounds.height), 1, accuracy: 0.001)
+            assertRect(video, equals: try XCTUnwrap(zoom.videoRect(
+                in: bounds, aspectRatio: 16 / 9, activePicture: normalized
+            )))
             XCTAssertEqual(video.width / video.height, 16 / 9, accuracy: 0.001)
             let scale = zoom.scaleFactors(in: bounds, aspectRatio: 16 / 9, fitBounds: safe, activePicture: normalized)
             XCTAssertEqual(scale.dx, scale.dy)
             XCTAssertLessThanOrEqual(scale.dx, 2)
+        }
+    }
+
+    func testPictureFitRemovesEncodedBarsPastTheLandscapeCutoutWithoutCroppingContent() throws {
+        let bounds = CGRect(x: 0, y: 0, width: 2622, height: 1206)
+        let safe = bounds.insetBy(dx: 177, dy: 0)
+        let normalized = CGRect(x: 0, y: 153.0 / 1206.0, width: 1, height: 901.0 / 1206.0)
+        let zoom = PlayerVideoZoom(mode: .picture)
+        let video = try XCTUnwrap(zoom.videoRect(
+            in: bounds, aspectRatio: 16 / 9, fitBounds: safe, activePicture: normalized
+        ))
+        let active = VideoActivePictureGeometry.map(normalized, into: video)
+        XCTAssertEqual(active.minX, bounds.minX, accuracy: 0.001)
+        XCTAssertEqual(active.maxX, bounds.maxX, accuracy: 0.001)
+        XCTAssertEqual(active.midY, bounds.midY, accuracy: 0.001)
+        XCTAssertGreaterThan(active.minY, bounds.minY)
+        XCTAssertLessThan(active.maxY, bounds.maxY)
+        XCTAssertEqual(active.width / active.height, (16 / 9) / normalized.height, accuracy: 0.001)
+    }
+
+    func testUnknownAndUnsafePictureGeometryPreserveNormalSafeAreaFitting() {
+        for (bounds, insets) in safeAreaCases {
+            let safe = bounds.inset(by: insets)
+            for invalid: CGRect? in [nil, .zero, CGRect(x: 0, y: 0, width: 0.01, height: 0.01),
+                                     CGRect(x: 0, y: 0, width: Double.nan, height: 1)] {
+                XCTAssertEqual(
+                    PlayerVideoZoom(mode: .picture).videoRect(
+                        in: bounds, aspectRatio: 16 / 9, fitBounds: safe, activePicture: invalid
+                    ),
+                    PlayerVideoZoom().videoRect(in: bounds, aspectRatio: 16 / 9, fitBounds: safe)
+                )
+            }
         }
     }
 

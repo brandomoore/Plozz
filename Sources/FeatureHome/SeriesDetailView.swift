@@ -21,6 +21,8 @@ import MetadataKit
 ///      the hero; clicking it plays it (the parent applies resume-vs-start-over).
 struct SeriesDetailView: View {
     let series: MediaItem
+    let preparationIsActive: Bool
+    @State private var playbackPreparation = DetailPlaybackPreparationCoordinator()
     let seasons: [MediaItem]
     /// Episodes attached directly to the series (used when a backend returns a
     /// flat episode list with no season containers).
@@ -173,6 +175,7 @@ struct SeriesDetailView: View {
     init(
         series: MediaItem,
         hasChildOnTop: Bool = false,
+        preparationIsActive: Bool = true,
         seasons: [MediaItem],
         looseEpisodes: [MediaItem],
         viewModel: ItemDetailViewModel,
@@ -191,6 +194,7 @@ struct SeriesDetailView: View {
         versionPreferences: VersionPreferenceStoring = VersionPreferenceStore()
     ) {
         self.series = series
+        self.preparationIsActive = preparationIsActive
         self.hasChildOnTop = hasChildOnTop
         self.seasons = seasons
         self.looseEpisodes = looseEpisodes
@@ -250,6 +254,11 @@ struct SeriesDetailView: View {
         let _ = plozzPrintChanges { Self._printChanges() }
         let _ = PlozzBodyRate.tick("SeriesDetail")
         scrollContent
+            .detailPlaybackPreparation(
+                for: preparationItem,
+                isActive: preparationIsActive && !hasChildOnTop,
+                coordinator: playbackPreparation
+            )
             // Never clip a focused card's lift, shadow or border.
             .scrollClipDisabled()
             // Let the hero bleed into the top overscan inset instead of the
@@ -398,11 +407,13 @@ struct SeriesDetailView: View {
                         spoilerSettings: spoilerSettings,
                         playTitle: playTarget.map { viewModel.playButtonTitle(for: $0) },
                         onPlay: playTarget.map { target in {
-                            onPlay(DetailPlaybackSelection.playItem(
+                            let item = DetailPlaybackSelection.playItem(
                                 for: target, sources: target.sources, activeAccountID: target.sourceAccountID,
                                 versionID: effectivePlayVersionID,
                                 explicit: versionOverride != nil || target.explicitSourceSelection
-                            ))
+                            )
+                            playbackPreparation.handoff(item)
+                            onPlay(item)
                         } },
                         showsPlayPlaceholder: DetailPlaybackSelection.showsPlayPlaceholder(
                             for: series,
@@ -1149,6 +1160,7 @@ struct SeriesDetailView: View {
                 // so selecting it is deliberately inert — it stays focusable purely
                 // so the rest of the run can be browsed and read.
                 guard !item.isUpcomingUnaired else { return }
+                playbackPreparation.handoff(item)
                 onPlay(item)
             }
         )
@@ -1403,6 +1415,7 @@ struct SeriesDetailView: View {
             guard accountID != series.sourceAccountID,
                   let source = viewModel.sources.first(where: { $0.accountID == accountID })
             else { return }
+            playbackPreparation.invalidate()
             // Capture the fronted episode by NUMBER (the displayed hero, whose S/E
             // is guaranteed) so the new server fronts the same one after reload.
             let fronted = displayHeroItem
@@ -1433,6 +1446,7 @@ struct SeriesDetailView: View {
     /// series' key: picking the 4K cut on episode 3 is how a viewer says "play
     /// this show in 4K", and every later episode matches the same shape.
     private func selectVersion(_ id: String) {
+        playbackPreparation.invalidate()
         versionOverride = id
         guard versionPreferences.remembersSeriesVersions else { return }
         guard let target = playTarget,
@@ -1504,6 +1518,18 @@ struct SeriesDetailView: View {
             ? currentEpisodes.first
             : SeriesResume.nextUp(in: currentEpisodes)
         return target.map { viewModel.episodeWithEnrichedBadges($0) }
+    }
+
+    private var preparationItem: MediaItem? {
+        guard let target = playTarget, !target.isUpcomingUnaired,
+              target.sourceAccountID == series.sourceAccountID,
+              target.seriesID == series.id,
+              !viewModel.hasNoPlaybackStreams(for: target) else { return nil }
+        return DetailPlaybackSelection.playItem(
+            for: target, sources: target.sources, activeAccountID: target.sourceAccountID,
+            versionID: effectivePlayVersionID,
+            explicit: versionOverride != nil || target.explicitSourceSelection
+        )
     }
 
     /// The hero item with its season/episode numbers guaranteed when an episode is

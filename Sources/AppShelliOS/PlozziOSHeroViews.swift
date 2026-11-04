@@ -63,11 +63,20 @@ enum PlozziOSHeroMetrics {
         style: HeroArtworkStyle,
         surfaceRole: HeroTrailerSurfaceRole,
         dynamicTypeSize: DynamicTypeSize,
-        containerHeight: CGFloat? = nil
+        containerHeight: CGFloat? = nil,
+        isRunningOnMac: Bool = false
     ) -> CGFloat {
         let accessibilityExtra: CGFloat = dynamicTypeSize.isAccessibilitySize
             ? (style == .compactPortrait ? 160 : 140)
             : 0
+        if isRunningOnMac, style == .landscape, surfaceRole == .home,
+           let containerHeight, containerHeight.isFinite, containerHeight > 0 {
+            let preferred = min(max(containerHeight * 0.82, 480), 1_020)
+            return min(
+                preferred + accessibilityExtra,
+                max(containerHeight - HeroStageMetrics.minimumPeek, 1)
+            )
+        }
         // The portrait Home hero is sized to the phone, not to a constant: it
         // has to reach far enough down that the metadata sits in the lower part
         // of the screen, while still leaving the next row peeking. See
@@ -102,7 +111,16 @@ private struct PlozziOSHeroContainerHeightKey: EnvironmentKey {
     static let defaultValue: CGFloat? = nil
 }
 
+private struct PlozziOSIsRunningOnMacKey: EnvironmentKey {
+    static let defaultValue = ProcessInfo.processInfo.isiOSAppOnMac
+}
+
 extension EnvironmentValues {
+    var plozziOSIsRunningOnMac: Bool {
+        get { self[PlozziOSIsRunningOnMacKey.self] }
+        set { self[PlozziOSIsRunningOnMacKey.self] = newValue }
+    }
+
     var plozziOSHeroContainerHeight: CGFloat? {
         get { self[PlozziOSHeroContainerHeightKey.self] }
         set { self[PlozziOSHeroContainerHeightKey.self] = newValue }
@@ -146,8 +164,10 @@ private extension EnvironmentValues {
 }
 
 enum PlozziOSPageLayout {
-    static func horizontalInset(for sizeClass: UserInterfaceSizeClass?) -> CGFloat {
-        sizeClass == .compact ? 22 : 36
+    static func horizontalInset(
+        for sizeClass: UserInterfaceSizeClass?, usesDesktopSizing: Bool = false
+    ) -> CGFloat {
+        usesDesktopSizing ? DesktopMediaRailLayout.pageInset : (sizeClass == .compact ? 22 : 36)
     }
 
     static func horizontalInset(for style: HeroArtworkStyle) -> CGFloat {
@@ -158,10 +178,12 @@ enum PlozziOSPageLayout {
         style == .compactPortrait ? 500 : 480
     }
 
-    static func homeTextMaxWidth(for style: HeroArtworkStyle, logoSize: HeroLogoSize) -> CGFloat {
+    static func homeTextMaxWidth(
+        for style: HeroArtworkStyle, logoSize: HeroLogoSize, isRunningOnMac: Bool = false
+    ) -> CGFloat {
         HeroLogoSizing.homeTextWidth(
-            for: style == .compactPortrait ? .compact : .regular,
-            logoSize: logoSize, minimumWidth: heroTextMaxWidth(for: style)
+            for: isRunningOnMac ? .desktop : (style == .compactPortrait ? .compact : .regular),
+            logoSize: logoSize, minimumWidth: isRunningOnMac ? 360 : heroTextMaxWidth(for: style)
         )
     }
 
@@ -189,10 +211,10 @@ enum PlozziOSPageLayout {
     /// width, and returns the width it takes as height so no logo shrinks.
     static func heroLogoBox(
         for style: HeroArtworkStyle, size: HeroLogoSize = .default,
-        availableWidth: CGFloat = .infinity
+        availableWidth: CGFloat = .infinity, isRunningOnMac: Bool = false
     ) -> CGSize {
         HeroLogoSizing.box(
-            for: style == .compactPortrait ? .compact : .regular,
+            for: isRunningOnMac ? .desktop : (style == .compactPortrait ? .compact : .regular),
             size: size, availableWidth: availableWidth
         )
     }
@@ -217,6 +239,7 @@ enum PlozziOSPageLayout {
 /// real hero — wrong indent, wrong vertical position. Screen sizes vary, so the
 /// two must derive from the same code, not from matching numbers.
 struct PlozziOSHeroForegroundPlacement: ViewModifier {
+    @Environment(\.plozziOSIsRunningOnMac) private var isRunningOnMac
     let style: HeroArtworkStyle
     var logoSize: HeroLogoSize = .default
 
@@ -232,7 +255,9 @@ struct PlozziOSHeroForegroundPlacement: ViewModifier {
             // too wide to fit, so an oversized child overhangs both edges and
             // moves the column's origin instead of just its own trailing edge.
             .frame(
-                maxWidth: PlozziOSPageLayout.homeTextMaxWidth(for: style, logoSize: logoSize),
+                maxWidth: PlozziOSPageLayout.homeTextMaxWidth(
+                    for: style, logoSize: logoSize, isRunningOnMac: isRunningOnMac
+                ),
                 alignment: style == .compactPortrait ? .center : .leading
             )
             .frame(
@@ -240,8 +265,9 @@ struct PlozziOSHeroForegroundPlacement: ViewModifier {
                 maxHeight: .infinity,
                 alignment: style == .compactPortrait ? .bottom : .bottomLeading
             )
-            .padding(.horizontal, PlozziOSPageLayout.horizontalInset(for: style))
-            .padding(.bottom, style == .compactPortrait ? 30 : 42)
+            .padding(.horizontal, isRunningOnMac
+                ? DesktopMediaRailLayout.pageInset : PlozziOSPageLayout.horizontalInset(for: style))
+            .padding(.bottom, isRunningOnMac ? 36 : (style == .compactPortrait ? 30 : 42))
     }
 }
 
@@ -514,9 +540,53 @@ struct PlozziOSDetailHeroSection: View {
     }
 }
 
+struct PlozziOSSeriesLoadingHero: View {
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.themePalette) private var palette
+    @Environment(HeroTrailerController.self) private var trailerController
+    let item: MediaItem
+    let appModel: PlozziOSAppModel
+
+    var body: some View {
+        let style: HeroArtworkStyle = horizontalSizeClass == .compact ? .compactPortrait : .landscape
+        // Keep the known Home artwork and show synopsis, not the episode's prose.
+        let presentation = HeroPresentation(item: item, artworkStyle: style, surface: .home)
+        let settings = appModel.settings.detailPage.settings
+        ScrollView {
+            PlozziOSHeroStage(
+                item: item, presentation: presentation, style: style,
+                surfaceRole: .detail, isActive: false,
+                textSize: settings.textSize,
+                trailerController: trailerController,
+                backgroundSettings: appModel.settings.heroBackground,
+                trailerResolver: appModel.heroTrailerResolver()
+            ) {
+                PlozziOSHeroMetadata(
+                    presentation: presentation, style: style, mode: .detail,
+                    usesCompactDetailLayout: style == .compactPortrait,
+                    content: style == .compactPortrait ? .information : .all,
+                    detailPageSettings: settings, textSize: settings.textSize
+                )
+                .environment(\.metadataTextScale, settings.textSize.scale)
+            }
+        }
+        .environment(\.plozzArtworkArea, .home)
+        .environment(\.plozziOSHeroLogoSize, settings.logoSize)
+        .ignoresSafeArea(.container, edges: .top)
+        .background(palette.backgroundBase.ignoresSafeArea())
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(.hidden, for: .navigationBar)
+        .allowsHitTesting(false)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Loading show…")
+        .accessibilityIdentifier("series-loading-hero")
+    }
+}
+
 struct PlozziOSHeroStage<Foreground: View>: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.plozziOSHeroContainerHeight) private var containerHeight
+    @Environment(\.plozziOSIsRunningOnMac) private var isRunningOnMac
     @Environment(\.themePalette) private var palette
     @Environment(\.gradientBackgroundsEnabled) private var gradientEnabled
     @Environment(\.plozzReduceTransparency) private var reduceTransparency
@@ -559,7 +629,8 @@ struct PlozziOSHeroStage<Foreground: View>: View {
             style: style,
             surfaceRole: surfaceRole,
             dynamicTypeSize: dynamicTypeSize,
-            containerHeight: containerHeight
+            containerHeight: containerHeight,
+            isRunningOnMac: isRunningOnMac
         )
     }
 
@@ -619,7 +690,8 @@ struct PlozziOSHeroStage<Foreground: View>: View {
                         width: reflectionWidth,
                         contentWidth: contentWidth,
                         height: height,
-                        trailerController: trailerController
+                        trailerController: trailerController,
+                        surfaceRole: surfaceRole
                     )
                 }
                 .scaleEffect(pullScale, anchor: .center)
@@ -943,6 +1015,27 @@ struct PlozziOSHeroPictureLayout {
     let height: CGFloat
 }
 
+struct PlozziOSHeroArtworkImage: View {
+    @Environment(\.plozziOSIsRunningOnMac) private var isRunningOnMac
+    let image: Image
+    let style: HeroArtworkStyle
+    var surfaceRole: HeroTrailerSurfaceRole = .home
+
+    var body: some View {
+        if isRunningOnMac, style == .landscape, surfaceRole == .home {
+            GeometryReader { proxy in
+                image
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+                    .frame(width: proxy.size.width, height: proxy.size.height, alignment: .top)
+                    .clipped()
+            }
+        } else {
+            ArtworkFillImage(image)
+        }
+    }
+}
+
 private struct PlozziOSHeroBackdrop: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.themePalette) private var palette
@@ -1044,7 +1137,7 @@ private struct PlozziOSHeroBackdrop: View {
             // the whole carousel, so a swipe lands on an image immediately
             // and sharpens, instead of waiting out a full-size download.
             previewVariant: .heroPreview,
-            artworkPolicy: artworkPolicy.forPlacement(.detailBackdrop),
+            artworkPolicy: artworkPolicy.forPlacement(presentation.artworkPlacement),
             asyncFallbackURL: asyncFallbackURL,
             pinIdentity: PlozziOSHeroArtworkFallback.cacheIdentity(
                 "\(surfaceRole == .home ? "home" : "detail"):\(presentation.itemID)", style: style
@@ -1052,7 +1145,9 @@ private struct PlozziOSHeroBackdrop: View {
             sharedResolutionIdentity: sharedResolutionIdentity.map {
                 PlozziOSHeroArtworkFallback.cacheIdentity($0, style: style)
             }
-        ) {
+        ) { image in
+            PlozziOSHeroArtworkImage(image: image, style: style, surfaceRole: surfaceRole)
+        } placeholder: {
             palette.backgroundBase
         }
         .reportingHeroArtwork(id: presentation.itemID)
@@ -1360,7 +1455,8 @@ struct PlozziOSHomeWipeBackdrop: View {
             scrimOpacity: 0,
             sharedResolutionIdentity: PlozziOSHeroArtworkFallback.cacheIdentity(
                 sharedResolutionIdentity, style: style
-            )
+            ),
+            artworkPlacement: presentation.artworkPlacement
         )
         .id(style == .compactPortrait)
     }
@@ -1523,13 +1619,15 @@ private struct PlozziOSSlidingHeroArtwork: View {
             maxAspectRatio: 3,
             variant: .heroBackdrop,
             previewVariant: .heroPreview,
-            artworkPolicy: artworkPolicy.forPlacement(.detailBackdrop),
+            artworkPolicy: artworkPolicy.forPlacement(presentation.artworkPlacement),
             asyncFallbackURL: asyncFallbackURL,
             pinIdentity: PlozziOSHeroArtworkFallback.cacheIdentity("home:\(presentation.itemID)", style: style),
             sharedResolutionIdentity: sharedResolutionIdentity.map {
                 PlozziOSHeroArtworkFallback.cacheIdentity($0, style: style)
             }
-        ) {
+        ) { image in
+            PlozziOSHeroArtworkImage(image: image, style: style)
+        } placeholder: {
             palette.backgroundBase
         }
         .reportingHeroArtwork(id: presentation.itemID)
@@ -1543,13 +1641,15 @@ private struct PlozziOSSlidingHeroArtwork: View {
             maxAspectRatio: 3,
             variant: .heroBackdrop,
             previewVariant: .heroPreview,
-            artworkPolicy: artworkPolicy.forPlacement(.detailBackdrop),
+            artworkPolicy: artworkPolicy.forPlacement(presentation.artworkPlacement),
             asyncFallbackURL: asyncFallbackURL,
             pinIdentity: PlozziOSHeroArtworkFallback.cacheIdentity("home:\(presentation.itemID)", style: style),
             sharedResolutionIdentity: sharedResolutionIdentity.map {
                 PlozziOSHeroArtworkFallback.cacheIdentity($0, style: style)
             }
-        ) {
+        ) { image in
+            PlozziOSHeroArtworkImage(image: image, style: style)
+        } placeholder: {
             palette.backgroundBase
         }
         .frame(width: width, height: height)
@@ -1573,6 +1673,7 @@ private struct PlozziOSHeroReflection: View {
     let contentWidth: CGFloat
     let height: CGFloat
     let trailerController: HeroTrailerController
+    var surfaceRole: HeroTrailerSurfaceRole = .home
 
     var body: some View {
         ZStack {
@@ -1581,13 +1682,15 @@ private struct PlozziOSHeroReflection: View {
                 maxAspectRatio: 3,
                 variant: .heroBackdrop,
                 previewVariant: .heroPreview,
-                artworkPolicy: artworkPolicy.forPlacement(.detailBackdrop),
+                artworkPolicy: artworkPolicy.forPlacement(presentation.artworkPlacement),
                 asyncFallbackURL: asyncFallbackURL,
                 pinIdentity: PlozziOSHeroArtworkFallback.cacheIdentity(artworkPinIdentity, style: style),
                 sharedResolutionIdentity: sharedResolutionIdentity.map {
                     PlozziOSHeroArtworkFallback.cacheIdentity($0, style: style)
                 }
-            ) {
+            ) { image in
+                PlozziOSHeroArtworkImage(image: image, style: style, surfaceRole: surfaceRole)
+            } placeholder: {
                 Color.clear
             }
             .frame(width: contentWidth, height: height)
@@ -1789,13 +1892,14 @@ struct PlozziOSHomeHeroForeground: View {
                     title: item.playActionTitle,
                     progress: item.resumeProgressFraction,
                     remainingText: item.resumeRemainingText,
-                    seasonEpisodeText: seasonEpisodeText,
+                    seasonEpisodeText: item.opensExternalSource ? nil : seasonEpisodeText,
                     onLight: colorScheme == .dark,
                     spacing: 10,
                     capsuleWidth: 60,
                     resumeTrailingStyle: resumeTrailingStyle,
                     separatesEpisodeText: item.startsWatching,
-                    wrapsText: wrapsText
+                    wrapsText: wrapsText,
+                    systemImage: item.opensExternalSource ? "arrow.up.forward.app" : "play.fill"
                 )
             }
             .buttonStyle(PlozziOSHeroActionButtonStyle(kind: .primary))
@@ -1898,8 +2002,8 @@ struct PlozziOSDetailHeroForeground: View {
     var onPlayTrailer: ((MediaItem) -> Void)?
     var heroRequest: PlozziOSHeroRequest?
     /// Whether this hero fronts an item with a parent page worth returning to —
-    /// an episode on its own page, reachable from Continue Watching or Search
-    /// where Back leaves the show entirely. See `DetailHeroView`.
+    /// an episode opened with "Go to Episode", where Back may leave the show
+    /// entirely. See `DetailHeroView`.
     var offersParentNavigation: Bool = false
     /// Renders the episode-page hero: the episode's own 16:9 still, inset above
     /// its details, with the show named in a breadcrumb rather than a wordmark.
@@ -2029,7 +2133,7 @@ struct PlozziOSDetailHeroForeground: View {
                 },
                 subjectTitle: presentsEpisodeStill ? item.title : nil,
                 scheduleLine: scheduleLine,
-                logoFallback: PlozziOSHeroMetadata.tmdbLogoFallback(for: item),
+                logoFallback: PlozziOSHeroMetadata.tmdbLogoFallback(for: rootItem),
                 usesCompactDetailLayout: style == .compactPortrait,
                 content: style == .compactPortrait && !presentsEpisodeStill ? .information : .all,
                 detailPageSettings: appModel.settings.detailPage.settings,
@@ -2294,14 +2398,15 @@ struct PlozziOSDetailHeroForeground: View {
                     title: playableItem?.playActionTitle ?? "Play",
                     progress: playableItem?.resumeProgressFraction,
                     remainingText: playableItem?.resumeRemainingText,
-                    seasonEpisodeText: playableItem.flatMap { seasonEpisodeText(for: $0) },
+                    seasonEpisodeText: playableItem.flatMap { $0.opensExternalSource ? nil : seasonEpisodeText(for: $0) },
                     onLight: colorScheme == .dark,
                     spacing: 10,
                     capsuleWidth: 60,
                     resumeTrailingStyle: resume,
                     isPlaceholder: playableItem == nil,
                     separatesEpisodeText: playableItem?.startsWatching ?? false,
-                    wrapsText: wrapsText
+                    wrapsText: wrapsText,
+                    systemImage: playableItem?.opensExternalSource == true ? "arrow.up.forward.app" : "play.fill"
                 )
             }
             .buttonStyle(PlozziOSHeroActionButtonStyle(
@@ -2542,7 +2647,8 @@ struct PlozziOSHeroActionButtonStyle: PrimitiveButtonStyle {
     }
 }
 
-private struct PlozziOSHeroMetadata: View {
+struct PlozziOSHeroMetadata: View {
+    @Environment(\.plozziOSIsRunningOnMac) private var isRunningOnMac
     enum Mode {
         case home
         case detail
@@ -2660,24 +2766,27 @@ private struct PlozziOSHeroMetadata: View {
                     let logoBox = PlozziOSPageLayout.heroLogoBox(
                         for: style, size: logoSize,
                         availableWidth: availableWidth > 0
-                            ? availableWidth : PlozziOSPageLayout.heroLogoMaxWidth(for: style)
+                            ? availableWidth : PlozziOSPageLayout.heroLogoMaxWidth(for: style),
+                        isRunningOnMac: isRunningOnMac && mode == .home
                     )
                     HeroLogoArtwork(
-                        references: presentation.logoReferences,
+                        references: titlePresentation.logoReferences,
                         asyncFallbackURL: logoFallback,
                         displayedArtworkID: displayedArtworkID ?? presentation.itemID,
                         maxWidth: logoBox.width,
                         maxHeight: logoBox.height,
-                        presentationPolicy: mode == .home ? .whenResolved : .whenReady,
+                        presentationPolicy: .whenResolved,
                         alignment: style == .compactPortrait ? .center : .leading
                     ) {
-                        Text(presentation.title)
-                            .font(textScale == 1 ? .largeTitle : .system(size: titleFontSize * textScale))
+                        Text(titlePresentation.title)
+                            .font(isRunningOnMac && mode == .home
+                                ? .system(size: titleFontSize * textScale * 28 / 34)
+                                : (textScale == 1 ? .largeTitle : .system(size: titleFontSize * textScale)))
                             .fontWeight(.bold)
                             .foregroundStyle(palette.primaryText)
                             .lineLimit(2)
                     }
-                    .accessibilityLabel(Text(presentation.title))
+                    .accessibilityLabel(Text(titlePresentation.title))
                     .accessibilityAddTraits(.isHeader)
                 }
             }
@@ -2721,7 +2830,9 @@ private struct PlozziOSHeroMetadata: View {
                         .lineLimit(textSize.descriptionLineLimit(base: mode == .home ? 2 : 3))
                         .frame(
                             maxWidth: mode == .home
-                                ? PlozziOSPageLayout.homeTextMaxWidth(for: style, logoSize: logoSize)
+                                ? PlozziOSPageLayout.homeTextMaxWidth(
+                                    for: style, logoSize: logoSize, isRunningOnMac: isRunningOnMac
+                                )
                                 : PlozziOSPageLayout.heroTextMaxWidth(for: style),
                             alignment: style == .compactPortrait
                                 ? .center
@@ -2774,6 +2885,11 @@ private struct PlozziOSHeroMetadata: View {
 
     private var rootPresentation: HeroPresentation {
         fallbackPresentation ?? presentation
+    }
+
+    // The Play episode supplies episode facts, not a new identity for the show.
+    private var titlePresentation: HeroPresentation {
+        mode == .detail ? rootPresentation : presentation
     }
 
     private var metadataFont: Font {
@@ -2981,9 +3097,11 @@ struct PlozziOSHeroPagingIndicator: View {
     /// `dwellStart` still belongs to the outgoing slide until the transition
     /// commits, so without this the incoming bar inherits its progress.
     var isTransitioning: Bool = false
+    var pausedGauge: HeroGaugeState?
     let trailerController: HeroTrailerController
 
     var body: some View {
+        let gauge = gauge(at: .now)
         // Drawn in Core Animation. Both the gauge and the page morph are stated
         // once and interpolated by the render server, so they run at the
         // display's full rate without the app doing per-frame work — this row
@@ -2994,8 +3112,8 @@ struct PlozziOSHeroPagingIndicator: View {
                 count: itemIDs.count,
                 activeIndex: selectedIndex,
                 autoAdvance: autoAdvance,
-                gaugeFraction: gaugeFraction,
-                gaugeRemaining: gaugeRemaining,
+                gaugeFraction: gauge.fraction,
+                gaugeRemaining: gauge.remaining,
                 rampID: "\(selectedItemID ?? "-")|\(dwellStart.timeIntervalSinceReferenceDate)"
             ),
             tint: UIColor(palette.primaryText)
@@ -3019,13 +3137,14 @@ struct PlozziOSHeroPagingIndicator: View {
 
     /// Where the gauge stands, decided by the shared rules in `HeroGaugeState`
     /// so this shell cannot drift from tvOS.
-    private var gauge: HeroGaugeState {
+    func gauge(at now: Date) -> HeroGaugeState {
+        if !isTransitioning, autoAdvance, let pausedGauge { return pausedGauge }
         let trailerIsShowing = selectedItemID.map(trailerController.isShowing) ?? false
         return HeroGaugeState.resolve(
             autoAdvance: autoAdvance,
             dwellStart: dwellStart,
             dwellDuration: Double(autoAdvanceSeconds),
-            now: Date(),
+            now: now,
             isTransitioning: isTransitioning,
             trailerElapsed: trailerIsShowing
                 ? trailerController.player.currentTime().seconds
@@ -3033,9 +3152,6 @@ struct PlozziOSHeroPagingIndicator: View {
             trailerDuration: trailerIsShowing ? trailerController.duration : nil
         )
     }
-
-    private var gaugeFraction: CGFloat { gauge.fraction }
-    private var gaugeRemaining: TimeInterval? { gauge.remaining }
 
     private var accessibilityValue: Text {
         guard let selectedItemID,

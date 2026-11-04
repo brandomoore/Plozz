@@ -23,6 +23,38 @@ private final class RuntimeMembershipSecureStore: SecureStoring, @unchecked Send
 
 final class LiveTVLibraryRuntimeTests: XCTestCase {
     @MainActor
+    func testAutomaticChannelsDistinguishUnsupportedAndUnresolvedSourcesFromEmptyMedia() async throws {
+        for resolves in [true, false] {
+            let suite = "UnsupportedLibrarySourceTests.\(UUID().uuidString)"
+            let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+            defer { defaults.removePersistentDomain(forName: suite) }
+            let profiles = ProfilesModel(store: ProfileStore(defaults: defaults))
+            let store = AccountStore(secureStore: InMemorySecureStore())
+            let provider = RuntimeUnsupportedLibraryProvider()
+            try store.add(Account(
+                id: "account", server: provider.session.server, userID: provider.session.userID,
+                userName: "User", deviceID: store.deviceID()), token: "fixture-token")
+            store.setActiveAccountIDs(["account"])
+            let registry = ProviderRegistry()
+            registry.register(.jellyfin) { _ in provider }
+            let accounts = AccountsProvidersModel(accountStore: store, registry: registry, profilesModel: profiles)
+            accounts.tokenResolver = { resolves ? store.token(for: $0) : nil }
+            accounts.reloadAccounts()
+            let settings = LiveTVMemoryAutomaticChannelsStore()
+            try settings.setEnabled(true)
+            let runtime = LiveTVLibraryRuntime(
+                profileID: profiles.activeProfileID, profiles: profiles,
+                definitionsStore: RuntimeLibraryDefinitions(),
+                snapshotStore: LibraryChannelSnapshotStore(databaseURL: nil),
+                automaticSettingsStore: settings)
+            await runtime.refresh(accounts: accounts)
+            XCTAssertEqual(runtime.automaticChannelsIssue, resolves ? .sourceUnsupported : .sourceUnavailable)
+            XCTAssertEqual(runtime.automaticUnavailableSources.map(\.reason), [resolves ? .unsupported : .authorization])
+            XCTAssertEqual(runtime.automaticSkippedItemCount, 0)
+        }
+    }
+
+    @MainActor
     func testMembershipReadbackFailureCannotReactivateHouseholdAccounts() throws {
         let suite = "MembershipReadbackTests.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
@@ -330,6 +362,26 @@ private struct RuntimeLibraryDiscoveryProvider: LibraryChannelCatalogProviding, 
     }
     func libraryChannelPlayback(for item: LibraryChannelItem) async throws -> PlaybackRequest { throw AppError.notFound }
     func recordLibraryChannelCompletion(itemID: String) async throws {}
+    func continueWatching(limit: Int) async throws -> [MediaItem] { [] }
+    func latest(limit: Int) async throws -> [MediaItem] { [] }
+    func item(id: String) async throws -> MediaItem { throw AppError.notFound }
+    func children(of itemID: String) async throws -> [MediaItem] { [] }
+    func items(in containerID: String, kind: MediaItemKind, page: PageRequest) async throws -> MediaPage {
+        throw AppError.notFound
+    }
+    func search(query: String, limit: Int) async throws -> [MediaItem] { [] }
+    func playbackInfo(for itemID: String) async throws -> PlaybackRequest { throw AppError.notFound }
+    func reportPlayback(_ progress: PlaybackProgress, event: PlaybackEvent) async throws {}
+    func imageURL(itemID: String, kind: ImageKind, maxWidth: Int?) -> URL? { nil }
+}
+
+private struct RuntimeUnsupportedLibraryProvider: MediaProvider {
+    let kind = ProviderKind.jellyfin
+    let session = RuntimeLibraryDiscoveryProvider().session
+    func libraries() async throws -> [MediaLibrary] {
+        XCTFail("An unsupported source must not be treated as a duration scan")
+        return []
+    }
     func continueWatching(limit: Int) async throws -> [MediaItem] { [] }
     func latest(limit: Int) async throws -> [MediaItem] { [] }
     func item(id: String) async throws -> MediaItem { throw AppError.notFound }

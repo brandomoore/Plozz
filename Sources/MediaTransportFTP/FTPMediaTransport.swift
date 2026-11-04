@@ -178,8 +178,9 @@ final class FTPMediaTransportFileSystem: MediaTransportFileSystem, @unchecked Se
 
     func probe() async throws -> MediaTransportProbe {
         // Advertise honestly: seek (random access) requires the server to affirm
-        // restart (`REST` in FEAT). A server without it can still list + read
-        // whole small files, but is not seekable — advertised as `.bounded`, so
+        // restart (authenticated FEAT or a successful REST probe). A server
+        // without it can still list + read whole small files, but is not seekable
+        // — advertised as `.bounded`, so
         // playback that needs seeking is truthfully gated (fail-closed policy,
         // mirroring WebDAV's per-file ETag enforcement). Per-file confirmation
         // happens at `openSource`.

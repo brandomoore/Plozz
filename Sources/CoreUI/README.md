@@ -6,12 +6,63 @@ with `browsingRow`; existing collection-detail `onSeeAll` headers elsewhere keep
 their behavior. Passing `nil` opts into Home browsing without showing an action
 or falling back to the old header action. Browse actions carry no media identity
 or context-menu actions.
+Pinned-sidebar rail parking clamps both native targets and idle corrections to
+the scrollable content bounds. A partial final slot must not overscroll: UIKit
+would clamp it when returning from a page, then parking would shift it again.
+Full-bleed media rows retain the consumed trailing safe area as content padding,
+so the final card's native focus lift fits on screen without overscrolling.
+This changes the scrollable tail, not the viewport or portrait density.
+`loadingMoreOnScroll` is the opt-in pagination hook shared by TV and mobile
+rails. It observes actual scroll geometry and visibility, not lazy card creation;
+new pages re-arm it only after their content width has been laid out. Rails
+exclude trailing skeleton slots from that boundary so loading placeholders
+cannot cancel or retrigger the active page request.
 
 Shared, **focusable** UI primitives, the app theme, and the artwork image
 cache that every feature module reuses on tvOS and iOS/iPadOS — guarded behind
 `#if canImport(SwiftUI)` so the package still compiles on Linux for tests.
 
 ## Responsibility
+
+`PlozzMetrics.desktop` supplies artwork width limits for the iOS-on-Mac shell
+without scaling touch controls, captions, or overlays with the artwork.
+`fittingDesktopRail` resolves those limits against the content viewport, leaving
+a gap-sized preview of the next card at every width. Page containers publish
+the resolved metrics through `plozzDesktopMediaRailLayout`; Featured rows use
+the same fitting policy for their 4:5 cards.
+Poster breakpoints preserve eight full cards plus a ninth-card preview around
+the wide reference viewport (1,960 points), including Home and Related. Verify
+the complete-card count as well as the preview when changing these limits.
+`HeroLogoSizing.Layout.desktop` retains the same logo-preference scaling and
+width containment as other hero layouts. The shell selects these policies;
+shared components do not infer their platform from a wide viewport.
+Framed landscape cards, like portrait and borderless cards, fit their proposed
+slot width while retaining the artwork aspect ratio. Rails supply their normal
+fixed slots; narrower grid cells must not inherit a rail-sized minimum width.
+
+Mobile full-width page actions use `plozzPageActionLabel()` inside a native
+`plozzPageActionButton`. The label owns body typography, multiline expansion, and a
+24-point minimum height; primary and secondary actions differ in prominence,
+not sizing. On iOS 26, disabled page actions use the same native glass treatment
+as secondary actions instead of a separate prominent-button outline.
+Toolbar actions and native form rows retain their system metrics.
+Mobile settings actions inside `SettingsSectionGroup` use `settingsActionRow()`.
+It puts the group's 16-point horizontal and 12-point vertical insets inside the
+button or menu's hit area, with a 44-point minimum height. A container value tells
+the group not to add those insets twice. Keep `SettingsDisclosureLabel` padding-free.
+Composite rows use `settingsControlTarget()` inside each control label for separate,
+non-overlapping 44-by-44 minimum targets; do not mark the entire composite as one action.
+`SettingsControlMenu` places that minimum inside the native menu label: a frame
+outside a native Picker can enlarge accessibility bounds without enlarging its
+real touch target. Verify the native trigger's bounds in a split view, not only
+its List accessibility container, whose reported frame may include the other column.
+`SettingsPageLink` uses a button-backed native destination on mobile so a link
+cannot take over its sibling switch or menu's action in a composite List cell.
+TV navigation, focus styles, and row geometry are unchanged.
+
+Mobile `ConnectionCodeView` uses `settingsGroupSurface` so code tiles follow the
+same gradient, theme, and reduced-transparency treatment as surrounding groups,
+without an extra dark overlay. TV code panels retain their existing treatment.
 
 `diagnosticRecordingStatus()` installs the local-Debug recording indicator in a
 non-key, input-transparent window owned by the current scene. It stays above
@@ -32,6 +83,11 @@ top bar. `scrollsTopNavigation()` handles ordinary SwiftUI roots; native grids
 and Showcase report through their existing owners. Source tokens reject late
 callbacks from departed pages. Back resets the active owner to the page top;
 scroll updates invalidate only the bar's position, not the page builder.
+Stage transitions report their target separately from the logical scroll offset.
+On TV, a bound native surface receives the stage's additive translation in the
+same Core Animation transaction, with bounded offscreen travel and no frame-by-frame
+SwiftUI state writes. Focus admission and Back still use the full logical offset.
+Source changes, Back, and unregistering clear owned animations and presentation state.
 There is no top-navigation foreground mask. Native and pinned sidebars do not
 receive this coordinator and retain their existing behavior.
 
@@ -235,6 +291,9 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   ownership. `MediaVersionPicker` supplies the sheet used by mobile playback
   and hero context-menu actions; context menus link to it rather than rendering
   a second text-only version list.
+  The full filename is visible directly above the badges, wrapping without a line
+  cap. Preserve its separators, technical suffix, release group and extension;
+  no abbreviated title or extra File menu is needed.
   On iOS/iPadOS, version sheets use an inline centered navigation title and a
   leading native X close action, with no bottom Cancel button. The pre-play X
   cancels the pending playback choice; tvOS retains its existing dialog controls.
@@ -335,6 +394,18 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   The bottom reflection and minimum dissolve span remain intact; trailers keep
   their full-stage presentation. Landscape and tvOS heroes are unchanged.
 
+  Detail title artwork stays attached to the page's root title, not its Play
+  episode, on both compact and regular-width mobile layouts. A visible logo
+  remains while additive metadata or artwork references for the same subject
+  resolve, including genre or added-ID enrichment that changes its metadata
+  routing (for example, TV to anime); the full request still keys resolution and
+  memoization. Changed subjects, accounts, languages, artwork policies or
+  conflicting lookup facts clear the old logo immediately. A completed miss
+  returns to the text fallback.
+  Detail pages on iOS/iPadOS and tvOS keep that text invisible during the initial
+  logo lookup and decoding, rather than flashing it before the logo arrives.
+  Titles with no logo sources show text immediately; cached logos also paint immediately.
+
 - **Setup presentation** — `ConnectionCodeView` shares the readable monospaced
   code panel across server sign-in and device pairing. `SetupCodeComparisonView`
   keeps both devices' confirmation copy and code treatment consistent while
@@ -408,8 +479,23 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   It starts when the native page appears, without a cover, window
   input guard, artwork wait, or custom Back handler. Leaving cancels the reveal;
   returning to an existing page does not replay it. Reduce Motion shows everything
-  immediately. iOS/iPadOS navigation is unchanged.
-- **Retained cinematic transition infrastructure** — the zoom implementation and
+  immediately.
+- **Mobile artwork navigation** — iOS/iPadOS poster detail links use the system
+  interactive zoom transition. `MediaArtworkZoomLink`, its value-based variant,
+  and `MediaArtworkZoomButton` give each card occurrence its own namespace.
+  `PosterCardView` registers the final artwork bounds and corner radius after
+  layout for framed/borderless, portrait/landscape, and Continue Watching cards;
+  captions, padding, density, and user-selected aspect ratios do not become
+  guessed transition geometry. Featured cards register their own artwork.
+  Home, library/recommendation/collection grids, search, watchlist, related
+  titles, and filmography carry the originating source into their destination.
+  Card menus share that origin for Go to Show, Go to Episode, and Go to Movie,
+  including direct-play posters and inline episode artwork. Menu navigation
+  waits for dismissal before opening the destination. Source-less menus,
+  deep links, folders, playback actions, and the Home hero retain their existing
+  behavior. iOS owns the gesture, cancellation, return animation, and Reduce
+  Motion treatment; no drag recognizer or per-frame layout state is installed.
+- **Retained tvOS cinematic transition infrastructure** — the custom zoom implementation and
   its focused fixtures remain available for future work, but no production shell
   enables it. TV browse stacks install
   `cinematicDetailNavigation(path:)` on the stack so its destinations inherit it.
@@ -740,6 +826,31 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   Their shared toast uses "Added to Watchlist" / "Removed from Watchlist" for
   the optimistic local change, not lingering progress wording. A failed save
   replaces that confirmation with "Couldn't update Watchlist".
+  Ordinary feedback and guide-progress toasts share `transientStatusSurface`:
+  an 18-point rounded rectangle, 24-point horizontal / 16-point vertical insets,
+  and the lighter `ThemePalette.toast` surface rather than modal overlay colors.
+  Guide progress uses a leading spinner centered beside a left-aligned title and
+  detail column, with dismissal centered at the trailing edge. Determinate
+  progress stays in the text column so stage changes preserve horizontal alignment.
+  Downloads show transferred and total bytes below the bar, without a redundant
+  numeric percentage.
+  Mobile feedback uses `adaptiveStatusOverlay` to keep a 16-point gap above the
+  visible native bottom navigation, toolbar, or search bar, falling back to the
+  bottom safe area when none is present. Layout changes animate over 0.25 seconds;
+  Reduce Motion changes position without animation. The passive UIKit layout
+  reader measures the current presentation without polling or changing its controls.
+  Side-mounted navigation constrains the toast's horizontal content area instead
+  of adding bottom clearance; native tab containers supply their unobscured
+  content layout guide on iOS 26 and later.
+  Each host measures its own presentation hierarchy, including both dimensions
+  of the native tab content guide. Window measurements are converted back into
+  the host's local coordinates so sheet presentation scaling cannot leave stale
+  widths or offsets in the covered screen.
+  While feedback is visible, passive observers in loaded navigation pages also
+  trigger measurement when a page reattaches, its safe area changes, or a native
+  transition completes. This covers search bars returning after a navigation pop
+  without polling or waiting for another progress update.
+  tvOS retains its 48-point bottom clearance.
   Manual watched actions retain the immediate tap and separate confirmation of
   durable outbox acceptance, not eventual server synchronization.
   Favorites confirm successful writes. Capture asynchronous completion haptics

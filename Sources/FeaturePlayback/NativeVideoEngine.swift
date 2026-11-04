@@ -949,7 +949,10 @@ public final class NativeVideoEngine: VideoEngine {
                             guard let track, let description = try await track.load(.formatDescriptions).first else { return nil }
                             return NativePlaybackFailure.VideoFormat(description)
                         },
-                        isCurrent: { [weak self] in self?.loadGeneration == generation }
+                        isCurrent: { [weak self] in
+                            self?.loadGeneration == generation && item.status != .failed
+                        },
+                        isReady: { item.status == .readyToPlay }
                     )
                     guard let format else { return }
                     guard let self, !Task.isCancelled, generation == self.loadGeneration else { return }

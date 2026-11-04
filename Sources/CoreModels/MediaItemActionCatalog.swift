@@ -165,7 +165,7 @@ public enum MediaItemActionCatalog {
     /// Downloadable kinds: a single playable file. A series or folder resolves to
     /// many files, so it has no one download to start, pause or remove.
     private static func isDownloadEligible(_ item: MediaItem) -> Bool {
-        item.kind == .movie || item.kind == .episode
+        !item.opensExternalSource && (item.kind == .movie || item.kind == .episode)
     }
 
     /// Whether "Episode Info" applies: any episode, wherever it is shown.

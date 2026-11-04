@@ -12,6 +12,28 @@ import XCTest
 
 @MainActor
 final class LibraryNavigationTests: XCTestCase {
+    func testSuccessfulLiveTVSetupRevealsTabOnlyForCurrentProfile() throws {
+        let app = try makeApp()
+        let originalProfile = app.profiles.activeProfileID
+        let order = app.settings.navigation.libraryLayout.order
+        XCTAssertFalse(PlozziOSTabShell.configuredDestinations(appModel: app).contains(.liveTV))
+
+        XCTAssertTrue(app.recordSuccessfulIPTVSetup())
+
+        XCTAssertTrue(PlozziOSTabShell.configuredDestinations(appModel: app).contains(.liveTV))
+        XCTAssertEqual(app.settings.navigation.libraryLayout.order, order)
+        let other = app.profiles.add(name: "Other", isAwaitingSetup: false)
+        app.profiles.select(other.id)
+        app.refreshActiveProfileSettings()
+        XCTAssertFalse(PlozziOSTabShell.configuredDestinations(appModel: app).contains(.liveTV))
+        app.profiles.select(originalProfile)
+        app.refreshActiveProfileSettings()
+        XCTAssertTrue(PlozziOSTabShell.configuredDestinations(appModel: app).contains(.liveTV))
+        app.settings.navigation.showsLiveTV = false
+        app.refreshActiveProfileSettings()
+        XCTAssertFalse(PlozziOSTabShell.configuredDestinations(appModel: app).contains(.liveTV))
+    }
+
     func testDefaultTabsRemainHomeDownloadsAndSearchAfterDiscoveryOnPhoneAndTablet() async throws {
         let app = try makeApp()
         XCTAssertEqual(PlozziOSTabShell.configuredDestinations(appModel: app), [.home, .downloads, .search])
@@ -407,7 +429,10 @@ final class LibraryNavigationTests: XCTestCase {
         addTeardownBlock { defaults.removePersistentDomain(forName: suite) }
         let store = AccountStore(secureStore: InMemorySecureStore())
         let profiles = ProfileStore(defaults: defaults)
-        let app = PlozziOSAppModel(accountStore: store, profileStore: profiles)
+        let app = PlozziOSAppModel(
+            appAdmissionStore: AppAdmissionStore(defaults: defaults),
+            accountStore: store, profileStore: profiles
+        )
         let profile = app.profiles.add(name: "Libraries fixture", isAwaitingSetup: false)
         app.profiles.select(profile.id)
         app.refreshActiveProfileSettings()

@@ -5,9 +5,11 @@ import SwiftUI
 import CoreUI
 
 struct PlozziOSSearchView: View {
+    @Environment(\.plozzMetrics) private var metrics
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.plozziOSUsesVerticalToolbar) private var usesVerticalToolbar
     @Environment(\.plozziOSIsOverflowDestination) private var isOverflowDestination
+    @FocusState private var isSearchFocused: Bool
     @State private var viewModel: SearchViewModel
     private let appModel: PlozziOSAppModel
     private let onShowSettings: () -> Void
@@ -43,10 +45,13 @@ struct PlozziOSSearchView: View {
         VStack(spacing: 0) {
             PlozziOSSearchHeader(
                 query: $viewModel.query,
+                isFocused: $isSearchFocused,
                 onShowSettings: onShowSettings
             )
             content
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .contentShape(Rectangle())
+                .simultaneousGesture(TapGesture().onEnded { isSearchFocused = false })
         }
         // Compact tabs do not need a second bar above the explicit Search header.
         // Regular-width iPad keeps the bar so the system sidebar toggle remains
@@ -111,12 +116,12 @@ struct PlozziOSSearchView: View {
 
     private func results(_ sections: [SearchSection]) -> some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: PlozziOSMediaRailLayout.sectionSpacing) {
+            LazyVStack(alignment: .leading, spacing: PlozziOSMediaRailLayout.sectionGap(metrics: metrics)) {
                 ForEach(sections) { section in
                     PlozziOSMediaSection(title: Text(section.title)) {
                         LazyVGrid(
                             columns: appModel.settings.density.density.iOSPosterGridColumns(
-                                horizontalSizeClass: horizontalSizeClass
+                                horizontalSizeClass: horizontalSizeClass, isRunningOnMac: metrics.usesDesktopSizing
                             ),
                             spacing: 18
                         ) {
@@ -133,6 +138,7 @@ struct PlozziOSSearchView: View {
             }
             .padding(.vertical)
         }
+        .scrollDismissesKeyboard(.interactively)
     }
 
     private func provider(for item: MediaItem) -> (any MediaProvider)? {
@@ -150,6 +156,7 @@ private struct PlozziOSSearchHeader: View {
     @Environment(\.plozziOSUsesVerticalToolbar) private var usesVerticalToolbar
     @Environment(\.plozziOSIsOverflowDestination) private var isOverflowDestination
     @Binding var query: String
+    @FocusState.Binding var isFocused: Bool
     let onShowSettings: () -> Void
 
     var body: some View {
@@ -162,6 +169,7 @@ private struct PlozziOSSearchHeader: View {
                     text: $query,
                     prompt: Text("Movies, shows, and episodes").foregroundColor(palette.secondaryText)
                 )
+                .focused($isFocused)
                 .textFieldStyle(.plain)
                 .foregroundStyle(palette.primaryText)
                 .autocorrectionDisabled()
@@ -204,7 +212,7 @@ private struct PlozziOSSearchResultCard: View {
     var body: some View {
         Group {
             if let provider {
-                NavigationLink {
+                MediaArtworkZoomLink(id: item.stablePresentationID) {
                     PlozziOSItemDetailView(
                         appModel: appModel,
                         provider: provider,

@@ -7,6 +7,23 @@ an empty provider feed from local curation without recording media or account ID
 Home rows, item detail, series/season experience, and the online-trailer
 fallback when the user's server has no attached trailer.
 
+## Mobile Home loading geometry
+
+Home measures its viewport once and shares that width with loaded and skeleton
+rails, so newly mounted rows do not first lay out at a fallback poster size.
+Browse headings keep their native 44-point touch target without enlarging the
+row. Library placeholders use the library card's own layout; featured collection
+placeholders use the featured row's card size.
+
+The vertical stack remains eager to avoid estimated-height changes. Stable
+`HomeRowID` content-coordinate frames preserve the first surviving visible row
+when loading inserts or removes rows above it. Empty rows disappear rather than
+leaving gaps. Scroll geometry is retained in a non-observable owner, not published
+through the full Home view every frame; a new Home model resets the scroll scope.
+At the top, Home stays at the top. Viewport resizing is not treated as a row
+insertion. This does not promise a fixed total height before the server's row
+inventory is known, or prove physical-device frame pacing.
+
 ## Inline library collections
 
 Movie Browse follows the server's collection presentation automatically under
@@ -30,20 +47,46 @@ library scan is added to ordinary paging.
 Media rows have a title-chevron action on iPhone/iPad and a trailing **See all**
 card on Apple TV. The TV action is a separate native control, not a synthetic
 media item, and follows the rail's poster, landscape, or featured geometry.
-Both TV Home layouts retain the complete `HomePresentationRow` source when
+All TV Home layouts retain the complete `HomePresentationRow` source when
 opening the shared browser. Libraries and Live TV keep their existing navigation.
+Expanded grids of collection covers retain the resolved Auto, Posters, or
+Landscape cover layout on TV and mobile. Movie, show, episode, and mixed-content
+grids use normal posters; they do not inherit Continue Watching's special layout
+or a custom collection-member row's Landscape/Featured presentation.
+Landscape collection-cover grids use wider columns; sorting, filtering, and
+paging do not change their shape or the saved library-browser layout.
+TV row browsers use Home's navigation path, hiding top-level navigation as soon
+as they open. Opening a title adds another level; Back returns to the browser
+before returning to the original Home action. Browser scrolling does not move
+Home's retained top navigation. See all uses native page push/pop animations;
+the retained Home rail keeps its own scroll position throughout the transition
+and restores focus to the original action.
 Browse actions appear only when the feed confirms additional eligible titles
 beyond the Home preview, not merely because the preview reaches its limit.
 Home requests one lookahead item in the existing bounded fetch; it does not
 probe every shelf again. Complete rows, including single-item shelves and
 uncapped Continue Watching snapshots, have no redundant browse action.
+On Mac, successfully loaded media rows with more than ten titles offer the
+title-chevron action even when the entire row is already loaded. This threshold
+changes only the heading action; it does not shorten the rail or change its fetch
+limit. Rows with ten or fewer titles, loading/failed rows, Libraries, and Live TV
+have no new action. Mac Related headings follow the same threshold and open all
+currently resolved related titles in the same grid, preserving their order,
+continuation cues, detail navigation, and profile/account scope.
 Watchlist previews the first 20 titles in its existing Home order. When there
-are more, its action selects the existing Watchlist destination instead of
-opening a separate row browser. The full profile-scoped Watchlist and its saved
-sorting/filtering preferences remain intact. A hidden Watchlist navigation entry
-is available temporarily for this explicit visit without changing the saved layout.
+are more, TV pushes the existing Watchlist view beneath Home rather than switching
+top-level destinations. Mobile retains its existing Watchlist destination handoff,
+temporarily admitting a hidden navigation entry without changing the saved layout.
+Both reuse the full profile-scoped Watchlist and its saved sorting/filtering
+preferences instead of creating a separate row browser.
+On TV, browser entry keeps query controls and later cards out of focus until
+the first grid item actually receives native focus. This also covers delayed
+loads and nested Watchlist; empty and failed loads release the controls. Once
+entered, ordinary directional navigation and detail-return focus stay native.
 The shared row browser's sort and filter menus sit at the trailing end of the
-TV heading and in the top-right navigation toolbar on iPhone/iPad. Watchlist
+TV heading and in the top-right navigation toolbar on iPhone/iPad. Mobile uses
+a native inline navigation title rather than a second large content heading;
+long titles truncate to fit alongside Back and the menus. Watchlist
 and library grids use that same mobile toolbar placement, keeping supported
 query actions available while the content scrolls without adding a pinned
 content header.
@@ -54,7 +97,10 @@ container APIs. Provider Home feeds continue the exact feed: Plex uses its
 same-origin shelf key where available, while limit-only feeds extend their
 requested prefix. Recommendation membership is separate from arranger slot
 identity; a missing or changed source is an error, not permission to browse an
-unrelated library. Fixed server shelves end when the source has no continuation.
+unrelated library. Server previews carry the continuation from their content
+response through aggregation and presentation, separately from saved layout
+discovery. This preserves Plex curated shuffle seeds across every browser page.
+Fixed server shelves end when the source has no continuation.
 Combined Recently Added also enforces its non-music library scope on returned
 items when a provider cannot scope the feed, without changing raw page offsets.
 Its hide-watched policy is reapplied after watch mutations for combined,
@@ -281,6 +327,39 @@ records on both platforms; error dialogs, playback routing and timeouts are unch
   metadata or generic source errors. Retry failures remain visible and secondary
   mobile actions continue to overflow before the primary label is squeezed.
 
+- **Bounded detail playback preparation** — The visible, active detail page may
+  prepare one already-known WebDAV file after a 750 ms dwell. Movies use the
+  resolved server/version; series use only the hero's resolved playable episode,
+  not the displayed series container or every rail card. A versionless episode or
+  raw movie qualifies only when ProviderShare's canonical physical-file ID proves
+  its exact relative path; a logical title ID or synthetic presentation version
+  alone is never that proof. Ambiguous or unauthorized selections do no work. Multi-version preparation
+  additionally requires an explicit exact selection and automatic version mode.
+  HTTP(S) network-share accounts and `networkFile` locators are both required;
+  other providers and SMB/SFTP/FTP/NFS shares are not implicitly WebDAV.
+  This approved exception uses `MediaProvider.playbackPreparationLocator`, not
+  full `playbackInfo`: it cannot inventory/materialize sidecar subtitles or mutate
+  watch state. It does not call `loadPlaybackVersions`, discover alternate
+  inventories, instantiate an engine, or add another stream-facts probe.
+  Preparation uses the item's already-loaded resume position (zero when absent);
+  nonfinite or negative positions are ineligible. Progress changes supersede the
+  old candidate without fetching watch state. Resume/Start Over still choose the
+  actual playback time, and may reuse a valid file cache prepared for another time.
+  The shared `FeatureHomeCore` coordinator checks live profile, authorization,
+  account, server-user and credential identity around awaits. Source/version/
+  episode changes, covered pages, inactivity and disappearance cancel work, with
+  a 30-second preparation deadline. Background failures are logged without
+  credential-bearing descriptions or user error sheets.
+  A deliberate exact Play handoff retains an in-flight or completed reservation
+  in the shell and asks optional preparation to yield while the normal
+  resume/version/admission gates run. Profile/auth changes still
+  evict it; abandonment is bounded by the resolver's 30-second TTL. Play must
+  freshly validate and claim the exact locator, and a different choice plays
+  normally without borrowing the prepared file. Preparation is an optimization,
+  never authorization or evidence that playback succeeded.
+  Performance reports must separate cold starts from detail-prepared starts and
+  include dwell/byte costs; sub-three-second tap-to-play is not a cold-start claim.
+
 - **Kids Discovery policy** — both shells consume the live profile's effective
   Hero settings, not a destructive rewrite of saved preferences. Kids profiles
   exclude external Discovery, including Showcase, cached attributed titles, and
@@ -314,9 +393,14 @@ records on both platforms; error dialogs, playback routing and timeouts are unch
   selecting the already active preset does nothing.
   **Include Next Up** is a profile-scoped setting inside the **Continue Watching**
   section's configuration on every platform, alongside its artwork choice.
-  **Continue Watching action** chooses **Play** (the unchanged default) or
-  **Open details** for movie/episode cards on Home, including merged Next Up
-  entries and every TV Home layout. It persists and transfers with the profile.
+  **Continue Watching action** chooses **Open details** (the default) or **Play**
+  for movie/episode cards on Home, including merged Next Up entries and every TV
+  Home layout. Existing saved choices are preserved; profiles without a saved
+  action open details. The choice persists and transfers with the profile.
+  Opening an episode from Continue Watching uses the normal series detail page,
+  with that specific episode's information and playback target in the hero and
+  its season selected. Only the explicit **Go to Episode** action opens the
+  standalone episode page.
   Artwork, progress overlays, context menus and Live TV tuning are unchanged.
   Library Recommended rows retain their existing detail navigation.
   On Apple TV, the remote's center button follows this choice, while Play/Pause
@@ -343,8 +427,15 @@ records on both platforms; error dialogs, playback routing and timeouts are unch
   Native content requests batch by account and library so several Plex rows
   reuse one promoted-hub response. Sharing lasts only for that refresh; it never
   leaves Next Up stale behind a cross-refresh item cache.
-  Native Continue Watching keeps the complete feed through bounded pages, applying
-  library exclusions before a presentation limit. Retained native rows immediately
+  Continue Watching admits ordinary resume positions at 5% of duration, bounded
+  between 5 and 60 seconds (60 seconds when duration is unknown). Saving resume
+  progress is independent of this visibility threshold. Unstarted Next Up episodes
+  remain eligible; trailers never enter the row or propagate watch state to their
+  parent title. The same policy covers optimistic updates, queued-write overlays,
+  cached content, library/server rows, and their browse grids. Grid filtering
+  preserves raw provider continuation offsets.
+  Native Continue Watching reads the feed through bounded pages, applying
+  eligibility and library exclusions before a presentation limit. Retained native rows immediately
   honor current library visibility while discovery is pending or offline.
   Connection failures identify the affected server. The Home row arranger names
   each failed server, distinguishing offline, sign-in, and Home-loading problems
@@ -412,6 +503,11 @@ records on both platforms; error dialogs, playback routing and timeouts are unch
   and this does not add support for third-party plugins with separate watchlist storage.
   Featured is available only for authored collection rows. Large artwork cards
   place the title logo (or text fallback) and real metadata at the lower left.
+  On tvOS, Classic rows retain these large cards with or without the Home hero.
+  Showcase and Hero + Showcase instead render standard poster cards, leaving
+  the focused title's artwork and metadata to Showcase. This presentation-only
+  adaptation preserves the saved Featured preference, row order, and contents;
+  iPhone and iPad continue to use large Featured cards.
   TV rows reuse the standard media-row heading and See all action, with the same
   pinned-navigation keyline, leading fade and card-slot parking as ordinary rows.
   System-focus Featured cards share the image-based native poster renderer.
@@ -449,9 +545,11 @@ records on both platforms; error dialogs, playback routing and timeouts are unch
   unselected row-family requests and stops a recommendation family after all its
   known rows are hidden. The separate library Recommended screen and Showcase's
   optional external Discover row are not redefined by these Home preferences.
-  Live TV contributes typed cached channel cards to Continue Watching and its
-  own optional row, never VOD items. Cache bounds, authorization and managed
-  tuning are documented in [Live TV](../../docs/live-tv-prototype.md).
+  Live TV contributes typed cached channel cards only to its own optional row,
+  never to Continue Watching, including Classic and Showcase layouts. Recent
+  channel history remains available on the Live TV page. Cache bounds,
+  authorization and managed tuning are documented in
+  [Live TV](../../docs/live-tv-prototype.md).
 
 - **Home** — `HomeView` + `HomeViewModel` render the focused tvOS rows:
   Continue Watching, Latest, Recently Added (per library). `HomeLayout`
@@ -521,6 +619,14 @@ records on both platforms; error dialogs, playback routing and timeouts are unch
   Watchlist and requests stay independent. Horizontal paging and vertical scrolling
   do not open details; in-flight page transitions disable the artwork link.
   VoiceOver exposes the artwork as More Info with the current title.
+  Mobile Home stays stationary beneath a pushed detail page. A transition-scoped,
+  non-interactive snapshot covers the outgoing page's native parallax and is
+  removed on completion or cancellation; destination animation and native Back
+  gestures remain owned by the navigation stack.
+  Opening an episode/season's parent show keeps the known hero artwork and title
+  visible while the provider resolves the series, on both iPhone and iPad.
+  This read-only preview does not start trailers or expose playback actions;
+  lookup failures still show the existing error and retry action.
   The tvOS More Info button is unchanged.
   Mobile Home and detail hero actions share native Liquid Glass buttons on iOS 26+.
   Primary actions use the prominent style with their existing monochrome theme
@@ -537,6 +643,21 @@ records on both platforms; error dialogs, playback routing and timeouts are unch
   Closing the sheet starts a fresh carousel dwell interval. Status polling
   continues for the selected series while the sheet is open; a lookup superseded
   by a sheet/manual refresh is not treated as a server failure.
+- **Discovery ownership refresh** — Home carousel and Showcase reverify Featured
+  titles when the active library identity index publishes, independently of Hide
+  Watched. This cannot use the watch-history-only fast path: an external title
+  needs a freshly verified, enabled-library copy before it can offer Play.
+  Existing slides remain visible and keep their identity while verified routing
+  arrives. Mobile uses the same discovery-verification policy. Shared Home/detail
+  movie actions never offer Request for Seerr's Available or Partially Available
+  status without local playback proof; the title remains navigable instead.
+  Series retain their season picker for requesting genuinely missing seasons.
+  Public discovery refreshes preserve the current slide's Seerr status when local
+  verification remains inconclusive; only live status updates may reset that
+  state to Unknown or Deleted. Failed or disabled local copies never gain Play.
+  Status survives library-visibility resets only within the same request context.
+  Changing the profile/Seerr connection clears old status and optimistic request
+  overrides; a different server cannot inherit Available or download progress.
 - **Collections hero source** — an opt-in source mixes individual movies and
   shows from multiple account-qualified collections across libraries, not collection cards. TV and
   mobile use the same `MediaProvider.collectionMembers` loader and existing
@@ -751,6 +872,11 @@ records on both platforms; error dialogs, playback routing and timeouts are unch
   unavailable rows and unsupported tabs retain saved intent. Browse remains
   accessible when no preferred tab is supported. Collection/playlist member
   routes remain plain Browse destinations.
+  Mobile Home's no-account and connected-but-empty states share
+  `PlozziOSHomeEmptyState`: the small blue Plozz mascot without its wordmark, a state-specific explanation,
+  and one native **Add Source** action. Only the no-account state also offers
+  device transfer. Both remain scrollable at large text sizes and in landscape;
+  empty-state presentation does not alter provider loading or profile inclusion.
   Library modes and series seasons both use CoreUI's `PlozzContentTabs`, with
   the same selected glass pill, inactive text, touch sizing, and reveal behavior.
   Tabs retain their identity through loading, empty, and failure states and
@@ -1066,6 +1192,12 @@ removing successful rows. Cancellation stops queued requests. Parent-series
 identity lookups are coalesced per account and load, and incomplete Home content
 does not overwrite the durable snapshot.
 
+If SwiftUI replaces Home's view task during library-settings preparation, a
+coalesced replacement request retries the cancelled preparation once. The rows
+must not wait for another trip away from Home and back. Cancellation without a
+replacement does not start background loading; an already-running aggregation
+still completes without a duplicate fetch.
+
 Showcase keeps its first-row anchor while that row loads; a lower row finishing
 does not choose focus or scroll the page. Its leading loading card has a visible
 progress indicator and can hold focus without making the other skeletons
@@ -1084,6 +1216,148 @@ resolved heroes use the same row-recede geometry. The `PLZBOOT` row-ready events
 data from completion of the entire Home load.
 
 ## Showcase
+
+The default **Hero + Showcase** Home presentation keeps the featured carousel above
+the same Showcase rows. Its native stage preserves the three hosting trees:
+the featured hero, Showcase details/artwork, and the row viewport. Down admits
+the first row before animating its viewport into place; Up from that row restores
+the existing hero action and slide, without a separate arrow-button focus stop.
+Each hosted root anchors its content at the top leading edge. The featured host
+uses symmetric horizontal viewport insets so its screen-wide backdrop stays
+centered on the display, including under pinned navigation's asymmetric row
+viewport. The Showcase host extends to the physical right edge while preserving
+its leading details inset. The row host retains its original bounds.
+Focus ownership includes SwiftUI virtual items and nested native controls,
+not only UIView-backed controls.
+While featured content loads, its full-size skeleton remains a native focus
+target so Down can still enter already-loaded rows and Up can return.
+The peeking rows are not eligible for focus while the featured hero is active,
+so first entry cannot collapse it. Boundary-only press and indirect-swipe
+recognizers request the other host even when its hidden content provides no
+geometric focus candidate; deeper-row and horizontal navigation remain native.
+While a boundary handoff waits for the current focus transaction to finish,
+further proposals in that direction remain blocked. They must not focus
+navigation before the deferred request can restore the hero or enter the rows.
+With Top Bar navigation, the featured stage contributes to the navigation scroll
+offset: entering even the first Showcase row moves the bar offscreen and removes
+it from focus, and returning to the hero reveals it. Back's return-to-top resets
+both the rows and featured stage. With the native Sidebar, the first Showcase row
+also includes the hidden hero's distance in its real scroll offset, balanced by
+matching content padding so card placement does not change. Native Home chrome
+therefore disappears on the first Down, not the second row, and reappears only
+when returning to the hero. This padding is a coordinate origin, separate from
+the row destination and height stops. Changing it rebases the native scroll
+target without adding a spring or restarting the in-flight viewport-height
+path, including when Up reaches the hero before the first row settles.
+For an animated native-Sidebar boundary, focus and compositor motion are admitted
+before changing that scroll origin. A one-shot display-link observer applies the
+padding/offset pair after it observes motion, rather than making native chrome
+layout block the first frame. It publishes once, not on every animation frame,
+and is bounded by the spring's settling duration. Reversal uses the latest
+destination; reset, disappearance, teardown and nonanimated updates synchronize
+immediately. This reorders the native layout work; it does not remove its CPU
+cost or replace the native Home control.
+The boundary handoff keeps Up directed at the hero
+instead of the native Home control. Standalone Showcase keeps its existing
+first-row behavior, and the Pinned Sidebar is unchanged.
+The bar travels only far enough to clear the screen and receives an additive
+native translation in the stage's own animation transaction, including reversals.
+Top Bar has no display-link-to-SwiftUI follower or independent SwiftUI animation.
+Using the full stage distance would hide it early and reveal it late.
+Detach and reduced-motion updates clear owned animations. The return chevron sits 48 points from the top in all navigation styles,
+without reserving space for the now-hidden Top Bar.
+Back still reveals navigation immediately, cancelling its remaining translations.
+The row scroll bridge retains its requested stage motion across temporary detach
+and reattachment, rebinding only while mounted; it does not depend on a later
+SwiftUI update to restore navigation. Featured and Showcase artwork reporters
+take ownership only while their respective stage is active, so returning to
+the featured hero republishes its displayed-image palette.
+The navigation fixture samples the bar's rendered position against stage
+progress through full transitions and rapid reversals, as well as checking
+focus ownership, final visibility, and the chevron's screen position. It requires
+less than one point of phase error and at most one navigation-state target change
+per transition, so a frame-following implementation cannot pass merely by reaching
+the correct final position.
+The same probe supports native Sidebar with `--native-sidebar-home` and
+`--held-home-artwork`: a controlled dark backdrop lets it check painted Home
+chrome, not just accessibility presence. It verifies repeated first-row/hero
+returns, rapid reversals, actual native focus and stable card placement.
+The outgoing hero foreground, incoming Showcase details, and rows share one
+native scroll distance, easing, and start time. Their relative positions remain
+fixed throughout the move and rapid reversals; only their opacity changes as
+the old details give way to the new. Both artwork planes travel at 37.5% of
+the foreground speed (about 120 points at the standard peek distance): the
+featured image rises out while the first Showcase image rises into place from
+below, reversing together on return. Their nested foregrounds compensate for
+that parent movement so their total travel still matches the rows. The
+transition uses the same zero-bounce spring as ordinary Showcase rows
+(0.4-second perceptual duration, running through its settling duration).
+Foregrounds, artwork, navigation, and crossfade share those spring parameters
+and the transaction's commit time. Additive movement retains running springs
+through rapid reversals instead of restarting from rest. Ordinary Showcase row
+transitions are unchanged and keep their artwork pinned. The return chevron lives outside the
+moving hosts and stays stationary.
+The incoming image includes top overscan equal to its travel, keeping its upper
+edge offscreen throughout the transition. This adds a modest aspect-fill crop
+only to the hybrid's Showcase backdrop; standalone layouts and Reduce Motion
+retain the original image bounds.
+Two stable foreground hosts let the compositor move them without per-frame
+SwiftUI state updates; artwork drift reuses the existing scene hosts rather
+than adding another renderer or loading another image. The other Home layouts
+do not create these hosts. Scroll and crossfade animations use the shared
+transaction's default start time, not a wall-clock timestamp captured before
+layout and focus work. Cold first-entry work therefore cannot use up their
+duration before that transaction is submitted.
+Reduce Motion omits foreground and artwork travel and snaps the rows.
+A shallow, text-free up chevron sits at the screen's horizontal center, 48 points
+from the top. It fades in only after two seconds on the first row when arriving
+upward from a deeper row. Coming down from the hero never shows it, and leaving
+before the delay ends cancels it. It fades away after three seconds of visibility;
+ordinary updates within the row do not restart it. Leaving Home, returning to the
+hero, or detaching the cue clears its arrival history.
+It is informational, never an additional focus stop. Deeper rows retain ordinary navigation.
+Row translation uses additive compositor animations so reversing direction retains
+the in-flight motion. Artwork planes crossfade; Reduce Motion uses the same
+destinations without animation. Carousel dwell and trailers suspend while rows
+are active. Settings exposes Hero independently from Classic/Showcase row
+style. Fresh profiles use both Hero and Showcase; saved styles and disabled
+heroes retain their previous behavior. Blobs without a style field keep the old
+carousel layout rather than adopting the new-profile default.
+
+The production Home fixture's `--hero-showcase-focus-probe` records initial
+native focus and invokes the same boundary handoff used by remote input. It
+checks the actual `UIFocusSystem.focusedItem` in the running app scene, not only
+the requested destination. This is separate from physical press/swipe delivery
+and presented-frame measurements in the remote test suite.
+`--hero-showcase-latency-probe` waits for native navigation to admit the hero,
+then measures ten boundary handoffs. When `PLOZZ_HERO_BOUNDARY_START` names a
+Darwin notification, the fixture registers it before reporting `ready`; the
+driver signals it only after hero focus is confirmed, so setup cannot race
+the measured navigation. It records queue, preparation, layout and
+focus-request durations plus the first observed moving presentation layer and
+destination focus. `ShowcaseNavigationTests.testHeroBoundaryLatencyAcrossNavigationStyles`
+retains the same measurements for Pinned, Top Bar and native Sidebar. Build it
+with `PlozzHomeFixtureTests` so the driver and fixture are both current.
+The 16 ms observation interval quantizes the latter two measurements; these
+exclude physical input delivery and are not display-photon latency or FPS.
+Keep first-entry and warm samples separate when comparing captures.
+The native first-motion callback is also recorded: subsequent chrome layout can
+delay the polling task even when compositor motion is already underway. Every
+sample requires native origin synchronization as well as focus and motion.
+`--hero-showcase-navigation-probe` first changes destinations and returns Home
+through pinned or top-bar navigation, then supplies presses to the boundary
+recognizer and checks actual focus while rejecting escape during each queued
+handoff. It covers focus ordering, not physical remote delivery or geometry.
+The separate `--hero-showcase-geometry-probe` directly changes presentation
+without requesting focus and verifies the artwork's physical screen edges.
+Use it with `--pinned-home`, `--native-sidebar-home`, and `--top-bar-home` to
+capture initial hero, Showcase, and returned hero geometry. Its pass is not a
+remote-input or focus pass.
+Add `--hero-showcase-delayed-commit` to either probe to hold the first
+transition's outer transaction for half a second, then require intermediate
+scroll and opacity values after submission. This controlled regression
+reproduces the early-clock skip; it does not measure the cause or duration of
+physical-device first-entry work.
 
 Episode-backed Home heroes use a separately scoped `MediaSeriesSynopsis` fetched
 from the authenticated parent-series record. The server's series tagline/synopsis
@@ -1156,6 +1430,11 @@ release all 110pt immediately, ahead of the moving presentation viewport.
 Earlier rows retain native Up eligibility;
 making their entire mask transparent would break that navigation. Showcase's
 backdrop uses wider leading and bottom gradients without lengthening its crossfade.
+Showcase artwork fits its full image into the top-trailing backdrop slot, including
+non-16:9 sources. Hero + Showcase transition overscan extends the image's top edge
+above that slot instead of enlarging and lifting the resting image. Standalone
+Showcase and Reduce Motion preserve the same uncropped framing; carousel artwork
+keeps its existing fill treatment.
 Crossfade is the only Showcase backdrop transition. The retired slide preference
 is ignored when reading older settings without resetting the remaining choices.
 Showcase's optional titles under cards follow Appearance > Cards;

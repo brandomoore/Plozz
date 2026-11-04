@@ -288,7 +288,7 @@ struct HomeSectionSettingsView: View {
 
     private var previewsShowcase: Bool {
         #if os(tvOS)
-        hero.settings.style == .followsFocus
+        hero.settings.followsFocus
         #else
         false
         #endif
@@ -303,7 +303,11 @@ struct ContinueWatchingActionControl: View {
         Group {
             #if os(iOS)
             ViewCustomizationMenu(
-                id: "continue-watching-action", title: "When tapping an item",
+                id: "continue-watching-action",
+                title: LocalizedStringResource(
+                    "Tap action",
+                    comment: "Short label for the Continue Watching setting on iPhone and iPad that chooses whether tapping a movie or episode plays it or opens its detail page."
+                ),
                 value: selection.displayName, detail: selection.detail,
                 selection: Binding(
                     get: { visibility.continueWatchingAction },
@@ -452,13 +456,10 @@ public struct HomeHeroSettingsView: View {
     private var resolvedPage: HeroSettingsPage? {
         guard let initialPage else { return nil }
         #if os(tvOS)
-        if hero.settings.style == .followsFocus {
-            if initialPage == .ratings { return .ratings }
-            if initialPage == .discovery && hero.settings.showsDiscoverRow { return .discovery }
-            return nil
-        }
-        #endif
+        guard hero.settings.spotlightEnabled else { return nil }
+        #else
         guard hero.settings.isEnabled else { return nil }
+        #endif
         switch initialPage {
         case .libraries where !hero.effectiveSettings.isEnabled(.randomFromLibrary): return .titles
         case .collections where !hero.effectiveSettings.isEnabled(.collection): return .titles
@@ -491,64 +492,64 @@ public struct HomeHeroSettingsView: View {
     }
 
     @ViewBuilder private var page: some View {
-        @Bindable var hero = hero
         HomeEditorPage(title: pageTitle, showsHeader: true) {
-            #if os(tvOS)
-            HomeLayoutPicker(
-                layout: $hero.settings.style,
-                homeLogoSize: hero.settings.logoSize, showcaseLogoSize: hero.settings.showcaseLogoSize,
-                homeTextSize: hero.settings.textSize, showcaseTextSize: hero.settings.showcaseTextSize
-            )
-            if hero.settings.style == .followsFocus {
-                SettingsControlGroup {
-                    HeroLogoSizeControl(
-                        size: $hero.settings.showcaseLogoSize, textSize: $hero.settings.showcaseTextSize, surface: .showcase
-                    )
-                }
-                SettingsControlGroup {
-                    Toggle("Ratings", isOn: $hero.settings.showsRatings)
-                        .settingsSearchAnchor(
-                            "hero-ratings", fallbackFor: hero.settings.showsRatings ? [] : ["hero-age", "hero-rating-count"]
-                        )
-                    if hero.settings.showsRatings {
-                        Toggle("Show Common Sense age", isOn: $hero.settings.ratingPreferences.showsHeaderFamilyGuidance)
-                            .settingsSearchAnchor("hero-age")
-                        HeaderReviewScoreCountPicker(settings: $hero.settings.ratingPreferences)
-                            .settingsSearchAnchor("hero-rating-count")
-                    }
-                }
-                if hero.allowsDiscovery {
-                    SettingsControlGroup {
-                        Toggle("Discovery row", isOn: $hero.settings.showsDiscoverRow)
-                            .settingsSearchAnchor(
-                                "showcase-discovery-row",
-                                fallbackFor: hero.settings.showsDiscoverRow ? [] : SettingsSearchCatalog.targets(on: .heroDiscovery)
-                            )
-                        if hero.settings.showsDiscoverRow {
-                            HeroSettingsLink(page: .discovery, libraries: availableLibraries, accounts: accounts)
-                        }
-                    }
-                } else {
-                    Text("Discovery is unavailable in Kids profiles.")
-                        .settingsHelperText()
-                }
-            } else {
-                HeroSettingsControls(libraries: availableLibraries, accounts: accounts)
-            }
-            #else
             HeroSettingsControls(libraries: availableLibraries, accounts: accounts)
-            #endif
         }
     }
 
     private var pageTitle: Text {
-        #if os(tvOS)
-        Text("Home layout")
-        #else
         Text("Hero")
-        #endif
     }
 }
+
+#if os(tvOS)
+struct HomeRowStyleSettingsView: View {
+    let libraries: [AggregatedLibrary]
+    let accounts: [ResolvedAccount]
+    @Environment(HeroSettingsModel.self) private var hero
+    @State private var navigation = SettingsDetailNavigation()
+
+    var body: some View {
+        @Bindable var hero = hero
+        SettingsDetailPages(navigation: navigation) {
+            HomeEditorPage(title: Text("Row style"), showsHeader: true) {
+                HomeRowStylePicker(
+                    immersive: $hero.settings.immersiveRows,
+                    logoSize: hero.settings.showcaseLogoSize,
+                    textSize: hero.settings.showcaseTextSize
+                )
+                if hero.settings.immersiveRows {
+                    SettingsControlGroup {
+                        HeroLogoSizeControl(
+                            size: $hero.settings.showcaseLogoSize,
+                            textSize: $hero.settings.showcaseTextSize, surface: .showcase
+                        )
+                    }
+                    HeroRatingControls(isShowcase: true)
+                    if hero.settings.style == .followsFocus {
+                        if hero.allowsDiscovery {
+                            SettingsControlGroup {
+                                Toggle("Discovery row", isOn: $hero.settings.showsDiscoverRow)
+                                    .settingsSearchAnchor(
+                                        "showcase-discovery-row",
+                                        fallbackFor: hero.settings.showsDiscoverRow ? [] : SettingsSearchCatalog.targets(on: .heroDiscovery)
+                                    )
+                                if hero.settings.showsDiscoverRow {
+                                    HeroSettingsLink(page: .discovery, libraries: libraries, accounts: accounts)
+                                }
+                            }
+                        } else {
+                            Text("Discovery is unavailable in Kids profiles.").settingsHelperText()
+                        }
+                    }
+                }
+            }
+        } detail: {
+            HeroSettingsDestination(libraries: libraries, accounts: accounts)
+        }
+    }
+}
+#endif
 
 struct HomeCatalogStatus: View {
     let inventory: HomeSectionCatalogModel

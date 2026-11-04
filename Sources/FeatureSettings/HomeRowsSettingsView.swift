@@ -13,6 +13,7 @@ public struct HomeRowsSettingsView: View {
     @Environment(HeroSettingsModel.self) private var hero
     @Environment(HeroBackgroundSettingsModel.self) private var heroBackground
     @Environment(CardStyleSettingsModel.self) private var cards
+    @Environment(SettingsSearchRequest.self) private var searchRequest: SettingsSearchRequest?
     @State private var inventory: HomeSectionCatalogModel
 
     public init(
@@ -42,6 +43,20 @@ public struct HomeRowsSettingsView: View {
     public var body: some View {
         switch searchPage {
         case .home: menu
+        #if os(tvOS)
+        case .homeRowStyle:
+            if searchRequest?.targetID == "showcase-discovery-row", hero.settings.spotlightEnabled {
+                HomeHeroSettingsView(libraries: libraries, accounts: accounts, visibility: visibility)
+            } else {
+                HomeRowStyleSettingsView(libraries: libraries, accounts: accounts)
+            }
+        case .heroDiscovery where hero.settings.style == .followsFocus:
+            if hero.settings.showsDiscoverRow {
+                HeroSettingsScreen(page: .discovery, libraries: libraries, accounts: accounts)
+            } else {
+                HomeRowStyleSettingsView(libraries: libraries, accounts: accounts)
+            }
+        #endif
         case .hero, .heroContent, .heroRatings, .heroTrailers, .heroDiscovery, .heroLibraries, .heroCollections:
             HomeHeroSettingsView(
                 libraries: libraries, accounts: accounts, visibility: visibility, initialPage: heroPage
@@ -94,6 +109,22 @@ public struct HomeRowsSettingsView: View {
             .accessibilityValue(heroSummary ?? Text(verbatim: ""))
             .accessibilityIdentifier("home-section-hero")
             .settingsSearchAnchor("home-hero")
+            #if os(tvOS)
+            HomeEditorLink {
+                HomeRowStyleSettingsView(libraries: libraries, accounts: accounts)
+                    .environment(hero)
+                    .environment(heroBackground)
+            } label: {
+                HomeEditorRowLabel(
+                    title: Text("Row style"),
+                    value: hero.settings.immersiveRows ? Text("Showcase") : Text("Classic")
+                )
+            }
+            .accessibilityLabel(Text("Row style"))
+            .accessibilityValue(hero.settings.immersiveRows ? Text("Showcase") : Text("Classic"))
+            .accessibilityIdentifier("home-row-style")
+            .settingsSearchAnchor("home-row-style")
+            #endif
             HomeEditorLink {
                 CardCaptionCustomizationView(cards: cards, scope: .home, visibility: visibility)
                     .environment(hero)
@@ -127,17 +158,12 @@ public struct HomeRowsSettingsView: View {
     }
 
     private var heroTitle: Text {
-        #if os(tvOS)
-        Text("Layout")
-        #else
         Text("Hero")
-        #endif
     }
 
     private var heroSummary: Text? {
         #if os(tvOS)
-        if hero.settings.style == .followsFocus { return Text("Showcase") }
-        return hero.settings.isEnabled ? Text("Hero") : Text("Off")
+        return hero.settings.spotlightEnabled ? Text("On") : Text("Off")
         #else
         return hero.settings.isEnabled ? nil : Text("Off")
         #endif
@@ -331,13 +357,13 @@ struct HomeSectionsSettingsView: View {
             #if os(tvOS)
             if hero.settings.style == .followsFocus {
                 HomeEditorLink {
-                    HomeHeroSettingsView(libraries: libraries, accounts: accounts, visibility: visibility)
+                    HomeRowStyleSettingsView(libraries: libraries, accounts: accounts)
                         .environment(hero)
                         .environment(heroBackground)
                 } label: {
                     HomeEditorRowLabel(
                         title: Text("Discovery"),
-                        subtitle: Text("Managed by Home layout.")
+                        subtitle: Text("Managed by Row style.")
                     )
                 }
                 .disabled(isReordering)

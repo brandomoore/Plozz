@@ -208,7 +208,9 @@ public struct MediaRowView: View {
     /// Keeps branch-specific masking completely out of native navigation styles.
     @Environment(\.plozzPinnedSidebarActive) private var pinnedSidebarActive
     #if os(tvOS)
+    @Environment(\.mediaRowHeaderTrailingInset) private var pageTrailingSafeInset
     @State private var portraitViewportWidth: CGFloat = 0
+    @State private var trailingSafeInset: CGFloat = 0
     #endif
 
     /// Extra scroll margin beyond the fade, so a FOCUSED card — which grows
@@ -217,6 +219,17 @@ public struct MediaRowView: View {
     /// the moment it takes focus, which is the symptom this exists to prevent.
     private var focusLiftAllowance: CGFloat { 28 }
     private let onSelect: (MediaItem) -> Void
+    #if os(iOS)
+    private var onSelectArtwork: ((MediaItem, MediaArtworkZoomSource) -> Void)?
+
+    public func artworkNavigation(
+        _ action: ((MediaItem, MediaArtworkZoomSource) -> Void)?
+    ) -> Self {
+        var copy = self
+        copy.onSelectArtwork = action
+        return copy
+    }
+    #endif
     private let onPlay: ((MediaItem) -> Void)?
     /// When `true`, selecting a card starts playback immediately, so its cards
     /// show the resume chip (play glyph + progress bar + time). Threaded to
@@ -262,6 +275,13 @@ public struct MediaRowView: View {
     @State private var tracksLoadingFocus: Bool
     private var onBrowse: (() -> Void)?
     private var usesRowBrowsing = false
+    private var onLoadMore: (@MainActor () async -> Void)?
+
+    public func loadingMore(_ action: (@MainActor () async -> Void)?) -> Self {
+        var copy = self
+        copy.onLoadMore = action
+        return copy
+    }
 
     public func browsingRow(_ action: (() -> Void)?) -> Self {
         var copy = self
@@ -626,7 +646,7 @@ public struct MediaRowView: View {
                         // navigation rail existed, with the first card's visible
                         // edge under the title.
                         .padding(.leading, cardsLeadingInset)
-                        .padding(.trailing, PlozzTheme.Metrics.screenPadding)
+                        .padding(.trailing, cardsTrailingInset)
                         // Reserve generous vertical room *inside* the clip so a
                         // focused card's lift + drop shadow are never cut. The
                         // negative outer padding below cancels this clearance in
@@ -635,6 +655,11 @@ public struct MediaRowView: View {
                         .padding(.vertical, layoutMetrics.railShadowClearance)
                     }
                     .scrollClipDisabled()
+                    .loadingMoreOnScroll(
+                        onLoadMore,
+                        trailingPlaceholderWidth: CGFloat(loadingPlaceholderCount)
+                            * (cardSlotWidth + layoutMetrics.cardSpacing)
+                    )
                     #if os(tvOS)
                     .ignoresSafeArea(.container, edges: presentation == .poster ? .trailing : [])
                     // This width already excludes the navigation safe area.
@@ -663,6 +688,13 @@ public struct MediaRowView: View {
                             episodeEntryPlaceholder
                         }
                     }
+                    #if os(tvOS)
+                    .onGeometryChange(for: CGFloat.self) { geometry in
+                        presentation == .poster ? geometry.safeAreaInsets.trailing : 0
+                    } action: { _, inset in
+                        trailingSafeInset = inset
+                    }
+                    #endif
                     .background {
                         #if os(tvOS)
                         if episodeEntry != nil {
@@ -873,6 +905,15 @@ public struct MediaRowView: View {
         } else {
             card(for: item)
         }
+        #elseif os(iOS)
+        MediaArtworkZoomButton(id: item.stablePresentationID) { source in
+            if let onSelectArtwork {
+                onSelectArtwork(item, source)
+            } else {
+                onSelect(item)
+            }
+        } label: { card(for: item) }
+            .buttonStyle(.plain)
         #else
         Button { onSelect(item) } label: { card(for: item) }
             // Plain, so the card keeps its own colours and chrome.
@@ -993,6 +1034,16 @@ public struct MediaRowView: View {
     private var cardsLeadingInset: CGFloat {
         guard presentation != .episodeColumn else { return leadingInset }
         return layoutMetrics.cardRowLeadingPadding(leadingInset, cardStyle: cardStyle)
+    }
+
+    private var cardsTrailingInset: CGFloat {
+        #if os(tvOS)
+        // Full-bleed artwork still needs a scrollable tail for the last card's
+        // native focus lift. A parent may already have consumed the safe area.
+        PlozzTheme.Metrics.screenPadding + max(trailingSafeInset, pageTrailingSafeInset)
+        #else
+        PlozzTheme.Metrics.screenPadding
+        #endif
     }
 
     /// The layout width reserved for one card in the rail — its full glass-surface

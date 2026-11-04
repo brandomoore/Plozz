@@ -191,6 +191,9 @@ public final class DefaultMediaShareRuntime: MediaShareRuntime {
         accountStore: any AccountPersisting,
         artworkCacheLifecycle: any ShareLocalArtworkCacheLifecycle =
             NoopShareLocalArtworkCacheLifecycle(),
+        sourcePreparer: (@Sendable (
+            NetworkFileLocator, Double, any MediaTransportByteSource
+        ) async throws -> Void)? = nil,
         streamProberFactory: @Sendable (
             any MediaTransportNetworkFileResolving
         ) -> (any NetworkFileStreamProbing)? = { _ in nil }
@@ -238,7 +241,8 @@ public final class DefaultMediaShareRuntime: MediaShareRuntime {
             registry: composition.resolverRegistry,
             playbackLeaseProvider: { locator in
                 try await coordinator.acquirePlayback(accountKey: locator.accountID)
-            }
+            },
+            sourcePreparer: sourcePreparer
         ) { locator in
             guard locator.sourceID == locator.accountID,
                   let account = accountStore.loadAccounts().first(where: {

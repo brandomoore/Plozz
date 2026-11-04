@@ -78,7 +78,7 @@ public enum PlozzAttributions {
                 "Playback is powered by AetherEngine by Vincent Herbst, under "
                 + "LGPL-3.0 with an Apple Store exception. "
                 + "Upstream: https://github.com/superuser404notfound/AetherEngine. "
-                + "Source: https://github.com/brandomoore/AetherEngine/tree/c1ce4cf48bad416e6be5230032a2b7f332e833d8",
+                + "Source: https://github.com/brandomoore/AetherEngine/tree/7cd91ee1a55401d59ca385e247a5c6308b7d27ea",
             licenses: [.init("LGPL-3.0", family: .lgpl)]
         ),
         PlozzAttribution(
@@ -86,9 +86,9 @@ public enum PlozzAttributions {
             detail:
                 "FFmpeg n8.1.3 provides libavcodec, libavformat, libavutil, "
                 + "libswresample, libswscale and libavfilter for media decoding "
-                + "and the playback bridge. Packaged by FFmpegBuild 3.10.1. "
+                + "and the playback bridge. Packaged by FFmpegBuild 3.11.1. "
                 + "Source and component notices: "
-                + "https://github.com/superuser404notfound/FFmpegBuild/tree/3.10.1. "
+                + "https://github.com/superuser404notfound/FFmpegBuild/tree/3.11.1. "
                 + "Upstream: https://ffmpeg.org.",
             licenses: [.init("LGPL-2.1+", family: .lgpl)]
         ),
@@ -102,7 +102,8 @@ public enum PlozzAttributions {
         PlozzAttribution(
             title: "LibTrueHD",
             detail:
-                "TrueHD decoding and optional spatial audio rendering use LibTrueHD 3.1.0. "
+                "LibTrueHD 3.1.0 supported optional spatial audio rendering in earlier builds "
+                + "and is not linked in this build. "
                 + "By Quick104 and "
                 + "Vincent Herbst, using truehdd and oamd by Rainbaby and contributors. "
                 + "Source: https://github.com/superuser404notfound/LibTrueHD/tree/3.1.0. "
@@ -133,7 +134,7 @@ public enum PlozzAttributions {
             detail:
                 "AV1 video decoding uses dav1d 1.5.4 by VideoLAN and contributors. "
                 + "Source and notices are included in FFmpegBuild: "
-                + "https://github.com/superuser404notfound/FFmpegBuild/tree/3.10.1.",
+                + "https://github.com/superuser404notfound/FFmpegBuild/tree/3.11.1.",
             licenses: [.init("BSD-2-Clause", family: .bsd)]
         ),
         PlozzAttribution(
@@ -141,7 +142,7 @@ public enum PlozzAttributions {
             detail:
                 "Image scaling and color conversion use zimg 3.0.6 under the WTFPL. "
                 + "Source: https://github.com/sekrit-twc/zimg. "
-                + "License: https://github.com/superuser404notfound/FFmpegBuild/blob/3.10.1/LICENSES/zimg.WTFPL.txt."
+                + "License: https://github.com/superuser404notfound/FFmpegBuild/blob/3.11.1/LICENSES/zimg.WTFPL.txt."
         ),
         PlozzAttribution(
             title: "libzvbi",
@@ -150,7 +151,7 @@ public enum PlozzAttributions {
                 + "The library is LGPL-2.0-or-later, distributed under LGPL-2.1; "
                 + "ure.c uses the MIT license. "
                 + "Source, build modifications and notices: "
-                + "https://github.com/superuser404notfound/FFmpegBuild/tree/3.10.1/LICENSES.",
+                + "https://github.com/superuser404notfound/FFmpegBuild/tree/3.11.1/LICENSES.",
             licenses: [
                 .init("LGPL-2.1", family: .lgpl),
                 .init("MIT", family: .mit),

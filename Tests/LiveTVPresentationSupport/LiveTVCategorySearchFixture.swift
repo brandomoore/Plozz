@@ -16,6 +16,7 @@ struct LiveTVCategorySearchFixture: View {
     @State private var profiles: ProfilesModel
     @State private var showsProfile = false
     @State private var isExpanded = false
+    @State private var sourceSetup = ManagedProviderSetupRouter()
     private let namespace = "CategorySearch.\(UUID().uuidString)"
     private var palette: ThemePalette {
         ProcessInfo.processInfo.arguments.contains("--category-preview-light") ? .light : .dark
@@ -33,10 +34,11 @@ struct LiveTVCategorySearchFixture: View {
                 viewSettingsStore: CategorySearchSettings(),
                 sourceStore: CategorySearchSources(),
                 onExpandedChange: { isExpanded = $0 },
+                allowsPlayback: !ProcessInfo.processInfo.arguments.contains("--category-playback-unavailable"),
                 sourceLoader: CategorySearchLoader(),
                 preferencesNamespace: namespace,
                 sourceApprovalContext: { [profiles] in LiveTVSourceApprovalContext(profiles: profiles) },
-                topBarAccessory: profileAction
+                onShowSettings: { showsProfile = true }
             ) { playback in
                 #if os(iOS)
                 CategoryPreviewPlayer(playback: playback)
@@ -47,9 +49,17 @@ struct LiveTVCategorySearchFixture: View {
                     .accessibilityValue(Text(verbatim: playback.isExpanded ? "Fullscreen" : "Preview"))
                 #endif
             }
-
         }
         .environment(profiles)
+        .environment(\.managedProviderSetupRouter,
+                     ProcessInfo.processInfo.arguments.contains("--category-managed-source-setup") ? sourceSetup : nil)
+        .overlay(alignment: .bottomLeading) {
+            if let request = sourceSetup.request {
+                Text(verbatim: request.mode.rawValue)
+                    .accessibilityIdentifier("category-source-setup-request")
+                    .allowsHitTesting(false)
+            }
+        }
         .environment(\.locale, Locale(identifier: "en_US"))
         .environment(\.themePalette, palette)
         .environment(\.colorScheme, palette.isLight ? .light : .dark)
@@ -66,21 +76,6 @@ struct LiveTVCategorySearchFixture: View {
         .sheet(isPresented: $showsProfile) {
             Text("Profile settings").accessibilityIdentifier("category-search-profile-settings")
         }
-        #endif
-    }
-
-    private var profileAction: AnyView? {
-        #if os(iOS)
-        AnyView(
-            Button { showsProfile = true } label: {
-                ProfileAvatarView(profile: profiles.activeProfile, size: 36, rendersAsImage: true)
-            }
-            .buttonBorderShape(.circle)
-            .accessibilityLabel("Profile settings")
-            .accessibilityIdentifier("live-tv-profile")
-        )
-        #else
-        nil
         #endif
     }
 }
@@ -117,6 +112,12 @@ private struct CategoryPreviewPlayer: View {
             onPlaybackStarted: playback.playbackStarted, reportingID: playback.reportingID,
             countsAsWatching: playback.countsAsWatching, program: playback.program
         )
+        .background {
+            Color.clear
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("Video bounds")
+                .accessibilityIdentifier("category-preview-video-bounds")
+        }
         .overlay(alignment: .topLeading) {
             VStack {
                 Text("Loads: \(engine.loads)")
@@ -236,11 +237,22 @@ private struct CategorySearchSettings: LiveTVViewSettingsStoring {
 
 private struct CategorySearchSources: LiveTVSourcesStoring {
     func load() throws -> LiveTVSourcesConfiguration {
-        .init(playlists: [
-            .init(id: "category-search", name: "Sample TV",
+        var sources = LiveTVSourcesConfiguration(playlists: [
+            .init(id: "category-search",
+                  name: ProcessInfo.processInfo.arguments.contains("--category-long-source-name")
+                    ? "Sample Television International Network" : "Sample TV",
                   playlistURL: URL(string: "https://fixture.invalid/channels.m3u")!,
                   guideURLs: [URL(string: "https://fixture.invalid/guide.xml")!])
         ])
+        if ProcessInfo.processInfo.arguments.contains("--category-multiple-sources") {
+            sources.playlists += [
+                .init(id: "local", name: "Local TV",
+                      playlistURL: URL(string: "https://fixture.invalid/local.m3u")!),
+                .init(id: "paused", name: "Paused TV",
+                      playlistURL: URL(string: "https://fixture.invalid/paused.m3u")!, isEnabled: false)
+            ]
+        }
+        return sources
     }
 
     func save(_ configuration: LiveTVSourcesConfiguration) throws {}
@@ -250,6 +262,24 @@ private struct CategorySearchLoader: LiveTVSourceLoading {
     func loadPlaylist(from url: URL) async throws -> LiveTVPlaylistImport {
         if ProcessInfo.processInfo.arguments.contains("--category-search-failure") {
             throw URLError(.cannotConnectToHost)
+        }
+        if url.lastPathComponent == "local.m3u" {
+            return try LiveTVPlaylistParser(baseURL: url).parse("""
+            #EXTM3U
+            #EXTINF:-1 tvg-id="local-sport" group-title="Sports",Local Sport
+            https://fixture.invalid/local-sport.m3u8
+            #EXTINF:-1 tvg-id="local-music" group-title="Music",Local Music
+            https://fixture.invalid/local-music.m3u8
+            """)
+        }
+        if ProcessInfo.processInfo.arguments.contains("--category-scroll-content") {
+            let entries = (1...80).map { index in
+                """
+                #EXTINF:-1 tvg-id="scroll-\(index)" group-title="Category \(String(format: "%02d", index))",Channel \(String(format: "%02d", index))
+                https://fixture.invalid/scroll-\(index).m3u8
+                """
+            }
+            return try LiveTVPlaylistParser(baseURL: url).parse("#EXTM3U\n" + entries.joined(separator: "\n"))
         }
         return try LiveTVPlaylistParser(baseURL: url).parse("""
         #EXTM3U

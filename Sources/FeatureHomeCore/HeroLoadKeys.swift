@@ -92,9 +92,9 @@ public struct HeroCurationLoadKey: Equatable, Sendable {
         configuration = HeroConfigurationKey(settings: settings)
         self.visibility = visibility
         self.freshnessRevision = freshnessRevision
-        let verifiesDiscovery = settings.isEnabled(.featured) && !settings.discoverySources.isEmpty
         let enrichesCollectionHistory = settings.isEnabled(.collection) && settings.hideWatched
-        self.identityIndexRevision = settings.isActive && (verifiesDiscovery || enrichesCollectionHistory)
+        self.identityIndexRevision = settings.requiresDiscoveryVerification
+            || (settings.isActive && enrichesCollectionHistory)
             ? identityIndexRevision : 0
         self.watchlistMembershipRevision = settings.isActive && settings.isEnabled(.watchlist)
             ? watchlistMembershipRevision : 0

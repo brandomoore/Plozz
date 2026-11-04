@@ -225,6 +225,9 @@ public struct PosterCardView: View {
                 }
             }
             #endif
+            #if os(iOS)
+            .mediaArtworkZoomOrigin(id: item.stablePresentationID)
+            #endif
     }
 
     private var usesNativePoster: Bool {
@@ -419,6 +422,8 @@ public struct PosterCardView: View {
                 )
                 #if os(tvOS)
                 .recordDetailTransitionArtwork(detailTransitionSource)
+                #elseif os(iOS)
+                .mediaArtworkZoomSource(cornerRadius: metrics.posterArtworkCornerRadius)
                 #endif
 
             if !captionsHidden {
@@ -481,8 +486,10 @@ public struct PosterCardView: View {
 
     private var landscapeCard: some View {
         VStack(alignment: .leading, spacing: metrics.landscapeCaptionTopSpacing) {
-            artwork
-                .frame(width: size.width, height: size.height)
+            Color.clear
+                .aspectRatio(borderlessAspectRatio, contentMode: .fit)
+                .frame(maxWidth: .infinity)
+                .overlay { artwork }
                 .overlay(alignment: .topLeading) { statusCue(inset: 8) }
                 .overlay {
                     MediaCardPlaybackIndicators(
@@ -506,12 +513,14 @@ public struct PosterCardView: View {
                 )
                 #if os(tvOS)
                 .recordDetailTransitionArtwork(detailTransitionSource)
+                #elseif os(iOS)
+                .mediaArtworkZoomSource(cornerRadius: metrics.landscapeArtworkCornerRadius)
                 #endif
 
             if showsCaption {
                 captionBlock(inset: metrics.landscapeCaptionHorizontalInset, spacing: 4)
                     .padding(.bottom, metrics.landscapeCaptionInset)
-                    .frame(width: size.width, alignment: .leading)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
         .plozzFramedMediaCard(
@@ -610,6 +619,8 @@ public struct PosterCardView: View {
             )
             #if os(tvOS)
             .recordDetailTransitionArtwork(detailTransitionSource)
+            #elseif os(iOS)
+            .mediaArtworkZoomSource(cornerRadius: borderlessCornerRadius)
             #endif
             .plozzFocusHalo(
                 cornerRadius: borderlessCornerRadius,

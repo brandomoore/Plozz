@@ -5,18 +5,38 @@ on:
     paths:
       - .github/workflows/discord-bridge.yml
       - tools/discord-bridge.py
+      - tools/discord-roadmap.py
+      - tools/testflight-discord.py
+      - tools/testflight-resolutions.py
+      - tools/testflight-discord-requirements.txt
+      - tools/tests/test_discord_roadmap.py
+      - tools/format-triage-comments.py
       - tools/run-bounded.py
       - tools/tests/test_discord_bridge.py
+      - tools/tests/test_testflight_resolutions.py
+      - tools/tests/test_format_triage_comments.py
   schedule:
     - cron: "7,22,37,52 * * * *"
   workflow_dispatch:
     inputs:
       mode:
-        description: Preflight checks connections; dry-run previews; sync mirrors; publish-guides posts bot-owned templates.
+        description: Check or sync the issue bridge, or explicitly publish bot-owned guides.
         type: choice
-        options: [preflight, dry-run, sync, publish-guides]
+        options: [preflight, dry-run, sync, publish-guides, publish-testflight-guide, roadmap-check, roadmap-sync, roadmap-setup]
         default: preflight
         required: true
+      make_testflight_read_only:
+        description: Explicitly make the existing TestFlight channel read-only before publishing its guide.
+        type: boolean
+        default: false
+      pin_roadmap_guide:
+        description: Explicitly pin the roadmap explanation (roadmap-setup only).
+        type: boolean
+        default: false
+      make_roadmap_read_only:
+        description: Explicitly disable ordinary member posting in the existing roadmap channel (roadmap-setup only).
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -27,7 +47,7 @@ concurrency:
 
 jobs:
   check:
-    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.mode != 'sync' && inputs.mode != 'publish-guides')
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.mode != 'sync' && inputs.mode != 'publish-guides' && inputs.mode != 'publish-testflight-guide' && !startsWith(inputs.mode, 'roadmap-'))
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
@@ -41,7 +61,7 @@ jobs:
         with:
           node-version: "22"
       - name: Regression tests
-        run: python3 -m unittest discover -s tools/tests -p 'test_discord_bridge.py'
+        run: PYTHONPATH=tools/tests python3 -m unittest test_discord_bridge test_discord_roadmap test_testflight_resolutions test_format_triage_comments
       - name: Install pinned Copilot CLI
         run: npm install --global --ignore-scripts @github/copilot@1.0.91
       - name: Read-only connection and model check
@@ -63,7 +83,7 @@ jobs:
     if: >-
       github.repository == 'brandomoore/Plozz' &&
       github.event_name == 'workflow_dispatch' &&
-      inputs.mode == 'publish-guides'
+      (inputs.mode == 'publish-guides' || inputs.mode == 'publish-testflight-guide')
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
@@ -74,10 +94,61 @@ jobs:
           persist-credentials: false
       - name: Regression tests
         run: python3 -m unittest discover -s tools/tests -p 'test_discord_bridge.py'
-      - name: Publish bot-owned posting templates
+      - name: Publish the selected bot-owned guide
         env:
           DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
-        run: python3 tools/discord-bridge.py --mode publish-guides
+          GUIDE_MODE: ${{ inputs.mode }}
+          MAKE_TESTFLIGHT_READ_ONLY: ${{ inputs.make_testflight_read_only }}
+        run: |
+          args=(--mode "$GUIDE_MODE")
+          if [ "$MAKE_TESTFLIGHT_READ_ONLY" = "true" ]; then
+            args+=(--make-testflight-read-only)
+          fi
+          python3 tools/discord-bridge.py "${args[@]}"
+
+  roadmap:
+    if: >-
+      github.repository == 'brandomoore/Plozz' &&
+      github.ref == 'refs/heads/main' &&
+      ((github.event_name == 'workflow_dispatch' && inputs.mode == 'roadmap-check') ||
+       (vars.DISCORD_ROADMAP_ENABLED == 'true' &&
+        (github.event_name == 'schedule' ||
+         (github.event_name == 'workflow_dispatch' &&
+          (inputs.mode == 'roadmap-sync' || inputs.mode == 'roadmap-setup')))))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      issues: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install existing Apple signing dependency
+        run: python3 -m pip install --disable-pip-version-check -r tools/testflight-discord-requirements.txt
+      - name: Roadmap regression tests
+        run: PYTHONPATH=tools/tests python3 -m unittest test_discord_roadmap test_discord_bridge test_testflight_resolutions test_testflight_discord
+      - name: Verify delivery and update the roadmap
+        env:
+          DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
+          GITHUB_TOKEN: ${{ github.token }}
+          ASC_KEY_ID: ${{ secrets.TESTFLIGHT_ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.TESTFLIGHT_ASC_ISSUER_ID }}
+          ASC_PRIVATE_KEY: ${{ secrets.TESTFLIGHT_ASC_PRIVATE_KEY }}
+          DISCORD_ROADMAP_ENABLED: ${{ vars.DISCORD_ROADMAP_ENABLED }}
+          ROADMAP_MODE: ${{ inputs.mode == 'roadmap-check' && 'check' || inputs.mode == 'roadmap-setup' && 'setup' || 'sync' }}
+          PIN_GUIDE: ${{ inputs.pin_roadmap_guide }}
+          MAKE_READ_ONLY: ${{ inputs.make_roadmap_read_only }}
+        run: |
+          args=(--mode "$ROADMAP_MODE")
+          if [ "$PIN_GUIDE" = "true" ]; then args+=(--pin-guide); fi
+          if [ "$MAKE_READ_ONLY" = "true" ]; then args+=(--make-read-only); fi
+          python3 tools/discord-roadmap.py "${args[@]}"
 
   sync:
     if: >-
@@ -87,7 +158,7 @@ jobs:
       (github.event_name == 'schedule' ||
        (github.event_name == 'workflow_dispatch' && inputs.mode == 'sync'))
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 30
     permissions:
       contents: read
       issues: write
@@ -108,4 +179,16 @@ jobs:
           DISCORD_BRIDGE_ENABLED: ${{ vars.DISCORD_BRIDGE_ENABLED }}
           DISCORD_PUBLIC_SINCE: ${{ vars.DISCORD_PUBLIC_SINCE }}
           TESTFLIGHT_RESOLUTION_ENABLED: ${{ vars.TESTFLIGHT_RESOLUTION_ENABLED }}
-        run: python3 tools/discord-bridge.py --mode sync
+        run: |
+          for attempt in 1 2; do
+            if python3 tools/discord-bridge.py --mode sync; then
+              exit 0
+            else
+              status=$?
+            fi
+            if [ "$status" -ne 75 ] || [ "$attempt" -eq 2 ]; then
+              exit "$status"
+            fi
+            echo "::warning::Transient bridge failure; rediscovering remote state before one recovery attempt."
+            sleep 20
+          done

@@ -14,6 +14,8 @@ final class FTPControlConnection {
         self.socket = socket
     }
 
+    var usesIPv4: Bool { socket.usesIPv4 }
+
     /// Reads one complete reply (single- or multi-line).
     func readReply() async throws -> FTPReply {
         var parser = FTPReplyParser()

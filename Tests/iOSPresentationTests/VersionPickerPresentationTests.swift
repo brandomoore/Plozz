@@ -151,6 +151,140 @@ final class VersionPickerPresentationTests: XCTestCase {
         )
     }
 
+    func testFullReleaseFilenamesRemainVisibleAboveTheBadges() async throws {
+        let filenames = [
+            "MobLand.S02E04.2160p.ATV.WEB-DL.DDP5.1.Atmos.DV.HDR.H.265.DUAL-BiOMA.mkv",
+            "MobLand S02E04 2160p ATV WEB-DL DDP5 1 Atmos DV HDR H 265 DUAL-BiOMA.mkv",
+            "MobLand.S02E04.MULTi.2160p.WEB-DL.DDP5.1.H265-R3MiX.mkv"
+        ]
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        window.overrideUserInterfaceStyle = .dark
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        for width in [350.0, 736.0] {
+            for typeSize in [DynamicTypeSize.large, .accessibility2] {
+                window.frame = CGRect(x: 0, y: 0, width: width + 32, height: 1024)
+                window.rootViewController = UIHostingController(rootView: VStack(spacing: 12) {
+                    ForEach(filenames, id: \.self) { filename in
+                        MediaVersionChoiceButton(presentation: .init(.init(
+                            id: filename, fileName: filename, height: 2160,
+                            sizeBytes: 8_700_000_000, videoCodec: "hevc",
+                            sourceMetadata: .init(video: .init(codec: "hevc", height: 2160))
+                        )), action: {})
+                    }
+                }
+                .frame(width: width)
+                .environment(\.locale, Locale(identifier: "en_US"))
+                .environment(\.themePalette, .dark)
+                .environment(\.colorScheme, .dark)
+                .environment(\.dynamicTypeSize, typeSize)
+                .padding(16)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .background(.black))
+                window.makeKeyAndVisible()
+                window.layoutIfNeeded()
+                try await Task.sleep(for: .milliseconds(300))
+                let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+                    XCTAssertTrue(window.drawHierarchy(in: window.bounds, afterScreenUpdates: true))
+                }
+                let attachment = XCTAttachment(image: image)
+                attachment.name = "full-release-filenames-\(Int(width))-\(typeSize)"
+                attachment.lifetime = .keepAlways
+                add(attachment)
+                let request = VNRecognizeTextRequest()
+                request.recognitionLevel = .accurate
+                request.recognitionLanguages = ["en-US"]
+                request.usesLanguageCorrection = false
+                request.customWords = ["MobLand", "S02E04", "BiOMA", "R3MiX", "4K", "HEVC"]
+                try VNImageRequestHandler(cgImage: XCTUnwrap(image.cgImage)).perform([request])
+                let text = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ")
+                for expected in ["MobLand", "S02E04", "BiOMA", "R3MiX", "2160p", "ATV", "WEB-DL", "DDP5", "Atmos", "DUAL", "mkv", "4K", "HEVC"] {
+                    XCTAssertTrue(text.contains(expected), "Missing \(expected) at \(width)/\(typeSize): \(text)")
+                }
+                XCTAssertFalse(text.contains("…"), "Filenames must wrap rather than truncate: \(text)")
+            }
+        }
+    }
+
+    func testStructuredSourceDescriptionRendersAsCleanFileFacts() async throws {
+        let version = MediaVersion(
+            id: "structured", name: """
+            4K ●●●●●
+            [SRC] ⚡ · Example S02 · E04
+            Langues : English · French
+            Sous titres : French · English
+            Group · Source · 9GB
+            """,
+            height: 2160, sizeBytes: 9_000_000_000, duration: 2_700,
+            videoCodec: "hevc", videoRange: "DOVI",
+            audioCodec: "eac3", audioChannels: 6,
+            sourceMetadata: .init(
+                video: .init(codec: "hevc", height: 2160, videoRange: "DOVI"),
+                audioLanguages: ["eng", "fra"]
+            )
+        )
+        let deadline = ContinuousClock.now + .seconds(5)
+        while !UIApplication.shared.connectedScenes.contains(where: { $0.activationState == .foregroundActive }),
+              ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
+        window.overrideUserInterfaceStyle = .dark
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        for typeSize in [DynamicTypeSize.large, .accessibility2] {
+            window.rootViewController = UIHostingController(rootView: MediaVersionChoiceButton(
+                presentation: .init(version, locale: Locale(identifier: "en_US")), action: {}
+            )
+            .frame(width: 350)
+            .environment(\.locale, Locale(identifier: "en_US"))
+            .environment(\.versionPickerAudioLanguage, "eng")
+            .environment(\.dynamicTypeSize, typeSize)
+            .environment(\.colorScheme, .dark)
+            .environment(\.themePalette, .dark)
+            .padding(16)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(.black))
+            window.makeKeyAndVisible()
+            window.layoutIfNeeded()
+            try await Task.sleep(for: .milliseconds(300))
+            let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+                XCTAssertTrue(window.drawHierarchy(in: window.bounds, afterScreenUpdates: true))
+            }
+            let attachment = XCTAttachment(image: image)
+            attachment.name = "clean-file-facts-\(typeSize)"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+            let request = VNRecognizeTextRequest()
+            request.recognitionLevel = .accurate
+            request.recognitionLanguages = ["en-US"]
+            request.usesLanguageCorrection = false
+            request.minimumTextHeight = 0.001
+            request.customWords = ["4K", "HEVC"]
+            try VNImageRequestHandler(cgImage: XCTUnwrap(image.cgImage)).perform([request])
+            let text = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ")
+            for fact in ["9 GB", "45m", "Example", "4K", "HEVC", "English"] {
+                XCTAssertTrue(text.contains(fact), "Missing \(fact): \(text)")
+            }
+            for removed in ["SRC", "Langues", "Sous titres", "Group", "Source"] {
+                XCTAssertFalse(text.contains(removed), text)
+            }
+        }
+    }
+
     private func assertCompactSummary(
         _ version: MediaVersion, expectedFacts: [String], width: CGFloat, typeSize: DynamicTypeSize,
         direction: LayoutDirection = .leftToRight
