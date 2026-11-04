@@ -213,7 +213,8 @@ public struct DetailInformationSections: View {
                         preferredColumns: ratingColumns,
                         minimumCellWidth: ratingMinimumWidth - 2 * DetailInformationLayout.cellPadding,
                         spacing: informationColumnSpacing,
-                        rowSpacing: informationRowSpacing
+                        rowSpacing: informationRowSpacing,
+                        centersIncompleteRows: true
                     ) {
                         ForEach(sortedRatings) { rating in
                             RatingValue(rating: rating)
@@ -232,9 +233,17 @@ public struct DetailInformationSections: View {
                 }
             }
         }
-        .frame(maxWidth: ratingsWidth, alignment: .leading)
+        .frame(maxWidth: expandsRatingsToAvailableWidth ? .infinity : ratingsWidth, alignment: .leading)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Ratings")
+    }
+
+    private var expandsRatingsToAvailableWidth: Bool {
+        #if os(iOS)
+        horizontalSizeClass == .compact
+        #else
+        false
+        #endif
     }
 
     var sectionIDs: [String] {

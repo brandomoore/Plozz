@@ -88,6 +88,7 @@ final class NativeInformationCardHostedTests: XCTestCase {
                 for (index, value) in paintedValues.enumerated() {
                     XCTAssertFalse(value.isNull)
                     XCTAssertEqual(value.midY, paintedValues[0].midY, accuracy: 3)
+                    var iconLeft: Int?
                     var iconRight: Int?
                     for y in Int(scores.minY + 24)..<Int(scores.maxY - 24) {
                         for x in Int(value.minX - 100)..<Int(value.minX) {
@@ -95,6 +96,7 @@ final class NativeInformationCardHostedTests: XCTestCase {
                             let channels = pixels[offset..<(offset + 3)]
                             if let high = channels.max(), let low = channels.min(),
                                high > 160, high - low > 45 {
+                                iconLeft = min(iconLeft ?? x, x)
                                 iconRight = max(iconRight ?? x, x)
                             }
                         }
@@ -102,12 +104,13 @@ final class NativeInformationCardHostedTests: XCTestCase {
                     let gap = value.minX - CGFloat(try XCTUnwrap(iconRight) + 1)
                     XCTAssertEqual(gap, 16, accuracy: 2,
                                    "Visible mark edges, not their centered slots, determine the score gap.")
-                    if index > 0 {
-                        let step = (scores.width - 2 * DetailInformationLayout.cellPadding
-                                    + DetailInformationLayout.gutter) / 4
-                        XCTAssertEqual(value.minX - paintedValues[index - 1].minX,
-                                       step, accuracy: 3, "Scores must share evenly spaced value columns.")
-                    }
+                    let cellWidth = (scores.width - 2 * DetailInformationLayout.cellPadding
+                                     - 3 * DetailInformationLayout.gutter) / 4
+                    let expectedCenter = scores.minX + DetailInformationLayout.cellPadding
+                        + CGFloat(index) * (cellWidth + DetailInformationLayout.gutter) + cellWidth / 2
+                    let visibleCenter = (CGFloat(try XCTUnwrap(iconLeft)) + value.maxX) / 2
+                    XCTAssertEqual(visibleCenter, expectedCenter, accuracy: 2,
+                                   "Each complete mark-and-score unit must have balanced space within its column.")
                 }
             }
             let attachment = XCTAttachment(image: DetailTransitionSnapshot.image(of: window))

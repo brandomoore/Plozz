@@ -23,29 +23,22 @@ struct FamilyGuidanceTile: View {
     @Environment(\.familyGuidanceProvider) private var provider
     @Environment(\.themePalette) private var palette
     #if os(iOS)
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @ScaledMetric(relativeTo: .title2) private var scaledAgeSize: CGFloat = 30
     #endif
 
     var body: some View {
         Button { isPresented = true } label: {
-            HStack(alignment: .center, spacing: 16) {
-                FamilyGuidanceAge(age: summary.recommendedAge, size: ageSize)
-                VStack(alignment: .leading, spacing: 6) {
-                    FamilyGuidanceBrand(compact: true)
-                        .font(sourceFont)
-                    if let overview = summary.overview {
-                        Text(overview)
-                            .font(summaryFont)
-                            .lineLimit(2)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .foregroundStyle(palette.secondaryText)
-                    }
+            Group {
+                #if os(iOS)
+                if horizontalSizeClass == .compact {
+                    centeredContent
+                } else {
+                    horizontalContent
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-                Image(systemName: "chevron.forward")
-                    .font(sourceFont)
-                    .foregroundStyle(palette.secondaryText)
-                    .accessibilityHidden(true)
+                #else
+                horizontalContent
+                #endif
             }
             .foregroundStyle(palette.primaryText)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -64,6 +57,60 @@ struct FamilyGuidanceTile: View {
             FamilyGuidanceSheet(item: item, summary: summary, authorizationID: provider?.contextID)
         }
         #endif
+    }
+
+    private var horizontalContent: some View {
+        HStack(alignment: .center, spacing: 16) {
+            FamilyGuidanceAge(age: summary.recommendedAge, size: ageSize)
+            VStack(alignment: .leading, spacing: 6) {
+                FamilyGuidanceBrand(compact: true)
+                    .font(sourceFont)
+                overview
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+            disclosure
+        }
+    }
+
+    #if os(iOS)
+    private var centeredContent: some View {
+        VStack(spacing: 8) {
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 12) {
+                    FamilyGuidanceAge(age: summary.recommendedAge, size: ageSize)
+                    FamilyGuidanceBrand(compact: true).font(sourceFont)
+                }
+                .fixedSize(horizontal: true, vertical: false)
+                VStack(spacing: 8) {
+                    FamilyGuidanceAge(age: summary.recommendedAge, size: ageSize)
+                    FamilyGuidanceBrand(compact: true).font(sourceFont)
+                }
+            }
+            overview
+        }
+        .multilineTextAlignment(.center)
+        .padding(.horizontal, 20)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .overlay(alignment: .trailing) { disclosure }
+    }
+    #endif
+
+    @ViewBuilder
+    private var overview: some View {
+        if let overview = summary.overview {
+            Text(overview)
+                .font(summaryFont)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+                .foregroundStyle(palette.secondaryText)
+        }
+    }
+
+    private var disclosure: some View {
+        Image(systemName: "chevron.forward")
+            .font(sourceFont)
+            .foregroundStyle(palette.secondaryText)
+            .accessibilityHidden(true)
     }
 
     private var ageSize: CGFloat {

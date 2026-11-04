@@ -24,6 +24,7 @@ public struct ProportionalWrapLayout: Layout {
     public var minimumCellWidth: CGFloat
     public var spacing: CGFloat
     public var rowSpacing: CGFloat?
+    public var centersIncompleteRows: Bool
     /// A floor on the layout's own height, so it can be made to match a sibling
     /// column without depending on the container stretching it. Rows divide any
     /// surplus between them, so the tiles grow rather than leaving a gap.
@@ -39,13 +40,15 @@ public struct ProportionalWrapLayout: Layout {
         minimumCellWidth: CGFloat,
         spacing: CGFloat,
         minimumHeight: CGFloat = 0,
-        rowSpacing: CGFloat? = nil
+        rowSpacing: CGFloat? = nil,
+        centersIncompleteRows: Bool = false
     ) {
         self.preferredColumns = max(1, preferredColumns)
         self.minimumCellWidth = max(1, minimumCellWidth)
         self.spacing = max(0, spacing)
         self.minimumHeight = max(0, minimumHeight)
         self.rowSpacing = rowSpacing.map { max(0, $0) }
+        self.centersIncompleteRows = centersIncompleteRows
     }
 
     /// Columns that fit, and the width each one gets.
@@ -98,8 +101,11 @@ public struct ProportionalWrapLayout: Layout {
             let row = index / columns
             if column == 0, row > 0 { rowY += heights[row - 1] + surplus + gap }
             let rowHeight = heights[row] + surplus
+            let rowCount = min(columns, subviews.count - row * columns)
+            let rowOffset = centersIncompleteRows
+                ? CGFloat(columns - rowCount) * (cellWidth + spacing) / 2 : 0
             let origin = CGPoint(
-                x: bounds.minX + CGFloat(column) * (cellWidth + spacing),
+                x: bounds.minX + rowOffset + CGFloat(column) * (cellWidth + spacing),
                 y: rowY
             )
             subview.place(

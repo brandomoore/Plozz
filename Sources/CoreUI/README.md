@@ -1002,10 +1002,13 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   sections. About and Ratings sit beside each other when both have readable space;
   otherwise they stack. Side-by-side About and Ratings share top and bottom
   edges; stacked sections keep their natural height. Numeric scores share one
-  surface with evenly spaced value columns, rather than a separate card per
-  source. Icons align their trailing
-  edges to keep the visible icon-to-score gap consistent without shifting score
-  columns. Scores determine their own column width, and family guidance remains
+  surface with equal-width cells, rather than a separate card per source. Each
+  icon-and-score pair is centered as a unit, with its source centered underneath
+  and a consistent gap measured from the mark's visible edge. Incomplete rows
+  are centered, and compact mobile layouts use the full available section width.
+  Family guidance uses a centered header and synopsis on compact mobile layouts,
+  retaining its horizontal presentation on wider screens. The number of scores
+  determines the preferred grid width, and family guidance remains
   with the scores. Four or more scores balance into two rows when there is no
   guidance row. About keeps its stable line cap when its surface grows to match
   the adjacent ratings group. Missing summary content reserves no column.

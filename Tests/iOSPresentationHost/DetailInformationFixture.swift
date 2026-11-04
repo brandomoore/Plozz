@@ -12,7 +12,7 @@ struct DetailInformationFixture: View {
         ProcessInfo.processInfo.arguments.contains("--detail-single-long-value")
     }
     private var layoutCase: String? {
-        ["sparse", "rich", "personal", "episode", "discover", "guidance", "upcoming", "ratings-only", "family-only", "lupin", "slow-horses"].first {
+        ["sparse", "rich", "personal", "episode", "discover", "guidance", "upcoming", "ratings-only", "three-ratings", "family-only", "lupin", "slow-horses"].first {
             ProcessInfo.processInfo.arguments.contains("--detail-layout-\($0)")
         }
     }
@@ -131,10 +131,16 @@ struct DetailInformationFixture: View {
                 item.runtime = nil
                 item.officialRating = nil
             }
-            if layoutCase == "ratings-only" || layoutCase == "family-only" {
+            if layoutCase == "ratings-only" || layoutCase == "three-ratings" || layoutCase == "family-only" {
                 var sparse = MediaItem(id: "minimal", title: "Minimal title", kind: .movie)
                 if layoutCase == "ratings-only" {
                     sparse.ratings = item.ratings
+                } else if layoutCase == "three-ratings" {
+                    sparse.ratings = [
+                        .init(source: .rottenTomatoes, value: 98, scale: .percent),
+                        .init(source: .imdb, value: 8.3, scale: .outOfTen),
+                        .init(source: .tmdb, value: 8.1, scale: .outOfTen)
+                    ]
                 } else {
                     sparse.familyGuidance = .init(recommendedAge: 12, qualityRating: nil)
                 }
@@ -153,7 +159,7 @@ struct DetailInformationFixture: View {
 
     private var isUnowned: Bool {
         guard let layoutCase else { return false }
-        return ["discover", "upcoming", "ratings-only", "family-only"].contains(layoutCase)
+        return ["discover", "upcoming", "ratings-only", "three-ratings", "family-only"].contains(layoutCase)
     }
 
     private var availability: ExternalTitleAvailability? {

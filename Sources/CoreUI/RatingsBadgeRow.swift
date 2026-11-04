@@ -343,21 +343,21 @@ struct RatingValue: View {
     }
 
     var body: some View {
-        HStack(spacing: valueSpacing) {
-            RatingSourceIcon(rating: rating, size: iconSize)
-                .frame(width: iconSize * 1.85, height: iconRowHeight, alignment: .trailing)
-            VStack(alignment: .leading, spacing: 4) {
+        VStack(spacing: 4) {
+            HStack(spacing: valueSpacing) {
+                RatingSourceIcon(rating: rating, size: iconSize)
+                    .frame(height: iconRowHeight)
                 Text(rating.displayValue)
                     .font(valueFont)
-                    .monospacedDigit()
                     .foregroundStyle(palette.primaryText)
                     .lineLimit(1)
                     .minimumScaleFactor(0.6)
-                subtitle
-                    .frame(height: subtitleHeight)
             }
+            subtitle
+                .frame(height: subtitleHeight)
         }
-        .frame(maxWidth: compact ? nil : .infinity, alignment: .leading)
+        .frame(maxWidth: compact ? nil : .infinity)
+        .multilineTextAlignment(.center)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(Text(verbatim: "\(rating.displayName) \(rating.displayValue)"))
     }

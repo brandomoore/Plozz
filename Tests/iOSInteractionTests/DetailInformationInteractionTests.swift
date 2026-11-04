@@ -59,6 +59,18 @@ final class DetailInformationInteractionTests: XCTestCase {
         XCTAssertTrue(expandedValue.waitForExistence(timeout: 5), app.debugDescription)
     }
 
+    func testFamilyGuidanceTileOpensAndDismissesItsDetails() {
+        launch(["--detail-layout-guidance"])
+        let tile = app.buttons["family-guidance-tile"]
+        reveal(tile)
+        tile.tap()
+        let sheet = app.navigationBars["Family guidance"]
+        XCTAssertTrue(sheet.waitForExistence(timeout: 5), app.debugDescription)
+        sheet.buttons["Done"].tap()
+        XCTAssertTrue(sheet.waitForNonExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(tile.isHittable)
+    }
+
     private func launch(_ options: [String] = []) {
         app.launchArguments = ["--detail-information-fixture", "-AppleLanguages", "(en)", "-AppleLocale", "en_US"] + options
         app.launch()

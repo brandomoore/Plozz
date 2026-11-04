@@ -9,6 +9,131 @@ import XCTest
 
 @MainActor
 final class DetailCardSurfacePresentationTests: XCTestCase {
+    func testRatingUnitsBalanceVisibleMarginsOnPhoneAndTablet() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        let host = UIHostingController(rootView: AnyView(EmptyView()))
+        host.safeAreaRegions = []
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        let ratings: [ExternalRating] = [
+            .init(source: .rottenTomatoes, value: 98, scale: .percent),
+            .init(source: .rottenTomatoesAudience, value: 88, scale: .percent),
+            .init(source: .imdb, value: 8.3, scale: .outOfTen, ratingCount: 123456),
+            .init(source: .tmdb, value: 8.1, scale: .outOfTen),
+            .init(source: .metacritic, value: 73, scale: .outOfHundred)
+        ]
+        for (width, sizeClass, iconSize) in [
+            (CGFloat(148), UserInterfaceSizeClass.compact, CGFloat(24)),
+            (CGFloat(240), UserInterfaceSizeClass.regular, CGFloat(28))
+        ] {
+            window.frame = CGRect(x: 0, y: 0, width: width, height: 140)
+            for rating in ratings {
+                host.rootView = AnyView(
+                    RatingValue(rating: rating)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                        .background(.black)
+                        .environment(\.horizontalSizeClass, sizeClass)
+                        .environment(\.themePalette, .dark)
+                        .environment(\.colorScheme, .dark)
+                        .dynamicTypeSize(.large)
+                )
+                window.layoutIfNeeded()
+                try await Task.sleep(for: .milliseconds(150))
+                let image = snapshot(window)
+                let attachment = XCTAttachment(image: image)
+                attachment.name = "centered-rating-\(rating.source)-\(width)"
+                attachment.lifetime = .keepAlways
+                add(attachment)
+                let pairRegion = CGRect(x: 0, y: 0, width: width, height: iconSize * 1.5)
+                let mark = try paintedBounds(image, in: pairRegion, colored: true)
+                XCTAssertFalse(mark.isNull)
+                guard !mark.isNull else { continue }
+                let score = try paintedBounds(image, in: CGRect(
+                    x: mark.maxX + 1, y: 0, width: width - mark.maxX - 1, height: pairRegion.height
+                ), colored: false)
+                XCTAssertFalse(score.isNull)
+                guard !score.isNull else { continue }
+                XCTAssertEqual((mark.minX + score.maxX) / 2, width / 2, accuracy: 2,
+                               "Center the visible pair, not a padded icon slot.")
+                XCTAssertEqual(score.minX - mark.maxX, iconSize / 2, accuracy: 2,
+                               "\(rating.source) at \(width)pt must preserve its visible icon-to-score gap.")
+                let label = try paintedBounds(image, in: CGRect(
+                    x: 0, y: pairRegion.maxY, width: width, height: 40
+                ), colored: false)
+                XCTAssertFalse(label.isNull)
+                XCTAssertEqual(label.midX, width / 2, accuracy: 2,
+                               "The source and any vote count must be centered beneath the pair.")
+            }
+        }
+    }
+
+    func testIncompleteRatingRowsCenterWithoutStretchingCells() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        let host = UIHostingController(rootView: AnyView(EmptyView()))
+        host.safeAreaRegions = []
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        for width in [CGFloat(340), 720] {
+            window.frame = CGRect(x: 0, y: 0, width: width, height: 300)
+            for count in 1...5 {
+                for centered in [false, true] {
+                    var frames: [Int: CGRect] = [:]
+                    host.rootView = AnyView(
+                        ProportionalWrapLayout(
+                            preferredColumns: 4, minimumCellWidth: 128, spacing: 16,
+                            centersIncompleteRows: centered
+                        ) {
+                            ForEach(0..<count, id: \.self) { index in
+                                Color.white.frame(height: 40)
+                                    .onGeometryChange(for: CGRect.self) { $0.frame(in: .named("ratings")) } action: {
+                                        frames[index] = $0
+                                    }
+                            }
+                        }
+                        .coordinateSpace(name: "ratings")
+                        .frame(maxHeight: .infinity, alignment: .top)
+                        .id("\(width)-\(count)-\(centered)")
+                    )
+                    window.layoutIfNeeded()
+                    try await Task.sleep(for: .milliseconds(100))
+                    XCTAssertEqual(frames.count, count)
+                    let first = try XCTUnwrap(frames[0])
+                    for rowY in Set(frames.values.map(\.minY)) {
+                        let row = frames.values.filter { $0.minY == rowY }.sorted { $0.minX < $1.minX }
+                        let leading = try XCTUnwrap(row.first)
+                        let trailing = try XCTUnwrap(row.last)
+                        if centered {
+                            XCTAssertEqual((leading.minX + trailing.maxX) / 2, width / 2, accuracy: 0.5)
+                        } else {
+                            XCTAssertEqual(leading.minX, 0, accuracy: 0.5,
+                                           "Other proportional layouts retain their existing leading alignment.")
+                        }
+                        for (index, frame) in row.enumerated() {
+                            XCTAssertEqual(frame.width, first.width, accuracy: 0.5)
+                            if index > 0 {
+                                XCTAssertEqual(frame.minX - row[index - 1].maxX, 16, accuracy: 0.5)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     func testInlineMorePreservesEarlierLinesAndClearsBehindLargeLabels() async throws {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
         let previous = scene.windows.first(where: \.isKeyWindow)
@@ -239,6 +364,34 @@ final class DetailCardSurfacePresentationTests: XCTestCase {
         return UIGraphicsImageRenderer(bounds: window.bounds, format: format).image { _ in
             XCTAssertTrue(window.drawHierarchy(in: window.bounds, afterScreenUpdates: true))
         }
+    }
+
+    private func paintedBounds(_ image: UIImage, in region: CGRect, colored: Bool) throws -> CGRect {
+        let cgImage = try XCTUnwrap(image.cgImage)
+        let rowBytes = cgImage.width * 4
+        var bytes = [UInt8](repeating: 0, count: rowBytes * cgImage.height)
+        try bytes.withUnsafeMutableBytes {
+            let context = try XCTUnwrap(CGContext(
+                data: $0.baseAddress, width: cgImage.width, height: cgImage.height,
+                bitsPerComponent: 8, bytesPerRow: rowBytes,
+                space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            ))
+            context.draw(cgImage, in: CGRect(x: 0, y: 0, width: cgImage.width, height: cgImage.height))
+        }
+        var bounds = CGRect.null
+        for y in max(0, Int(region.minY))..<min(cgImage.height, Int(region.maxY)) {
+            for x in max(0, Int(region.minX))..<min(cgImage.width, Int(region.maxX)) {
+                let offset = y * rowBytes + x * 4
+                let channels = bytes[offset..<(offset + 3)]
+                let high = Int(channels.max() ?? 0)
+                let low = Int(channels.min() ?? 0)
+                // Include the colored marks' antialiased edges against this fixture's black backdrop.
+                if colored ? high > 80 && high - low > 45 : low > 140 {
+                    bounds = bounds.union(CGRect(x: x, y: y, width: 1, height: 1))
+                }
+            }
+        }
+        return bounds
     }
 
     private func pixel(_ image: UIImage, at point: CGPoint) throws -> [Int] {
