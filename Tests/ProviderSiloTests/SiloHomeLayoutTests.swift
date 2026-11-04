@@ -113,4 +113,75 @@ extension SiloProviderTests {
         let requests = await http.requests
         XCTAssertEqual(requests.count, 2)
     }
+
+    func testRestrictedHomeSharesMembershipWithinRefreshButNotAcrossRefreshes() async throws {
+        let raw = try credential().encoded()
+        let row = """
+        {"section_type":"custom_filter","items":[
+          {"content_id":"allowed","type":"movie","title":"Same title"},
+          {"content_id":"excluded","type":"movie","title":"Same title"}]
+        """
+        let home = #"{"sections":[{"id":"a",\#(row.dropFirst())},{"id":"b",\#(row.dropFirst())}]}"#
+        let http = SiloHTTPStub([
+            "/api/v2/home/sections": home,
+            "/api/v2/user/libraries": #"{"items":[{"id":"allowed-library","name":"Movies","type":"movie"},{"id":"hidden","name":"Hidden","type":"movie"}]}"#,
+            "/api/v2/catalog": #"{"items":[{"content_id":"allowed","type":"movie","title":"Same title"}],"total":1,"total_exact":true,"window_cursor":""}"#
+        ])
+        let provider = try SiloProvider(context: context(raw), credentials: SiloCredentialStub(raw), http: http)
+        let rows = ["a", "b"].map { ServerHomeSection(id: $0, kind: .recommendations) }
+        for refresh in 1...2 {
+            let result = await provider.serverHomeItems(sections: rows, limit: 20, excludingLibraryIDs: ["hidden"])
+            for row in rows {
+                XCTAssertEqual(try result[row.id]?.get().map(\.id), ["allowed"])
+                XCTAssertEqual(try result[row.id]?.get().first?.libraryID, "allowed-library")
+            }
+            let requests = await http.requests
+            XCTAssertEqual(requests.filter { $0.path == "/api/v2/user/libraries" }.count, refresh)
+            XCTAssertEqual(requests.filter { $0.path == "/api/v2/catalog" }.count, 2 * refresh)
+        }
+    }
+
+    func testRestrictedHomeStopsPagingImmediatelyAfterExactMembershipMatch() async throws {
+        let raw = try credential().encoded()
+        let http = SiloHTTPStub([
+            "/api/v2/home/sections": nativeHome,
+            "/api/v2/user/libraries": #"{"items":[{"id":"allowed","name":"Movies","type":"movie"}]}"#,
+            "/api/v2/catalog": """
+            {"items":[{"content_id":"movie:2","type":"movie","title":"Second"}],
+             "total":1000,"total_exact":true,"window_cursor":"","page":{"has_more":true,"next_cursor":"unused"}}
+            """
+        ])
+        let provider = try SiloProvider(context: context(raw), credentials: SiloCredentialStub(raw), http: http)
+        let result = await provider.serverHomeItems(
+            sections: [.init(id: "curated-42", kind: .recommendations)],
+            limit: 1, excludingLibraryIDs: ["hidden"]
+        )
+        XCTAssertEqual(try result["curated-42"]?.get().map(\.id), ["movie:2"])
+        let requests = await http.requests.filter { $0.path == "/api/v2/catalog" }
+        XCTAssertEqual(requests.count, 1)
+        XCTAssertEqual(requests.first?.queryItems.first { $0.name == "limit" }?.value, "200")
+    }
+
+    func testHomeSharesPlayableDetailsWithoutSharingRowResumeState() async throws {
+        let raw = try credential().encoded()
+        let http = SiloHTTPStub([
+            "/api/v2/home/sections": """
+            {"sections":[
+              {"id":"a","section_type":"next_up","items":[
+                {"content_id":"series:1","type":"series","title":"Show","play_content_id":"episode:1","position_seconds":12}]},
+              {"id":"b","section_type":"next_up","items":[
+                {"content_id":"series:1","type":"series","title":"Show","play_content_id":"episode:1","position_seconds":34}]}]}
+            """,
+            "/api/v2/catalog/items/episode:1": #"{"content_id":"episode:1","type":"episode","title":"Episode","series_id":"series:1"}"#
+        ])
+        let provider = try SiloProvider(context: context(raw), credentials: SiloCredentialStub(raw), http: http)
+        let result = await provider.serverHomeItems(
+            sections: ["a", "b"].map { .init(id: $0, kind: .nextUp) }, limit: 10, excludingLibraryIDs: []
+        )
+        XCTAssertEqual(try result["a"]?.get().first?.resumePosition, 12)
+        XCTAssertEqual(try result["b"]?.get().first?.resumePosition, 34)
+        let requests = await http.requests
+        XCTAssertEqual(requests.filter { $0.path.hasPrefix("/api/v2/catalog/items/") }.count, 1)
+        XCTAssertFalse(requests.contains { $0.path == "/api/v2/user/libraries" })
+    }
 }

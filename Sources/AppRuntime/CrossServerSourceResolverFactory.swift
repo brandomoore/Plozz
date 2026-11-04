@@ -11,7 +11,7 @@ private func searchWithDeadline(
         let items = (try? await provider.search(query: query, limit: limit)) ?? []
         guard provider.catalogIdentityRequiresEnrichment else { return items }
         let prepared = await IdentityEnrichment.prepare(items, enrichIdentifiedItems: true) { item in
-            try? await provider.item(id: item.id)
+            try await provider.item(id: item.id)
         }
         guard !Task.isCancelled else { return [] }
         if prepared.inconclusive {

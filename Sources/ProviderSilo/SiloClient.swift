@@ -15,10 +15,13 @@ actor SiloClient {
     private let store: any RotatingCredentialStoring
     private let http: any HTTPClient
     private var refresh: Task<SiloCredential, Error>?
+    private let uptime: @Sendable () -> TimeInterval
+    private var browseRetryAfter: TimeInterval?
 
     init(
         context: ProviderResolutionContext, store: any RotatingCredentialStoring, http: any HTTPClient,
-        addressProbe: any HTTPClient = URLSessionHTTPClient(session: .plozzDiscovery)
+        addressProbe: any HTTPClient = URLSessionHTTPClient(session: .plozzDiscovery),
+        uptime: @escaping @Sendable () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }
     ) throws {
         let credential = try SiloCredential.decode(context.session.accessToken)
         guard context.session.server.provider == .silo,
@@ -42,6 +45,7 @@ actor SiloClient {
         profileID = credential.profileID
         loginID = credential.loginID
         self.store = store
+        self.uptime = uptime
     }
 
     private func currentCredential() throws -> (String, SiloCredential) {
@@ -182,6 +186,8 @@ actor SiloClient {
         deviceID: String? = nil
     ) async throws -> (Data, HTTPURLResponse) {
         try Task.checkCancellation()
+        _ = try currentCredential()
+        try checkBrowseCooldown(path)
         let credential = try await authorizedCredential()
         _ = try currentCredential()
         var endpoint = SiloAPI.endpoint(path, method: method, query: query, token: credential.accessToken,
@@ -189,11 +195,11 @@ actor SiloClient {
         endpoint.body = body
         if let deviceID { endpoint.headers["X-Silo-Device-Id"] = deviceID }
         if body != nil { endpoint.headers["Content-Type"] = "application/json" }
-        var result = try await http.sendRaw(endpoint, baseURL: baseURL)
+        var result = try await transmit(endpoint, path: path)
         if result.1.statusCode == 401, method == .get {
             let refreshed = try await authorizedCredential(rejectedToken: credential.accessToken)
             endpoint.headers["Authorization"] = "Bearer \(refreshed.accessToken)"
-            result = try await http.sendRaw(endpoint, baseURL: baseURL)
+            result = try await transmit(endpoint, path: path)
         }
         if !(200...299).contains(result.1.statusCode) {
             HTTPResponseDiagnostics.recordHTTPFailure(status: result.1.statusCode)
@@ -234,6 +240,43 @@ actor SiloClient {
         }
         try Task.checkCancellation()
         _ = try currentCredential()
+        return result
+    }
+
+    private func checkBrowseCooldown(_ path: String) throws {
+        // A catalog quota must not prevent an active player from reporting or stopping.
+        guard !path.hasPrefix("/playback/"), let deadline = browseRetryAfter else { return }
+        let remaining = deadline - uptime()
+        guard remaining > 0 else {
+            browseRetryAfter = nil
+            return
+        }
+        throw AppError.rateLimited(retryAfter: remaining)
+    }
+
+    private func recordBrowseCooldown(_ delay: TimeInterval?, path: String) {
+        guard !path.hasPrefix("/playback/") else { return }
+        let delay = delay.flatMap { $0.isFinite && $0 >= 0 ? $0 : nil } ?? 60
+        browseRetryAfter = max(browseRetryAfter ?? 0, uptime() + delay)
+        PlozzLog.networking.info("Silo browsing paused after a rate limit.")
+    }
+
+    private func transmit(_ endpoint: Endpoint, path: String) async throws -> (Data, HTTPURLResponse) {
+        try Task.checkCancellation()
+        _ = try currentCredential()
+        try checkBrowseCooldown(path)
+        let result: (Data, HTTPURLResponse)
+        do {
+            result = try await http.sendRaw(endpoint, baseURL: baseURL)
+        } catch AppError.rateLimited(let delay) {
+            recordBrowseCooldown(delay, path: path)
+            throw AppError.rateLimited(retryAfter: delay)
+        }
+        if result.1.statusCode == 429 {
+            recordBrowseCooldown(
+                HTTPDate.retryAfter(result.1.value(forHTTPHeaderField: "Retry-After")), path: path
+            )
+        }
         return result
     }
 }

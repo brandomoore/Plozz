@@ -265,6 +265,13 @@ public final class IdentityIndexModel {
         Self.globalPersistenceGeneration &+= 1
         let persistenceGeneration = Self.globalPersistenceGeneration
         identityWarmTask = Task { [weak self] in
+            defer {
+                // A completed or refused wave must not block a later retry.
+                if let self, self.identityWarmGeneration == warmGeneration {
+                    self.identityWarmTask = nil
+                    self.identityWarmKey = nil
+                }
+            }
             guard self?.isCurrentWarm(warmGeneration, namespace: storeNamespace) == true else { return }
             // B2: On the first warm this launch, seed the index from the persisted
             // membership and publish immediately, so cross-server unions are known
@@ -535,11 +542,19 @@ public final class IdentityIndexModel {
             var offset = 0
             while offset < maxPerLibrary {
                 if Task.isCancelled { return }
-                guard let page = try? await provider.items(
-                    in: library.id,
-                    kind: library.kind,
-                    page: PageRequest(startIndex: offset, limit: chunkSize, sort: .default)
-                ) else {
+                let page: MediaPage
+                do {
+                    page = try await provider.items(
+                        in: library.id, kind: library.kind,
+                        page: PageRequest(startIndex: offset, limit: chunkSize, sort: .default)
+                    )
+                } catch {
+                    let failure = (error as? AppError) ?? (error is CancellationError ? .cancelled : .invalidResponse)
+                    FanoutDiagnostics.emit("index.page failed reason=\(HandoffDiagnostics.errorCode(failure))")
+                    switch failure {
+                    case .rateLimited, .unauthorized, .cancelled: return
+                    default: break
+                    }
                     // A page fetch threw (network / server error), not a clean end
                     // of catalogue. Mark the scan inconclusive so this library —
                     // and thus the account — is re-warmed rather than finished as
@@ -557,7 +572,7 @@ public final class IdentityIndexModel {
                     page.items,
                     enrichIdentifiedItems: provider.catalogIdentityRequiresEnrichment
                 ) { item in
-                    try? await provider.item(id: item.id)
+                    try await provider.item(id: item.id)
                 }
                 inconclusive = inconclusive || prepared.inconclusive
                 // Re-check just before the ingest: `provider.items` and the
@@ -566,6 +581,10 @@ public final class IdentityIndexModel {
                 // into a bucket a concurrent retain/rebuild already cleared.
                 if Task.isCancelled { return }
                 await index.ingest(prepared.indexable, accountID: accountID, serverInfo: liveServerInfo)
+                if let interruption = prepared.interruption {
+                    FanoutDiagnostics.emit("index.enrichment stopped reason=\(HandoffDiagnostics.errorCode(interruption))")
+                    return
+                }
                 offset += page.items.count
                 // Only trust `totalCount` as an end-of-catalogue signal when the
                 // provider actually reports one (> 0). A provider that returns a
