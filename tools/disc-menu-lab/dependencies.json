@@ -1,0 +1,22 @@
+{
+  "libbluray": {
+    "url": "https://download.videolan.org/pub/videolan/libbluray/1.5.0/libbluray-1.5.0.tar.xz",
+    "sha256": "f676408e91a5d321abf8b8d4dfdae36205c297dab5c54c3ec519639025f474a2",
+    "root": "libbluray-1.5.0"
+  },
+  "host-jdk": {
+    "url": "https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.13%2B9/OpenJDK21U-jdk_aarch64_mac_hotspot_21.0.13_9.tar.gz",
+    "sha256": "bf036b35b071bfb2f54f2c0af8ee8d88afa95ee6eb3dce02c0f94cfc2524d04a",
+    "root": "jdk-21.0.13+9"
+  },
+  "zero-source": {
+    "url": "https://codeload.github.com/openjdk/mobile/tar.gz/ecb17532dc8f3e271ad2d6550127a2253569cf9b",
+    "sha256": "04713003a9b797e5c128f48a0d6bc401d80f3475e6fcf0e7b204ee0b09a3290a",
+    "root": "mobile-ecb17532dc8f3e271ad2d6550127a2253569cf9b"
+  },
+  "ant": {
+    "url": "https://archive.apache.org/dist/ant/binaries/apache-ant-1.10.15-bin.tar.gz",
+    "sha512": "d78427aff207592c024ff1552dc04f7b57065a195c42d398fcffe7a0145e8d00cd46786f5aa52e77ab0fdf81334f065eb8011eecd2b48f7228e97ff4cb20d16c",
+    "root": "apache-ant-1.10.15"
+  }
+}
