@@ -441,8 +441,11 @@ records on both platforms; error dialogs, playback routing and timeouts are unch
   each failed server, distinguishing offline, sign-in, and Home-loading problems
   instead of showing a blanket warning about server arrangements. Recovery clears
   that server's status; failures never reset saved row choices.
-  Enabled sections missing their content retain a compact warning on Home with
-  source, Details, and Retry. Customize Home shares the same completed-load
+  Enabled sections with failed or unavailable content retain a compact warning
+  on Home with source, Details, and Retry. Confirmed-empty sections instead show
+  a centered native empty state with a neutral stack symbol, source attribution,
+  and extra vertical breathing room, without error details or retry controls.
+  Customize Home shares the same completed-load
   evidence, distinguishing typed failures, empty results, and saved sections
   absent from the latest refresh. Missing sections do not prove a server error:
   dynamic recommendations may be empty or changed. Normal empty default library
@@ -450,8 +453,9 @@ records on both platforms; error dialogs, playback routing and timeouts are unch
   cards remain visible, with any load warning available in the editor.
   Empty and failed Home rows use the same header and keyline as populated rows,
   including pinned-navigation clearance. Status/source and native recovery
-  actions stay compact; they do not use a full-page error panel or reserve an
-  empty poster wall. Mobile uses its ordinary media-section heading and insets.
+  actions for failures stay compact; empty states reserve a modest minimum
+  height rather than an empty poster wall and grow for larger text. Mobile uses
+  its ordinary media-section heading and insets.
   Warnings are runtime-only, scoped to the current profile, accounts, server
   users, credentials, and settings; cancellation is not a failure and successful
   recovery clears the warning. Details expose safe error categories, not URLs,

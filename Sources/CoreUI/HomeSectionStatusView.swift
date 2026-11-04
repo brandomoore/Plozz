@@ -24,28 +24,33 @@ public struct HomeSectionStatusView: View {
                 (issue.choice.localizedTitle.map(Text.init) ?? Text(verbatim: issue.choice.title))
                     .font(.headline)
             }
-            MediaRowStatusContent(message: issue.summary, symbol: symbol) {
-                HStack(spacing: 8) {
-                    if let provider = issue.providerKind {
-                        ProviderBrandMark(provider: provider, size: 20, showsBackground: false)
-                    }
-                    if let server = issue.serverName {
-                        Text(verbatim: server)
-                    }
-                    if let library = issue.choice.library {
-                        Text(verbatim: library.library.title)
-                    }
+            if issue.reason == .empty {
+                ContentUnavailableView {
+                    Label(issue.summary, systemImage: "rectangle.stack")
+                } description: {
+                    HomeSectionSourceLabel(issue: issue)
+                } actions: {
+                    if let onSeeAll { Button("See all", action: onSeeAll) }
                 }
-            } actions: {
-                Button("Details", systemImage: "info.circle") { showsDetails = true }
-                    .plozzActionButton(role: .secondary)
-                    .accessibilityIdentifier("home-section-details")
-                Button("Retry", systemImage: "arrow.clockwise", action: onRetry)
-                    .plozzActionButton()
-                    .accessibilityIdentifier("home-section-retry")
-                if let onSeeAll { Button("See all", action: onSeeAll) }
+                #if os(tvOS)
+                .frame(maxWidth: .infinity, minHeight: 220)
+                #else
+                .frame(maxWidth: .infinity, minHeight: 180)
+                #endif
+                .accessibilityIdentifier("home-section-empty")
+            } else {
+                MediaRowStatusContent(message: issue.summary, symbol: symbol) {
+                    HomeSectionSourceLabel(issue: issue)
+                } actions: {
+                    Button("Details", systemImage: "info.circle") { showsDetails = true }
+                        .plozzActionButton(role: .secondary)
+                        .accessibilityIdentifier("home-section-details")
+                    Button("Retry", systemImage: "arrow.clockwise", action: onRetry)
+                        .plozzActionButton()
+                        .accessibilityIdentifier("home-section-retry")
+                    if let onSeeAll { Button("See all", action: onSeeAll) }
+                }
             }
-
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .contain)
@@ -64,5 +69,23 @@ public struct HomeSectionStatusView: View {
     private var symbol: String {
         if case .failed = issue.reason { return "exclamationmark.triangle" }
         return "info.circle"
+    }
+}
+
+private struct HomeSectionSourceLabel: View {
+    let issue: HomeSectionIssue
+
+    var body: some View {
+        HStack(spacing: 8) {
+            if let provider = issue.providerKind {
+                ProviderBrandMark(provider: provider, size: 20, showsBackground: false)
+            }
+            if let server = issue.serverName {
+                Text(verbatim: server)
+            }
+            if let library = issue.choice.library {
+                Text(verbatim: library.library.title)
+            }
+        }
     }
 }

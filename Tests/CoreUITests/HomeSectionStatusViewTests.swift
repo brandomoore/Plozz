@@ -1,0 +1,157 @@
+#if canImport(UIKit)
+import CoreModels
+import CoreUI
+import SwiftUI
+import UIKit
+import Vision
+import XCTest
+
+@MainActor
+final class HomeSectionStatusViewTests: XCTestCase {
+    func testEmptySectionReservesSpaceWithoutRecoveryControls() async throws {
+        #if os(tvOS)
+        let widths: [CGFloat] = [800, 1600]
+        let minimumHeight = 220
+        #else
+        let widths: [CGFloat] = [280, 360, 760]
+        let minimumHeight = 180
+        #endif
+        for width in widths {
+            let image = try await render(.empty, width: width)
+            let text = try recognize(image)
+            XCTAssertTrue(text.contains("No titles to show"), text)
+            XCTAssertTrue(text.contains("Media server"), text)
+            XCTAssertFalse(text.contains("Details"), text)
+            XCTAssertFalse(text.contains("Retry"), text)
+            XCTAssertFalse(text.contains("connection"), text)
+            let summary = try XCTUnwrap(
+                observations(image).first { $0.topCandidates(1).first?.string == "No titles to show" }
+            )
+            XCTAssertEqual(summary.boundingBox.midX, 0.5, accuracy: 0.02)
+            XCTAssertGreaterThanOrEqual(image.height, minimumHeight * 2)
+            XCTAssertLessThan(image.height, 700, "An empty row should not reserve a whole poster wall.")
+            let attachment = XCTAttachment(image: UIImage(cgImage: image))
+            attachment.name = "Empty Home section \(Int(width))"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+            if let directory = ProcessInfo.processInfo.environment["PLOZZ_HOME_STATUS_SNAPSHOTS"] {
+                let url = URL(fileURLWithPath: directory).appendingPathComponent("empty-\(Int(width)).png")
+                try XCTUnwrap(UIImage(cgImage: image).pngData()).write(to: url)
+            }
+        }
+    }
+
+    #if os(tvOS)
+    func testNonemptyIssueReasonsKeepRecoveryControls() async throws {
+        let reasons: [HomeSectionIssue.Reason] = [.failed(.serverUnreachable), .notReturned, .sourceUnavailable]
+        for (index, reason) in reasons.enumerated() {
+            let width: CGFloat = 1000
+            let image = try await render(reason, width: width)
+            if let directory = ProcessInfo.processInfo.environment["PLOZZ_HOME_STATUS_SNAPSHOTS"] {
+                let url = URL(fileURLWithPath: directory).appendingPathComponent("unavailable-\(index).png")
+                try XCTUnwrap(UIImage(cgImage: image).pngData()).write(to: url)
+            }
+            let text = try recognize(image)
+            XCTAssertTrue(text.contains("Details"), text)
+            XCTAssertTrue(text.contains("Retry"), text)
+            XCTAssertTrue(text.contains("Media server"), text)
+        }
+    }
+    #endif
+
+    #if os(iOS)
+    func testEmptySectionGrowsForAccessibilityTextWithoutClipping() async throws {
+        let normal = try await render(.empty, width: 280)
+        let large = try await render(.empty, width: 280, textSize: .accessibility3)
+        XCTAssertGreaterThan(large.height, normal.height)
+        let text = try recognize(large)
+        for word in ["No", "titles", "to", "show", "Media", "server"] {
+            XCTAssertTrue(text.contains(word), text)
+        }
+    }
+    #endif
+
+    func testEmptySectionRetainsOptionalBrowseAction() async throws {
+        #if os(tvOS)
+        let width: CGFloat = 1000
+        #else
+        let width: CGFloat = 360
+        #endif
+        let text = try recognize(await render(.empty, width: width, onSeeAll: {}))
+        XCTAssertTrue(text.contains("See all"), text)
+        XCTAssertFalse(text.contains("Details"), text)
+        XCTAssertFalse(text.contains("Retry"), text)
+    }
+
+    private func render(
+        _ reason: HomeSectionIssue.Reason, width: CGFloat,
+        textSize: DynamicTypeSize = .large, onSeeAll: (() -> Void)? = nil
+    ) async throws -> CGImage {
+        let issue = HomeSectionIssue(
+            choice: .init(
+                id: .server(accountID: "fixture", section: "seasonal"),
+                title: "Seasonal picks", isProviderDefault: true
+            ),
+            reason: reason, serverName: "Media server", providerKind: .silo
+        )
+        let content =
+            HomeSectionStatusView(issue: issue, showsTitle: false, onSeeAll: onSeeAll, onRetry: {})
+                .environment(\.themePalette, .dark)
+                .environment(\.colorScheme, .dark)
+                .environment(\.locale, Locale(identifier: "en_US"))
+                .environment(\.dynamicTypeSize, textSize)
+                .frame(width: width)
+                .fixedSize(horizontal: false, vertical: true)
+                .background(ThemePalette.dark.backgroundBase)
+                .ignoresSafeArea()
+        #if os(iOS)
+        let renderer = ImageRenderer(content: content)
+        renderer.scale = 2
+        return try XCTUnwrap(renderer.cgImage)
+        #else
+        // Native tvOS buttons are UIKit-backed and are omitted by ImageRenderer.
+        let host = UIHostingController(rootView: content)
+        host.safeAreaRegions = []
+        let proposal = CGSize(width: width, height: 2_000)
+        let previousKeyWindow = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }.flatMap(\.windows).first(where: \.isKeyWindow)
+        let window = UIWindow(frame: CGRect(origin: .zero, size: host.sizeThatFits(in: proposal)))
+        window.overrideUserInterfaceStyle = .dark
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previousKeyWindow?.makeKey()
+        }
+        host.view.frame = window.bounds
+        host.view.layoutIfNeeded()
+        try await Task.sleep(for: .milliseconds(250))
+        let size = host.sizeThatFits(in: proposal)
+        window.frame.size = size
+        host.view.frame = window.bounds
+        host.view.layoutIfNeeded()
+        try await Task.sleep(for: .milliseconds(100))
+        host.view.layoutIfNeeded()
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 2
+        let image = UIGraphicsImageRenderer(size: size, format: format).image { context in
+            host.view.layer.render(in: context.cgContext)
+        }
+        return try XCTUnwrap(image.cgImage)
+        #endif
+    }
+
+    private func recognize(_ image: CGImage) throws -> String {
+        try observations(image).compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ")
+    }
+
+    private func observations(_ image: CGImage) throws -> [VNRecognizedTextObservation] {
+        let request = VNRecognizeTextRequest()
+        request.recognitionLevel = .accurate
+        request.recognitionLanguages = ["en-US"]
+        try VNImageRequestHandler(cgImage: image).perform([request])
+        return request.results ?? []
+    }
+}
+#endif
