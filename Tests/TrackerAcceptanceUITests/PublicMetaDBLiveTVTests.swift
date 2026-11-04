@@ -199,6 +199,12 @@ final class PublicMetaDBLiveTVTests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Playback reporting enabled"].waitForExistence(timeout: 10))
     }
 
+    func testPlaybackReportingIsDisabled() throws {
+        try openPlaybackReporting()
+        XCTAssertTrue(app.buttons["publicmetadb.playback.enable"].waitForExistence(timeout: 10))
+        XCTAssertFalse(app.buttons["publicmetadb.playback.disable"].exists)
+    }
+
     func testDisablePlaybackReporting() throws {
         try openPlaybackReporting()
         XCTAssertTrue(app.staticTexts["Playback reporting enabled"].exists)

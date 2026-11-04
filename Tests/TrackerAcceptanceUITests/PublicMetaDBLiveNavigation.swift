@@ -17,7 +17,10 @@ enum PublicMetaDBLiveNavigation {
             let settings = app.buttons["Settings"]
             for _ in 0..<4 {
                 if settings.exists && settings.isEnabled { break }
-                XCUIRemote.shared.press(.left)
+                XCUIRemote.shared.press(.menu)
+            }
+            guard settings.exists, settings.isEnabled else {
+                throw Failure.unavailableControl("App navigation did not become available.")
             }
             try select(settings, moving: .down)
         }
