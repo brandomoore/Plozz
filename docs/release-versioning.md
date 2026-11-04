@@ -99,6 +99,37 @@ PLOZZ_RELEASE_ID=release/045 fastlane beta --env fastlane
 PLOZZ_RELEASE_ID=release/045 fastlane release --env fastlane
 ```
 
+### Queued App Store screenshots
+
+`fastlane/pending-store-screenshots.json` pins the approved Asset Library images,
+their hashes, order, device groups and the existing versions that must remain
+untouched. The `release` lane applies this one-time set after both platform
+uploads and before tagging. It does not submit review, change build selection,
+or run during `beta`. The current queue targets the first versions after
+`2026.10.30`; it cannot replace the build-70 screenshots.
+Only the three pinned device groups in `en-US` are changed. Separate device
+groups, including iPhone Duo, and other localizations are preserved.
+
+Consumption and partial-progress receipts are shared across worktrees in
+`${XDG_STATE_HOME:-~/.local/state}/plozz/app-store-screenshots/`, under a
+nonblocking writer lock. Each platform is consumed only after all of its
+placements and their order are read back. Future releases inherit Apple's
+existing screenshots rather than reapplying this set. A changed queue needs a
+new ID; do not delete receipts to force reuse.
+
+If screenshots fail after binary upload, retain the uploads and recover only
+the metadata step:
+
+```sh
+PLOZZ_RELEASE_ID=release/NNN fastlane apply_queued_screenshots --env fastlane
+```
+
+Use the already-uploaded release's actual catalog ID, not the example. This
+command resumes confirmed progress but refuses an in-review/released target,
+an unexpected asset, concurrent edits or an uncertain write. Inspect its
+journal and App Store Connect before resolving an uncertain outcome. Never
+withdraw a submission or blindly reupload binaries to retry screenshots.
+
 `PLOZZ_MARKETING_VERSION` is an intentional Apple-version override, not the public
 release label. With a selected release it must match the catalog's Apple version.
 Never use that override merely to change the date shown in the app. Both platforms
