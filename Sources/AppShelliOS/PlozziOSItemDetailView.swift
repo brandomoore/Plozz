@@ -2979,7 +2979,9 @@ struct PlozziOSBulkDownloadActionControl: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            PlozziOSDownloadControl(state: state, isPreparing: action == .preparing)
+            PlozziOSDownloadControl(
+                state: state, isPreparing: action == .preparing, showsPauseIcon: action == .pause
+            )
             Group {
                 if state == .completed, action != .preparing {
                     Text("Downloaded")
@@ -3118,7 +3120,7 @@ private struct PlozziOSEpisodeDownloadRow: View {
                     Button {
                         Task { await appModel.downloads.pause(record) }
                     } label: {
-                        PlozziOSDownloadControl(state: record.badgeState)
+                        PlozziOSDownloadControl(state: record.badgeState, showsPauseIcon: true)
                     }
                     .buttonStyle(.plain)
                     .disabled(isBusy)
@@ -3312,6 +3314,7 @@ struct PlozziOSDownloadThumbnail: View {
 struct PlozziOSDownloadControl: View {
     var state: MediaDownloadBadgeState?
     var isPreparing = false
+    var showsPauseIcon = false
     var fallbackSystemImage = "arrow.down"
 
     var body: some View {
@@ -3323,6 +3326,14 @@ struct PlozziOSDownloadControl: View {
                     .accessibilityLabel("Preparing Download")
             } else if let state {
                 statusIcon(state)
+                    .overlay {
+                        if showsPauseIcon, case .inProgress = state {
+                            Image(systemName: "pause.fill")
+                                .font(.system(size: 9, weight: .semibold))
+                                .foregroundStyle(.primary)
+                                .accessibilityHidden(true)
+                        }
+                    }
             } else {
                 Image(systemName: "\(fallbackSystemImage).circle")
                     .font(.system(size: 25, weight: .regular))
@@ -3352,6 +3363,11 @@ struct PlozziOSDownloadControl: View {
                             format: .percent.precision(.fractionLength(0))
                         )
                     )
+            } else if showsPauseIcon {
+                Circle()
+                    .stroke(Color.primary.opacity(0.25), lineWidth: 3)
+                    .frame(width: 25, height: 25)
+                    .accessibilityLabel(Text(MediaDownloadDestination.current.downloadingTitle))
             } else {
                 ProgressView()
                     .controlSize(.small)

@@ -898,6 +898,32 @@ final class DownloadPresentationTests: XCTestCase {
         }
     }
 
+    func testActionableDownloadProgressAddsPauseInsideTheUnchangedRing() throws {
+        let fractions: [Double?] = [nil, 0.6]
+        for fraction in fractions {
+            var centers: [Data] = []
+            for showsPause in [false, true] {
+                let renderer = ImageRenderer(content:
+                    PlozziOSDownloadControl(state: .inProgress(fraction: fraction), showsPauseIcon: showsPause)
+                        .foregroundStyle(.white)
+                        .background(.black)
+                        .environment(\.colorScheme, .dark)
+                )
+                renderer.scale = 3
+                let image = try XCTUnwrap(renderer.cgImage)
+                XCTAssertEqual(image.width, 132)
+                XCTAssertEqual(image.height, 132)
+                let center = try XCTUnwrap(image.cropping(to: CGRect(x: 54, y: 54, width: 24, height: 24)))
+                centers.append(try XCTUnwrap(UIImage(cgImage: center).pngData()))
+                let attachment = XCTAttachment(image: UIImage(cgImage: image))
+                attachment.name = "download-pause-\(showsPause)-\(fraction == nil ? "unknown" : "known")"
+                attachment.lifetime = .keepAlways
+                add(attachment)
+            }
+            XCTAssertNotEqual(centers[0], centers[1], "The pause glyph must be visible inside the ring.")
+        }
+    }
+
     func testProgressDoesNotInvalidateUnrelatedEpisodeLookups() async throws {
         let registry = DownloadedMediaRegistry(store: InMemoryDownloadedMediaStore())
         var active = record(id: "active")
