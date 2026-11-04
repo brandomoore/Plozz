@@ -37,6 +37,13 @@ extension DownloadedMediaRecord {
 }
 
 extension PlozziOSAppModel {
+    func removeConfirmedDownload(_ record: DownloadedMediaRecord, profileID: String) async {
+        guard isActiveProfileAuthorized, profiles.activeProfileID == profileID,
+              let current = downloads.records.first(where: { $0.identityKey == record.identityKey }),
+              current.status == .completed else { return }
+        await downloads.remove(current)
+    }
+
     /// Run a download action from any menu. One implementation so the Continue
     /// Watching card, the episode rows and the detail page can't drift on what
     /// "Resume" does — previously these lived only inside the episode row view,

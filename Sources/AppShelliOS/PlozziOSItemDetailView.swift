@@ -3111,15 +3111,19 @@ private struct PlozziOSEpisodeDownloadRow: View {
                     .disabled(isBusy)
                     .accessibilityLabel("Resume Download")
                 } else if let state = record.badgeState {
-                    if alternatives.count > 1 || episode.hasMultipleVersions {
-                        Button { onDownload(downloadItems) } label: {
-                            PlozziOSDownloadControl(state: state)
-                        }
-                        .buttonStyle(.plain)
-                        .disabled(isBusy)
-                        .accessibilityLabel("Choose Versions")
-                    } else {
+                    let profileID = appModel.profiles.activeProfileID
+                    PlozziOSRemoveDownloadButton {
+                        Task { await appModel.removeConfirmedDownload(record, profileID: profileID) }
+                    } label: {
                         PlozziOSDownloadControl(state: state)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isBusy)
+                    .id("\(profileID):\(record.identityKey)")
+                    .contextMenu {
+                        if alternatives.count > 1 || episode.hasMultipleVersions {
+                            Button("Choose Versions") { onDownload(downloadItems) }
+                        }
                     }
                 }
             } else {

@@ -209,6 +209,8 @@ limits and refuses an incompatible plan rather than quietly using Maximum.
   Single-episode downloads show version choices directly. Season/show downloads
   use season sections with one row per episode and nested version lists.
   Version rows identify their server and, for network shares, their relative folder.
+  Tap a downloaded episode's button to confirm removing that offline copy;
+  other saved versions remain available.
   One version is preselected using the existing explicit,
   remembered-series, and device-compatible version selection rules. You can
   exclude episodes or deliberately select multiple versions, which keep separate

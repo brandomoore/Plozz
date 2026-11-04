@@ -61,6 +61,36 @@ final class DownloadSelectionInteractionTests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Queued: 0"].waitForExistence(timeout: 5))
     }
 
+    func testDownloadedEpisodeRequiresConfirmationAndCancelKeepsTheCopy() {
+        relaunch(["--downloaded-episode"])
+        app.buttons["downloaded-episode"].tap()
+        let cancel = app.buttons["Cancel"]
+        XCTAssertTrue(app.staticTexts["Remove this download from this device?"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Saved copies: 2"].exists)
+        if cancel.exists {
+            cancel.tap()
+        } else {
+            app.otherElements["PopoverDismissRegion"].tap()
+        }
+        XCTAssertTrue(app.buttons["downloaded-episode"].exists)
+        XCTAssertTrue(app.staticTexts["Saved copies: 2"].exists)
+        XCTAssertTrue(app.staticTexts["Queued: 0"].exists)
+    }
+
+    func testConfirmedRemovalLeavesTheOtherSavedCopy() {
+        relaunch(["--downloaded-episode"])
+        app.buttons["downloaded-episode"].tap()
+        let remove = app.buttons.matching(
+            NSPredicate(format: "label == %@ AND identifier != %@", "Remove Download", "downloaded-episode")
+        ).firstMatch
+        XCTAssertTrue(remove.waitForExistence(timeout: 5), app.debugDescription)
+        capture("episode-remove-download-confirmation")
+        remove.tap()
+        XCTAssertTrue(app.staticTexts["Saved copies: 1"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["downloaded-episode"].exists)
+        XCTAssertTrue(app.staticTexts["Queued: 0"].exists)
+    }
+
     func testUncheckingTheOnlyEpisodeDisablesDownload() {
         app.terminate()
         app.launchArguments.append("--single-download-episode")

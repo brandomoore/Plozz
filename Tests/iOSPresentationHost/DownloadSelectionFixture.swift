@@ -13,10 +13,22 @@ struct DownloadSelectionFixture: View {
     @State private var downloadedCount = 0
     @State private var sheetCount = 0
     @State private var preparationCount = 0
+    @State private var hasDownloadedEpisode = true
 
     var body: some View {
         NavigationStack {
             VStack(spacing: 20) {
+                if ProcessInfo.processInfo.arguments.contains("--downloaded-episode") {
+                    if hasDownloadedEpisode {
+                        PlozziOSRemoveDownloadButton {
+                            hasDownloadedEpisode = false
+                        } label: {
+                            Label("Downloaded", systemImage: "checkmark.circle.fill")
+                        }
+                        .accessibilityIdentifier("downloaded-episode")
+                    }
+                    Text(hasDownloadedEpisode ? "Saved copies: 2" : "Saved copies: 1")
+                }
                 Button("Download Season") { showsSheet = true }
                     .disabled(showsSheet)
                 Text("Queued: \(downloadedCount)")
