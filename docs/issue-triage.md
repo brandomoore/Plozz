@@ -68,6 +68,16 @@ Actions execution and Copilot inference have separate billing rules. Verify
 the account's model entitlement and usage; do not assume an unlimited desktop
 model entitlement transfers to Actions.
 
+The initial hosted preview confirmed that the credential's model catalog lists
+`mai-code-2-flash`, but neither that catalog nor gh-aw's bundled catalog supplied
+its pricing. With maintainer approval, the workflow uses an accounting estimate
+of $3 per million input/cache tokens and $15 per million output/reasoning tokens
+for its usage guard. These are **not quoted billing rates** and do not change
+GitHub charges. Inference uses the token owner's Copilot entitlement; consult
+that account's billing for actual consumption. Replace the estimate with
+verified pricing when available. Model availability alone is not proof of a
+successful inference request.
+
 ## Durable evidence and website consumption
 
 The generated comment footer includes the workflow identity and a link to the

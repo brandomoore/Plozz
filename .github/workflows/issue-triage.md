@@ -35,6 +35,17 @@ engine:
   bare: true
 models:
   allowed: [mai-code-2-flash]
+  providers:
+    github-copilot:
+      models:
+        mai-code-2-flash:
+          # Approved accounting estimate, not a quoted Copilot billing rate.
+          cost:
+            input: 0.000003
+            output: 0.000015
+            cache_read: 0.000003
+            cache_write: 0.000003
+            reasoning: 0.000015
 features:
   # The external detector does not forward the configured reasoning arguments.
   gh-aw-detection: false
