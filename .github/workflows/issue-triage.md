@@ -117,6 +117,24 @@ safe-outputs:
   messages:
     footer: "> Automated assessment, not a reproduction or a delivery guarantee. [Evidence run]({run_url})."
     footer-install: ""
+jobs:
+  format-triage-comments:
+    needs: [safe_outputs, detection]
+    if: vars.PLOZZ_TRIAGE_PUBLISH == 'true' && github.ref == 'refs/heads/main' && needs.detection.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          persist-credentials: false
+      - name: Collapse automation details
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 tools/format-triage-comments.py --apply
 ---
 
 # Plozz issue triage

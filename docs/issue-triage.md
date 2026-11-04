@@ -17,6 +17,12 @@ also feed a public website board without creating another backlog.
 
 Each issue gets at most one current workflow-owned assessment comment, updated
 in place. It records the reported app build, the evidence, and one next action.
+Machine-readable records sit inside a collapsed **Automation details** section.
+After safe outputs succeed, a deterministic formatting job adds only the
+disclosure wrapper; it preserves the assessment, JSON and provenance exactly.
+It never modifies human comments or other bots' records. To preview a bulk
+presentation update, run `python3 tools/format-triage-comments.py`; add `--apply`
+to update the workflow-owned comments in place.
 Unknown builds stay unknown. Static code inspection is not reproduction, and a
 merge is not delivery. New reports after a shipped fix remain actionable.
 
