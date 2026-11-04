@@ -334,4 +334,46 @@ extension SiloProviderTests {
         let requests = await http.requests
         XCTAssertEqual(requests.count, 2)
     }
+
+    func testOmittedHomeRowPreservesActualEndpointFailures() async throws {
+        for (status, body, expected) in [
+            (404, "{}", AppError.notFound),
+            (403, "{}", .unauthorized),
+            (429, "{}", .rateLimited(retryAfter: 12)),
+            (500, "{}", .invalidResponse),
+            (200, "{}", .decoding),
+            (200, #"{"id":"wrong","section_type":"seasonal","items":[]}"#, .invalidResponse),
+            (200, #"{"id":"seasonal","section_type":"seasonal"}"#, .invalidResponse)
+        ] {
+            let raw = try credential().encoded()
+            let http = SiloContinueWatchingHTTP(replies: [
+                "/api/v2/home/sections": .init(body: """
+                {"sections":[{"id":"ready","section_type":"recently_added","items":[
+                  {"content_id":"movie:1","type":"movie","title":"Ready"}]}]}
+                """),
+                "/api/v2/home/sections/seasonal/items": .init(status: status, body: body),
+                "/api/v2/home/sections/later/items": .init(body: """
+                {"id":"later","section_type":"custom_filter","items":[]}
+                """)
+            ])
+            let provider = try SiloProvider(context: context(raw), credentials: SiloCredentialStub(raw), http: http)
+            let result = await provider.serverHomeItems(
+                sections: ["ready", "seasonal", "later"].map { .init(id: $0, kind: .recommendations) },
+                limit: 20, excludingLibraryIDs: []
+            )
+            XCTAssertEqual(try result["ready"]?.get().map(\.id), ["movie:1"])
+            guard case .failure(let failure) = result["seasonal"] else {
+                return XCTFail("An omitted row must not hide an actual endpoint failure.")
+            }
+            XCTAssertEqual(failure, expected)
+            let requests = await http.requests
+            if status == 403 || status == 429 {
+                XCTAssertEqual(result["later"], .failure(expected))
+                XCTAssertEqual(requests.count, 2, "A provider refusal must stop further row requests.")
+            } else {
+                XCTAssertEqual(try result["later"]?.get(), [])
+                XCTAssertEqual(requests.count, 3)
+            }
+        }
+    }
 }

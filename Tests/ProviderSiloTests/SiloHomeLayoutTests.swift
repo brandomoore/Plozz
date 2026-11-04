@@ -111,7 +111,60 @@ extension SiloProviderTests {
             guard case .failure(.notFound) = result["gone"] else { return XCTFail("Missing row is not an empty success") }
         }
         let requests = await http.requests
-        XCTAssertEqual(requests.count, 2)
+        XCTAssertEqual(requests.map(\.path), [
+            "/api/v2/home/sections", "/api/v2/home/sections/gone/items",
+            "/api/v2/home/sections", "/api/v2/home/sections/gone/items"
+        ])
+    }
+
+    func testSeasonalRowOmittedFromBulkHomeIsConfirmedEmptyByItsOwnEndpoint() async throws {
+        let raw = try credential().encoded()
+        let http = SiloHTTPStub([
+            "/api/v2/home/layout": """
+            {"sections":[{"id":"seasonal","section_type":"seasonal","title":"Seasonal picks"}]}
+            """,
+            "/api/v2/home/sections": #"{"sections":[]}"#,
+            "/api/v2/home/sections/seasonal/items": """
+            {"id":"seasonal","section_type":"seasonal","title":"Seasonal picks","items":[]}
+            """
+        ])
+        let provider = try SiloProvider(context: context(raw), credentials: SiloCredentialStub(raw), http: http)
+        let layout = try await provider.serverHomeLayout()
+        let row = try XCTUnwrap(layout?.sections.first)
+        XCTAssertEqual(row.title, "Seasonal picks")
+        let result = await provider.serverHomeItems(sections: [row], limit: 20, excludingLibraryIDs: [])
+        XCTAssertEqual(try XCTUnwrap(result[row.id]).get(), [])
+        let requests = await http.requests
+        XCTAssertEqual(requests.map(\.path), [
+            "/api/v2/home/layout", "/api/v2/home/sections", "/api/v2/home/sections/seasonal/items"
+        ])
+    }
+
+    func testOmittedHomeRowUsesNormalLimitsAndExactLibraryMembership() async throws {
+        let raw = try credential().encoded()
+        let http = SiloHTTPStub([
+            "/api/v2/home/sections": #"{"sections":[]}"#,
+            "/api/v2/home/sections/seasonal/items": """
+            {"id":"seasonal","section_type":"seasonal","items":[
+              {"content_id":"excluded","type":"movie","title":"Same title"},
+              {"content_id":"allowed","type":"movie","title":"Same title"},
+              {"content_id":"unused","type":"movie","title":"Other"}]}
+            """,
+            "/api/v2/user/libraries": #"{"items":[{"id":"visible","name":"Movies","type":"movie"},{"id":"hidden","name":"Hidden","type":"movie"}]}"#,
+            "/api/v2/catalog": #"{"items":[{"content_id":"allowed","type":"movie","title":"Same title"}],"total":1,"total_exact":true,"window_cursor":""}"#
+        ])
+        let provider = try SiloProvider(context: context(raw), credentials: SiloCredentialStub(raw), http: http)
+        let row = ServerHomeSection(id: "seasonal", kind: .recommendations)
+        let result = await provider.serverHomeItems(
+            sections: [row, row], limit: 1, excludingLibraryIDs: ["hidden"]
+        )
+        let items = try XCTUnwrap(result[row.id]).get()
+        XCTAssertEqual(items.map(\.id), ["allowed"])
+        XCTAssertEqual(items.first?.libraryID, "visible")
+        let requests = await http.requests
+        XCTAssertEqual(requests.filter { $0.path == "/api/v2/home/sections/seasonal/items" }.count, 1)
+        XCTAssertEqual(requests.filter { $0.path == "/api/v2/catalog" }.count, 2)
+        XCTAssertFalse(requests.contains { $0.queryItems.contains(.init(name: "library_id", value: "hidden")) })
     }
 
     func testRestrictedHomeSharesMembershipWithinRefreshButNotAcrossRefreshes() async throws {

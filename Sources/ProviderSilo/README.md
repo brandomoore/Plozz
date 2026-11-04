@@ -92,6 +92,13 @@ one fresh sections response instead of caching content across watch changes.
 Single-row requests use `/home/sections/{id}/items` with the same older-server
 fallback. Servers lacking both Home endpoints retain ordinary provider defaults.
 
+Silo can retain seasonal or hide-watched rows in the layout while omitting them
+from the bulk content response. Missing batch rows are checked once through
+their individual items endpoint: a valid empty response is empty content, not
+`notFound`. Actual endpoint errors, mismatched row IDs, and missing item arrays
+remain failures; the batch is not fetched again. This omission behavior is
+documented in the [upstream Home handlers](https://github.com/Silo-Server/silo-server/blob/6d1562473336738009a91475ed3f33143670c249/internal/api/handlers/home_views_service.go).
+
 Only video cards are displayed. Disabled Plozz libraries require exact membership
 in an enabled library; title matches alone never establish membership. Continue
 Watching and Next Up resolve the server-selected playable episode and retain

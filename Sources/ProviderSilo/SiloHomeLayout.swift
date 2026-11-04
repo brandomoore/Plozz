@@ -58,7 +58,17 @@ extension SiloProvider {
             for section in sections where results[section.id] == nil {
                 do {
                     try Task.checkCancellation()
-                    guard let row = rows[section.id] else { throw AppError.notFound }
+                    let row: SiloHomeSection
+                    if let included = rows[section.id] {
+                        row = included
+                    } else {
+                        // Bulk Home can omit empty seasonal or hide-watched rows
+                        // that still exist in the layout. Ask the row itself.
+                        row = try await client.request(
+                            "/home/sections/\(try SiloAPI.pathComponent(section.id))/items"
+                        )
+                    }
+                    guard row.id == section.id else { throw AppError.invalidResponse }
                     results[section.id] = .success(try await homeItems(
                         row, limit: limit, scope: &scope
                     ))
