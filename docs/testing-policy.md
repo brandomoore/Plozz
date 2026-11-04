@@ -456,6 +456,9 @@ Tracker snapshot changes reject imports before dispatch with a page-level error;
 destination changes detected during dispatch have per-row outcomes. Native race
 checks must assert the appropriate rejection and independently verify that the
 destination history stayed unchanged.
+Label controlled runtime edits separately from authentic playback evidence.
+Compatibility checks should cover the inclusive limit and the next representable
+value outside it, not just a large mismatch.
 
 ## App-hosted focus integration
 

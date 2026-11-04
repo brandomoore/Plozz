@@ -2828,6 +2828,19 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         try testInspectRejectedHistoryImport()
     }
 
+    func testIncompatibleResumeCannotBeImported() throws {
+        try require(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_IMPORT_ACTION"] == "resume",
+                    "Expected an independently verified incompatible resume")
+        try openHistoryComparison()
+        let rows = try historyImportRows(status: "Different or unknown runtime — resume not imported")
+        try tapVisible(rows.firstMatch, tapping: false, maximumSwipes: 32)
+        try require(rows.count == 1, "Expected the exact destination's incompatible resume row")
+        XCTAssertFalse(importSelection.exists)
+        try tapVisible(app.buttons["tracker-history.apply"], tapping: false, maximumSwipes: 32)
+        XCTAssertEqual(app.buttons["tracker-history.apply"].label, "Apply 0 selected changes")
+        XCTAssertFalse(app.buttons["tracker-history.apply"].isEnabled)
+    }
+
     func testRejectChangedTrackerHistoryImport() throws {
         XCTAssertEqual(app.buttons["tracker-history.apply"].label, "Apply 1 selected changes")
         let confirm = app.buttons["Apply selected changes"]
