@@ -46,7 +46,6 @@ struct PlozziOSMediaSection<Content: View>: View {
     var artworkInset: CGFloat = 0
     var onSeeAll: (() -> Void)? = nil
     var onBrowse: (() -> Void)? = nil
-    var onMore: (() -> Void)? = nil
     @ViewBuilder var content: Content
 
     var body: some View {
@@ -61,12 +60,7 @@ struct PlozziOSMediaSection<Content: View>: View {
                     .truncationMode(.tail)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityAddTraits(.isHeader)
-                if let onMore {
-                    Spacer()
-                    Button("More", action: onMore)
-                        .font(.subheadline)
-                        .accessibilityIdentifier("detail-cast-more")
-                } else if onBrowse == nil, let onSeeAll {
+                if onBrowse == nil, let onSeeAll {
                     Spacer()
                     Button("See all", action: onSeeAll)
                         .font(.subheadline)

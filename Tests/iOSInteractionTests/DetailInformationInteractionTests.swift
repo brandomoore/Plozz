@@ -27,6 +27,7 @@ final class DetailInformationInteractionTests: XCTestCase {
 
     func testCastMoreIncludesPeopleOutsideThePreviewAndKeepsNavigation() {
         launch()
+        reveal(app.buttons["detail-cast-more"])
         app.buttons["detail-cast-more"].tap()
         let last = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Person 40")).firstMatch
         reveal(last)
@@ -37,7 +38,7 @@ final class DetailInformationInteractionTests: XCTestCase {
 
     func testCrewMorePreservesTheLastDirector() {
         launch()
-        let more = app.buttons["detail-crew-more"]
+        let more = app.buttons["detail-crew-directors-more"]
         reveal(more)
         more.tap()
         XCTAssertTrue(app.navigationBars["Crew"].waitForExistence(timeout: 5), app.debugDescription)
@@ -47,7 +48,7 @@ final class DetailInformationInteractionTests: XCTestCase {
 
     func testSingleLongValueGetsMoreWithoutAnOversizedList() {
         launch(["--detail-single-long-value"])
-        let more = app.buttons["detail-details-more"]
+        let more = app.buttons["detail-details-original-title-more"]
         XCTAssertTrue(more.waitForExistence(timeout: 10), app.debugDescription)
         more.tap()
         XCTAssertTrue(app.navigationBars["Details"].waitForExistence(timeout: 5), app.debugDescription)

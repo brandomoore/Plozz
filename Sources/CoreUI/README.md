@@ -999,11 +999,16 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
 - **Detail information layout** — TV and mobile share ordered, full-width
   information sections with adaptive fact columns on common keylines. About
   keeps a stable line cap and reading width; scores never determine its height.
-  Numeric ratings use compact rows, with family guidance in its own wider row.
+  Numeric ratings flow alongside the short Details facts rather than reserving
+  their own section, with family guidance in a wider row below. Revealing one
+  protected score reveals the shared score group, never the surrounding facts.
   Missing sections leave no reserved grid cells. Cast previews show 12 people
   on both platforms; More opens the complete supplied cast and keeps person
   navigation bound to the owning source. Information previews retain all source
-  values, cap lists and long text, and open the complete section through More.
+  values, cap lists and long text, and reuse the synopsis's faded inline MORE
+  treatment beside each truncated value. Cast expansion sits beneath its rail.
+  Fact grids are eagerly measured before native TV focus hosting; a lazy grid
+  inside a single native card can report an incomplete multi-row height.
   Required availability attribution stays visible even when release facts are
   capped. These presentation limits do not change provider metadata precedence.
 - **Detail information focus** — the tvOS About/Ratings/Information band uses

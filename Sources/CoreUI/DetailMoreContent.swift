@@ -12,6 +12,52 @@ public enum DetailPreviewLimits {
 #if canImport(SwiftUI)
 import SwiftUI
 
+public struct DetailMoreLabel: View {
+    public init() {}
+
+    public var body: some View {
+        Text("MORE")
+            .font(labelFont)
+            .plozzForeground(.secondary)
+    }
+
+    private var labelFont: Font {
+        #if os(tvOS)
+        .system(size: 20, weight: .semibold)
+        #else
+        .footnote.weight(.semibold)
+        #endif
+    }
+}
+
+struct DetailInlineMoreLabel<Content: View>: View {
+    let isTruncated: Bool
+    let fadeWidth: CGFloat
+    let fadeHeight: CGFloat
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        ZStack(alignment: .bottomTrailing) {
+            content
+            if isTruncated {
+                LinearGradient(
+                    stops: [
+                        .init(color: .clear, location: 0),
+                        .init(color: .black, location: 0.45),
+                        .init(color: .black, location: 1)
+                    ],
+                    startPoint: .leading,
+                    endPoint: .trailing
+                )
+                .frame(width: fadeWidth, height: fadeHeight)
+                .blendMode(.destinationOut)
+                DetailMoreLabel()
+            }
+        }
+        .compositingGroup()
+    }
+}
+
 public struct DetailMoreSheet<Content: View>: View {
     private let title: Text
     private let content: Content

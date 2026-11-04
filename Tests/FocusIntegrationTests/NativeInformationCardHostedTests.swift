@@ -9,6 +9,73 @@ import XCTest
 
 @MainActor
 final class NativeInformationCardHostedTests: XCTestCase {
+    func testEagerInformationRowsIncludeTheirLastNativeCard() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        let host = NativeInformationFocusHost(rootView: AnyView(
+            VStack(alignment: .leading) {
+                ProportionalWrapLayout(
+                    preferredColumns: 4, minimumCellWidth: 300, spacing: 40, rowSpacing: 28
+                ) {
+                    ForEach(0..<8) { index in
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Field \(index)").font(.system(size: 18))
+                            Text(index == 7 ? "FINAL VALUE" : "Value \(index)")
+                                .font(.system(size: 24))
+                        }
+                        .padding(16)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .plozzFocusableCard(cornerRadius: 12)
+                    }
+                }
+                Spacer()
+            }
+            .frame(width: 1600, height: 1080, alignment: .topLeading)
+            .environment(\.plozzNativeInformationFocus, true)
+            .environment(\.plozzCardFocusStyle, .system)
+            .environment(\.themePalette, .dark)
+            .environment(\.colorScheme, .dark)
+            .background(.black)
+        ))
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        window.layoutIfNeeded()
+        try await Task.sleep(for: .milliseconds(500))
+        let cards = nativeCards(in: window).sorted {
+            let first = $0.convert($0.bounds, to: window)
+            let second = $1.convert($1.bounds, to: window)
+            return abs(first.minY - second.minY) > 1 ? first.minY < second.minY : first.minX < second.minX
+        }
+        XCTAssertEqual(cards.count, 8)
+        for card in cards {
+            XCTAssertGreaterThan(card.bounds.height, 60)
+        }
+        let firstCard = try XCTUnwrap(cards.first)
+        let lastCard = try XCTUnwrap(cards.last)
+        let first = firstCard.convert(firstCard.bounds, to: window)
+        let last = lastCard.convert(lastCard.bounds, to: window)
+        XCTAssertGreaterThan(last.minY, first.maxY + 20)
+        let image = DetailTransitionSnapshot.image(of: window)
+        let request = VNRecognizeTextRequest()
+        request.recognitionLevel = .accurate
+        request.usesLanguageCorrection = false
+        try VNImageRequestHandler(cgImage: XCTUnwrap(image.cgImage)).perform([request])
+        let recognized = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }
+        XCTAssertTrue(recognized.contains { $0.contains("FINAL VALUE") }, "\(recognized)")
+        let attachment = XCTAttachment(image: image)
+        attachment.name = "eager-information-two-rows"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
     func testFocusedNativeInformationCardPaintsAboveAnOverlappingPeer() async throws {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
             .first { $0.activationState == .foregroundActive })

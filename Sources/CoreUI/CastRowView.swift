@@ -37,25 +37,10 @@ public struct CastRowView: View {
     public var body: some View {
         if !people.isEmpty {
             VStack(alignment: .leading, spacing: metrics.sectionTitleSpacing) {
-                if title != nil || people.count > DetailPreviewLimits.cast {
-                    HStack {
-                        if let title {
-                            Text(title)
-                                .font(.system(size: metrics.sectionHeaderFontSize, weight: .bold))
-                        }
-                        Spacer()
-                        if people.count > DetailPreviewLimits.cast {
-                            Button("More") { showsFullCast = true }
-                                .plozzActionButton(role: .secondary)
-                                .focused($moreFocused)
-                                .accessibilityIdentifier("detail-cast-more")
-                        }
-                    }
-                    .padding(.leading, leadingInset)
-                    .padding(.trailing, PlozzTheme.Metrics.screenPadding)
-                    #if os(tvOS)
-                    .focusSection()
-                    #endif
+                if let title {
+                    Text(title)
+                        .font(.system(size: metrics.sectionHeaderFontSize, weight: .bold))
+                        .padding(.leading, leadingInset)
                 }
 
                 ScrollView(.horizontal, showsIndicators: false) {
@@ -75,6 +60,16 @@ public struct CastRowView: View {
                 }
                 .padding(.top, metrics.railClearanceOffset(for: PlozzTheme.Spacing.small))
                 .padding(.bottom, metrics.railClearanceOffset(for: PlozzTheme.Spacing.large))
+                if people.count > DetailPreviewLimits.cast {
+                    Button { showsFullCast = true } label: {
+                        DetailMoreLabel()
+                            .frame(minWidth: 44, minHeight: 44, alignment: .leading)
+                    }
+                    .buttonStyle(.plain)
+                    .focused($moreFocused)
+                    .padding(.leading, leadingInset)
+                    .accessibilityIdentifier("detail-cast-more")
+                }
             }
             .onChange(of: moreFocused) { _, focused in
                 if focused { onFocusEntered?() }

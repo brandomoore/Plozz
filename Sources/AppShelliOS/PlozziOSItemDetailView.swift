@@ -4040,8 +4040,7 @@ private struct PlozziOSCastSection: View {
 
     var body: some View {
         PlozziOSMediaSection(
-            title: Text("Cast"), horizontalInset: pageInset,
-            onMore: people.count > DetailPreviewLimits.cast ? { showsFullCast = true } : nil
+            title: Text("Cast"), horizontalInset: pageInset
         ) {
             ScrollView(.horizontal) {
                 LazyHStack(
@@ -4108,6 +4107,15 @@ private struct PlozziOSCastSection: View {
                 for: .scrollContent
             )
             .scrollIndicators(.hidden)
+            if people.count > DetailPreviewLimits.cast {
+                Button { showsFullCast = true } label: {
+                    DetailMoreLabel()
+                        .frame(minWidth: 44, minHeight: 44, alignment: .leading)
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal, pageInset)
+                .accessibilityIdentifier("detail-cast-more")
+            }
         }
         // Symmetric scaled whitespace above and below the cast rail so it sits with
         // balanced breathing room between the hero and the info band — and the gap

@@ -10,7 +10,7 @@ final class DetailInformationPreviewTests: XCTestCase {
         XCTAssertEqual(DetailInformationSections(item: empty, horizontalInset: 24).sectionIDs, [])
         var rated = empty
         rated.ratings = [.init(source: .tmdb, value: 8, scale: .outOfTen)]
-        XCTAssertEqual(DetailInformationSections(item: rated, horizontalInset: 24).sectionIDs, ["ratings"])
+        XCTAssertEqual(DetailInformationSections(item: rated, horizontalInset: 24).sectionIDs, ["details"])
     }
 
     func testSectionsKeepOneReadingOrder() {
@@ -21,7 +21,7 @@ final class DetailInformationPreviewTests: XCTestCase {
         )
         XCTAssertEqual(
             DetailInformationSections(item: item, horizontalInset: 24).sectionIDs,
-            ["about", "details", "ratings", "crew"]
+            ["about", "details", "crew"]
         )
     }
 
@@ -34,7 +34,7 @@ final class DetailInformationPreviewTests: XCTestCase {
         XCTAssertEqual(fact.listValues?.count, 60)
         XCTAssertTrue(fact.value.contains("Director 60"))
         XCTAssertFalse(fact.previewValue.contains("Director 4"))
-        XCTAssertTrue(group.hasMore(truncatedFacts: []))
+        XCTAssertTrue(fact.needsExpansion(textTruncated: false))
     }
 
     func testTagsAreNotSilentlyDiscardedAfterSixteen() throws {
@@ -45,15 +45,13 @@ final class DetailInformationPreviewTests: XCTestCase {
         let fact = try XCTUnwrap(group.facts.first { $0.id == "tags" })
         XCTAssertEqual(fact.listValues, tags)
         XCTAssertTrue(fact.value.contains("Tag 30"))
-        XCTAssertTrue(group.hasMore(truncatedFacts: []))
+        XCTAssertTrue(fact.needsExpansion(textTruncated: false))
     }
 
     func testShortValuesDoNotOfferRedundantExpansion() {
         let fact = InformationFact(id: "runtime", label: "Runtime", value: "2h")
-        let group = InformationGroup(id: "details", title: "Details", facts: [fact])
-        XCTAssertFalse(group.hasMore(truncatedFacts: []))
-        XCTAssertTrue(group.hasMore(truncatedFacts: ["details.runtime"]))
-        XCTAssertFalse(group.hasMore(truncatedFacts: ["playback.runtime"]))
+        XCTAssertFalse(fact.needsExpansion(textTruncated: false))
+        XCTAssertTrue(fact.needsExpansion(textTruncated: true))
     }
 
     func testLongFactGroupsRetainTheirCompleteData() {
@@ -61,7 +59,7 @@ final class DetailInformationPreviewTests: XCTestCase {
         let group = InformationGroup(id: "availability", title: "Release & Availability", facts: facts)
         XCTAssertEqual(group.previewFacts.count, 9)
         XCTAssertEqual(group.facts.count, 20)
-        XCTAssertTrue(group.hasMore(truncatedFacts: []))
+        XCTAssertTrue(group.hasOmittedFacts)
     }
 
     func testCastPreviewLimitLeavesTheFullInputIntact() {
@@ -80,7 +78,7 @@ final class DetailInformationPreviewTests: XCTestCase {
         XCTAssertEqual(group.previewFacts.count, 9)
         XCTAssertEqual(group.previewFacts.last?.value, "JustWatch")
         XCTAssertEqual(group.facts.count, 21)
-        XCTAssertTrue(group.hasMore(truncatedFacts: []))
+        XCTAssertTrue(group.hasOmittedFacts)
     }
 
     func testVisibleServiceLogosDoNotPretendTheirNamesWereHidden() {
