@@ -2,6 +2,52 @@
   "schemaVersion": 1,
   "releases": [
     {
+      "id": "release/070",
+      "version": "2026.11.3",
+      "marketingVersion": "2026.10.30",
+      "build": 70,
+      "releasedAt": "2026-11-03",
+      "sections": [
+        {
+          "category": "New",
+          "items": [
+            "Discover browsing, filters and Seerr requests. Not available in child profiles.",
+            {
+              "text": "Automatic and fixed landscape directions on iPhone.",
+              "platforms": ["iOS"]
+            }
+          ]
+        },
+        {
+          "category": "Updated",
+          "items": [
+            {
+              "text": "Live TV design and search updates.",
+              "platforms": ["iOS"]
+            },
+            {
+              "text": "Updated fonts in See all pages.",
+              "platforms": ["iOS"]
+            },
+            "More useful playback diagnostic reports.",
+            "Removed height-channel audio conversion and experimental Dolby Vision FEL playback."
+          ]
+        },
+        {
+          "category": "Fixed",
+          "items": [
+            "Playback and navigation crash fixes on older systems.",
+            "Corrected landscape collection covers in See all pages.",
+            "Corrected version-title formatting.",
+            {
+              "text": "Fixed Showcase background cropping.",
+              "platforms": ["tvOS"]
+            }
+          ]
+        }
+      ]
+    },
+    {
       "id": "release/069.2",
       "version": "2026.11.3",
       "marketingVersion": "2026.10.30",

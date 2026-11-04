@@ -1386,8 +1386,7 @@ public struct HomeView: View {
     private func rowView(
         _ row: HomeRow, reservesLoadingFocus: Bool = false, onBrowse: (() -> Void)? = nil
     ) -> some View {
-        if let failure = row.failure, row.items.isEmpty, row.libraries.isEmpty,
-           row.kind != .continueWatching || liveTV.recentChannels.isEmpty {
+        if let failure = row.failure, row.items.isEmpty, row.libraries.isEmpty {
             rowFailureView(
                 title: Text(row.title), error: failure,
                 report: row.kind == .continueWatching
@@ -1417,7 +1416,6 @@ public struct HomeView: View {
                 reservesLoadingFocus: reservesLoadingFocus,
                 playsOnSelect: row.playsOnSelect(continueWatchingAction: visibility.continueWatchingAction),
                 showsResumeChip: true,
-                liveChannels: liveTV.recentChannels,
                 onPlay: onPlayItem,
                 onSelect: row.playsOnSelect(continueWatchingAction: visibility.continueWatchingAction)
                     ? onPlayItem : onSelectItem
@@ -1523,8 +1521,7 @@ public struct HomeView: View {
                             for: $0, showsSeriesArtwork: seriesArtwork,
                             prefersTextlessArtwork: artworkSettings.prefersTextlessArtwork(in: .continueWatching)
                         ) }
-                        : nil,
-                    liveChannels: row.kind == .continueWatching ? liveTV.recentChannels : []
+                        : nil
                 ),
                 .home(row, presentation)
             )
@@ -1735,8 +1732,7 @@ public struct HomeView: View {
             )
         case .home(let row, let presentation):
             let onBrowse = presentation.flatMap { browseAction(for: $0) }
-            if let failure = row.failure, row.items.isEmpty, row.libraries.isEmpty,
-               row.kind != .continueWatching || liveTV.recentChannels.isEmpty {
+            if let failure = row.failure, row.items.isEmpty, row.libraries.isEmpty {
                 rowFailureView(
                     title: Text(row.title), error: failure,
                     report: row.kind == .continueWatching
@@ -1759,8 +1755,6 @@ public struct HomeView: View {
                         reservesLoadingFocus: reservesLoadingFocus,
                         playsOnSelect: row.playsOnSelect(continueWatchingAction: visibility.continueWatchingAction),
                         showsResumeChip: true,
-                        liveChannels: liveTV.recentChannels,
-                        onLiveChannelFocused: reporter.focusedLiveChannel,
                         onPlay: onPlayItem,
                         onSelect: row.playsOnSelect(continueWatchingAction: visibility.continueWatchingAction)
                             ? onPlayItem : onSelectItem

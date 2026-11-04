@@ -538,9 +538,11 @@ records on both platforms; error dialogs, playback routing and timeouts are unch
   unselected row-family requests and stops a recommendation family after all its
   known rows are hidden. The separate library Recommended screen and Showcase's
   optional external Discover row are not redefined by these Home preferences.
-  Live TV contributes typed cached channel cards to Continue Watching and its
-  own optional row, never VOD items. Cache bounds, authorization and managed
-  tuning are documented in [Live TV](../../docs/live-tv-prototype.md).
+  Live TV contributes typed cached channel cards only to its own optional row,
+  never to Continue Watching, including Classic and Showcase layouts. Recent
+  channel history remains available on the Live TV page. Cache bounds,
+  authorization and managed tuning are documented in
+  [Live TV](../../docs/live-tv-prototype.md).
 
 - **Home** — `HomeView` + `HomeViewModel` render the focused tvOS rows:
   Continue Watching, Latest, Recently Added (per library). `HomeLayout`

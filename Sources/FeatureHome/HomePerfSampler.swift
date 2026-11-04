@@ -51,8 +51,17 @@ public final class HomePerfSampler {
 
     public nonisolated init() {}
 
-    isolated deinit {
-        stop()
+    deinit {
+        // Keep teardown on the main actor without isolated-deinit back deployment.
+        let cleanup: @MainActor @Sendable () -> Void = { [proxy, lifecycleObservers] in
+            proxy?.link?.invalidate()
+            for observer in lifecycleObservers { NotificationCenter.default.removeObserver(observer) }
+        }
+        if Thread.isMainThread {
+            MainActor.assumeIsolated { cleanup() }
+        } else {
+            Task { @MainActor in cleanup() }
+        }
     }
 
     var displayLinkForTesting: CADisplayLink? { link }
@@ -65,6 +74,7 @@ public final class HomePerfSampler {
             self?.tick(link)
         }
         let link = CADisplayLink(target: proxy, selector: #selector(DisplayLinkProxy.step(_:)))
+        proxy.link = link
         link.add(to: .main, forMode: .common)
         link.isPaused = UIApplication.shared.applicationState != .active
         self.proxy = proxy
@@ -239,7 +249,9 @@ public final class HomePerfSampler {
 
 /// NSObject shim so the `CADisplayLink` target/selector requirement doesn't force
 /// the `@Observable` sampler to subclass NSObject.
+@MainActor
 private final class DisplayLinkProxy: NSObject {
+    weak var link: CADisplayLink?
     private let handler: (CADisplayLink) -> Void
 
     init(handler: @escaping (CADisplayLink) -> Void) {
