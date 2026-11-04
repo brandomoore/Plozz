@@ -32,9 +32,9 @@ public enum PlayerTouchLayout {
         min(portrait ? 39 : 68, max(0, (availableWidth - playDiameter - 2 * skipDiameter) / 2))
     }
 
-    public static func scrubPreviewSize(availableSize: CGSize) -> CGSize {
+    public static func scrubPreviewSize(availableSize: CGSize, maximumWidth: CGFloat = 360) -> CGSize {
         let height = max(0, availableSize.height - 2 * edgeInset - 44 - timelineRowHeight - 24)
-        let width = max(0, min(360, availableSize.width - 2 * horizontalInset, height * 16 / 9))
+        let width = max(0, min(maximumWidth, availableSize.width - 2 * horizontalInset, height * 16 / 9))
         return CGSize(width: width, height: width * 9 / 16)
     }
 }
@@ -44,9 +44,9 @@ public struct PlayerTouchScrubPreview: View {
     private let image: CGImage?
     private let size: CGSize
 
-    public init(image: CGImage?, availableSize: CGSize) {
+    public init(image: CGImage?, availableSize: CGSize, maximumWidth: CGFloat = 360) {
         self.image = image
-        self.size = PlayerTouchLayout.scrubPreviewSize(availableSize: availableSize)
+        self.size = PlayerTouchLayout.scrubPreviewSize(availableSize: availableSize, maximumWidth: maximumWidth)
     }
 
     public var body: some View {
