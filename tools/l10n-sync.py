@@ -566,7 +566,7 @@ def plural_problems(strings: dict) -> list[str]:
         "%lld", "%lld%%", "%lld of %lld", "Items: %lld", ":%lld", "%lld sec",
         "%lld Mbps", "Custom • %lldp", "Maximum Resolution: %lldp",
         "Custom • %lldp • %@ Mbps",
-        "Episode %lld", "Track %lld", "Chapter %lld", "Downloading %lld%%", "Downloading %lld percent",
+        "Episode %lld", "Track %lld", "Chapter %lld", "Version %lld", "Downloading %lld%%", "Downloading %lld percent",
         "Left %lld%%", "Right %lld%%", "%lld queued", "%lld unavailable",
         "+ %lld more", "· +%lld more",
         # PIN entry positions — "PIN 1 of 2", "PIN progress: 2 of 4". Same family
