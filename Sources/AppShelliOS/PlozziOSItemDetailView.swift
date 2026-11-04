@@ -3200,21 +3200,20 @@ private struct PlozziOSEpisodeDownloadRow: View {
     ) -> some View {
         // Metrics are formatted data, not another translatable status template.
         if let fraction = record.fractionCompleted {
-            Text(MediaDownloadDestination.current.downloadingTitle)
-                + Text(verbatim: " ")
-                + Text(fraction, format: .percent.precision(.fractionLength(0)))
-                + transferMetricsText(for: record)
+            Text(fraction, format: .percent.precision(.fractionLength(0)))
+                + (transferMetricsText(for: record, includesSeparator: true) ?? Text(verbatim: ""))
         } else {
-            Text(MediaDownloadDestination.current.downloadingTitle) + transferMetricsText(for: record)
+            transferMetricsText(for: record, includesSeparator: false) ?? Text("Downloading")
         }
     }
 
     private func transferMetricsText(
-        for record: DownloadedMediaRecord
-    ) -> Text {
+        for record: DownloadedMediaRecord,
+        includesSeparator: Bool
+    ) -> Text? {
         guard let metrics = appModel.downloads.transferMetrics(for: record),
               metrics.bytesPerSecond > 0 else {
-            return Text(verbatim: "")
+            return nil
         }
         var detail = metrics.bytesPerSecond.formatted(
             .byteCount(style: .file)
@@ -3228,7 +3227,7 @@ private struct PlozziOSEpisodeDownloadRow: View {
                 )
             ) + " remaining"
         }
-        return Text(verbatim: " • \(detail)")
+        return Text(verbatim: (includesSeparator ? " • " : "") + detail)
     }
 }
 
