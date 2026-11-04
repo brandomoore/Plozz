@@ -10,6 +10,7 @@ import json
 import os
 from pathlib import Path
 import re
+import runpy
 import subprocess
 import sys
 import tempfile
@@ -30,6 +31,8 @@ GITHUB_BOT = "github-actions[bot]"
 MODEL = "gpt-6.1-sol"
 EFFORT = "high"
 MATCHING_CONTEXT_LIMIT = 180000
+MATCHING_RUN_SECONDS = 660
+TRIAGE = runpy.run_path(str(Path(__file__).with_name("format-triage-comments.py")))
 PINNED_THREAD = 1 << 1
 THUMBS_UP = "\U0001f44d"
 PUBLIC_NOTICE = "Posts and replies automatically sync to GitHub"
@@ -120,10 +123,15 @@ class BridgeError(RuntimeError):
     pass
 
 
+class TransientBridgeError(BridgeError):
+    """A fresh synchronization may safely recover after rediscovering remote state."""
+
+
 class APIError(BridgeError):
     def __init__(self, service, method, status, code=None):
         self.status = status
         self.code = code
+        self.retryable = status in (429, 500, 502, 503, 504)
         detail = f", code {code}" if type(code) is int else ""
         super().__init__(f"{service} {method} failed (HTTP {status}{detail}).")
 
@@ -185,7 +193,7 @@ class API:
                         raise BridgeError(f"{self.service} rate limit exceeds this run's retry budget.") from None
                     time.sleep(delay + 0.1)
                     continue
-                if method == "GET" and error.code in (502, 503, 504) and attempt < 2:
+                if method == "GET" and error.code in (500, 502, 503, 504) and attempt < 2:
                     time.sleep(2 ** attempt)
                     continue
                 try:
@@ -195,7 +203,12 @@ class API:
                 code = details.get("code") if isinstance(details, dict) else None
                 raise APIError(self.service, method, error.code, code) from None
             except (URLError, TimeoutError, OSError):
-                raise BridgeError(f"{self.service} {method} transport failed; no ambiguous write was retried.") from None
+                if method == "GET" and attempt < 2:
+                    time.sleep(2 ** attempt)
+                    continue
+                raise TransientBridgeError(
+                    f"{self.service} {method} transport failed; no ambiguous write was retried."
+                ) from None
         raise BridgeError(f"{self.service} retry budget exhausted.")
 
     def pages(self, path):
@@ -299,8 +312,13 @@ class CopilotMatcher:
         if not token:
             raise BridgeError("Missing Copilot credential.")
         self.token = token
+        self.deadline = time.monotonic() + MATCHING_RUN_SECONDS
 
     def request(self, prompt):
+        remaining = int(self.deadline - time.monotonic())
+        if remaining < 15:
+            raise TransientBridgeError("This run's matching budget is exhausted; remaining reports will resume on a fresh run.")
+        timeout = min(180, remaining)
         with tempfile.TemporaryDirectory(prefix="plozz-discord-copilot-") as folder:
             env = {
                 "PATH": os.environ.get("PATH", ""),
@@ -314,19 +332,33 @@ class CopilotMatcher:
             }
             command = [
                 sys.executable, str(Path(__file__).with_name("run-bounded.py")),
-                "180", "discord-copilot", "--",
+                str(timeout), "discord-copilot", "--",
                 "copilot", "--model", MODEL, "--reasoning-effort", EFFORT,
                 "--no-custom-instructions", "--disable-builtin-mcps", "--no-ask-user",
                 "--no-remote-export", "--no-auto-update", "--available-tools",
                 "--deny-tool", "shell", "write", "url", "--secret-env-vars", "COPILOT_GITHUB_TOKEN",
-                "--stream", "off", "--silent", "--prompt", prompt,
+                "--stream", "off", "--silent",
             ]
             try:
-                result = subprocess.run(command, cwd=folder, env=env, capture_output=True, text=True, timeout=195)
-            except (OSError, subprocess.TimeoutExpired):
-                raise BridgeError("Copilot could not complete within its execution budget; the report remains pending.") from None
+                result = subprocess.run(
+                    command, input=prompt, cwd=folder, env=env, capture_output=True,
+                    text=True, timeout=timeout + 15,
+                )
+            except OSError as error:
+                raise BridgeError(
+                    f"Copilot could not start (OS error {error.errno}); check the CLI installation and process limits."
+                ) from None
+            except subprocess.TimeoutExpired:
+                raise TransientBridgeError("Copilot exceeded its execution budget; the report remains pending.") from None
             if result.returncode:
                 detail = result.stderr.replace(self.token, "[REDACTED]")[-2000:]
+                if result.returncode == 124 or re.search(
+                    r"\b(?:429|500|502|503|504|ECONNRESET|ETIMEDOUT)\b|temporarily unavailable",
+                    detail, re.I,
+                ):
+                    raise TransientBridgeError(
+                        f"Copilot temporarily failed with {MODEL}/{EFFORT}; the report remains pending.\n{detail}"
+                    )
                 raise BridgeError(f"Copilot failed with {MODEL}/{EFFORT}; no fallback was used.\n{detail}")
             try:
                 return json.loads(result.stdout.strip())
@@ -843,18 +875,24 @@ def set_thread_archived(discord, thread, archived):
     thread.setdefault("thread_metadata", {})["archived"] = archived
 
 
-def discord_upsert(discord, thread, messages, key, embed):
-    footer = FOOTER + key
-    embed = {**embed, "footer": {"text": footer}}
+def discord_records(messages, key):
     existing = [
         m for m in messages if m.get("author", {}).get("id") == BOT
-        and len(m.get("embeds", [])) == 1 and m["embeds"][0].get("footer", {}).get("text") == footer
+        and len(m.get("embeds", [])) == 1 and m["embeds"][0].get("footer", {}).get("text") == FOOTER + key
     ]
     if len(existing) > 1:
         raise BridgeError("Duplicate Discord bridge messages exist; refusing an ambiguous update.")
+    return existing
+
+
+def discord_upsert(discord, thread, messages, key, embed, *, previous_key=None):
+    embed = {**embed, "footer": {"text": FOOTER + key}}
+    existing = discord_records(messages, key)
+    if not existing and previous_key:
+        existing = discord_records(messages, previous_key)
     if existing:
         old = existing[0]["embeds"][0]
-        if all(old.get(k) == v for k, v in embed.items()):
+        if all(old.get(k, [] if k == "fields" else None) == v for k, v in embed.items()):
             return True
     if thread.get("thread_metadata", {}).get("locked"):
         print(f"WARNING: thread {thread['id']} is locked; GitHub-to-Discord updates remain pending.")
@@ -875,13 +913,13 @@ def discord_upsert(discord, thread, messages, key, embed):
     return True
 
 
-def discord_chunks(body):
+def discord_chunks(body, limit=3800):
     chunks = []
     current = []
     units = 0
     for character in body:
         width = 2 if ord(character) > 0xffff else 1
-        if units + width > 3800:
+        if units + width > limit:
             chunks.append("".join(current))
             current = []
             units = 0
@@ -892,17 +930,69 @@ def discord_chunks(body):
     return chunks
 
 
-def sync_github_replies(discord, thread, messages, index, number):
+def excerpt(body, limit, url):
+    if len(body.encode("utf-16-le")) // 2 <= limit:
+        return body
+    suffix = f"\n\n... [Full text on GitHub]({url})"
+    return discord_chunks(body, limit - len(suffix.encode("utf-16-le")) // 2)[0] + suffix
+
+
+def issue_comments(index, number):
+    return [comment for comment in index.comments
+            if comment.get("issue_url") == f"https://api.github.com/repos/{REPO}/issues/{number}"]
+
+
+def status_embed(index, number):
+    issue = index.issues[number]
+    url = f"https://github.com/{REPO}/issues/{number}"
+    description = (
+        "This post and its replies sync to this public GitHub issue. "
+        "The forum's default reaction counts as a vote.\n"
+        f"[Full discussion]({url})"
+    )
+    latest = None
+    assessment = None
+    resolution = None
+    for comment in issue_comments(index, number):
+        if value := release_resolution(comment, number):
+            resolution = (comment, value)
+        elif TRIAGE["owned"](comment):
+            assessment = comment
+        elif comment.get("user", {}).get("login") != GITHUB_BOT and comment.get("user", {}).get("type") != "Bot":
+            latest = comment
+    fields = []
+    if resolution:
+        comment, value = resolution
+        phase = "Available in TestFlight" if value["status"] == "delivered" else "Implemented; awaiting TestFlight"
+        fields = [{"name": "Implementation", "value":
+                   f"[{value['commit'][:7]}](https://github.com/{REPO}/commit/{value['commit']}) - {phase}"}]
+        description += "\n\n" + excerpt(comment["body"].partition("\n")[2].lstrip(), 900, url)
+    if assessment:
+        try:
+            prose = TRIAGE["public_prose"](assessment)
+        except ValueError:
+            raise BridgeError(f"GitHub triage comment {assessment['id']} has invalid structured metadata.") from None
+        description += "\n\n**Automated assessment (not delivery confirmation)**\n" + excerpt(
+            prose, 1200, f"{url}#issuecomment-{assessment['id']}",
+        )
+    if latest:
+        description += "\n\n**Latest GitHub comment**\n" + excerpt(
+            latest.get("body") or "(Empty GitHub comment.)", 1200, f"{url}#issuecomment-{latest['id']}",
+        )
+    return {
+        "title": f"GitHub #{number} - {issue['state'].capitalize()}",
+        "url": url, "description": excerpt(description, 3800, url), "fields": fields,
+    }, resolution
+
+
+def sync_legacy_replies(discord, thread, messages, index, number):
+    """Maintain edits to existing mirrors without posting more discussion messages."""
     for comment in index.comments:
         if comment.get("issue_url") != f"https://api.github.com/repos/{REPO}/issues/{number}":
             continue
         if comment.get("user", {}).get("login") == GITHUB_BOT:
-            if not release_resolution(comment, number):
-                continue
-            # Only the human-readable receipt is copied; the bot-owned marker stays on GitHub.
-            body = comment["body"].partition("\n")[2].lstrip()
-        else:
-            body = comment.get("body") or "(Empty GitHub comment.)"
+            continue
+        body = comment.get("body") or "(Empty GitHub comment.)"
         chunks = discord_chunks(body)
         prefix = f"comment:{comment['id']}:"
         previous_messages = [
@@ -915,14 +1005,16 @@ def sync_github_replies(discord, thread, messages, index, number):
             int(m["embeds"][0]["footer"]["text"].removeprefix(FOOTER + prefix))
             for m in previous_messages
         ]
-        count = max(len(chunks), max(previous_parts, default=-1) + 1)
-        for part in range(count):
+        for part in sorted(set(previous_parts)):
             previous = next((m for m in previous_messages
                              if m["embeds"][0]["footer"]["text"] == FOOTER + prefix + str(part)), None)
+            description = chunks[part] if part < len(chunks) else "(Removed by a GitHub comment edit.)"
+            url = f"https://github.com/{REPO}/issues/{number}#issuecomment-{comment['id']}"
+            if part == max(previous_parts) and len(chunks) > part + 1:
+                description = excerpt("".join(chunks[part:]), 3800, url)
             if not discord_upsert(discord, thread, messages, prefix + str(part), {
-                "title": previous["embeds"][0]["title"] if previous else f"GitHub #{number}",
-                "url": f"https://github.com/{REPO}/issues/{number}#issuecomment-{comment['id']}",
-                "description": chunks[part] if part < len(chunks) else "(Removed by a GitHub comment edit.)",
+                "title": previous["embeds"][0]["title"],
+                "url": url, "description": description,
             }):
                 return False
     return True
@@ -932,14 +1024,25 @@ def sync_issue_to_discord(discord, thread, messages, index, number):
     issue = index.issues[number]
     was_archived = thread.get("thread_metadata", {}).get("archived", False)
     try:
-        sent = discord_upsert(discord, thread, messages, f"issue:{number}", {
-            "title": f"GitHub #{number} - {issue['state'].capitalize()}",
-            "url": f"https://github.com/{REPO}/issues/{number}",
-            "description": "This post and its replies are mirrored to this public GitHub issue. "
-                "The forum's default reaction counts as a vote; duplicate posts share one unique-voter total.",
-        })
-        sent = sync_github_replies(discord, thread, messages, index, number) and sent
-        resolution = latest_release_resolution(index, number)
+        embed, current_resolution = status_embed(index, number)
+        previous = discord_records(messages, f"issue:{number}")
+        sent = True
+        if current_resolution and previous:
+            comment, resolution = current_resolution
+            key = f"resolution:{number}:{resolution['commit']}:{resolution['status']}"
+            if previous[0]["embeds"][0].get("fields", []) != embed["fields"] or discord_records(messages, key):
+                # Publish the milestone first: a failed send must not advance the status baseline.
+                sent = discord_upsert(discord, thread, messages, key, {
+                    "title": f"GitHub #{number} - " + (
+                        "Available in TestFlight" if resolution["status"] == "delivered" else "Implemented"
+                    ),
+                    "url": f"https://github.com/{REPO}/issues/{number}#issuecomment-{comment['id']}",
+                    "description": excerpt(comment["body"].partition("\n")[2].lstrip(), 3800, embed["url"]),
+                }, previous_key=f"comment:{comment['id']}:0")
+        if sent:
+            sent = discord_upsert(discord, thread, messages, f"issue:{number}", embed)
+        sent = sync_legacy_replies(discord, thread, messages, index, number) and sent
+        resolution = current_resolution[1] if current_resolution else None
         delivered = resolution and resolution["status"] == "delivered"
         if (
             sent and delivered and issue["state"] == "closed" and issue.get("state_reason") == "completed"
@@ -989,6 +1092,7 @@ def sync(discord, github, matcher, channels, since, dry_run=False):
     totals = {}
     unavailable_votes = set()
     failures = []
+    retryable = False
     for identifier in sorted(set(index.reports) - found, key=int):
         number = index.reports[identifier]["number"]
         try:
@@ -1005,6 +1109,7 @@ def sync(discord, github, matcher, channels, since, dry_run=False):
                 print(f"WARNING: {detail} Preserving its imported content and the issue's last vote total.")
             else:
                 failures.append(detail)
+                retryable |= isinstance(error, TransientBridgeError) or getattr(error, "retryable", False)
     threads.sort(key=lambda t: int(t["id"]))
     for thread in threads:
         try:
@@ -1059,6 +1164,7 @@ def sync(discord, github, matcher, channels, since, dry_run=False):
             print(f"Thread {thread['id']}: synchronized with issue #{number}")
         except BridgeError as error:
             failures.append(f"Thread {thread['id']}: {error}")
+            retryable |= isinstance(error, TransientBridgeError) or getattr(error, "retryable", False)
     # A failed source must never make a partial voter set look like the complete count.
     if not failures and not dry_run:
         for number, aggregate in totals.items():
@@ -1070,7 +1176,8 @@ def sync(discord, github, matcher, channels, since, dry_run=False):
                 "Unique non-bot voters across all linked posts, counting the default forum reaction "
                 "(normal or burst) once per person. This is separate from GitHub reactions.\n\n" + links)
     if failures:
-        raise BridgeError("Available threads were processed, but some sources remain pending:\n" + "\n".join(failures))
+        error_type = TransientBridgeError if retryable else BridgeError
+        raise error_type("Available threads were processed, but some sources remain pending:\n" + "\n".join(failures))
     print(f"Completed {'dry run' if dry_run else 'synchronization'} for {len(threads)} forum threads.")
 
 
@@ -1114,4 +1221,5 @@ if __name__ == "__main__":
         main()
     except (BridgeError, ValueError, KeyError, TypeError) as error:
         print(f"Discord bridge stopped: {error}", file=sys.stderr)
-        raise SystemExit(1)
+        retryable = isinstance(error, TransientBridgeError) or getattr(error, "retryable", False)
+        raise SystemExit(75 if retryable else 1)

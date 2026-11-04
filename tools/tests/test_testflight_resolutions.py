@@ -13,7 +13,7 @@ import unittest
 from unittest.mock import Mock, patch
 
 from test_testflight_discord import Apple, build, catalog_fixture
-from test_discord_bridge import Discord, GitHub, THREAD, SECOND, thread, synchronize
+from test_discord_bridge import Discord, GitHub, THREAD, SECOND, thread, message, synchronize
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -445,6 +445,88 @@ class DiscordResolutionTests(unittest.TestCase):
         self.sync()
         self.assertEqual(len(self.discord.writes), count)
         self.assertFalse(any("locked" in data for _, _, data in self.discord.writes))
+
+    def test_implementation_and_delivery_each_get_one_message_despite_edits(self):
+        self.receipt(delivered=False)
+        self.sync()
+        self.github.comments[-1]["body"] += "\nAdditional context."
+        self.sync()
+        receipt = self.github.comments.pop()
+        self.receipt(delivered=True)
+        self.assertEqual(self.github.comments[-1]["id"], receipt["id"])
+        self.sync()
+        self.sync()
+        for identifier in (THREAD, SECOND):
+            messages = [m for m in self.discord.messages[identifier] if m.get("embeds")]
+            self.assertEqual(len(messages), 3)
+            self.assertEqual(len(BRIDGE.discord_records(messages, f"resolution:{self.number}:{FIX['commit']}:awaiting_release")), 1)
+            self.assertEqual(len(BRIDGE.discord_records(messages, f"resolution:{self.number}:{FIX['commit']}:delivered")), 1)
+
+    def test_new_link_baselines_existing_resolution_without_historical_announcements(self):
+        self.receipt()
+        for identifier in (THREAD, SECOND):
+            self.discord.messages[identifier] = [m for m in self.discord.messages[identifier] if not m.get("embeds")]
+        self.sync()
+        self.sync()
+        for identifier in (THREAD, SECOND):
+            self.assertEqual(sum(bool(m.get("embeds")) for m in self.discord.messages[identifier]), 1)
+
+    def test_legacy_resolution_message_is_reused_then_delivery_gets_new_message(self):
+        self.receipt(delivered=False)
+        for identifier in (THREAD, SECOND):
+            self.discord.messages[identifier].append(message(
+                "1556500000000999999", "", BRIDGE.BOT, bot=True, embeds=[{
+                    "title": f"GitHub #{self.number}",
+                    "description": self.github.comments[-1]["body"].partition("\n")[2].lstrip(),
+                    "footer": {"text": BRIDGE.FOOTER + "comment:500:0"},
+                }],
+            ))
+        self.discord.writes.clear()
+        self.sync()
+        self.assertFalse(any(method == "POST" for method, _, _ in self.discord.writes))
+        self.github.comments.pop()
+        self.receipt()
+        self.sync()
+        self.assertEqual(sum(method == "POST" for method, _, _ in self.discord.writes), 2)
+
+    def test_failed_milestone_keeps_previous_baseline_and_does_not_archive(self):
+        self.receipt()
+        self.github.issues[0].update(state="closed", state_reason="completed")
+        original = self.discord.call
+
+        def fail_milestone(method, path, data=None, query=None):
+            if method == "POST" and ":resolution:" in data["embeds"][0]["footer"]["text"]:
+                raise BRIDGE.TransientBridgeError("Lost send")
+            return original(method, path, data, query)
+
+        with patch.object(self.discord, "call", side_effect=fail_milestone):
+            with self.assertRaisesRegex(BRIDGE.TransientBridgeError, "Lost send"):
+                self.sync()
+        self.assertFalse(self.discord.threads[0]["thread_metadata"].get("archived", False))
+        status = BRIDGE.discord_records(self.discord.messages[THREAD], f"issue:{self.number}")[0]
+        self.assertEqual(status["embeds"][0]["fields"], [])
+        self.sync()
+        self.assertTrue(self.discord.threads[0]["thread_metadata"]["archived"])
+
+    def test_ambiguous_milestone_send_rediscovers_remote_message_without_duplicate(self):
+        self.receipt()
+        original = self.discord.call
+        failed = False
+
+        def lose_response(method, path, data=None, query=None):
+            nonlocal failed
+            result = original(method, path, data, query)
+            if method == "POST" and not failed and ":resolution:" in data["embeds"][0]["footer"]["text"]:
+                failed = True
+                raise BRIDGE.TransientBridgeError("Lost response")
+            return result
+
+        with patch.object(self.discord, "call", side_effect=lose_response):
+            with self.assertRaisesRegex(BRIDGE.TransientBridgeError, "Lost response"):
+                self.sync()
+        self.sync()
+        for identifier in (THREAD, SECOND):
+            self.assertEqual(sum(bool(m.get("embeds")) for m in self.discord.messages[identifier]), 2)
 
     def test_pending_manual_closure_and_forged_receipt_do_not_archive(self):
         for delivered, user, state in (
