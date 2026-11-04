@@ -30,22 +30,11 @@ concurrency:
   cancel-in-progress: false
 engine:
   id: copilot
-  model: mai-code-2-flash
+  model: gpt-6.1-sol
   args: ["--reasoning-effort", "high"]
   bare: true
 models:
-  allowed: [mai-code-2-flash]
-  providers:
-    github-copilot:
-      models:
-        mai-code-2-flash:
-          # Approved accounting estimate, not a quoted Copilot billing rate.
-          cost:
-            input: 0.000003
-            output: 0.000015
-            cache_read: 0.000003
-            cache_write: 0.000003
-            reasoning: 0.000015
+  allowed: [gpt-6.1-sol]
 features:
   # The external detector does not forward the configured reasoning arguments.
   gh-aw-detection: false
@@ -112,9 +101,9 @@ safe-outputs:
   threat-detection:
     engine:
       id: copilot
-      model: mai-code-2-flash
+      model: gpt-6.1-sol
       # Detection does not inherit sandbox.model-fallback in gh-aw v1.0.1.
-      fallback-models: [mai-code-2-flash]
+      fallback-models: [gpt-6.1-sol]
       args: ["--reasoning-effort", "high", "--excluded-tools", "task"]
       bare: true
     continue-on-error: false

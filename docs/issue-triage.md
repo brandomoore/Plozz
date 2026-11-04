@@ -35,7 +35,7 @@ runs on GitHub-hosted runners and does not require the maintainer's computer.
    outputs appear only as previews in the Actions run; no labels/comments are
    changed.
 3. Verify that both the assessment and threat-detection jobs actually use
-   `mai-code-2-flash` at high effort, and inspect authentication, output quality
+   `gpt-6.1-sol` at high effort, and inspect authentication, output quality
    and billed usage. Availability here is not guaranteed by desktop access.
    The workflow disallows switching to another model. The primary job also
    disables token steering.
@@ -68,15 +68,15 @@ Actions execution and Copilot inference have separate billing rules. Verify
 the account's model entitlement and usage; do not assume an unlimited desktop
 model entitlement transfers to Actions.
 
-The initial hosted preview confirmed that the credential's model catalog lists
-`mai-code-2-flash`, but neither that catalog nor gh-aw's bundled catalog supplied
-its pricing. With maintainer approval, the workflow uses an accounting estimate
-of $3 per million input/cache tokens and $15 per million output/reasoning tokens
-for its usage guard. These are **not quoted billing rates** and do not change
-GitHub charges. Inference uses the token owner's Copilot entitlement; consult
-that account's billing for actual consumption. Replace the estimate with
-verified pricing when available. Model availability alone is not proof of a
-successful inference request.
+The initial hosted previews found `mai-code-2-flash` in the credential's model
+catalog, first without pricing and then rejected by the upstream service:
+`no model endpoints available given user constraints`. Listing a model is not
+proof that the credential can use it. The maintainer approved switching both
+jobs to `gpt-6.1-sol` at high effort. Its pricing is supplied by the compiler's
+catalog and the runtime provider; no custom accounting estimate is retained.
+Inference uses the token owner's Copilot entitlement. Consult that account's
+billing for actual consumption rather than treating workflow estimates as an
+invoice.
 
 ## Durable evidence and website consumption
 
