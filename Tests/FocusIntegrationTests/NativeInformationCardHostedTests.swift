@@ -48,20 +48,48 @@ final class NativeInformationCardHostedTests: XCTestCase {
             window.makeKeyAndVisible()
             try await Task.sleep(for: .milliseconds(500))
             let cards = nativeCards(in: window)
-            XCTAssertEqual(cards.count, count == 4 ? 7 : 3)
-            guard cards.count == (count == 4 ? 7 : 3) else { continue }
+            XCTAssertEqual(cards.count, count == 4 ? 4 : 3,
+                           "Numeric scores share one surface; guidance keeps its own action.")
+            guard cards.count == (count == 4 ? 4 : 3) else { continue }
             let frames = try cards.map { card in
                 let container = try XCTUnwrap(card.superview)
                 return container.convert(container.bounds, to: window)
             }
             let about = frames[0]
-            for rating in frames[1...count] {
-                XCTAssertEqual(rating.minY, about.minY, accuracy: 1)
-                XCTAssertGreaterThan(rating.minX, about.maxX)
-            }
+            let scores = frames[1]
+            XCTAssertEqual(scores.minY, about.minY, accuracy: 1)
+            XCTAssertGreaterThan(scores.minX, about.maxX)
+            XCTAssertLessThan(scores.height, 160, "Scores must occupy one compact row.")
             if count == 4 {
-                XCTAssertLessThanOrEqual(frames[5].maxY - about.maxY, 100,
+                XCTAssertLessThanOrEqual(frames[2].maxY - about.maxY, 100,
                                          "Family guidance must not leave a large empty reservation under a short synopsis.")
+                let request = VNRecognizeTextRequest()
+                request.recognitionLevel = .accurate
+                try VNImageRequestHandler(cgImage: XCTUnwrap(DetailTransitionSnapshot.image(of: window).cgImage))
+                    .perform([request])
+                let values = try XCTUnwrap(request.results).filter {
+                    ["98%", "88%", "8.3", "8.1"].contains($0.topCandidates(1).first?.string ?? "")
+                }.sorted { $0.boundingBox.minX < $1.boundingBox.minX }
+                XCTAssertEqual(values.count, 4)
+                let pixels = try informationPixels(window)
+                let paintedValues = values.map { value in
+                    paintedTextBounds(pixels, in: CGRect(
+                        x: value.boundingBox.minX * 1920,
+                        y: (1 - value.boundingBox.maxY) * 1080,
+                        width: value.boundingBox.width * 1920,
+                        height: value.boundingBox.height * 1080
+                    ).insetBy(dx: -6, dy: -4))
+                }
+                for (index, value) in paintedValues.enumerated() {
+                    XCTAssertFalse(value.isNull)
+                    XCTAssertEqual(value.midY, paintedValues[0].midY, accuracy: 3)
+                    if index > 0 {
+                        let step = (scores.width - 2 * DetailInformationLayout.cellPadding
+                                    + DetailInformationLayout.gutter) / 4
+                        XCTAssertEqual(value.minX - paintedValues[index - 1].minX,
+                                       step, accuracy: 3, "Scores must share evenly spaced value columns.")
+                    }
+                }
             }
             let attachment = XCTAttachment(image: DetailTransitionSnapshot.image(of: window))
             attachment.name = "summary-\(count)-scores"
@@ -239,21 +267,27 @@ final class NativeInformationCardHostedTests: XCTestCase {
             // Vision can overestimate glyph bounds. Measure painted text for exact insets,
             // excluding the native card's border rather than relaxing the padding requirement.
             let interior = surface.intersection(window.bounds).insetBy(dx: 8, dy: 8).integral
-            var textBounds = CGRect.null
-            for y in Int(interior.minY)..<Int(interior.maxY) {
-                for x in Int(interior.minX)..<Int(interior.maxX) {
-                    let offset = (y * 1920 + x) * 4
-                    if pixels[offset] > 140 && pixels[offset + 1] > 140 && pixels[offset + 2] > 140 {
-                        textBounds = textBounds.union(CGRect(x: x, y: y, width: 1, height: 1))
-                    }
-                }
-            }
+            let textBounds = paintedTextBounds(pixels, in: interior)
             XCTAssertFalse(textBounds.isNull)
             XCTAssertGreaterThanOrEqual(textBounds.minX - surface.minX, 20)
             XCTAssertGreaterThanOrEqual(surface.maxX - textBounds.maxX, 20)
             XCTAssertGreaterThanOrEqual(textBounds.minY - surface.minY, 20)
             XCTAssertGreaterThanOrEqual(surface.maxY - textBounds.maxY, 20)
         }
+    }
+
+    private func paintedTextBounds(_ pixels: [UInt8], in region: CGRect) -> CGRect {
+        let interior = region.intersection(CGRect(x: 0, y: 0, width: 1920, height: 1080)).integral
+        var bounds = CGRect.null
+        for y in Int(interior.minY)..<Int(interior.maxY) {
+            for x in Int(interior.minX)..<Int(interior.maxX) {
+                let offset = (y * 1920 + x) * 4
+                if pixels[offset] > 140 && pixels[offset + 1] > 140 && pixels[offset + 2] > 140 {
+                    bounds = bounds.union(CGRect(x: x, y: y, width: 1, height: 1))
+                }
+            }
+        }
+        return bounds
     }
 
     func testMoreOverlayDoesNotParticipateInTextSizing() {
@@ -558,7 +592,7 @@ final class NativeInformationCardHostedTests: XCTestCase {
         window.layoutIfNeeded()
         try await Task.sleep(for: .milliseconds(600))
         let cards = nativeCards(in: window)
-        XCTAssertGreaterThanOrEqual(cards.count, 8)
+        XCTAssertEqual(cards.count, 6, "About, scores, guidance, Details, Crew and Playback each own a surface.")
         var samples: [String] = []
         for (index, card) in cards.enumerated() {
             host.target = card

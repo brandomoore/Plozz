@@ -49,9 +49,10 @@ struct FamilyGuidanceTile: View {
             }
             .foregroundStyle(palette.primaryText)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(16)
+            .padding(DetailInformationLayout.cellPadding)
         }
-        .plozzCardButton(cornerRadius: 18, focusedScale: PlozzTheme.Metrics.readOnlyFocusedCardScale)
+        .plozzCardButton(cornerRadius: DetailInformationLayout.cornerRadius,
+                        focusedScale: PlozzTheme.Metrics.readOnlyFocusedCardScale)
         .accessibilityIdentifier("family-guidance-tile")
         .accessibilityHint("Open family guidance")
         #if os(tvOS)

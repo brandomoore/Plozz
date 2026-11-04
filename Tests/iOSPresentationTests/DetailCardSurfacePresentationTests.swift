@@ -185,7 +185,8 @@ final class DetailCardSurfacePresentationTests: XCTestCase {
             for palette in [ThemePalette.dark, .pureBlack, .light] {
                 for (gradientEnabled, reduceTransparency) in [(true, false), (false, false), (true, true)] {
                     let gradientSurface = gradientEnabled && !reduceTransparency
-                    for style in ["read-only", "button", "settings"] {
+                    for style in ["read-only", "button", "settings", "detail"] {
+                        let fillOpacity = style == "detail" ? 0.12 : 0.05
                         let label = Color.white.frame(width: 40, height: 40)
                             .frame(width: 240, height: 120)
                         host.rootView = AnyView(
@@ -199,7 +200,9 @@ final class DetailCardSurfacePresentationTests: XCTestCase {
                                     label.plozzFocusableCard(cornerRadius: 20)
                                 }
                             }
-                            .plozzAdaptiveCardSurface()
+                            .plozzAdaptiveCardSurface(fillOpacity: style == "detail"
+                                ? ThemePalette.detailGradientSurfaceFillOpacity
+                                : ThemePalette.gradientSurfaceFillOpacity)
                             .environment(\.themePalette, palette)
                             .environment(\.colorScheme, palette.isLight ? .light : .dark)
                             .environment(\.gradientBackgroundsEnabled, gradientEnabled)
@@ -211,7 +214,7 @@ final class DetailCardSurfacePresentationTests: XCTestCase {
                         XCTAssertEqual(try pixel(actual, at: CGPoint(x: size.width / 2, y: size.height / 2)),
                                        [255, 255, 255], "Surface opacity must not fade card content.")
                         let fill = gradientSurface
-                            ? (palette.isLight ? Color.black : .white).opacity(0.05)
+                            ? (palette.isLight ? Color.black : .white).opacity(fillOpacity)
                             : palette.raised.fill
                         host.rootView = AnyView(fill.background(.blue)
                             .environment(\.colorScheme, palette.isLight ? .light : .dark))

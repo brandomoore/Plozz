@@ -312,10 +312,6 @@ public struct RatingSourceIcon: View {
 
 /// A score and its source, optionally content-sized for a compact detail strip.
 public struct RatingTile: View {
-    @Environment(\.themePalette) private var palette
-    #if os(iOS)
-    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
-    #endif
     private let rating: ExternalRating
     private let compact: Bool
 
@@ -325,6 +321,28 @@ public struct RatingTile: View {
     }
 
     public var body: some View {
+        RatingValue(rating: rating, compact: compact)
+            .padding(.vertical, compact ? PlozzTheme.Spacing.small : DetailInformationLayout.cellPadding)
+            .padding(.horizontal, compact ? PlozzTheme.Spacing.medium : DetailInformationLayout.cellPadding)
+            .plozzFocusableCard(cornerRadius: DetailInformationLayout.cornerRadius)
+    }
+}
+
+/// Shared score geometry, without an individual surface when grouped with other scores.
+struct RatingValue: View {
+    @Environment(\.themePalette) private var palette
+    #if os(iOS)
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    #endif
+    private let rating: ExternalRating
+    private let compact: Bool
+
+    init(rating: ExternalRating, compact: Bool = false) {
+        self.rating = rating
+        self.compact = compact
+    }
+
+    var body: some View {
         HStack(spacing: valueSpacing) {
             RatingSourceIcon(rating: rating, size: iconSize)
                 .frame(width: iconSize * 1.85, height: iconRowHeight)
@@ -340,11 +358,6 @@ public struct RatingTile: View {
             }
         }
         .frame(maxWidth: compact ? nil : .infinity, alignment: .leading)
-        .padding(.vertical, verticalPadding)
-        .padding(.horizontal, horizontalPadding)
-        // Focusable on tvOS (D-pad reachable with the shared glass lift, matching
-        // the About/info cards); a plain filled surface on iOS/iPadOS.
-        .plozzFocusableCard(cornerRadius: cornerRadius)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(Text(verbatim: "\(rating.displayName) \(rating.displayValue)"))
     }
@@ -420,18 +433,6 @@ public struct RatingTile: View {
         #else
         return 6
         #endif
-    }
-
-    private var verticalPadding: CGFloat {
-        compact ? PlozzTheme.Spacing.small : DetailInformationLayout.cellPadding
-    }
-
-    private var horizontalPadding: CGFloat {
-        compact ? PlozzTheme.Spacing.medium : DetailInformationLayout.cellPadding
-    }
-
-    private var cornerRadius: CGFloat {
-        DetailInformationLayout.cornerRadius
     }
 }
 

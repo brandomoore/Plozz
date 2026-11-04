@@ -659,9 +659,10 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   retaining its hue and brightness without desaturating the hero image. Showcase,
   detail pages, and untinted stock gradients retain their existing treatment.
   Tint saturation is page-scoped and shared with native card fills/textures.
-  Settings panels and detail information cards share a
-  5%-white wash in Dark and Black, or a 5%-black wash in Light, so they remain
-  distinct without replacing the gradient's colour. SwiftUI surfaces keep their
+  Settings panels use a 5% wash; detail information cards use a stronger 12%
+  wash so grouped content remains distinct from the artwork gradient. Both use
+  white in Dark/Black and black in Light without replacing the gradient's colour.
+  SwiftUI surfaces keep their
   shadow and a matching hairline edge. Gradient Off or Reduce Transparency restores the original solid
   surface and border; unrelated raised cards remain unchanged.
   PIN digit/delete keys use native Liquid Glass at rest and during interaction
@@ -688,8 +689,9 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   of covering it with a solid rectangle; Gradient Off and Reduce Transparency
   retain the original opaque base. The artwork's existing readability fade stays.
   Native tvOS cards display their local portion of a shared page-mesh texture,
-  with the information band and wash precomposed because TVUIKit replaces fill
-  alpha. The texture is created only when a card needs it, its longest edge is
+  with the information band precomposed because TVUIKit replaces fill alpha.
+  A background-only tint layer applies each card's wash without fading text or
+  rerendering the shared texture. The texture is created only when a card needs it, its longest edge is
   capped at 480 pixels, and it is rebuilt only for palette or viewport size
   changes. Scrolling updates each background's sampling rectangle, not its
   texture or foreground content. `settingsPageBackground()` provides the same
@@ -998,7 +1000,8 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   Title-information facts retain the full original classification when visible.
 - **Detail information layout** — TV and mobile share ordered information
   sections. About and Ratings sit beside each other when both have readable space;
-  otherwise they stack. Scores determine their own column width, and family
+  otherwise they stack. Numeric scores share one surface with evenly spaced value
+  columns, rather than a separate card per source. Scores determine their own column width, and family
   guidance remains with the scores. Four or more scores balance into two rows when
   there is no guidance row. Their heights are independent; About keeps a stable
   line cap and never stretches to match ratings. Missing summary content reserves
@@ -1039,6 +1042,8 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   `--detail-layout-family-only` for native review without server access.
   `--detail-layout-lupin` and `--detail-layout-slow-horses` reproduce the visible
   metadata shapes from reported layout regressions, without private server identities.
+  The fixture uses the production page-scoped gradient host; `--detail-layout-flat`
+  and `--detail-layout-reduced-transparency` cover its opaque fallbacks.
   `--detail-layout-bottom` reveals Playback.
 - **Detail information focus** — the tvOS About/Ratings/Information band uses
   native focus with at most 2% growth and 6pt of expansion per edge, leaving

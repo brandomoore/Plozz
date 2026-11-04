@@ -280,6 +280,8 @@ private struct NativeCardBackground: View {
     @Environment(\.ambientBackdropModel) private var ambient
     @Environment(\.settingsGradientCardSurface) private var settingsSurface
     @Environment(\.plozzGradientCardSurface) private var gradientSurface
+    @Environment(\.plozzGradientCardFillOpacity) private var fillOpacity
+    @Environment(\.plozzRestingCardSurface) private var restingSurface
     @Environment(\.artworkGradientTintSaturation) private var tintSaturation
     let apply: (UIColor) -> Void
 
@@ -292,11 +294,14 @@ private struct NativeCardBackground: View {
         )[4]
             .mix(with: palette.informationSurface,
                  by: settingsSurface == nil ? DetailInformationSections.bandFillOpacity : 0)
-            .mix(with: palette.gradientSurfaceTint, by: ThemePalette.gradientSurfaceFillOpacity)
+            .mix(with: palette.gradientSurfaceTint, by: fillOpacity)
     }
 
     var body: some View {
-        NativeGradientCardFill(surface: gradientSurface ? (settingsSurface ?? ambient?.cardSurface) : nil)
+        NativeGradientCardFill(
+            surface: gradientSurface ? (settingsSurface ?? ambient?.cardSurface) : nil,
+            fill: restingSurface.fill
+        )
             .onChange(of: color, initial: true) { _, color in apply(UIColor(color)) }
     }
 }

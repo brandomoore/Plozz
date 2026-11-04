@@ -4,6 +4,7 @@ import SwiftUI
 
 struct DetailInformationFixture: View {
     @State private var selectedPerson = ""
+    @State private var backdropScope = NSObject()
 
     static let longTitle = String(repeating: "A very long original title ", count: 40)
         .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -216,6 +217,11 @@ struct DetailInformationFixture: View {
                 }
             }
         }
+        .artworkGradientBackground(scope: ObjectIdentifier(backdropScope), isVisible: true)
+        .environment(\.gradientBackgroundsEnabled,
+                     !ProcessInfo.processInfo.arguments.contains("--detail-layout-flat"))
+        .environment(\.plozzReduceTransparency,
+                     ProcessInfo.processInfo.arguments.contains("--detail-layout-reduced-transparency"))
         .environment(\.plozzCardFocusStyle, .system)
         .environment(\.themePalette, palette)
         .dynamicTypeSize(ProcessInfo.processInfo.arguments.contains("--detail-layout-large-type") ? .accessibility3 : .large)

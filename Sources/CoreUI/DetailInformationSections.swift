@@ -86,7 +86,7 @@ public struct DetailInformationSections: View {
             if hasContent {
                 sectionBody
                     .environment(\.plozzNativeInformationFocus, true)
-                    .plozzAdaptiveCardSurface()
+                    .plozzAdaptiveCardSurface(fillOpacity: ThemePalette.detailGradientSurfaceFillOpacity)
                     .padding(.horizontal, horizontalInset)
                     .padding(.top, bandTopPadding)
                     .padding(.bottom, bandBottomPadding)
@@ -208,15 +208,20 @@ public struct DetailInformationSections: View {
     private var ratingsContent: some View {
         VStack(alignment: .leading, spacing: informationGroupSpacing) {
             if !sortedRatings.isEmpty {
-                ProportionalWrapLayout(
-                    preferredColumns: ratingColumns,
-                    minimumCellWidth: ratingMinimumWidth,
-                    spacing: informationColumnSpacing,
-                    rowSpacing: informationRowSpacing
-                ) {
-                    ForEach(sortedRatings) { rating in
-                        protectedRating { RatingTile(rating: rating) }
+                protectedRating {
+                    ProportionalWrapLayout(
+                        preferredColumns: ratingColumns,
+                        minimumCellWidth: ratingMinimumWidth - 2 * DetailInformationLayout.cellPadding,
+                        spacing: informationColumnSpacing,
+                        rowSpacing: informationRowSpacing
+                    ) {
+                        ForEach(sortedRatings) { rating in
+                            RatingValue(rating: rating)
+                        }
                     }
+                    .padding(DetailInformationLayout.cellPadding)
+                    .plozzFocusableCard(cornerRadius: DetailInformationLayout.cornerRadius)
+                    .accessibilityIdentifier("detail-rating-scores")
                 }
             }
             if let summary = familyGuidanceSummary {
