@@ -140,7 +140,7 @@ public struct MediaExtra: Codable, Hashable, Identifiable, Sendable {
         supportsResume: Bool = true,
         isPrimary: Bool = false
     ) {
-        self.item = item
+        self.item = kind == .trailer ? item.markingAsTrailer() : item
         self.kind = kind
         self.rawProviderType = rawProviderType
         self.owner = owner
@@ -166,8 +166,8 @@ public struct MediaExtra: Codable, Hashable, Identifiable, Sendable {
     }
 
     public var playbackItem: MediaItem {
-        guard !supportsResume else { return item }
-        var copy = item
+        var copy = kind == .trailer ? item.markingAsTrailer() : item
+        guard !supportsResume else { return copy }
         copy.resumePosition = nil
         copy.playedPercentage = copy.isPlayed ? 1 : nil
         return copy

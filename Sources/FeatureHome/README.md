@@ -427,8 +427,15 @@ records on both platforms; error dialogs, playback routing and timeouts are unch
   Native content requests batch by account and library so several Plex rows
   reuse one promoted-hub response. Sharing lasts only for that refresh; it never
   leaves Next Up stale behind a cross-refresh item cache.
-  Native Continue Watching keeps the complete feed through bounded pages, applying
-  library exclusions before a presentation limit. Retained native rows immediately
+  Continue Watching admits ordinary resume positions at 5% of duration, bounded
+  between 5 and 60 seconds (60 seconds when duration is unknown). Saving resume
+  progress is independent of this visibility threshold. Unstarted Next Up episodes
+  remain eligible; trailers never enter the row or propagate watch state to their
+  parent title. The same policy covers optimistic updates, queued-write overlays,
+  cached content, library/server rows, and their browse grids. Grid filtering
+  preserves raw provider continuation offsets.
+  Native Continue Watching reads the feed through bounded pages, applying
+  eligibility and library exclusions before a presentation limit. Retained native rows immediately
   honor current library visibility while discovery is pending or offline.
   Connection failures identify the affected server. The Home row arranger names
   each failed server, distinguishing offline, sign-in, and Home-loading problems

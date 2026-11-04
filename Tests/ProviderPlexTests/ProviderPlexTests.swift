@@ -572,6 +572,7 @@ final class PlexProviderMappingTests: XCTestCase {
 
         XCTAssertEqual(trailers.map(\.id), ["e1"])
         XCTAssertEqual(trailers.first?.title, "Trailer")
+        XCTAssertEqual(trailers.first?.isTrailer, true)
         XCTAssertEqual(trailers.first?.kind, .video)
     }
 

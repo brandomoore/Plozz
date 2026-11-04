@@ -2016,6 +2016,7 @@ public struct PlexProvider: MediaProvider, AuthenticatedHTTPOriginProviding, Ser
             title: dto.title ?? "Untitled",
             originalTitle: dto.originalTitle,
             kind: kind,
+            isTrailer: Self.extraKind(for: dto) == .trailer,
             overview: dto.summary,
             parentTitle: parentTitle,
             // A season's own ordinal lives in `index`; an episode's season number

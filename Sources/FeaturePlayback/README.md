@@ -34,6 +34,11 @@ bounded language-match/accessibility flags without track titles or URLs.
 - **View model / view** —
   - `PlayerViewModel` orchestrates engine lifecycle, audio/subtitle
     selection, scrub state, resume, and progress reporting.
+  - Resume progress is saved independently of Continue Watching eligibility:
+    `ContinueWatchingPolicy` requires 5% of the duration, bounded to 5–60 seconds
+    (60 seconds when duration is unknown). Provider-supported trailer progress
+    is preserved, but trailers never appear in Continue Watching, converge onto their parent,
+    or scrobble their parent's identity to trackers.
   - `PlayerView` + `CustomPlayerContainer` host the engine's vended
     bare video surface and overlay the shared transport chrome.
 - **Subtitle rendering** — `SubtitleOverlayView` draws in-app captions from

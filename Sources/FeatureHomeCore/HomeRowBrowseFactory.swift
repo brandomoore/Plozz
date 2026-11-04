@@ -19,6 +19,7 @@ enum HomeRowBrowseFactory {
         var mergesSources = false
         var isRecentlyAdded = false
         var watchlistDates = false
+        var isContinueWatching = false
 
         func append(
             accountID: String, libraryID: String? = nil, history: Bool = false,
@@ -43,6 +44,7 @@ enum HomeRowBrowseFactory {
         switch row.source {
         case .home(let home):
             snapshot = home.items
+            isContinueWatching = home.kind == .continueWatching
             watchlistDates = home.kind == .watchlist
             if home.kind == .recentlyAdded {
                 mergesSources = true
@@ -77,6 +79,8 @@ enum HomeRowBrowseFactory {
             }
         case .library(let libraryRow):
             let section = libraryRow.section
+            isContinueWatching = section.id == "continueWatching"
+                || row.choice.serverRow?.section.kind == .continueWatching
             // Collection-cover shape reflects its artwork and cover preference,
             // not the special presentation of a history or collection-member rail.
             if CollectionCoverLayout.isCollectionGroup(section.items) {
@@ -150,6 +154,8 @@ enum HomeRowBrowseFactory {
         }
         let mergeSources = mergesSources
         let hidesWatched = isRecentlyAdded && visibility.hideWatchedRecentlyAdded
+        let curatesProgress = isContinueWatching
+        if curatesProgress { snapshot = snapshot.filter(ContinueWatchingPolicy.admits) }
         let serverInfo = accounts.sourceServerInfo()
         let isAdmitted = visibility.isHomeRowVisible(row.choice)
             && row.choice.library.map { visibility.isEnabled($0.key) } != false
@@ -163,7 +169,10 @@ enum HomeRowBrowseFactory {
             let items = mergeSources ? MediaItemMerger.merge(
                 HomeAggregator.interleave(groups), serverInfo: { serverInfo[$0] }, identitySources: identitySources
             ) : groups.flatMap { $0 }
-            return items.filter { !hidesWatched || !HomeRecentlyAddedPolicy.isWatched($0) }
+            return items.filter {
+                (!hidesWatched || !HomeRecentlyAddedPolicy.isWatched($0))
+                    && (!curatesProgress || ContinueWatchingPolicy.admits($0))
+            }
         }
     }
 }

@@ -12,6 +12,12 @@ import Foundation
 /// `providerIDs` key. The producer (`FeatureHome`) stamps it; the player router
 /// reads `isYouTubeTrailer` before creating any in-app playback request.
 public extension MediaItem {
+    func markingAsTrailer() -> MediaItem {
+        var copy = self
+        copy.isTrailer = true
+        return copy
+    }
+
     /// `providerIDs` key whose value is the YouTube video id of an online trailer.
     static let youTubeTrailerProviderKey = "YouTubeTrailer"
 
@@ -89,6 +95,7 @@ public extension MediaItem {
             id: videoID,
             title: title,
             kind: .video,
+            isTrailer: true,
             parentTitle: parentTitle,
             runtime: runtime,
             posterURL: posterURL,
