@@ -220,6 +220,9 @@ public struct DetailInformationSections: View {
 
     private var ratingColumns: Int {
         let count = sortedRatings.count
+        #if os(tvOS)
+        if count == 4, familyGuidanceSummary == nil { return 4 }
+        #endif
         let columns = familyGuidanceSummary != nil ? max(2, count + 1) : (count > 3 ? (count + 1) / 2 : count)
         return max(1, min(4, columns))
     }

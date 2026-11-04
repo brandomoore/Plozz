@@ -1016,8 +1016,9 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   The grid's accessibility container stays inside its spoiler-protection wrapper,
   so scores and guidance are hidden from accessibility until the grid is revealed.
   Stacked phone and tablet grids with multiple tiles use the available section width.
-  The number of scores determines the preferred tile count per row. Four or more scores
-  balance into two rows when there is no family guidance.
+  The number of scores determines the preferred tile count per row. Without family
+  guidance, four TV scores stay in one row when they fit. Larger score sets and
+  four-score mobile grids retain their balanced-row preference.
   About keeps its stable line cap when its surface grows to match
   the adjacent ratings group. Missing summary content reserves no column.
   About occupies one reading column instead of absorbing leftover space.

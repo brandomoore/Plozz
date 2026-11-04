@@ -74,11 +74,15 @@ final class NativeInformationCardHostedTests: XCTestCase {
             XCTAssertGreaterThan(ratings[0].minX, about.maxX)
             let tileCount = count + (hasGuidance ? 1 : 0)
             let ratingsWidth = tileCount > 1 ? 2 * columnWidth + DetailInformationLayout.sectionSpacing : columnWidth
-            let columns = hasGuidance ? min(4, max(2, count + 1)) : min(4, count > 3 ? (count + 1) / 2 : count)
+            let columns = hasGuidance ? min(4, max(2, count + 1)) : min(4, count > 4 ? (count + 1) / 2 : count)
             let cellWidth = (ratingsWidth - CGFloat(columns - 1) * DetailInformationLayout.gutter) / CGFloat(columns)
             for score in ratings.prefix(count) {
                 XCTAssertEqual(score.width, cellWidth, accuracy: 1,
                                "Scores must use equal flexible columns, not fixed 220pt tiles.")
+                if count == 4 && !hasGuidance {
+                    XCTAssertEqual(score.minY, ratings[0].minY, accuracy: 1,
+                                   "Four TV scores should read across one row rather than a 2-by-2 grid.")
+                }
             }
             if tileCount == 1 {
                 XCTAssertEqual(ratings[0].width, columnWidth, accuracy: 1,
@@ -164,7 +168,7 @@ final class NativeInformationCardHostedTests: XCTestCase {
         let window = UIWindow(windowScene: scene)
         window.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
         defer { window.isHidden = true; window.rootViewController = nil; previous?.makeKeyAndVisible() }
-        for count in [1, 3, 5] {
+        for count in [1, 3, 4, 5] {
             var item = MediaItem(id: "ratings-only", title: "A film", kind: .movie)
             item.ratings = Array([
                 ExternalRating(source: .rottenTomatoes, value: 98, scale: .percent),
