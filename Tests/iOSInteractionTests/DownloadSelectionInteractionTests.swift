@@ -39,6 +39,7 @@ final class DownloadSelectionInteractionTests: XCTestCase {
         let first = app.buttons["download-version-1"]
         XCTAssertTrue(first.waitForExistence(timeout: 3), app.debugDescription)
         XCTAssertEqual(first.value as? String, "Selected")
+        XCTAssertTrue(app.staticTexts["Living Room Server"].firstMatch.exists)
         let second = app.buttons["download-version-2"]
         XCTAssertEqual(second.value as? String, "Not selected")
         second.tap()
@@ -76,10 +77,13 @@ final class DownloadSelectionInteractionTests: XCTestCase {
     }
 
     func testAskOffAutomaticallyDownloadsSingleVersionEpisode() {
-        relaunch(["--single-download-episode", "--one-download-version", "--download-ask-off"])
+        relaunch(["--single-download-episode", "--one-download-version", "--download-ask-off", "--slow-download-preparation"])
         app.buttons["Download Season"].tap()
+        XCTAssertTrue(app.staticTexts["Sheets: 0"].exists)
+        XCTAssertFalse(app.staticTexts["Preparing Downloads"].exists)
         XCTAssertTrue(app.staticTexts["Queued: 1"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.buttons["confirm-download-selection"].exists)
+        XCTAssertTrue(app.staticTexts["Sheets: 0"].exists)
     }
 
     func testAskOffAutomaticallyDownloadsSingleVersionMovie() {
@@ -87,6 +91,7 @@ final class DownloadSelectionInteractionTests: XCTestCase {
         app.buttons["Download Season"].tap()
         XCTAssertTrue(app.staticTexts["Queued: 1"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.buttons["confirm-download-selection"].exists)
+        XCTAssertTrue(app.staticTexts["Sheets: 0"].exists)
     }
 
     func testAlwaysAskStillConfirmsSingleVersion() {
@@ -97,6 +102,38 @@ final class DownloadSelectionInteractionTests: XCTestCase {
         XCTAssertFalse(app.staticTexts["Queued: 1"].exists)
         confirm.tap()
         XCTAssertTrue(app.staticTexts["Queued: 1"].waitForExistence(timeout: 5))
+    }
+
+    func testAutomaticPreparationErrorCanRetryWithoutPresentingASelectionSheet() {
+        relaunch(["--single-download-episode", "--one-download-version", "--download-ask-off", "--fail-download-preparation"])
+        app.buttons["Download Season"].tap()
+        XCTAssertTrue(app.alerts["Download Failed"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Queued: 0"].exists)
+        app.alerts.buttons["Try Again"].tap()
+        XCTAssertTrue(app.staticTexts["Queued: 1"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Sheets: 0"].exists)
+    }
+
+    func testAutomaticSubmissionFailureIsVisibleWithoutOpeningASelectionSheet() {
+        relaunch(["--single-download-episode", "--one-download-version", "--download-ask-off", "--fail-download-submit"])
+        app.buttons["Download Season"].tap()
+        XCTAssertTrue(app.alerts["Download Failed"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["The file could not be saved."].exists)
+        app.alerts.buttons["Cancel"].tap()
+        XCTAssertTrue(app.buttons["Download Season"].isEnabled)
+        XCTAssertTrue(app.staticTexts["Queued: 0"].exists)
+        XCTAssertTrue(app.staticTexts["Sheets: 0"].exists)
+    }
+
+    func testCancelledPreparationCannotQueueOrPresentLater() {
+        relaunch(["--single-download-episode", "--one-download-version", "--download-ask-off",
+                  "--slow-download-preparation", "--cancel-download-preparation"])
+        app.buttons["Download Season"].tap()
+        app.buttons["Cancel Preparation"].tap()
+        XCTAssertFalse(app.staticTexts["Queued: 1"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["Queued: 0"].exists)
+        XCTAssertTrue(app.staticTexts["Sheets: 0"].exists)
+        XCTAssertTrue(app.buttons["Download Season"].isEnabled)
     }
 
     func testAskOffStillConfirmsSeasonWithOneVersionPerEpisode() {
@@ -115,6 +152,7 @@ final class DownloadSelectionInteractionTests: XCTestCase {
         let second = app.buttons["download-version-2"]
         XCTAssertTrue(first.exists)
         XCTAssertTrue(second.exists)
+        XCTAssertTrue(app.staticTexts["Living Room Server"].firstMatch.exists)
         XCTAssertFalse(app.buttons["episode-versions-1-1"].exists)
         XCTAssertFalse(app.staticTexts["Season 1"].exists)
         second.tap()

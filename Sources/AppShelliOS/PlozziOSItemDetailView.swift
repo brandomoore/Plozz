@@ -2088,14 +2088,17 @@ private struct PlozziOSSeriesDownloadPicker: View {
             }
         }
         .interactiveDismissDisabled(isBusy)
-        .plozzSheet(item: $prompt) { prompt in
-            PlozziOSDownloadSelectionSheet(
-                title: prompt.title, items: prompt.batches.flatMap(\.episodes),
-                resolvesSingleItem: !prompt.isBulk, isBulk: prompt.isBulk
-            ) { options, quality in
-                try await performDownload(prompt, options: options, quality: quality)
+        .background {
+            if let prompt {
+                PlozziOSDownloadSelectionSheet(
+                    title: prompt.title, items: prompt.batches.flatMap(\.episodes),
+                    resolvesSingleItem: !prompt.isBulk, isBulk: prompt.isBulk,
+                    onFinish: { self.prompt = nil }
+                ) { options, quality in
+                    try await performDownload(prompt, options: options, quality: quality)
+                }
+                .id(prompt.id)
             }
-            .presentationDetents([.large])
         }
         .alert(
             "Download Failed",
@@ -2188,6 +2191,7 @@ private struct PlozziOSSeriesDownloadPicker: View {
     }
 
     private func beginShowDownload() {
+        guard prompt == nil, !isBusy else { return }
         if let batchID = activeShowBatchID {
             Task { await appModel.downloads.pauseBatch(batchID) }
             return
@@ -2242,14 +2246,14 @@ private struct PlozziOSSeriesDownloadPicker: View {
         title: SeriesDownloadSeasonTitle,
         episodes: [MediaItem]
     ) {
-        guard !episodes.isEmpty else { return }
+        guard !episodes.isEmpty, prompt == nil else { return }
         prompt = PlozziOSSeasonDownloadPrompt(
             scope: .season(title), batches: [.init(season: season, episodes: episodes)]
         )
     }
 
     private func beginEpisodeDownload(_ episodes: [MediaItem]) {
-        guard let episode = episodes.first else { return }
+        guard let episode = episodes.first, prompt == nil else { return }
         let spoilers = appModel.settings.spoilers.settings
         let title = spoilers.shouldHideText(for: episode)
             ? String(localized: spoilers.maskedTitle(for: episode)) // l10n:content - stored prompt title

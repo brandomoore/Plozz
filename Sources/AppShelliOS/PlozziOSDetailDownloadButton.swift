@@ -18,6 +18,7 @@ struct PlozziOSDetailDownloadButton: View {
 
     var body: some View {
         Button {
+            guard !showsVersionSelection else { return }
             Task { await performDownloadAction() }
         } label: {
             Image(systemName: downloadActionSymbol)
@@ -85,12 +86,16 @@ struct PlozziOSDetailDownloadButton: View {
         } message: {
             downloadConfirmationMessage
         }
-        .plozzSheet(isPresented: $showsVersionSelection, onDismiss: {
-            Task {
-                downloadRecord = await appModel.downloads.record(forSelectedVersionOf: downloadItem)
+        .background {
+            if showsVersionSelection {
+                PlozziOSSingleItemDownloadSheet(item: downloadItem) {
+                    showsVersionSelection = false
+                    Task {
+                        downloadRecord = await appModel.downloads.record(forSelectedVersionOf: downloadItem)
+                    }
+                }
+                .id(downloadItem.stablePresentationID)
             }
-        }) {
-            PlozziOSSingleItemDownloadSheet(item: downloadItem)
         }
     }
 

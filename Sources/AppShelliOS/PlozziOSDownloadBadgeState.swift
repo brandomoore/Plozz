@@ -44,7 +44,7 @@ extension PlozziOSAppModel {
     func performDownloadMenuAction(_ action: MediaItemAction, on item: MediaItem) async {
         switch action {
         case .startDownload:
-            guard isActiveProfileAuthorized else { return }
+            guard isActiveProfileAuthorized, pendingDownloadSelection == nil else { return }
             pendingDownloadSelection = item
         case .pauseDownload:
             guard let record = downloads.cachedRecord(forSelectedVersionOf: item) else { return }

@@ -11,31 +11,63 @@ struct DownloadSelectionFixture: View {
     )
     @State private var quality: DownloadQuality = .original
     @State private var downloadedCount = 0
+    @State private var sheetCount = 0
+    @State private var preparationCount = 0
 
     var body: some View {
         NavigationStack {
             VStack(spacing: 20) {
                 Button("Download Season") { showsSheet = true }
+                    .disabled(showsSheet)
                 Text("Queued: \(downloadedCount)")
+                Text("Sheets: \(sheetCount)")
+                if showsSheet, ProcessInfo.processInfo.arguments.contains("--cancel-download-preparation") {
+                    Button("Cancel Preparation") { showsSheet = false }
+                }
             }
             .navigationTitle("Northbound")
         }
-        .sheet(isPresented: $showsSheet) {
-            PlozziOSDownloadSelectionContent(
-                title: Text("Northbound"), selection: $selection, quality: $quality,
-                supportsReducedQuality: true,
-                availableSpace: "72 GB",
-                alwaysAsk: !ProcessInfo.processInfo.arguments.contains("--download-ask-off"),
-                isBulk: ProcessInfo.processInfo.arguments.contains("--bulk-download")
-                    || (!ProcessInfo.processInfo.arguments.contains("--single-download-episode")
-                        && !ProcessInfo.processInfo.arguments.contains("--download-movie")),
-                onCancel: { showsSheet = false },
-                onDownload: {
-                    downloadedCount = selection.selectedOptions.count
-                    showsSheet = false
+        .background {
+            if showsSheet {
+                PlozziOSDownloadSelectionPresenter(
+                    alwaysAsk: !ProcessInfo.processInfo.arguments.contains("--download-ask-off"),
+                    isBulk: isBulk,
+                    prepare: {
+                        preparationCount += 1
+                        if preparationCount == 1,
+                           ProcessInfo.processInfo.arguments.contains("--fail-download-preparation") {
+                            throw PlozziOSDownloadError.unavailable("The selected server is unavailable.")
+                        }
+                        if ProcessInfo.processInfo.arguments.contains("--slow-download-preparation") {
+                            try await Task.sleep(for: .seconds(2))
+                        }
+                        return selection
+                    },
+                    onDownload: {
+                        if ProcessInfo.processInfo.arguments.contains("--fail-download-submit") {
+                            throw PlozziOSDownloadError.unavailable("The file could not be saved.")
+                        }
+                        downloadedCount = $0.selectedOptions.count
+                    },
+                    onFinish: { showsSheet = false }
+                ) { selection, isDownloading, cancel, download in
+                    PlozziOSDownloadSelectionContent(
+                        title: Text("Northbound"), selection: selection, quality: $quality,
+                        supportsReducedQuality: true,
+                        availableSpace: "72 GB", isBulk: isBulk,
+                        isDownloading: isDownloading,
+                        onCancel: cancel, onDownload: download
+                    )
+                    .onAppear { sheetCount += 1 }
                 }
-            )
+            }
         }
+    }
+
+    private var isBulk: Bool {
+        ProcessInfo.processInfo.arguments.contains("--bulk-download")
+            || (!ProcessInfo.processInfo.arguments.contains("--single-download-episode")
+                && !ProcessInfo.processInfo.arguments.contains("--download-movie"))
     }
 
     private struct Preferences: VersionPreferenceStoring {
@@ -66,13 +98,20 @@ struct DownloadSelectionFixture: View {
                     audioCodec: "aac", audioChannels: 2, container: "mkv"
                 )
             }
-            return MediaItem(
+            var item = MediaItem(
                 id: "episode-\(index)", title: title, kind: isMovie ? .movie : .episode,
                 seasonNumber: index < 6 ? 1 : 2,
                 episodeNumber: index < 6 ? index + 1 : index - 5,
                 seriesID: "northbound", sourceAccountID: "fixture",
                 versions: versions
             )
+            item.sources = [
+                MediaSourceRef(
+                    accountID: "fixture", itemID: item.id, kind: item.kind,
+                    providerKind: .jellyfin, serverName: "Living Room Server", versions: versions
+                )
+            ]
+            return item
         }
     }
 }

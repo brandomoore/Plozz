@@ -116,7 +116,7 @@ public struct PlozziOSRootView: View {
         appModel.crashReportingController.isConfigured && appModel.crashReporting.needsConsent
     }
 
-    private var appContent: some View {
+    private var appDownloadContent: some View {
         Group {
             if !appModel.canEnterApp {
                 PlozziOSOnboardingView(appModel: appModel)
@@ -148,13 +148,14 @@ public struct PlozziOSRootView: View {
         }
         .scrollContentBackground(.hidden)
         .environment(\.managedProviderSetupRouter, providerSetupRouter)
-        .plozzSheet(item: $appModel.pendingDownloadSelection) { item in
-            PlozziOSSingleItemDownloadSheet(item: item)
-                .environment(appModel)
-        }
+        .background { downloadSelectionPresenter }
         .onChange(of: appModel.isActiveProfileAuthorized) { _, authorized in
             if !authorized { appModel.pendingDownloadSelection = nil }
         }
+    }
+
+    private var appContent: some View {
+        appDownloadContent
         .plozzSheet(item: $providerSetupRouter.reauthenticationAccount) { account in
             PlozziOSAccountReauthenticationView(appModel: appModel, account: account)
                 .presentationSizing(.page)
@@ -473,6 +474,18 @@ public struct PlozziOSRootView: View {
         }
         .environment(\.themePalette, resolvedPalette)
         .environment(\.gradientBackgroundsEnabled, appModel.settings.theme.gradientEnabled)
+    }
+
+    @ViewBuilder
+    private var downloadSelectionPresenter: some View {
+        if let item = appModel.pendingDownloadSelection {
+            PlozziOSSingleItemDownloadSheet(item: item) {
+                guard appModel.pendingDownloadSelection?.stablePresentationID == item.stablePresentationID else { return }
+                appModel.pendingDownloadSelection = nil
+            }
+            .environment(appModel)
+            .id(item.stablePresentationID)
+        }
     }
 
     private struct PlozziOSCrashScreenObserver: View {

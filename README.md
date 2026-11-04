@@ -204,10 +204,11 @@ limits and refuses an incompatible plan rather than quietly using Maximum.
   When space is tight, the action moves below the details before its label wraps.
   With Ask Before Downloading enabled, every new download opens a confirmation.
   With it disabled, a single movie or episode with one version starts immediately
-  using the saved quality. Multiple versions and season/show downloads still
+  using the saved quality, without opening a preparation sheet. Multiple versions and season/show downloads still
   open the selection sheet before queueing.
   Single-episode downloads show version choices directly. Season/show downloads
   use season sections with one row per episode and nested version lists.
+  Version rows identify their server and, for network shares, their relative folder.
   One version is preselected using the existing explicit,
   remembered-series, and device-compatible version selection rules. You can
   exclude episodes or deliberately select multiple versions, which keep separate

@@ -3,18 +3,20 @@ import CoreModels
 import CoreUI
 import FeatureHomeCore
 import MediaDownloads
+import ProviderShare
 import SwiftUI
 
 struct PlozziOSSingleItemDownloadSheet: View {
     @Environment(PlozziOSAppModel.self) private var appModel
     let item: MediaItem
+    let onFinish: () -> Void
 
     var body: some View {
         PlozziOSDownloadSelectionSheet(
             title: appModel.settings.spoilers.settings.shouldHideText(for: item)
                 ? Text(appModel.settings.spoilers.settings.maskedTitle(for: item))
                 : Text(verbatim: item.title),
-            items: [item], resolvesSingleItem: true, isBulk: false
+            items: [item], resolvesSingleItem: true, isBulk: false, onFinish: onFinish
         ) { options, quality in
             guard let provider = appModel.provider(for: item) else {
                 throw PlozziOSDownloadError.unavailable("The selected server is no longer available.")
@@ -35,138 +37,85 @@ struct PlozziOSSingleItemDownloadSheet: View {
 
 struct PlozziOSDownloadSelectionSheet: View {
     @Environment(PlozziOSAppModel.self) private var appModel
-    @Environment(\.dismiss) private var dismiss
-    @State private var selection: EpisodeDownloadSelection?
     @State private var quality: DownloadQuality = .original
-    @State private var profileID: String?
-    @State private var isDownloading = false
-    @State private var errorMessage: String?
+    @State private var preparedProfileID: String?
     @State private var availableSpace: String?
     @State private var resolvedItems: [MediaItem] = []
-    @State private var preparationError: String?
-    @State private var preparationAttempt = 0
 
     let title: Text
     let items: [MediaItem]
     var resolvesSingleItem = false
     var isBulk = true
+    let onFinish: () -> Void
     let onDownload: ([EpisodeDownloadSelection.Option], DownloadQuality) async throws -> Void
 
     var body: some View {
-        Group {
-            if let selection {
-                PlozziOSDownloadSelectionContent(
-                    title: title,
-                    selection: Binding(
-                        get: { self.selection ?? selection },
-                        set: { self.selection = $0 }
-                    ),
-                    quality: $quality,
-                    supportsReducedQuality: resolvedItems.allSatisfy {
-                        appModel.downloads.supportsReducedQuality(for: $0)
-                    },
-                    customQuality: appModel.downloads.customDownloadQuality,
-                    customQualityTitle: appModel.downloads.customDownloadQualityTitle,
-                    availableSpace: availableSpace,
-                    spoilers: appModel.settings.spoilers.settings,
-                    alwaysAsk: appModel.downloads.asksBeforeDownloading,
-                    isBulk: isBulk,
-                    isDownloading: isDownloading,
-                    onCancel: { dismiss() },
-                    onDownload: { isDownloading = true }
-                )
-            } else {
-                NavigationStack {
-                    Group {
-                        if let preparationError {
-                            ContentUnavailableView {
-                                Label("Couldn't Load Versions", systemImage: "exclamationmark.triangle")
-                            } description: {
-                                Text(verbatim: preparationError)
-                            } actions: {
-                                Button("Try Again") { preparationAttempt += 1 }
-                            }
-                        } else {
-                            ProgressView("Preparing Downloads")
-                        }
-                    }
-                    .navigationTitle("Download")
-                    .navigationBarTitleDisplayMode(.inline)
-                    .toolbar {
-                        ToolbarItem(placement: .cancellationAction) {
-                            Button("Cancel") { dismiss() }
-                        }
-                    }
-                }
-            }
-        }
-        .interactiveDismissDisabled(isDownloading)
-        .task(id: preparationAttempt) {
-            let currentProfile = appModel.profiles.activeProfileID
-            profileID = currentProfile
-            preparationError = nil
-            if let bytes = try? DownloadStorageCapacity.device.availableBytes(at: .documentsDirectory) {
-                availableSpace = MediaFileSizeFormatter.string(fromByteCount: bytes)
-            }
-            let choices: [MediaItem]
-            do {
-                choices = try await loadItems()
-            } catch is CancellationError {
-                return
-            } catch {
-                preparationError = error.localizedDescription
-                return
-            }
-            guard !Task.isCancelled, appModel.profiles.activeProfileID == currentProfile else { return }
-            var checked = Set<String>()
-            for item in choices where checked.insert(item.sourceAccountID ?? "").inserted {
-                guard let provider = appModel.provider(for: item) else { continue }
-                await appModel.downloads.refreshReducedQualitySupport(for: item, provider: provider)
-                guard !Task.isCancelled, appModel.profiles.activeProfileID == currentProfile else { return }
-            }
-            if choices.allSatisfy({ appModel.downloads.supportsReducedQuality(for: $0) }) {
-                quality = appModel.downloads.downloadQuality
-            }
-            guard !Task.isCancelled, appModel.profiles.activeProfileID == currentProfile else { return }
-            resolvedItems = choices
-            let prepared = EpisodeDownloadSelection(
-                items: choices, preferences: appModel.versionPreferences,
-                capabilities: .detected()
-            )
-            guard !prepared.episodes.isEmpty else {
-                preparationError = String(localized: "No downloadable versions are available.") // l10n:content - resolved error presentation
-                return
-            }
-            selection = prepared
-        }
-        .task(id: isDownloading) {
-            guard isDownloading, let selection else { return }
-            do {
-                guard profileID == appModel.profiles.activeProfileID,
-                      appModel.isActiveProfileAuthorized else { throw CancellationError() }
-                try Task.checkCancellation()
+        PlozziOSDownloadSelectionPresenter(
+            alwaysAsk: appModel.downloads.asksBeforeDownloading,
+            isBulk: isBulk,
+            prepare: prepare,
+            onDownload: { selection in
+                guard appModel.isActiveProfileAuthorized,
+                      preparedProfileID == appModel.profiles.activeProfileID else { throw CancellationError() }
                 try await onDownload(selection.selectedOptions, quality)
-                try Task.checkCancellation()
-                dismiss()
-            } catch is CancellationError {
-                isDownloading = false
-            } catch {
-                errorMessage = error.localizedDescription
-                isDownloading = false
-            }
+            },
+            onFinish: onFinish
+        ) { selection, isDownloading, cancel, download in
+            PlozziOSDownloadSelectionContent(
+                title: title,
+                selection: selection,
+                quality: $quality,
+                supportsReducedQuality: resolvedItems.allSatisfy {
+                    appModel.downloads.supportsReducedQuality(for: $0)
+                },
+                customQuality: appModel.downloads.customDownloadQuality,
+                customQualityTitle: appModel.downloads.customDownloadQualityTitle,
+                availableSpace: availableSpace,
+                spoilers: appModel.settings.spoilers.settings,
+                sourceDetails: sourceDetails,
+                isBulk: isBulk,
+                isDownloading: isDownloading,
+                onCancel: cancel,
+                onDownload: download
+            )
         }
-        .onChange(of: appModel.profiles.activeProfileID) { _, _ in dismiss() }
+        .onChange(of: appModel.profiles.activeProfileID) { _, _ in onFinish() }
         .onChange(of: appModel.isActiveProfileAuthorized) { _, authorized in
-            if !authorized { dismiss() }
+            if !authorized { onFinish() }
         }
-        .alert("Download Failed", isPresented: Binding(
-            get: { errorMessage != nil },
-            set: { if !$0 { errorMessage = nil } }
-        )) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text(verbatim: errorMessage ?? "")
+    }
+
+    private func prepare() async throws -> EpisodeDownloadSelection {
+        let currentProfile = appModel.profiles.activeProfileID
+        guard appModel.isActiveProfileAuthorized else { throw CancellationError() }
+        if let bytes = try? DownloadStorageCapacity.device.availableBytes(at: .documentsDirectory) {
+            availableSpace = MediaFileSizeFormatter.string(fromByteCount: bytes)
         }
+        let choices = try await loadItems()
+        try Task.checkCancellation()
+        guard appModel.profiles.activeProfileID == currentProfile else { throw CancellationError() }
+        var checked = Set<String>()
+        for item in choices where checked.insert(item.sourceAccountID ?? "").inserted {
+            guard let provider = appModel.provider(for: item) else { continue }
+            await appModel.downloads.refreshReducedQualitySupport(for: item, provider: provider)
+            try Task.checkCancellation()
+            guard appModel.profiles.activeProfileID == currentProfile else { throw CancellationError() }
+        }
+        if choices.allSatisfy({ appModel.downloads.supportsReducedQuality(for: $0) }) {
+            quality = appModel.downloads.downloadQuality
+        }
+        try Task.checkCancellation()
+        guard appModel.profiles.activeProfileID == currentProfile else { throw CancellationError() }
+        preparedProfileID = currentProfile
+        resolvedItems = choices
+        return EpisodeDownloadSelection(
+            items: choices, preferences: appModel.versionPreferences,
+            capabilities: .detected()
+        )
+    }
+
+    private func sourceDetails(_ option: EpisodeDownloadSelection.Option) -> PlozziOSDownloadSourceDetails {
+        PlozziOSDownloadSourceDetails(item: option.item, accounts: appModel.accounts)
     }
 
     private func loadItems() async throws -> [MediaItem] {
@@ -199,6 +148,121 @@ struct PlozziOSDownloadSelectionSheet: View {
     }
 }
 
+/// Preparation and automatic downloads never present a sheet. Only a prepared
+/// selection requiring a decision can enter the modal presentation path.
+struct PlozziOSDownloadSelectionPresenter<Content: View>: View {
+    private struct Confirmation: Identifiable {
+        let id = UUID()
+        let selection: EpisodeDownloadSelection
+    }
+
+    let alwaysAsk: Bool
+    let isBulk: Bool
+    let prepare: () async throws -> EpisodeDownloadSelection
+    let onDownload: (EpisodeDownloadSelection) async throws -> Void
+    let onFinish: () -> Void
+    @ViewBuilder let content: (
+        Binding<EpisodeDownloadSelection>, Bool, @escaping () -> Void, @escaping () -> Void
+    ) -> Content
+    @State private var selection: EpisodeDownloadSelection?
+    @State private var confirmation: Confirmation?
+    @State private var isDownloading = false
+    @State private var errorMessage: String?
+    @State private var attempt = 0
+
+    var body: some View {
+        Color.clear
+            .frame(width: 0, height: 0)
+            .task(id: attempt) {
+                do {
+                    let prepared = try await prepare()
+                    try Task.checkCancellation()
+                    guard !prepared.episodes.isEmpty else {
+                        throw PlozziOSDownloadError.unavailable("No downloadable versions are available.")
+                    }
+                    selection = prepared
+                    if prepared.requiresConfirmation(alwaysAsk: alwaysAsk, isBulk: isBulk) {
+                        confirmation = Confirmation(selection: prepared)
+                    } else {
+                        isDownloading = true
+                    }
+                } catch is CancellationError {
+                    guard !Task.isCancelled else { return }
+                    onFinish()
+                } catch {
+                    guard !Task.isCancelled else { return }
+                    errorMessage = error.localizedDescription
+                }
+            }
+            .task(id: isDownloading) {
+                guard isDownloading, let selection else { return }
+                do {
+                    try Task.checkCancellation()
+                    try await onDownload(selection)
+                    try Task.checkCancellation()
+                    if confirmation != nil { confirmation = nil } else { onFinish() }
+                } catch is CancellationError {
+                    guard !Task.isCancelled else { return }
+                    if confirmation != nil { confirmation = nil } else { onFinish() }
+                } catch {
+                    guard !Task.isCancelled else { return }
+                    errorMessage = error.localizedDescription
+                }
+                isDownloading = false
+            }
+            .plozzSheet(item: $confirmation, onDismiss: onFinish) { presented in
+                content(
+                    Binding(get: { selection ?? presented.selection }, set: { selection = $0 }),
+                    isDownloading, { confirmation = nil }, { isDownloading = true }
+                )
+                .interactiveDismissDisabled(isDownloading)
+                .alert("Download Failed", isPresented: errorPresented(inSheet: true)) {
+                    Button("OK", role: .cancel) { errorMessage = nil }
+                } message: {
+                    Text(verbatim: errorMessage ?? "")
+                }
+            }
+            .alert("Download Failed", isPresented: errorPresented(inSheet: false)) {
+                Button("Try Again") { errorMessage = nil; attempt += 1 }
+                Button("Cancel", role: .cancel) { onFinish() }
+            } message: {
+                Text(verbatim: errorMessage ?? "")
+            }
+    }
+
+    private func errorPresented(inSheet: Bool) -> Binding<Bool> {
+        Binding(
+            get: { errorMessage != nil && (confirmation != nil) == inSheet },
+            set: { if !$0 { errorMessage = nil } }
+        )
+    }
+}
+
+struct PlozziOSDownloadSourceDetails {
+    let name: String?
+    let folder: String?
+
+    init(item: MediaItem, accounts: [Account]) {
+        let account = accounts.first { $0.id == item.sourceAccountID }
+        let source = item.sources.first { $0.accountID == item.sourceAccountID && $0.itemID == item.id }
+        name = account.map {
+            MediaSourceRef(
+                accountID: $0.id, itemID: item.id, providerKind: $0.server.provider,
+                serverName: $0.server.name, accountName: $0.userName
+            ).displayName
+        } ?? source?.displayName
+        guard account?.server.provider == .mediaShare || source?.providerKind == .mediaShare,
+              let path = ShareProvider.exactFileRelativePath(for: item) ?? item.selectedVersionID,
+              !path.contains("://"), !path.hasPrefix("/"),
+              !path.contains("?"), !path.contains("#") else {
+            folder = nil
+            return
+        }
+        let parent = (path as NSString).deletingLastPathComponent
+        folder = parent.isEmpty ? "/" : parent
+    }
+}
+
 /// Shared by the real sheet and hosted interaction fixtures.
 struct PlozziOSDownloadSelectionContent: View {
     let title: Text
@@ -209,10 +273,11 @@ struct PlozziOSDownloadSelectionContent: View {
     var customQualityTitle: LocalizedStringResource?
     var availableSpace: String?
     var spoilers: SpoilerSettings = .default
-    var alwaysAsk = true
+    var sourceDetails: (EpisodeDownloadSelection.Option) -> PlozziOSDownloadSourceDetails = {
+        PlozziOSDownloadSourceDetails(item: $0.item, accounts: [])
+    }
     var isBulk = true
     var isDownloading = false
-    @State private var requestedAutomaticDownload = false
     let onCancel: () -> Void
     let onDownload: () -> Void
 
@@ -239,20 +304,6 @@ struct PlozziOSDownloadSelectionContent: View {
     }
 
     var body: some View {
-        if !selection.requiresConfirmation(alwaysAsk: alwaysAsk, isBulk: isBulk),
-           !requestedAutomaticDownload || isDownloading {
-            ProgressView("Preparing Downloads")
-                .task {
-                    guard !requestedAutomaticDownload else { return }
-                    requestedAutomaticDownload = true
-                    onDownload()
-                }
-        } else {
-            confirmation
-        }
-    }
-
-    private var confirmation: some View {
         NavigationStack {
             List {
                 Section {
@@ -432,6 +483,15 @@ struct PlozziOSDownloadSelectionContent: View {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Version \(index + 1)")
                             .foregroundStyle(.primary)
+                        let source = sourceDetails(option)
+                        if let name = source.name {
+                            Text(verbatim: name).font(.subheadline).foregroundStyle(.secondary)
+                        } else {
+                            Text("Selected server").font(.subheadline).foregroundStyle(.secondary)
+                        }
+                        if !spoilers.shouldHideText(for: episode.item), let folder = source.folder {
+                            Text(verbatim: folder).font(.caption).foregroundStyle(.secondary)
+                        }
                         if let detail = technicalSummary(option.version) {
                             Text(verbatim: detail).font(.subheadline).foregroundStyle(.secondary)
                         }

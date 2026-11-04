@@ -14,6 +14,31 @@ import XCTest
 
 @MainActor
 final class DownloadPresentationTests: XCTestCase {
+    func testDownloadVersionSourcesUseThePhysicalOwnerAndRelativeShareFolder() {
+        var item = MediaItem(
+            id: "f:torrents/episode/episode.mkv", title: "Episode", kind: .episode,
+            sourceAccountID: "share"
+        )
+        item.sources = [
+            .init(accountID: "other", itemID: item.id, kind: .episode, providerKind: .plex, serverName: "Wrong Server"),
+            .init(accountID: "share", itemID: item.id, kind: .episode, providerKind: .mediaShare, serverName: "My Share")
+        ]
+        let torrent = PlozziOSDownloadSourceDetails(item: item, accounts: [])
+        XCTAssertEqual(torrent.name, "My Share")
+        XCTAssertEqual(torrent.folder, "torrents/episode")
+        item.id = "f:links/episode.mkv"
+        item.sources[1].itemID = item.id
+        XCTAssertEqual(PlozziOSDownloadSourceDetails(item: item, accounts: []).folder, "links")
+        item.sources[1].providerKind = .jellyfin
+        XCTAssertNil(PlozziOSDownloadSourceDetails(item: item, accounts: []).folder)
+        item.sources[1].providerKind = .mediaShare
+        item.id = "f:https://example.invalid/file?token=secret"
+        item.sources[1].itemID = item.id
+        XCTAssertNil(PlozziOSDownloadSourceDetails(item: item, accounts: []).folder)
+        item.sourceAccountID = "unknown"
+        XCTAssertNil(PlozziOSDownloadSourceDetails(item: item, accounts: []).name)
+    }
+
     func testExplicitEpisodeChoicesDoNotShareCachedDownloadControls() async throws {
         let items = ["first", "second"].map { id -> MediaItem in
             var item = MediaItem(
@@ -74,6 +99,9 @@ final class DownloadPresentationTests: XCTestCase {
         XCTAssertEqual(app.pendingDownloadSelection?.sourceAccountID, "fixture")
         XCTAssertEqual(app.downloads.records.count, previousCount)
         let movie = MediaItem(id: "movie-choice", title: "Movie Choice", kind: .movie, sourceAccountID: "fixture")
+        await app.performDownloadMenuAction(.startDownload, on: movie)
+        XCTAssertEqual(app.pendingDownloadSelection?.id, episode.id, "Do not replace an in-flight selection.")
+        app.pendingDownloadSelection = nil
         await app.performDownloadMenuAction(.startDownload, on: movie)
         XCTAssertEqual(app.pendingDownloadSelection?.id, movie.id)
         XCTAssertEqual(app.downloads.records.count, previousCount)
