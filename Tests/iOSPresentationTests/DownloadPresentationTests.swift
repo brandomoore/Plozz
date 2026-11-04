@@ -14,6 +14,50 @@ import XCTest
 
 @MainActor
 final class DownloadPresentationTests: XCTestCase {
+    func testDownloadHeadingCentersAndMovesWithinTheSameRowWhenStatusAppears() throws {
+        do {
+            var titlePositions: [CGFloat] = []
+            var heights: [Int] = []
+            for showsStatus in [false, true] {
+                let renderer = ImageRenderer(content:
+                    SeasonEpisodeRowContent(
+                        number: 8, title: "The Envoys", reservesStatusSpace: true,
+                        showsStatus: showsStatus
+                    ) {
+                        SeasonEpisodeRowArtwork(showsMediaEdge: false) { Color.gray }
+                    } status: {
+                        Text("Downloaded")
+                    } accessory: {
+                        Image(systemName: "arrow.down.circle").frame(width: 44, height: 44)
+                    }
+                    .frame(width: 370)
+                    .padding(16)
+                    .background(.black)
+                    .environment(\.colorScheme, .dark)
+                    .environment(\.locale, Locale(identifier: "en"))
+                )
+                renderer.scale = 3
+                let image = try XCTUnwrap(renderer.cgImage)
+                heights.append(image.height)
+                let text = try recognizedText(image)
+                let title = try XCTUnwrap(text.first { $0.text.contains("Envoys") })
+                titlePositions.append(title.bounds.midY)
+                let labels = text.filter {
+                    $0.text.contains("Envoys") || $0.text.contains("Episode") || $0.text.contains("Downloaded")
+                }
+                let bounds = labels.reduce(CGRect.null) { $0.union($1.bounds) }
+                XCTAssertEqual(bounds.midY, 0.5, accuracy: 0.06, "Visible text should be centered in the row.")
+                XCTAssertEqual(text.contains { $0.text.contains("Downloaded") }, showsStatus)
+                let attachment = XCTAttachment(image: UIImage(cgImage: image))
+                attachment.name = "centered-episode-status-\(showsStatus)"
+                attachment.lifetime = .keepAlways
+                add(attachment)
+            }
+            XCTAssertEqual(heights[0], heights[1])
+            XCTAssertGreaterThan(titlePositions[1], titlePositions[0], "The title moves up as status appears.")
+        }
+    }
+
     func testEpisodeDownloadRowsReserveStatusHeightAcrossTransferStates() throws {
         let widths: [CGFloat] = [320, 402, 768]
         for width in widths {
@@ -22,7 +66,8 @@ final class DownloadPresentationTests: XCTestCase {
                 for status in ["", "Preparing Download", "46% · 47.6 MB/s · 1 min remaining", "Downloaded"] {
                     let renderer = ImageRenderer(content:
                         SeasonEpisodeRowContent(
-                            number: 8, title: "The Envoys", reservesStatusSpace: true
+                            number: 8, title: "The Envoys", reservesStatusSpace: true,
+                            showsStatus: !status.isEmpty
                         ) {
                             SeasonEpisodeRowArtwork(showsMediaEdge: false) { Color.gray }
                         } status: {

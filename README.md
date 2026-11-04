@@ -215,6 +215,8 @@ limits and refuses an incompatible plan rather than quietly using Maximum.
   stays with the season or show action.
   Episode download rows reserve one caption line to keep ordinary progress
   updates from shifting the list, while allowing larger text to expand.
+  Visible episode text stays vertically centered and gently repositions when
+  status appears or disappears, unless Reduce Motion is enabled.
   One version is preselected using the existing explicit,
   remembered-series, and device-compatible version selection rules. You can
   exclude episodes or deliberately select multiple versions, which keep separate
