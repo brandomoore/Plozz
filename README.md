@@ -211,6 +211,8 @@ limits and refuses an incompatible plan rather than quietly using Maximum.
   Version rows identify their server and, for network shares, their relative folder.
   Tap a downloaded episode's button to confirm removing that offline copy;
   other saved versions remain available.
+  Individual episode preparation appears on that episode's row; bulk preparation
+  stays with the season or show action.
   One version is preselected using the existing explicit,
   remembered-series, and device-compatible version selection rules. You can
   exclude episodes or deliberately select multiple versions, which keep separate

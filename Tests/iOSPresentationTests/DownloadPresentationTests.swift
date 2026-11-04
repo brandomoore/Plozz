@@ -14,6 +14,25 @@ import XCTest
 
 @MainActor
 final class DownloadPresentationTests: XCTestCase {
+    func testEpisodePreparationBelongsToItsRowsNotTheBulkHeader() {
+        let season = MediaItem(id: "season", title: "Season 1", kind: .season)
+        let first = MediaItem(id: "file-a", title: "Episode", kind: .episode, sourceAccountID: "server")
+        let alternate = MediaItem(id: "file-b", title: "Episode", kind: .episode, sourceAccountID: "server")
+        let batch = PlozziOSSeasonDownloadPrompt.Batch(season: season, episodes: [first, alternate])
+        let episode = PlozziOSSeasonDownloadPrompt(scope: .episode("Episode"), batches: [batch])
+        XCTAssertFalse(episode.isBulk)
+        XCTAssertEqual(episode.preparingEpisodeIDs, Set([first.stablePresentationID, alternate.stablePresentationID]))
+        var otherAccount = first
+        otherAccount.sourceAccountID = "other"
+        XCTAssertFalse(episode.preparingEpisodeIDs.contains(otherAccount.stablePresentationID))
+        let scopes: [PlozziOSSeasonDownloadPrompt.Scope] = [.season(.content("Season 1")), .show("Show")]
+        for scope in scopes {
+            let bulk = PlozziOSSeasonDownloadPrompt(scope: scope, batches: [batch])
+            XCTAssertTrue(bulk.isBulk)
+            XCTAssertTrue(bulk.preparingEpisodeIDs.isEmpty)
+        }
+    }
+
     func testDownloadVersionSourcesUseThePhysicalOwnerAndRelativeShareFolder() {
         var item = MediaItem(
             id: "f:torrents/episode/episode.mkv", title: "Episode", kind: .episode,

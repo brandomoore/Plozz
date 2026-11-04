@@ -2006,6 +2006,14 @@ private struct PlozziOSSeriesDownloadPicker: View {
         )
     }
 
+    private var isPreparingBulkDownload: Bool {
+        isBusy && prompt?.isBulk != false
+    }
+
+    private var preparingEpisodeIDs: Set<String> {
+        prompt?.preparingEpisodeIDs ?? []
+    }
+
     var body: some View {
         let seasonList = self.seasonList
         NavigationStack {
@@ -2023,7 +2031,7 @@ private struct PlozziOSSeriesDownloadPicker: View {
                 ) {
                     PlozziOSShowDownloadAction(
                         series: series, seasons: seasons, looseEpisodes: looseEpisodes,
-                        viewModel: viewModel, isBusy: isBusy, onDownload: beginShowDownload
+                        viewModel: viewModel, isBusy: isPreparingBulkDownload, onDownload: beginShowDownload
                     )
                 }
 
@@ -2057,6 +2065,7 @@ private struct PlozziOSSeriesDownloadPicker: View {
                             if let episode = groups[index].first {
                                 PlozziOSEpisodeDownloadRow(
                                     episode: episode, alternatives: groups[index],
+                                    preparingEpisodeIDs: preparingEpisodeIDs,
                                     isBusy: isBusy, onDownload: beginEpisodeDownload
                                 )
                             }
@@ -2173,6 +2182,8 @@ private struct PlozziOSSeriesDownloadPicker: View {
             selection: selection,
             viewModel: viewModel,
             isBusy: isBusy,
+            isPreparingBulkDownload: isPreparingBulkDownload,
+            preparingEpisodeIDs: preparingEpisodeIDs,
             canRequestSeasons: presentation.canRequestSeasons,
             requestState: seasonList.rows.first { $0.id == row.id }?.requestState,
             isRequestingSeasons: isRequestingSeasons,
@@ -2514,6 +2525,8 @@ private struct PlozziOSSeasonDownloadPicker: View {
     let selection: PlozziOSSeasonDownloadSelection
     let viewModel: ItemDetailViewModel
     let isBusy: Bool
+    let isPreparingBulkDownload: Bool
+    let preparingEpisodeIDs: Set<String>
     let canRequestSeasons: Bool
     let requestState: MediaSeasonRequestState?
     let isRequestingSeasons: Bool
@@ -2651,7 +2664,7 @@ private struct PlozziOSSeasonDownloadPicker: View {
                                 seasonNumber: season.number,
                                 title: Text(season.title),
                                 episodeCount: episodes.coverage?.total ?? entries.count,
-                                isBusy: isBusy,
+                                isBusy: isPreparingBulkDownload,
                                 isRefreshing: isRefreshingEpisodes,
                                 onDownload: onDownloadSeason
                             )
@@ -2695,6 +2708,7 @@ private struct PlozziOSSeasonDownloadPicker: View {
                                 PlozziOSSeasonEpisodeRow(
                                     row: row,
                                     selectedEpisodeIDs: selectedEpisodeIDs,
+                                    preparingEpisodeIDs: preparingEpisodeIDs,
                                     isBusy: isBusy || isRefreshingEpisodes,
                                     onDownload: onDownloadEpisode
                                 )
@@ -2702,6 +2716,7 @@ private struct PlozziOSSeasonDownloadPicker: View {
                                 if let episode = items.first {
                                     PlozziOSEpisodeDownloadRow(
                                         episode: episode, alternatives: items,
+                                        preparingEpisodeIDs: preparingEpisodeIDs,
                                         isBusy: isBusy || isRefreshingEpisodes,
                                         onDownload: onDownloadEpisode
                                     )
@@ -2993,6 +3008,7 @@ private struct PlozziOSSeasonEpisodeRow: View {
     @Environment(PlozziOSAppModel.self) private var appModel
     let row: SeasonEpisodeRow
     let selectedEpisodeIDs: Set<String>
+    let preparingEpisodeIDs: Set<String>
     let isBusy: Bool
     let onDownload: ([MediaItem]) -> Void
 
@@ -3026,6 +3042,7 @@ private struct PlozziOSSeasonEpisodeRow: View {
                         PlozziOSEpisodeDownloadRow(
                             episode: episode, alternatives: groups[index],
                             displayedEpisodeNumber: row.episodeNumber,
+                            preparingEpisodeIDs: preparingEpisodeIDs,
                             isBusy: isBusy, onDownload: onDownload
                         )
                     }
@@ -3066,11 +3083,13 @@ private struct PlozziOSEpisodeDownloadRow: View {
     let episode: MediaItem
     var alternatives: [MediaItem] = []
     var displayedEpisodeNumber: Int? = nil
+    var preparingEpisodeIDs: Set<String> = []
     let isBusy: Bool
     let onDownload: ([MediaItem]) -> Void
 
     var body: some View {
         let record = currentDownloadRecord
+        let isPreparing = downloadItems.contains { preparingEpisodeIDs.contains($0.stablePresentationID) }
         SeasonEpisodeRowContent(
             number: displayedEpisodeNumber ?? episode.episodeNumber,
             title: appModel.settings.spoilers.settings.shouldHideText(for: episode) ? nil : episode.title
@@ -3080,13 +3099,17 @@ private struct PlozziOSEpisodeDownloadRow: View {
                 style: .episode
             )
         } status: {
-            if let record {
+            if isPreparing {
+                Text("Preparing Download")
+            } else if let record {
                 downloadStatusText(for: record)
             } else {
                 SeasonEpisodeAvailabilityLabel(availability: .inLibrary)
             }
         } accessory: {
-            if let record {
+            if isPreparing {
+                PlozziOSDownloadControl(isPreparing: true)
+            } else if let record {
                 if record.status == .queued
                     || record.status == .preparing
                     || record.status == .downloading {
@@ -3484,11 +3507,17 @@ private func downloadCollectionBadgeState(
 }
 
 /// Backing data for a bulk season/show download confirmation.
-private struct PlozziOSSeasonDownloadPrompt: Identifiable {
+struct PlozziOSSeasonDownloadPrompt: Identifiable {
     var isBulk: Bool {
         if case .episode = scope { return false }
         return true
     }
+
+    var preparingEpisodeIDs: Set<String> {
+        guard !isBulk else { return [] }
+        return Set(batches.flatMap(\.episodes).map(\.stablePresentationID))
+    }
+
     struct Batch {
         let season: MediaItem
         let episodes: [MediaItem]
