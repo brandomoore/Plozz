@@ -1751,6 +1751,21 @@ final class PlozziOSDownloadsModel {
             .sorted { $0.updatedAt > $1.updatedAt }
         guard acceptsNewWork, generation == reloadGeneration, !Task.isCancelled else { return }
         sampleTransferSpeed(refreshed)
+        if HandoffDiagnostics.isEnabled {
+            for record in refreshed where record.status == .failed {
+                let previous = recordsByKey[record.identityKey]
+                guard previous?.status != .failed
+                    || previous?.failureReason != record.failureReason
+                    || previous?.createdAt != record.createdAt else { continue }
+                HandoffDiagnostics.emit(
+                    "download FAILED key=\(HandoffDiagnostics.correlationID(record.identityKey))"
+                        + " provider=\(record.managedHTTPSource?.provider.rawValue ?? "direct")"
+                        + " original=\(record.quality == .original) bytes=\(record.bytesDownloaded)"
+                        + " total=\(record.totalBytes.map(String.init) ?? "unknown")"
+                        + " reason=\(HandoffDiagnostics.redactedDetail(record.failureReason ?? "unavailable"))"
+                )
+            }
+        }
         if records != refreshed { records = refreshed }
         hasLoadedRecords = true
         if let storage {
