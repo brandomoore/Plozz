@@ -1486,6 +1486,8 @@ public final class AppState {
                 session: context.session,
                 accountID: context.accountID,
                 credentialRevision: context.credentialRevision,
+                localMediaContext: context.localMediaContext,
+                durableStore: durableLocalStateStore,
                 interactiveHTTP: URLSessionHTTPClient(session: .plozzInteractive),
                 hybridEngineEnabled: HybridPlayback.enabled,
                 connectionRefresh: PlexProvider.connectionRefresh(for: context.session)

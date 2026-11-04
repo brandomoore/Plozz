@@ -8,11 +8,14 @@ public struct LocalMediaContext: Hashable, Sendable {
     public let accountID: String
     public let profileID: String
     public let profileNamespace: String?
+    /// Effective server viewer, which may differ from the account's owner.
+    public let serverUserID: String?
 
-    public init(accountID: String, profileID: String, profileNamespace: String?) {
+    public init(accountID: String, profileID: String, profileNamespace: String?, serverUserID: String? = nil) {
         self.accountID = accountID
         self.profileID = profileID
         self.profileNamespace = profileNamespace
+        self.serverUserID = serverUserID
     }
 }
 

@@ -172,6 +172,9 @@ final class PlexHomeUsersModelTests: XCTestCase {
         hub.cloudTokenResolver = { try await model.resolveCloudToken(for: $0, expectedRevision: $1) }
         let account = try XCTUnwrap(hub.accounts.first)
         let context = hub.providerResolutionContext(for: account, token: "parent-server")
+        XCTAssertEqual(context.localMediaContext?.profileID, profiles.activeProfileID)
+        XCTAssertEqual(context.localMediaContext?.accountID, account.id)
+        XCTAssertEqual(context.localMediaContext?.serverUserID, "parent")
         let resolve = try XCTUnwrap(context.cloudTokenResolver)
         let token = try await resolve()
         XCTAssertEqual(token, "parent-cloud")
@@ -179,6 +182,8 @@ final class PlexHomeUsersModelTests: XCTestCase {
         profiles.update(savedProfile.settingHomeUserBinding(
             .init(homeUserID: "other", name: "Other", requiresPIN: true), forPlexAccount: "a"
         ))
+        XCTAssertEqual(context.localMediaContext?.serverUserID, "parent")
+        XCTAssertEqual(hub.providerResolutionContext(for: account, token: "other-server").localMediaContext?.serverUserID, "other")
         do {
             _ = try await resolve()
             XCTFail("A changed binding must invalidate the reader before reconciliation runs.")

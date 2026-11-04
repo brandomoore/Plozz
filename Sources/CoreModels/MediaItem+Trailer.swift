@@ -15,6 +15,7 @@ public extension MediaItem {
     func markingAsTrailer() -> MediaItem {
         var copy = self
         copy.isTrailer = true
+        copy.isExtra = true
         return copy
     }
 

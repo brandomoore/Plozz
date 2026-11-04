@@ -56,6 +56,23 @@ first-class backends; co-equal with `ProviderJellyfin`.
   Home-user token, never the server-scoped token, and rechecks identity after
   the cloud response before publishing an empty inventory.
 
+## Extra resume fallback
+
+Plex can accept short progress writes without retaining an offset, including for
+trailers and special features. Explicit extras use `LocalMediaWatchStore` as a
+device-local fallback, scoped by Plozz profile, account, server and effective Plex
+Home user. Both shells capture that viewer context when resolving the provider;
+token refresh does not change the durable identity. Movies and ordinary episodes
+remain server-managed, including Plex's short-progress cutoff.
+
+Item, extra/trailer lists and playback requests apply the fallback. Timestamped
+resume and played writes preserve ordering across provider reconstruction;
+start-over clears the local offset and completion marks the extra itself watched.
+Newer server progress still wins. Server-report failures remain errors even when
+local persistence succeeds. Extras never propagate inherited parent identities
+or tracker scrobbles; trailers remain excluded from Continue Watching. This does
+not synchronize extra progress to other devices.
+
 ## Live TV tuning
 
 Plex DVR tuning uses the lineup's native channel `id`, never its display number

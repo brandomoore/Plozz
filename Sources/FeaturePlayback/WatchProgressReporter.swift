@@ -153,7 +153,8 @@ final class WatchProgressReporter {
         )
         let report = Report(
             progress: progress, event: event, item: request.item, percent: percent,
-            scrobble: scrobble && scrobblesLibraryItem && !request.item.isTrailer && !request.item.isYouTubeTrailer
+            scrobble: scrobble && scrobblesLibraryItem
+                && !request.item.isExtra && !request.item.isTrailer && !request.item.isYouTubeTrailer
         )
         if event == .progress, let pendingProgress {
             pendingProgress.entry.report = report

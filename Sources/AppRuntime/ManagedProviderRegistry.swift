@@ -68,6 +68,8 @@ public enum ManagedProviderRegistry {
                 accountID: context.accountID,
                 credentialRevision: context.credentialRevision,
                 cloudTokenResolver: context.cloudTokenResolver,
+                localMediaContext: context.localMediaContext,
+                durableStore: durableStore,
                 interactiveHTTP: URLSessionHTTPClient(session: .plozzInteractive),
                 hybridEngineEnabled: hybridEngineEnabled,
                 connectionRefresh: PlexProvider.connectionRefresh(for: context.session)

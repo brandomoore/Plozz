@@ -39,6 +39,12 @@ bounded language-match/accessibility flags without track titles or URLs.
     (60 seconds when duration is unknown). Provider-supported trailer progress
     is preserved, but trailers never appear in Continue Watching, converge onto their parent,
     or scrobble their parent's identity to trackers.
+    This client-side visibility rule does not override server resume policies.
+    Plex can accept a short progress write without retaining a resume offset;
+    live verification observed that behavior at 60 seconds and below.
+    Plex trailers and special features additionally retain a device-local,
+    profile/account/server-viewer-scoped resume fallback; ordinary movies and
+    episodes remain server-managed. See ProviderPlex's extra resume contract.
   - `PlayerView` + `CustomPlayerContainer` host the engine's vended
     bare video surface and overlay the shared transport chrome.
 - **Subtitle rendering** — `SubtitleOverlayView` draws in-app captions from

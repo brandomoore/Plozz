@@ -360,11 +360,14 @@ public final class AccountsProvidersModel {
         for account: Account,
         token: String
     ) -> ProviderResolutionContext {
-        let localMediaContext = account.server.provider == .mediaShare || account.server.provider == .iptv
+        let localMediaContext = [.mediaShare, .iptv, .plex].contains(account.server.provider)
             ? LocalMediaContext(
                 accountID: account.id,
                 profileID: profilesModel.activeProfileID,
-                profileNamespace: profilesModel.activeNamespace
+                profileNamespace: profilesModel.activeNamespace,
+                serverUserID: account.server.provider == .plex
+                    ? (profilesModel.activeProfile.homeUserBinding(forPlexAccount: account.id)?.homeUserID ?? account.userID)
+                    : nil
             )
             : nil
         let revision = credentialRevision(account)

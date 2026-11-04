@@ -587,7 +587,7 @@ private struct PlozziOSCanonicalItemDetailView: View {
                         play(playbackItem(for: liveTarget), fromBeginning: fromBeginning)
                     },
                     trailerItem: viewModel.trailers.first,
-                    onPlayTrailer: { play($0, fromBeginning: true) },
+                    onPlayTrailer: { play($0) },
                     heroRequest: heroRequest(
                         for: detail,
                         hasPlayAction: playableHeroTarget != nil || showsPlayPlaceholder

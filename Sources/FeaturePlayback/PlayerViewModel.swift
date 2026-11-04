@@ -691,7 +691,7 @@ public final class PlayerViewModel {
         self.onPlaybackStopped = onPlaybackStopped
         self.onPlaybackStarted = onPlaybackStarted
         self.scrobblesLibraryItem = (offlineItem ?? episodeItem).map {
-            !$0.isTrailer && !$0.isYouTubeTrailer
+            !$0.isExtra && !$0.isTrailer && !$0.isYouTubeTrailer
         } ?? true
         self.onPlaybackCheckpoint = onPlaybackCheckpoint
         self.checkpointInterval = checkpointInterval

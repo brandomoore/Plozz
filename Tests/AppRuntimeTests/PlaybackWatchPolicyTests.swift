@@ -66,12 +66,33 @@ final class PlaybackWatchPolicyTests: XCTestCase {
         XCTAssertTrue(try JSONDecoder().decode(MediaItem.self, from: encoded).isTrailer)
         var legacy = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
         legacy.removeValue(forKey: "isTrailer")
+        legacy.removeValue(forKey: "isExtra")
         let restored = try JSONDecoder().decode(
             MediaItem.self, from: JSONSerialization.data(withJSONObject: legacy)
         )
         XCTAssertFalse(restored.isTrailer)
+        XCTAssertFalse(restored.isExtra)
         XCTAssertTrue(MediaExtra(item: restored, kind: .trailer).playbackItem.isTrailer)
         XCTAssertFalse(MediaExtra(item: restored, kind: .featurette).playbackItem.isTrailer)
+        XCTAssertTrue(MediaExtra(item: restored, kind: .featurette).playbackItem.isExtra)
+    }
+
+    func testSpecialFeatureNeverPropagatesParentIdentityOrTrackerWrites() throws {
+        var item = movie()
+        item.id = "featurette"
+        let feature = MediaExtra(item: item, kind: .featurette).playbackItem
+        for percent in [10.0, 100] {
+            let mutation = try XCTUnwrap(WatchMutationFactory.playbackStop(
+                item: feature, position: 15, watchedPercent: percent, primaryAccountID: "origin",
+                additionalSources: [.init(accountID: "other", itemID: "movie-copy", providerKind: .plex)],
+                reportTraktProgress: true
+            ))
+            XCTAssertEqual(mutation.targets.map(\.id), ["origin:featurette"])
+            XCTAssertNil(mutation.trakt)
+            XCTAssertNil(mutation.traktProgress)
+            XCTAssertFalse(mutation.expansionPending)
+            XCTAssertTrue(mutation.identities.isEmpty)
+        }
     }
 
     func testManualTrailerWatchedToggleStaysOnItsOwnOrigin() throws {

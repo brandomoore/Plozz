@@ -1732,6 +1732,7 @@ public final class ItemDetailViewModel {
                 return updated
             }
         }
+        trailers = trailers.map { mutation.applied(to: $0) }
         if case let .loaded(extras) = extrasState {
             extrasState = .loaded(extras.map { extra in
                 var copy = extra
