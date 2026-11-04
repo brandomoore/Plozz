@@ -14,6 +14,40 @@ import XCTest
 
 @MainActor
 final class DownloadPresentationTests: XCTestCase {
+    func testEpisodeDownloadRowsReserveStatusHeightAcrossTransferStates() throws {
+        let widths: [CGFloat] = [320, 402, 768]
+        for width in widths {
+            for size in [DynamicTypeSize.large, .accessibility3] {
+                var heights: [CGFloat] = []
+                for status in ["", "Preparing Download", "46% · 47.6 MB/s\n1 min remaining", "Downloaded"] {
+                    let renderer = ImageRenderer(content:
+                        SeasonEpisodeRowContent(
+                            number: 8, title: "The Envoys", reservesStatusSpace: true
+                        ) {
+                            SeasonEpisodeRowArtwork(showsMediaEdge: false) { Color.gray }
+                        } status: {
+                            Text(verbatim: status)
+                        } accessory: {
+                            Color.clear.frame(width: 44, height: 44)
+                        }
+                        .frame(width: width)
+                        .environment(\.dynamicTypeSize, size)
+                        .environment(\.locale, Locale(identifier: "en"))
+                    )
+                    heights.append(try XCTUnwrap(renderer.uiImage).size.height)
+                }
+                if size.isAccessibilitySize {
+                    XCTAssertGreaterThanOrEqual(heights[2], heights[0])
+                    XCTAssertEqual(heights[0], heights[3], accuracy: 1)
+                } else {
+                    for height in heights {
+                        XCTAssertEqual(height, heights[0], accuracy: 1, "Width \(width), size \(size)")
+                    }
+                }
+            }
+        }
+    }
+
     func testEpisodePreparationBelongsToItsRowsNotTheBulkHeader() {
         let season = MediaItem(id: "season", title: "Season 1", kind: .season)
         let first = MediaItem(id: "file-a", title: "Episode", kind: .episode, sourceAccountID: "server")

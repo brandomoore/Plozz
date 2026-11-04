@@ -5,6 +5,7 @@ public struct SeasonEpisodeRowContent<Artwork: View, Status: View, Accessory: Vi
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     private let number: Int?
     private let title: String? // l10n:content - provider-supplied episode title
+    private let reservesStatusSpace: Bool
     private let artwork: Artwork
     private let status: Status
     private let accessory: Accessory
@@ -12,12 +13,14 @@ public struct SeasonEpisodeRowContent<Artwork: View, Status: View, Accessory: Vi
     public init(
         number: Int?,
         title: String?, // l10n:content — episode title, nil when spoiler-protected
+        reservesStatusSpace: Bool = false,
         @ViewBuilder artwork: () -> Artwork,
         @ViewBuilder status: () -> Status,
         @ViewBuilder accessory: () -> Accessory
     ) {
         self.number = number
         self.title = title
+        self.reservesStatusSpace = reservesStatusSpace
         self.artwork = artwork()
         self.status = status()
         self.accessory = accessory()
@@ -45,9 +48,16 @@ public struct SeasonEpisodeRowContent<Artwork: View, Status: View, Accessory: Vi
                     Text("Episode")
                         .foregroundStyle(Color.primary)
                 }
-                status
-                    .font(.caption)
-                    .foregroundStyle(Color.secondary)
+                ZStack(alignment: .topLeading) {
+                    if reservesStatusSpace {
+                        Text(verbatim: "\n")
+                            .hidden()
+                            .accessibilityHidden(true)
+                    }
+                    status
+                }
+                .font(.caption)
+                .foregroundStyle(Color.secondary)
             }
             .lineLimit(nil)
             .fixedSize(horizontal: false, vertical: true)

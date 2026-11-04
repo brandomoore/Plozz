@@ -3092,7 +3092,8 @@ private struct PlozziOSEpisodeDownloadRow: View {
         let isPreparing = downloadItems.contains { preparingEpisodeIDs.contains($0.stablePresentationID) }
         SeasonEpisodeRowContent(
             number: displayedEpisodeNumber ?? episode.episodeNumber,
-            title: appModel.settings.spoilers.settings.shouldHideText(for: episode) ? nil : episode.title
+            title: appModel.settings.spoilers.settings.shouldHideText(for: episode) ? nil : episode.title,
+            reservesStatusSpace: true
         ) {
             PlozziOSDownloadThumbnail(
                 item: episode,

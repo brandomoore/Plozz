@@ -213,6 +213,8 @@ limits and refuses an incompatible plan rather than quietly using Maximum.
   other saved versions remain available.
   Individual episode preparation appears on that episode's row; bulk preparation
   stays with the season or show action.
+  Episode download rows reserve two status lines to keep ordinary progress
+  updates from shifting the list, while allowing larger text to expand.
   One version is preselected using the existing explicit,
   remembered-series, and device-compatible version selection rules. You can
   exclude episodes or deliberately select multiple versions, which keep separate
