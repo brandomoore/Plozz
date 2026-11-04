@@ -58,6 +58,9 @@ jobs:
       - name: Package storage regression tests
         run: python3 -m unittest discover -s tools/tests -p 'test_package_storage.py'
 
+      - name: Unsigned packaging regression tests
+        run: python3 -m unittest discover -s tools/tests -p 'test_unsigned_ipa.py'
+
       - name: Fastlane pipeline regression tests
         run: python3 -m unittest discover -s tools/tests -p 'test_fastlane_pipeline.py'
 

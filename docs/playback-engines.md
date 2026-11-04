@@ -501,14 +501,21 @@ Upstream 7.44.0 replaced LibDTSX with FFmpeg's patched `dca` decoder.
 `DTSX.framework` and the retired LibDTSX notices are no longer shipped;
 existing FFmpeg notices remain.
 
-Plozz enables only `DolbyVisionStillReshaping` on its Swift package dependency.
-`DualLayerDolbyVision`, `TrueHDObjectAudio` and `DTSXObjectAudio` are disabled,
-so FEL reconstruction and height-channel conversion are not compiled, and LibTrueHD is not resolved or
-linked. Ordinary FFmpeg audio decoding is unchanged. Both apps consume this same local package, so no
-generated-project trait patch is needed. Engine integration tests inspect the
-linked engine's `OptionalComponent.isBuiltIn` flags, not just its load options.
-Upstream's patent-licensing warning still applies; enabling a trait does not
-establish patent clearance.
+Plozz explicitly enables no optional engine traits. `DolbyVisionStillReshaping`,
+`DualLayerDolbyVision`, `TrueHDObjectAudio` and `DTSXObjectAudio` are disabled:
+their engine implementations are excluded, and LibTrueHD is not resolved or
+linked. The existing FFmpegBuild binary still contains its dormant DTS:X
+`x_heights` decoder option; Plozz does not enable it. This is not a stripped
+FFmpeg build. Ordinary FFmpeg audio decoding is unchanged. Both apps consume
+this same local package, so no generated-project trait patch is needed. Engine
+integration tests inspect the linked engine's `OptionalComponent.isBuiltIn`
+flags, not just its load options. Upstream's licensing notices remain applicable;
+this configuration does not establish patent clearance.
+
+Dolby Vision Profile 5 / AV1 Profile 10.0 sources no longer receive software-
+reshaped scrub or I-frame stills. Ordinary base-layer thumbnails remain available.
+Native Dolby Vision playback is unchanged; the pinned engine can retain a held
+picture through the system compositor instead of applying its own reshaping.
 
 The 7.23.0-to-7.34.1 range adds live-start/holdback and source-open recovery
 fixes, corrected software resume/seek timelines, transport-intent preservation
@@ -663,9 +670,9 @@ loading or transferring profile settings and omitted on the next save.
 Normal Dolby Vision handling remains automatic. Profile 7 keeps the existing
 single-layer Profile 8.1 conversion where the display accepts Dolby Vision, or
 the HDR10 base layer otherwise; the enhancement layer is discarded. Other
-profiles, ordinary audio paths, native E-AC-3/JOC stream-copy, and Dolby Vision
-still-image reshaping are unchanged. External players own their own decoding
-preferences.
+profiles' playback, ordinary audio paths, and native E-AC-3/JOC stream-copy are
+unchanged. Software still-image reshaping is separately disabled as described
+above. External players own their own decoding preferences.
 
 Removing the optional reconstruction path does not establish licensing clearance
 for every remaining video or audio feature.
