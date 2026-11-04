@@ -218,7 +218,7 @@ limits and refuses an incompatible plan rather than quietly using Maximum.
   Visible episode text stays vertically centered and gently repositions when
   status appears or disappears, unless Reduce Motion is enabled.
   Tappable download progress indicators include a pause symbol while downloading
-  and a resume triangle inside the orange progress ring when paused.
+  and a resume triangle when paused, keeping the same neutral progress ring.
   One version is preselected using the existing explicit,
   remembered-series, and device-compatible version selection rules. You can
   exclude episodes or deliberately select multiple versions, which keep separate

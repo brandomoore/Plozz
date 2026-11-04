@@ -947,6 +947,24 @@ final class DownloadPresentationTests: XCTestCase {
                 attachment.name = "download-resume-\(showsResume)-\(fraction.map(String.init(describing:)) ?? "unknown")"
                 attachment.lifetime = .keepAlways
                 add(attachment)
+                var pixels = [UInt8](repeating: 0, count: image.width * image.height * 4)
+                try pixels.withUnsafeMutableBytes { buffer in
+                    let context = try XCTUnwrap(CGContext(
+                        data: buffer.baseAddress, width: image.width, height: image.height,
+                        bitsPerComponent: 8, bytesPerRow: image.width * 4,
+                        space: CGColorSpaceCreateDeviceRGB(),
+                        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+                            | CGBitmapInfo.byteOrder32Big.rawValue
+                    ))
+                    context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+                }
+                let isNeutral = stride(from: 0, to: pixels.count, by: 4).allSatisfy { index in
+                    let red = Int(pixels[index])
+                    let green = Int(pixels[index + 1])
+                    let blue = Int(pixels[index + 2])
+                    return max(red, green, blue) - min(red, green, blue) <= 1
+                }
+                XCTAssertTrue(isNeutral, "Paused downloads must not use warning colors.")
             }
             XCTAssertNotEqual(centers[0], centers[1], "The resume glyph must be visible inside the paused ring.")
             if fraction != nil {

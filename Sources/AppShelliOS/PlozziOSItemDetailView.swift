@@ -3338,7 +3338,7 @@ struct PlozziOSDownloadControl: View {
                         } else if showsResumeIcon, case .paused = state {
                             Image(systemName: "play.fill")
                                 .font(.system(size: 9, weight: .semibold))
-                                .foregroundStyle(.orange)
+                                .foregroundStyle(.primary)
                                 .accessibilityHidden(true)
                         }
                     }
@@ -3384,7 +3384,7 @@ struct PlozziOSDownloadControl: View {
             }
         case .paused(let fraction):
             if let fraction {
-                progressRing(fraction: fraction, color: .orange)
+                progressRing(fraction: fraction, color: .primary)
                     .accessibilityLabel("Download Paused")
                     .accessibilityValue(
                         Text(
@@ -3395,13 +3395,13 @@ struct PlozziOSDownloadControl: View {
             } else {
                 if showsResumeIcon {
                     Circle()
-                        .stroke(Color.orange.opacity(0.25), lineWidth: 3)
+                        .stroke(Color.primary.opacity(0.25), lineWidth: 3)
                         .frame(width: 25, height: 25)
                         .accessibilityLabel("Download Paused")
                 } else {
                     Image(systemName: "pause.circle.fill")
                         .font(.system(size: 25, weight: .regular))
-                        .foregroundStyle(.orange)
+                        .foregroundStyle(.primary)
                         .accessibilityLabel("Download Paused")
                 }
             }
