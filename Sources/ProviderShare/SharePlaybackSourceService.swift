@@ -35,6 +35,55 @@ struct SharePlaybackSourceService: Sendable {
         return try networkFileLocator(for: relativePath, entry: entry)
     }
 
+    func networkDiscLocator(for indexPath: String) async throws -> NetworkDiscLocator {
+        let directory = (indexPath as NSString).deletingLastPathComponent
+        let entries = try await store.rawEntries(inDirectory: directory)
+        guard let disc = try await ShareBluRayFolder.discover(in: directory, entries: entries, list: {
+            try await store.rawEntries(inDirectory: $0)
+        }), disc.indexPath == indexPath else {
+            throw MediaTransportError.sourceChanged(reason: "Blu-ray folder structure changed")
+        }
+        var inventory = [disc.index]
+        for folder in disc.entries where folder.kind == .directory
+            && ["playlist", "clipinf", "stream"].contains(folder.name.lowercased()) {
+            try Task.checkCancellation()
+            let children = try await store.rawEntries(inDirectory: folder.relativePath)
+            guard children.count <= 4_096 - inventory.count else {
+                throw MediaTransportError.unsupportedCapability("Blu-ray folder file limit")
+            }
+            let expectedExtension = ["playlist": "mpls", "clipinf": "clpi", "stream": "m2ts"][folder.name.lowercased()]
+            inventory += children.filter {
+                $0.kind == .file && ($0.name as NSString).pathExtension.lowercased() == expectedExtension
+            }
+        }
+        guard inventory.contains(where: { ($0.name as NSString).pathExtension.lowercased() == "mpls" }),
+              inventory.contains(where: { ($0.name as NSString).pathExtension.lowercased() == "m2ts" }) else {
+            throw MediaTransportError.unsupportedCapability("Blu-ray folder lacks playlists or clips")
+        }
+        let prefix = directory.isEmpty ? "" : directory + "/"
+        var files: [NetworkDiscLocator.File] = []
+        for entry in inventory {
+            try Task.checkCancellation()
+            guard entry.relativePath.hasPrefix(prefix) else {
+                throw MediaTransportError.protocolViolation(reason: "disc entry outside directory")
+            }
+            let locator: NetworkFileLocator
+            if entry.size != nil, entry.strongETag != nil || entry.modifiedAt != nil {
+                locator = try networkFileLocator(for: entry.relativePath, entry: entry)
+            } else {
+                locator = try await networkFileLocator(for: entry.relativePath)
+            }
+            files.append(try .init(
+                path: "BDMV/" + entry.relativePath.dropFirst(prefix.count),
+                locator: locator
+            ))
+        }
+        guard let anchor = files.first?.locator else {
+            throw MediaTransportError.protocolViolation(reason: "disc index missing")
+        }
+        return try NetworkDiscLocator(anchor: anchor, files: files)
+    }
+
     func playbackOpening(
         for relativePath: String, reuseDirectoryMetadata: Bool
     ) async throws -> (locator: NetworkFileLocator, directoryEntries: [RemoteFileEntry]?) {

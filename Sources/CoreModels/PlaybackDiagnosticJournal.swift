@@ -103,7 +103,7 @@ public final class PlaybackDiagnosticJournal: @unchecked Sendable {
             self.engine = engine
             if let source { self.source = source }
             else if request?.externalAudioURL != nil { self.source = .separateAudio }
-            else if case .some(.networkFile) = request?.playbackSource { self.source = .networkFile }
+            else if request?.playbackSource?.requiresNetworkFileResolver == true { self.source = .networkFile }
             else if let url = request?.streamURL, url.isFileURL {
                 self.source = url.pathExtension.lowercased() == "movpkg" ? .assetPackage : .localFile
             } else if request?.isManifestStream == true { self.source = .serverHLS }

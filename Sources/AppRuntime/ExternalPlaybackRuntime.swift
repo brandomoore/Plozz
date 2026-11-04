@@ -293,7 +293,7 @@ public final class ExternalPlaybackRuntime {
             guard locator.deliveryMode == .directFile else { throw ExternalPlayerError.unsupportedSource }
             url = try await resolver.resolve(locator)
         case .publicURL(let source): url = source.url
-        case .networkFile, .dlnaResource: throw ExternalPlayerError.unsupportedSource
+        case .networkFile, .networkDisc, .dlnaResource: throw ExternalPlayerError.unsupportedSource
         case .none:
             guard let fallback else { throw ExternalPlayerError.unsupportedSource }
             url = fallback

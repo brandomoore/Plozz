@@ -47,6 +47,85 @@ final class WebDAVDiscPlaybackHostedTests: XCTestCase {
         try await checkFixturePlayback(named: "dvd-test-pattern", fileExtension: "iso")
     }
 
+    private final class FixtureReads: @unchecked Sendable {
+        private let lock = NSLock()
+        private var paths: Set<String> = []
+        func record(_ path: String) { lock.withLock { _ = paths.insert(path) } }
+        func contains(_ path: String) -> Bool { lock.withLock { paths.contains(path) } }
+    }
+
+    func testSyntheticBluRayFolderPlaysBothClipsAndSeeksOverWebDAV() async throws {
+        try await checkBluRayPlayback(startPosition: 0)
+    }
+
+    func testSyntheticBluRayFolderResumesIntoSecondClipOverWebDAV() async throws {
+        try await checkBluRayPlayback(startPosition: 9)
+    }
+
+    private func checkBluRayPlayback(startPosition: Double) async throws {
+        let root = try XCTUnwrap(Bundle(for: Self.self).resourceURL)
+            .appendingPathComponent("Fixtures/bluray-test-pattern")
+        let subpaths = try FileManager.default.subpathsOfDirectory(atPath: root.path)
+        var files: [String: URL] = [:]
+        var sizes: [String: Int] = [:]
+        var directories: Set<String> = [""]
+        for path in subpaths {
+            let url = root.appendingPathComponent(path)
+            let values = try url.resourceValues(forKeys: [.isDirectoryKey, .fileSizeKey])
+            if values.isDirectory == true {
+                directories.insert(path)
+            } else {
+                files[path] = url
+                sizes[path] = try XCTUnwrap(values.fileSize)
+            }
+        }
+        let fixtureFiles = files
+        let fixtureSizes = sizes
+        let fixtureDirectories = directories
+        let reads = FixtureReads()
+        let server = try IPTVTestHTTPServer { request in
+            let target = String(request.split(separator: " ").dropFirst().first ?? "")
+            let path = String(target.dropFirst("/dav".count)).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+            if request.hasPrefix("OPTIONS ") { return .init(headers: ["DAV": "1, 2"]) }
+            if request.hasPrefix("PROPFIND ") {
+                guard fixtureDirectories.contains(path) || fixtureFiles[path] != nil else { return .init(status: 404) }
+                var paths = [path]
+                if request.lowercased().contains("\r\ndepth: 1\r\n") {
+                    paths += (Array(fixtureDirectories) + Array(fixtureFiles.keys)).filter {
+                        !$0.isEmpty && $0 != path && ($0 as NSString).deletingLastPathComponent == path
+                    }
+                }
+                let properties = paths.sorted().map { entry in
+                    let collection = fixtureDirectories.contains(entry)
+                    let body = collection ? "<D:resourcetype><D:collection/></D:resourcetype>"
+                        : "<D:getcontentlength>\(fixtureSizes[entry]!)</D:getcontentlength><D:getetag>\"fixture\"</D:getetag>"
+                    return "<D:response><D:href>/dav/\(entry)\(collection ? "/" : "")</D:href><D:propstat><D:prop>\(body)</D:prop><D:status>HTTP/1.1 200 OK</D:status></D:propstat></D:response>"
+                }.joined()
+                return .init(data: Data("<D:multistatus xmlns:D=\"DAV:\">\(properties)</D:multistatus>".utf8),
+                             status: 207, headers: ["Content-Type": "application/xml"])
+            }
+            guard request.hasPrefix("GET "), let file = fixtureFiles[path], let size = fixtureSizes[path],
+                  let range = request.components(separatedBy: "\r\n").first(where: {
+                      $0.lowercased().hasPrefix("range: bytes=")
+                  })?.split(separator: "=").last?.split(separator: "-"),
+                  range.count == 2, let start = Int(range[0]), let end = Int(range[1]),
+                  start >= 0, end >= start, end < size else { return .init(status: 416) }
+            reads.record(path)
+            return .init(file: file, status: 206, headers: [
+                "Content-Range": "bytes \(start)-\(end)/\(size)", "ETag": "\"fixture\""
+            ], range: start..<(end + 1))
+        }
+        addTeardownBlock { await server.stop() }
+        let base = try await server.start().appendingPathComponent("dav")
+        try await checkPlayback(
+            base: base, path: "BDMV/index.bdmv", credential: .anonymous,
+            seekPositions: [10, 2, 13], startPosition: startPosition
+        )
+        XCTAssertTrue(reads.contains("BDMV/STREAM/00001.m2ts"))
+        XCTAssertTrue(reads.contains("BDMV/STREAM/00002.m2ts"))
+        XCTAssertFalse(reads.contains("BDMV/STREAM/00003.m2ts"), "The largest clip is not the selected movie")
+    }
+
     func testMP4PlaysAndSeeksOverWebDAV() async throws {
         try await checkFixturePlayback(named: "embedded", fileExtension: "mp4")
     }
@@ -389,8 +468,13 @@ final class WebDAVDiscPlaybackHostedTests: XCTestCase {
         let request = try await provider.playbackInfo(for: item.id, mediaSourceID: nil, forceTranscode: false)
         let preparationDuration = preparationStarted.duration(to: .now)
         print("WEBDAV_DISC preparationSeconds=\(preparationDuration)")
-        guard case .networkFile = request.playbackSource else {
-            return XCTFail("Disc playback must use the production network-file path")
+        guard request.playbackSource?.requiresNetworkFileResolver == true else {
+            return XCTFail("Disc playback must use the production transport path")
+        }
+        if path.hasSuffix("index.bdmv") {
+            guard case .networkDisc = request.playbackSource else {
+                return XCTFail("A Blu-ray folder must not play its index as an ordinary file")
+            }
         }
         let engine = try PlozzigenVideoEngine(
             networkFileResolver: resolver
@@ -446,6 +530,9 @@ final class WebDAVDiscPlaybackHostedTests: XCTestCase {
         XCTAssertGreaterThan(
             engine.duration, max(startPosition, seekPositions.max()!) + Double(max(1, sustainedPlaybackSeconds))
         )
+        if path.hasSuffix("index.bdmv") {
+            XCTAssertEqual(engine.duration, 16, accuracy: 0.5, "The selected playlist spans both eight-second clips")
+        }
         print("WEBDAV_DISC startPosition=\(startPosition) firstPresentedPosition=\(firstPresentedPosition)")
         print("WEBDAV_DISC firstRenderedFrameSeconds=\(firstRenderedDuration) duration=\(engine.duration)")
         print("WEBDAV_DISC playToFirstRenderedFrameSeconds=\(playToFirstRenderedDuration)")

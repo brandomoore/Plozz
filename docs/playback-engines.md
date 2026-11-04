@@ -4,6 +4,44 @@ Plozz uses two playback engines, automatically selected per-item based on
 container, codecs, and subtitle requirements. The goal is maximum format coverage
 with the best possible quality (Dolby Vision, spatial audio, full-timeline seek).
 
+## Media-share Blu-ray folders
+
+Recognized `BDMV` folders appear as one movie in indexed libraries and normal
+folder browsing, rather than one movie per `.m2ts` clip. Recognition requires an
+`index.bdmv` file and `PLAYLIST`/`STREAM` directories, matched case-insensitively.
+The containing movie folder supplies the title and local metadata. A source
+root inside `BDMV` is supported. Standalone transport-stream files and explicit
+**Browse Files** navigation retain their ordinary behavior.
+
+All share transports use the same discovery and playback path: SMB, SFTP, FTP,
+FTPS, HTTP and HTTPS/WebDAV. Play builds a bounded, credential-free manifest
+(at most 4,096 files), preserving each file's representation identity. Plozzigen
+selects the main playlist and plays its ordered clips; it does not select the
+largest stream or concatenate every file. Files open lazily through the existing
+transport resolver. One admission lease spans playback, independent readers
+share teardown ownership, and cancellation interrupts pending file opens.
+
+Folder downloads, external-player handoff and index-file warming are unsupported;
+the index is never treated as an original video. This adds no decryption, menus,
+BD-J, multi-angle playback or title picker. Missing, changed or unsupported disc
+contents follow the playback error path.
+
+Jellyfin/Emby, Plex and Silo remain server-managed libraries: Plozz consumes their
+item identities and negotiated playback sources, not their underlying directory
+trees. This change does not merge unrelated server-provided M2TS items or claim
+to repair a server's own disc indexing.
+
+`Fixtures/bluray-test-pattern` contains original generated color/sine clips and
+synthetic MPLS playlists, with no copyrighted movie content. The main playlist
+joins two eight-second clips; a longer unrelated clip catches largest-file
+selection mistakes. Hosted WebDAV tests cover rendering, the 16-second timeline,
+cross-clip seeking, second-clip resume and teardown, and assert that the unrelated
+clip is not fetched. Regenerate into a **new** directory with:
+
+```bash
+python3 tools/generate-bdmv-test-fixture.py --output /tmp/plozz-new-bluray-fixture
+```
+
 ## Media-share disc images
 
 Media-share folder browsing and indexed libraries recognize `.iso` files

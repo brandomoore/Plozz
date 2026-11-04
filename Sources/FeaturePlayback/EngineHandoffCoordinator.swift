@@ -429,7 +429,7 @@ final class EngineHandoffCoordinator {
         let request = host.handoffRequest
 
         let isNetworkFile: Bool
-        if case .some(.networkFile) = request?.playbackSource {
+        if request?.playbackSource?.requiresNetworkFileResolver == true {
             isNetworkFile = true
         } else {
             isNetworkFile = false

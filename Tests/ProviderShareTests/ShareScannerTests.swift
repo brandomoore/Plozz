@@ -419,6 +419,36 @@ final class ShareScannerTests: XCTestCase {
         XCTAssertEqual(movies.first?.productionYear, 2010)
     }
 
+    func testBluRayFolderIsOneMovieAndStandaloneTransportStreamsRemainPlayable() async {
+        let store = ShareCatalogStore(accountKey: "bdmv", directory: tempDir())
+        let fake = FakeShare([
+            "": [dir("Test Pattern (2026)"), file("Standalone (2025).m2ts")],
+            "Test Pattern (2026)": [dir("bDmV")],
+            "Test Pattern (2026)/bDmV": [file("INDEX.bdmv"), dir("PLAYLIST"), dir("STREAM")],
+            "Test Pattern (2026)/bDmV/PLAYLIST": [file("00001.mpls")],
+            "Test Pattern (2026)/bDmV/STREAM": [file("00001.m2ts"), file("00002.m2ts")]
+        ])
+        await makeScanner(store: store, fake: fake).scan()
+        let movies = await store.movies(offset: 0, limit: 10)
+        XCTAssertEqual(Set(movies.map(\.title)), ["Test Pattern", "Standalone"])
+        let disc = movies.first { $0.title == "Test Pattern" }
+        XCTAssertEqual(disc?.productionYear, 2026)
+        XCTAssertEqual(disc?.versions.map(\.id), ["Test Pattern (2026)/bDmV/INDEX.bdmv"])
+        let paths = await fake.listedPaths
+        XCTAssertFalse(paths.contains("Test Pattern (2026)/bDmV/STREAM"))
+    }
+
+    func testFolderNamedBDMVWithoutDiscStructureDoesNotHideOrdinaryVideos() async {
+        let store = ShareCatalogStore(accountKey: "not-bdmv", directory: tempDir())
+        let fake = FakeShare([
+            "": [dir("BDMV")],
+            "BDMV": [file("Home Movie (2026).m2ts")]
+        ])
+        await makeScanner(store: store, fake: fake).scan()
+        let movies = await store.movies(offset: 0, limit: 10)
+        XCTAssertEqual(movies.map(\.title), ["Home Movie"])
+    }
+
     /// The scanner's BFS discovers every supported NFO sidecar NAME in the same
     /// listing pass as the videos beside them (movie-stem, `tvshow.nfo`,
     /// episode-stem) — pure filename/sibling-stem facts. `ScanLister` only ever

@@ -540,7 +540,7 @@ public struct PlaybackRequest: Hashable, Sendable {
             return playbackSource
         case .networkFile:
             return playbackSource
-        case .publicURL, .dlnaResource, .authenticatedHTTP, .none:
+        case .publicURL, .dlnaResource, .authenticatedHTTP, .networkDisc, .none:
             return nil
         }
     }

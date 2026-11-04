@@ -405,6 +405,7 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
     /// loads.
     private var activeResolvedSource: MediaTransportResolvedSource?
     private var activeTransportReader: TransportIOReader?
+    private var activeDiscReader: TransportDiscDirectoryReader?
     private let scrubStillExtractors = NSHashTable<PlozzigenScrubStillExtractor>.weakObjects()
     #if canImport(UIKit)
     private let videoView: UIView
@@ -520,6 +521,12 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
         invalidateScrubStills()
         activeTransportReader?.closeAllReaders()
         activeTransportReader = nil
+        if let disc = activeDiscReader {
+            activeDiscReader = nil
+            disc.closeAllReaders()
+            await disc.waitForFinalShutdown()
+            guard outputLoadGeneration == outputGeneration, !Task.isCancelled else { return }
+        }
         clearASS()
         let outputPolicy = liveOutputPolicy
         defer { finishOutputLoad(outputGeneration, policy: outputPolicy) }
@@ -578,6 +585,25 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
                 let source = MediaSource.custom(reader, formatHint: formatHint)
                 try await engine.load(
                     source: source,
+                    startPosition: startPosition > 0 ? startPosition : nil,
+                    options: options,
+                    audioSourceStreamIndex: audioSourceStreamIndex
+                )
+            } else if case .some(.networkDisc(let locator)) = request.playbackSource {
+                guard let networkFileResolver else {
+                    throw MediaTransportError.unsupportedCapability("network-disc playback resolver")
+                }
+                let admission = try await networkFileResolver.resolve(locator.anchor)
+                guard probePublicationGate.accepts(probeGeneration), !Task.isCancelled else {
+                    await admission.waitForFinalShutdown()
+                    return
+                }
+                activeResolvedSource = admission
+                let reader = TransportDiscDirectoryReader(locator: locator, resolver: networkFileResolver)
+                activeDiscReader = reader
+                stage = "engine.load"
+                try await engine.load(
+                    source: .custom(reader),
                     startPosition: startPosition > 0 ? startPosition : nil,
                     options: options,
                     audioSourceStreamIndex: audioSourceStreamIndex
@@ -873,7 +899,7 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
     ) -> LoadOptions {
         let source = request.playbackSource
         let isLocalFile: Bool
-        if case .networkFile = request.playbackSource {
+        if request.playbackSource?.requiresNetworkFileResolver == true {
             isLocalFile = false
         } else if case .authenticatedHTTP = source {
             isLocalFile = false
@@ -1264,6 +1290,7 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
         invalidateScrubStills()
         activeTransportReader?.closeAllReaders()
         activeTransportReader = nil
+        activeDiscReader?.closeAllReaders()
         clearASS()
         nativeSubtitleOutput?.detach()
         nativeSubtitleOutput = nil
@@ -1295,6 +1322,9 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
     public func drainTransport() async {
         let source = activeResolvedSource
         activeResolvedSource = nil
+        let disc = activeDiscReader
+        activeDiscReader = nil
+        await disc?.waitForFinalShutdown()
         await source?.waitForFinalShutdown()
     }
 

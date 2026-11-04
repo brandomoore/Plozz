@@ -230,7 +230,7 @@ func resolveThemeMusicURL(
             throw ThemeMusicSourceResolutionError.missingAuthenticatedResolver
         }
         return try await authenticatedHTTPResolver.resolve(locator)
-    case .networkFile, .dlnaResource:
+    case .networkFile, .networkDisc, .dlnaResource:
         throw ThemeMusicSourceResolutionError.unsupportedSource
     }
 }

@@ -1058,7 +1058,7 @@ actor ShareCatalogStore {
     }
 
     private func reassociateArtwork(afterUpserting assets: [CatalogAsset]) {
-        var directories = Set(assets.map { ($0.relPath as NSString).deletingLastPathComponent })
+        var directories = Set(assets.map { ShareBluRayFolder.metadataDirectory($0.relPath) })
         directories.formUnion(assets.compactMap(\.metadataRoot))
         let directArtworkDirectories = directories.flatMap {
             $0.isEmpty
@@ -1933,7 +1933,7 @@ actor ShareCatalogStore {
             query("SELECT kind FROM assets WHERE rel_path=?;", bind: { self.bindText($0, 1, relPath) }) { stmt in
                 isMovie = self.columnText(stmt, 0) == "movie"
             }
-            let parentDir = (relPath as NSString).deletingLastPathComponent
+            let parentDir = ShareBluRayFolder.metadataDirectory(relPath)
             members = [.init(
                 relPath: relPath,
                 isMovie: isMovie,
@@ -1948,7 +1948,7 @@ actor ShareCatalogStore {
             WHERE COALESCE(movie_group_key, movie_key)=? AND library='movies' AND kind='movie';
             """, bind: { self.bindText($0, 1, groupKey) }) { stmt in
                 guard let relPath = self.columnText(stmt, 0) else { return }
-                let parentDir = (relPath as NSString).deletingLastPathComponent
+                let parentDir = ShareBluRayFolder.metadataDirectory(relPath)
                 members.append(.init(
                     relPath: relPath,
                     isMovie: true,
@@ -2008,10 +2008,10 @@ actor ShareCatalogStore {
         query("""
         SELECT rel_path, movie_key, movie_group_key FROM assets
         WHERE library='movies' AND kind='movie'
-          AND substr(rel_path,1,length(rel_path)-length(basename)-1)=?;
-        """, bind: { self.bindText($0, 1, dir) }) { stmt in
+          AND (substr(rel_path,1,length(rel_path)-length(basename)-1)=? OR metadata_root=?);
+        """, bind: { self.bindText($0, 1, dir); self.bindText($0, 2, dir) }) { stmt in
             guard let relPath = self.columnText(stmt, 0),
-                  (relPath as NSString).deletingLastPathComponent == dir else { return }
+                  ShareBluRayFolder.metadataDirectory(relPath) == dir else { return }
             let key = self.columnText(stmt, 2) ?? self.columnText(stmt, 1) ?? relPath
             if let existing = repsByGroup[key], relPath >= existing { return }
             repsByGroup[key] = relPath

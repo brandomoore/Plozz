@@ -10,6 +10,52 @@ import XCTest
 /// SMB-style entry (modification time, no ETag) falls back to
 /// `.modificationTime`, and an entry with neither is rejected.
 final class ShareProviderLocatorTests: XCTestCase {
+    func testBluRayFolderPlaybackUsesOneManifestAcrossShareTransports() async throws {
+        let root = "Test Pattern (2026)/BDMV"
+        let index = try RemoteFileEntry(
+            relativePath: "\(root)/index.bdmv", kind: .file, size: 40, strongETag: "\"index\""
+        )
+        let playlist = try RemoteFileEntry(
+            relativePath: "\(root)/PLAYLIST/00001.mpls", kind: .file, size: 120, strongETag: "\"playlist\""
+        )
+        let clips = try ["00001", "00002"].map {
+            try RemoteFileEntry(
+                relativePath: "\(root)/STREAM/\($0).m2ts", kind: .file, size: 4096,
+                modifiedAt: Date(timeIntervalSince1970: 100)
+            )
+        }
+        let folders = try ["PLAYLIST", "STREAM"].map {
+            try RemoteFileEntry(relativePath: "\(root)/\($0)", kind: .directory)
+        }
+        for scheme in ["smb", "sftp", "ftp", "ftps", "http", "https"] {
+            let fileSystem = LocatorFakeFileSystem(statEntry: index, directoryTree: [
+                root: [index] + folders,
+                "\(root)/PLAYLIST": [playlist],
+                "\(root)/STREAM": clips
+            ])
+            let provider = makeProvider(
+                stat: index, fileSystem: fileSystem,
+                baseURL: try XCTUnwrap(URL(string: "\(scheme)://nas.example.com/media"))
+            )
+            addTeardownBlock { await provider.teardown() }
+            let request = try await provider.playbackInfo(for: "f:\(index.relativePath)")
+            guard case .networkDisc(let disc) = request.playbackSource else {
+                return XCTFail("\(scheme) must use folder playback, never the first clip")
+            }
+            XCTAssertEqual(disc.files.count, 4)
+            XCTAssertEqual(request.item.title, "Test Pattern")
+            XCTAssertEqual(disc.anchor.relativePath, index.relativePath)
+            XCTAssertEqual(disc.files.last?.locator.representation.identity.kind, .modificationTime)
+            XCTAssertNil(request.downloadableOriginalSource)
+            let preparation = try await provider.playbackPreparationLocator(
+                for: request.item.id, mediaSourceID: index.relativePath
+            )
+            XCTAssertNil(preparation, "Do not warm the index as a video")
+            let reads = await fileSystem.fileReads
+            XCTAssertEqual(reads, 0, "Manifest discovery must not download clips")
+        }
+    }
+
     func testPreparationDiagnosticCodesNeverIncludeAssociatedErrorText() {
         let secret = "https://private.example/file?token=private-secret"
         let cases: [(Error, String)] = [
@@ -685,17 +731,19 @@ private actor LocatorFakeFileSystem: MediaTransportFileSystem {
     private(set) var fileReads = 0
     private(set) var readLimits: [Int] = []
     private let fileContents: Data
+    private let directoryTree: [String: [RemoteFileEntry]]?
 
     init(
         statEntry: RemoteFileEntry, openingEntry: RemoteFileEntry? = nil,
         listedEntries: [RemoteFileEntry] = [], listingError: MediaTransportError? = nil,
-        fileContents: Data = Data()
+        fileContents: Data = Data(), directoryTree: [String: [RemoteFileEntry]]? = nil
     ) {
         self.statEntry = statEntry
         self.openingEntry = openingEntry
         self.listedEntries = listedEntries
         self.listingError = listingError
         self.fileContents = fileContents
+        self.directoryTree = directoryTree
     }
 
     func replaceStat(_ entry: RemoteFileEntry) { statEntry = entry }
@@ -719,6 +767,7 @@ private actor LocatorFakeFileSystem: MediaTransportFileSystem {
     func list(relativePath: String) async throws -> [RemoteFileEntry] {
         listingCalls += 1
         if let listingError { throw listingError }
+        if let directoryTree { return directoryTree[relativePath] ?? [] }
         return listedEntries
     }
 
