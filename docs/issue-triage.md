@@ -4,6 +4,9 @@ The **Issue triage** GitHub Actions workflow maintains evidence-backed
 assessments of existing reports. It does not fix code, accept feature requests,
 or close issues. GitHub issues remain the source of truth; these records can
 also feed a public website board without creating another backlog.
+The [Discord roadmap](discord-bridge.md#discord-roadmap) is a separate deterministic
+view: its Planned/In progress stages are maintainer-owned, and delivery stages
+require verified Apple availability. Triage labels never select those stages.
 
 ## What the status means
 

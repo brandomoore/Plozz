@@ -278,6 +278,85 @@ python3 -m unittest discover -s tools/tests -p 'test_format_triage_comments.py'
 actionlint .github/workflows/discord-bridge.yml
 ```
 
+## Discord roadmap
+
+`tools/discord-roadmap.py` maintains the existing
+[#roadmap channel](https://discord.com/channels/1527028230106906704/1567621289106219069)
+as a read-only view of the GitHub backlog, not a second issue tracker. It includes
+both `bug` and `enhancement` issues. It uses no model and never writes GitHub
+labels, comments, milestones, issue states, or source.
+
+| Stage | Authority |
+| --- | --- |
+| Backlog | An open tracked issue without a verified commitment or delivery. Tracking is **not a promise**. |
+| Planned | `roadmap: planned`, most recently applied by `brandomoore`. |
+| In progress | `roadmap: in progress`, most recently applied by `brandomoore`. |
+| In beta | A validated fixing-commit declaration and current external TestFlight availability on every affected platform, or App Store availability on one of those platforms. |
+| Released | Verified App Store distribution on every affected platform, with released source containing the declared fix. |
+
+Brandon chooses the two commitment labels manually; the automation does not
+create or apply them. Remove the prior commitment label before choosing another.
+Conflicting labels or an unverifiable label actor fail visibly rather than
+inventing a commitment. The `triage:` labels remain independent assessments.
+No dates, priorities, or promises are derived from issue text, votes or labels.
+
+Delivery reuses the existing bot-owned TestFlight receipt validator, source-tag
+and release-catalog checks, commit declarations, and revert detection. It queries
+App Store Connect read-only: external beta membership/state is distinct from an
+App Store version in `READY_FOR_SALE` / `READY_FOR_DISTRIBUTION`. Approval, preorder,
+pending release, main merge, GitHub release publication and issue closure alone
+never establish App Store delivery. Builds without a published source tag are
+reported as unverifiable, not guessed. A reopened issue cannot reuse an older
+fix declaration. Expired beta builds alone do not keep an issue In beta.
+Closed reports without verified delivery and issues labeled `duplicate` are
+omitted rather than misrepresented as Released.
+
+Every entry links to its GitHub issue. Existing Discord discussions are linked
+only through validated bot-owned bridge mappings. Titles are escaped, mentions
+are disabled, and untrusted text never controls stages or API destinations.
+One editable explanation indexes the five groups. Each group has stable numbered
+pages and previous/next links. Entries are never silently truncated to fit a
+message; a board exceeding 50 pages fails visibly before writes. Surplus pages
+are edited to a retirement notice, not deleted or left advertising stale issues.
+Human messages are untouched. Deterministic nonces and bot-owned footers support
+recovery after ambiguous writes; duplicate markers fail closed. As with other
+Discord updates, a mid-run failure can leave mixed-age pages; the next run
+reconciles them. Successful writes are read back before being reported verified.
+
+### Roadmap activation
+
+The existing **Discord issue bridge** workflow owns the roadmap job and serializes
+runs. Installing the code does not activate it or change the channel's permissions.
+
+1. Merge the reviewed code to `main`. The roadmap uses the existing
+   `DISCORD_BOT_TOKEN` and `TESTFLIGHT_ASC_*` secrets, plus a read-only GitHub token.
+   The workflow always checks out `main` and its full release-tag history.
+2. Run `roadmap-check` manually. This verifies the configured bot, exact channel
+   and guild, permissions, source records and Apple availability, then prints a
+   preview without posting or changing permissions.
+3. After explicit publication approval, set `DISCORD_ROADMAP_ENABLED=true`.
+   Run `roadmap-setup` with `pin_roadmap_guide=true` to publish and pin the
+   explanation. The bot needs View Channel, Send Messages, Embed Links and Read
+   Message History; pinning additionally needs **Pin Messages**.
+4. Only with explicit permission approval, also set `make_roadmap_read_only=true`.
+   The shared channel setup helper needs Manage Permissions. It denies ordinary
+   `@everyone` posting/thread creation, preserves other role/member overrides,
+   and retains bot posting. It does not remove staff or other explicit role
+   exceptions, change visibility, create a channel, or change server roles.
+5. Scheduled updates now run on the bridge's roughly 15-minute cadence.
+   `roadmap-sync` triggers an immediate refresh without pin or permission changes.
+   Set `DISCORD_ROADMAP_ENABLED=false` to stop roadmap writes independently of
+   the forum bridge, triage and delivery watcher.
+
+The workflow cannot choose commitments on Brandon's behalf. Creating the two
+labels, assigning issues, merging code and enabling live publication remain
+separate decisions. No website roadmap is created.
+
+```bash
+PYTHONPATH=tools/tests python3 -m unittest test_discord_roadmap test_discord_bridge test_testflight_resolutions test_testflight_discord
+actionlint .github/workflows/discord-bridge.yml
+```
+
 ## TestFlight announcements
 
 The separate **TestFlight Discord announcements** workflow uses the same Plozz

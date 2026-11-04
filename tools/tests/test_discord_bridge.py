@@ -1415,7 +1415,7 @@ class WorkflowTests(unittest.TestCase):
 
     def test_secret_bearing_jobs_never_run_from_pull_request_events(self):
         self.assertNotIn("pull_request", WORKFLOW)
-        self.assertEqual(WORKFLOW.count("persist-credentials: false"), 3)
+        self.assertEqual(WORKFLOW.count("persist-credentials: false"), 4)
         self.assertIn("cancel-in-progress: false", WORKFLOW)
         self.assertEqual(WORKFLOW.count("npm install --global --ignore-scripts @github/copilot@1.0.91"), 2)
 
@@ -1437,7 +1437,7 @@ class WorkflowTests(unittest.TestCase):
                     BRIDGE.main()
 
     def test_guide_job_is_manual_and_has_no_github_write_or_copilot_credential(self):
-        guides = WORKFLOW.split("\n  publish-guides:\n", 1)[1].split("\n  sync:\n", 1)[0]
+        guides = WORKFLOW.split("\n  publish-guides:\n", 1)[1].split("\n  roadmap:\n", 1)[0]
         self.assertIn("github.event_name == 'workflow_dispatch'", guides)
         self.assertIn("github.repository == 'brandomoore/Plozz'", guides)
         self.assertIn("inputs.mode == 'publish-guides'", guides)

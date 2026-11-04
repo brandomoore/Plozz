@@ -618,7 +618,7 @@ def publish_guides(discord, channels):
     print("Pin each guide in its forum using a moderator account. Bot-created guides are excluded from issue mirroring.")
 
 
-def make_testflight_read_only(discord, channel):
+def make_channel_read_only(discord, channel):
     require_channel_permissions(discord, channel, {"Manage Permissions": 28})
     overwrites = channel.get("permission_overwrites", [])
     writing = sum(1 << bit for bit in (11, 35, 36, 38))
@@ -661,7 +661,7 @@ def publish_testflight_guide(discord, *, make_read_only=False):
         "View Channel": 10, "Send Messages": 11, "Embed Links": 14, "Read Message History": 16,
     })
     if make_read_only:
-        channel = make_testflight_read_only(discord, channel)
+        channel = make_channel_read_only(discord, channel)
         require_channel_permissions(discord, channel, {
             "View Channel": 10, "Send Messages": 11, "Embed Links": 14, "Read Message History": 16,
         })

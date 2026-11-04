@@ -137,21 +137,23 @@ def declared_fixes(sources=("HEAD",)):
     ), failures
 
 
+def verified_release_source(release):
+    tag = NOTES.release_tag(release["build"])
+    source = git("rev-parse", "--verify", f"refs/tags/{tag}^{{commit}}")
+    if not re.fullmatch(r"[0-9a-f]{40}", source):
+        raise Error("A release tag has an invalid source commit.")
+    catalog = NOTES.validate_catalog(json.loads(git("show", f"{source}:App/Resources/ReleaseNotes.json")))
+    entry = NOTES.selected_release(catalog, tag, release["marketing"], release["build"])
+    return {**release, "source": source, "tag": tag, "version": entry["version"]}
+
+
 def delivered_releases(apple, github, minimum):
     published = github.pages(f"/repos/{BRIDGE.REPO}/releases")
     result = []
     for release in ANNOUNCEMENTS.available_builds(apple, minimum):
         if ANNOUNCEMENTS.published_release(release["build"], published) is None:
             continue
-        tag = NOTES.release_tag(release["build"])
-        source = git("rev-parse", "--verify", f"refs/tags/{tag}^{{commit}}")
-        if not re.fullmatch(r"[0-9a-f]{40}", source):
-            raise Error("A release tag has an invalid source commit.")
-        catalog = NOTES.validate_catalog(json.loads(git("show", f"{source}:App/Resources/ReleaseNotes.json")))
-        entry = NOTES.selected_release(catalog, tag, release["marketing"], release["build"])
-        result.append({
-            **release, "source": source, "tag": tag, "version": entry["version"],
-        })
+        result.append(verified_release_source(release))
     return result
 
 
