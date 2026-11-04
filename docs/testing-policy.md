@@ -459,6 +459,9 @@ destination history stayed unchanged.
 Label controlled runtime edits separately from authentic playback evidence.
 Compatibility checks should cover the inclusive limit and the next representable
 value outside it, not just a large mismatch.
+Use exact real tracker identities for unmatched-library checks. Distinguish
+discarding an unconfirmed selection on relaunch from cancelling an in-flight
+delivery; the former is not evidence of queued-mutation recovery.
 
 ## App-hosted focus integration
 

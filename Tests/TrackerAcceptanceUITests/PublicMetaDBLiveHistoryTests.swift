@@ -2841,6 +2841,21 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         XCTAssertFalse(app.buttons["tracker-history.apply"].isEnabled)
     }
 
+    func testUnmatchedMovieCannotBeImported() throws {
+        let value = try XCTUnwrap(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_UNMATCHED_MOVIE_ID"])
+        let movieID = try XCTUnwrap(Int(value))
+        try require(movieID > 0, "Expected an independently verified unmatched tracker movie")
+        try openHistoryComparison()
+        let rows = app.cells.containing(.staticText, identifier: "tmdb: \(movieID)")
+            .containing(.staticText, identifier: "No confirmed library match")
+        try tapVisible(rows.firstMatch, tapping: false, maximumSwipes: 32)
+        try require(rows.count == 1, "Expected the exact unmatched movie's single tracker record")
+        XCTAssertEqual(rows.element.switches.count, 0)
+        try tapVisible(app.buttons["tracker-history.apply"], tapping: false, maximumSwipes: 32)
+        XCTAssertEqual(app.buttons["tracker-history.apply"].label, "Apply 0 selected changes")
+        XCTAssertFalse(app.buttons["tracker-history.apply"].isEnabled)
+    }
+
     func testRejectChangedTrackerHistoryImport() throws {
         XCTAssertEqual(app.buttons["tracker-history.apply"].label, "Apply 1 selected changes")
         let confirm = app.buttons["Apply selected changes"]
