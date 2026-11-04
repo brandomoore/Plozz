@@ -322,13 +322,14 @@ public struct RatingTile: View {
 
     public var body: some View {
         RatingValue(rating: rating, compact: compact)
+            .frame(maxHeight: compact ? nil : .infinity)
             .padding(.vertical, compact ? PlozzTheme.Spacing.small : DetailInformationLayout.cellPadding)
             .padding(.horizontal, compact ? PlozzTheme.Spacing.medium : DetailInformationLayout.cellPadding)
             .plozzFocusableCard(cornerRadius: DetailInformationLayout.cornerRadius)
     }
 }
 
-/// Shared score geometry, without an individual surface when grouped with other scores.
+/// Shared score geometry inside a rating tile.
 struct RatingValue: View {
     @Environment(\.themePalette) private var palette
     #if os(iOS)

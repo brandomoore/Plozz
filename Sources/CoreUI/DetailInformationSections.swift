@@ -188,12 +188,12 @@ public struct DetailInformationSections: View {
 
     private var ratingColumns: Int {
         let count = sortedRatings.count
-        let columns = familyGuidanceSummary == nil && count > 3 ? (count + 1) / 2 : count
+        let columns = familyGuidanceSummary != nil ? max(2, count + 1) : (count > 3 ? (count + 1) / 2 : count)
         return max(1, min(4, columns))
     }
 
     private var ratingsWidth: CGFloat {
-        let columns = familyGuidanceSummary == nil ? ratingColumns : max(2, ratingColumns)
+        let columns = ratingColumns
         return CGFloat(columns) * ratingMinimumWidth + CGFloat(columns - 1) * informationColumnSpacing
     }
 
@@ -206,41 +206,34 @@ public struct DetailInformationSections: View {
     }
 
     private var ratingsContent: some View {
-        VStack(alignment: .leading, spacing: informationGroupSpacing) {
-            if !sortedRatings.isEmpty {
-                protectedRating {
-                    ProportionalWrapLayout(
-                        preferredColumns: ratingColumns,
-                        minimumCellWidth: ratingMinimumWidth - 2 * DetailInformationLayout.cellPadding,
-                        spacing: informationColumnSpacing,
-                        rowSpacing: informationRowSpacing,
-                        centersIncompleteRows: true
-                    ) {
-                        ForEach(sortedRatings) { rating in
-                            RatingValue(rating: rating)
-                        }
-                    }
-                    .frame(maxHeight: .infinity)
-                    .padding(DetailInformationLayout.cellPadding)
-                    .plozzFocusableCard(cornerRadius: DetailInformationLayout.cornerRadius)
-                    .accessibilityIdentifier("detail-rating-scores")
+        protectedRating {
+            ProportionalWrapLayout(
+                preferredColumns: ratingColumns,
+                minimumCellWidth: ratingMinimumWidth,
+                spacing: informationColumnSpacing,
+                rowSpacing: informationRowSpacing,
+                lastSubviewFillsRemainingColumns: familyGuidanceSummary != nil,
+                fillsProposedHeight: true
+            ) {
+                ForEach(sortedRatings) { rating in
+                    RatingTile(rating: rating)
+                        .accessibilityIdentifier("detail-rating-\(rating.source.rawValue)")
                 }
-            }
-            if let summary = familyGuidanceSummary {
-                protectedRating {
+                if let summary = familyGuidanceSummary {
                     FamilyGuidanceTile(item: item, summary: summary)
                         .id(item.stablePresentationID)
                 }
             }
+            .frame(maxHeight: .infinity)
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel("Ratings")
         }
         .frame(maxWidth: expandsRatingsToAvailableWidth ? .infinity : ratingsWidth, alignment: .leading)
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("Ratings")
     }
 
     private var expandsRatingsToAvailableWidth: Bool {
         #if os(iOS)
-        horizontalSizeClass == .compact
+        sortedRatings.count > 1 || familyGuidanceSummary != nil
         #else
         false
         #endif

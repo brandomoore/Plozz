@@ -74,7 +74,7 @@ final class DetailCardSurfacePresentationTests: XCTestCase {
         }
     }
 
-    func testIncompleteRatingRowsCenterWithoutStretchingCells() async throws {
+    func testGuidanceCompletesRatingRowsWithoutStretchingScores() async throws {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
         let previous = scene.windows.first(where: \.isKeyWindow)
         let window = UIWindow(windowScene: scene)
@@ -87,47 +87,63 @@ final class DetailCardSurfacePresentationTests: XCTestCase {
             window.rootViewController = nil
             previous?.makeKeyAndVisible()
         }
-        for width in [CGFloat(340), 720] {
+        let sizes: [(CGFloat, CGFloat?)] = [(340, nil), (720, nil), (340, 200), (720, 200)]
+        for (width, allocatedHeight) in sizes {
             window.frame = CGRect(x: 0, y: 0, width: width, height: 300)
-            for count in 1...5 {
-                for centered in [false, true] {
+            for scoreCount in 0...5 {
+                for hasGuidance in [false, true] where scoreCount > 0 || hasGuidance {
+                    let count = scoreCount + (hasGuidance ? 1 : 0)
                     var frames: [Int: CGRect] = [:]
                     host.rootView = AnyView(
                         ProportionalWrapLayout(
                             preferredColumns: 4, minimumCellWidth: 128, spacing: 16,
-                            centersIncompleteRows: centered
+                            lastSubviewFillsRemainingColumns: hasGuidance,
+                            fillsProposedHeight: allocatedHeight != nil
                         ) {
                             ForEach(0..<count, id: \.self) { index in
-                                Color.white.frame(height: 40)
+                                Color.white.frame(minHeight: 40, maxHeight: .infinity)
                                     .onGeometryChange(for: CGRect.self) { $0.frame(in: .named("ratings")) } action: {
                                         frames[index] = $0
                                     }
                             }
                         }
                         .coordinateSpace(name: "ratings")
+                        .frame(height: allocatedHeight, alignment: .top)
                         .frame(maxHeight: .infinity, alignment: .top)
-                        .id("\(width)-\(count)-\(centered)")
+                        .id("\(width)-\(scoreCount)-\(hasGuidance)-\(allocatedHeight ?? 0)")
                     )
                     window.layoutIfNeeded()
                     try await Task.sleep(for: .milliseconds(100))
                     XCTAssertEqual(frames.count, count)
-                    let first = try XCTUnwrap(frames[0])
+                    let columns = width == 340 ? 2 : 4
+                    let cellWidth = (width - CGFloat(columns - 1) * 16) / CGFloat(columns)
+                    let rows = (count + columns - 1) / columns
+                    let rowHeight = allocatedHeight.map { ($0 - CGFloat(rows - 1) * 16) / CGFloat(rows) } ?? 40
+                    for index in 0..<scoreCount {
+                        XCTAssertEqual(try XCTUnwrap(frames[index]).width, cellWidth, accuracy: 0.5)
+                    }
                     for rowY in Set(frames.values.map(\.minY)) {
                         let row = frames.values.filter { $0.minY == rowY }.sorted { $0.minX < $1.minX }
                         let leading = try XCTUnwrap(row.first)
                         let trailing = try XCTUnwrap(row.last)
-                        if centered {
-                            XCTAssertEqual((leading.minX + trailing.maxX) / 2, width / 2, accuracy: 0.5)
-                        } else {
-                            XCTAssertEqual(leading.minX, 0, accuracy: 0.5,
-                                           "Other proportional layouts retain their existing leading alignment.")
-                        }
+                        XCTAssertEqual(leading.minX, 0, accuracy: 0.5)
                         for (index, frame) in row.enumerated() {
-                            XCTAssertEqual(frame.width, first.width, accuracy: 0.5)
+                            XCTAssertEqual(frame.height, rowHeight, accuracy: 0.5)
                             if index > 0 {
                                 XCTAssertEqual(frame.minX - row[index - 1].maxX, 16, accuracy: 0.5)
                             }
                         }
+                        if hasGuidance {
+                            XCTAssertEqual(trailing.maxX, width, accuracy: 0.5,
+                                           "Guidance must complete the grid's last row without a blank cell.")
+                        }
+                    }
+                    if hasGuidance {
+                        let guide = try XCTUnwrap(frames[scoreCount])
+                        let expectedColumn = scoreCount % columns
+                        XCTAssertEqual(guide.minX, CGFloat(expectedColumn) * (cellWidth + 16), accuracy: 0.5)
+                        XCTAssertEqual(guide.width, width - guide.minX, accuracy: 0.5)
+                        XCTAssertEqual(guide.minY, CGFloat(scoreCount / columns) * (rowHeight + 16), accuracy: 0.5)
                     }
                 }
             }

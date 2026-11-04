@@ -21,7 +21,8 @@ final class NativeInformationCardHostedTests: XCTestCase {
             previous?.makeKeyAndVisible()
         }
         for (count, hasGuidance, longOverview) in [
-            (1, false, false), (4, true, false), (4, false, true), (0, true, false)
+            (1, false, false), (1, true, false), (2, true, false), (3, true, false),
+            (4, true, false), (5, true, false), (4, false, true), (0, true, false)
         ] {
             var item = MediaItem(
                 id: "summary", title: "Slow Horses", kind: .series,
@@ -35,7 +36,8 @@ final class NativeInformationCardHostedTests: XCTestCase {
                 ExternalRating(source: .rottenTomatoes, value: 98, scale: .percent),
                 .init(source: .rottenTomatoesAudience, value: 88, scale: .percent),
                 .init(source: .imdb, value: 8.3, scale: .outOfTen),
-                .init(source: .tmdb, value: 8.1, scale: .outOfTen)
+                .init(source: .tmdb, value: 8.1, scale: .outOfTen),
+                .init(source: .metacritic, value: 73, scale: .outOfHundred)
             ].prefix(count))
             if hasGuidance {
                 item.familyGuidance = .init(
@@ -53,20 +55,38 @@ final class NativeInformationCardHostedTests: XCTestCase {
             window.makeKeyAndVisible()
             try await Task.sleep(for: .milliseconds(500))
             let cards = nativeCards(in: window)
-            let expectedCount = count > 0 && hasGuidance ? 4 : 3
+            let expectedCount = count + (hasGuidance ? 1 : 0) + 2
             XCTAssertEqual(cards.count, expectedCount,
-                           "Numeric scores share one surface; guidance keeps its own action.")
+                           "Each score owns a tile; guidance participates in the same grid.")
             guard cards.count == expectedCount else { continue }
             let frames = try cards.map { card in
                 let container = try XCTUnwrap(card.superview)
                 return container.convert(container.bounds, to: window)
             }
             let about = frames[0]
-            let scores = frames[1]
-            XCTAssertEqual(scores.minY, about.minY, accuracy: 1)
-            XCTAssertGreaterThan(scores.minX, about.maxX)
-            XCTAssertEqual(frames[expectedCount - 2].maxY, about.maxY, accuracy: 1,
+            let ratings = Array(frames[1..<(expectedCount - 1)])
+            XCTAssertEqual(ratings[0].minY, about.minY, accuracy: 1)
+            XCTAssertGreaterThan(ratings[0].minX, about.maxX)
+            XCTAssertEqual(try XCTUnwrap(ratings.map(\.maxY).max()), about.maxY, accuracy: 1,
                            "About and Ratings must share a bottom edge: scores=\(count), guidance=\(hasGuidance), long=\(longOverview), frames=\(frames)")
+            if hasGuidance {
+                let guide = try XCTUnwrap(ratings.last)
+                let columns = min(4, max(2, count + 1))
+                let rightEdge = ratings[0].minX + CGFloat(columns) * 220
+                    + CGFloat(columns - 1) * DetailInformationLayout.gutter
+                XCTAssertEqual(guide.maxX, rightEdge, accuracy: 1)
+                if count > 0 {
+                    let lastScore = ratings[count - 1]
+                    if count % columns == 0 {
+                        XCTAssertEqual(guide.minX, ratings[0].minX, accuracy: 1)
+                        XCTAssertGreaterThan(guide.minY, lastScore.maxY)
+                    } else {
+                        XCTAssertEqual(guide.minX - lastScore.maxX, DetailInformationLayout.gutter, accuracy: 1)
+                        XCTAssertEqual(guide.minY, lastScore.minY, accuracy: 1)
+                        XCTAssertEqual(guide.maxY, lastScore.maxY, accuracy: 1)
+                    }
+                }
+            }
             if count == 4 && hasGuidance {
                 let request = VNRecognizeTextRequest()
                 request.recognitionLevel = .accurate
@@ -86,6 +106,7 @@ final class NativeInformationCardHostedTests: XCTestCase {
                     ).insetBy(dx: -6, dy: -4))
                 }
                 for (index, value) in paintedValues.enumerated() {
+                    let scores = ratings[index]
                     XCTAssertFalse(value.isNull)
                     XCTAssertEqual(value.midY, paintedValues[0].midY, accuracy: 3)
                     var iconLeft: Int?
@@ -104,12 +125,8 @@ final class NativeInformationCardHostedTests: XCTestCase {
                     let gap = value.minX - CGFloat(try XCTUnwrap(iconRight) + 1)
                     XCTAssertEqual(gap, 16, accuracy: 2,
                                    "Visible mark edges, not their centered slots, determine the score gap.")
-                    let cellWidth = (scores.width - 2 * DetailInformationLayout.cellPadding
-                                     - 3 * DetailInformationLayout.gutter) / 4
-                    let expectedCenter = scores.minX + DetailInformationLayout.cellPadding
-                        + CGFloat(index) * (cellWidth + DetailInformationLayout.gutter) + cellWidth / 2
                     let visibleCenter = (CGFloat(try XCTUnwrap(iconLeft)) + value.maxX) / 2
-                    XCTAssertEqual(visibleCenter, expectedCenter, accuracy: 2,
+                    XCTAssertEqual(visibleCenter, scores.midX, accuracy: 2,
                                    "Each complete mark-and-score unit must have balanced space within its column.")
                 }
             }
@@ -643,7 +660,7 @@ final class NativeInformationCardHostedTests: XCTestCase {
         window.layoutIfNeeded()
         try await Task.sleep(for: .milliseconds(600))
         let cards = nativeCards(in: window)
-        XCTAssertEqual(cards.count, 6, "About, scores, guidance, Details, Crew and Playback each own a surface.")
+        XCTAssertEqual(cards.count, 9, "About, four scores, guidance, Details, Crew and Playback each own a surface.")
         var samples: [String] = []
         for (index, card) in cards.enumerated() {
             host.target = card

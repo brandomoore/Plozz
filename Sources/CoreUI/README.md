@@ -1001,16 +1001,21 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
 - **Detail information layout** — TV and mobile share ordered information
   sections. About and Ratings sit beside each other when both have readable space;
   otherwise they stack. Side-by-side About and Ratings share top and bottom
-  edges; stacked sections keep their natural height. Numeric scores share one
-  surface with equal-width cells, rather than a separate card per source. Each
-  icon-and-score pair is centered as a unit, with its source centered underneath
-  and a consistent gap measured from the mark's visible edge. Incomplete rows
-  are centered, and compact mobile layouts use the full available section width.
-  Family guidance uses a centered header and synopsis on compact mobile layouts,
-  retaining its horizontal presentation on wider screens. The number of scores
-  determines the preferred grid width, and family guidance remains
-  with the scores. Four or more scores balance into two rows when there is no
-  guidance row. About keeps its stable line cap when its surface grows to match
+  edges; stacked sections keep their natural height. Numeric scores use
+  individual equal-width tiles in one grid. Each icon-and-score pair is centered
+  as a unit, with its source centered underneath
+  and a consistent gap measured from the mark's visible edge. Rows start at the
+  leading grid line. A lone score keeps a compact tile rather than stretching.
+  Family guidance completes the remaining columns of the final score row, or
+  spans the next row when the score row is full. A narrow guidance tile shows
+  its age recommendation and source; wider tiles include a left-aligned overview.
+  Opening either presentation retains the full guidance and source authorization.
+  The grid's accessibility container stays inside its spoiler-protection wrapper,
+  so scores and guidance are hidden from accessibility until the grid is revealed.
+  Stacked phone and tablet grids with multiple tiles use the available section width.
+  The number of scores determines the preferred grid width. Four or more scores
+  balance into two rows when there is no family guidance.
+  About keeps its stable line cap when its surface grows to match
   the adjacent ratings group. Missing summary content reserves no column.
   Section headings sit above full-width fact groups, never in an empty side column.
   Ordered facts use up to four columns, with balanced rows and fewer columns at
@@ -1046,6 +1051,8 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   `--detail-layout-discover`, `--detail-layout-personal`, `--detail-layout-guidance`,
   `--detail-layout-upcoming`, `--detail-layout-ratings-only`, or
   `--detail-layout-family-only` for native review without server access.
+  `--detail-layout-ratings-0-guide` through `--detail-layout-ratings-5-guide`
+  exercise guidance spanning, including empty and partial score rows.
   `--detail-layout-lupin` and `--detail-layout-slow-horses` reproduce the visible
   metadata shapes from reported layout regressions, without private server identities.
   The fixture uses the production page-scoped gradient host; `--detail-layout-flat`

@@ -25,20 +25,15 @@ struct FamilyGuidanceTile: View {
     #if os(iOS)
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @ScaledMetric(relativeTo: .title2) private var scaledAgeSize: CGFloat = 30
+    @ScaledMetric(relativeTo: .body) private var expandedMinimumWidth: CGFloat = 280
     #endif
 
     var body: some View {
         Button { isPresented = true } label: {
-            Group {
-                #if os(iOS)
-                if horizontalSizeClass == .compact {
-                    centeredContent
-                } else {
-                    horizontalContent
-                }
-                #else
+            ViewThatFits(in: .horizontal) {
                 horizontalContent
-                #endif
+                    .frame(minWidth: expandedContentWidth, idealWidth: expandedContentWidth)
+                compactContent
             }
             .foregroundStyle(palette.primaryText)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -72,28 +67,39 @@ struct FamilyGuidanceTile: View {
         }
     }
 
-    #if os(iOS)
-    private var centeredContent: some View {
-        VStack(spacing: 8) {
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: 12) {
-                    FamilyGuidanceAge(age: summary.recommendedAge, size: ageSize)
-                    FamilyGuidanceBrand(compact: true).font(sourceFont)
-                }
-                .fixedSize(horizontal: true, vertical: false)
-                VStack(spacing: 8) {
-                    FamilyGuidanceAge(age: summary.recommendedAge, size: ageSize)
-                    FamilyGuidanceBrand(compact: true).font(sourceFont)
-                }
+    private var compactContent: some View {
+        VStack(spacing: 4) {
+            HStack(spacing: compactIconSize / 2) {
+                FamilyGuidanceIcon(size: compactIconSize)
+                FamilyGuidanceAge(age: summary.recommendedAge, size: ageSize * (22.0 / 30))
             }
-            overview
+            .frame(minHeight: compactIconSize * 1.5)
+            Text(verbatim: "Common Sense")
+                .font(sourceFont)
+                .foregroundStyle(palette.secondaryText)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .multilineTextAlignment(.center)
-        .padding(.horizontal, 20)
+        .padding(.horizontal, 12)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .overlay(alignment: .trailing) { disclosure }
     }
-    #endif
+
+    private var expandedContentWidth: CGFloat {
+        #if os(tvOS)
+        320
+        #else
+        expandedMinimumWidth
+        #endif
+    }
+
+    private var compactIconSize: CGFloat {
+        #if os(tvOS)
+        32
+        #else
+        horizontalSizeClass == .compact ? 24 : 28
+        #endif
+    }
 
     @ViewBuilder
     private var overview: some View {

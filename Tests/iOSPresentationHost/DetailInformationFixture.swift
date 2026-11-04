@@ -12,7 +12,9 @@ struct DetailInformationFixture: View {
         ProcessInfo.processInfo.arguments.contains("--detail-single-long-value")
     }
     private var layoutCase: String? {
-        ["sparse", "rich", "personal", "episode", "discover", "guidance", "upcoming", "ratings-only", "three-ratings", "family-only", "lupin", "slow-horses"].first {
+        let cases = ["sparse", "rich", "personal", "episode", "discover", "guidance", "upcoming", "ratings-only", "three-ratings", "family-only", "lupin", "slow-horses"]
+            + (0...5).map { "ratings-\($0)-guide" }
+        return cases.first {
             ProcessInfo.processInfo.arguments.contains("--detail-layout-\($0)")
         }
     }
@@ -80,7 +82,8 @@ struct DetailInformationFixture: View {
                     overview: "Survival drama with strong violence and language."
                 )
             }
-            if layoutCase == "lupin" || layoutCase == "slow-horses" {
+            let matrixCount = (0...5).first { layoutCase == "ratings-\($0)-guide" }
+            if layoutCase == "lupin" || layoutCase == "slow-horses" || matrixCount != nil {
                 item.kind = .series
                 item.officialRating = "TV-MA"
                 item.originalTitle = nil
@@ -124,6 +127,11 @@ struct DetailInformationFixture: View {
                         .init(id: "w3", name: "Jonny Stockwood", kind: "Writer")
                     ]
                     item.studios = ["See-Saw Films"]
+                    if let matrixCount {
+                        item.ratings = Array((item.ratings + [
+                            .init(source: .metacritic, value: 73, scale: .outOfHundred)
+                        ]).prefix(matrixCount))
+                    }
                 }
             }
             if layoutCase == "upcoming" {
@@ -201,7 +209,9 @@ struct DetailInformationFixture: View {
                             sizeBytes: 17_800_000_000, videoCodec: "hevc",
                             videoRange: "DOVI", audioCodec: "eac3", audioChannels: 6
                         ),
-                        externalAvailability: availability
+                        externalAvailability: availability,
+                        spoilerSettings: .init(hideRatingsUntilWatched:
+                            ProcessInfo.processInfo.arguments.contains("--detail-layout-hide-ratings"))
                     )
                 }
                 .id("detail-fixture-top")
@@ -212,6 +222,8 @@ struct DetailInformationFixture: View {
                         try await Task.sleep(for: .milliseconds(600))
                         if ProcessInfo.processInfo.arguments.contains("--detail-layout-bottom") {
                             scroll.scrollTo("playback", anchor: .bottom)
+                        } else if ProcessInfo.processInfo.arguments.contains("--detail-layout-ratings-top") {
+                            scroll.scrollTo("ratings", anchor: .top)
                         } else {
                             scroll.scrollTo("detail-fixture-top", anchor: .top)
                         }

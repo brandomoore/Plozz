@@ -61,11 +61,44 @@ final class DetailInformationInteractionTests: XCTestCase {
 
     func testFamilyGuidanceTileOpensAndDismissesItsDetails() {
         launch(["--detail-layout-guidance"])
+        checkGuidanceSheet()
+    }
+
+    func testCompactFamilyGuidanceTileKeepsItsFullDetails() {
+        launch(["--detail-layout-ratings-1-guide"])
+        checkGuidanceSheet()
+    }
+
+    func testStackedRatingGridUsesTheFullContentWidth() {
+        launch(["--detail-layout-ratings-5-guide"])
+        let guide = app.buttons["family-guidance-tile"]
+        reveal(guide)
+        XCTAssertEqual(guide.frame.maxX, app.frame.maxX - 24, accuracy: 1,
+                       "The last grid row must reach the same trailing inset as the other sections.")
+    }
+
+    func testSpoilerProtectionCoversTheEntireRatingGridUntilRevealed() {
+        launch(["--detail-layout-ratings-1-guide", "--detail-layout-hide-ratings"])
+        let prompt = app.buttons["Show Ratings"]
+        let score = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier BEGINSWITH %@", "detail-rating-")).firstMatch
+        reveal(prompt)
+        XCTAssertFalse(score.exists)
+        XCTAssertFalse(app.buttons["family-guidance-tile"].isHittable)
+        prompt.tap()
+        XCTAssertTrue(prompt.waitForNonExistence(timeout: 5))
+        XCTAssertTrue(score.waitForExistence(timeout: 5))
+        checkGuidanceSheet()
+    }
+
+    private func checkGuidanceSheet() {
         let tile = app.buttons["family-guidance-tile"]
         reveal(tile)
         tile.tap()
         let sheet = app.navigationBars["Family guidance"]
         XCTAssertTrue(sheet.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "language"))
+            .firstMatch.waitForExistence(timeout: 5), "The compact tile must retain its full guidance in the sheet.")
         sheet.buttons["Done"].tap()
         XCTAssertTrue(sheet.waitForNonExistence(timeout: 5), app.debugDescription)
         XCTAssertTrue(tile.isHittable)
