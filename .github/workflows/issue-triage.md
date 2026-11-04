@@ -131,6 +131,10 @@ dependencies, run app builds, modify source, open PRs/issues, close/reopen issue
 assign people, set milestones, or promise implementation dates. Do not delegate
 to other agents or select another model.
 
+Temporary working files under `/tmp/gh-aw/agent/` belong to this disposable
+runner and are removed with it. Do not request deletion permissions or report
+the absence of a cleanup command as a missing capability.
+
 The existing TestFlight issue-resolution workflow exclusively owns `awaiting
 release` and delivery-based closure. Do not add/remove that label, duplicate its
 release receipts, or infer shipment from a commit, tag name, upload, or closed
@@ -203,6 +207,12 @@ pass a comment ID. Keep the body to three short lines:
 **Reported:** app build (and last affected build when different).
 **Assessment:** what the evidence establishes, with one or two precise links.
 **Next:** one concrete action or the exact missing information.
+
+Finish and validate every assessment before submitting its safe output: queued
+comments cannot be amended. Copy comment URLs from GitHub's returned `html_url`
+or `url`, rather than constructing comment fragments. Cross-check body links
+against the structured evidence URLs and use the issue URL without a fragment
+if the exact comment URL is unavailable.
 
 Supply the structured `data` object alongside the body:
 `schema_version: 1`, numeric `issue_number`, full `checked_sha`, ISO8601 UTC
