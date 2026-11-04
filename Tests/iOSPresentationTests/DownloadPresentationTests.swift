@@ -50,7 +50,7 @@ final class DownloadPresentationTests: XCTestCase {
         XCTAssertNil(model.cachedRecord(forSelectedVersionOf: foreign))
     }
 
-    func testEpisodeMenuOpensSelectionWithoutStartingADownload() async {
+    func testSingleItemMenusUseSelectionFlowWithoutBypassingConfirmation() async {
         let suite = "EpisodeMenuSelection.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
@@ -70,10 +70,14 @@ final class DownloadPresentationTests: XCTestCase {
         )
         let previousCount = app.downloads.records.count
         await app.performDownloadMenuAction(.startDownload, on: episode)
-        XCTAssertEqual(app.pendingEpisodeDownload?.id, episode.id)
-        XCTAssertEqual(app.pendingEpisodeDownload?.sourceAccountID, "fixture")
+        XCTAssertEqual(app.pendingDownloadSelection?.id, episode.id)
+        XCTAssertEqual(app.pendingDownloadSelection?.sourceAccountID, "fixture")
         XCTAssertEqual(app.downloads.records.count, previousCount)
-        app.pendingEpisodeDownload = nil
+        let movie = MediaItem(id: "movie-choice", title: "Movie Choice", kind: .movie, sourceAccountID: "fixture")
+        await app.performDownloadMenuAction(.startDownload, on: movie)
+        XCTAssertEqual(app.pendingDownloadSelection?.id, movie.id)
+        XCTAssertEqual(app.downloads.records.count, previousCount)
+        app.pendingDownloadSelection = nil
     }
 
     func testProfileTransitionClearsPendingEpisodeSelection() {
@@ -82,10 +86,28 @@ final class DownloadPresentationTests: XCTestCase {
         defer { defaults.removePersistentDomain(forName: suite) }
         let app = PlozziOSAppModel(profileStore: ProfileStore(defaults: defaults))
         defer { app.downloads.beginProfileTransition() }
-        app.pendingEpisodeDownload = MediaItem(id: "old-profile", title: "Episode", kind: .episode)
+        app.pendingDownloadSelection = MediaItem(id: "old-profile", title: "Episode", kind: .episode)
         let profile = app.profiles.add(name: "Download Choice", isAwaitingSetup: false)
         app.selectProfile(profile.id)
-        XCTAssertNil(app.pendingEpisodeDownload)
+        XCTAssertNil(app.pendingDownloadSelection)
+    }
+
+    func testAskBeforeDownloadingPersistsBothValuesWithinItsProfile() throws {
+        let model = makeModel(
+            registry: DownloadedMediaRegistry(store: InMemoryDownloadedMediaStore()),
+            storage: try temporaryStorage(), probe: ArtworkProbe(data: imageData()), startsActive: false
+        )
+        let key = "downloads.preferences.\(try XCTUnwrap(model.profileID))"
+        defer {
+            model.beginProfileTransition()
+            UserDefaults.standard.removeObject(forKey: key)
+        }
+        XCTAssertTrue(model.asksBeforeDownloading)
+        model.asksBeforeDownloading = false
+        XCTAssertFalse(PlozziOSDownloadPreferences.load(key: key).asksBeforeDownloading)
+        XCTAssertTrue(PlozziOSDownloadPreferences.load(key: "\(key)-other-profile").asksBeforeDownloading)
+        model.asksBeforeDownloading = true
+        XCTAssertTrue(PlozziOSDownloadPreferences.load(key: key).asksBeforeDownloading)
     }
 
     func testDetailHeroResolvesActionsOnceForAllLayoutCandidates() throws {

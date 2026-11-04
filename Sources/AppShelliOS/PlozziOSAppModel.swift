@@ -444,7 +444,7 @@ final class PlozziOSAppModel {
     private(set) var seriesTrackStore: SeriesTrackPreferenceStore
     private(set) var versionPreferences: VersionPreferenceStore
     private(set) var downloads: PlozziOSDownloadsModel
-    var pendingEpisodeDownload: MediaItem?
+    var pendingDownloadSelection: MediaItem?
     private(set) var pendingLibrarySelection: PendingLibrarySelection?
     private(set) var pendingFirstRunStep: FirstRunStep?
     /// Drives the app to a named screen for an automated capture run. Inert unless
@@ -1784,7 +1784,7 @@ final class PlozziOSAppModel {
     }
 
     private func transitionDownloads(to profileID: String) {
-        pendingEpisodeDownload = nil
+        pendingDownloadSelection = nil
         let outgoing = downloads
         outgoing.beginProfileTransition()
         downloads = PlozziOSDownloadsModel(

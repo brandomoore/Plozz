@@ -202,7 +202,10 @@ limits and refuses an incompatible plan rather than quietly using Maximum.
   a compact Download All, Pause All, or Resume All control. Show headers retain
   completed download counts without inventing an unknown total episode count.
   When space is tight, the action moves below the details before its label wraps.
-  Episode, season, and show downloads open a selection sheet before queueing.
+  With Ask Before Downloading enabled, every new download opens a confirmation.
+  With it disabled, a single movie or episode with one version starts immediately
+  using the saved quality. Multiple versions and season/show downloads still
+  open the selection sheet before queueing.
   Seasons are sections with one row per episode; alternate files stay in a
   nested version list. One version is preselected using the existing explicit,
   remembered-series, and device-compatible version selection rules. You can

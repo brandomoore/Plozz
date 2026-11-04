@@ -82,6 +82,10 @@ public struct EpisodeDownloadSelection: Sendable {
         }
     }
 
+    public func requiresConfirmation(alwaysAsk: Bool, isBulk: Bool) -> Bool {
+        alwaysAsk || isBulk || episodes.count != 1 || episodes.first?.options.count != 1
+    }
+
     public mutating func setSelected(_ selected: Bool, optionID: String) {
         guard episodes.contains(where: { $0.options.contains(where: { $0.id == optionID }) }) else { return }
         if selected {

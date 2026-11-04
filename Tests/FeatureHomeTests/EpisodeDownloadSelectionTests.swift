@@ -39,6 +39,21 @@ final class EpisodeDownloadSelectionTests: XCTestCase {
         XCTAssertEqual(model.selectedOptions.map(\.id), [group.recommendedID])
     }
 
+    func testConfirmationOnlySkipsAnUnambiguousSingleDownloadWithAlwaysAskOff() {
+        for kind in [MediaItemKind.episode, .movie] {
+            var item = episode("single")
+            item.kind = kind
+            let single = selection([item])
+            XCTAssertFalse(single.requiresConfirmation(alwaysAsk: false, isBulk: false))
+            XCTAssertTrue(single.requiresConfirmation(alwaysAsk: true, isBulk: false))
+            XCTAssertTrue(single.requiresConfirmation(alwaysAsk: false, isBulk: true))
+            item.versions = [.init(id: "hd", height: 1080), .init(id: "sd", height: 480)]
+            XCTAssertTrue(selection([item]).requiresConfirmation(alwaysAsk: false, isBulk: false))
+        }
+        XCTAssertTrue(selection([episode("a"), episode("b")]).requiresConfirmation(alwaysAsk: false, isBulk: false))
+        XCTAssertTrue(selection([]).requiresConfirmation(alwaysAsk: false, isBulk: false))
+    }
+
     func testFifteenVersionsPerEpisodeKeepOnlyOneSelectedPerEpisode() {
         let items = (1...10).map { number -> MediaItem in
             var item = episode("episode-\(number)", number: number)

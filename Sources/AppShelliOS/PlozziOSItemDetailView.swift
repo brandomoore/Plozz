@@ -2090,7 +2090,8 @@ private struct PlozziOSSeriesDownloadPicker: View {
         .interactiveDismissDisabled(isBusy)
         .plozzSheet(item: $prompt) { prompt in
             PlozziOSDownloadSelectionSheet(
-                title: prompt.title, items: prompt.batches.flatMap(\.episodes)
+                title: prompt.title, items: prompt.batches.flatMap(\.episodes),
+                resolvesSingleItem: !prompt.isBulk, isBulk: prompt.isBulk
             ) { options, quality in
                 try await performDownload(prompt, options: options, quality: quality)
             }
@@ -2293,12 +2294,17 @@ private struct PlozziOSSeriesDownloadPicker: View {
             batchTitle = title
         }
         var seen = Set<String>()
-        let batches = prompt.batches.compactMap { batch -> PlozziOSSeasonDownloadPrompt.Batch? in
-            let origins = Set(batch.episodes.map(\.stablePresentationID))
-            let episodes = options.filter {
-                origins.contains($0.originID) && seen.insert($0.id).inserted
-            }.map(\.item)
-            return episodes.isEmpty ? nil : .init(season: batch.season, episodes: episodes)
+        let batches: [PlozziOSSeasonDownloadPrompt.Batch]
+        if case .episode = prompt.scope, let batch = prompt.batches.first {
+            batches = [.init(season: batch.season, episodes: options.map(\.item))]
+        } else {
+            batches = prompt.batches.compactMap { batch -> PlozziOSSeasonDownloadPrompt.Batch? in
+                let origins = Set(batch.episodes.map(\.stablePresentationID))
+                let episodes = options.filter {
+                    origins.contains($0.originID) && seen.insert($0.id).inserted
+                }.map(\.item)
+                return episodes.isEmpty ? nil : .init(season: batch.season, episodes: episodes)
+            }
         }
         guard batches.reduce(0, { $0 + $1.episodes.count }) == options.count else {
             throw PlozziOSDownloadError.unavailable("The episode selection changed. Open Downloads and try again.")
@@ -3472,6 +3478,10 @@ private func downloadCollectionBadgeState(
 
 /// Backing data for a bulk season/show download confirmation.
 private struct PlozziOSSeasonDownloadPrompt: Identifiable {
+    var isBulk: Bool {
+        if case .episode = scope { return false }
+        return true
+    }
     struct Batch {
         let season: MediaItem
         let episodes: [MediaItem]

@@ -75,6 +75,63 @@ final class DownloadSelectionInteractionTests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Queued: 1"].waitForExistence(timeout: 5))
     }
 
+    func testAskOffAutomaticallyDownloadsSingleVersionEpisode() {
+        relaunch(["--single-download-episode", "--one-download-version", "--download-ask-off"])
+        app.buttons["Download Season"].tap()
+        XCTAssertTrue(app.staticTexts["Queued: 1"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["confirm-download-selection"].exists)
+    }
+
+    func testAskOffAutomaticallyDownloadsSingleVersionMovie() {
+        relaunch(["--download-movie", "--one-download-version", "--download-ask-off"])
+        app.buttons["Download Season"].tap()
+        XCTAssertTrue(app.staticTexts["Queued: 1"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["confirm-download-selection"].exists)
+    }
+
+    func testAlwaysAskStillConfirmsSingleVersion() {
+        relaunch(["--single-download-episode", "--one-download-version"])
+        app.buttons["Download Season"].tap()
+        let confirm = app.buttons["confirm-download-selection"]
+        XCTAssertTrue(confirm.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts["Queued: 1"].exists)
+        confirm.tap()
+        XCTAssertTrue(app.staticTexts["Queued: 1"].waitForExistence(timeout: 5))
+    }
+
+    func testAskOffStillConfirmsSeasonWithOneVersionPerEpisode() {
+        relaunch(["--one-download-version", "--download-ask-off"])
+        app.buttons["Download Season"].tap()
+        XCTAssertTrue(app.buttons["confirm-download-selection"].waitForExistence(timeout: 5))
+        app.buttons["Cancel"].tap()
+        XCTAssertTrue(app.staticTexts["Queued: 0"].waitForExistence(timeout: 5))
+    }
+
+    func testAskOffStillAsksForEpisodeVersionChoices() {
+        relaunch(["--single-download-episode", "--download-ask-off"])
+        app.buttons["Download Season"].tap()
+        XCTAssertTrue(app.buttons["confirm-download-selection"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["15 versions"].exists)
+    }
+
+    func testMovieVersionChoicesRemainExclusiveWithAskOff() {
+        relaunch(["--download-movie", "--download-ask-off"])
+        app.buttons["Download Season"].tap()
+        let first = app.buttons["download-version-1"]
+        XCTAssertTrue(first.waitForExistence(timeout: 5))
+        app.buttons["download-version-2"].tap()
+        XCTAssertEqual(first.value as? String, "Not selected")
+        XCTAssertEqual(app.buttons["download-version-2"].value as? String, "Selected")
+        app.buttons["confirm-download-selection"].tap()
+        XCTAssertTrue(app.staticTexts["Queued: 1"].waitForExistence(timeout: 5))
+    }
+
+    private func relaunch(_ arguments: [String]) {
+        app.terminate()
+        app.launchArguments = ["--download-selection-fixture"] + arguments
+        app.launch()
+    }
+
     private func capture(_ name: String) {
         let attachment = XCTAttachment(screenshot: app.screenshot())
         attachment.name = name

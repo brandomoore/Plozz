@@ -5,7 +5,7 @@ import FeatureHomeCore
 import MediaDownloads
 import SwiftUI
 
-struct PlozziOSSingleEpisodeDownloadSheet: View {
+struct PlozziOSSingleItemDownloadSheet: View {
     @Environment(PlozziOSAppModel.self) private var appModel
     let item: MediaItem
 
@@ -14,7 +14,7 @@ struct PlozziOSSingleEpisodeDownloadSheet: View {
             title: appModel.settings.spoilers.settings.shouldHideText(for: item)
                 ? Text(appModel.settings.spoilers.settings.maskedTitle(for: item))
                 : Text(verbatim: item.title),
-            items: [item], resolvesSingleEpisode: true
+            items: [item], resolvesSingleItem: true, isBulk: false
         ) { options, quality in
             guard let provider = appModel.provider(for: item) else {
                 throw PlozziOSDownloadError.unavailable("The selected server is no longer available.")
@@ -22,6 +22,9 @@ struct PlozziOSSingleEpisodeDownloadSheet: View {
             if options.count == 1, let option = options.first {
                 _ = try await appModel.downloads.enqueue(item: option.item, provider: provider, quality: quality)
             } else {
+                guard item.kind == .episode else {
+                    throw PlozziOSDownloadError.unavailable("Select one version.")
+                }
                 _ = try await appModel.downloads.enqueueSeason(
                     season: item, episodes: options.map(\.item), provider: provider, quality: quality
                 )
@@ -45,7 +48,8 @@ struct PlozziOSDownloadSelectionSheet: View {
 
     let title: Text
     let items: [MediaItem]
-    var resolvesSingleEpisode = false
+    var resolvesSingleItem = false
+    var isBulk = true
     let onDownload: ([EpisodeDownloadSelection.Option], DownloadQuality) async throws -> Void
 
     var body: some View {
@@ -65,6 +69,8 @@ struct PlozziOSDownloadSelectionSheet: View {
                     customQualityTitle: appModel.downloads.customDownloadQualityTitle,
                     availableSpace: availableSpace,
                     spoilers: appModel.settings.spoilers.settings,
+                    alwaysAsk: appModel.downloads.asksBeforeDownloading,
+                    isBulk: isBulk,
                     isDownloading: isDownloading,
                     onCancel: { dismiss() },
                     onDownload: { isDownloading = true }
@@ -123,10 +129,15 @@ struct PlozziOSDownloadSelectionSheet: View {
             }
             guard !Task.isCancelled, appModel.profiles.activeProfileID == currentProfile else { return }
             resolvedItems = choices
-            selection = EpisodeDownloadSelection(
+            let prepared = EpisodeDownloadSelection(
                 items: choices, preferences: appModel.versionPreferences,
                 capabilities: .detected()
             )
+            guard !prepared.episodes.isEmpty else {
+                preparationError = String(localized: "No downloadable versions are available.") // l10n:content - resolved error presentation
+                return
+            }
+            selection = prepared
         }
         .task(id: isDownloading) {
             guard isDownloading, let selection else { return }
@@ -159,7 +170,7 @@ struct PlozziOSDownloadSelectionSheet: View {
     }
 
     private func loadItems() async throws -> [MediaItem] {
-        guard resolvesSingleEpisode, let seed = items.first else { return items }
+        guard resolvesSingleItem, let seed = items.first else { return items }
         guard let provider = appModel.provider(for: seed) else {
             throw PlozziOSDownloadError.unavailable("The selected server is no longer available.")
         }
@@ -171,7 +182,8 @@ struct PlozziOSDownloadSelectionSheet: View {
         }
         var item = PlayerVersionSelection.item(opened: seed, resolved: detail, authoritativeVersions: true)
         item.mediaInfo = detail.mediaInfo ?? item.mediaInfo
-        guard let seasonID = item.seasonID else { return [item] }
+        let knownItems = [item] + items.filter { $0.stablePresentationID != item.stablePresentationID }
+        guard item.kind == .episode, let seasonID = item.seasonID else { return knownItems }
         let children = try await provider.children(of: seasonID)
         try Task.checkCancellation()
         let candidates = children.filter {
@@ -182,7 +194,7 @@ struct PlozziOSDownloadSelectionSheet: View {
             copy.sourceAccountID = seed.sourceAccountID
             return copy
         }
-        return EpisodeDownloadSelection.groupedItems([item] + candidates)
+        return EpisodeDownloadSelection.groupedItems(knownItems + candidates)
             .first { $0.contains(where: { $0.stablePresentationID == item.stablePresentationID }) } ?? [item]
     }
 }
@@ -197,7 +209,10 @@ struct PlozziOSDownloadSelectionContent: View {
     var customQualityTitle: LocalizedStringResource?
     var availableSpace: String?
     var spoilers: SpoilerSettings = .default
+    var alwaysAsk = true
+    var isBulk = true
     var isDownloading = false
+    @State private var requestedAutomaticDownload = false
     let onCancel: () -> Void
     let onDownload: () -> Void
 
@@ -224,6 +239,20 @@ struct PlozziOSDownloadSelectionContent: View {
     }
 
     var body: some View {
+        if !selection.requiresConfirmation(alwaysAsk: alwaysAsk, isBulk: isBulk),
+           !requestedAutomaticDownload || isDownloading {
+            ProgressView("Preparing Downloads")
+                .task {
+                    guard !requestedAutomaticDownload else { return }
+                    requestedAutomaticDownload = true
+                    onDownload()
+                }
+        } else {
+            confirmation
+        }
+    }
+
+    private var confirmation: some View {
         NavigationStack {
             List {
                 Section {
@@ -248,21 +277,29 @@ struct PlozziOSDownloadSelectionContent: View {
                 } header: {
                     title
                 } footer: {
-                    if selection.episodes.contains(where: { $0.options.count > 1 }) {
+                    if selection.episodes.contains(where: { $0.item.kind == .episode && $0.options.count > 1 }) {
                         Text("Open an episode to change its selected versions.")
                     }
                 }
 
-                ForEach(seasons) { season in
-                    Section {
-                        ForEach(season.episodes) { episode in
-                            episodeRow(episode)
+                if let movie = selection.episodes.first, movie.item.kind == .movie {
+                    if movie.options.count > 1 {
+                        Section("Version") {
+                            versionRows(for: movie)
                         }
-                    } header: {
-                        if let number = season.number {
-                            Text("Season \(number)")
-                        } else {
-                            Text("Episodes")
+                    }
+                } else {
+                    ForEach(seasons) { season in
+                        Section {
+                            ForEach(season.episodes) { episode in
+                                episodeRow(episode)
+                            }
+                        } header: {
+                            if let number = season.number {
+                                Text("Season \(number)")
+                            } else {
+                                Text("Episodes")
+                            }
                         }
                     }
                 }
@@ -360,37 +397,7 @@ struct PlozziOSDownloadSelectionContent: View {
     private func versions(for episode: EpisodeDownloadSelection.Episode) -> some View {
         List {
             Section {
-                ForEach(Array(episode.options.enumerated()), id: \.element.id) { index, option in
-                    Button {
-                        selection.setSelected(!selection.selectedIDs.contains(option.id), optionID: option.id)
-                    } label: {
-                        HStack(spacing: 12) {
-                            Image(systemName: selection.selectedIDs.contains(option.id) ? "checkmark.circle.fill" : "circle")
-                                .foregroundStyle(.tint)
-                                .frame(width: 28)
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("Version \(index + 1)")
-                                    .foregroundStyle(.primary)
-                                if let detail = technicalSummary(option.version) {
-                                    Text(verbatim: detail).font(.subheadline).foregroundStyle(.secondary)
-                                }
-                                if !spoilers.shouldHideText(for: episode.item),
-                                   let file = option.version.fileName ?? option.version.name {
-                                    Text(verbatim: file).font(.caption).foregroundStyle(.secondary)
-                                }
-                                if option.id == episode.recommendedID {
-                                    Text("Recommended").font(.caption).foregroundStyle(.secondary)
-                                }
-                            }
-                            .fixedSize(horizontal: false, vertical: true)
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityValue(selection.selectedIDs.contains(option.id) ? Text("Selected") : Text("Not selected"))
-                    .accessibilityIdentifier("download-version-\(index + 1)")
-                }
+                versionRows(for: episode)
             } footer: {
                 Text("Each selected version downloads a separate file.")
             }
@@ -398,6 +405,47 @@ struct PlozziOSDownloadSelectionContent: View {
         .navigationTitle(episodeTitle(episode))
         .navigationBarTitleDisplayMode(.inline)
         .disabled(isDownloading)
+    }
+
+    private func versionRows(for episode: EpisodeDownloadSelection.Episode) -> some View {
+        ForEach(Array(episode.options.enumerated()), id: \.element.id) { index, option in
+            Button {
+                if episode.item.kind == .movie {
+                    for candidate in episode.options {
+                        selection.setSelected(false, optionID: candidate.id)
+                    }
+                    selection.setSelected(true, optionID: option.id)
+                    return
+                }
+                selection.setSelected(!selection.selectedIDs.contains(option.id), optionID: option.id)
+            } label: {
+                HStack(spacing: 12) {
+                    Image(systemName: selection.selectedIDs.contains(option.id) ? "checkmark.circle.fill" : "circle")
+                        .foregroundStyle(.tint)
+                        .frame(width: 28)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Version \(index + 1)")
+                            .foregroundStyle(.primary)
+                        if let detail = technicalSummary(option.version) {
+                            Text(verbatim: detail).font(.subheadline).foregroundStyle(.secondary)
+                        }
+                        if !spoilers.shouldHideText(for: episode.item),
+                           let file = option.version.fileName ?? option.version.name {
+                            Text(verbatim: file).font(.caption).foregroundStyle(.secondary)
+                        }
+                        if option.id == episode.recommendedID {
+                            Text("Recommended").font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                    .fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityValue(selection.selectedIDs.contains(option.id) ? Text("Selected") : Text("Not selected"))
+            .accessibilityIdentifier("download-version-\(index + 1)")
+        }
     }
 
     private func technicalSummary(_ version: MediaVersion) -> String? {

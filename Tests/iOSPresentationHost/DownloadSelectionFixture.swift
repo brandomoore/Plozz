@@ -25,6 +25,9 @@ struct DownloadSelectionFixture: View {
                 title: Text("Northbound"), selection: $selection, quality: $quality,
                 supportsReducedQuality: true,
                 availableSpace: "72 GB",
+                alwaysAsk: !ProcessInfo.processInfo.arguments.contains("--download-ask-off"),
+                isBulk: !ProcessInfo.processInfo.arguments.contains("--single-download-episode")
+                    && !ProcessInfo.processInfo.arguments.contains("--download-movie"),
                 onCancel: { showsSheet = false },
                 onDownload: {
                     downloadedCount = selection.selectedOptions.count
@@ -46,10 +49,12 @@ struct DownloadSelectionFixture: View {
     ]
 
     private static var items: [MediaItem] {
-        let visibleTitles = ProcessInfo.processInfo.arguments.contains("--single-download-episode")
+        let isMovie = ProcessInfo.processInfo.arguments.contains("--download-movie")
+        let visibleTitles = ProcessInfo.processInfo.arguments.contains("--single-download-episode") || isMovie
             ? Array(titles.prefix(1)) : titles
         return visibleTitles.enumerated().map { index, title in
-            let versions: [MediaVersion] = (1...15).map { version in
+            let versionCount = ProcessInfo.processInfo.arguments.contains("--one-download-version") ? 1 : 15
+            let versions: [MediaVersion] = (1...versionCount).map { version in
                 let resolution = version == 1 ? "1080p" : "720p"
                 let size: Int64 = version == 1 ? 420_000_000 : Int64(200_000_000 + version * 1_000_000)
                 return MediaVersion(
@@ -61,7 +66,7 @@ struct DownloadSelectionFixture: View {
                 )
             }
             return MediaItem(
-                id: "episode-\(index)", title: title, kind: .episode,
+                id: "episode-\(index)", title: title, kind: isMovie ? .movie : .episode,
                 seasonNumber: index < 6 ? 1 : 2,
                 episodeNumber: index < 6 ? index + 1 : index - 5,
                 seriesID: "northbound", sourceAccountID: "fixture",

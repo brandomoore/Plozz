@@ -90,7 +90,7 @@ struct PlozziOSDetailDownloadButton: View {
                 downloadRecord = await appModel.downloads.record(forSelectedVersionOf: downloadItem)
             }
         }) {
-            PlozziOSSingleEpisodeDownloadSheet(item: downloadItem)
+            PlozziOSSingleItemDownloadSheet(item: downloadItem)
         }
     }
 
@@ -121,13 +121,7 @@ struct PlozziOSDetailDownloadButton: View {
         case .completed:
             showsDownloadConfirmation = true
         case nil:
-            if downloadItem.kind == .episode {
-                showsVersionSelection = true
-            } else if appModel.downloads.asksBeforeDownloading {
-                showsDownloadConfirmation = true
-            } else {
-                await startDownload()
-            }
+            showsVersionSelection = true
         }
     }
 
