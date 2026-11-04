@@ -85,9 +85,24 @@ final class DetailInformationInteractionTests: XCTestCase {
         }
     }
 
+    func testSingleScoreFillsOneTabletColumnWithoutWideningPhoneTile() {
+        launch(["--detail-layout-lupin"])
+        let score = app.descendants(matching: .any)["detail-rating-tmdb"].firstMatch
+        let about = app.descendants(matching: .any)["detail-about"].firstMatch
+        XCTAssertTrue(score.waitForExistence(timeout: 10))
+        XCTAssertTrue(about.exists)
+        if UIDevice.current.userInterfaceIdiom == .pad {
+            XCTAssertEqual(score.frame.width, about.frame.width, accuracy: 1)
+            XCTAssertGreaterThan(score.frame.minX, about.frame.maxX)
+        } else {
+            XCTAssertEqual(score.frame.width, 160, accuracy: 1,
+                           "The compact phone score must retain its existing width.")
+        }
+    }
+
     func testLandscapeInformationUsesReadableSectionColumns() throws {
         try checkInformationLayout(orientation: .landscapeLeft, cases: [
-            "discover", "rich", "ratings-1-guide", "ratings-5-guide"
+            "discover", "rich", "lupin", "ratings-1-guide", "ratings-5-guide"
         ])
     }
 

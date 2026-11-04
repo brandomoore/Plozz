@@ -20,12 +20,15 @@ enum DetailInformationLayout {
     #if os(tvOS)
     static let cellPadding = PlozzTheme.Spacing.large
     static let gutter = PlozzTheme.Spacing.large
-    static let sectionSpacing = PlozzTheme.Spacing.xxLarge
+    static let focusPadding: CGFloat = 22
+    static let factSpacing = focusPadding * 2 + PlozzTheme.Spacing.small
+    static let sectionSpacing = factSpacing
     static let headingSpacing = PlozzTheme.Spacing.medium
     static let cornerRadius: CGFloat = 20
     #else
     static let cellPadding = PlozzTheme.Spacing.medium
     static let gutter = PlozzTheme.Spacing.medium
+    static let factSpacing = gutter
     static let sectionSpacing = PlozzTheme.Spacing.xLarge
     static let headingSpacing = PlozzTheme.Spacing.small
     static let cornerRadius: CGFloat = 16
@@ -167,6 +170,7 @@ public struct DetailInformationSections: View {
                     hasOverview: hasAbout,
                     ratingsWidth: ratingsWidth,
                     fillsRatingsColumn: expandsRatingsToAvailableWidth,
+                    maximumRatingsColumnSpan: maximumRatingsColumnSpan,
                     spacing: sectionSpacing
                 ) {
                     if hasAbout {
@@ -262,9 +266,17 @@ public struct DetailInformationSections: View {
 
     private var expandsRatingsToAvailableWidth: Bool {
         #if os(tvOS)
-        false
+        true
         #else
-        sortedRatings.count > 1 || familyGuidanceSummary != nil
+        horizontalSizeClass == .regular || sortedRatings.count > 1 || familyGuidanceSummary != nil
+        #endif
+    }
+
+    private var maximumRatingsColumnSpan: Int {
+        #if os(tvOS)
+        sortedRatings.count + (familyGuidanceSummary == nil ? 0 : 1) > 1 ? 2 : 1
+        #else
+        1
         #endif
     }
 
@@ -1049,7 +1061,7 @@ private struct DetailInformationGroup: View {
     }
 
     private var facts: some View {
-        VStack(alignment: .leading, spacing: DetailInformationLayout.gutter) {
+        VStack(alignment: .leading, spacing: DetailInformationLayout.factSpacing) {
             ForEach(group.previewFacts) { fact in
                 factCell(fact)
             }
@@ -1083,26 +1095,22 @@ private struct DetailInformationFocus: ViewModifier {
     @FocusState private var isFocused: Bool
     @Environment(\.plozzReduceTransparency) private var reduceTransparency
 
+    private var usesOpaqueFocus: Bool {
+        if #available(tvOS 26.0, *) { reduceTransparency } else { true }
+    }
+
     func body(content: Content) -> some View {
         content
             .buttonStyle(.borderless)
-            .environment(\.settingsRowIsFocused, isFocused && reduceTransparency)
+            .environment(\.settingsRowIsFocused, isFocused && usesOpaqueFocus)
             .environment(\.settingsRowFocusForeground, .black)
             .focused($isFocused)
             .background {
-                // Keep the effect out of text fitting, and inside the 24pt row gutters.
-                if reduceTransparency {
-                    if isFocused {
-                        Color.clear
-                            .plozzGlassCard(cornerRadius: DetailInformationLayout.cornerRadius, isFocused: true)
-                            .padding(-8)
-                            .allowsHitTesting(false)
-                    }
-                } else {
+                // Glass must stay outside text fitting; the gutters reserve its full outset.
+                if isFocused {
                     Color.clear
-                        .contentShape(.hoverEffect, RoundedRectangle(cornerRadius: DetailInformationLayout.cornerRadius))
-                        .hoverEffect(.highlight, isEnabled: isFocused)
-                        .padding(-8)
+                        .plozzGlassCard(cornerRadius: DetailInformationLayout.cornerRadius, isFocused: true)
+                        .padding(-DetailInformationLayout.focusPadding)
                         .allowsHitTesting(false)
                 }
             }
@@ -1161,18 +1169,21 @@ private struct DetailSummaryLayout: Layout {
     let hasOverview: Bool
     let ratingsWidth: CGFloat
     let fillsRatingsColumn: Bool
+    let maximumRatingsColumnSpan: Int
     let spacing: CGFloat
 
     private func widths(for width: CGFloat, count: Int) -> [CGFloat] {
         let columnWidth = DetailSectionLayout(
             preferredColumns: preferredColumns, minimumColumnWidth: minimumColumnWidth, spacing: spacing
         ).columnWidth(for: width)
+        let ratingsLimit = columnWidth * CGFloat(maximumRatingsColumnSpan)
+            + spacing * CGFloat(maximumRatingsColumnSpan - 1)
         if count == 2, columnWidth < width {
             let available = width - columnWidth - spacing
-            return [columnWidth, fillsRatingsColumn ? available : min(ratingsWidth, available)]
+            return [columnWidth, min(fillsRatingsColumn ? ratingsLimit : ratingsWidth, available)]
         }
         if count == 1 {
-            return [hasOverview || fillsRatingsColumn ? columnWidth : min(ratingsWidth, width)]
+            return [hasOverview ? columnWidth : min(fillsRatingsColumn ? ratingsLimit : ratingsWidth, width)]
         }
         return [width, fillsRatingsColumn ? width : min(ratingsWidth, width)]
     }

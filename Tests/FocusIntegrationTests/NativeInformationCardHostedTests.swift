@@ -21,7 +21,8 @@ final class NativeInformationCardHostedTests: XCTestCase {
             previous?.makeKeyAndVisible()
         }
         for (count, hasGuidance, longOverview) in [
-            (1, false, false), (1, true, false), (2, true, false), (3, true, false),
+            (1, false, false), (2, false, false), (3, false, false), (5, false, false),
+            (1, true, false), (2, true, false), (3, true, false),
             (4, true, false), (5, true, false), (4, false, true), (0, true, false)
         ] {
             var item = MediaItem(
@@ -66,19 +67,32 @@ final class NativeInformationCardHostedTests: XCTestCase {
             let about = frames[0]
             let ratings = Array(frames.dropFirst())
             let contentWidth = window.bounds.inset(by: window.safeAreaInsets).width - 160
-            XCTAssertEqual(about.width, (contentWidth - 80) / 3, accuracy: 1,
+            let columnWidth = (contentWidth - 2 * DetailInformationLayout.sectionSpacing) / 3
+            XCTAssertEqual(about.width, columnWidth, accuracy: 1,
                            "TV prose must stay within one third-width column.")
             XCTAssertEqual(ratings[0].minY, about.minY, accuracy: 1)
             XCTAssertGreaterThan(ratings[0].minX, about.maxX)
+            let tileCount = count + (hasGuidance ? 1 : 0)
+            let ratingsWidth = tileCount > 1 ? 2 * columnWidth + DetailInformationLayout.sectionSpacing : columnWidth
+            let columns = hasGuidance ? min(4, max(2, count + 1)) : min(4, count > 3 ? (count + 1) / 2 : count)
+            let cellWidth = (ratingsWidth - CGFloat(columns - 1) * DetailInformationLayout.gutter) / CGFloat(columns)
+            for score in ratings.prefix(count) {
+                XCTAssertEqual(score.width, cellWidth, accuracy: 1,
+                               "Scores must use equal flexible columns, not fixed 220pt tiles.")
+            }
+            if tileCount == 1 {
+                XCTAssertEqual(ratings[0].width, columnWidth, accuracy: 1,
+                               "A lone score or guide must occupy only one reading column.")
+            }
+            XCTAssertEqual(try XCTUnwrap(ratings.map(\.maxX).max()), ratings[0].minX + ratingsWidth, accuracy: 1)
             XCTAssertEqual(try XCTUnwrap(ratings.map(\.maxY).max()), about.maxY, accuracy: 1,
                            "About and Ratings must share a bottom edge: scores=\(count), guidance=\(hasGuidance), long=\(longOverview), frames=\(frames)")
             if hasGuidance {
                 let guide = try XCTUnwrap(ratings.last)
-                let columns = min(4, max(2, count + 1))
                 let column = count % columns
                 let span = min(2, columns - column)
-                let rightEdge = ratings[0].minX + CGFloat(column) * 244
-                    + CGFloat(span) * 220 + CGFloat(span - 1) * DetailInformationLayout.gutter
+                let rightEdge = ratings[0].minX + CGFloat(column) * (cellWidth + DetailInformationLayout.gutter)
+                    + CGFloat(span) * cellWidth + CGFloat(span - 1) * DetailInformationLayout.gutter
                 XCTAssertEqual(guide.maxX, rightEdge, accuracy: 1)
                 XCTAssertLessThanOrEqual(guide.width, 560)
                 if count > 0 {
@@ -140,6 +154,44 @@ final class NativeInformationCardHostedTests: XCTestCase {
             attachment.name = "summary-\(count)-scores-guidance-\(hasGuidance)-long-\(longOverview)"
             attachment.lifetime = .keepAlways
             add(attachment)
+        }
+    }
+
+    func testRatingsWithoutOverviewKeepTheirColumnSpan() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
+        defer { window.isHidden = true; window.rootViewController = nil; previous?.makeKeyAndVisible() }
+        for count in [1, 3, 5] {
+            var item = MediaItem(id: "ratings-only", title: "A film", kind: .movie)
+            item.ratings = Array([
+                ExternalRating(source: .rottenTomatoes, value: 98, scale: .percent),
+                .init(source: .rottenTomatoesAudience, value: 88, scale: .percent),
+                .init(source: .imdb, value: 8.3, scale: .outOfTen),
+                .init(source: .tmdb, value: 8.1, scale: .outOfTen),
+                .init(source: .metacritic, value: 73, scale: .outOfHundred)
+            ].prefix(count))
+            window.rootViewController = UIHostingController(rootView:
+                ScrollView { DetailInformationSections(item: item, horizontalInset: 80) }
+                    .environment(\.plozzCardFocusStyle, .system)
+                    .environment(\.themePalette, .dark)
+            )
+            window.makeKeyAndVisible()
+            try await Task.sleep(for: .milliseconds(500))
+            let cards = nativeCards(in: window)
+            XCTAssertEqual(cards.count, count)
+            let frames = try cards.map { card in
+                let container = try XCTUnwrap(card.superview)
+                return container.convert(container.bounds, to: window)
+            }
+            let content = window.bounds.inset(by: window.safeAreaInsets).insetBy(dx: 80, dy: 0)
+            let columnWidth = (content.width - 2 * DetailInformationLayout.sectionSpacing) / 3
+            let width = count == 1 ? columnWidth : 2 * columnWidth + DetailInformationLayout.sectionSpacing
+            XCTAssertEqual(try XCTUnwrap(frames.map(\.minX).min()), content.minX, accuracy: 1)
+            XCTAssertEqual(try XCTUnwrap(frames.map(\.maxX).max()), content.minX + width, accuracy: 1,
+                           "Missing About must not reserve a column or stretch ratings across the whole page.")
         }
     }
 
@@ -277,9 +329,10 @@ final class NativeInformationCardHostedTests: XCTestCase {
         add(attachment)
         var headingYs: [CGFloat] = []
         let contentFrame = window.bounds.inset(by: window.safeAreaInsets).insetBy(dx: 80, dy: 0)
-        let columnWidth = (contentFrame.width - 80) / 3
+        let spacing = DetailInformationLayout.sectionSpacing
+        let columnWidth = (contentFrame.width - 2 * spacing) / 3
         for (index, heading) in ["Details", "Crew", "Playback"].enumerated() {
-            let frame = CGRect(x: contentFrame.minX + CGFloat(index) * (columnWidth + 40),
+            let frame = CGRect(x: contentFrame.minX + CGFloat(index) * (columnWidth + spacing),
                                y: 0, width: columnWidth, height: 1080)
             let crop = try XCTUnwrap(image.cgImage?.cropping(to: frame))
             let request = VNRecognizeTextRequest()

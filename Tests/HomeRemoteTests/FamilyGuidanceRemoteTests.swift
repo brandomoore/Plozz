@@ -83,6 +83,17 @@ final class FamilyGuidanceRemoteTests: XCTestCase {
             let minimumChange = 0.5 * (region.width + region.height) / (region.width * region.height)
             XCTAssertGreaterThan(change, minimumChange, "Logical focus without a visible highlight is not sufficient.")
         }
+        for label in [textFrames[0], textFrames[2]] {
+            let paddingRegions = [
+                CGRect(x: label.minX - 18, y: label.midY - 5, width: 8, height: 10),
+                CGRect(x: label.minX + 12, y: label.minY - 18, width: 30, height: 8)
+            ]
+            for region in paddingRegions {
+                let change = try changedPixelFraction(before, after, frame: region, app: app)
+                XCTAssertGreaterThan(change, 0.5,
+                                     "Glass must provide visible breathing room beyond the previous 8pt outset.")
+            }
+        }
         for (element, frame) in zip(text, textFrames) {
             XCTAssertEqual(element.frame, frame, "Focus must not move or scale the text keyline.")
         }
@@ -91,6 +102,10 @@ final class FamilyGuidanceRemoteTests: XCTestCase {
             let change = try changedPixelFraction(before, after, frame: frame, app: app)
             XCTAssertLessThan(change, 0.02, "The highlight must not paint over \(neighbor.label).")
         }
+        XCTAssertGreaterThanOrEqual(neighbors[0].frame.minY - textFrames[1].maxY, 44,
+                                    "The next fact must leave room for both 22pt focus outsets.")
+        XCTAssertGreaterThanOrEqual(textFrames[2].minY - neighbors[5].frame.maxY, 22,
+                                    "The focus surface must clear its section heading.")
     }
 
     func testUnboxedSectionMoreRetainsFocusContrastAndExpandsOmittedFacts() throws {
@@ -529,7 +544,8 @@ final class FamilyGuidanceRemoteTests: XCTestCase {
         XCTAssertEqual(first.count, second.count)
         guard first.count == second.count, !first.isEmpty else { return 1 }
         let changed = stride(from: 0, to: first.count, by: 4).filter { offset in
-            (0..<3).reduce(0) { $0 + abs(Int(first[offset + $1]) - Int(second[offset + $1])) } > 24
+            // Native glass on a light backdrop can lift each channel by only 4-5 steps.
+            (0..<3).reduce(0) { $0 + abs(Int(first[offset + $1]) - Int(second[offset + $1])) } > 12
         }.count
         return Double(changed) / Double(first.count / 4)
     }

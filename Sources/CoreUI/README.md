@@ -1005,7 +1005,9 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   individual equal-width tiles in one grid. Each icon-and-score pair is centered
   as a unit, with its source centered underneath
   and a consistent gap measured from the mark's visible edge. Rows start at the
-  leading grid line. A lone score keeps a compact tile rather than stretching.
+  leading grid line. On TV, multiple ratings use up to two reading columns;
+  a lone score or guide uses only one. Regular-width mobile ratings fill their
+  allocated reading column. A lone phone score keeps its compact tile.
   Family guidance completes the remaining columns of the final score row, or
   starts the next row when the score row is full. On TV it spans at most two
   score columns, keeping its prose within a reading column. A narrow guidance tile shows
@@ -1014,7 +1016,7 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   The grid's accessibility container stays inside its spoiler-protection wrapper,
   so scores and guidance are hidden from accessibility until the grid is revealed.
   Stacked phone and tablet grids with multiple tiles use the available section width.
-  The number of scores determines the preferred grid width. Four or more scores
+  The number of scores determines the preferred tile count per row. Four or more scores
   balance into two rows when there is no family guidance.
   About keeps its stable line cap when its surface grows to match
   the adjacent ratings group. Missing summary content reserves no column.
@@ -1028,9 +1030,11 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   width rather than filling the page. Compact phones use one column.
   Playback uses quieter type, including a bounded filename preview.
   TV facts use stable borderless native buttons for scroll-by-focus, with no resting
-  fill. A focus-only native highlight sits in a non-sizing underlay, extending
-  8pt into the 24pt row gutters without moving text keylines. Reduce Transparency
-  retains the shared opaque surface and semantic text contrast. Only truncated
+  fill. The shared Liquid Glass surface sits in a focus-only, non-sizing underlay
+  with the original 22pt outset. Facts and columns reserve 56pt gutters, leaving
+  12pt between neighboring focus surfaces without moving text keylines.
+  Reduce Transparency and pre-Liquid-Glass systems retain the shared opaque
+  surface and semantic text contrast. Only truncated
   facts open their group's full values. Full-value rows remain focusable for remote
   scrolling through long lists. Mobile keeps inline expansion targets.
   Section gaps, gutters, and padding come from `DetailInformationLayout`.
