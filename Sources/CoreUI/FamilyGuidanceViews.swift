@@ -41,7 +41,7 @@ struct FamilyGuidanceTile: View {
                             .foregroundStyle(palette.secondaryText)
                     }
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
                 Image(systemName: "chevron.forward")
                     .font(sourceFont)
                     .foregroundStyle(palette.secondaryText)

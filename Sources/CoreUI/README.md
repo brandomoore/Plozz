@@ -1000,12 +1000,15 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   Title-information facts retain the full original classification when visible.
 - **Detail information layout** — TV and mobile share ordered information
   sections. About and Ratings sit beside each other when both have readable space;
-  otherwise they stack. Numeric scores share one surface with evenly spaced value
-  columns, rather than a separate card per source. Scores determine their own column width, and family
-  guidance remains with the scores. Four or more scores balance into two rows when
-  there is no guidance row. Their heights are independent; About keeps a stable
-  line cap and never stretches to match ratings. Missing summary content reserves
-  no column.
+  otherwise they stack. Side-by-side About and Ratings share top and bottom
+  edges; stacked sections keep their natural height. Numeric scores share one
+  surface with evenly spaced value columns, rather than a separate card per
+  source. Icons align their trailing
+  edges to keep the visible icon-to-score gap consistent without shifting score
+  columns. Scores determine their own column width, and family guidance remains
+  with the scores. Four or more scores balance into two rows when there is no
+  guidance row. About keeps its stable line cap when its surface grows to match
+  the adjacent ratings group. Missing summary content reserves no column.
   Section headings sit above full-width fact groups, never in an empty side column.
   Ordered facts use up to four columns, with balanced rows and fewer columns at
   narrower widths or larger mobile text sizes. Playback uses quieter type, and

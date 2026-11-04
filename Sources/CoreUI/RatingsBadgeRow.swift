@@ -345,7 +345,7 @@ struct RatingValue: View {
     var body: some View {
         HStack(spacing: valueSpacing) {
             RatingSourceIcon(rating: rating, size: iconSize)
-                .frame(width: iconSize * 1.85, height: iconRowHeight)
+                .frame(width: iconSize * 1.85, height: iconRowHeight, alignment: .trailing)
             VStack(alignment: .leading, spacing: 4) {
                 Text(rating.displayValue)
                     .font(valueFont)
@@ -428,11 +428,7 @@ struct RatingValue: View {
     }
 
     private var valueSpacing: CGFloat {
-        #if os(tvOS)
-        return PlozzTheme.Spacing.small
-        #else
-        return 6
-        #endif
+        iconSize * 0.5
     }
 }
 

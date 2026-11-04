@@ -9,7 +9,7 @@ import XCTest
 
 @MainActor
 final class NativeInformationCardHostedTests: XCTestCase {
-    func testSummaryUsesOneRatingRowWithoutReservingSynopsisHeight() async throws {
+    func testSummaryAlignsSideBySideSurfacesAndScoreIconGaps() async throws {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
             .first { $0.activationState == .foregroundActive })
         let previous = scene.windows.first(where: \.isKeyWindow)
@@ -20,19 +20,24 @@ final class NativeInformationCardHostedTests: XCTestCase {
             window.rootViewController = nil
             previous?.makeKeyAndVisible()
         }
-        for count in [1, 4] {
+        for (count, hasGuidance, longOverview) in [
+            (1, false, false), (4, true, false), (4, false, true), (0, true, false)
+        ] {
             var item = MediaItem(
                 id: "summary", title: "Slow Horses", kind: .series,
                 overview: "A dysfunctional team of MI5 agents navigate the espionage world's smoke and mirrors to defend the UK from sinister forces.",
                 productionYear: 2022
             )
+            if longOverview {
+                item.overview = String(repeating: item.overview ?? "", count: 8)
+            }
             item.ratings = Array([
                 ExternalRating(source: .rottenTomatoes, value: 98, scale: .percent),
                 .init(source: .rottenTomatoesAudience, value: 88, scale: .percent),
                 .init(source: .imdb, value: 8.3, scale: .outOfTen),
                 .init(source: .tmdb, value: 8.1, scale: .outOfTen)
             ].prefix(count))
-            if count == 4 {
+            if hasGuidance {
                 item.familyGuidance = .init(
                     recommendedAge: 16, qualityRating: nil,
                     overview: "Smart espionage thriller has language, violence, drinking."
@@ -48,9 +53,10 @@ final class NativeInformationCardHostedTests: XCTestCase {
             window.makeKeyAndVisible()
             try await Task.sleep(for: .milliseconds(500))
             let cards = nativeCards(in: window)
-            XCTAssertEqual(cards.count, count == 4 ? 4 : 3,
+            let expectedCount = count > 0 && hasGuidance ? 4 : 3
+            XCTAssertEqual(cards.count, expectedCount,
                            "Numeric scores share one surface; guidance keeps its own action.")
-            guard cards.count == (count == 4 ? 4 : 3) else { continue }
+            guard cards.count == expectedCount else { continue }
             let frames = try cards.map { card in
                 let container = try XCTUnwrap(card.superview)
                 return container.convert(container.bounds, to: window)
@@ -59,10 +65,9 @@ final class NativeInformationCardHostedTests: XCTestCase {
             let scores = frames[1]
             XCTAssertEqual(scores.minY, about.minY, accuracy: 1)
             XCTAssertGreaterThan(scores.minX, about.maxX)
-            XCTAssertLessThan(scores.height, 160, "Scores must occupy one compact row.")
-            if count == 4 {
-                XCTAssertLessThanOrEqual(frames[2].maxY - about.maxY, 100,
-                                         "Family guidance must not leave a large empty reservation under a short synopsis.")
+            XCTAssertEqual(frames[expectedCount - 2].maxY, about.maxY, accuracy: 1,
+                           "About and Ratings must share a bottom edge: scores=\(count), guidance=\(hasGuidance), long=\(longOverview), frames=\(frames)")
+            if count == 4 && hasGuidance {
                 let request = VNRecognizeTextRequest()
                 request.recognitionLevel = .accurate
                 try VNImageRequestHandler(cgImage: XCTUnwrap(DetailTransitionSnapshot.image(of: window).cgImage))
@@ -83,6 +88,20 @@ final class NativeInformationCardHostedTests: XCTestCase {
                 for (index, value) in paintedValues.enumerated() {
                     XCTAssertFalse(value.isNull)
                     XCTAssertEqual(value.midY, paintedValues[0].midY, accuracy: 3)
+                    var iconRight: Int?
+                    for y in Int(scores.minY + 24)..<Int(scores.maxY - 24) {
+                        for x in Int(value.minX - 100)..<Int(value.minX) {
+                            let offset = (y * 1920 + x) * 4
+                            let channels = pixels[offset..<(offset + 3)]
+                            if let high = channels.max(), let low = channels.min(),
+                               high > 160, high - low > 45 {
+                                iconRight = max(iconRight ?? x, x)
+                            }
+                        }
+                    }
+                    let gap = value.minX - CGFloat(try XCTUnwrap(iconRight) + 1)
+                    XCTAssertEqual(gap, 16, accuracy: 2,
+                                   "Visible mark edges, not their centered slots, determine the score gap.")
                     if index > 0 {
                         let step = (scores.width - 2 * DetailInformationLayout.cellPadding
                                     + DetailInformationLayout.gutter) / 4
@@ -92,10 +111,39 @@ final class NativeInformationCardHostedTests: XCTestCase {
                 }
             }
             let attachment = XCTAttachment(image: DetailTransitionSnapshot.image(of: window))
-            attachment.name = "summary-\(count)-scores"
+            attachment.name = "summary-\(count)-scores-guidance-\(hasGuidance)-long-\(longOverview)"
             attachment.lifetime = .keepAlways
             add(attachment)
         }
+    }
+
+    func testStackedSummaryKeepsIntrinsicCardHeights() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 720, height: 1080)
+        var item = MediaItem(id: "stacked-summary", title: "A title", kind: .movie,
+                             overview: String(repeating: "A story about two friends travelling together. ", count: 8))
+        item.ratings = [.init(source: .tmdb, value: 8.1, scale: .outOfTen)]
+        window.rootViewController = UIHostingController(rootView:
+            ScrollView { DetailInformationSections(item: item, horizontalInset: 40) }
+                .environment(\.plozzCardFocusStyle, .system)
+                .environment(\.themePalette, .dark)
+        )
+        defer { window.isHidden = true; window.rootViewController = nil; previous?.makeKeyAndVisible() }
+        window.makeKeyAndVisible()
+        try await Task.sleep(for: .milliseconds(500))
+        let cards = nativeCards(in: window)
+        XCTAssertEqual(cards.count, 2)
+        guard cards.count == 2 else { return }
+        let frames = try cards.map { card in
+            let container = try XCTUnwrap(card.superview)
+            return container.convert(container.bounds, to: window)
+        }
+        XCTAssertGreaterThan(frames[1].minY, frames[0].maxY)
+        XCTAssertLessThan(frames[1].height, 160, "A stacked score must not inherit the synopsis height.")
+        XCTAssertGreaterThan(frames[0].height, frames[1].height + 40)
     }
 
     func testFocusedAboutKeepsReadableTextInLightAppearance() async throws {

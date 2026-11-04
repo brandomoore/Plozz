@@ -219,6 +219,7 @@ public struct DetailInformationSections: View {
                             RatingValue(rating: rating)
                         }
                     }
+                    .frame(maxHeight: .infinity)
                     .padding(DetailInformationLayout.cellPadding)
                     .plozzFocusableCard(cornerRadius: DetailInformationLayout.cornerRadius)
                     .accessibilityIdentifier("detail-rating-scores")
@@ -346,7 +347,7 @@ public struct DetailInformationSections: View {
                     aboutOverview(overview)
                 }
             }
-            .frame(maxWidth: .infinity, alignment: .topLeading)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .onPreferenceChange(OverviewFullHeightKey.self) { overviewFullHeight = $0 }
             .onPreferenceChange(OverviewVisibleHeightKey.self) { overviewVisibleHeight = $0 }
             .padding(cardPadding)
@@ -1076,7 +1077,7 @@ private struct DetailInformationGroup: View {
     }
 }
 
-/// Scores occupy only their useful width; neither side stretches the other's height.
+/// Side-by-side sections share a height; stacked sections retain their intrinsic height.
 private struct DetailSummaryLayout: Layout {
     let minimumOverviewWidth: CGFloat
     let ratingsWidth: CGFloat
@@ -1094,7 +1095,7 @@ private struct DetailSummaryLayout: Layout {
         let widths = widths(for: width, count: subviews.count)
         let heights = zip(subviews, widths).map { $0.sizeThatFits(.init(width: $1, height: nil)).height }
         let horizontal = subviews.count == 2 && widths[0] < width
-        let height = horizontal ? max(heights[0], heights[1])
+        let height = horizontal ? ceil(max(heights[0], heights[1]))
             : heights.reduce(0, +) + spacing * CGFloat(max(0, subviews.count - 1))
         return CGSize(width: width, height: height)
     }
@@ -1106,7 +1107,9 @@ private struct DetailSummaryLayout: Layout {
         for pair in zip(subviews, widths) {
             let (subview, width) = pair
             let size = subview.sizeThatFits(.init(width: width, height: nil))
-            subview.place(at: origin, proposal: .init(width: width, height: size.height))
+            subview.place(at: origin, proposal: .init(
+                width: width, height: horizontal ? bounds.height : size.height
+            ))
             if horizontal {
                 origin.x += width + spacing
             } else {
