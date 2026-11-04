@@ -84,11 +84,14 @@ after an eviction or storage failure as proof an action never occurred.
 
 ## Cached Home cards
 
-Normal Live TV use publishes a small, profile-scoped **local** Home snapshot:
-up to three recently watched channels in Continue Watching and an eight-channel,
-favorites-first Live TV row. Existing Home row controls determine their visibility
-and order on Apple TV, iPhone and iPad. The selected cards persist in a separate
-device-local cache file (at most 64 KiB, three recent cards and eight row cards).
+Normal Live TV use publishes a small, profile-scoped **local** Home snapshot for
+an eight-channel, favorites-first Live TV row. Home never inserts live channels
+into Continue Watching or creates that row from recent channel history, including
+Classic and Showcase layouts. Recent channels remain available on the Live TV page
+and may appear in Home's dedicated Live TV row. Existing Home row controls determine
+that row's visibility and order on Apple TV, iPhone and iPad. The selected cards
+persist in a separate device-local cache file (at most 64 KiB, three recent cards
+and eight row cards).
 Cold launches hydrate only that file; opening Home does not warm the lineup.
 Absent, corrupt, oversized or unsupported cache files are treated as cache misses.
 There is no portable-state initialization or sync registration for this cache.

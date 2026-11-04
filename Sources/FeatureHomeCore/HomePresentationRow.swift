@@ -79,10 +79,6 @@ public struct HomePresentationRow: Identifiable, Equatable, Sendable {
             return Self(choice: choice, source: .home(row))
         }
         var available = rows.filter { $0.kind != .libraries }.compactMap(entry)
-        if !liveTV.recentChannels.isEmpty, !rows.contains(where: { $0.kind == .continueWatching }),
-           let recent = entry(HomeRow(kind: .continueWatching)) {
-            available.insert(recent, at: 0)
-        }
         if !liveTV.channels.isEmpty, let choice = shared.first(where: { $0.id == .liveTV }) {
             available.append(Self(choice: choice, source: .liveTV(liveTV.channels)))
         }
@@ -178,7 +174,6 @@ public struct HomePresentationRow: Identifiable, Equatable, Sendable {
                 switch existing.source {
                 case let .home(row):
                     if !row.items.isEmpty || !row.libraries.isEmpty { continue }
-                    if row.kind == .continueWatching, !liveTV.recentChannels.isEmpty { continue }
                 case let .library(row):
                     if !row.section.items.isEmpty || row.isLoading { continue }
                     browseItem = row.browseItem

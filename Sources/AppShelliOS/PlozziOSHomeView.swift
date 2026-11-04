@@ -2690,16 +2690,12 @@ private struct PlozziOSHomeRowView: View {
     @Environment(\.plozzMetrics) private var metrics
     @Environment(\.plozzCardStyle) private var artworkStyle
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
-    @Environment(\.homeLiveTVSnapshot) private var liveTV
     let row: HomeRow
     let appModel: PlozziOSAppModel
     let viewModel: HomeViewModel
     let watchlistIntentRevision: Int
     let watchlistLoadingPlaceholderCount: Int
     let onBrowse: (() -> Void)?
-    private var liveChannels: [HomeLiveTVChannel] {
-        row.kind == .continueWatching ? liveTV.recentChannels : []
-    }
 
     private var cardStyle: PosterCardView.Style {
         if row.kind == .continueWatching {
@@ -2710,7 +2706,7 @@ private struct PlozziOSHomeRowView: View {
 
     var body: some View {
         Group {
-            if let failure = row.failure, row.items.isEmpty, row.libraries.isEmpty, liveChannels.isEmpty {
+            if let failure = row.failure, row.items.isEmpty, row.libraries.isEmpty {
                 PlozziOSHomeRowFailure(
                     title: Text(row.title), error: failure, viewModel: viewModel,
                     report: row.kind == .continueWatching
@@ -2720,7 +2716,7 @@ private struct PlozziOSHomeRowView: View {
                 PlozziOSMediaSection(title: Text(row.title)) {
                     libraryRow
                 }
-            } else if row.items.isEmpty, liveChannels.isEmpty {
+            } else if row.items.isEmpty {
                 // A row that exists but hasn't resolved its items yet: show the
                 // placeholder rail rather than a title over empty space. Same
                 // geometry as the real rail, so the cards swap in without the
@@ -2760,7 +2756,6 @@ private struct PlozziOSHomeRowView: View {
                     // the user has turned that off in Customize Home.
                     showsSeriesArtwork: row.kind == .continueWatching
                         && appModel.settings.homeVisibility.continueWatchingUsesSeriesArtwork,
-                    liveChannels: liveChannels,
                     onBrowse: row.items.isEmpty ? nil : onBrowse,
                     onNavigationInteraction:
                         viewModel.noteHomeNavigationInteraction

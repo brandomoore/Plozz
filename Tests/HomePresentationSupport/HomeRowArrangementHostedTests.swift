@@ -8,6 +8,7 @@ import MetadataKit
 @testable import FeatureHome
 #elseif os(iOS)
 @testable import AppShelliOS
+import FeatureAuth
 #endif
 @testable import FeatureSettings
 import Observation
@@ -15,6 +16,39 @@ import SwiftUI
 import UIKit
 import Vision
 import XCTest
+
+private struct ContinueWatchingChannelsProvider: MediaProvider {
+    let kind: ProviderKind = .jellyfin
+    let account = Account(
+        id: "continue-watching-fixture",
+        server: MediaServer(
+            id: "server", name: "Fixture",
+            baseURL: URL(string: "https://fixture.invalid")!, provider: .jellyfin
+        ),
+        userID: "viewer", userName: "Viewer", deviceID: "fixture"
+    )
+    var session: UserSession { account.session(token: "fixture") }
+
+    func libraries() async throws -> [MediaLibrary] {
+        [MediaLibrary(id: "movies", title: "Movies", kind: .movie)]
+    }
+    func continueWatching(limit: Int) async throws -> [MediaItem] {
+        [MediaItem(
+            id: "resume-movie", title: "Resume Movie", kind: .movie,
+            resumePosition: 180, allowsTitleBasedMetadataMatching: false
+        )]
+    }
+    func latest(limit: Int) async throws -> [MediaItem] { [] }
+    func items(in containerID: String, kind: MediaItemKind, page: PageRequest) async throws -> MediaPage {
+        MediaPage(items: [], startIndex: 0, totalCount: 0)
+    }
+    func item(id: String) async throws -> MediaItem { throw AppError.notFound }
+    func children(of itemID: String) async throws -> [MediaItem] { [] }
+    func search(query: String, limit: Int) async throws -> [MediaItem] { [] }
+    func playbackInfo(for itemID: String) async throws -> PlaybackRequest { throw AppError.notFound }
+    func reportPlayback(_ progress: PlaybackProgress, event: PlaybackEvent) async throws {}
+    func imageURL(itemID: String, kind: ImageKind, maxWidth: Int?) -> URL? { nil }
+}
 
 #if os(tvOS)
 @MainActor
@@ -555,6 +589,88 @@ final class HomeRowsFocusHost: UIHostingController<AnyView> {
 }
 @MainActor
 final class HomeRowArrangementHostedTests: XCTestCase {
+    func testHomeContinueWatchingDoesNotRenderRecentLiveChannels() async throws {
+        let suite = "HomeContinueWatchingChannels.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let provider = ContinueWatchingChannelsProvider()
+        let visibility = HomeLibraryVisibilityModel(store: HomeLibraryVisibilityStore(defaults: defaults))
+        visibility.applyRows(
+            .init(
+                enabled: [.global(.continueWatching)],
+                disabled: HomeRowChoice.shared.map(\.id).filter { $0 != .global(.continueWatching) }
+            ),
+            choices: HomeRowChoice.shared
+        )
+        let model = HomeViewModel(
+            accounts: [.init(account: provider.account, provider: provider)],
+            profileNamespace: suite, layoutStore: InMemoryHomeLayoutStore(),
+            currentVisibility: { visibility.visibility }
+        )
+        await model.load()
+        XCTAssertEqual(model.state.value?.continueWatching.map(\.id), ["resume-movie"])
+        let channel = HomeLiveTVChannel(
+            route: .init(
+                profileID: suite, channelID: "news", sourceID: "playlist",
+                sourceAuthorizationID: "approval", serverAuthorizationID: "servers"
+            ), name: "NEWS CHANNEL", sourceName: "Playlist", number: 1
+        )
+        let liveTV = HomeLiveTVSnapshot(recentChannels: [channel], channels: [channel])
+        #if os(tvOS)
+        for style: HeroStyle in [.carousel, .followsFocus] {
+            let hero = HeroSettingsModel(store: InMemoryHeroSettingsStore())
+            hero.settings.isEnabled = false
+            hero.settings.style = style
+            try await withWindow {
+                HomeView(
+                    viewModel: model, visibility: visibility, heroSettings: hero,
+                    heroBackground: HeroBackgroundSettingsModel(store: InMemoryHeroBackgroundSettingsStore()),
+                    heroTrailerController: HeroTrailerController(), heroIsFrontmost: true,
+                    heroRuntime: HomeHeroRuntimeState(),
+                    onSelectItem: { _ in }, onPlayItem: { _ in },
+                    onSelectLibrary: { _ in }, onBrowse: { _ in }
+                )
+                .environment(\.homeLiveTVSnapshot, liveTV)
+            } inspect: { window in
+                let text = try await self.capture(window, name: "Continue Watching without channels \(style)")
+                XCTAssertTrue(text.contains { $0.0.localizedCaseInsensitiveContains("Continue Watching") })
+                XCTAssertFalse(text.contains { $0.0.localizedCaseInsensitiveContains("NEWS") })
+            }
+        }
+        #elseif os(iOS)
+        let app = PlozziOSAppModel(
+            accountStore: AccountStore(secureStore: InMemorySecureStore()),
+            profileStore: ProfileStore(defaults: defaults)
+        )
+        let profile = app.profiles.add(name: "Fixture", isAwaitingSetup: false)
+        app.selectProfile(profile.id)
+        defer { app.profiles.remove(profile.id) }
+        app.settings.hero.settings.isEnabled = false
+        app.settings.homeVisibility.applyRows(
+            .init(
+                enabled: [.global(.continueWatching)],
+                disabled: HomeRowChoice.shared.map(\.id).filter { $0 != .global(.continueWatching) }
+            ),
+            choices: HomeRowChoice.shared
+        )
+        for width: CGFloat in [390, 1024] {
+            try await withWindow(size: CGSize(width: width, height: 844)) {
+                NavigationStack {
+                    PlozziOSHomeView(appModel: app, viewModel: model, onAddServer: {}, onShowSettings: {})
+                }
+                .environment(app)
+                .environment(HeroTrailerController())
+                .environment(\.horizontalSizeClass, width < 600 ? .compact : .regular)
+                .environment(\.homeLiveTVSnapshot, liveTV)
+            } inspect: { window in
+                let text = try await self.capture(window, name: "Continue Watching without channels \(width)")
+                XCTAssertTrue(text.contains { $0.0.localizedCaseInsensitiveContains("Continue Watching") })
+                XCTAssertFalse(text.contains { $0.0.localizedCaseInsensitiveContains("NEWS") })
+            }
+        }
+        #endif
+    }
+
     func testHomeRowBrowserShowsSourceTitleAndFullFixedShelf() async throws {
         let items = (0..<35).map {
             MediaItem(id: "\($0)", title: String(format: "Shelf title %02d", $0), kind: .movie)
