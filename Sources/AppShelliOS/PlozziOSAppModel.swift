@@ -572,6 +572,9 @@ final class PlozziOSAppModel {
     @ObservationIgnored private var queuedLibrarySelectionBeginsFirstRun = false
     @ObservationIgnored private var postAddPresentationGeneration: UInt64 = 0
     @ObservationIgnored private var watchReconcilers: [String: WatchStateReconciler] = [:]
+    @ObservationIgnored private lazy var watchOutboxConnectivity = WatchOutboxConnectivity { [weak self] in
+        self?.retryWatchOutboxIfAllowed()
+    }
     @ObservationIgnored var universalWatchlistReconciler: WatchlistReconciler?
     @ObservationIgnored var universalWatchlistMutationStore: DurableWatchlistMutationStore?
     @ObservationIgnored var universalWatchlistNativeView: NativeWatchlistView = .empty
@@ -607,6 +610,7 @@ final class PlozziOSAppModel {
     )
 
     private var watchReconciler: WatchStateReconciler {
+        _ = watchOutboxConnectivity
         let profileID = profiles.activeProfileID
         if let existing = watchReconcilers[profileID] {
             return existing
@@ -1085,6 +1089,7 @@ final class PlozziOSAppModel {
         sceneSessionIDs = sceneSessionIDs.filter { connected.contains($0.key) }
         if let transition = applicationLifecycle.replaceScenes(scenes) {
             applicationIsActive = transition.isActive
+            if transition.isActive { retryWatchOutboxIfAllowed() }
         }
     }
 
@@ -2078,6 +2083,12 @@ final class PlozziOSAppModel {
         Task { await reconciler.drain() }
     }
 
+    func retryWatchOutboxIfAllowed() {
+        guard applicationIsActive, isActiveProfileAuthorized,
+              watchOutboxConnectivity.isConnected else { return }
+        drainWatchOutbox()
+    }
+
     func pendingWatchMutations() async -> [WatchMutation] {
         let profileID = profiles.activeProfileID
         let pending = await watchReconciler.snapshot().pending
@@ -2239,6 +2250,14 @@ final class PlozziOSAppModel {
                         } catch { return }
                     }
                     refresh.post()
+                }
+            },
+            automaticRetryAllowed: { [weak self] in
+                await MainActor.run {
+                    guard let self else { return false }
+                    return self.applicationIsActive && self.isActiveProfileAuthorized
+                        && self.profiles.activeProfileID == profileID
+                        && self.watchOutboxConnectivity.isConnected
                 }
             }
         )

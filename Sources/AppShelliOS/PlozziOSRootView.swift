@@ -790,6 +790,12 @@ private struct PlozziOSScenePhaseEffects: View {
                     appModel.syncCloudOnForeground()
                 }
             }
+            .onChange(of: appModel.isActiveProfileAuthorized) { _, authorized in
+                if authorized { appModel.retryWatchOutboxIfAllowed() }
+            }
+            .onChange(of: appModel.profiles.activeProfileID) { _, _ in
+                appModel.retryWatchOutboxIfAllowed()
+            }
     }
 }
 

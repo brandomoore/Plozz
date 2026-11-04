@@ -135,8 +135,13 @@ readable and retain their original retry-key derivation.
 
 Failed server targets in the watch outbox have independent persisted retry
 deadlines: 30 seconds initially, doubling to a 15-minute maximum, or longer when
-the server explicitly requests it. Existing drain triggers retry once the deadline
-passes; no polling timer is added. Coalescing preserves the cooldown while keeping
+the server explicitly requests it. Both app shells arm one cancellation-safe wake
+for pending work, retry when connectivity returns, and resume delivery on foreground
+or profile admission. Automatic attempts require the active authorized profile and
+a connected network; suspension or force-quit cannot guarantee background delivery.
+The durable queue resumes on the next launch. Empty queues and live-session-only
+targets do not poll. Tracker/expansion work without a target deadline is paced at
+30 seconds. Coalescing preserves the cooldown while keeping
 the latest desired state, and relaunching cannot reset it. Successful destinations
 and tracker mirrors are not held behind a failed server. Cancellation is not a
 server failure, and authorization is still checked before any retry. Legacy
