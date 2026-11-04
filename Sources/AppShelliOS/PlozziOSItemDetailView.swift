@@ -4035,15 +4035,20 @@ private struct PlozziOSCastSection: View {
     /// The server this title came from, and therefore whose person ids its cast
     /// list holds.
     let sourceAccountID: String?
+    @State private var showsFullCast = false
+    @State private var selectedPerson: MediaPerson?
 
     var body: some View {
-        PlozziOSMediaSection(title: Text("Cast"), horizontalInset: pageInset) {
+        PlozziOSMediaSection(
+            title: Text("Cast"), horizontalInset: pageInset,
+            onMore: people.count > DetailPreviewLimits.cast ? { showsFullCast = true } : nil
+        ) {
             ScrollView(.horizontal) {
                 LazyHStack(
                     alignment: .top,
                     spacing: PlozziOSMediaRailLayout.visibleGap(metrics: metrics)
                 ) {
-                    ForEach(people.prefix(20)) { person in
+                    ForEach(people.prefix(DetailPreviewLimits.cast)) { person in
                         Button {
                             openPerson?(person, sourceAccountID)
                         } label: {
@@ -4108,6 +4113,26 @@ private struct PlozziOSCastSection: View {
         // balanced breathing room between the hero and the info band — and the gap
         // under the (variably wrapped) names mirrors the gap over the About header.
         .padding(.vertical, verticalPadding)
+        .onChange(of: sourceAccountID) { _, _ in
+            selectedPerson = nil
+            showsFullCast = false
+        }
+        .onChange(of: people) { _, _ in
+            selectedPerson = nil
+            showsFullCast = false
+        }
+        .onDisappear { selectedPerson = nil }
+        .plozzSheet(isPresented: $showsFullCast, onDismiss: {
+            if let person = selectedPerson {
+                selectedPerson = nil
+                openPerson?(person, sourceAccountID)
+            }
+        }) {
+            DetailCastList(people: people, onSelect: openPerson == nil ? nil : { person in
+                selectedPerson = person
+                showsFullCast = false
+            })
+        }
     }
 
     private var verticalPadding: CGFloat {

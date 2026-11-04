@@ -326,23 +326,21 @@ public struct RatingTile: View {
     }
 
     public var body: some View {
-        VStack(spacing: valueSpacing) {
+        HStack(spacing: valueSpacing) {
             RatingSourceIcon(rating: rating, size: iconSize)
-                .frame(height: iconRowHeight)
-            Text(rating.displayValue)
-                .font(valueFont)
-                .monospacedDigit()
-                .foregroundStyle(palette.primaryText)
-                // Never wrap the score (e.g. "95%" splitting to "95⏎%") when a tile
-                // is narrow; shrink to fit instead.
-                .lineLimit(1)
-                .minimumScaleFactor(0.6)
-            subtitle
-                .frame(height: subtitleRowHeight)
+                .frame(width: iconRowHeight, height: iconRowHeight)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(rating.displayValue)
+                    .font(valueFont)
+                    .monospacedDigit()
+                    .foregroundStyle(palette.primaryText)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
+                subtitle
+                    .frame(height: subtitleRowHeight)
+            }
         }
-        // Fill and center vertically, so when a tile is stretched to match a taller
-        // About card its icon/score/subtitle stay centered rather than pinned top.
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, verticalPadding)
         .padding(.horizontal, horizontalPadding)
         // Focusable on tvOS (D-pad reachable with the shared glass lift, matching
@@ -384,11 +382,11 @@ public struct RatingTile: View {
 
     private var valueFont: Font {
         #if os(tvOS)
-        return .system(size: 40, weight: .semibold)
+        return .system(size: 32, weight: .semibold)
         #else
         return horizontalSizeClass == .compact
             ? .title2.weight(.semibold)
-            : .system(size: 30, weight: .semibold)
+            : .system(size: 24, weight: .semibold)
         #endif
     }
 
@@ -412,9 +410,9 @@ public struct RatingTile: View {
 
     private var verticalPadding: CGFloat {
         #if os(tvOS)
-        return 26
+        return 16
         #else
-        return horizontalSizeClass == .compact ? 16 : 20
+        return 12
         #endif
     }
 

@@ -23,33 +23,33 @@ struct FamilyGuidanceTile: View {
     @Environment(\.familyGuidanceProvider) private var provider
     @Environment(\.themePalette) private var palette
     #if os(iOS)
-    @ScaledMetric(relativeTo: .largeTitle) private var scaledAgeSize: CGFloat = 48
+    @ScaledMetric(relativeTo: .title2) private var scaledAgeSize: CGFloat = 30
     #endif
 
     var body: some View {
         Button { isPresented = true } label: {
-            VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .center, spacing: 16) {
                 FamilyGuidanceAge(age: summary.recommendedAge, size: ageSize)
-                HStack(spacing: 8) {
+                VStack(alignment: .leading, spacing: 6) {
                     FamilyGuidanceBrand(compact: true)
                         .font(sourceFont)
-                    Spacer(minLength: 0)
-                    Image(systemName: "chevron.forward")
-                        .font(sourceFont)
-                        .foregroundStyle(palette.secondaryText)
-                        .accessibilityHidden(true)
+                    if let overview = summary.overview {
+                        Text(overview)
+                            .font(summaryFont)
+                            .lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .foregroundStyle(palette.secondaryText)
+                    }
                 }
-                if let overview = summary.overview {
-                    Text(overview)
-                        .font(summaryFont)
-                        .lineLimit(3)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .foregroundStyle(palette.secondaryText)
-                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                Image(systemName: "chevron.forward")
+                    .font(sourceFont)
+                    .foregroundStyle(palette.secondaryText)
+                    .accessibilityHidden(true)
             }
             .foregroundStyle(palette.primaryText)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .padding(24)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(16)
         }
         .plozzCardButton(cornerRadius: 18, focusedScale: PlozzTheme.Metrics.readOnlyFocusedCardScale)
         .accessibilityIdentifier("family-guidance-tile")
@@ -67,7 +67,7 @@ struct FamilyGuidanceTile: View {
 
     private var ageSize: CGFloat {
         #if os(tvOS)
-        76
+        38
         #else
         scaledAgeSize
         #endif

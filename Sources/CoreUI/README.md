@@ -996,6 +996,16 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   review scores, or parental restrictions; copy it across native hosting boundaries.
   Featured cards use compact visual metadata and full accessible classifications.
   Title-information facts retain the full original classification when visible.
+- **Detail information layout** — TV and mobile share ordered, full-width
+  information sections with adaptive fact columns on common keylines. About
+  keeps a stable line cap and reading width; scores never determine its height.
+  Numeric ratings use compact rows, with family guidance in its own wider row.
+  Missing sections leave no reserved grid cells. Cast previews show 12 people
+  on both platforms; More opens the complete supplied cast and keeps person
+  navigation bound to the owning source. Information previews retain all source
+  values, cap lists and long text, and open the complete section through More.
+  Required availability attribution stays visible even when release facts are
+  capped. These presentation limits do not change provider metadata precedence.
 - **Detail information focus** — the tvOS About/Ratings/Information band uses
   native focus with at most 2% growth and 6pt of expansion per edge, leaving
   clearance in its 18pt gutters. Focused read-only cards and card buttons draw

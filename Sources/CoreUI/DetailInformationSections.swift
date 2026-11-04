@@ -32,22 +32,12 @@ public struct DetailInformationSections: View {
     private let overviewAlreadyShown: String?
 
     @State private var showsFullOverview = false
+    @State private var expandedGroup: InformationGroup?
+    @State private var truncatedFacts = Set<String>()
     @State private var overviewCardHeight: CGFloat = 0
     @State private var overviewFullHeight: CGFloat = 0
     @State private var overviewVisibleHeight: CGFloat = 0
-    /// Height the About card would take at its *base* line cap, measured from a
-    /// hidden copy. The ratings column is floored at this, so the two columns end
-    /// on the same line. Measured at the base cap (never the adjusted one) so it
-    /// cannot feed back into the cap that is derived from it.
-    @State private var aboutBaseCardHeight: CGFloat = 0
-    /// The height the ratings column actually settled on. When the tiles wrap this
-    /// exceeds the About card, and About grows — and shows more text — to match.
-    @State private var ratingsBlockHeight: CGFloat = 0
-    /// One line of body text, so surplus height converts to a line count rather
-    /// than a guess. Measured, so it tracks Dynamic Type.
-    @State private var bodyLineHeight: CGFloat = 0
     @Environment(\.themePalette) private var palette
-    @Environment(\.plozzCardFocusStyle) private var cardFocusStyle
     @Environment(\.gradientBackgroundsEnabled) private var gradientEnabled
     @Environment(\.plozzShowsContentRatings) private var showsContentRatings
     @Environment(\.plozzReduceTransparency) private var reduceTransparency
@@ -71,25 +61,57 @@ public struct DetailInformationSections: View {
     }
 
     public var body: some View {
-        if let url = item.metadataProvenance.wetrakrWatchlistURL {
-            WetrakrWatchlistLink(url: url)
-                .padding(.horizontal, horizontalInset)
+        Group {
+            if let url = item.metadataProvenance.wetrakrWatchlistURL {
+                WetrakrWatchlistLink(url: url)
+                    .padding(.horizontal, horizontalInset)
+            }
+            if hasContent {
+                sectionBody
+                    .environment(\.plozzNativeInformationFocus, true)
+                    .plozzAdaptiveCardSurface()
+                    .padding(.horizontal, horizontalInset)
+                    .padding(.top, bandTopPadding)
+                    .padding(.bottom, bandBottomPadding)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background {
+                        palette.informationSurface
+                            .opacity(gradientEnabled && !reduceTransparency ? Self.bandFillOpacity : 1)
+                            .padding(.horizontal, -Self.backgroundBleed)
+                            .padding(.bottom, -Self.backgroundBleed)
+                    }
+            }
         }
-        if hasContent {
-            sectionBody
-                .environment(\.plozzNativeInformationFocus, true)
-                .plozzAdaptiveCardSurface()
-                .padding(.horizontal, horizontalInset)
-                .padding(.top, bandTopPadding)
-                .padding(.bottom, bandBottomPadding)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background {
-                    palette.informationSurface
-                        .opacity(gradientEnabled && !reduceTransparency ? Self.bandFillOpacity : 1)
-                        // Paint past scroll-view insets without changing the content layout.
-                        .padding(.horizontal, -Self.backgroundBleed)
-                        .padding(.bottom, -Self.backgroundBleed)
+        .plozzSheet(item: $expandedGroup) { group in
+            DetailMoreSheet(title: Text(group.title)) {
+                List {
+                    if let current = informationGroups.first(where: { $0.id == group.id }) {
+                        ForEach(current.facts) { fact in
+                            Section {
+                                if let values = fact.listValues {
+                                    ForEach(values, id: \.self) { value in
+                                        Text(value).fixedSize(horizontal: false, vertical: true)
+                                    }
+                                } else {
+                                    Text(fact.value).fixedSize(horizontal: false, vertical: true)
+                                }
+                            } header: {
+                                Text(fact.label)
+                            }
+                        }
+                    }
                 }
+            }
+        }
+        .onChange(of: [item.id, item.sourceAccountID, selectedSource?.accountID]) { _, _ in
+            showsFullOverview = false
+            expandedGroup = nil
+            truncatedFacts = []
+        }
+        .onChange(of: sectionIDs) { _, _ in
+            if let expandedGroup, !informationGroups.contains(where: { $0.id == expandedGroup.id }) {
+                self.expandedGroup = nil
+            }
         }
     }
 
@@ -100,17 +122,34 @@ public struct DetailInformationSections: View {
     /// overshoot to cover up.
     private static let backgroundBleed: CGFloat = 400
 
-    @ViewBuilder
     private var sectionBody: some View {
-        #if os(tvOS)
-        proportionalGrid
-        #else
-        if horizontalSizeClass == .regular {
-            proportionalGrid
-        } else {
-            iPhoneStack
+        VStack(alignment: .leading, spacing: sectionSpacing) {
+            ForEach(sectionIDs, id: \.self) { id in
+                if id == "about" {
+                    detailSection(title: LocalizedStringResource(
+                        "mediaDetail.section.about",
+                        defaultValue: "About",
+                        comment: "Header of the synopsis section on a movie or series detail page. A noun meaning 'about this title', not the Settings > About page."
+                    )) {
+                        aboutContent
+                            .frame(maxWidth: overviewReadingWidth, alignment: .leading)
+                    }
+                } else if id == "ratings" {
+                    detailSection(title: "Ratings") { ratingsTiles }
+                } else if let group = informationGroups.first(where: { $0.id == id }) {
+                    informationGroup(group)
+                }
+            }
         }
-        #endif
+    }
+
+    var sectionIDs: [String] {
+        var result: [String] = []
+        if hasAbout { result.append("about") }
+        if informationGroups.contains(where: { $0.id == "details" }) { result.append("details") }
+        if hasRatings { result.append("ratings") }
+        result += informationGroups.filter { $0.id != "details" }.map(\.id)
+        return result
     }
 
     private var bandTopPadding: CGFloat {
@@ -131,120 +170,10 @@ public struct DetailInformationSections: View {
 
     #if !os(tvOS)
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
-
-    /// iPhone (compact width): a simple vertical stack. About, Ratings and each
-    /// Information group stack full-width with their own large headers.
-    private var iPhoneStack: some View {
-        VStack(alignment: .leading, spacing: sectionSpacing) {
-            if hasAbout {
-                detailSection(title: LocalizedStringResource(
-                    "mediaDetail.section.about",
-                    defaultValue: "About",
-                    comment: "Header of the synopsis section on a movie or series detail page. A noun meaning 'about this title', not the Settings > About page."
-                )) { aboutContent }
-            }
-            if hasRatings {
-                detailSection(title: "Ratings") { ratingsTiles }
-            }
-            if !informationGroups.isEmpty {
-                informationGrid
-            }
-        }
-    }
     #endif
-
-    /// Shared proportional 12-track grid used on tvOS and regular-width iPad, so
-    /// both platforms subdivide the same spine: About (⅔) sits above
-    /// Details+Playback (⅔), and Ratings (⅓) sits above File (⅓) — every column
-    /// edge lines up.
-    private var proportionalGrid: some View {
-        Grid(alignment: .topLeading, horizontalSpacing: gridSpacing, verticalSpacing: 0) {
-            // Zero-height priming row: pins twelve equal tracks so every section
-            // below subdivides the same spine (About ⅔ = Details+Playback,
-            // Ratings ⅓ = File).
-            GridRow {
-                ForEach(0..<12, id: \.self) { _ in
-                    Color.clear
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 0)
-                }
-            }
-
-            if hasAbout || hasRatings {
-                GridRow(alignment: .top) {
-                    if hasAbout {
-                        headedSection(title: LocalizedStringResource(
-                            "mediaDetail.section.about",
-                            defaultValue: "About",
-                            comment: "Header of the synopsis section on a movie or series detail page. A noun meaning 'about this title', not the Settings > About page."
-                        )) { aboutContent }
-                            .gridCellColumns(4)
-                    } else {
-                        Color.clear.gridCellColumns(4)
-                    }
-                    if hasRatings {
-                        headedSection(title: "Ratings") { ratingsTiles }
-                            .gridCellColumns(8)
-                    } else {
-                        Color.clear.gridCellColumns(8)
-                    }
-                }
-            }
-
-            if !informationGroups.isEmpty {
-                GridRow(alignment: .top) {
-                    ForEach(informationGroups) { group in
-                        informationGroup(group)
-                            // tvOS reserves the borderless focus plate's outward
-                            // growth (cardPadding + 8pt) so a focused column's
-                            // plate lands inside its own keyline. iOS has no focus
-                            // plate, so the grid gutter alone spaces the columns.
-                            .padding(.trailing, infoColumnFocusInset)
-                            .gridCellColumns(informationColumnSpan)
-                    }
-                    if informationGroups.count * informationColumnSpan < 12 {
-                        Color.clear
-                            .gridCellColumns(12 - informationGroups.count * informationColumnSpan)
-                    }
-                }
-                .padding(.top, sectionSpacing)
-            }
-        }
-    }
-
-    private var infoColumnFocusInset: CGFloat {
-        #if os(tvOS)
-        cardFocusStyle.usesSystemEffect ? 0 : cardPadding + 8
-        #else
-        0
-        #endif
-    }
-
-    private func headedSection<Content: View>(
-        title: LocalizedStringResource,
-        @ViewBuilder content: () -> Content
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text(title)
-                .font(sectionTitleFont)
-            content()
-        }
-        .frame(maxHeight: .infinity, alignment: .top)
-    }
 
     @ViewBuilder
     private var ratingsTiles: some View {
-        // One layout for both platforms and both arrangements. Each tile takes a
-        // quarter of the width, so a single rating reads as one of four rather
-        // than stretching across the column as if it were a table, and four fill
-        // the row. When the column is too narrow for quarters the tiles wrap and
-        // divide whatever is there, instead of shrinking below legibility to
-        // preserve a share that no longer fits.
-        //
-        // Height matching is an *input* (`minimumHeight`), not something the
-        // container does to us: the layout reports the About card's height as its
-        // own, so the tiles reach the bottom of About without depending on a Grid
-        // choosing to stretch the cell.
         SpoilerRevealBox(
             isHidden: hidesRatings,
             prompt: LocalizedStringResource(
@@ -254,14 +183,13 @@ public struct DetailInformationSections: View {
             ),
             identity: item.id
         ) {
-            ProportionalWrapLayout(
-                preferredColumns: 4,
-                minimumCellWidth: ratingsTileMinWidth,
-                spacing: ratingsTileSpacing,
-                minimumHeight: matchesRatingsHeight ? aboutBaseCardHeight : 0
-            ) {
-                ForEach(sortedRatings) { rating in
-                    RatingTile(rating: rating)
+            VStack(alignment: .leading, spacing: gridSpacing) {
+                if !sortedRatings.isEmpty {
+                    LazyVGrid(columns: informationColumns, alignment: .leading, spacing: informationRowSpacing) {
+                        ForEach(sortedRatings) { rating in
+                            RatingTile(rating: rating)
+                        }
+                    }
                 }
                 if let summary = familyGuidanceSummary {
                     FamilyGuidanceTile(item: item, summary: summary)
@@ -269,16 +197,6 @@ public struct DetailInformationSections: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .topLeading)
-            // Report the height back so About can grow to meet it when the tiles wrap.
-            .background {
-                GeometryReader { proxy in
-                    Color.clear.preference(
-                        key: RatingsBlockHeightKey.self,
-                        value: proxy.size.height
-                    )
-                }
-            }
-            .onPreferenceChange(RatingsBlockHeightKey.self) { ratingsBlockHeight = $0 }
         }
     }
 
@@ -291,34 +209,6 @@ public struct DetailInformationSections: View {
     private var hidesRatings: Bool {
         spoilerSettings.shouldHideRatings(for: item)
     }
-
-    /// Whether About and Ratings sit side-by-side and should be the same height
-    /// (tvOS and regular-width iPad). iPhone stacks them, so no matching.
-    private var matchesRatingsHeight: Bool {
-        guard hasAbout, hasRatings else { return false }
-        #if os(tvOS)
-        return true
-        #else
-        return horizontalSizeClass == .regular
-        #endif
-    }
-
-    private var ratingsTileMinWidth: CGFloat {
-        #if os(tvOS)
-        210
-        #else
-        horizontalSizeClass == .compact ? 130 : 150
-        #endif
-    }
-
-    private var ratingsTileSpacing: CGFloat {
-        #if os(tvOS)
-        18
-        #else
-        12
-        #endif
-    }
-
     private var hasContent: Bool {
         hasAbout || hasRatings || !informationGroups.isEmpty
     }
@@ -356,9 +246,7 @@ public struct DetailInformationSections: View {
             Button { showsFullOverview = true } label: {
                 aboutCardBody
             }
-            // Same lift as the read-only cards beside it. The style's default is
-            // a browse-card 1.07, which on a panel this wide both mismatched its
-            // neighbours and grew far enough to overlap the Ratings column.
+            // Use the same native focus scale as the read-only information.
             .plozzCardButton(
                 cornerRadius: cardCornerRadius,
                 focusedScale: PlozzTheme.Metrics.readOnlyFocusedCardScale
@@ -394,83 +282,11 @@ public struct DetailInformationSections: View {
                     aboutOverview(overview)
                 }
             }
-            // Grow to meet the ratings column when the tiles wrap past a single
-            // row. `minHeight` rather than a stretch, because the target is a
-            // measured number and not "whatever the row turns out to be".
-            .frame(
-                maxWidth: .infinity,
-                minHeight: aboutTargetContentHeight,
-                alignment: .topLeading
-            )
-            // Measure the card at its *base* cap. This is what the ratings column
-            // is floored at, so it must never reflect the adjusted cap or the two
-            // would chase each other.
-            .background(alignment: .top) { aboutBaseHeightProbe }
+            .frame(maxWidth: .infinity, alignment: .topLeading)
             .onPreferenceChange(OverviewFullHeightKey.self) { overviewFullHeight = $0 }
             .onPreferenceChange(OverviewVisibleHeightKey.self) { overviewVisibleHeight = $0 }
-            .onPreferenceChange(AboutBaseCardHeightKey.self) { aboutBaseCardHeight = $0 }
-            .onPreferenceChange(BodyLineHeightKey.self) { bodyLineHeight = $0 }
             .padding(cardPadding)
         }
-    }
-
-    /// Hidden twin of the About card's content at the base line cap, plus a single
-    /// line of body text. Both are pure measurements: `.hidden()` keeps them out of
-    /// the render, the hit test and (on tvOS) the focus order.
-    @ViewBuilder
-    private var aboutBaseHeightProbe: some View {
-        VStack(alignment: .leading, spacing: aboutContentSpacing) {
-            Text(item.title)
-                .font(aboutTitleFont)
-                .fixedSize(horizontal: false, vertical: true)
-            if let overview = nonempty(item.overview) {
-                overviewText(overview)
-                    .font(bodyFont)
-                    .lineLimit(aboutBaseLineLimit)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .topLeading)
-        .hidden()
-        .overlay {
-            GeometryReader { proxy in
-                Color.clear.preference(
-                    key: AboutBaseCardHeightKey.self,
-                    // The ratings column has no card padding of its own, so the
-                    // floor it gets is the whole card, insets included.
-                    value: proxy.size.height + cardPadding * 2
-                )
-            }
-        }
-        .overlay(alignment: .topLeading) {
-            Text(verbatim: "Ag")
-                .font(bodyFont)
-                .hidden()
-                .overlay {
-                    GeometryReader { proxy in
-                        Color.clear.preference(
-                            key: BodyLineHeightKey.self,
-                            value: proxy.size.height
-                        )
-                    }
-                }
-        }
-    }
-
-    /// Height the About card's content must reach so the card matches the ratings
-    /// column. Zero (no floor) unless the ratings actually came out taller.
-    private var aboutTargetContentHeight: CGFloat {
-        guard aboutHeightSurplus > 0 else { return 0 }
-        return ratingsBlockHeight - cardPadding * 2
-    }
-
-    /// How much taller the ratings column is than the About card would naturally
-    /// be. Positive only when the tiles wrapped onto a second row.
-    private var aboutHeightSurplus: CGFloat {
-        guard matchesRatingsHeight, aboutBaseCardHeight > 0, ratingsBlockHeight > 0 else {
-            return 0
-        }
-        return ratingsBlockHeight - aboutBaseCardHeight
     }
 
     /// The synopsis, capped to `aboutLineLimit` lines — the line count (not a fixed
@@ -725,44 +541,54 @@ public struct DetailInformationSections: View {
         #endif
     }
 
-    private var informationGrid: some View {
-        LazyVGrid(columns: informationColumns, alignment: .leading, spacing: informationRowSpacing) {
-            ForEach(informationGroups) { group in
-                informationGroup(group)
-            }
-        }
-    }
-
     private func informationGroup(_ group: InformationGroup) -> some View {
         VStack(alignment: .leading, spacing: informationGroupSpacing) {
-            Text(group.title)
-                .font(informationGroupTitleFont)
-
-            VStack(alignment: .leading, spacing: informationFactSpacing) {
-                ForEach(group.facts) { fact in
+            HStack {
+                Text(group.title)
+                    .font(group.id == "playback" ? technicalTitleFont : sectionTitleFont)
+                Spacer()
+                if group.hasMore(truncatedFacts: truncatedFacts) {
+                    Button("More") { expandedGroup = group }
+                        .plozzActionButton(role: .secondary)
+                        .accessibilityIdentifier("detail-\(group.id)-more")
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            #if os(tvOS)
+            .focusSection()
+            #endif
+            LazyVGrid(columns: informationColumns, alignment: .leading, spacing: informationRowSpacing) {
+                ForEach(group.previewFacts) { fact in
                     VStack(alignment: .leading, spacing: 5) {
                         Text(fact.label)
                             .font(factLabelFont)
                             .plozzForeground(.secondary)
                         if fact.logos.isEmpty {
-                            Text(fact.value)
-                                .font(factValueFont)
-                                .fixedSize(horizontal: false, vertical: true)
+                            InformationValuePreview(
+                                fact: fact,
+                                font: group.id == "playback" ? technicalValueFont : factValueFont
+                            ) { isTruncated in
+                                let id = "\(group.id).\(fact.id)"
+                                if isTruncated { truncatedFacts.insert(id) }
+                                else { truncatedFacts.remove(id) }
+                            }
+                            .plozzForeground(group.id == "playback" ? .secondary : .primary)
                         } else {
                             WatchProviderLogoRow(
-                                logos: fact.logos,
+                                logos: Array(fact.logos.prefix(DetailPreviewLimits.serviceLogos)),
                                 names: fact.value
                             )
                         }
                     }
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
                 }
             }
+            .plozzFocusableCard(
+                cornerRadius: cardCornerRadius,
+                variant: .borderless(focusPadding: 8)
+            )
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
-        .plozzFocusableCard(
-            cornerRadius: cardCornerRadius,
-            variant: .borderless(focusPadding: cardPadding)
-        )
         .accessibilityElement(children: .contain)
     }
 
@@ -776,9 +602,10 @@ public struct DetailInformationSections: View {
                 .font(sectionTitleFont)
             content()
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private var informationGroups: [InformationGroup] {
+    var informationGroups: [InformationGroup] {
         [
             InformationGroup(id: "details", title: "Details", facts: detailFacts),
             InformationGroup(id: "crew", title: "Crew", facts: crewFacts),
@@ -804,11 +631,6 @@ public struct DetailInformationSections: View {
     }
 
     var hasRatings: Bool { !sortedRatings.isEmpty || familyGuidanceSummary != nil }
-
-    /// Every Information column occupies one third of the spine so the lower row
-    /// always lines up with the top row (About · Ratings), regardless of how many
-    /// groups have content.
-    private var informationColumnSpan: Int { 4 }
 
     /// "Details" — the editorial facts about the *title* itself.
     private var detailFacts: [InformationFact] {
@@ -839,7 +661,7 @@ public struct DetailInformationSections: View {
             facts.append(InformationFact(id: "original-title", label: "Original Title", value: originalTitle))
         }
         appendListFact(id: "genres", label: "Genres", values: item.genres, to: &facts)
-        appendListFact(id: "tags", label: "Tags", values: Array(item.tags.prefix(16)), to: &facts)
+        appendListFact(id: "tags", label: "Tags", values: item.tags, to: &facts)
         return facts
     }
 
@@ -887,7 +709,8 @@ public struct DetailInformationSections: View {
             return InformationFact(
                 id: id,
                 label: label,
-                value: names,
+                value: names.joined(separator: " · "),
+                listValues: names,
                 logos: providerLogos(offers)
             )
         }
@@ -906,7 +729,8 @@ public struct DetailInformationSections: View {
             facts.append(InformationFact(
                 id: "availability-attribution",
                 label: "Availability Data",
-                value: "JustWatch"
+                value: "JustWatch",
+                isRequiredAttribution: true
             ))
         }
         return facts
@@ -928,12 +752,11 @@ public struct DetailInformationSections: View {
         }
     }
 
-    private func providerNames(_ offers: [TitleWatchOffer]) -> String {
+    private func providerNames(_ offers: [TitleWatchOffer]) -> [String] {
         var seen = Set<String>()
         return offers
             .map { ExternalTitleAvailability.collapsedServiceName($0.providerName) }
             .filter { seen.insert($0).inserted }
-            .joined(separator: " · ")
     }
 
     /// "Playback" — everything about *this copy* in one place: where it streams
@@ -1011,7 +834,8 @@ public struct DetailInformationSections: View {
         facts.append(InformationFact(
             id: id,
             label: label,
-            value: ListFormatter.localizedString(byJoining: unique)
+            value: ListFormatter.localizedString(byJoining: unique),
+            listValues: unique
         ))
     }
 
@@ -1079,20 +903,7 @@ public struct DetailInformationSections: View {
         #endif
     }
 
-    /// Lines of synopsis to show.
-    ///
-    /// The base cap is what sets the About card's height, and therefore the height
-    /// the ratings tiles grow to meet — so it stays a real, tight cap and MORE
-    /// still appears the moment anything is hidden. It is only raised when the
-    /// ratings column came out *taller* (the tiles wrapped onto a second row): the
-    /// card has to grow to match, so it fills the extra with text rather than blank
-    /// space. `floor` on the surplus keeps the text inside the height it is
-    /// matching, so the card can never overshoot the column beside it.
     private var aboutLineLimit: Int {
-        aboutBaseLineLimit + extraAboutLines
-    }
-
-    private var aboutBaseLineLimit: Int {
         #if os(tvOS)
         return 6
         #else
@@ -1100,11 +911,12 @@ public struct DetailInformationSections: View {
         #endif
     }
 
-    private var extraAboutLines: Int {
-        guard bodyLineHeight > 1, aboutHeightSurplus > 0 else { return 0 }
-        // Bounded by the surplus itself, which is bounded by the number of rating
-        // rows — the card can grow to meet the tiles and no further.
-        return Int((aboutHeightSurplus / bodyLineHeight).rounded(.down))
+    private var overviewReadingWidth: CGFloat {
+        #if os(tvOS)
+        1180
+        #else
+        900
+        #endif
     }
 
     private var moreLabelFont: Font {
@@ -1155,11 +967,20 @@ public struct DetailInformationSections: View {
         #endif
     }
 
-    private var informationGroupTitleFont: Font {
-        // Match the top-level section headers (About/Ratings) so Details, Playback
-        // and File each read as their own distinct section — the "Information"
-        // umbrella header is gone, so these carry the separation.
-        sectionTitleFont
+    private var technicalTitleFont: Font {
+        #if os(tvOS)
+        .system(size: 28, weight: .semibold)
+        #else
+        .title3.weight(.semibold)
+        #endif
+    }
+
+    private var technicalValueFont: Font {
+        #if os(tvOS)
+        .system(size: 20)
+        #else
+        .subheadline
+        #endif
     }
 
     private var sectionSpacing: CGFloat {
@@ -1186,10 +1007,6 @@ public struct DetailInformationSections: View {
         #endif
     }
 
-    /// Vertical gap between Information sections when they wrap to a new row
-    /// (File under Details on a 2-column iPad, or all stacked on iPhone). Larger
-    /// than the column gutter so a wrapped section's large header is clearly the
-    /// start of a new section, not a continuation of the column above.
     private var informationRowSpacing: CGFloat {
         #if os(tvOS)
         36
@@ -1203,22 +1020,6 @@ public struct DetailInformationSections: View {
         22
         #else
         16
-        #endif
-    }
-
-    private var informationFactSpacing: CGFloat {
-        #if os(tvOS)
-        18
-        #else
-        14
-        #endif
-    }
-
-    private var ratingRowSpacing: CGFloat {
-        #if os(tvOS)
-        16
-        #else
-        12
         #endif
     }
 
@@ -1240,9 +1041,9 @@ public struct DetailInformationSections: View {
 
     private var informationColumnMinimumWidth: CGFloat {
         #if os(tvOS)
-        400
+        380
         #else
-        280
+        220
         #endif
     }
 }
@@ -1255,27 +1056,6 @@ private struct OverviewFullHeightKey: PreferenceKey {
 }
 
 private struct OverviewVisibleHeightKey: PreferenceKey {
-    static let defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = max(value, nextValue())
-    }
-}
-
-private struct AboutBaseCardHeightKey: PreferenceKey {
-    static let defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = max(value, nextValue())
-    }
-}
-
-private struct RatingsBlockHeightKey: PreferenceKey {
-    static let defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = max(value, nextValue())
-    }
-}
-
-private struct BodyLineHeightKey: PreferenceKey {
     static let defaultValue: CGFloat = 0
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
         value = max(value, nextValue())
@@ -1327,13 +1107,26 @@ private struct WatchProviderLogoRow: View {
     }
 }
 
-private struct InformationGroup: Identifiable {
+struct InformationGroup: Identifiable {
     let id: String
     let title: LocalizedStringKey
     let facts: [InformationFact]
+
+    var previewFacts: [InformationFact] {
+        let notices = facts.filter(\.isRequiredAttribution)
+        let limit = max(0, DetailPreviewLimits.facts - notices.count)
+        let previewIDs = Set(facts.filter { !$0.isRequiredAttribution }.prefix(limit).map(\.id))
+        return facts.filter { $0.isRequiredAttribution || previewIDs.contains($0.id) }
+    }
+
+    func hasMore(truncatedFacts: Set<String>) -> Bool {
+        facts.count > previewFacts.count || previewFacts.contains {
+            $0.hasOmittedValues || truncatedFacts.contains("\(id).\($0.id)")
+        }
+    }
 }
 
-private struct InformationFact: Identifiable {
+struct InformationFact: Identifiable {
     let id: String
     /// `LocalizedStringResource`, not `LocalizedStringKey`, so a label that needs
     /// a translator note can carry one. Several of these are ambiguous out of
@@ -1342,11 +1135,57 @@ private struct InformationFact: Identifiable {
     /// Bare string literals still work at the call site.
     let label: LocalizedStringResource
     let value: String
+    var listValues: [String]? = nil
     /// Service artwork for a "where to watch" row. A logo is read at a glance from
     /// across a room where a list of names has to be parsed, so where these exist
     /// they replace the text — `value` stays as the accessibility description and
     /// as the fallback when a logo is missing.
     var logos: [WatchProviderLogo] = []
+    var isRequiredAttribution = false
+
+    var previewValue: String {
+        guard let listValues else { return value }
+        return ListFormatter.localizedString(byJoining: Array(listValues.prefix(DetailPreviewLimits.listValues)))
+    }
+
+    var hasOmittedValues: Bool {
+        if !logos.isEmpty {
+            let visible = Set(logos.prefix(DetailPreviewLimits.serviceLogos).map(\.name))
+            return logos.count > DetailPreviewLimits.serviceLogos
+                || (listValues ?? []).contains { !visible.contains($0) }
+        }
+        return (listValues?.count ?? 0) > DetailPreviewLimits.listValues
+    }
+}
+
+private struct InformationValuePreview: View {
+    let fact: InformationFact
+    let font: Font
+    let onTruncationChange: (Bool) -> Void
+    @State private var visibleHeight: CGFloat = 0
+    @State private var fullHeight: CGFloat = 0
+
+    private var isTruncated: Bool {
+        visibleHeight > 0 && fullHeight > visibleHeight + 0.5
+    }
+
+    var body: some View {
+        Text(fact.previewValue)
+            .font(font)
+            .lineLimit(DetailPreviewLimits.valueLines)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { visibleHeight = $0 }
+            .background(alignment: .topLeading) {
+                Text(fact.value)
+                    .font(font)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .hidden()
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { fullHeight = $0 }
+            }
+            .onChange(of: isTruncated, initial: true) { _, value in onTruncationChange(value) }
+    }
 }
 
 /// One service's mark. Identified by the collapsed service NAME rather than the

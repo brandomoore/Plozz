@@ -17,6 +17,10 @@ public struct CastRowView: View {
     private let onFocusEntered: (() -> Void)?
 
     @Environment(\.plozzMetrics) private var metrics
+    @Environment(\.mediaPersonNavigator) private var navigateToPerson
+    @State private var showsFullCast = false
+    @State private var selectedPerson: MediaPerson?
+    @FocusState private var moreFocused: Bool
 
     public init(
         title: LocalizedStringResource? = "Cast",
@@ -33,15 +37,30 @@ public struct CastRowView: View {
     public var body: some View {
         if !people.isEmpty {
             VStack(alignment: .leading, spacing: metrics.sectionTitleSpacing) {
-                if let title {
-                    Text(title)
-                        .font(.system(size: metrics.sectionHeaderFontSize, weight: .bold))
-                        .padding(.leading, leadingInset)
+                if title != nil || people.count > DetailPreviewLimits.cast {
+                    HStack {
+                        if let title {
+                            Text(title)
+                                .font(.system(size: metrics.sectionHeaderFontSize, weight: .bold))
+                        }
+                        Spacer()
+                        if people.count > DetailPreviewLimits.cast {
+                            Button("More") { showsFullCast = true }
+                                .plozzActionButton(role: .secondary)
+                                .focused($moreFocused)
+                                .accessibilityIdentifier("detail-cast-more")
+                        }
+                    }
+                    .padding(.leading, leadingInset)
+                    .padding(.trailing, PlozzTheme.Metrics.screenPadding)
+                    #if os(tvOS)
+                    .focusSection()
+                    #endif
                 }
 
                 ScrollView(.horizontal, showsIndicators: false) {
                     LazyHStack(alignment: .top, spacing: metrics.cardSpacing) {
-                        ForEach(people) { person in
+                        ForEach(people.prefix(DetailPreviewLimits.cast)) { person in
                             CastMemberCard(person: person, onFocusEntered: onFocusEntered)
                         }
                     }
@@ -56,6 +75,25 @@ public struct CastRowView: View {
                 }
                 .padding(.top, metrics.railClearanceOffset(for: PlozzTheme.Spacing.small))
                 .padding(.bottom, metrics.railClearanceOffset(for: PlozzTheme.Spacing.large))
+            }
+            .onChange(of: moreFocused) { _, focused in
+                if focused { onFocusEntered?() }
+            }
+            .onChange(of: people) { _, _ in
+                selectedPerson = nil
+                showsFullCast = false
+            }
+            .onDisappear { selectedPerson = nil }
+            .plozzSheet(isPresented: $showsFullCast, onDismiss: {
+                if let person = selectedPerson {
+                    selectedPerson = nil
+                    navigateToPerson?(person)
+                }
+            }) {
+                DetailCastList(people: people, onSelect: navigateToPerson == nil ? nil : { person in
+                    selectedPerson = person
+                    showsFullCast = false
+                })
             }
         }
     }
