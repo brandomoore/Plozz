@@ -44,6 +44,11 @@ extension PlozziOSAppModel {
     func performDownloadMenuAction(_ action: MediaItemAction, on item: MediaItem) async {
         switch action {
         case .startDownload:
+            if item.kind == .episode {
+                guard isActiveProfileAuthorized else { return }
+                pendingEpisodeDownload = item
+                return
+            }
             guard let provider = provider(for: item) else { return }
             _ = try? await downloads.enqueue(item: item, provider: provider)
         case .pauseDownload:

@@ -14,6 +14,80 @@ import XCTest
 
 @MainActor
 final class DownloadPresentationTests: XCTestCase {
+    func testExplicitEpisodeChoicesDoNotShareCachedDownloadControls() async throws {
+        let items = ["first", "second"].map { id -> MediaItem in
+            var item = MediaItem(
+                id: id, title: "Episode", kind: .episode,
+                seasonNumber: 1, episodeNumber: 1, seriesID: "show",
+                providerIDs: ["tvdb": "12345"], sourceAccountID: "fixture"
+            )
+            item.selectedVersionID = "1"
+            item.explicitSourceSelection = true
+            return item
+        }
+        let records = try items.map { item in
+            DownloadedMediaRecord(
+                identity: try XCTUnwrap(DownloadMediaIdentity.requestIdentity(for: item, existingRecords: [])),
+                versionID: item.selectedVersionID, sourceKind: .managedHTTP,
+                status: .completed, localFileName: "media.mkv", snapshot: PinnedMediaSnapshot(item: item)
+            )
+        }
+        let registry = DownloadedMediaRegistry(store: InMemoryDownloadedMediaStore(.init(
+            records: Dictionary(uniqueKeysWithValues: records.map { ($0.identityKey, $0) })
+        )))
+        let model = makeModel(
+            registry: registry, storage: try temporaryStorage(), probe: ArtworkProbe(data: imageData()),
+            startsActive: false
+        )
+        defer { model.beginProfileTransition() }
+        try await waitUntil { model.records.count == 2 }
+        for (item, record) in zip(items, records) {
+            XCTAssertEqual(model.cachedRecord(forSelectedVersionOf: item)?.identityKey, record.identityKey)
+            XCTAssertNotNil(model.cachedRecord(for: item.selectingVersion(nil)))
+        }
+        var foreign = items[0]
+        foreign.sourceAccountID = "other"
+        XCTAssertNil(model.cachedRecord(forSelectedVersionOf: foreign))
+    }
+
+    func testEpisodeMenuOpensSelectionWithoutStartingADownload() async {
+        let suite = "EpisodeMenuSelection.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let app = PlozziOSAppModel(
+            appAdmissionStore: AppAdmissionStore(defaults: defaults),
+            profileStore: ProfileStore(defaults: defaults)
+        )
+        defer { app.downloads.beginProfileTransition() }
+        XCTAssertTrue(app.recordSuccessfulIPTVSetup())
+        let profile = app.profiles.add(name: "Downloads", isAwaitingSetup: false)
+        app.selectProfile(profile.id)
+        XCTAssertTrue(app.isActiveProfileAuthorized)
+        let episode = MediaItem(
+            id: "episode-choice", title: "Episode Choice", kind: .episode,
+            seasonNumber: 1, episodeNumber: 1, seriesID: "show",
+            sourceAccountID: "fixture"
+        )
+        let previousCount = app.downloads.records.count
+        await app.performDownloadMenuAction(.startDownload, on: episode)
+        XCTAssertEqual(app.pendingEpisodeDownload?.id, episode.id)
+        XCTAssertEqual(app.pendingEpisodeDownload?.sourceAccountID, "fixture")
+        XCTAssertEqual(app.downloads.records.count, previousCount)
+        app.pendingEpisodeDownload = nil
+    }
+
+    func testProfileTransitionClearsPendingEpisodeSelection() {
+        let suite = "EpisodeSelectionTransition.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let app = PlozziOSAppModel(profileStore: ProfileStore(defaults: defaults))
+        defer { app.downloads.beginProfileTransition() }
+        app.pendingEpisodeDownload = MediaItem(id: "old-profile", title: "Episode", kind: .episode)
+        let profile = app.profiles.add(name: "Download Choice", isAwaitingSetup: false)
+        app.selectProfile(profile.id)
+        XCTAssertNil(app.pendingEpisodeDownload)
+    }
+
     func testDetailHeroResolvesActionsOnceForAllLayoutCandidates() throws {
         let model = makeModel(
             registry: DownloadedMediaRegistry(store: InMemoryDownloadedMediaStore()),

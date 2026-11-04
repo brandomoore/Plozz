@@ -444,6 +444,7 @@ final class PlozziOSAppModel {
     private(set) var seriesTrackStore: SeriesTrackPreferenceStore
     private(set) var versionPreferences: VersionPreferenceStore
     private(set) var downloads: PlozziOSDownloadsModel
+    var pendingEpisodeDownload: MediaItem?
     private(set) var pendingLibrarySelection: PendingLibrarySelection?
     private(set) var pendingFirstRunStep: FirstRunStep?
     /// Drives the app to a named screen for an automated capture run. Inert unless
@@ -543,7 +544,11 @@ final class PlozziOSAppModel {
                 .some(self.downloads.cachedRecord(forSelectedVersionOf: item)?.menuState)
             },
             performDownloadAction: { [unowned self] action, item in
-                Task { await self.performDownloadMenuAction(action, on: item) }
+                let profileID = self.profiles.activeProfileID
+                Task {
+                    guard self.profiles.activeProfileID == profileID else { return }
+                    await self.performDownloadMenuAction(action, on: item)
+                }
             },
             makeActionConfirmation: { [unowned self] in self.makeLibraryActionFeedback() },
             makeWatchlistFailureFeedback: { [unowned self] in self.makeLibraryActionFeedback(onCompletion: .error) }
@@ -1779,6 +1784,7 @@ final class PlozziOSAppModel {
     }
 
     private func transitionDownloads(to profileID: String) {
+        pendingEpisodeDownload = nil
         let outgoing = downloads
         outgoing.beginProfileTransition()
         downloads = PlozziOSDownloadsModel(

@@ -148,6 +148,13 @@ public struct PlozziOSRootView: View {
         }
         .scrollContentBackground(.hidden)
         .environment(\.managedProviderSetupRouter, providerSetupRouter)
+        .plozzSheet(item: $appModel.pendingEpisodeDownload) { item in
+            PlozziOSSingleEpisodeDownloadSheet(item: item)
+                .environment(appModel)
+        }
+        .onChange(of: appModel.isActiveProfileAuthorized) { _, authorized in
+            if !authorized { appModel.pendingEpisodeDownload = nil }
+        }
         .plozzSheet(item: $providerSetupRouter.reauthenticationAccount) { account in
             PlozziOSAccountReauthenticationView(appModel: appModel, account: account)
                 .presentationSizing(.page)

@@ -434,6 +434,10 @@ final class PlozziOSDownloadsModel {
     func cachedRecord(forSelectedVersionOf item: MediaItem) -> DownloadedMediaRecord? {
         let indexedRecords = recordIndex.records
         guard !indexedRecords.isEmpty else { return nil }
+        if item.kind == .episode, item.explicitSourceSelection {
+            return DownloadMediaIdentity.selectedRecord(for: item, in: indexedRecords)
+                .flatMap { recordIndex.record(forKey: $0.identityKey) }
+        }
         // An item can carry SEVERAL identities (the same title on more than one
         // server), so match the registry's own resolution rather than assuming a
         // single key — otherwise a download made from one server is invisible to
@@ -533,8 +537,9 @@ final class PlozziOSDownloadsModel {
             }
             return source.hasPrefix(DownloadMediaIdentity.accountSourcePrefix)
         }
-        return sourceScopedMatches.count == 1
-            ? recordIndex.record(forKey: sourceScopedMatches[0].identityKey) : nil
+        guard expectedAccountSource != nil || sourceScopedMatches.count == 1 else { return nil }
+        return sourceScopedMatches.sorted { $0.identityKey < $1.identityKey }.first
+            .flatMap { recordIndex.record(forKey: $0.identityKey) }
     }
 
     @discardableResult
@@ -770,7 +775,9 @@ final class PlozziOSDownloadsModel {
         guard !item.opensExternalSource else {
             throw PlozziOSDownloadError.unavailable("External links cannot be downloaded.")
         }
-        guard let identity = DownloadMediaIdentity.primary(for: item) else {
+        guard let identity = DownloadMediaIdentity.requestIdentity(
+            for: item, existingRecords: records
+        ) else {
             throw PlozziOSDownloadError.unavailable(
                 "This item does not have a stable offline identity."
             )

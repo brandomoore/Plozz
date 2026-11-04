@@ -1,5 +1,6 @@
 #if os(iOS)
 import CoreModels
+import CoreUI
 import MediaDownloads
 import SwiftUI
 
@@ -9,6 +10,7 @@ struct PlozziOSDetailDownloadButton: View {
     @State private var downloadRecord: DownloadedMediaRecord?
     @State private var downloadError: String?
     @State private var showsDownloadConfirmation = false
+    @State private var showsVersionSelection = false
 
     let downloadItem: MediaItem
     let selectedSource: MediaSourceRef?
@@ -83,6 +85,13 @@ struct PlozziOSDetailDownloadButton: View {
         } message: {
             downloadConfirmationMessage
         }
+        .plozzSheet(isPresented: $showsVersionSelection, onDismiss: {
+            Task {
+                downloadRecord = await appModel.downloads.record(forSelectedVersionOf: downloadItem)
+            }
+        }) {
+            PlozziOSSingleEpisodeDownloadSheet(item: downloadItem)
+        }
     }
 
     private var downloadActionTitle: LocalizedStringResource {
@@ -112,7 +121,9 @@ struct PlozziOSDetailDownloadButton: View {
         case .completed:
             showsDownloadConfirmation = true
         case nil:
-            if appModel.downloads.asksBeforeDownloading {
+            if downloadItem.kind == .episode {
+                showsVersionSelection = true
+            } else if appModel.downloads.asksBeforeDownloading {
                 showsDownloadConfirmation = true
             } else {
                 await startDownload()

@@ -278,6 +278,8 @@ struct PresentationHostApp: App {
                 ProfileSelectionInteractionFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--profile-picker-fixture") {
                 ProfilePickerInteractionFixture()
+            } else if ProcessInfo.processInfo.arguments.contains("--download-selection-fixture") {
+                DownloadSelectionFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--downloads-interaction-fixture") {
                 DownloadsInteractionFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--iptv-removal-fixture") {
