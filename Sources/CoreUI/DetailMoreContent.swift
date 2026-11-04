@@ -33,28 +33,46 @@ public struct DetailMoreLabel: View {
 struct DetailInlineMoreLabel<Content: View>: View {
     let isTruncated: Bool
     let fadeWidth: CGFloat
-    let fadeHeight: CGFloat
+    let textFont: Font
     @ViewBuilder let content: Content
+    @State private var lineHeight: CGFloat = 0
+    @State private var moreWidth: CGFloat = 0
+
+    private var maskWidth: CGFloat { max(fadeWidth, moreWidth + 48) }
+    private var fadeEnd: CGFloat { (maskWidth - moreWidth - 8) / maskWidth }
 
     var body: some View {
-        ZStack(alignment: .bottomTrailing) {
-            content
-            if isTruncated {
+        content.overlay(alignment: .bottomTrailing) {
+            if isTruncated, lineHeight > 0 {
                 LinearGradient(
                     stops: [
                         .init(color: .clear, location: 0),
-                        .init(color: .black, location: 0.45),
+                        .init(color: .black, location: fadeEnd),
                         .init(color: .black, location: 1)
                     ],
                     startPoint: .leading,
                     endPoint: .trailing
                 )
-                .frame(width: fadeWidth, height: fadeHeight)
+                .frame(width: maskWidth, height: lineHeight)
                 .blendMode(.destinationOut)
-                DetailMoreLabel()
             }
         }
         .compositingGroup()
+        .overlay(alignment: Alignment(horizontal: .trailing, vertical: .lastTextBaseline)) {
+            if isTruncated, lineHeight > 0 {
+                DetailMoreLabel()
+                    .fixedSize()
+                    .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { moreWidth = $0 }
+            }
+        }
+        .background(alignment: .topLeading) {
+            Text(verbatim: "Ag")
+                .font(textFont)
+                .fixedSize()
+                .hidden()
+                .accessibilityHidden(true)
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { lineHeight = $0 }
+        }
     }
 }
 

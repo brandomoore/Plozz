@@ -9,6 +9,56 @@ import XCTest
 
 @MainActor
 final class NativeInformationCardHostedTests: XCTestCase {
+    func testFocusedAboutKeepsReadableTextInLightAppearance() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        for longOverview in [false, true] {
+            let item = MediaItem(
+                id: "light-about", title: "An unexpected journey", kind: .movie,
+                overview: String(repeating: "Two friends travel together and discover a new city. ",
+                                 count: longOverview ? 30 : 1)
+            )
+            let host = NativeInformationFocusHost(rootView: AnyView(
+                DetailInformationSections(item: item, horizontalInset: 80)
+                    .environment(\.themePalette, .light)
+                    .environment(\.colorScheme, .light)
+                    .environment(\.gradientBackgroundsEnabled, false)
+                    .environment(\.plozzCardFocusStyle, .system)
+            ))
+            window.rootViewController = host
+            window.makeKeyAndVisible()
+            try await Task.sleep(for: .milliseconds(500))
+            let card = try XCTUnwrap(nativeCards(in: window).first)
+            host.target = card
+            host.setNeedsFocusUpdate()
+            host.updateFocusIfNeeded()
+            try await Task.sleep(for: .milliseconds(300))
+            XCTAssertTrue(card.isFocused)
+            let surface = try XCTUnwrap(NativeFocusProjection.artworkFrame(of: card.contentView, in: window))
+            let textRegion = surface.insetBy(dx: 24, dy: 24).intersection(window.bounds).integral
+            let pixels = try informationPixels(window)
+            var darkPixels = 0
+            for y in Int(textRegion.minY)..<Int(textRegion.maxY) {
+                for x in Int(textRegion.minX)..<Int(textRegion.maxX) {
+                    if pixels[(y * 1920 + x) * 4] < 80 { darkPixels += 1 }
+                }
+            }
+            XCTAssertGreaterThan(darkPixels, 200, "Focused About text must not become white on a light card.")
+            let attachment = XCTAttachment(image: DetailTransitionSnapshot.image(of: window))
+            attachment.name = "light-about-expandable-\(longOverview)"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+        }
+    }
+
     func testDetailFactsShareKeylinesRowHeightsAndReadableInsets() async throws {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
             .first { $0.activationState == .foregroundActive })
@@ -17,7 +67,7 @@ final class NativeInformationCardHostedTests: XCTestCase {
         window.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
         let item = MediaItem(
             id: "layout", title: "A film", kind: .movie, productionYear: 2026,
-            officialRating: "R", genres: ["Horror", "Science Fiction", "Adventure"],
+            officialRating: "TV-MA", genres: ["Horror", "Science Fiction", "Adventure"],
             people: [
                 .init(id: "director", name: "One Director", kind: "Director"),
                 .init(id: "writer", name: "One Writer", kind: "Writer")
@@ -61,18 +111,20 @@ final class NativeInformationCardHostedTests: XCTestCase {
             }
             return first.frame.minX < second.frame.minX
         }
-        XCTAssertEqual(slots.count, 14)
-        guard slots.count == 14 else { return }
-        for row in [0..<4, 4..<7, 7..<11, 11..<14] {
-            for (column, index) in row.enumerated() {
-                XCTAssertEqual(slots[index].frame.minX, slots[column].frame.minX, accuracy: 1)
-                XCTAssertEqual(slots[index].card.contentSize.width, slots[0].card.contentSize.width, accuracy: 1)
-                XCTAssertEqual(slots[index].card.contentSize.height, slots[row.lowerBound].card.contentSize.height, accuracy: 1)
+        XCTAssertEqual(slots.count, 3, "Details, Crew and Playback each own one native surface.")
+        guard slots.count == 3 else { return }
+        for (index, slot) in slots.enumerated() {
+            XCTAssertEqual(slot.frame.minX, slots[0].frame.minX, accuracy: 1)
+            XCTAssertEqual(slot.card.contentSize.width, slots[0].card.contentSize.width, accuracy: 1)
+            XCTAssertLessThanOrEqual(slot.frame.maxY, window.bounds.maxY)
+            if index > 0 {
+                XCTAssertGreaterThanOrEqual(slot.frame.minY - slots[index - 1].frame.maxY, 39)
             }
         }
         let image = DetailTransitionSnapshot.image(of: window)
-        for slot in slots.prefix(4) {
-            let frame = slot.frame.applying(CGAffineTransform(scaleX: image.scale, y: image.scale))
+        for (index, slot) in slots.enumerated() {
+            let surface = try XCTUnwrap(NativeFocusProjection.artworkFrame(of: slot.card.contentView, in: window))
+            let frame = surface.applying(CGAffineTransform(scaleX: image.scale, y: image.scale))
             let crop = try XCTUnwrap(image.cgImage?.cropping(to: frame))
             let request = VNRecognizeTextRequest()
             request.recognitionLevel = .accurate
@@ -80,9 +132,21 @@ final class NativeInformationCardHostedTests: XCTestCase {
             try VNImageRequestHandler(cgImage: crop).perform([request])
             let observations = try XCTUnwrap(request.results)
             XCTAssertFalse(observations.isEmpty)
+            let text = observations.compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ")
+            if index == 0 {
+                XCTAssertFalse(text.contains("MORE"), "Short facts must not inherit truncation from a fitting probe: \(text)")
+                XCTAssertTrue(text.contains("TV-MA"), "The complete classification must remain visible: \(text)")
+                let labels = observations.filter {
+                    ["Year", "Runtime", "Content Rating"].contains($0.topCandidates(1).first?.string ?? "")
+                }
+                XCTAssertEqual(labels.count, 3)
+                for label in labels {
+                    XCTAssertEqual(label.boundingBox.maxY, labels[0].boundingBox.maxY, accuracy: 0.015)
+                }
+            }
             for text in observations {
-                let width = slot.frame.width
-                let height = slot.frame.height
+                let width = surface.width
+                let height = surface.height
                 // Vision's normalized coordinates introduce subpixel rounding.
                 XCTAssertGreaterThanOrEqual(text.boundingBox.minX * width + 0.01, 20)
                 XCTAssertGreaterThanOrEqual((1 - text.boundingBox.maxX) * width + 0.01, 20)
@@ -92,6 +156,64 @@ final class NativeInformationCardHostedTests: XCTestCase {
         }
         let attachment = XCTAttachment(image: image)
         attachment.name = "detail-fact-keylines-and-insets"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
+    func testMoreOverlayDoesNotParticipateInTextSizing() {
+        let plain = UIHostingController(rootView: Text("TV-MA").font(.system(size: 24)))
+        let expanded = UIHostingController(rootView:
+            DetailInlineMoreLabel(isTruncated: true, fadeWidth: 120, textFont: .system(size: 24)) {
+                Text("TV-MA").font(.system(size: 24))
+            }
+        )
+        let proposal = CGSize(width: 600, height: 200)
+        let expected = plain.sizeThatFits(in: proposal)
+        let actual = expanded.sizeThatFits(in: proposal)
+        XCTAssertEqual(actual.width, expected.width, accuracy: 0.5)
+        XCTAssertEqual(actual.height, expected.height, accuracy: 0.5)
+    }
+
+    func testInlineMoreDoesNotEraseThePreviousLine() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
+        let host = UIHostingController(rootView: InlineMorePixelFixture(showsMore: false))
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        try await Task.sleep(for: .milliseconds(400))
+        let before = try informationPixels(window)
+        host.rootView = InlineMorePixelFixture(showsMore: true)
+        try await Task.sleep(for: .milliseconds(400))
+        let after = try informationPixels(window)
+        let earlierLines = Int(floor(UIFont.systemFont(ofSize: 24).lineHeight * 2))
+        var earlierInk = 0
+        var earlierChanges = 0
+        var lastLineChanges = 0
+        for y in 0..<100 {
+            for x in 0..<340 {
+                let offset = (y * 1920 + x) * 4
+                let changed = (0..<3).contains { abs(Int(before[offset + $0]) - Int(after[offset + $0])) > 3 }
+                if y < earlierLines {
+                    if before[offset] > 30 { earlierInk += 1 }
+                    if changed { earlierChanges += 1 }
+                } else if changed {
+                    lastLineChanges += 1
+                }
+            }
+        }
+        XCTAssertGreaterThan(earlierInk, 100, "The comparison must include rendered text, not an empty crop.")
+        XCTAssertLessThanOrEqual(earlierChanges, 20, "More must not alter glyphs on an earlier line.")
+        XCTAssertGreaterThan(lastLineChanges, 50, "The final line must actually show the fade and More.")
+        let attachment = XCTAttachment(image: DetailTransitionSnapshot.image(of: window))
+        attachment.name = "inline-more-final-line-only"
         attachment.lifetime = .keepAlways
         add(attachment)
     }
@@ -109,7 +231,7 @@ final class NativeInformationCardHostedTests: XCTestCase {
             people: [MediaPerson(id: "director", name: "Director", kind: "Director")],
             studios: ["Studio"]
         )
-        let host = UIHostingController(rootView: NativeInformationFactFixture(model: model))
+        let host = NativeInformationFocusHost(rootView: AnyView(NativeInformationFactFixture(model: model)))
         window.rootViewController = host
         window.makeKeyAndVisible()
         defer {
@@ -119,7 +241,7 @@ final class NativeInformationCardHostedTests: XCTestCase {
         }
         try await Task.sleep(for: .milliseconds(500))
         let original = nativeCards(in: window)
-        XCTAssertEqual(original.count, 5)
+        XCTAssertEqual(original.count, 2)
         let identities = Set(original.map(ObjectIdentifier.init))
         let studios = try XCTUnwrap(original.max {
             let first = $0.convert($0.bounds, to: window)
@@ -131,6 +253,19 @@ final class NativeInformationCardHostedTests: XCTestCase {
         for card in original { card.sendActions(for: .primaryActionTriggered) }
         try await Task.sleep(for: .milliseconds(100))
         XCTAssertNil(host.presentedViewController)
+        host.target = studios
+        host.setNeedsFocusUpdate()
+        host.updateFocusIfNeeded()
+        try await Task.sleep(for: .milliseconds(300))
+        XCTAssertTrue(studios.isFocused)
+        XCTAssertEqual(studios.cardBackgroundColor, UIColor(ThemePalette.dark.raised.fill))
+        let next = try XCTUnwrap(original.first { $0 !== studios })
+        host.target = next
+        host.setNeedsFocusUpdate()
+        host.updateFocusIfNeeded()
+        try await Task.sleep(for: .milliseconds(300))
+        XCTAssertTrue(next.isFocused)
+        XCTAssertFalse(studios.isFocused)
 
         for expanded in [true, false, true, false] {
             model.item.originalTitle = expanded
@@ -195,6 +330,7 @@ final class NativeInformationCardHostedTests: XCTestCase {
         }
         XCTAssertEqual(cards.count, 8)
         for card in cards {
+            XCTAssertEqual(card.cardBackgroundColor, UIColor(ThemePalette.dark.raised.fill))
             XCTAssertGreaterThan(card.bounds.height, 60)
         }
         let firstCard = try XCTUnwrap(cards.first)
@@ -464,6 +600,10 @@ final class NativeInformationCardHostedTests: XCTestCase {
         window.layoutIfNeeded()
         try await Task.sleep(for: .seconds(1))
         let card = try XCTUnwrap(nativeCards(in: window).first)
+        let placedSize = card.contentSize
+        XCTAssertEqual(placedSize.width, 300, accuracy: 1)
+        XCTAssertGreaterThan(placedSize.height, 70)
+        XCTAssertLessThanOrEqual(placedSize.height, 280)
         let baseline = try informationPixels(window)
         let region = card.contentView.convert(card.contentView.bounds, to: window).insetBy(dx: 12, dy: 12).integral
         var sizes: [CGSize] = []
@@ -473,9 +613,9 @@ final class NativeInformationCardHostedTests: XCTestCase {
             try await Task.sleep(for: .milliseconds(60))
             sizes.append(card.contentSize)
             XCTAssertEqual(card.contentSize.width, 300, accuracy: 1)
-            XCTAssertEqual(card.contentSize.height, 280, accuracy: 1)
+            XCTAssertEqual(card.contentSize.height, placedSize.height, accuracy: 1)
             XCTAssertEqual(card.contentView.bounds.width, 300, accuracy: 1)
-            XCTAssertEqual(card.contentView.bounds.height, 280, accuracy: 1)
+            XCTAssertEqual(card.contentView.bounds.height, placedSize.height, accuracy: 1)
             let current = try informationPixels(window)
             var changed = 0
             for y in Int(region.minY)..<Int(region.maxY) {
@@ -739,6 +879,24 @@ final class NativeInformationCardHostedTests: XCTestCase {
     }
 }
 
+private struct InlineMorePixelFixture: View {
+    let showsMore: Bool
+
+    var body: some View {
+        DetailInlineMoreLabel(isTruncated: showsMore, fadeWidth: 120, textFont: .system(size: 24)) {
+            Text(verbatim: "Upper line ending in gypqy\nMiddle line ending in gypqy\nLast line ending in several words")
+                .font(.system(size: 24))
+                .lineLimit(3)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(width: 340, alignment: .leading)
+        }
+        .foregroundStyle(.white)
+        .frame(width: 1920, height: 1080, alignment: .topLeading)
+        .background(.black)
+        .ignoresSafeArea()
+    }
+}
+
 private struct NativeInformationFactFixture: View {
     let model: NativeInformationRefreshModel
 
@@ -749,6 +907,7 @@ private struct NativeInformationFactFixture: View {
         .environment(\.plozzCardFocusStyle, .system)
         .environment(\.themePalette, .dark)
         .environment(\.colorScheme, .dark)
+        .environment(\.gradientBackgroundsEnabled, false)
     }
 }
 

@@ -144,10 +144,7 @@ public struct DetailInformationSections: View {
     private var sectionBody: some View {
         VStack(alignment: .leading, spacing: sectionSpacing) {
             if hasAbout || hasRatings {
-                DetailSummaryLayout(
-                    secondaryColumns: sortedRatings.count > 1 || familyGuidanceSummary != nil ? 2 : 1,
-                    sideBySideMinimumWidth: summaryMinimumWidth
-                ) {
+                VStack(alignment: .leading, spacing: informationGroupSpacing) {
                     if hasAbout {
                         detailSection(title: LocalizedStringResource(
                             "mediaDetail.section.about",
@@ -160,16 +157,14 @@ public struct DetailInformationSections: View {
                         .id("about")
                     }
                     if hasRatings {
-                        detailSection(title: "Ratings") {
+                        VStack(alignment: .leading, spacing: informationGroupSpacing) {
                             if !sortedRatings.isEmpty {
-                                ProportionalWrapLayout(
-                                    preferredColumns: DetailInformationLayout.columns,
-                                    minimumCellWidth: informationColumnMinimumWidth,
+                                WrappingHStackLayout(
                                     spacing: informationColumnSpacing,
-                                    rowSpacing: informationRowSpacing
+                                    lineSpacing: informationRowSpacing
                                 ) {
                                     ForEach(sortedRatings) { rating in
-                                        protectedRating { RatingTile(rating: rating) }
+                                        protectedRating { RatingTile(rating: rating, compact: true) }
                                     }
                                 }
                             }
@@ -178,14 +173,25 @@ public struct DetailInformationSections: View {
                                     FamilyGuidanceTile(item: item, summary: summary)
                                         .id(item.stablePresentationID)
                                 }
+                                .frame(maxWidth: 900, alignment: .leading)
                             }
                         }
+                        .accessibilityElement(children: .contain)
+                        .accessibilityLabel("Ratings")
                         .id("ratings")
                     }
                 }
             }
             ForEach(informationGroups) { group in
-                informationGroup(group)
+                DetailInformationGroup(
+                    group: group,
+                    minimumCellWidth: informationColumnMinimumWidth,
+                    titleFont: group.id == "playback" ? technicalTitleFont : sectionTitleFont,
+                    labelFont: factLabelFont,
+                    valueFont: group.id == "playback" ? technicalValueFont : factValueFont
+                ) {
+                    expandedGroup = group
+                }
             }
         }
     }
@@ -310,6 +316,7 @@ public struct DetailInformationSections: View {
                     }
                     Text(item.title)
                         .font(aboutTitleFont)
+                        .plozzForeground(.primary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 if let overview = nonempty(item.overview) {
@@ -332,11 +339,11 @@ public struct DetailInformationSections: View {
     @ViewBuilder
     private func aboutOverview(_ overview: String) -> some View {
         DetailInlineMoreLabel(
-            isTruncated: isOverviewTruncated, fadeWidth: moreFadeWidth, fadeHeight: moreFadeHeight
+            isTruncated: isOverviewTruncated, fadeWidth: moreFadeWidth, textFont: bodyFont
         ) {
             overviewText(overview)
                 .font(bodyFont)
-                .foregroundStyle(.primary)
+                .plozzForeground(.primary)
                 .lineLimit(aboutLineLimit)
                 // Measure the visible (line-limited) height…
                 .background {
@@ -363,7 +370,6 @@ public struct DetailInformationSections: View {
                             }
                         }
                 }
-
         }
     }
 
@@ -555,38 +561,6 @@ public struct DetailInformationSections: View {
             accent: palette.accent
         ))
         #endif
-    }
-
-    private func informationGroup(_ group: InformationGroup) -> some View {
-        VStack(alignment: .leading, spacing: informationGroupSpacing) {
-            Text(group.title)
-                .font(group.id == "playback" ? technicalTitleFont : sectionTitleFont)
-            ProportionalWrapLayout(
-                preferredColumns: DetailInformationLayout.columns,
-                minimumCellWidth: informationColumnMinimumWidth,
-                spacing: informationColumnSpacing,
-                rowSpacing: informationRowSpacing
-            ) {
-                ForEach(group.previewFacts) { fact in
-                    InformationFactCell(
-                        fact: fact, labelFont: factLabelFont,
-                        valueFont: group.id == "playback" ? technicalValueFont : factValueFont,
-                        isTechnical: group.id == "playback",
-                        accessibilityID: "detail-\(group.id)-\(fact.id)-more"
-                    ) {
-                        expandedGroup = group
-                    }
-                }
-            }
-            if group.hasOmittedFacts {
-                Button { expandedGroup = group } label: { DetailMoreLabel() }
-                    .buttonStyle(.plain)
-                    .frame(minHeight: 44, alignment: .leading)
-                    .accessibilityIdentifier("detail-\(group.id)-more")
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .topLeading)
-        .accessibilityElement(children: .contain)
     }
 
     private func detailSection<Content: View>(
@@ -898,14 +872,6 @@ public struct DetailInformationSections: View {
         #endif
     }
 
-    private var moreFadeHeight: CGFloat {
-        #if os(tvOS)
-        34
-        #else
-        22
-        #endif
-    }
-
     private var moreFadeWidth: CGFloat {
         #if os(tvOS)
         220
@@ -985,27 +951,101 @@ public struct DetailInformationSections: View {
         mobileColumnMinimumWidth
         #endif
     }
+}
 
-    private var summaryMinimumWidth: CGFloat {
-        let columns = CGFloat(DetailInformationLayout.columns)
-        return columns * informationColumnMinimumWidth + (columns - 1) * informationColumnSpacing
+private struct DetailInformationGroup: View {
+    let group: InformationGroup
+    let minimumCellWidth: CGFloat
+    let titleFont: Font
+    let labelFont: Font
+    let valueFont: Font
+    let onExpand: () -> Void
+    @State private var expandableFacts: Set<String> = []
+
+    private var hasMore: Bool {
+        group.hasOmittedFacts || group.previewFacts.contains {
+            $0.hasOmittedValues || expandableFacts.contains($0.id)
+        }
+    }
+
+    var body: some View {
+        DetailSectionLayout(
+            sideBySideMinimumWidth: CGFloat(DetailInformationLayout.columns) * minimumCellWidth
+                + CGFloat(DetailInformationLayout.columns - 1) * DetailInformationLayout.gutter
+        ) {
+            Text(group.title)
+                .font(titleFont)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            #if os(tvOS)
+            // Truncation changes actions, never the native host owning the group.
+            Button {
+                if hasMore { onExpand() }
+            } label: {
+                facts
+            }
+            .plozzCardButton(
+                cornerRadius: DetailInformationLayout.cornerRadius,
+                focusedScale: PlozzTheme.Metrics.readOnlyFocusedCardScale
+            )
+            .accessibilityRemoveTraits(hasMore ? [] : .isButton)
+            .accessibilityIdentifier("detail-\(group.id)-more")
+            #else
+            facts
+            #endif
+        }
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .accessibilityElement(children: .contain)
+    }
+
+    private var facts: some View {
+        VStack(alignment: .leading, spacing: DetailInformationLayout.headingSpacing) {
+            ProportionalWrapLayout(
+                preferredColumns: DetailInformationLayout.columns - 1,
+                minimumCellWidth: minimumCellWidth,
+                spacing: DetailInformationLayout.gutter,
+                rowSpacing: DetailInformationLayout.labelSpacing
+            ) {
+                ForEach(group.previewFacts) { fact in
+                    InformationFactCell(
+                        fact: fact, labelFont: labelFont, valueFont: valueFont,
+                        isTechnical: group.id == "playback",
+                        accessibilityID: "detail-\(group.id)-\(fact.id)-more",
+                        onExpand: onExpand,
+                        onExpansionChange: { canExpand in
+                            if canExpand {
+                                expandableFacts.insert(fact.id)
+                            } else {
+                                expandableFacts.remove(fact.id)
+                            }
+                        }
+                    )
+                }
+            }
+            if group.hasOmittedFacts {
+                #if os(tvOS)
+                DetailMoreLabel()
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding([.horizontal, .bottom], DetailInformationLayout.cellPadding)
+                #else
+                Button(action: onExpand) { DetailMoreLabel() }
+                    .buttonStyle(.plain)
+                    .frame(minHeight: 44, alignment: .leading)
+                    .accessibilityIdentifier("detail-\(group.id)-more")
+                #endif
+            }
+        }
     }
 }
 
-/// Summary and scores share the first row only when both retain a useful width.
-/// Natural heights are independent: wrapping ratings never stretches the synopsis.
-private struct DetailSummaryLayout: Layout {
-    let secondaryColumns: Int
+/// A label column on wide screens; a heading above the same ordered facts on mobile.
+private struct DetailSectionLayout: Layout {
     let sideBySideMinimumWidth: CGFloat
 
     private func widths(for width: CGFloat, count: Int) -> [CGFloat] {
         let gutter = DetailInformationLayout.gutter
         if count == 2, width >= sideBySideMinimumWidth {
             let column = (width - 3 * gutter) / 4
-            let secondary = CGFloat(secondaryColumns)
-            let primary = 4 - secondary
-            return [primary * column + (primary - 1) * gutter,
-                    secondary * column + (secondary - 1) * gutter]
+            return [column, 3 * column + 2 * gutter]
         }
         return Array(repeating: width, count: count)
     }
@@ -1015,8 +1055,8 @@ private struct DetailSummaryLayout: Layout {
         let widths = widths(for: width, count: subviews.count)
         let heights = zip(subviews, widths).map { $0.sizeThatFits(.init(width: $1, height: nil)).height }
         let horizontal = subviews.count == 2 && width >= sideBySideMinimumWidth
-        let height = horizontal ? (heights.max() ?? 0)
-            : heights.reduce(0, +) + DetailInformationLayout.sectionSpacing * CGFloat(max(0, subviews.count - 1))
+        let height = horizontal ? max(heights[0] + DetailInformationLayout.cellPadding, heights[1])
+            : heights.reduce(0, +) + DetailInformationLayout.headingSpacing * CGFloat(max(0, subviews.count - 1))
         return CGSize(width: width, height: height)
     }
 
@@ -1024,13 +1064,15 @@ private struct DetailSummaryLayout: Layout {
         let widths = widths(for: bounds.width, count: subviews.count)
         let horizontal = subviews.count == 2 && bounds.width >= sideBySideMinimumWidth
         var origin = bounds.origin
-        for (subview, width) in zip(subviews, widths) {
+        for (index, pair) in zip(subviews, widths).enumerated() {
+            let (subview, width) = pair
             let size = subview.sizeThatFits(.init(width: width, height: nil))
-            subview.place(at: origin, proposal: .init(width: width, height: size.height))
+            let y = origin.y + (horizontal && index == 0 ? DetailInformationLayout.cellPadding : 0)
+            subview.place(at: CGPoint(x: origin.x, y: y), proposal: .init(width: width, height: size.height))
             if horizontal {
                 origin.x += width + DetailInformationLayout.gutter
             } else {
-                origin.y += size.height + DetailInformationLayout.sectionSpacing
+                origin.y += size.height + DetailInformationLayout.headingSpacing
             }
         }
     }
@@ -1153,6 +1195,7 @@ private struct InformationFactCell: View {
     let isTechnical: Bool
     let accessibilityID: String
     let onExpand: () -> Void
+    let onExpansionChange: (Bool) -> Void
     @State private var textTruncated = false
 
     private var hasMore: Bool { fact.needsExpansion(textTruncated: textTruncated) }
@@ -1160,15 +1203,13 @@ private struct InformationFactCell: View {
     @ViewBuilder
     var body: some View {
         #if os(tvOS)
-        // Native fitting probes can briefly truncate even short values. Replacing
-        // the host on that result restarts the probes and never lets layout settle.
-        cardButton
-            .accessibilityRemoveTraits(hasMore ? [] : .isButton)
+        label
+            .onChange(of: hasMore, initial: true) { _, hasMore in onExpansionChange(hasMore) }
         #else
         if hasMore {
             cardButton
         } else {
-            label.plozzFocusableCard(cornerRadius: DetailInformationLayout.cornerRadius)
+            label
         }
         #endif
     }
@@ -1179,10 +1220,7 @@ private struct InformationFactCell: View {
         } label: {
             label
         }
-        .plozzCardButton(
-            cornerRadius: DetailInformationLayout.cornerRadius,
-            focusedScale: PlozzTheme.Metrics.readOnlyFocusedCardScale
-        )
+        .buttonStyle(.plain)
         .accessibilityIdentifier(accessibilityID)
     }
 
@@ -1211,31 +1249,33 @@ private struct InformationValuePreview: View {
     let fact: InformationFact
     let font: Font
     let onTruncationChange: (Bool) -> Void
-    @State private var visibleHeight: CGFloat = 0
-    @State private var fullHeight: CGFloat = 0
+    @State private var visibleSize: CGSize = .zero
+    @State private var fullSize: CGSize = .zero
 
     private var measuredTruncation: Bool? {
-        guard visibleHeight > 0, fullHeight > 0 else { return nil }
-        return fullHeight > visibleHeight + 0.5
+        guard visibleSize.height > 0, fullSize.height > 0,
+              visibleSize.width > 0, abs(visibleSize.width - fullSize.width) < 0.5 else { return nil }
+        return fullSize.height > visibleSize.height + 0.5
     }
 
     var body: some View {
         DetailInlineMoreLabel(
             isTruncated: fact.needsExpansion(textTruncated: measuredTruncation == true),
-            fadeWidth: fadeWidth, fadeHeight: fadeHeight
+            fadeWidth: fadeWidth, textFont: font
         ) {
             Text(fact.previewValue)
                 .font(font)
                 .lineLimit(DetailPreviewLimits.valueLines)
                 .fixedSize(horizontal: false, vertical: true)
-                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { visibleHeight = $0 }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .onGeometryChange(for: CGSize.self) { $0.size } action: { visibleSize = $0 }
                 .background(alignment: .topLeading) {
                     Text(fact.value)
                         .font(font)
                         .fixedSize(horizontal: false, vertical: true)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .hidden()
-                        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { fullHeight = $0 }
+                        .onGeometryChange(for: CGSize.self) { $0.size } action: { fullSize = $0 }
                 }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -1249,14 +1289,6 @@ private struct InformationValuePreview: View {
         120
         #else
         90
-        #endif
-    }
-
-    private var fadeHeight: CGFloat {
-        #if os(tvOS)
-        34
-        #else
-        22
         #endif
     }
 }

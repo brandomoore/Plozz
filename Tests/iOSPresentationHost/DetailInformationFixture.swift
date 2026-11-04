@@ -11,7 +11,7 @@ struct DetailInformationFixture: View {
         ProcessInfo.processInfo.arguments.contains("--detail-single-long-value")
     }
     private var layoutCase: String? {
-        ["sparse", "rich", "personal", "episode", "discover"].first {
+        ["sparse", "rich", "personal", "episode", "discover", "guidance", "upcoming", "ratings-only", "family-only"].first {
             ProcessInfo.processInfo.arguments.contains("--detail-layout-\($0)")
         }
     }
@@ -64,6 +64,35 @@ struct DetailInformationFixture: View {
                 item.ratings = []
                 item.studios = []
             }
+            if layoutCase == "guidance" {
+                item.title = "The Last of Us"
+                item.kind = .series
+                item.officialRating = "TV-MA"
+                item.ratings = [
+                    .init(source: .imdb, value: 8.4, scale: .outOfTen),
+                    .init(source: .tmdb, value: 8.4, scale: .outOfTen),
+                    .init(source: .rottenTomatoes, value: 94, scale: .percent),
+                    .init(source: .rottenTomatoesAudience, value: 62, scale: .percent)
+                ]
+                item.familyGuidance = .init(
+                    recommendedAge: 16, qualityRating: 4,
+                    overview: "Survival drama with strong violence and language."
+                )
+            }
+            if layoutCase == "upcoming" {
+                item.title = "The Dog Stars"
+                item.runtime = nil
+                item.officialRating = nil
+            }
+            if layoutCase == "ratings-only" || layoutCase == "family-only" {
+                var sparse = MediaItem(id: "minimal", title: "Minimal title", kind: .movie)
+                if layoutCase == "ratings-only" {
+                    sparse.ratings = item.ratings
+                } else {
+                    sparse.familyGuidance = .init(recommendedAge: 12, qualityRating: nil)
+                }
+                return sparse
+            }
             return item
         }
         if singleValue {
@@ -72,6 +101,26 @@ struct DetailInformationFixture: View {
         return MediaItem(
             id: "series", title: "Series", kind: .series,
             people: (1...60).map { MediaPerson(id: "director-\($0)", name: "Director \($0)", kind: "Director") }
+        )
+    }
+
+    private var isUnowned: Bool {
+        guard let layoutCase else { return false }
+        return ["discover", "upcoming", "ratings-only", "family-only"].contains(layoutCase)
+    }
+
+    private var availability: ExternalTitleAvailability? {
+        guard layoutCase == "upcoming" else { return nil }
+        return ExternalTitleAvailability(
+            regionCode: "US",
+            releaseEvents: [
+                .init(kind: .theatrical, date: Date(timeIntervalSince1970: 1_787_875_200), regionCode: "US"),
+                .init(kind: .digital, date: Date(timeIntervalSince1970: 1_793_059_200), regionCode: "US"),
+                .init(kind: .physical, date: Date(timeIntervalSince1970: 1_796_083_200), regionCode: "US")
+            ],
+            watchOffers: ["Prime Video", "Apple TV", "Fandango at Home"].enumerated().map {
+                .init(providerID: $0.offset, providerName: $0.element, kind: .rent, regionCode: "US")
+            }
         )
     }
 
@@ -87,18 +136,19 @@ struct DetailInformationFixture: View {
                     }
                     DetailInformationSections(
                         item: item, horizontalInset: horizontalInset,
-                        selectedSource: layoutCase == nil || layoutCase == "discover" ? nil : MediaSourceRef(
+                        selectedSource: layoutCase == nil || isUnowned ? nil : MediaSourceRef(
                             accountID: "fixture", itemID: item.id, providerKind: .jellyfin,
                             serverName: "Living room server", accountName: "Household", locality: .local
                         ),
-                        selectedVersion: layoutCase == nil || layoutCase == "discover" ? nil : MediaVersion(
+                        selectedVersion: layoutCase == nil || isUnowned ? nil : MediaVersion(
                             id: "file",
                             fileName: layoutCase == "personal" ? "Summer holiday.mov"
                                 : "Resident Evil (2026) - [WEBDL-2160p][DV HDR10Plus][EAC3 5.1][h265].mkv",
                             width: 3840, height: 2160, bitrate: 25_300_000,
                             sizeBytes: 17_800_000_000, videoCodec: "hevc",
                             videoRange: "DOVI", audioCodec: "eac3", audioChannels: 6
-                        )
+                        ),
+                        externalAvailability: availability
                     )
                 }
                 .id("detail-fixture-top")

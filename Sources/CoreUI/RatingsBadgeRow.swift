@@ -310,19 +310,18 @@ public struct RatingSourceIcon: View {
     static let metacriticRed = Color(red: 0.98, green: 0.27, blue: 0.20)
 }
 
-/// A single rating presented as a filled tile — a large branded icon, the score
-/// at display size, and a quiet subtitle (vote count, or a Rotten-Tomatoes
-/// freshness word). Used in the detail page's ratings grid so one or many ratings
-/// fill the space legibly instead of a cramped inline row.
+/// A score and its source, optionally content-sized for a compact detail strip.
 public struct RatingTile: View {
     @Environment(\.themePalette) private var palette
     #if os(iOS)
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     #endif
     private let rating: ExternalRating
+    private let compact: Bool
 
-    public init(rating: ExternalRating) {
+    public init(rating: ExternalRating, compact: Bool = false) {
         self.rating = rating
+        self.compact = compact
     }
 
     public var body: some View {
@@ -337,10 +336,10 @@ public struct RatingTile: View {
                     .lineLimit(1)
                     .minimumScaleFactor(0.6)
                 subtitle
-                    .frame(height: subtitleRowHeight)
+                    .frame(height: compact ? nil : subtitleRowHeight)
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: compact ? nil : .infinity, alignment: .leading)
         .padding(.vertical, verticalPadding)
         .padding(.horizontal, horizontalPadding)
         // Focusable on tvOS (D-pad reachable with the shared glass lift, matching
@@ -353,7 +352,7 @@ public struct RatingTile: View {
     @ViewBuilder
     private var subtitle: some View {
         Text(subtitleText)
-            .font(.system(size: subtitleFontSize, weight: .medium))
+            .font(subtitleFont)
             .plozzForeground(.secondary)
             .lineLimit(1)
             .minimumScaleFactor(0.75)
@@ -371,6 +370,7 @@ public struct RatingTile: View {
     }
 
     private var iconSize: CGFloat {
+        if compact { return 24 }
         #if os(tvOS)
         return 32
         #else
@@ -382,9 +382,9 @@ public struct RatingTile: View {
 
     private var valueFont: Font {
         #if os(tvOS)
-        return .system(size: 28, weight: .semibold)
+        return .system(size: compact ? 24 : 28, weight: .semibold)
         #else
-        return horizontalSizeClass == .compact
+        return compact || horizontalSizeClass == .compact
             ? .title2.weight(.semibold)
             : .system(size: 24, weight: .semibold)
         #endif
@@ -400,6 +400,13 @@ public struct RatingTile: View {
 
     private var subtitleRowHeight: CGFloat { subtitleFontSize * 1.4 }
 
+    private var subtitleFont: Font {
+        #if os(iOS)
+        if compact { return .caption.weight(.medium) }
+        #endif
+        return .system(size: subtitleFontSize, weight: .medium)
+    }
+
     private var valueSpacing: CGFloat {
         #if os(tvOS)
         return PlozzTheme.Spacing.small
@@ -409,11 +416,11 @@ public struct RatingTile: View {
     }
 
     private var verticalPadding: CGFloat {
-        DetailInformationLayout.cellPadding
+        compact ? PlozzTheme.Spacing.small : DetailInformationLayout.cellPadding
     }
 
     private var horizontalPadding: CGFloat {
-        DetailInformationLayout.cellPadding
+        compact ? PlozzTheme.Spacing.medium : DetailInformationLayout.cellPadding
     }
 
     private var cornerRadius: CGFloat {
