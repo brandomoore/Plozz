@@ -305,8 +305,12 @@ and release-catalog checks, commit declarations, and revert detection. It querie
 App Store Connect read-only: external beta membership/state is distinct from an
 App Store version in `READY_FOR_SALE` / `READY_FOR_DISTRIBUTION`. Approval, preorder,
 pending release, main merge, GitHub release publication and issue closure alone
-never establish App Store delivery. Builds without a published source tag are
-reported as unverifiable, not guessed. A reopened issue cannot reuse an older
+never establish App Store delivery. Apple can retain the distribution state on
+superseded versions; only the highest distributed marketing version per platform
+is used, not a newer pending version or response order. Builds without a published
+source tag or whose tagged source predates the release catalog are reported as
+unverifiable and excluded, not guessed. Missing referenced tags or invalid existing
+catalogs still fail visibly. A reopened issue cannot reuse an older
 fix declaration. Expired beta builds alone do not keep an issue In beta.
 Closed reports without verified delivery and issues labeled `duplicate` are
 omitted rather than misrepresented as Released.
