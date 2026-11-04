@@ -641,6 +641,20 @@ targets:
         TARGETED_DEVICE_FAMILY: "1,2"
         GENERATE_INFOPLIST_FILE: YES
 
+  PlozzTrackerStateTests:
+    type: bundle.unit-test
+    platform: tvOS
+    sources:
+      - path: Tests/TrackerAcceptanceHostedTests
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.thatcube.Plozz.TrackerStateTests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Plozz.app/Plozz"
+        BUNDLE_LOADER: "$(TEST_HOST)"
+    dependencies:
+      - target: Plozz
+
   PlozziOSTrackerStateTests:
     type: bundle.unit-test
     platform: iOS
@@ -723,6 +737,16 @@ schemes:
       preferredScreenCaptureFormat: screenshots
       targets:
         - PlozziOSTrackerConnectionTests
+
+  PlozzTrackerStateTests:
+    build:
+      targets:
+        Plozz: all
+        PlozzTrackerStateTests: [test]
+    test:
+      config: Debug
+      targets:
+        - PlozzTrackerStateTests
 
   PlozziOSTrackerStateTests:
     build:

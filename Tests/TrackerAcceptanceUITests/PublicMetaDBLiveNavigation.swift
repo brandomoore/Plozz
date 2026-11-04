@@ -9,23 +9,7 @@ enum PublicMetaDBLiveNavigation {
     static func openSettings(in app: XCUIApplication) throws {
         if app.buttons["publicmetadb.pair"].exists { return }
         #if os(tvOS)
-        if app.buttons["live-tv-preview-disable"].exists {
-            try select(app.buttons["live-tv-preview-disable"], moving: .right)
-        }
-        let integrations = app.buttons["settings-section-integrations"]
-        if !integrations.exists || !integrations.isEnabled {
-            let settings = app.buttons["Settings"]
-            for _ in 0..<4 {
-                if settings.exists && settings.isEnabled { break }
-                XCUIRemote.shared.press(.menu)
-            }
-            guard settings.exists, settings.isEnabled else {
-                throw Failure.unavailableControl("App navigation did not become available.")
-            }
-            try select(settings, moving: .down)
-        }
-        let towardIntegrations: XCUIRemote.Button = integrations.frame.maxY < app.frame.minY ? .up : .down
-        try select(integrations, moving: towardIntegrations)
+        try openSettingsCategory("integrations", in: app)
         try select(app.buttons["settings-page-publicmetadb"], moving: .down)
         #else
         throw Failure.unavailableControl("Open PublicMetaDB settings before this iOS run.")
@@ -36,6 +20,29 @@ enum PublicMetaDBLiveNavigation {
     }
 
     #if os(tvOS)
+    static func openSettingsCategory(_ identifier: String, in app: XCUIApplication) throws {
+        if app.buttons["live-tv-preview-disable"].exists {
+            try select(app.buttons["live-tv-preview-disable"], moving: .right)
+        }
+        let category = app.buttons["settings-section-\(identifier)"]
+        if !category.exists || !category.isEnabled {
+            let settings = app.buttons["Settings"]
+            guard settings.waitForExistence(timeout: 30) else {
+                throw Failure.unavailableControl("App Settings navigation")
+            }
+            for _ in 0..<4 {
+                if settings.exists && settings.isEnabled { break }
+                XCUIRemote.shared.press(.menu)
+            }
+            guard settings.exists, settings.isEnabled else {
+                throw Failure.unavailableControl("App navigation did not become available.")
+            }
+            try select(settings, moving: .down)
+        }
+        let direction: XCUIRemote.Button = category.frame.maxY < app.frame.minY ? .up : .down
+        try select(category, moving: direction)
+    }
+
     static func select(
         _ target: XCUIElement, moving direction: XCUIRemote.Button, maximumPresses: Int = 24
     ) throws {

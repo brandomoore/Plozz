@@ -320,6 +320,19 @@ the normal isolated retry only after every requested bundle reported.
 Runner verdict regressions use the existing host-side unittest runner:
 `python3 -m unittest discover -s tools/tests -p 'test_xcresult_summary.py'`.
 
+### Opt-in tracker acceptance
+
+`PlozzTrackerConnectionTests` and `PlozziOSTrackerConnectionTests` drive an
+already-installed normal app on an explicitly selected owned simulator.
+`PlozzTrackerStateTests` and `PlozziOSTrackerStateTests` provide independent,
+read-only share-history observation inside that app's normal signed host.
+The observer requires one explicit profile and share, preserves the existing
+Keychain access groups, and accepts only item-not-found as absent history.
+On tvOS it uses the production user-independent Keychain namespace, with no
+per-system-user fallback; omitting that query attribute reads a different store.
+Use these alongside real native actions and source/build provenance; a passing
+readback alone does not establish that the expected history was present.
+
 ## App-hosted focus integration
 
 Episode-panel fixtures activate native window focus before reissuing their

@@ -43,6 +43,203 @@ final class PublicMetaDBLiveTVTests: XCTestCase {
         XCTAssertEqual(app.state, .runningForeground)
     }
 
+    func testPrepareSelectedNFSShowShare() throws {
+        let (url, name) = try selectedNFSShowShare()
+        app.terminate()
+        app.launch()
+        try PublicMetaDBLiveNavigation.openSettingsCategory("servers", in: app)
+        XCTAssertTrue(app.buttons["Add Server"].waitForExistence(timeout: 15))
+        XCTAssertFalse(app.buttons.matching(NSPredicate(format: "label CONTAINS %@", name)).firstMatch.exists)
+        try PublicMetaDBLiveNavigation.select(app.buttons["Add Server"], moving: .down)
+        XCTAssertTrue(app.buttons["Media Share"].waitForExistence(timeout: 10))
+        try PublicMetaDBLiveNavigation.select(app.buttons["Media Share"], moving: .down)
+        try PublicMetaDBLiveNavigation.select(app.buttons["Enter an address manually"], moving: .down)
+        try PublicMetaDBLiveNavigation.select(
+            app.buttons.containing(.staticText, identifier: "SMB").firstMatch, moving: .up
+        )
+        try PublicMetaDBLiveNavigation.select(
+            app.cells.containing(.any, identifier: "NFS").firstMatch, moving: .down
+        )
+        XCTAssertEqual(app.secureTextFields.count, 0)
+        try enterNonsecretText(try XCTUnwrap(url.string),
+                              into: app.textFields["e.g. 192.168.1.100 or mynas.local"])
+        try PublicMetaDBLiveNavigation.select(app.buttons["Connect"], moving: .down)
+        XCTAssertTrue(app.staticTexts[url.path].waitForExistence(timeout: 45))
+        try enterNonsecretText(name, into: app.textFields["e.g. Family Movies"], moving: .up)
+        try PublicMetaDBLiveNavigation.select(
+            app.buttons.containing(.staticText, identifier: "Mixed (Automatic)").firstMatch, moving: .down
+        )
+        try PublicMetaDBLiveNavigation.select(
+            app.cells.containing(.any, identifier: "TV Shows").firstMatch, moving: .down
+        )
+        XCTAssertTrue(app.buttons.containing(.staticText, identifier: "TV Shows").firstMatch.exists)
+        XCTAssertTrue(app.buttons["Use This Folder"].exists)
+        XCTAssertEqual(app.textFields["e.g. Family Movies"].value as? String, name)
+    }
+
+    func testConfirmSelectedNFSShowShare() throws {
+        let (url, name) = try selectedNFSShowShare()
+        XCTAssertTrue(app.staticTexts[url.path].exists)
+        XCTAssertEqual(app.textFields["e.g. Family Movies"].value as? String, name)
+        XCTAssertTrue(app.buttons.containing(.staticText, identifier: "TV Shows").firstMatch.exists)
+        try PublicMetaDBLiveNavigation.select(app.buttons["Use This Folder"], moving: .down)
+        XCTAssertTrue(app.buttons["Add Server"].waitForExistence(timeout: 45))
+        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label CONTAINS %@", name))
+            .firstMatch.waitForExistence(timeout: 30))
+    }
+
+    func testInspectShareSourceSettings() throws {
+        let (_, name) = try selectedNFSShowShare()
+        app.terminate()
+        app.launch()
+        try PublicMetaDBLiveNavigation.openSettingsCategory("myLibraries", in: app)
+        let source = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "NFS, \(name), ")).firstMatch
+        XCTAssertTrue(source.waitForExistence(timeout: 15))
+        XCTAssertTrue(source.isEnabled)
+    }
+
+    func testDisableCrossServerWatchSync() throws {
+        app.terminate()
+        app.launch()
+        try PublicMetaDBLiveNavigation.openSettingsCategory("integrations", in: app)
+        let control = app.switches["Sync across servers"]
+        XCTAssertTrue(control.waitForExistence(timeout: 15))
+        XCTAssertTrue(["0", "1"].contains(try XCTUnwrap(control.value as? String)))
+        if control.value as? String == "1" {
+            try PublicMetaDBLiveNavigation.select(control, moving: .down)
+        }
+        XCTAssertEqual(control.value as? String, "0")
+    }
+
+    func testSelectOnlyNFSShowShare() throws {
+        let (_, name) = try selectedNFSShowShare()
+        try testInspectShareSourceSettings()
+        XCTAssertEqual(app.buttons.matching(NSPredicate(format: "label MATCHES %@", ".*, (On|Off)")).count, 2)
+        XCTAssertTrue(app.buttons["NFS, \(name), On"].exists)
+        let otherSource = app.buttons["CubeBoi, On"]
+        if otherSource.exists {
+            try PublicMetaDBLiveNavigation.select(otherSource, moving: .down)
+        }
+        XCTAssertTrue(app.buttons["CubeBoi, Off"].waitForExistence(timeout: 10))
+        assertOnlyNFSShowShareSelected(name: name)
+    }
+
+    private func assertOnlyNFSShowShareSelected(name: String) {
+        XCTAssertEqual(app.buttons.matching(NSPredicate(format: "label MATCHES %@", ".*, (On|Off)")).count, 2)
+        XCTAssertTrue(app.buttons["CubeBoi, Off"].exists)
+        XCTAssertTrue(app.buttons["NFS, \(name), On"].exists)
+        XCTAssertTrue(app.buttons[name].isSelected)
+    }
+
+    func testRestoreSourcesAfterNFSShowShare() throws {
+        let (_, name) = try selectedNFSShowShare()
+        try testInspectShareSourceSettings()
+        assertOnlyNFSShowShareSelected(name: name)
+        try PublicMetaDBLiveNavigation.select(app.buttons["CubeBoi, Off"], moving: .down)
+        XCTAssertTrue(app.buttons["CubeBoi, On"].waitForExistence(timeout: 10))
+        try PublicMetaDBLiveNavigation.select(app.buttons["NFS, \(name), On"], moving: .down)
+        XCTAssertTrue(app.buttons["NFS, \(name), Off"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["CubeBoi, On"].exists)
+    }
+
+    func testOpenSelectedNFSShow() throws {
+        _ = try selectedNFSShowShare()
+        let title = try XCTUnwrap(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_HISTORY_TITLE"])
+        XCTAssertFalse(title.isEmpty)
+        let card = try selectedTitleCard(title: title)
+        try PublicMetaDBLiveNavigation.select(card, moving: .down)
+        XCTAssertTrue(app.staticTexts["Season 1"].waitForExistence(timeout: 30))
+    }
+
+    func testInspectSelectedNFSSeasonUnwatched() throws {
+        let action = try openSelectedNFSSeasonMenu(watched: false)
+        XCUIRemote.shared.press(.menu)
+        XCTAssertTrue(action.waitForNonExistence(timeout: 5))
+        assertVisibleSeasonWatchState(false)
+    }
+
+    func testMarkSelectedNFSSeasonWatched() throws {
+        let action = try openSelectedNFSSeasonMenu(watched: false)
+        try PublicMetaDBLiveNavigation.select(action, moving: .down)
+        XCTAssertTrue(action.waitForNonExistence(timeout: 5))
+        assertVisibleSeasonWatchState(true)
+    }
+
+    func testInspectSelectedNFSSeasonWatched() throws {
+        let action = try openSelectedNFSSeasonMenu(watched: true)
+        XCUIRemote.shared.press(.menu)
+        XCTAssertTrue(action.waitForNonExistence(timeout: 5))
+        assertVisibleSeasonWatchState(true)
+    }
+
+    func testMarkSelectedNFSSeasonUnwatched() throws {
+        let action = try openSelectedNFSSeasonMenu(watched: true)
+        try PublicMetaDBLiveNavigation.select(action, moving: .down)
+        XCTAssertTrue(action.waitForNonExistence(timeout: 5))
+        assertVisibleSeasonWatchState(false)
+    }
+
+    private func assertVisibleSeasonWatchState(_ watched: Bool) {
+        let episodes = app.otherElements.matching(NSPredicate(
+            format: "label MATCHES %@", "E[0-9]+ · .*, (Watched|Unwatched)"
+        ))
+        let suffix = watched ? ", Watched" : ", Unwatched"
+        let updated = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            let visible = episodes.allElementsBoundByIndex
+            return !visible.isEmpty && visible.allSatisfy { $0.label.hasSuffix(suffix) }
+        }, object: app)
+        XCTAssertEqual(XCTWaiter.wait(for: [updated], timeout: 30), .completed)
+    }
+
+    private func openSelectedNFSSeasonMenu(watched: Bool) throws -> XCUIElement {
+        XCTAssertEqual(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_HISTORY_TITLE"], "The Crown")
+        let (_, name) = try selectedNFSShowShare()
+        try testInspectShareSourceSettings()
+        assertOnlyNFSShowShareSelected(name: name)
+        try testOpenSelectedNFSShow()
+        let episode = app.otherElements.matching(NSPredicate(
+            format: "label MATCHES %@", "E[0-9]+ · .*, (Watched|Unwatched)"
+        )).firstMatch
+        let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            episode.exists && episode.isEnabled
+                && episode.buttons.firstMatch.exists && episode.buttons.firstMatch.isEnabled
+                && episode.buttons.firstMatch.frame.width > 0
+        }, object: app)
+        XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 15), .completed)
+        try PublicMetaDBLiveNavigation.focus(episode, moving: .down, maximumPresses: 4)
+        let seasons = (1...6).map {
+            app.buttons.containing(.staticText, identifier: "Season \($0)").firstMatch
+        }
+        let active = try XCTUnwrap(seasons.first { $0.exists && $0.isEnabled })
+        try PublicMetaDBLiveNavigation.focus(active, moving: .up, maximumPresses: 4)
+        let season = app.buttons.containing(.staticText, identifier: "Season 1").firstMatch
+        try PublicMetaDBLiveNavigation.focus(season, moving: .left, maximumPresses: 6)
+        XCUIRemote.shared.press(.select, forDuration: 1)
+        let label = watched ? "Mark Season Unwatched" : "Mark Season Watched"
+        let otherLabel = watched ? "Mark Season Watched" : "Mark Season Unwatched"
+        let action = app.cells.containing(.any, identifier: label).firstMatch
+        XCTAssertTrue(action.waitForExistence(timeout: 10))
+        XCTAssertTrue(app.cells.containing(.any, identifier: otherLabel).firstMatch.exists)
+        return action
+    }
+
+    private func selectedNFSShowShare() throws -> (URLComponents, String) {
+        let environment = ProcessInfo.processInfo.environment
+        let rawURL = try XCTUnwrap(environment["PLOZZ_TRACKER_SHARE_URL"])
+        let url = try XCTUnwrap(URLComponents(string: rawURL))
+        let name = try XCTUnwrap(environment["PLOZZ_TRACKER_SHARE_NAME"])
+        XCTAssertEqual(environment["PLOZZ_TRACKER_SHARE_CONTENT"], "TV Shows")
+        XCTAssertEqual(url.scheme, "nfs")
+        XCTAssertNotNil(url.host)
+        XCTAssertGreaterThanOrEqual(url.path.split(separator: "/").count, 3)
+        XCTAssertNil(url.user)
+        XCTAssertNil(url.password)
+        XCTAssertNil(url.query)
+        XCTAssertNil(url.fragment)
+        XCTAssertFalse(name.isEmpty)
+        return (url, name)
+    }
+
     func testCancelServerAddressEntry() throws {
         XCTAssertTrue(app.keyboards.firstMatch.exists)
         XCUIRemote.shared.press(.menu)
@@ -462,8 +659,9 @@ final class PublicMetaDBLiveTVTests: XCTestCase {
         XCTAssertTrue(search.waitForExistence(timeout: 30))
         for _ in 0..<4 {
             if search.isEnabled { break }
-            XCUIRemote.shared.press(.left)
+            XCUIRemote.shared.press(.menu)
         }
+        XCTAssertTrue(search.isEnabled)
         try PublicMetaDBLiveNavigation.select(search, moving: .up)
         let field = app.searchFields.firstMatch
         XCTAssertTrue(field.waitForExistence(timeout: 10))

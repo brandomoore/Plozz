@@ -35,13 +35,17 @@ final class LiveShareWatchStateReadbackTests: XCTestCase {
                     .replacingOccurrences(of: "/", with: "_")
                     .replacingOccurrences(of: "=", with: "")
             }.joined(separator: ".")
-        let query: [String: Any] = [
+        var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: "com.plozz.app.local-state",
             kSecAttrAccount as String: address,
             kSecReturnData as String: true,
             kSecMatchLimit as String: kSecMatchLimitOne
         ]
+        #if os(tvOS)
+        // Match DurableLocalStateStoreFactory's household namespace, without a per-user fallback.
+        query[kSecUseUserIndependentKeychain as String] = kCFBooleanTrue
+        #endif
         var stored: CFTypeRef?
         let status = SecItemCopyMatching(query as CFDictionary, &stored)
         var result: [String: Any] = [
@@ -49,6 +53,11 @@ final class LiveShareWatchStateReadbackTests: XCTestCase {
             "status": status, "capturedAt": Date().timeIntervalSince1970,
             "readOnly": true, "found": status == errSecSuccess
         ]
+        #if os(tvOS)
+        result["userIndependentKeychain"] = true
+        #else
+        result["userIndependentKeychain"] = false
+        #endif
         if status == errSecSuccess {
             let data = try XCTUnwrap(stored as? Data)
             XCTAssertLessThanOrEqual(data.count, 400_000)
