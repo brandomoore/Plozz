@@ -996,33 +996,39 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   review scores, or parental restrictions; copy it across native hosting boundaries.
   Featured cards use compact visual metadata and full accessible classifications.
   Title-information facts retain the full original classification when visible.
-- **Detail information layout** — TV and mobile share ordered, full-width
-  information sections. About occupies the full width, followed by a compact,
-  content-sized rating strip and any family guidance. Their heights are independent;
-  a single score never reserves an empty summary column. About keeps a stable line cap.
-  On wide screens, section headings occupy the first of four shared columns and
-  ordered facts use the remaining three. Narrow screens and larger mobile text
-  sizes put the heading above the same facts, which wrap to fewer columns.
+- **Detail information layout** — TV and mobile share ordered information
+  sections. About and Ratings sit beside each other when both have readable space;
+  otherwise they stack. Scores determine their own column width, and family
+  guidance remains with the scores. Four or more scores balance into two rows when
+  there is no guidance row. Their heights are independent; About keeps a stable
+  line cap and never stretches to match ratings. Missing summary content reserves
+  no column.
+  Section headings sit above full-width fact groups, never in an empty side column.
+  Ordered facts use up to four columns, with balanced rows and fewer columns at
+  narrower widths or larger mobile text sizes. Playback uses quieter type, and
+  its filename spans the group rather than wrapping in one narrow column.
   On TV, each group owns one native focus surface rather than a card per fact;
   selecting an expandable group opens its full values. Mobile keeps inline
   expansion targets without individual filled cards.
-  They share padded text insets, label spacing, and equal heights within each
+  They share group insets, label spacing, and equal heights within each
   row; section gaps, gutters, and padding come from `DetailInformationLayout`.
   Ratings stay separate from editorial facts. Revealing one
   protected score reveals the shared score group, never the surrounding facts.
   Missing sections leave no reserved grid cells. Cast previews show 12 people
   on both platforms; More opens the complete supplied cast and keeps person
   navigation bound to the owning source. Information previews retain all source
-  values, cap lists and long text, and reuse the synopsis's faded inline MORE
-  treatment beside each truncated value. MORE is a non-sizing overlay aligned
+  values and cap text previews by rendered lines, not an arbitrary number of
+  names. Short genre and studio lists remain complete when they fit. Long text
+  reuses the synopsis's faded inline MORE treatment beside each truncated value.
+  MORE is a non-sizing overlay aligned
   to the final text baseline. Its soft fade is limited to one measured line at
   the current font size, leaving the previous line intact. Truncation compares
   full and visible text at the same allocated width, so native fitting probes
   do not prematurely mask short values. Cast expansion sits beneath its rail.
   Fact grids are eagerly measured before native TV focus hosting; a lazy grid
   inside a single native card can report an incomplete multi-row height.
-  A group keeps the same native TV card when truncation changes; only its More
-  action and accessibility role change. Switching between separate read-only
+  About and each group keep the same native TV card when truncation changes; only
+  their More action and accessibility role change. Switching between separate read-only
   and button hosts restarts minimum-size probes and can loop during first layout.
   Required availability attribution stays visible even when release facts are
   capped. These presentation limits do not change provider metadata precedence.
@@ -1031,6 +1037,8 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   `--detail-layout-discover`, `--detail-layout-personal`, `--detail-layout-guidance`,
   `--detail-layout-upcoming`, `--detail-layout-ratings-only`, or
   `--detail-layout-family-only` for native review without server access.
+  `--detail-layout-lupin` and `--detail-layout-slow-horses` reproduce the visible
+  metadata shapes from reported layout regressions, without private server identities.
   `--detail-layout-bottom` reveals Playback.
 - **Detail information focus** — the tvOS About/Ratings/Information band uses
   native focus with at most 2% growth and 6pt of expansion per edge, leaving

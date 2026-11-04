@@ -3,7 +3,6 @@ import Foundation
 
 public enum DetailPreviewLimits {
     public static let cast = 12
-    static let listValues = 3
     static let valueLines = 3
     static let facts = 9
     static let serviceLogos = 6

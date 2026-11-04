@@ -336,7 +336,7 @@ public struct RatingTile: View {
                     .lineLimit(1)
                     .minimumScaleFactor(0.6)
                 subtitle
-                    .frame(height: compact ? nil : subtitleRowHeight)
+                    .frame(height: subtitleHeight)
             }
         }
         .frame(maxWidth: compact ? nil : .infinity, alignment: .leading)
@@ -384,9 +384,7 @@ public struct RatingTile: View {
         #if os(tvOS)
         return .system(size: compact ? 24 : 28, weight: .semibold)
         #else
-        return compact || horizontalSizeClass == .compact
-            ? .title2.weight(.semibold)
-            : .system(size: 24, weight: .semibold)
+        return .title2.weight(.semibold)
         #endif
     }
 
@@ -400,11 +398,20 @@ public struct RatingTile: View {
 
     private var subtitleRowHeight: CGFloat { subtitleFontSize * 1.4 }
 
+    private var subtitleHeight: CGFloat? {
+        #if os(tvOS)
+        compact ? nil : subtitleRowHeight
+        #else
+        nil
+        #endif
+    }
+
     private var subtitleFont: Font {
         #if os(iOS)
-        if compact { return .caption.weight(.medium) }
-        #endif
+        return .caption.weight(.medium)
+        #else
         return .system(size: subtitleFontSize, weight: .medium)
+        #endif
     }
 
     private var valueSpacing: CGFloat {

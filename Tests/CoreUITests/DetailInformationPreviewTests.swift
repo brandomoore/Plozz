@@ -33,8 +33,8 @@ final class DetailInformationPreviewTests: XCTestCase {
         let fact = try XCTUnwrap(group.facts.first)
         XCTAssertEqual(fact.listValues?.count, 60)
         XCTAssertTrue(fact.value.contains("Director 60"))
-        XCTAssertFalse(fact.previewValue.contains("Director 4"))
-        XCTAssertTrue(fact.needsExpansion(textTruncated: false))
+        XCTAssertTrue(fact.value.contains("Director 4"))
+        XCTAssertTrue(fact.needsExpansion(textTruncated: true))
     }
 
     func testTagsAreNotSilentlyDiscardedAfterSixteen() throws {
@@ -45,13 +45,22 @@ final class DetailInformationPreviewTests: XCTestCase {
         let fact = try XCTUnwrap(group.facts.first { $0.id == "tags" })
         XCTAssertEqual(fact.listValues, tags)
         XCTAssertTrue(fact.value.contains("Tag 30"))
-        XCTAssertTrue(fact.needsExpansion(textTruncated: false))
+        XCTAssertTrue(fact.needsExpansion(textTruncated: true))
     }
 
     func testShortValuesDoNotOfferRedundantExpansion() {
         let fact = InformationFact(id: "runtime", label: "Runtime", value: "2h")
         XCTAssertFalse(fact.needsExpansion(textTruncated: false))
         XCTAssertTrue(fact.needsExpansion(textTruncated: true))
+    }
+
+    func testShortListsAreNotCutOffByAnArbitraryNameCount() {
+        let names = ["Drama", "Crime", "Action", "Mystery"]
+        let fact = InformationFact(id: "genres", label: "Genres", value: names.joined(separator: ", "),
+                                   listValues: names)
+        XCTAssertFalse(fact.needsExpansion(textTruncated: false))
+        XCTAssertTrue(fact.needsExpansion(textTruncated: true))
+        XCTAssertEqual(fact.listValues, names)
     }
 
     func testLongFactGroupsRetainTheirCompleteData() {

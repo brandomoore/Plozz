@@ -11,7 +11,7 @@ struct DetailInformationFixture: View {
         ProcessInfo.processInfo.arguments.contains("--detail-single-long-value")
     }
     private var layoutCase: String? {
-        ["sparse", "rich", "personal", "episode", "discover", "guidance", "upcoming", "ratings-only", "family-only"].first {
+        ["sparse", "rich", "personal", "episode", "discover", "guidance", "upcoming", "ratings-only", "family-only", "lupin", "slow-horses"].first {
             ProcessInfo.processInfo.arguments.contains("--detail-layout-\($0)")
         }
     }
@@ -79,6 +79,52 @@ struct DetailInformationFixture: View {
                     overview: "Survival drama with strong violence and language."
                 )
             }
+            if layoutCase == "lupin" || layoutCase == "slow-horses" {
+                item.kind = .series
+                item.officialRating = "TV-MA"
+                item.originalTitle = nil
+                item.genres = ["Drama", "Crime", "Action", "Mystery"]
+                if layoutCase == "lupin" {
+                    item.title = "Lupin"
+                    item.overview = "Inspired by the adventures of Arsène Lupin, gentleman thief Assane Diop sets out to avenge his father for an injustice inflicted by a wealthy family."
+                    item.productionYear = 2021
+                    item.runtime = nil
+                    item.ratings = [.init(source: .tmdb, value: 7.7, scale: .outOfTen)]
+                    item.people = [
+                        .init(id: "d1", name: "Hugo Gélin", kind: "Director"),
+                        .init(id: "d2", name: "Ludovic Bernard", kind: "Director"),
+                        .init(id: "d3", name: "Daniel Grou", kind: "Director"),
+                        .init(id: "w1", name: "François Uzan", kind: "Writer"),
+                        .init(id: "w2", name: "George Kay", kind: "Writer"),
+                        .init(id: "w3", name: "Tony Saint", kind: "Writer")
+                    ]
+                    item.studios = ["Gaumont", "Carrousel Studios"]
+                } else {
+                    item.title = "Slow Horses"
+                    item.overview = "A dysfunctional team of MI5 agents navigate the espionage world's smoke and mirrors to defend the UK from sinister forces."
+                    item.productionYear = 2022
+                    item.runtime = 3_000
+                    item.ratings = [
+                        .init(source: .rottenTomatoes, value: 98, scale: .percent),
+                        .init(source: .rottenTomatoesAudience, value: 88, scale: .percent),
+                        .init(source: .imdb, value: 8.3, scale: .outOfTen),
+                        .init(source: .tmdb, value: 8.1, scale: .outOfTen)
+                    ]
+                    item.familyGuidance = .init(
+                        recommendedAge: 16, qualityRating: nil,
+                        overview: "Smart espionage thriller has language, violence, drinking."
+                    )
+                    item.people = [
+                        .init(id: "d1", name: "Saul Metzstein", kind: "Director"),
+                        .init(id: "d2", name: "Adam Randall", kind: "Director"),
+                        .init(id: "d3", name: "James Hawes", kind: "Director"),
+                        .init(id: "w1", name: "Will Smith", kind: "Writer"),
+                        .init(id: "w2", name: "Mark Denton", kind: "Writer"),
+                        .init(id: "w3", name: "Jonny Stockwood", kind: "Writer")
+                    ]
+                    item.studios = ["See-Saw Films"]
+                }
+            }
             if layoutCase == "upcoming" {
                 item.title = "The Dog Stars"
                 item.runtime = nil
@@ -143,7 +189,7 @@ struct DetailInformationFixture: View {
                         selectedVersion: layoutCase == nil || isUnowned ? nil : MediaVersion(
                             id: "file",
                             fileName: layoutCase == "personal" ? "Summer holiday.mov"
-                                : "Resident Evil (2026) - [WEBDL-2160p][DV HDR10Plus][EAC3 5.1][h265].mkv",
+                                : "\(item.title) (\(item.productionYear ?? 2026)) - [WEBDL-2160p][DV HDR10Plus][EAC3 5.1][h265].mkv",
                             width: 3840, height: 2160, bitrate: 25_300_000,
                             sizeBytes: 17_800_000_000, videoCodec: "hevc",
                             videoRange: "DOVI", audioCodec: "eac3", audioChannels: 6

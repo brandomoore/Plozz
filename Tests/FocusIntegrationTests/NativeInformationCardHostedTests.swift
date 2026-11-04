@@ -9,6 +9,67 @@ import XCTest
 
 @MainActor
 final class NativeInformationCardHostedTests: XCTestCase {
+    func testSummaryUsesOneRatingRowWithoutReservingSynopsisHeight() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        for count in [1, 4] {
+            var item = MediaItem(
+                id: "summary", title: "Slow Horses", kind: .series,
+                overview: "A dysfunctional team of MI5 agents navigate the espionage world's smoke and mirrors to defend the UK from sinister forces.",
+                productionYear: 2022
+            )
+            item.ratings = Array([
+                ExternalRating(source: .rottenTomatoes, value: 98, scale: .percent),
+                .init(source: .rottenTomatoesAudience, value: 88, scale: .percent),
+                .init(source: .imdb, value: 8.3, scale: .outOfTen),
+                .init(source: .tmdb, value: 8.1, scale: .outOfTen)
+            ].prefix(count))
+            if count == 4 {
+                item.familyGuidance = .init(
+                    recommendedAge: 16, qualityRating: nil,
+                    overview: "Smart espionage thriller has language, violence, drinking."
+                )
+            }
+            window.rootViewController = UIHostingController(rootView:
+                ScrollView {
+                    DetailInformationSections(item: item, horizontalInset: 80)
+                }
+                .environment(\.plozzCardFocusStyle, .system)
+                .environment(\.themePalette, .dark)
+            )
+            window.makeKeyAndVisible()
+            try await Task.sleep(for: .milliseconds(500))
+            let cards = nativeCards(in: window)
+            XCTAssertEqual(cards.count, count == 4 ? 7 : 3)
+            guard cards.count == (count == 4 ? 7 : 3) else { continue }
+            let frames = try cards.map { card in
+                let container = try XCTUnwrap(card.superview)
+                return container.convert(container.bounds, to: window)
+            }
+            let about = frames[0]
+            for rating in frames[1...count] {
+                XCTAssertEqual(rating.minY, about.minY, accuracy: 1)
+                XCTAssertGreaterThan(rating.minX, about.maxX)
+            }
+            if count == 4 {
+                XCTAssertLessThanOrEqual(frames[5].maxY - about.maxY, 100,
+                                         "Family guidance must not leave a large empty reservation under a short synopsis.")
+            }
+            let attachment = XCTAttachment(image: DetailTransitionSnapshot.image(of: window))
+            attachment.name = "summary-\(count)-scores"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+        }
+    }
+
     func testFocusedAboutKeepsReadableTextInLightAppearance() async throws {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
             .first { $0.activationState == .foregroundActive })
@@ -69,8 +130,12 @@ final class NativeInformationCardHostedTests: XCTestCase {
             id: "layout", title: "A film", kind: .movie, productionYear: 2026,
             officialRating: "TV-MA", genres: ["Horror", "Science Fiction", "Adventure"],
             people: [
-                .init(id: "director", name: "One Director", kind: "Director"),
-                .init(id: "writer", name: "One Writer", kind: "Writer")
+                .init(id: "director-1", name: "Saul Metzstein", kind: "Director"),
+                .init(id: "director-2", name: "Adam Randall", kind: "Director"),
+                .init(id: "director-3", name: "James Hawes", kind: "Director"),
+                .init(id: "writer-1", name: "Will Smith", kind: "Writer"),
+                .init(id: "writer-2", name: "Mark Denton", kind: "Writer"),
+                .init(id: "writer-3", name: "Jonny Stockwood", kind: "Writer")
             ],
             studios: ["First Studio", "Second Studio", "Third Studio", "Fourth Studio"],
             runtime: 5_700
@@ -114,6 +179,8 @@ final class NativeInformationCardHostedTests: XCTestCase {
         XCTAssertEqual(slots.count, 3, "Details, Crew and Playback each own one native surface.")
         guard slots.count == 3 else { return }
         for (index, slot) in slots.enumerated() {
+            XCTAssertGreaterThan(slot.frame.width, window.bounds.width * 0.8,
+                                 "Information must not reserve a heading-only column.")
             XCTAssertEqual(slot.frame.minX, slots[0].frame.minX, accuracy: 1)
             XCTAssertEqual(slot.card.contentSize.width, slots[0].card.contentSize.width, accuracy: 1)
             XCTAssertLessThanOrEqual(slot.frame.maxY, window.bounds.maxY)
@@ -122,6 +189,11 @@ final class NativeInformationCardHostedTests: XCTestCase {
             }
         }
         let image = DetailTransitionSnapshot.image(of: window)
+        let attachment = XCTAttachment(image: image)
+        attachment.name = "detail-fact-keylines-and-insets"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+        let pixels = try informationPixels(window)
         for (index, slot) in slots.enumerated() {
             let surface = try XCTUnwrap(NativeFocusProjection.artworkFrame(of: slot.card.contentView, in: window))
             let frame = surface.applying(CGAffineTransform(scaleX: image.scale, y: image.scale))
@@ -141,23 +213,47 @@ final class NativeInformationCardHostedTests: XCTestCase {
                 }
                 XCTAssertEqual(labels.count, 3)
                 for label in labels {
-                    XCTAssertEqual(label.boundingBox.maxY, labels[0].boundingBox.maxY, accuracy: 0.015)
+                    XCTAssertEqual(label.boundingBox.midY * surface.height,
+                                   labels[0].boundingBox.midY * surface.height, accuracy: 3,
+                                   "Recognized label centers must share a row; glyph tops vary with the text.")
                 }
             }
-            for text in observations {
-                let width = surface.width
-                let height = surface.height
-                // Vision's normalized coordinates introduce subpixel rounding.
-                XCTAssertGreaterThanOrEqual(text.boundingBox.minX * width + 0.01, 20)
-                XCTAssertGreaterThanOrEqual((1 - text.boundingBox.maxX) * width + 0.01, 20)
-                XCTAssertGreaterThanOrEqual((1 - text.boundingBox.maxY) * height + 0.01, 20)
-                XCTAssertGreaterThanOrEqual(text.boundingBox.minY * height + 0.01, 20)
+            if index == 1 {
+                let writerLabel = try XCTUnwrap(observations.first {
+                    $0.topCandidates(1).first?.string == "Written By"
+                })
+                let directors = try XCTUnwrap(observations.first {
+                    $0.topCandidates(1).first?.string.contains("Saul Metzstein") == true
+                })
+                XCTAssertLessThanOrEqual(directors.boundingBox.maxX * surface.width + 20,
+                                         writerLabel.boundingBox.minX * surface.width,
+                                         "Neighboring text columns need a readable gap.")
             }
+            if index == 2 {
+                let filename = try XCTUnwrap(observations.first {
+                    $0.topCandidates(1).first?.string.contains(".mkv") == true
+                })
+                XCTAssertGreaterThan(filename.boundingBox.width, 0.35,
+                                     "The filename must use more than one narrow fact column.")
+            }
+            // Vision can overestimate glyph bounds. Measure painted text for exact insets,
+            // excluding the native card's border rather than relaxing the padding requirement.
+            let interior = surface.intersection(window.bounds).insetBy(dx: 8, dy: 8).integral
+            var textBounds = CGRect.null
+            for y in Int(interior.minY)..<Int(interior.maxY) {
+                for x in Int(interior.minX)..<Int(interior.maxX) {
+                    let offset = (y * 1920 + x) * 4
+                    if pixels[offset] > 140 && pixels[offset + 1] > 140 && pixels[offset + 2] > 140 {
+                        textBounds = textBounds.union(CGRect(x: x, y: y, width: 1, height: 1))
+                    }
+                }
+            }
+            XCTAssertFalse(textBounds.isNull)
+            XCTAssertGreaterThanOrEqual(textBounds.minX - surface.minX, 20)
+            XCTAssertGreaterThanOrEqual(surface.maxX - textBounds.maxX, 20)
+            XCTAssertGreaterThanOrEqual(textBounds.minY - surface.minY, 20)
+            XCTAssertGreaterThanOrEqual(surface.maxY - textBounds.maxY, 20)
         }
-        let attachment = XCTAttachment(image: image)
-        attachment.name = "detail-fact-keylines-and-insets"
-        attachment.lifetime = .keepAlways
-        add(attachment)
     }
 
     func testMoreOverlayDoesNotParticipateInTextSizing() {
@@ -270,12 +366,12 @@ final class NativeInformationCardHostedTests: XCTestCase {
         for expanded in [true, false, true, false] {
             model.item.originalTitle = expanded
                 ? String(repeating: "A very long original title ", count: 40) : "Original title"
-            model.item.studios = expanded ? ["First Studio", "Second Studio", "Third Studio", "Fourth Studio"] : ["Studio"]
+            model.item.studios = expanded ? (1...30).map { "Production Studio \($0)" } : ["Studio"]
             try await Task.sleep(for: .milliseconds(350))
             XCTAssertEqual(Set(nativeCards(in: window).map(ObjectIdentifier.init)), identities)
             XCTAssertTrue(original.allSatisfy { $0.contentSize.width > 100 && $0.contentSize.height > 0 })
         }
-        model.item.studios = ["First Studio", "Second Studio", "Third Studio", "Fourth Studio"]
+        model.item.studios = (1...30).map { "Production Studio \($0)" }
         try await Task.sleep(for: .milliseconds(350))
         studios.sendActions(for: .primaryActionTriggered)
         try await Task.sleep(for: .milliseconds(400))
