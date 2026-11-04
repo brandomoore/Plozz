@@ -50,12 +50,13 @@ public struct SeasonEpisodeRowContent<Artwork: View, Status: View, Accessory: Vi
                 }
                 ZStack(alignment: .topLeading) {
                     if reservesStatusSpace {
-                        Text(verbatim: "\n")
+                        Text(verbatim: " ")
                             .hidden()
                             .accessibilityHidden(true)
                     }
                     status
                 }
+                .lineLimit(reservesStatusSpace && !dynamicTypeSize.isAccessibilitySize ? 1 : nil)
                 .font(.caption)
                 .foregroundStyle(Color.secondary)
             }

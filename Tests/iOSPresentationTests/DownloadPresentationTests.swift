@@ -19,7 +19,7 @@ final class DownloadPresentationTests: XCTestCase {
         for width in widths {
             for size in [DynamicTypeSize.large, .accessibility3] {
                 var heights: [CGFloat] = []
-                for status in ["", "Preparing Download", "46% · 47.6 MB/s\n1 min remaining", "Downloaded"] {
+                for status in ["", "Preparing Download", "46% · 47.6 MB/s · 1 min remaining", "Downloaded"] {
                     let renderer = ImageRenderer(content:
                         SeasonEpisodeRowContent(
                             number: 8, title: "The Envoys", reservesStatusSpace: true
@@ -40,6 +40,20 @@ final class DownloadPresentationTests: XCTestCase {
                     XCTAssertGreaterThanOrEqual(heights[2], heights[0])
                     XCTAssertEqual(heights[0], heights[3], accuracy: 1)
                 } else {
+                    let baseline = ImageRenderer(content:
+                        SeasonEpisodeRowContent(number: 8, title: "The Envoys") {
+                            SeasonEpisodeRowArtwork(showsMediaEdge: false) { Color.gray }
+                        } status: {
+                            EmptyView()
+                        } accessory: {
+                            Color.clear.frame(width: 44, height: 44)
+                        }
+                        .frame(width: width)
+                        .environment(\.dynamicTypeSize, size)
+                        .environment(\.locale, Locale(identifier: "en"))
+                    )
+                    let baselineHeight = try XCTUnwrap(baseline.uiImage).size.height
+                    XCTAssertLessThanOrEqual(heights[0] - baselineHeight, 16, "Reserve at most one caption line.")
                     for height in heights {
                         XCTAssertEqual(height, heights[0], accuracy: 1, "Width \(width), size \(size)")
                     }
