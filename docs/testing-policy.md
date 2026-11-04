@@ -332,6 +332,9 @@ On tvOS it uses the production user-independent Keychain namespace, with no
 per-system-user fallback; omitting that query attribute reads a different store.
 Use these alongside real native actions and source/build provenance; a passing
 readback alone does not establish that the expected history was present.
+SMB source-selection drivers require the exact declared fixture before changing
+any switches. The Emby-only methods are separate from the Emby/Silo/NFS methods;
+missing sources must not silently reduce the scope of an acceptance run.
 
 ## App-hosted focus integration
 

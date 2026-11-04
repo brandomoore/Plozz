@@ -449,13 +449,39 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         try configureSMBSources(selected: false)
     }
 
-    private func configureSMBSources(selected: Bool) throws {
+    func testSelectOnlySMBShareWithEmby() throws {
+        try configureSMBSources(selected: true, includesSiloAndNFS: false)
+    }
+
+    func testRestoreEmbyAfterSMBShare() throws {
+        try configureSMBSources(selected: false, includesSiloAndNFS: false)
+    }
+
+    private func configureSMBSources(selected: Bool, includesSiloAndNFS: Bool = true) throws {
         let name = try XCTUnwrap(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_SHARE_NAME"])
+        try require(!name.isEmpty, "Expected the dedicated SMB share name")
+        let share = "SMB, \(name)"
+        var expectedSources: Set<String> = ["CubeBoi", share]
+        if includesSiloAndNFS {
+            expectedSources.formUnion(["Silo", "NFS, Tracker NFS"])
+        }
         try testOpenLibrarySettings()
-        try setSourceServer("SMB, \(name)", selected: selected)
+        let sources = Set(app.switches.allElementsBoundByIndex.map(\.label).filter { !$0.isEmpty })
+        try require(sources == expectedSources, "Expected exactly the explicitly selected SMB test fixture")
+        if selected { try setSourceServer(share, selected: true) }
         try setSourceServer("CubeBoi", selected: !selected)
-        try setSourceServer("Silo", selected: !selected)
-        try setSourceServer("NFS, Tracker NFS", selected: false)
+        if includesSiloAndNFS {
+            try setSourceServer("Silo", selected: !selected)
+            try setSourceServer("NFS, Tracker NFS", selected: false)
+        }
+        if !selected { try setSourceServer(share, selected: false) }
+        try testOpenLibrarySettings()
+        XCTAssertEqual(app.switches[share].value as? String, selected ? "1" : "0")
+        XCTAssertEqual(app.switches["CubeBoi"].value as? String, selected ? "0" : "1")
+        if includesSiloAndNFS {
+            XCTAssertEqual(app.switches["Silo"].value as? String, selected ? "0" : "1")
+            XCTAssertEqual(app.switches["NFS, Tracker NFS"].value as? String, "0")
+        }
     }
 
     private struct SMBInput: Decodable {
@@ -2873,6 +2899,7 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
     }
 
     private func revealHistoryImportRow(status: String) throws -> XCUIElement {
+        try tapVisible(app.buttons["Compare again"], tapping: false, maximumSwipes: 32)
         let finished = XCTNSPredicateExpectation(
             predicate: NSPredicate(format: "exists == true AND enabled == true"),
             object: app.buttons["Compare again"]
