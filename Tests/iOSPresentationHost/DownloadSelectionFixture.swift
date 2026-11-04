@@ -26,8 +26,9 @@ struct DownloadSelectionFixture: View {
                 supportsReducedQuality: true,
                 availableSpace: "72 GB",
                 alwaysAsk: !ProcessInfo.processInfo.arguments.contains("--download-ask-off"),
-                isBulk: !ProcessInfo.processInfo.arguments.contains("--single-download-episode")
-                    && !ProcessInfo.processInfo.arguments.contains("--download-movie"),
+                isBulk: ProcessInfo.processInfo.arguments.contains("--bulk-download")
+                    || (!ProcessInfo.processInfo.arguments.contains("--single-download-episode")
+                        && !ProcessInfo.processInfo.arguments.contains("--download-movie")),
                 onCancel: { showsSheet = false },
                 onDownload: {
                     downloadedCount = selection.selectedOptions.count

@@ -206,8 +206,9 @@ limits and refuses an incompatible plan rather than quietly using Maximum.
   With it disabled, a single movie or episode with one version starts immediately
   using the saved quality. Multiple versions and season/show downloads still
   open the selection sheet before queueing.
-  Seasons are sections with one row per episode; alternate files stay in a
-  nested version list. One version is preselected using the existing explicit,
+  Single-episode downloads show version choices directly. Season/show downloads
+  use season sections with one row per episode and nested version lists.
+  One version is preselected using the existing explicit,
   remembered-series, and device-compatible version selection rules. You can
   exclude episodes or deliberately select multiple versions, which keep separate
   saved files and download controls. Equal filenames

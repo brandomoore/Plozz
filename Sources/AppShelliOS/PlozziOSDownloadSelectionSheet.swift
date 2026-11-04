@@ -277,15 +277,21 @@ struct PlozziOSDownloadSelectionContent: View {
                 } header: {
                     title
                 } footer: {
-                    if selection.episodes.contains(where: { $0.item.kind == .episode && $0.options.count > 1 }) {
+                    if isBulk, selection.episodes.contains(where: { $0.item.kind == .episode && $0.options.count > 1 }) {
                         Text("Open an episode to change its selected versions.")
                     }
                 }
 
-                if let movie = selection.episodes.first, movie.item.kind == .movie {
-                    if movie.options.count > 1 {
-                        Section("Version") {
-                            versionRows(for: movie)
+                if !isBulk, selection.episodes.count == 1, let focused = selection.episodes.first {
+                    if focused.item.kind == .episode || focused.options.count > 1 {
+                        Section {
+                            versionRows(for: focused)
+                        } header: {
+                            Text("Versions")
+                        } footer: {
+                            if focused.item.kind == .episode, focused.options.count > 1 {
+                                Text("Each selected version downloads a separate file.")
+                            }
                         }
                     }
                 } else {

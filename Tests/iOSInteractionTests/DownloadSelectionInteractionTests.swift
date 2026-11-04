@@ -67,9 +67,9 @@ final class DownloadSelectionInteractionTests: XCTestCase {
         app.buttons["Download Season"].tap()
         let confirm = app.buttons["confirm-download-selection"]
         XCTAssertTrue(confirm.waitForExistence(timeout: 5))
-        app.buttons["select-episode-1-1"].tap()
+        app.buttons["download-version-1"].tap()
         XCTAssertFalse(confirm.isEnabled)
-        app.buttons["select-episode-1-1"].tap()
+        app.buttons["download-version-1"].tap()
         XCTAssertTrue(confirm.isEnabled)
         confirm.tap()
         XCTAssertTrue(app.staticTexts["Queued: 1"].waitForExistence(timeout: 5))
@@ -107,11 +107,32 @@ final class DownloadSelectionInteractionTests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Queued: 0"].waitForExistence(timeout: 5))
     }
 
-    func testAskOffStillAsksForEpisodeVersionChoices() {
+    func testSingleEpisodeShowsVersionChoicesImmediatelyWithAskOff() {
         relaunch(["--single-download-episode", "--download-ask-off"])
         app.buttons["Download Season"].tap()
         XCTAssertTrue(app.buttons["confirm-download-selection"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["15 versions"].exists)
+        let first = app.buttons["download-version-1"]
+        let second = app.buttons["download-version-2"]
+        XCTAssertTrue(first.exists)
+        XCTAssertTrue(second.exists)
+        XCTAssertFalse(app.buttons["episode-versions-1-1"].exists)
+        XCTAssertFalse(app.staticTexts["Season 1"].exists)
+        second.tap()
+        XCTAssertEqual(first.value as? String, "Selected")
+        XCTAssertEqual(second.value as? String, "Selected")
+        capture("single-episode-download-versions")
+        app.buttons["confirm-download-selection"].tap()
+        XCTAssertTrue(app.staticTexts["Queued: 2"].waitForExistence(timeout: 5))
+    }
+
+    func testSeasonWithOneEpisodeStillUsesTheNestedVersionPage() {
+        relaunch(["--single-download-episode", "--bulk-download"])
+        app.buttons["Download Season"].tap()
+        let episode = app.buttons["episode-versions-1-1"]
+        XCTAssertTrue(episode.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["download-version-1"].exists)
+        episode.tap()
+        XCTAssertTrue(app.buttons["download-version-1"].waitForExistence(timeout: 5))
     }
 
     func testMovieVersionChoicesRemainExclusiveWithAskOff() {
