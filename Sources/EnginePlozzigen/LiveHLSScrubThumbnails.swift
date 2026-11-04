@@ -82,8 +82,15 @@ final class LiveHLSScrubThumbnails {
     /// A frame near `offset` seconds after the start of AVPlayer's seekable
     /// range, which begins with the oldest segment of the playlist it holds.
     func thumbnail(secondsIntoWindow offset: TimeInterval, maxWidth: Int) async -> CGImage? {
-        guard !Task.isCancelled, offset.isFinite, let playlist = await currentPlaylist(), !Task.isCancelled,
-              let segment = Self.segment(at: offset, in: playlist.segments) else { return nil }
+        guard !Task.isCancelled, offset.isFinite else { return nil }
+        guard let playlist = await currentPlaylist(), !Task.isCancelled else {
+            Self.trace("no media playlist")
+            return nil
+        }
+        guard let segment = Self.segment(at: offset, in: playlist.segments) else {
+            Self.trace("no segment at \(offset)s of \(playlist.segments.count)")
+            return nil
+        }
         if let cached = cache[segment.url] { return cached }
         if let key = segment.key, !Self.canDecrypt(key, fragmented: playlist.mapURL != nil) {
             Self.noteUnsupported("\(key.method) \(key.keyFormat ?? "identity")")
@@ -94,6 +101,7 @@ final class LiveHLSScrubThumbnails {
         for (attempt, limit) in Self.headLimits.enumerated() {
             guard !Task.isCancelled else { return nil }
             guard var data = await head(of: segment.url, bytes: limit) else {
+                Self.trace("segment head unavailable")
                 return nil
             }
             let bytes = data.count
@@ -109,7 +117,10 @@ final class LiveHLSScrubThumbnails {
                 initSegment = initSegments[mapURL]
             }
             if let key = segment.key {
-                guard let keyData = await keyBytes(for: key) else { return nil }
+                guard let keyData = await keyBytes(for: key) else {
+                    Self.trace("\(key.method) key unavailable")
+                    return nil
+                }
                 let iv = key.iv ?? Self.sequenceIV(segment.sequence)
                 switch key.method {
                 case "AES-128":
@@ -140,7 +151,10 @@ final class LiveHLSScrubThumbnails {
             // bytes ran out: read further rather than show that.
             if !HLSSampleDecryption.leadingFrameIsComplete(
                 fileExtension == "h264" ? decryptedTransportHead : data, fragmented: playlist.mapURL != nil) {
-                guard !lastAttempt else { return nil }
+                guard !lastAttempt else {
+                    Self.trace("leading frame incomplete in \(bytes) bytes")
+                    return nil
+                }
                 continue
             }
             if playlist.mapURL != nil {
@@ -153,9 +167,16 @@ final class LiveHLSScrubThumbnails {
                 remember(image, for: segment.url)
                 return image
             }
-            guard !lastAttempt else { return nil }
+            guard !lastAttempt else {
+                Self.trace("\(fileExtension) head of \(data.count) bytes did not decode")
+                return nil
+            }
         }
         return nil
+    }
+
+    nonisolated static func trace(_ message: String) {
+        PlozzLog.playback.debug("Scrub preview: \(message)")
     }
 
     /// 256 KB holds a typical 1080p keyframe; high-bitrate sport needs more.
@@ -212,11 +233,14 @@ final class LiveHLSScrubThumbnails {
     private func currentPlaylist() async -> Playlist? {
         if !masterChecked {
             masterChecked = true
-            if let text = await text(of: playlistURL) {
-                if let variant = Self.thumbnailVariant(in: text, base: playlistURL) {
+            // Relative URIs resolve against where the playlist came from: a
+            // provider that redirects its master to a CDN lists its variants
+            // relative to the CDN, as AVPlayer reads them.
+            if let (text, base) = await text(of: playlistURL) {
+                if let variant = Self.thumbnailVariant(in: text, base: base) {
                     thumbnailVariant = variant
                 } else if text.contains("#EXTINF") {
-                    thumbnailVariant = playlistURL
+                    thumbnailVariant = base
                 }
             }
         }
@@ -234,8 +258,14 @@ final class LiveHLSScrubThumbnails {
            Date().timeIntervalSince(playlistFetchedAt) < Self.playlistLifetime {
             return playlist
         }
-        guard let text = await text(of: target) else { return playlist }
-        return store(Self.parseMediaPlaylist(text, base: target))
+        guard let (text, base) = await text(of: target) else {
+            guard !Task.isCancelled else { return nil }
+            // A variant read from the master that its origin refuses: follow
+            // the media playlist AVPlayer plays instead.
+            if target == thumbnailVariant, playingMediaPlaylist() != nil { thumbnailVariant = nil }
+            return playlist
+        }
+        return store(Self.parseMediaPlaylist(text, base: base))
     }
 
     /// The variant to draw previews from: the smallest video rendition at least
@@ -396,12 +426,22 @@ final class LiveHLSScrubThumbnails {
         return "AppleCoreMedia/1.0.0.\(String(cString: build)) (\(device); U; CPU OS \(os) like Mac OS X; \(locale))"
     }()
 
+    /// Headers that say which client is asking rather than who it is. AVPlayer
+    /// sends them on every request, and providers check them on their CDN and
+    /// key hosts too: without them an encrypted channel's keys come back 403.
+    nonisolated static let clientIdentityHeaders: Set<String> = ["user-agent", "referer", "origin"]
+
+    nonisolated static func isClientIdentityHeader(_ name: String) -> Bool {
+        clientIdentityHeaders.contains(name.lowercased())
+    }
+
     func request(_ url: URL) -> URLRequest {
         var request = URLRequest(url: url)
         // Playlist-provided CDN/key URLs do not authorize forwarding the
-        // channel's credentials to another origin.
-        if HDR10PlusHTTPRangeSource.sameOrigin(playlistURL, url) {
-            for (name, value) in headers { request.setValue(value, forHTTPHeaderField: name) }
+        // channel's credentials to another origin, only its client identity.
+        let sameOrigin = HDR10PlusHTTPRangeSource.sameOrigin(playlistURL, url)
+        for (name, value) in headers where sameOrigin || Self.isClientIdentityHeader(name) {
+            request.setValue(value, forHTTPHeaderField: name)
         }
         if request.value(forHTTPHeaderField: "User-Agent") == nil {
             request.setValue(Self.playerUserAgent, forHTTPHeaderField: "User-Agent")
@@ -409,9 +449,11 @@ final class LiveHLSScrubThumbnails {
         return request
     }
 
-    private func text(of url: URL) async -> String? {
-        guard let data = await fetch(request(url), maximumBytes: 512 * 1_024) else { return nil }
-        return String(data: data, encoding: .utf8)
+    /// The playlist's text and the URL it was finally served from.
+    private func text(of url: URL) async -> (String, URL)? {
+        guard let (data, served) = await Self.fetchServed(request(url), session: session, maximumBytes: 512 * 1_024),
+              let text = String(data: data, encoding: .utf8) else { return nil }
+        return (text, served)
     }
 
     private func whole(_ url: URL) async -> Data? {
@@ -425,13 +467,24 @@ final class LiveHLSScrubThumbnails {
     nonisolated static func fetch(
         _ request: URLRequest, session: URLSession, maximumBytes: Int, allowsPrefix: Bool = false
     ) async -> Data? {
+        await fetchServed(request, session: session, maximumBytes: maximumBytes, allowsPrefix: allowsPrefix)?.data
+    }
+
+    /// The body, and the URL that served it after any redirects.
+    nonisolated static func fetchServed(
+        _ request: URLRequest, session: URLSession, maximumBytes: Int, allowsPrefix: Bool = false
+    ) async -> (data: Data, url: URL)? {
         guard let url = request.url, HDR10PlusHTTPRangeSource.sameOrigin(url, url), maximumBytes > 0,
               !Task.isCancelled else { return nil }
         do {
             let (bytes, response) = try await session.bytes(for: request, delegate: LiveHLSScrubRedirects())
             defer { bytes.task.cancel() }
             guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode),
-                  allowsPrefix || response.expectedContentLength <= maximumBytes else { return nil }
+                  allowsPrefix || response.expectedContentLength <= maximumBytes else {
+                let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+                trace("\(url.host ?? "?") answered HTTP \(status), \(response.expectedContentLength) bytes")
+                return nil
+            }
             if http.statusCode == 206 {
                 // A prefix must start at zero, not an unrelated cached range.
                 guard http.value(forHTTPHeaderField: "Content-Range")?.lowercased().hasPrefix("bytes 0-") == true else { return nil }
@@ -442,11 +495,12 @@ final class LiveHLSScrubThumbnails {
                 guard !Task.isCancelled else { return nil }
                 guard data.count < maximumBytes else { return nil }
                 data.append(byte)
-                if allowsPrefix, data.count == maximumBytes { return data }
+                if allowsPrefix, data.count == maximumBytes { return (data, response.url ?? url) }
             }
             guard !Task.isCancelled else { return nil }
-            return data
+            return (data, response.url ?? url)
         } catch {
+            trace("\(url.host ?? "?") failed: \((error as? URLError)?.code.rawValue ?? 0)")
             return nil
         }
     }
@@ -492,14 +546,30 @@ final class LiveHLSScrubRedirects: NSObject, URLSessionTaskDelegate, @unchecked 
         willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest,
         completionHandler: @escaping (URLRequest?) -> Void
     ) {
-        guard let original = task.originalRequest, let origin = original.url, let destination = request.url,
-              HDR10PlusHTTPRangeSource.sameOrigin(origin, destination) else {
-            completionHandler(nil)
-            return
-        }
+        completionHandler(Self.redirect(task.originalRequest, from: response.url, to: request.url))
+    }
+
+    /// Providers commonly hand a channel's playlist, segments or keys to a CDN
+    /// by redirect, as AVPlayer follows them. A redirect within the origin keeps
+    /// every header; one to another origin keeps the client identity and the
+    /// byte range but drops credentials, and never downgrades to plain HTTP.
+    static func redirect(_ original: URLRequest?, from responseURL: URL?, to destination: URL?) -> URLRequest? {
+        guard let original, let origin = original.url, let responseURL, let destination,
+              HDR10PlusHTTPRangeSource.sameOrigin(responseURL, responseURL),
+              HDR10PlusHTTPRangeSource.sameOrigin(destination, destination),
+              !((origin.scheme?.lowercased() == "https" || responseURL.scheme?.lowercased() == "https")
+                && destination.scheme?.lowercased() == "http")
+        else { return nil }
         var redirected = original
         redirected.url = destination
-        completionHandler(redirected)
+        if !HDR10PlusHTTPRangeSource.sameOrigin(origin, destination) {
+            let kept: Set<String> = ["range", "accept-encoding"]
+            for name in (original.allHTTPHeaderFields ?? [:]).keys
+            where !kept.contains(name.lowercased()) && !LiveHLSScrubThumbnails.isClientIdentityHeader(name) {
+                redirected.setValue(nil, forHTTPHeaderField: name)
+            }
+        }
+        return redirected
     }
 
     func urlSession(

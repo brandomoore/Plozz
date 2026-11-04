@@ -517,14 +517,21 @@ drags seek on release. Channel/source changes and overlay teardown cancel pendin
 preview work and discard outgoing frames.
 
 Native HLS previews use bounded segment prefixes, not a second persistent player.
-Channel headers are restricted to their original origin; foreign-origin redirects
-and unsupported encryption/layouts omit the preview without affecting playback.
+Relative playlist URLs resolve against the final serving URL after redirects.
+CDN requests and redirects retain User-Agent, Referer and Origin; credential
+headers remain restricted to the original origin. Every redirect hop rejects
+HTTPS-to-HTTP downgrades, including after an initial HTTP request upgrades.
+If a selected preview rendition is refused, subsequent previews can follow
+AVPlayer's playing playlist; cancelling a request does not discard that selection.
+Unsupported encryption/layouts omit the preview without affecting playback.
 Byte-range playlists and playlists switching initialization maps currently omit
 previews. Segments are capped at 2 MiB, playlists at 512 KiB, initialization files
 at 2 MiB, and identity keys at 16 bytes. Truncated frames are never intentionally
 shown; unsupported or oversized resources leave the preview unavailable.
 The decoded-image cache holds 32 entries; init and key caches each hold at most
 eight. Reduced-transparency/performance presentation retains the non-glass frame.
+On iPhone/iPad, Live TV previews are capped at 180 points wide and still shrink
+to fit small viewports. VOD retains its existing 360-point maximum.
 
 ## Playback completion reporting
 
