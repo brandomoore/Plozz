@@ -34,7 +34,9 @@
 @property(nonatomic) NSString *authorization;
 @property(nonatomic) NSDictionary<NSString *, NSNumber *> *files;
 @property(nonatomic) NSDictionary<NSString *, NSArray<NSString *> *> *directories;
+@property(nonatomic) NSMutableDictionary<NSString *, NSData *> *metadata;
 - (void)fail:(NSString *)message;
+- (BOOL)prepareMetadata;
 - (nullable NSData *)range:(NSString *)path offset:(int64_t)offset length:(int64_t)length;
 - (void)pump;
 - (void)overlay:(const BD_OVERLAY *)event;
@@ -187,8 +189,9 @@ static unsigned component(double value) {
     NSMutableDictionary *lists = [NSMutableDictionary dictionary];
     for (NSString *key in directories) lists[key] = [[directories[key] allObjects] sortedArrayUsingSelector:@selector(compare:)];
     _files = files; _directories = lists;
+    _metadata = [NSMutableDictionary dictionary];
     NSURLSessionConfiguration *http = NSURLSessionConfiguration.ephemeralSessionConfiguration;
-    http.timeoutIntervalForRequest = 10; http.timeoutIntervalForResource = 15;
+    http.timeoutIntervalForRequest = 18; http.timeoutIntervalForResource = 22;
     http.URLCache = nil; http.HTTPCookieStorage = nil; http.URLCredentialStorage = nil;
     _http = [NSURLSession sessionWithConfiguration:http delegate:[LabHTTPGuard new] delegateQueue:nil];
     _queue = dispatch_queue_create("app.plozz.lab.hdmv", DISPATCH_QUEUE_SERIAL);
@@ -206,39 +209,88 @@ static unsigned component(double value) {
 }
 
 - (NSData *)range:(NSString *)path offset:(int64_t)offset length:(int64_t)length {
-    if (self.stopped || length <= 0 || length > 512 * 1024) return nil;
-    NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:[self.baseURL URLByAppendingPathComponent:path]];
-    [request setValue:self.authorization forHTTPHeaderField:@"Authorization"];
-    NSString *range = [NSString stringWithFormat:@"bytes=%lld-%lld", offset, offset + length - 1];
-    [request setValue:range forHTTPHeaderField:@"Range"];
-    dispatch_semaphore_t ready = dispatch_semaphore_create(0);
-    __block NSData *data = nil;
-    __block NSHTTPURLResponse *response = nil;
-    __block NSError *failure = nil;
-    NSURLSessionDataTask *task = [self.http dataTaskWithRequest:request completionHandler:
-        ^(NSData *body, NSURLResponse *result, NSError *error) {
-            data = body; response = (NSHTTPURLResponse *)result; failure = error;
-            dispatch_semaphore_signal(ready);
-        }];
-    [task resume];
-    if (dispatch_semaphore_wait(ready, dispatch_time(DISPATCH_TIME_NOW, 15 * NSEC_PER_SEC))) {
-        [task cancel]; [self fail:@"Disc read timed out"]; return nil;
-    }
     if (self.stopped) return nil;
+    int64_t size = self.files[path].longLongValue;
+    if (!self.files[path] || offset < 0 || offset > size || length <= 0 ||
+        length > 512 * 1024 || length > size - offset) {
+        [self fail:@"Invalid disc range"]; return nil;
+    }
+    NSData *cached = self.metadata[path];
+    if (cached) return [cached subdataWithRange:NSMakeRange((NSUInteger)offset, (NSUInteger)length)];
     NSString *expected = [NSString stringWithFormat:@"bytes %lld-%lld/%lld",
-                          offset, offset + length - 1, self.files[path].longLongValue];
-    if (failure || response.statusCode != 206 || data.length != (NSUInteger)length ||
-        ![[response valueForHTTPHeaderField:@"Content-Range"] isEqualToString:expected]) {
+                          offset, offset + length - 1, size];
+    for (unsigned attempt = 0; attempt < 2; attempt++) {
+        if (self.stopped) return nil;
+        NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:[self.baseURL URLByAppendingPathComponent:path]];
+        [request setValue:self.authorization forHTTPHeaderField:@"Authorization"];
+        [request setValue:[NSString stringWithFormat:@"bytes=%lld-%lld", offset, offset + length - 1]
+      forHTTPHeaderField:@"Range"];
+        dispatch_semaphore_t ready = dispatch_semaphore_create(0);
+        __block NSData *data = nil;
+        __block NSHTTPURLResponse *response = nil;
+        __block NSError *failure = nil;
+        NSURLSessionDataTask *task = [self.http dataTaskWithRequest:request completionHandler:
+            ^(NSData *body, NSURLResponse *result, NSError *error) {
+                data = body; response = (NSHTTPURLResponse *)result; failure = error;
+                dispatch_semaphore_signal(ready);
+            }];
+        [task resume];
+        BOOL timedOut = dispatch_semaphore_wait(ready, dispatch_time(DISPATCH_TIME_NOW, 24 * NSEC_PER_SEC)) != 0;
+        if (timedOut) [task cancel];
+        if (self.stopped) return nil;
+        NSInteger status = timedOut ? 0 : response.statusCode;
+        NSInteger code = timedOut ? NSURLErrorTimedOut : failure.code;
+        if (!timedOut && !failure && status == 206 && data.length == (NSUInteger)length &&
+            [[response valueForHTTPHeaderField:@"Content-Range"] isEqualToString:expected]) return data;
+        BOOL transient = timedOut ||
+            ([failure.domain isEqualToString:NSURLErrorDomain] &&
+             (code == NSURLErrorTimedOut || code == NSURLErrorNetworkConnectionLost ||
+              code == NSURLErrorCannotConnectToHost)) || status == 503 || status == 504;
+        if (attempt == 0 && transient) {
+            NSLog(@"Disc Menu Lab: retrying range after transient failure (HTTP %ld, error %ld)",
+                  (long)status, (long)code);
+            dispatch_async(dispatch_get_main_queue(), ^{
+                if (!self.stopped && self.noticeChanged) self.noticeChanged(@"Retrying disc read...");
+            });
+            [NSThread sleepForTimeInterval:0.25];
+            continue;
+        }
         [self fail:[NSString stringWithFormat:@"Disc range read failed (HTTP %ld, error %ld)",
-                    (long)response.statusCode, (long)failure.code]];
+                    (long)status, (long)code]];
         return nil;
     }
-    return data;
+    [self fail:@"Disc range retry budget exhausted"]; return nil;
+}
+
+- (BOOL)prepareMetadata {
+    uint64_t total = 0;
+    for (NSString *path in [[self.files allKeys] sortedArrayUsingSelector:@selector(compare:)]) {
+        NSString *upper = path.uppercaseString;
+        if (![upper isEqualToString:@"BDMV/INDEX.BDMV"] &&
+            ![upper isEqualToString:@"BDMV/MOVIEOBJECT.BDMV"] &&
+            ![upper hasPrefix:@"BDMV/PLAYLIST/"] && ![upper hasPrefix:@"BDMV/CLIPINF/"]) continue;
+        int64_t size = self.files[path].longLongValue;
+        total += (uint64_t)size;
+        if (size > 2 * 1024 * 1024 || total > 16 * 1024 * 1024) {
+            [self fail:@"Disc navigation metadata exceeds the lab cache limit"]; return NO;
+        }
+        NSMutableData *data = [NSMutableData dataWithCapacity:(NSUInteger)size];
+        while (data.length < (NSUInteger)size) {
+            NSData *part = [self range:path offset:(int64_t)data.length
+                               length:MIN(512 * 1024, size - (int64_t)data.length)];
+            if (!part) return NO;
+            [data appendData:part];
+        }
+        self.metadata[path] = [data copy];
+    }
+    printf("HDMV navigation metadata cached: %llu bytes\n", (unsigned long long)total);
+    return !self.stopped;
 }
 
 - (void)start {
     dispatch_async(self.queue, ^{
         if (self.stopped || self->_disc) return;
+        if (![self prepareMetadata]) return;
         self->_disc = bd_init();
         if (!self->_disc || !bd_open_files(self->_disc, (__bridge void *)self, openDirectory, openFile)) {
             [self fail:@"Could not open the disc"]; return;
@@ -482,6 +534,7 @@ static unsigned component(double value) {
         if (self->_title) { bd_free_title_info(self->_title); self->_title = NULL; }
         free(self->_pixels); self->_pixels = NULL;
         free(self->_indices); self->_indices = NULL;
+        [self.metadata removeAllObjects];
     });
 }
 @end

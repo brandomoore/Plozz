@@ -3,6 +3,7 @@ import http.server
 import threading
 import time
 import unittest
+from unittest.mock import patch
 import urllib.error
 import urllib.request
 
@@ -112,8 +113,28 @@ class RelayTests(unittest.TestCase):
         self.relay.byte_limit = 1
         with self.assertRaises(urllib.error.HTTPError) as error:
             self.get()
-        self.assertEqual(error.exception.code, 502)
+        self.assertEqual(error.exception.code, 429)
         error.exception.close()
+        self.assertEqual(Upstream.requests, [])
+
+    def test_upstream_timeout_is_distinct_from_invalid_range(self):
+        for failure in (TimeoutError(), urllib.error.URLError(TimeoutError())):
+            with self.subTest(failure=type(failure).__name__), \
+                 patch("relay.Handler.fetch", side_effect=failure):
+                with self.assertRaises(urllib.error.HTTPError) as error:
+                    self.get(byte_range="bytes=0-2")
+                self.assertEqual(error.exception.code, 504)
+                error.exception.close()
+        self.assertEqual(Upstream.requests, [])
+
+    def test_upstream_busy_and_timeout_status_remain_retryable(self):
+        for status in (503, 504):
+            failure = urllib.error.HTTPError("http://fixture.invalid", status, "fixture", {}, None)
+            with self.subTest(status=status), patch("relay.Handler.fetch", side_effect=failure):
+                with self.assertRaises(urllib.error.HTTPError) as error:
+                    self.get(byte_range="bytes=0-2")
+                self.assertEqual(error.exception.code, status)
+                error.exception.close()
         self.assertEqual(Upstream.requests, [])
 
 

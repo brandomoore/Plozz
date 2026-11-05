@@ -22,6 +22,7 @@
 @property(nonatomic) BOOL playing;
 @property(nonatomic) BOOL finished;
 @property(nonatomic) BOOL failed;
+@property(nonatomic, copy) void (^restartRequested)(void);
 @property(nonatomic) double lastSaved;
 @end
 
@@ -31,7 +32,9 @@
     self.view.backgroundColor = UIColor.blackColor;
     self.selections = [NSMutableArray array]; self.samples = [NSMutableArray array];
     self.frames = [NSMutableArray array]; self.phases = [NSMutableArray array];
-    self.automatic = [NSProcessInfo.processInfo.arguments containsObject:@"--lab-auto"];
+    static BOOL probeClaimed = NO;
+    self.automatic = !probeClaimed && [NSProcessInfo.processInfo.arguments containsObject:@"--lab-auto"];
+    probeClaimed |= self.automatic;
     self.generationStart = -1;
     self.status = [UILabel new];
     self.status.textColor = UIColor.whiteColor;
@@ -70,7 +73,8 @@
     self.disc.statusChanged = ^(NSString *status) {
         LiveController *controller = weakSelf;
         if (!controller || controller.finished) return;
-        controller.status.text = status; controller.playing = NO; controller.failed = YES;
+        controller.status.text = [status stringByAppendingString:@"\nBack: retry"];
+        controller.playing = NO; controller.failed = YES;
         [controller.player stopPlayback];
         [controller.disc stop];
         [controller save:@"navigation-error"];
@@ -130,7 +134,10 @@
             case UIPressTypeLeftArrow: [self.disc key:BD_VK_LEFT]; break;
             case UIPressTypeRightArrow: [self.disc key:BD_VK_RIGHT]; break;
             case UIPressTypeSelect: [self.disc key:BD_VK_ENTER]; break;
-            case UIPressTypeMenu: [self.disc menu]; break;
+            case UIPressTypeMenu:
+                if (self.failed && self.restartRequested) self.restartRequested();
+                else [self.disc menu];
+                break;
             case UIPressTypePlayPause: [self.player togglePause]; break;
             default: [unhandled addObject:press]; break;
         }
@@ -154,6 +161,7 @@
     if ([phase isEqualToString:@"ended"]) [self.disc ended:generation];
     self.status.text = [NSString stringWithFormat:
         @"Disc Menu Lab - %@ | Back: disc menu | Play/Pause\nExperimental movie selection; audio/subtitle menus are not connected.", phase];
+    if (self.failed) self.status.text = @"Playback failed.\nBack: retry";
     [self save:phase];
 }
 - (void)discPlayerTime:(double)seconds generation:(NSInteger)generation {
@@ -223,6 +231,13 @@
 @property(nonatomic) LiveController *controller;
 @end
 @implementation LiveScene
+- (void)startController {
+    [self.controller shutdown];
+    self.controller = [LiveController new];
+    __weak LiveScene *weakSelf = self;
+    self.controller.restartRequested = ^{ [weakSelf startController]; };
+    self.window.rootViewController = self.controller;
+}
 - (void)scene:(UIScene *)scene willConnectToSession:(UISceneSession *)session options:(UISceneConnectionOptions *)options {
     (void)session; (void)options;
     NSURL *cache = [NSFileManager.defaultManager URLsForDirectory:NSCachesDirectory inDomains:NSUserDomainMask].firstObject;
@@ -230,14 +245,14 @@
     freopen([[cache URLByAppendingPathComponent:@"live-stderr.log"].path fileSystemRepresentation], "w", stderr);
     setbuf(stdout, NULL); setbuf(stderr, NULL);
     self.window = [[UIWindow alloc] initWithWindowScene:(UIWindowScene *)scene];
-    self.controller = [LiveController new]; self.window.rootViewController = self.controller;
+    [self startController];
     [self.window makeKeyAndVisible];
 }
 - (void)sceneDidEnterBackground:(UIScene *)scene { (void)scene; [self.controller shutdown]; }
 - (void)sceneWillEnterForeground:(UIScene *)scene {
     (void)scene;
     if (self.controller.finished) {
-        self.controller = [LiveController new]; self.window.rootViewController = self.controller;
+        [self startController];
     }
 }
 - (void)sceneDidDisconnect:(UIScene *)scene { (void)scene; [self.controller shutdown]; }

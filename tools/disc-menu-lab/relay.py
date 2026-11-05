@@ -21,6 +21,14 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
         raise ValueError("Upstream redirects are not allowed")
 
 
+class RelayExpired(ValueError):
+    pass
+
+
+class RelayLimitReached(ValueError):
+    pass
+
+
 class DiscRelay(http.server.ThreadingHTTPServer):
     daemon_threads = False
     block_on_close = True
@@ -142,13 +150,20 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 cursor += len(data)
         except (BrokenPipeError, ConnectionResetError):
             self.close_connection = True  # Reader cancellation is not a successful completed response.
-        except (OSError, ValueError, urllib.error.URLError, http.client.HTTPException):
+        except (OSError, ValueError, urllib.error.URLError, http.client.HTTPException) as error:
             with server.lock:
                 server.failures += 1
+            reason = error.reason if isinstance(error, urllib.error.URLError) else error
+            status = (410 if isinstance(error, RelayExpired) else
+                      429 if isinstance(error, RelayLimitReached) else
+                      error.code if isinstance(error, urllib.error.HTTPError) and error.code in (503, 504) else
+                      504 if isinstance(reason, TimeoutError) else 502)
+            if isinstance(error, urllib.error.HTTPError):
+                error.close()
             if not sent:
-                self.reject(502)
+                self.reject(status)
             self.close_connection = True
-            print("Disc relay: upstream request failed; response closed", flush=True)
+            print(f"Disc relay: {type(error).__name__}; HTTP {status}; response closed", flush=True)
         finally:
             server.slots.release()
 
@@ -156,8 +171,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
         server = self.server
         count = end - start + 1
         with server.lock:
-            if time.monotonic() >= server.deadline or server.bytes + count > server.byte_limit:
-                raise ValueError("Relay lifetime or byte limit reached")
+            if time.monotonic() >= server.deadline:
+                raise RelayExpired("Relay lifetime reached")
+            if server.bytes + count > server.byte_limit:
+                raise RelayLimitReached("Relay byte limit reached")
             server.bytes += count
         request = urllib.request.Request(
             server.upstream + urllib.parse.quote(path, safe="/"),

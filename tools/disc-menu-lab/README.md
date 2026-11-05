@@ -281,6 +281,20 @@ timestamp. A menu call unavailable at the current location is a visible notice,
 not a fatal navigation error; actual failures remain visible and are not
 replaced by a misleading timeout/retry prompt.
 
+Index, movie-object, playlist and clip-information files are cached in memory
+before navigation starts (2 MiB per file, 16 MiB total). Menu transitions reuse
+that session-local metadata instead of repeatedly fetching it during video
+playback. Exact range reads retry once for transient URL timeouts/connection
+loss or HTTP 503/504, with finite request and whole-attempt deadlines. Cancelled
+sessions, invalid ranges, authorization failures, expiry and byte-limit failures
+are not silently retried or accepted. The relay distinguishes timeout (504),
+expiry (410), quota (429), and invalid upstream responses (502).
+
+After an exhausted read failure, Back tears down the old session and creates a
+fresh one rather than sending commands to a stopped native instance. Restarting
+or foregrounding does not re-arm an automated sequence already claimed in that
+process. Recovery cannot restore an expired relay or repair a missing source.
+
 Controls: directions/swipes move through the original menu, Select activates,
 Back requests the top menu, and Play/Pause controls AetherEngine. **Audio and
 subtitle choices in the original disc menu are not connected to the engine.**
@@ -308,3 +322,43 @@ were logged as unavailable without stopping playback; subsequent menu input
 worked. Manual takeover interrupted the three-movie automated sequence, so this
 run does **not** establish all three movie start positions on the TV. The earlier
 desktop navigation evidence and this physical playback evidence remain distinct.
+
+A subsequent physical run deliberately delayed one metadata response beyond
+the request timeout. The app logged URL error `-1001`, retried the same range,
+cached 95,370 bytes of navigation metadata, and continued into changing video
+frames without restarting the app. This proves that specific transient-read
+recovery, not arbitrary network-failure tolerance or the manual retry UI.
+
+### Before production integration or distribution
+
+The lab's success is not an App Store compliance result. In particular:
+
+- Replace the temporary relay with the existing account-scoped media transports;
+  preserve independent readers, source identity checks, profile isolation, and
+  cancellation. Connect menu track selections, title-relative resume/watch state,
+  exit behavior, and a native title/main-feature fallback before relying on menus.
+- Audit the final distribution archive and every embedded dependency against
+  target SDK availability. A narrow `nm` denylist is only one check. The current
+  Debug engine binary imports `posix_spawnp`; its origin and distribution impact
+  need investigation, not a blind replacement. Unsupported function stubs must
+  preserve each API's actual error contract.
+- Replace the lab-only standalone FreeType dylib layout with supported framework
+  packaging or an appropriately licensed static link. Framework metadata and
+  deployment targets must be valid; their versions need not equal the app's.
+  Preserve applicable license texts and redistribution/relinking obligations.
+- Keep the Zero runtime's no-generated-executable-memory requirement. Validate
+  JVM flags against the pinned runtime rather than copying flag lists: the port
+  uses `ImplicitNullChecks`, and reduced signal usage does not eliminate all
+  fatal-signal handlers. libbluray uses its offscreen BDToolkit with
+  `java.awt.headless=false`; forcing true is not a harmless sandbox switch.
+- Arbitrary BD-J discs require further confinement and resource-limit work.
+  Java permission checks alone do not harden native parsers. Keep runtime reads
+  and per-disc writable storage explicitly scoped; never delete active caches
+  or unrelated app data to satisfy a blanket cleanup rule.
+- Use clear UI language without hiding Java/OpenJDK implementation details from
+  diagnostics, licenses, or App Review. Neither interpreter packaging nor naming
+  establishes approval under Apple's code-execution rules. Keep unencrypted-media
+  scope explicit and do not bundle DRM circumvention.
+
+References: [App Review Guidelines 2.5.1, 2.5.2 and 4.7](https://developer.apple.com/app-store/review/guidelines/),
+[Apple's framework embedding guidance](https://developer.apple.com/library/archive/technotes/tn2435/_index.html).
