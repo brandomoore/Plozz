@@ -24,6 +24,7 @@ final class HomeSectionStatusViewTests: XCTestCase {
             XCTAssertFalse(text.contains("Details"), text)
             XCTAssertFalse(text.contains("Retry"), text)
             XCTAssertFalse(text.contains("connection"), text)
+            XCTAssertFalse(text.contains("Customize Home"), "The editor preview must not link to itself.")
             let summary = try XCTUnwrap(
                 observations(image).first { $0.topCandidates(1).first?.string == "No titles to show" }
             )
@@ -46,7 +47,7 @@ final class HomeSectionStatusViewTests: XCTestCase {
         let reasons: [HomeSectionIssue.Reason] = [.failed(.serverUnreachable), .notReturned, .sourceUnavailable]
         for (index, reason) in reasons.enumerated() {
             let width: CGFloat = 1000
-            let image = try await render(reason, width: width)
+            let image = try await render(reason, width: width, onCustomizeHome: {})
             if let directory = ProcessInfo.processInfo.environment["PLOZZ_HOME_STATUS_SNAPSHOTS"] {
                 let url = URL(fileURLWithPath: directory).appendingPathComponent("unavailable-\(index).png")
                 try XCTUnwrap(UIImage(cgImage: image).pngData()).write(to: url)
@@ -55,21 +56,41 @@ final class HomeSectionStatusViewTests: XCTestCase {
             XCTAssertTrue(text.contains("Details"), text)
             XCTAssertTrue(text.contains("Retry"), text)
             XCTAssertTrue(text.contains("Media server"), text)
+            XCTAssertFalse(text.contains("Customize Home"), text)
         }
     }
     #endif
 
     #if os(iOS)
     func testEmptySectionGrowsForAccessibilityTextWithoutClipping() async throws {
-        let normal = try await render(.empty, width: 280)
-        let large = try await render(.empty, width: 280, textSize: .accessibility3)
+        let normal = try await render(.empty, width: 280, onCustomizeHome: {})
+        let large = try await render(.empty, width: 280, textSize: .accessibility3, onCustomizeHome: {})
         XCTAssertGreaterThan(large.height, normal.height)
         let text = try recognize(large)
-        for word in ["No", "titles", "to", "show", "Media", "server"] {
+        for word in ["No", "titles", "to", "show", "Media", "server", "Customize", "Home"] {
             XCTAssertTrue(text.contains(word), text)
         }
     }
     #endif
+
+    func testEmptySectionOffersOptionalHomeCustomization() async throws {
+        #if os(tvOS)
+        let width: CGFloat = 1000
+        #else
+        let width: CGFloat = 360
+        #endif
+        let image = try await render(.empty, width: width, onCustomizeHome: {})
+        let text = try recognize(image)
+        XCTAssertTrue(text.contains("Customize Home"), text)
+        XCTAssertTrue(text.contains("No titles to show"), text)
+        XCTAssertFalse(text.contains("Details"), text)
+        XCTAssertFalse(text.contains("Retry"), text)
+        XCTAssertLessThan(image.height, 700)
+        if let directory = ProcessInfo.processInfo.environment["PLOZZ_HOME_STATUS_SNAPSHOTS"] {
+            let url = URL(fileURLWithPath: directory).appendingPathComponent("empty-customize-\(Int(width)).png")
+            try XCTUnwrap(UIImage(cgImage: image).pngData()).write(to: url)
+        }
+    }
 
     func testEmptySectionRetainsOptionalBrowseAction() async throws {
         #if os(tvOS)
@@ -85,7 +106,8 @@ final class HomeSectionStatusViewTests: XCTestCase {
 
     private func render(
         _ reason: HomeSectionIssue.Reason, width: CGFloat,
-        textSize: DynamicTypeSize = .large, onSeeAll: (() -> Void)? = nil
+        textSize: DynamicTypeSize = .large, onSeeAll: (() -> Void)? = nil,
+        onCustomizeHome: (() -> Void)? = nil
     ) async throws -> CGImage {
         let issue = HomeSectionIssue(
             choice: .init(
@@ -95,7 +117,10 @@ final class HomeSectionStatusViewTests: XCTestCase {
             reason: reason, serverName: "Media server", providerKind: .silo
         )
         let content =
-            HomeSectionStatusView(issue: issue, showsTitle: false, onSeeAll: onSeeAll, onRetry: {})
+            HomeSectionStatusView(
+                issue: issue, showsTitle: false, onSeeAll: onSeeAll,
+                onCustomizeHome: onCustomizeHome, onRetry: {}
+            )
                 .environment(\.themePalette, .dark)
                 .environment(\.colorScheme, .dark)
                 .environment(\.locale, Locale(identifier: "en_US"))

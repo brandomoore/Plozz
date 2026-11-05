@@ -1,7 +1,12 @@
 import CoreModels
 import SwiftUI
 
+extension EnvironmentValues {
+    @Entry public var openHomeCustomization: (@MainActor () -> Void)? = nil
+}
+
 public struct HomeSectionStatusRow: View {
+    @Environment(\.openHomeCustomization) private var openHomeCustomization
     private let issue: HomeSectionIssue
     private let onSeeAll: (() -> Void)?
     private let onRetry: () -> Void
@@ -17,7 +22,10 @@ public struct HomeSectionStatusRow: View {
             title: issue.choice.localizedTitle.map(Text.init) ?? Text(verbatim: issue.choice.title),
             insetsContent: true, onSeeAll: onSeeAll
         ) {
-            HomeSectionStatusView(issue: issue, showsTitle: false, onRetry: onRetry)
+            HomeSectionStatusView(
+                issue: issue, showsTitle: false,
+                onCustomizeHome: openHomeCustomization, onRetry: onRetry
+            )
         }
     }
 }

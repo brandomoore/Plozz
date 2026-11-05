@@ -1241,6 +1241,7 @@ final class HomeRowArrangementHostedTests: XCTestCase {
                     VStack(alignment: .leading, spacing: 28) {
                         MediaRowView(title: Text("Collection row"), items: [item], onSelect: { _ in })
                         HomeSectionStatusRow(issue: issue, onRetry: {})
+                            .environment(\.openHomeCustomization, {})
                     }
                 }
                 .environment(\.plozzPinnedSidebarActive, pinned)
@@ -1271,6 +1272,14 @@ final class HomeRowArrangementHostedTests: XCTestCase {
                 for title in ["Details", "Retry"] {
                     XCTAssertFalse(text.contains(title), "Empty content is not a failed request: \(text)")
                 }
+                let customize = try XCTUnwrap(lines.first { $0.0.contains("Customize Home") }, text).1
+                let point = CGPoint(
+                    x: customize.midX * window.bounds.width, y: (1 - customize.midY) * window.bounds.height
+                )
+                let target = try XCTUnwrap(self.focusableItem(at: point, in: window))
+                XCTAssertTrue(target.canBecomeFocused)
+                try await self.focus(target, in: window)
+                XCTAssertTrue(UIFocusSystem.focusSystem(for: window)?.focusedItem === target)
             }
         }
     }

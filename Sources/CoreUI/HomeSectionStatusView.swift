@@ -5,15 +5,18 @@ public struct HomeSectionStatusView: View {
     private let issue: HomeSectionIssue
     private let onRetry: () -> Void
     private let onSeeAll: (() -> Void)?
+    private let onCustomizeHome: (() -> Void)?
     private let showsTitle: Bool
     @State private var showsDetails = false
 
     public init(
         issue: HomeSectionIssue, showsTitle: Bool = true,
-        onSeeAll: (() -> Void)? = nil, onRetry: @escaping () -> Void
+        onSeeAll: (() -> Void)? = nil, onCustomizeHome: (() -> Void)? = nil,
+        onRetry: @escaping () -> Void
     ) {
         self.issue = issue
         self.onSeeAll = onSeeAll
+        self.onCustomizeHome = onCustomizeHome
         self.showsTitle = showsTitle
         self.onRetry = onRetry
     }
@@ -30,6 +33,15 @@ public struct HomeSectionStatusView: View {
                 } description: {
                     HomeSectionSourceLabel(issue: issue)
                 } actions: {
+                    if let onCustomizeHome {
+                        Button(action: onCustomizeHome) {
+                            Text("Customize Home")
+                                .font(.subheadline)
+                                .frame(minHeight: 44)
+                        }
+                        .buttonStyle(.borderless)
+                        .accessibilityIdentifier("home-section-customize")
+                    }
                     if let onSeeAll { Button("See all", action: onSeeAll) }
                 }
                 #if os(tvOS)

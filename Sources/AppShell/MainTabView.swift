@@ -801,6 +801,16 @@ struct MainTabView: View {
         }
     }
 
+    private func openHomeCustomization() {
+        settingsNavigation.openHomeCustomization()
+        if navigationStyle == .tabBar {
+            selectedTab.wrappedValue = .settings
+        } else {
+            if navigationStyle == .sidebar { nativeSidebarFocus.begin(.settings) }
+            libraryNavigationSelection.wrappedValue = .settings
+        }
+    }
+
     private func destination(for tab: MainTab) -> NavigationRailDestination {
         switch tab {
         case .home: return .home
@@ -1243,6 +1253,7 @@ struct MainTabView: View {
             // rebuilds the stack instead of re-using the previous library's grid.
             .id(id ?? homeScopeKey)
             .environment(\.openWatchlist, openWatchlist)
+            .environment(\.openHomeCustomization, openHomeCustomization)
     }
 
     /// The Music destination.
