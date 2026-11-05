@@ -324,16 +324,20 @@ public struct ItemDetailView: View {
         }
         .task(id: heroTrailerTaskID) {
             guard let item = viewModel.state.value?.item else { return }
-            guard isTrailerOwner,
-                  heroBackground.settings.detailMode == .trailer else {
+            guard isTrailerOwner else {
                 if isPageVisible || !preservesHeroTrailerOnDisappear(item.id) {
                     heroTrailerController.stop(ifShowing: item.id, ownedBy: trailerHandlerOwnerID)
                 }
                 heroTrailerController.clearEndHandler(ownerID: trailerHandlerOwnerID)
                 return
             }
-            if let currentID = heroTrailerController.currentItemID,
-               currentID != item.id {
+            guard heroBackground.settings.detailMode == .trailer else {
+                heroTrailerController.stop(ifShowing: item.id)
+                heroTrailerController.clearEndHandler(ownerID: trailerHandlerOwnerID)
+                return
+            }
+            if heroTrailerController.currentItemID != nil,
+               !heroTrailerController.isShowing(item.id) {
                 heroTrailerController.stop()
             }
             // Detail owns end-of-item while it is frontmost. This replaces Home's
@@ -347,7 +351,9 @@ public struct ItemDetailView: View {
             // item, do nothing — the picture keeps rolling (and keeps its live
             // session mute) while metadata swaps.
             guard !heroTrailerController.isShowing(item.id) else {
-                heroTrailerController.setPaused(false)
+                heroTrailerController.claimSurface(.detail, itemID: item.id)
+                heroTrailerController.setPaused(false, surfaceRole: .detail)
+                heroTrailerController.startPrepared()
                 return
             }
             try? await Task.sleep(for: .seconds(3))
@@ -362,6 +368,7 @@ public struct ItemDetailView: View {
                 resolvedURL: source.url,
                 muted: heroBackground.settings.detailTrailerMuted
             )
+            heroTrailerController.claimSurface(.detail, itemID: item.id)
         }
         .confirmationDialog(
             "Request as Admin?",

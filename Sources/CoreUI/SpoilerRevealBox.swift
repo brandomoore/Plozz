@@ -23,6 +23,7 @@ public struct SpoilerRevealBox<Content: View>: View {
     private let identity: String
     private let blurRadius: CGFloat
     private let content: Content
+    private let onReveal: (() -> Void)?
 
     @State private var isRevealed = false
     @Environment(\.themePalette) private var palette
@@ -42,6 +43,7 @@ public struct SpoilerRevealBox<Content: View>: View {
         prompt: LocalizedStringResource,
         identity: String,
         blurRadius: CGFloat = SpoilerRevealBox.defaultBlurRadius,
+        onReveal: (() -> Void)? = nil,
         @ViewBuilder content: () -> Content
     ) {
         self.isHidden = isHidden
@@ -49,6 +51,7 @@ public struct SpoilerRevealBox<Content: View>: View {
         self.identity = identity
         self.blurRadius = blurRadius
         self.content = content()
+        self.onReveal = onReveal
     }
 
     public static var defaultBlurRadius: CGFloat {
@@ -72,6 +75,7 @@ public struct SpoilerRevealBox<Content: View>: View {
                 if isMasked {
                     Button {
                         withAnimation(.easeOut(duration: 0.22)) { isRevealed = true }
+                        onReveal?()
                     } label: {
                         SpoilerRevealPrompt(prompt: prompt, palette: palette)
                             .frame(maxWidth: .infinity, maxHeight: .infinity)

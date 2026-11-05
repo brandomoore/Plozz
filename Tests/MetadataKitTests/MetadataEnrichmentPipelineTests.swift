@@ -34,6 +34,16 @@ final class FakeEnrichmentProvider: MetadataEnrichmentProvider, @unchecked Senda
         if missing.contains(.title) { filtered.title = output.title }
         if missing.contains(.overview) { filtered.overview = output.overview }
         if missing.contains(.genres) { filtered.genres = output.genres }
+        if missing.contains(.cast) { filtered.cast = output.cast }
+        if missing.contains(.directors) { filtered.directors = output.directors }
+        if missing.contains(.writers) { filtered.writers = output.writers }
+        if missing.contains(.producers) { filtered.producers = output.producers }
+        if missing.contains(.composers) { filtered.composers = output.composers }
+        filtered.creditReferences = output.creditReferences
+        if missing.contains(.originalLanguage) { filtered.originalLanguage = output.originalLanguage }
+        if missing.contains(.seriesStatus) { filtered.seriesStatus = output.seriesStatus }
+        if missing.contains(.catalogSeasonCount) { filtered.catalogSeasonCount = output.catalogSeasonCount }
+        if missing.contains(.catalogEpisodeCount) { filtered.catalogEpisodeCount = output.catalogEpisodeCount }
         if missing.contains(.taglines) { filtered.tagline = output.tagline }
         if missing.contains(.posterURL) { filtered.posterURL = output.posterURL }
         if missing.contains(.logoURL) { filtered.logoURL = output.logoURL }

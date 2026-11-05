@@ -32,6 +32,12 @@ bounded language-match/accessibility flags without track titles or URLs.
     The adapter loads the server-selected source, never a preview-only original.
     See [playback engines](../../docs/playback-engines.md#routing-logic).
 - **View model / view** —
+  - `BorrowedTrailerPlayer` hosts the same TV transport and seek coordinator over
+    the hero's existing AVPlayer and persistent video surface. The app shell
+    injects this presentation into Home, keeping feature modules independent.
+    It does not resolve a source, start provider reporting, change display mode,
+    or stop the borrowed player on dismissal. Only available transport capabilities
+    are exposed; the hero owner restores ambient playback and mute state.
   - `PlayerViewModel` orchestrates engine lifecycle, audio/subtitle
     selection, scrub state, resume, and progress reporting.
   - Resume progress is saved independently of Continue Watching eligibility:

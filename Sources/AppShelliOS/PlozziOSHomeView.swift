@@ -740,7 +740,7 @@ struct PlozziOSHomeView: View {
             .onScrollGeometryChange(for: Bool.self) { geometry in
                 geometry.contentOffset.y > trailerPauseThreshold
             } action: { _, isPastHalfHero in
-                trailerController.setPaused(isPastHalfHero)
+                trailerController.setPaused(isPastHalfHero, surfaceRole: .home)
                 heroPullModel.isVisible = !isPastHalfHero
             }
             .onScrollGeometryChange(for: CGFloat.self) { geometry in
@@ -1566,7 +1566,7 @@ struct PlozziOSHomeHeroCarousel: View {
 
                     PlozziOSHomeHeroSlide(
                         item: currentItem,
-                        isSelected: true
+                        isSelected: isActive
                     )
 
                     if let provider = provider(for: currentItem) {
@@ -1818,12 +1818,8 @@ struct PlozziOSHomeHeroCarousel: View {
         .onDisappear {
             pointerActivity.reset()
             trailerController.clearEndHandler(ownerID: endHandlerOwnerID)
-            // Leaving Home — another tab, or a pushed page — means nobody can
-            // see this trailer, so it should not keep streaming and decoding.
-            // Scoped to the item this hero was showing so a stale disappear
-            // can't stop a trailer the detail page has taken over.
             if !trailerController.isPlaybackSuppressed, let currentItem {
-                trailerController.stop(ifShowing: currentItem.id)
+                trailerController.stopHero(ifShowing: currentItem.id)
             }
         }
         .task(id: heroSeasonRefreshKey) {

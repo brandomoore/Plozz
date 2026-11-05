@@ -21,37 +21,25 @@ struct FamilyGuidanceTile: View {
     let summary: FamilyGuidanceSummary
     @State private var isPresented = false
     @Environment(\.familyGuidanceProvider) private var provider
-    @Environment(\.themePalette) private var palette
     #if os(iOS)
-    @ScaledMetric(relativeTo: .largeTitle) private var scaledAgeSize: CGFloat = 48
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @ScaledMetric(relativeTo: .title2) private var scaledAgeSize: CGFloat = 30
+    @ScaledMetric(relativeTo: .body) private var expandedMinimumWidth: CGFloat = 280
     #endif
 
     var body: some View {
         Button { isPresented = true } label: {
-            VStack(alignment: .leading, spacing: 12) {
-                FamilyGuidanceAge(age: summary.recommendedAge, size: ageSize)
-                HStack(spacing: 8) {
-                    FamilyGuidanceBrand(compact: true)
-                        .font(sourceFont)
-                    Spacer(minLength: 0)
-                    Image(systemName: "chevron.forward")
-                        .font(sourceFont)
-                        .foregroundStyle(palette.secondaryText)
-                        .accessibilityHidden(true)
-                }
-                if let overview = summary.overview {
-                    Text(overview)
-                        .font(summaryFont)
-                        .lineLimit(3)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .foregroundStyle(palette.secondaryText)
-                }
+            ViewThatFits(in: .horizontal) {
+                horizontalContent
+                    .frame(minWidth: expandedContentWidth, idealWidth: expandedContentWidth)
+                compactContent
             }
-            .foregroundStyle(palette.primaryText)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .padding(24)
+            .plozzForeground(.primary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(DetailInformationLayout.cellPadding)
         }
-        .plozzCardButton(cornerRadius: 18, focusedScale: PlozzTheme.Metrics.readOnlyFocusedCardScale)
+        .plozzCardButton(cornerRadius: DetailInformationLayout.cornerRadius,
+                        focusedScale: PlozzTheme.Metrics.readOnlyFocusedCardScale)
         .accessibilityIdentifier("family-guidance-tile")
         .accessibilityHint("Open family guidance")
         #if os(tvOS)
@@ -65,9 +53,74 @@ struct FamilyGuidanceTile: View {
         #endif
     }
 
+    private var horizontalContent: some View {
+        HStack(alignment: .center, spacing: 16) {
+            FamilyGuidanceAge(age: summary.recommendedAge, size: ageSize)
+            VStack(alignment: .leading, spacing: 6) {
+                FamilyGuidanceBrand(compact: true)
+                    .font(sourceFont)
+                overview
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+            disclosure
+        }
+    }
+
+    private var compactContent: some View {
+        VStack(spacing: 4) {
+            HStack(spacing: compactIconSize / 2) {
+                FamilyGuidanceIcon(size: compactIconSize)
+                FamilyGuidanceAge(age: summary.recommendedAge, size: ageSize * (22.0 / 30))
+            }
+            .frame(minHeight: compactIconSize * 1.5)
+            Text(verbatim: "Common Sense")
+                .font(sourceFont)
+                .plozzForeground(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .multilineTextAlignment(.center)
+        .padding(.horizontal, 12)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .overlay(alignment: .trailing) { disclosure }
+    }
+
+    private var expandedContentWidth: CGFloat {
+        #if os(tvOS)
+        320
+        #else
+        expandedMinimumWidth
+        #endif
+    }
+
+    private var compactIconSize: CGFloat {
+        #if os(tvOS)
+        32
+        #else
+        horizontalSizeClass == .compact ? 24 : 28
+        #endif
+    }
+
+    @ViewBuilder
+    private var overview: some View {
+        if let overview = summary.overview {
+            Text(overview)
+                .font(summaryFont)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+                .plozzForeground(.secondary)
+        }
+    }
+
+    private var disclosure: some View {
+        Image(systemName: "chevron.forward")
+            .font(sourceFont)
+            .plozzForeground(.secondary)
+            .accessibilityHidden(true)
+    }
+
     private var ageSize: CGFloat {
         #if os(tvOS)
-        76
+        38
         #else
         scaledAgeSize
         #endif

@@ -659,9 +659,10 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   retaining its hue and brightness without desaturating the hero image. Showcase,
   detail pages, and untinted stock gradients retain their existing treatment.
   Tint saturation is page-scoped and shared with native card fills/textures.
-  Settings panels and detail information cards share a
-  5%-white wash in Dark and Black, or a 5%-black wash in Light, so they remain
-  distinct without replacing the gradient's colour. SwiftUI surfaces keep their
+  Settings panels use a 5% wash; detail information cards use a stronger 12%
+  wash so grouped content remains distinct from the artwork gradient. Both use
+  white in Dark/Black and black in Light without replacing the gradient's colour.
+  SwiftUI surfaces keep their
   shadow and a matching hairline edge. Gradient Off or Reduce Transparency restores the original solid
   surface and border; unrelated raised cards remain unchanged.
   PIN digit/delete keys use native Liquid Glass at rest and during interaction
@@ -688,8 +689,9 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   of covering it with a solid rectangle; Gradient Off and Reduce Transparency
   retain the original opaque base. The artwork's existing readability fade stays.
   Native tvOS cards display their local portion of a shared page-mesh texture,
-  with the information band and wash precomposed because TVUIKit replaces fill
-  alpha. The texture is created only when a card needs it, its longest edge is
+  with the information band precomposed because TVUIKit replaces fill alpha.
+  A background-only tint layer applies each card's wash without fading text or
+  rerendering the shared texture. The texture is created only when a card needs it, its longest edge is
   capped at 480 pixels, and it is rebuilt only for palette or viewport size
   changes. Scrolling updates each background's sampling rectangle, not its
   texture or foreground content. `settingsPageBackground()` provides the same
@@ -996,11 +998,123 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   review scores, or parental restrictions; copy it across native hosting boundaries.
   Featured cards use compact visual metadata and full accessible classifications.
   Title-information facts retain the full original classification when visible.
-- **Detail information focus** — the tvOS About/Ratings/Information band uses
-  native focus with at most 2% growth and 6pt of expansion per edge, leaving
-  clearance in its 18pt gutters. Focused read-only cards and card buttons draw
-  above their peers. This policy does not change ordinary media-card growth,
-  custom focus styles, or touch layouts.
+- **Detail information layout** — TV and mobile share ordered information
+  sections. About and Ratings sit beside each other when both have readable space;
+  otherwise they stack. Side-by-side About and Ratings share top and bottom
+  edges for multi-tile groups; stacked sections keep their natural height. Numeric scores use
+  individual equal-width tiles in one grid. Each icon-and-score pair is centered
+  as a unit, with its source centered underneath
+  and a consistent gap measured from the mark's visible edge. Rows start at the
+  leading grid line. On TV, multiple ratings use up to two reading columns;
+  a lone guide uses only one. A lone score without guidance uses roughly half
+  a reading column, matching About's height when they sit beside each other.
+  Details fills the third TV column, or sits below the score in a two-column
+  layout; supporting sections can start beneath About without waiting for the
+  whole fact list. Phone sections remain stacked with a compact score tile.
+  Regular-width mobile multi-tile ratings fill their allocated reading column.
+  Family guidance completes the remaining columns of the final score row, or
+  starts the next row when the score row is full. On TV it spans at most two
+  score columns, keeping its prose within a reading column. A narrow guidance tile shows
+  its age recommendation and source; wider tiles include a left-aligned overview.
+  Opening either presentation retains the full guidance and source authorization.
+  The grid's accessibility container stays inside its spoiler-protection wrapper,
+  so scores and guidance are hidden from accessibility until the grid is revealed.
+  Stacked phone and tablet grids with multiple tiles use the available section width.
+  The number of scores determines the preferred tile count per row. Without family
+  guidance, four TV scores stay in one row when they fit. Larger score sets and
+  four-score mobile grids retain their balanced-row preference.
+  About keeps its stable line cap when its surface grows to match
+  the adjacent ratings group. Missing summary content reserves no column.
+  About occupies one reading column instead of absorbing leftover space.
+  Supporting sections are unboxed, with headings above vertically stacked facts.
+  Release & Availability leads the lower sections, followed by Details, Crew
+  and Playback (Details is promoted alongside a lone score). Original language
+  is distinct from playable audio. Series status and total seasons/episodes
+  appear only when confirmed; totals describe the catalog, not library ownership.
+  On larger screens, short Details facts pair within their reading column.
+  Long labels/values, dates and prose retain the full column width; narrow
+  windows and large text fall back to a single list. Focus gutters stay intact.
+  TV prefers three columns and regular-width mobile prefers two, falling back
+  when the window or text size cannot support readable widths. Regular-width mobile
+  information is centered within a 1120pt maximum, without narrowing the hero or
+  media rails. Additional sections flow into the shortest column; their intrinsic
+  heights do not stretch neighboring sections. A lone section keeps its reading
+  width rather than filling the page. Compact phones use one column.
+  Playback uses quieter type, including a bounded filename preview.
+  TV facts use stable borderless native buttons for scroll-by-focus, with no resting
+  fill. The shared Liquid Glass surface sits in a focus-only, non-sizing underlay
+  with a 22pt horizontal and 12pt vertical outset. Facts reserve 36pt row gaps
+  and 56pt column gaps, leaving 12pt between neighboring focus surfaces without
+  moving text keylines. About, ratings and guidance use the standard native tvOS
+  card focus treatment in System mode, with semantic text contrast rather than
+  the media card's subtle rim. Custom card-focus modes retain their existing fallback.
+  Within the shared About/Ratings summary, System focus moves to an already-visible
+  card suppress native page reveal only for that focus animation. Entry, clipped
+  targets, exits to lower facts and subsequent offscreen focus searches retain
+  normal scrolling; the page offset is never reset after a jump.
+  Reduce Transparency and pre-Liquid-Glass systems retain the shared opaque
+  surface and semantic text contrast. Only truncated
+  facts open their group's full values. Full-value rows remain focusable for remote
+  scrolling through long lists. Mobile keeps inline expansion targets.
+  All detail More dialogs share the existing About reader surface on TV:
+  a content-sized 900pt card, capped at 760pt high, with a 38pt leading title,
+  48pt content insets and Menu/Back dismissal. Metadata uses unboxed
+  scrolling content, including on mobile; mobile retains its native inline title
+  and Done action.
+  Section gaps, gutters, and padding come from `DetailInformationLayout`.
+  Ratings stay separate from editorial facts. Revealing one
+  protected score reveals the shared score group, never the surrounding facts.
+  Missing sections leave no reserved grid cells. Cast rails lazily show the complete
+  supplied cast on both platforms, without a separate More button or dialog,
+  and keep person navigation bound to the owning source. The shared
+  `MediaPersonCredit` presentation starts with seven billed actors, then up to four
+  key-crew portraits, then the remaining actors and crew. The preview takes the
+  first available person for directing/creation, writing, production and music;
+  one person's combined roles cover those groups without adding more preview slots.
+  Seven is a presentation breakpoint, not a principal-cast classification.
+  Server order is preserved within actor/crew groups. Matching person IDs or
+  explicit external identities share one portrait with combined roles. Scoped
+  enrichment can also reconcile a unique same-name, same-role credit across
+  sources; names alone never merge people, and navigation retains the original provider route.
+  Crew-only titles still show the rail. Information previews retain all source
+  values and cap text previews by rendered lines, not an arbitrary number of
+  names. Short genre and studio lists remain complete when they fit. Long text
+  reuses the synopsis's faded inline MORE treatment beside each truncated value.
+  MORE is a non-sizing overlay aligned
+  to the final text baseline. Its soft fade is limited to one measured line at
+  the current font size, leaving the previous line intact. Truncation compares
+  full and visible text at the same allocated width, so native fitting probes
+  do not prematurely mask short values.
+  Sections are eagerly measured so lower facts participate in scrollable height.
+  About and TV fact controls keep the same native owner when truncation changes; only
+  their More action and accessibility role change. Switching between separate read-only
+  and button hosts restarts minimum-size probes and can loop during first layout.
+  Required availability attribution stays visible even when release facts are
+  capped. These presentation limits do not change provider metadata precedence.
+  Both presentation hosts expose `--detail-information-fixture` with
+  `--detail-layout-sparse`, `--detail-layout-rich`, `--detail-layout-episode`,
+  `--detail-layout-discover`, `--detail-layout-personal`, `--detail-layout-guidance`,
+  `--detail-layout-upcoming`, `--detail-layout-ratings-only`, or
+  `--detail-layout-family-only` for native review without server access.
+  `--detail-layout-ratings-0-guide` through `--detail-layout-ratings-5-guide`
+  exercise guidance spanning, including empty and partial score rows.
+  `--detail-layout-lupin` and `--detail-layout-slow-horses` reproduce the visible
+  metadata shapes from reported layout regressions, without private server identities.
+  The fixture uses the production page-scoped gradient host; `--detail-layout-flat`
+  and `--detail-layout-reduced-transparency` cover its opaque fallbacks.
+  `--detail-layout-bottom` reveals Playback.
+  The test hosts also accept `PLOZZ_DETAIL_EXAMPLE_PATH`, an explicit JSON file
+  containing a `MediaItem` under `item` and optional `availability`, `source`, and
+  `version` values. Invalid input fails rather than substituting fixture metadata.
+  Keep captured server data private; label captures with their source, region,
+  and whether enrichment was applied. This input is not part of the production app.
+- **Detail information focus** — About, ratings and family guidance use the
+  standard tvOS card button style in System mode. The system owns the lift,
+  highlight and enlargement; shared grid gutters must keep the painted surfaces
+  separate throughout focus transitions. Text retains the selected theme on
+  Liquid Glass systems and uses dark text on the older opaque focus plate.
+  Focused read-only cards and card buttons draw above their peers.
+  Ordinary media cards, custom focus styles and touch layouts are unchanged.
 - **Native artwork focus comparison** — launch the separate tvOS focus host
   with `--native-artwork-focus-comparison`. It compares the current poster,
   a single-image poster, a content-masked poster with separate overlays, and a

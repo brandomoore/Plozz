@@ -4,6 +4,7 @@ import AVFoundation
 import notify
 @testable import FeatureHome
 import FeatureHomeCore
+import FeaturePlayback
 import FeatureSearch
 import MetadataKit
 import Observation
@@ -254,6 +255,10 @@ struct ProductionHomeFixture: View {
                             Text(verbatim: fixture.trailer.currentItemID ?? "none")
                                 .accessibilityIdentifier("detail-sequence-trailer-owner")
                         }
+                        if ProcessInfo.processInfo.arguments.contains("--hero-trailer-controls") {
+                            Text(verbatim: fixture.trailer.isPlaying ? "playing" : "waiting")
+                                .accessibilityIdentifier("hero-trailer-state")
+                        }
                         if ProcessInfo.processInfo.arguments.contains("--progressive-home-load") {
                             Text(verbatim: fixture.model.loadingRows.contains(.continueWatching) ? "pending" : "ready")
                                 .accessibilityIdentifier("home-fixture-resume-state")
@@ -273,6 +278,9 @@ struct ProductionHomeFixture: View {
             }
         }
         .environment(\.plozzCardFocusStyle, Self.focusStyle)
+        .environment(\.heroTrailerPlayerFactory, HeroTrailerPlayerFactory { player, surface, title, dismiss in
+            BorrowedTrailerPlayer(player: player, surface: surface, title: title, onDismiss: dismiss)
+        })
         .environment(\.gradientBackgroundsEnabled, !ProcessInfo.processInfo.arguments.contains("--gradient-off"))
         .environment(\.themePalette, ProcessInfo.processInfo.arguments.contains("--gradient-black") ? .pureBlack : .dark)
         .environment(\.plozzCardStyle, ProcessInfo.processInfo.arguments.contains("--framed-cards") ? .framed : .borderless)
@@ -953,6 +961,16 @@ private struct ProductionHomeContent: View {
                         heroFeaturedProvider: { limit in await fixture.featuredContent(limit: limit) },
                         heroArtworkProvider: { $0.backdropURL },
                         heroArtworkValidator: { _ in true },
+                        heroTrailerResolver: { [url = fixture.trailerURL] item in
+                            url.map {
+                                HeroTrailerSource(
+                                    ownerItemID: item.id, trailerItemID: "clip",
+                                    url: ProcessInfo.processInfo.arguments.contains("--hero-trailer-failure")
+                                        ? $0.appendingPathExtension("missing") : $0,
+                                    duration: ProcessInfo.processInfo.arguments.contains("--hero-trailer-failure") ? 140 : 60
+                                )
+                            }
+                        },
                         navigationStyle: isPinned
                             ? .rail
                             : (ProcessInfo.processInfo.arguments.contains("--native-sidebar-home")
@@ -1030,7 +1048,10 @@ private struct ProductionHomeContent: View {
         let isEpisodeContext = item.kind == .episode && lastDetailRoute == "browse"
         return ItemDetailView(
             viewModel: fixture.detail(for: item, asSeriesContext: isEpisodeContext),
-            onPlay: { _ in },
+            onPlay: { item in
+                playbackCount += 1
+                lastPlayedID = item.id
+            },
             onSelectChild: { next in
                 withCinematicDetailNavigation(for: next) {
                     if isLibrarySequence {
@@ -1194,6 +1215,10 @@ private final class ProductionHomeState {
             settings.setEnabled(.featured, enabled: true)
         }
         settings.autoAdvance = false
+        if ProcessInfo.processInfo.arguments.contains("--hero-trailer-failure") {
+            settings.autoAdvance = true
+            settings.autoAdvanceSeconds = 8
+        }
         settings.trailersEnabled = false
         // Settings persist between launches, so every launch picks its layout.
         settings.style = ProcessInfo.processInfo.arguments.contains("--hero-showcase-home")
@@ -1201,8 +1226,12 @@ private final class ProductionHomeState {
             : ProcessInfo.processInfo.arguments.contains("--immersive-home") ? .followsFocus : .carousel
         settings.showsDiscoverRow = ProcessInfo.processInfo.arguments.contains("--showcase-discover-fixture")
         heroSettings.settings = settings
-        background.settings.homeTrailerEnabled = false
+        background.settings.homeTrailerEnabled = ProcessInfo.processInfo.arguments.contains("--hero-trailer-controls")
         if trailerURL != nil { background.settings.detailMode = .trailer }
+        if ProcessInfo.processInfo.arguments.contains("--ambient-trailers-off") {
+            background.settings.homeTrailerEnabled = false
+            background.settings.detailMode = .off
+        }
     }
 
     func detail(for item: MediaItem, asSeriesContext: Bool = false) -> ItemDetailViewModel {
@@ -1242,7 +1271,8 @@ private final class ProductionHomeState {
             color: .white
         )
         let trailerURL: URL?
-        if ProcessInfo.processInfo.arguments.contains("--library-detail-sequence") {
+        if ProcessInfo.processInfo.arguments.contains("--library-detail-sequence")
+            || ProcessInfo.processInfo.arguments.contains("--hero-trailer-controls") {
             do {
                 trailerURL = try await makeTrailerVideo()
             } catch {
@@ -1393,6 +1423,11 @@ private struct ProductionHomeProvider: MediaProvider, WatchlistProviding {
         ProcessInfo.processInfo.arguments.contains("--home-performance-fixture") ? 75 : 24
     }
     var heroSeed: MediaItem { movie(rowCount + 10) }
+
+    func trailers(for itemID: String) async throws -> [MediaItem] {
+        guard ProcessInfo.processInfo.arguments.contains("--hero-trailer-controls") else { return [] }
+        return [MediaItem(id: "trailer-\(itemID)", title: "Fixture trailer", kind: .movie).markingAsTrailer()]
+    }
 
     func watchlist() async throws -> [MediaItem] {
         ProcessInfo.processInfo.arguments.contains("--real-root-pages") ? (0..<48).map(movie) : []

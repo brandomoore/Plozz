@@ -242,6 +242,8 @@ struct PresentationHostApp: App {
                                  ? ThemePalette.light : .dark)
                     .preferredColorScheme(ProcessInfo.processInfo.arguments.contains("--light") ? .light : .dark)
                     .dynamicTypeSize(ProcessInfo.processInfo.arguments.contains("--large-text") ? .accessibility5 : .large)
+            } else if ProcessInfo.processInfo.arguments.contains("--detail-information-fixture") {
+                DetailInformationFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--continue-watching-details-fixture") {
                 ContinueWatchingDetailsFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--search-keyboard-fixture") {

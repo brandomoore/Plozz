@@ -1,9 +1,11 @@
 import AVFoundation
+import AVKit
 @testable import AppShell
 import CoreModels
 @testable import CoreUI
 @testable import FeatureHome
 import FeatureHomeCore
+@testable import FeaturePlayback
 @testable import HeroUI
 import MetadataKit
 import Observation
@@ -455,12 +457,507 @@ final class DetailTransitionVisualRegressionTests: XCTestCase {
         XCTAssertEqual(controller.player.rate, 0)
     }
 
+    func testHomeToDetailKeepsThePlayingTrailerThroughHomeDisappearance() async throws {
+        try await assertTrailerRoundTrip(usesShowcase: false)
+    }
+
+    func testHeroShowcaseKeepsThePlayingTrailerThroughRepeatedDetailRoundTrips() async throws {
+        try await assertTrailerRoundTrip(usesShowcase: true)
+    }
+
+    func testThirdHeroTitleKeepsItsTrailerWhenDetailSelectsAnotherSourceID() async throws {
+        try await assertTrailerRoundTrip(usesShowcase: true, alternateSource: true)
+    }
+
+    func testHomeTrailerFullscreenSupportsSeekingAndReturnsToTheSameHero() async throws {
+        try await assertTrailerFullscreen(fromDetail: false)
+    }
+
+    func testFailedTrailerReadinessReturnsWithoutWaitingForItsDuration() async throws {
+        try await withTrailerFixture { model, video in
+            let controller = model.trailer
+            controller.prepare(itemID: "failed", resolvedURL: video.appendingPathExtension("missing"), muted: true)
+            let start = ContinuousClock.now
+            let ready = try await controller.waitUntilReady(itemID: "failed")
+            XCTAssertFalse(ready)
+            XCTAssertLessThan(start.duration(to: .now), .seconds(3))
+            XCTAssertNil(controller.currentItemID)
+        }
+    }
+
+    func testTrailerReadinessTimeoutStopsOnlyThePreparedItem() async throws {
+        try await withTrailerFixture { model, video in
+            let controller = model.trailer
+            controller.prepare(itemID: "pending", resolvedURL: video, muted: true)
+            let ready = try await controller.waitUntilReady(itemID: "pending", timeout: .zero)
+            XCTAssertFalse(ready)
+            XCTAssertNil(controller.player.currentItem)
+            controller.prepare(itemID: "replacement", resolvedURL: video, muted: true)
+            let stale = try await controller.waitUntilReady(itemID: "pending", timeout: .zero)
+            XCTAssertFalse(stale)
+            XCTAssertEqual(controller.currentItemID, "replacement")
+        }
+    }
+
+    func testBorrowedTrailerTransportCannotControlAReplacementItem() async throws {
+        try await withTrailerFixture { model, video in
+            let controller = model.trailer
+            controller.play(itemID: "hero", resolvedURL: video, muted: true)
+            controller.claimSurface(.detail, itemID: "hero")
+            try await waitUntil { controller.isPlaying && controller.duration > 0 }
+            let request = try XCTUnwrap(controller.beginFullScreen(itemID: "hero", from: .detail))
+            let surface = try XCTUnwrap(controller.fullScreenSurface(id: request))
+            let engine = BorrowedTrailerEngine(player: controller.player, surface: surface)
+            controller.stop()
+            controller.play(itemID: "replacement", resolvedURL: video, muted: true)
+            try await waitUntil { controller.isPlaying && controller.player.currentTime().seconds > 0.1 }
+            engine.pause()
+            await engine.seek(to: 12)
+            engine.setPlaybackSpeed(2)
+            engine.stop()
+            XCTAssertEqual(controller.currentItemID, "replacement")
+            XCTAssertEqual(controller.player.rate, 1)
+            XCTAssertLessThan(controller.player.currentTime().seconds, 3)
+            XCTAssertEqual(engine.status, .idle)
+        }
+    }
+
+    func testDetailTrailerFullscreenSupportsSeekingAndReturnsToTheSameDetail() async throws {
+        try await assertTrailerFullscreen(fromDetail: true)
+    }
+
+    private func assertTrailerFullscreen(fromDetail: Bool) async throws {
+        let scene = try await activeScene()
+        let directory = try XCTUnwrap(Bundle(for: Self.self).url(
+            forResource: "Fixtures", withExtension: nil
+        )).appendingPathComponent("active-picture-hls")
+        let server = try SubtitleFixtureServer(directory: directory)
+        defer { server.stop() }
+        let port = try await server.start()
+        let video = try XCTUnwrap(URL(string: "http://127.0.0.1:\(port)/active-picture.m3u8"))
+        let model = TransitionShowModel(provider: TransitionShowProvider(artwork: try await seedArtwork()))
+        model.background.settings.homeTrailerEnabled = true
+        model.background.settings.detailMode = .trailer
+        model.heroItems.append(MediaItem(
+            id: "another-title", title: "Another title", kind: .movie,
+            allowsTitleBasedMetadataMatching: false
+        ))
+        model.resolveTrailer = { item in
+            HeroTrailerSource(ownerItemID: item.id, trailerItemID: "clip", url: video, duration: 18)
+        }
+        let host = UIHostingController(rootView: TransitionShowRoot(
+            model: model, usesHomeHero: true, usesShowcase: true
+        ))
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer {
+            model.trailer.stop()
+            model.detail.suspendEnrichment()
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        try await waitUntil(timeout: .seconds(12)) {
+            model.trailer.isPlaying && model.trailer.player.currentTime().seconds > 0.5
+                && self.trailerLayers(in: window).contains(where: \.isReadyForDisplay)
+        }
+        if fromDetail {
+            model.openHeroDetail()
+            try await waitUntil { model.stackDepth.depth == 1 && model.detail.state.value?.childrenLoaded == true }
+        }
+        let role: HeroTrailerSurfaceRole = fromDetail ? .detail : .home
+        let original = try XCTUnwrap(model.trailer.player.currentItem)
+        let ambientLayer = try XCTUnwrap(trailerLayers(in: window).first { $0.player === model.trailer.player })
+        let ambientHostLayer = try XCTUnwrap(ambientLayer.superlayer)
+        let originalPosition = model.trailer.player.currentTime().seconds
+        model.fullscreenRequest = try XCTUnwrap(TrailerFullscreenRequest(
+            controller: model.trailer, itemID: model.provider.show.id, role: role,
+            navigationStyle: .rail
+        ))
+        try await waitUntil { self.trailerPlayer(in: host)?.view.window != nil }
+        let player = try XCTUnwrap(trailerPlayer(in: host))
+        XCTAssertEqual(player.modalTransitionStyle, .crossDissolve)
+        XCTAssertTrue(ambientLayer.player === model.trailer.player)
+        XCTAssertTrue(trailerLayers(in: player.view).contains { $0 === ambientLayer },
+                      "Plozz controls must reuse the exact ambient renderer.")
+        XCTAssertTrue(ambientLayer.isReadyForDisplay)
+        XCTAssertFalse(model.trailer.isMuted)
+        XCTAssertGreaterThanOrEqual(model.trailer.player.currentTime().seconds, originalPosition)
+
+        player.engine.seekApplyPaused(true)
+        try await Task.sleep(for: .milliseconds(150))
+        let pausedPosition = model.trailer.player.currentTime().seconds
+        model.trailer.setPaused(false, surfaceRole: role)
+        try await Task.sleep(for: .milliseconds(200))
+        XCTAssertEqual(model.trailer.player.currentTime().seconds, pausedPosition, accuracy: 0.1,
+                       "Covered hero callbacks cannot override full-screen transport.")
+        for seconds in [12.0, 3.0] {
+            player.engine.seeks.requestSeek(to: seconds)
+            try await waitUntil { !player.engine.controls.isSeeking }
+            XCTAssertEqual(model.trailer.player.currentTime().seconds, seconds, accuracy: 0.2)
+            XCTAssertTrue(model.trailer.player.currentItem === original)
+        }
+        player.engine.seekApplyPaused(false)
+        try await waitUntil { model.trailer.player.currentTime().seconds > 3.2 }
+        player.engine.seeks.requestSeek(to: player.engine.duration)
+        try await waitUntil {
+            !player.engine.controls.isSeeking && player.engine.isPaused
+                && player.engine.currentTime >= player.engine.duration - 0.1
+        }
+        XCTAssertTrue(model.trailer.player.currentItem === original)
+        player.engine.togglePlayPause()
+        try await waitUntil {
+            !player.engine.controls.isSeeking && player.engine.currentTime > 0.2 && player.engine.currentTime < 3
+        }
+        let fullScreenSurfaceHost = try XCTUnwrap(ambientLayer.superlayer?.delegate as? UIView)
+        let returnPosition = model.trailer.player.currentTime().seconds
+        model.fullscreenRequest = nil
+        try await waitUntil { player.isBeingDismissed }
+        XCTAssertTrue(ambientLayer.superlayer === ambientHostLayer,
+                      "Restore the live background before the full-screen cover starts revealing the hero.")
+        XCTAssertTrue(ambientLayer.isReadyForDisplay)
+        XCTAssertTrue(model.trailer.isFullScreen,
+                      "Keep carousel and focus callbacks suspended until the return transition finishes.")
+        let returnCover = try XCTUnwrap(fullScreenSurfaceHost.subviews.compactMap { $0 as? UIImageView }
+            .first { $0.accessibilityIdentifier == "trailer-fullscreen-return-cover" })
+        XCTAssertNotNil(returnCover.image, "Cover the outgoing player with video, not artwork or black.")
+        XCTAssertTrue(returnCover.image === model.trailer.handoffImage)
+        try await waitUntil {
+            !model.trailer.isFullScreen && host.presentedViewController == nil
+                && ambientLayer.player === model.trailer.player && ambientLayer.isReadyForDisplay
+        }
+        XCTAssertTrue(model.trailer.player.currentItem === original)
+        XCTAssertTrue(ambientLayer.superlayer === ambientHostLayer)
+        XCTAssertNil(returnCover.superview, "Release the transition frame after revealing live video.")
+        XCTAssertTrue(model.trailer.isClaimed(by: role, itemID: model.provider.show.id))
+        XCTAssertTrue(model.trailer.isMuted, "Restore the ambient mute choice.")
+        XCTAssertEqual(model.path, fromDetail ? [1] : [])
+        try await waitUntil { model.trailer.player.currentTime().seconds > returnPosition + 0.2 }
+        XCTAssertEqual(model.trailer.currentItemID, model.provider.show.id)
+    }
+
+    private func trailerPlayer(in controller: UIViewController) -> BorrowedTrailerPlayer? {
+        if let player = controller as? BorrowedTrailerPlayer { return player }
+        if let presented = controller.presentedViewController,
+           let player = trailerPlayer(in: presented) { return player }
+        return controller.children.lazy.compactMap { self.trailerPlayer(in: $0) }.first
+    }
+
+    func testFullscreenEntryRequiresPinnedHomeButAllowsEveryDetailNavigationStyle() async throws {
+        try await withTrailerFixture { model, video in
+            let controller = model.trailer
+            controller.play(itemID: "home", resolvedURL: video, muted: true)
+            controller.claimSurface(.home, itemID: "home")
+            try await waitUntil { controller.isPlaying }
+            for style in [NavigationStyle.tabBar, .sidebar] {
+                XCTAssertNil(TrailerFullscreenRequest(
+                    controller: controller, itemID: "home", role: .home, navigationStyle: style
+                ))
+                XCTAssertTrue(controller.isClaimed(by: .home, itemID: "home"))
+            }
+            let request = try XCTUnwrap(TrailerFullscreenRequest(
+                controller: controller, itemID: "home", role: .home, navigationStyle: .rail
+            ))
+            controller.endFullScreen(id: request.id)
+            controller.handoffToDetail(itemID: "home", destinationItemID: "selected-source")
+            for style in NavigationStyle.allCases {
+                let request = try XCTUnwrap(TrailerFullscreenRequest(
+                    controller: controller, itemID: "selected-source", role: .detail, navigationStyle: style
+                ))
+                controller.endFullScreen(id: request.id)
+            }
+            let detailRequest = try XCTUnwrap(TrailerFullscreenRequest(
+                controller: controller, itemID: "selected-source", role: .detail, navigationStyle: .tabBar
+            ))
+            let original = controller.player.currentItem
+            controller.stopHero()
+            controller.stop(ifShowing: "selected-source")
+            controller.prepare(itemID: "stale", resolvedURL: video, muted: true)
+            XCTAssertFalse(controller.reserveFeaturedSurface(owner: UUID()))
+            XCTAssertTrue(controller.player.currentItem === original)
+            XCTAssertTrue(controller.isFullScreen)
+            controller.stop()
+            controller.endFullScreen(id: detailRequest.id)
+            XCTAssertNil(controller.player.currentItem, "Dismissal cannot resurrect revoked playback.")
+            XCTAssertFalse(controller.isFullScreen)
+        }
+    }
+
+    func testFullscreenUpObserverIsScopedAndReleasesPressAndSwipeRecognizers() {
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 600, height: 400))
+        let observer = TVFocusActivityObserver.ObserverView(
+            frame: CGRect(x: 100, y: 100, width: 300, height: 100)
+        )
+        let control = TrailerFocusItem(frame: CGRect(x: 140, y: 120, width: 60, height: 44))
+        let outside = TrailerFocusItem(frame: CGRect(x: 440, y: 120, width: 60, height: 44))
+        var upRequests = 0
+        observer.onUp = { upRequests += 1 }
+        window.addSubview(observer)
+        window.addSubview(control)
+        window.addSubview(outside)
+        XCTAssertFalse(observer.observePress(.upArrow, focusedItem: outside))
+        XCTAssertFalse(observer.observePress(.downArrow, focusedItem: control))
+        XCTAssertFalse(observer.observePress(.select, focusedItem: control))
+        XCTAssertEqual(upRequests, 0)
+        XCTAssertFalse(observer.observePress(.upArrow, focusedItem: control))
+        XCTAssertEqual(upRequests, 1)
+        XCTAssertEqual(window.gestureRecognizers?.filter { $0.delegate === observer }.count, 2)
+        observer.stop()
+        XCTAssertFalse(window.gestureRecognizers?.contains { $0.delegate === observer } ?? false)
+        XCTAssertFalse(observer.observePress(.upArrow, focusedItem: control))
+        XCTAssertEqual(upRequests, 1)
+    }
+
+    private final class TrailerFocusItem: UIView {
+        override var canBecomeFocused: Bool { true }
+    }
+
+    func testFullscreenEndRetainsTheItemForReplayUntilReturning() async throws {
+        try await withTrailerFixture(videoFrames: 2) { model, video in
+            let controller = model.trailer
+            controller.play(itemID: "hero", resolvedURL: video, muted: false)
+            controller.claimSurface(.detail, itemID: "hero")
+            try await waitUntil { controller.isPlaying && controller.duration > 0 }
+            var endings = 0
+            controller.setEndHandler(ownerID: "detail") { endings += 1 }
+            let request = try XCTUnwrap(controller.beginFullScreen(itemID: "hero", from: .detail))
+            let original = try XCTUnwrap(controller.player.currentItem)
+            controller.clearEndHandler(ownerID: "detail")
+            try await waitUntil { controller.player.currentTime().seconds >= controller.duration - 0.1 }
+            NotificationCenter.default.post(name: .AVPlayerItemDidPlayToEndTime, object: original)
+            XCTAssertTrue(controller.isPlaying)
+            XCTAssertTrue(controller.player.currentItem === original)
+            XCTAssertEqual(endings, 0)
+            controller.endFullScreen(id: request)
+            XCTAssertEqual(endings, 1)
+            XCTAssertFalse(controller.isPlaying)
+            XCTAssertFalse(controller.isMuted)
+        }
+    }
+
+    private func assertTrailerRoundTrip(usesShowcase: Bool, alternateSource: Bool = false) async throws {
+        let scene = try await activeScene()
+        let directory = try XCTUnwrap(Bundle(for: Self.self).url(
+            forResource: "Fixtures", withExtension: nil
+        )).appendingPathComponent("active-picture-hls")
+        let server = try SubtitleFixtureServer(directory: directory)
+        defer { server.stop() }
+        let port = try await server.start()
+        let video = try XCTUnwrap(URL(string: "http://127.0.0.1:\(port)/active-picture.m3u8"))
+        let model = TransitionShowModel(provider: TransitionShowProvider(artwork: try await seedArtwork()))
+        model.background.settings.homeTrailerEnabled = true
+        model.background.settings.detailMode = .trailer
+        var homeItem = model.provider.show
+        if alternateSource {
+            homeItem.id = "home-source-copy"
+            model.heroItems = [
+                MediaItem(id: "first", title: "First", kind: .movie, allowsTitleBasedMetadataMatching: false),
+                MediaItem(id: "second", title: "Second", kind: .movie, allowsTitleBasedMetadataMatching: false),
+                homeItem
+            ]
+            model.heroSettings.autoAdvanceSeconds = 1
+        }
+        let homeItemID = homeItem.id
+        model.resolveTrailer = { item in
+            guard item.id == homeItemID else { return nil }
+            return HeroTrailerSource(ownerItemID: item.id, trailerItemID: "clip", url: video, duration: 120)
+        }
+        let host = UIHostingController(rootView: TransitionShowRoot(
+            model: model, usesHomeHero: true, usesShowcase: usesShowcase
+        ))
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer {
+            model.trailer.stop()
+            model.detail.suspendEnrichment()
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        try await waitUntil {
+            model.trailer.isPlaying && model.trailer.player.currentTime().seconds > 0.5
+                && self.trailerLayers(in: window).contains(where: \.isReadyForDisplay)
+        }
+        model.trailer.setMuted(false)
+        let original = try XCTUnwrap(model.trailer.player.currentItem)
+        let originalLayer = try XCTUnwrap(trailerLayers(in: window).first(where: \.isReadyForDisplay))
+        let position = model.trailer.player.currentTime().seconds
+        model.openHeroDetail()
+        // Exercise actual Home teardown even on OS versions that keep a covered
+        // NavigationStack root mounted.
+        if !alternateSource { model.showsHomeHero = false }
+        let deadline = ContinuousClock.now + .seconds(2)
+        while ContinuousClock.now < deadline {
+            XCTAssertTrue(model.trailer.player.currentItem === original,
+                          "Home disappearance must not discard the trailer adopted by detail.")
+            XCTAssertEqual(model.trailer.player.rate, 1)
+            XCTAssertFalse(model.trailer.isMuted, "Keep the live mute choice, not the detail default.")
+            XCTAssertGreaterThanOrEqual(model.trailer.player.currentTime().seconds, position)
+            for cover in window.subviews.compactMap({ $0 as? DetailTransitionOverlay }) {
+                XCTAssertNil(cover.destination.image, "A live trailer must never be covered by destination artwork.")
+                XCTAssertTrue(cover.screen.isHidden)
+                XCTAssertTrue(cover.cardContainer.isHidden)
+                XCTAssertEqual(cover.backgroundColor, .clear)
+            }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertGreaterThan(model.trailer.player.currentTime().seconds, position + 1)
+        XCTAssertEqual(model.stackDepth.depth, 1)
+        XCTAssertTrue(trailerLayers(in: window).contains { $0.player === model.trailer.player && $0.isReadyForDisplay })
+        XCTAssertTrue(trailerLayers(in: window).contains { $0 === originalLayer })
+
+        for _ in 0..<3 {
+            // A covered Home can remount/update before the pop. It must not steal
+            // the live layer from detail or replace the playing item.
+            model.showsHomeHero = true
+            try await Task.sleep(for: .milliseconds(100))
+            XCTAssertTrue(originalLayer.isReadyForDisplay)
+            XCTAssertTrue(model.trailer.isClaimed(by: .detail, itemID: model.provider.show.id))
+            model.path.removeAll()
+            try await waitUntil {
+                model.stackDepth.depth == 0
+                    && model.trailer.isClaimed(by: .home, itemID: homeItemID)
+                    && self.trailerLayers(in: window).contains { $0 === originalLayer && $0.isReadyForDisplay }
+            }
+            XCTAssertTrue(model.trailer.player.currentItem === original)
+            XCTAssertEqual(model.trailer.player.rate, 1)
+            XCTAssertFalse(model.trailer.isMuted)
+            model.openHeroDetail()
+            try await waitUntil { model.stackDepth.depth == 1 }
+            XCTAssertTrue(model.trailer.player.currentItem === original)
+            XCTAssertTrue(originalLayer.isReadyForDisplay)
+        }
+    }
+
+    func testTrailerHandoffProtectsAgainstLateHomeCleanupButNotRealDeparture() async throws {
+        try await withTrailerFixture { model, video in
+            let controller = model.trailer
+            controller.play(itemID: "hero", resolvedURL: video, muted: false)
+            controller.claimSurface(.home, itemID: "hero")
+            try await waitUntil { controller.isPlaying && controller.player.currentTime().seconds > 0.1 }
+            let original = try XCTUnwrap(controller.player.currentItem)
+            controller.setPaused(true, surfaceRole: .home)
+            controller.handoffToDetail(itemID: "hero")
+            let position = controller.player.currentTime().seconds
+            controller.stop(ifShowing: "hero", ownedBy: "detail-not-yet-mounted")
+            XCTAssertFalse(controller.reserveFeaturedSurface(owner: UUID()),
+                           "A delayed showcase focus event cannot take the detail trailer.")
+            controller.stopHero(ifShowing: "hero")
+            controller.setPaused(true, surfaceRole: .home)
+            controller.stopHero()
+            XCTAssertTrue(controller.player.currentItem === original)
+            XCTAssertTrue(controller.isClaimed(by: .detail, itemID: "hero"))
+            XCTAssertFalse(controller.isMuted)
+            XCTAssertEqual(controller.player.rate, 1)
+            try await waitUntil { controller.player.currentTime().seconds > position + 0.1 }
+            controller.setEndHandler(ownerID: "detail-current") {}
+            controller.stop(ifShowing: "hero", ownedBy: "detail-stale")
+            XCTAssertTrue(controller.player.currentItem === original)
+
+            let playbackOwner = UUID()
+            controller.suspendForPlayback(owner: playbackOwner)
+            controller.handoffToDetail(itemID: "hero")
+            XCTAssertEqual(controller.player.rate, 0, "A navigation handoff cannot override full playback.")
+            controller.resumeAfterPlayback(owner: playbackOwner)
+            controller.stop(ifShowing: "hero")
+            XCTAssertNil(controller.player.currentItem, "Leaving detail still releases the player.")
+        }
+    }
+
+    func testUnmatchedHomeNavigationDoesNotReserveATrailerForDetail() async throws {
+        try await withTrailerFixture { model, video in
+            let controller = model.trailer
+            controller.prepare(itemID: "hero", resolvedURL: video, muted: true)
+            controller.claimSurface(.home, itemID: "hero")
+            controller.handoffToDetail(itemID: "other")
+            XCTAssertTrue(controller.isClaimed(by: .home, itemID: "hero"))
+            controller.stopHero(ifShowing: "hero")
+            XCTAssertNil(controller.player.currentItem)
+        }
+    }
+
+    func testTrailerSourceAliasIsLimitedToTheTransferredPlayback() async throws {
+        try await withTrailerFixture { model, video in
+            let controller = model.trailer
+            controller.prepare(itemID: "home-copy", resolvedURL: video, muted: false)
+            let original = try XCTUnwrap(controller.player.currentItem)
+            controller.handoffToDetail(itemID: "home-copy", destinationItemID: "detail-copy")
+            XCTAssertTrue(controller.isShowing("home-copy"))
+            XCTAssertTrue(controller.isShowing("detail-copy"))
+            XCTAssertFalse(controller.isShowing("unrelated"))
+            controller.claimSurface(.detail, itemID: "detail-copy")
+            XCTAssertTrue(controller.player.currentItem === original)
+            controller.stop(ifShowing: "detail-copy")
+            XCTAssertNil(controller.player.currentItem)
+            controller.prepare(itemID: "next", resolvedURL: video, muted: true)
+            XCTAssertFalse(controller.isShowing("detail-copy"), "A prior source alias cannot match another title.")
+            controller.stop(ifShowing: "detail-copy")
+            XCTAssertEqual(controller.currentItemID, "next")
+        }
+    }
+
+    func testVideoTransitionRejectsCachedAndLateArtworkInBothDirections() async throws {
+        let fixture = FocusReturnFixture(scene: try await activeScene())
+        defer { fixture.close() }
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 32, height: 18)).image {
+            UIColor.magenta.setFill()
+            $0.fill(CGRect(x: 0, y: 0, width: 32, height: 18))
+        }
+        DetailTransitionNavigation.prepare(for: fixture.item, in: fixture.window, source: fixture.source)
+        let opening = try XCTUnwrap(fixture.window.subviews.compactMap { $0 as? DetailTransitionOverlay }.first)
+        opening.destination.image = image
+        DetailTransitionNavigation.prepare(
+            for: fixture.item, in: fixture.window, source: fixture.source, preservingVideo: true
+        )
+        XCTAssertNil(opening.destination.image)
+        let session = TVDetailEntranceSession()
+        defer { session.finishImmediately() }
+        session.resolvedDestinationArtwork(image)
+        session.attach(to: fixture.window, enabled: true, waitsForBackdrop: true)
+        session.resolvedDestinationVideo()
+        session.resolvedDestinationArtwork(image)
+        XCTAssertNil(opening.destination.image)
+        XCTAssertTrue(opening.screen.isHidden)
+        XCTAssertTrue(opening.cardContainer.isHidden)
+        XCTAssertEqual(opening.backgroundColor, .clear)
+        try await waitUntil { session.stage == .complete }
+        session.close(dismiss: {})
+        let returning = try XCTUnwrap(fixture.window.subviews.compactMap { $0 as? DetailTransitionOverlay }.first)
+        XCTAssertNil(returning.destination.image)
+        XCTAssertTrue(returning.screen.isHidden)
+        XCTAssertTrue(returning.cardContainer.isHidden)
+        XCTAssertEqual(returning.backgroundColor, .clear)
+    }
+
+    func testPreparedHomeTrailerStartsInDetailWithoutReplacingItsItem() async throws {
+        try await withTrailerFixture { model, video in
+            let controller = model.trailer
+            controller.prepare(itemID: "hero", resolvedURL: video, muted: false)
+            let original = try XCTUnwrap(controller.player.currentItem)
+            controller.handoffToDetail(itemID: "hero")
+            controller.stopHero()
+            try await waitUntil { controller.isPlaying && controller.player.currentTime().seconds > 0.1 }
+            XCTAssertTrue(controller.player.currentItem === original)
+            XCTAssertFalse(controller.isMuted)
+        }
+    }
+
+    private func trailerLayers(in view: UIView) -> [AVPlayerLayer] {
+        (view.layer as? AVPlayerLayer).map { [$0] } ?? view.subviews.flatMap { trailerLayers(in: $0) }
+    }
+
     func testProductionDetailStopsTrailerAfterReturningToNonHeroRoot() async throws {
         try await withTrailerFixture { model, video in
+            model.background.settings.detailMode = .trailer
+            model.resolveTrailer = { item in
+                HeroTrailerSource(ownerItemID: item.id, trailerItemID: "clip", url: video, duration: 120)
+            }
             model.path.append(1)
             try await waitUntil { model.detail.state.value?.childrenLoaded == true }
-            try await Task.sleep(for: .milliseconds(500))
-            model.trailer.play(itemID: model.provider.show.id, resolvedURL: video, muted: false)
             try await waitUntil { model.trailer.isPlaying && model.trailer.player.rate == 1 }
             model.path.removeAll()
             try await Task.sleep(for: .seconds(1))
@@ -472,10 +969,12 @@ final class DetailTransitionVisualRegressionTests: XCTestCase {
 
     func testProductionDetailPreservesSamePlayerOnlyForMatchingHomeReturn() async throws {
         try await withTrailerFixture { model, video in
+            model.background.settings.detailMode = .trailer
+            model.resolveTrailer = { item in
+                HeroTrailerSource(ownerItemID: item.id, trailerItemID: "clip", url: video, duration: 120)
+            }
             model.path.append(1)
             try await waitUntil { model.detail.state.value?.childrenLoaded == true }
-            try await Task.sleep(for: .milliseconds(500))
-            model.trailer.play(itemID: model.provider.show.id, resolvedURL: video, muted: false)
             try await waitUntil { model.trailer.isPlaying && model.trailer.player.rate == 1 }
             let original = try XCTUnwrap(model.trailer.player.currentItem)
             // Change eligibility after the detail was constructed.
@@ -563,7 +1062,38 @@ final class DetailTransitionVisualRegressionTests: XCTestCase {
         try await waitUntil { model.trailerReturnItemID == nil }
     }
 
+    func testCoveredHomeDoesNotAdvanceItsReturnTitle() async throws {
+        let scene = try await activeScene()
+        let model = TransitionShowModel(provider: TransitionShowProvider(artwork: try await seedArtwork()))
+        model.background.settings.homeTrailerEnabled = true
+        model.heroSettings.autoAdvance = true
+        model.heroSettings.autoAdvanceSeconds = 1
+        model.heroItems.append(MediaItem(
+            id: "next-hero", title: "Next hero", kind: .movie,
+            allowsTitleBasedMetadataMatching: false
+        ))
+        let host = UIHostingController(rootView: TrailerReturnHomeRoot(model: model))
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer {
+            model.trailer.stop()
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        try await waitUntil { model.trailerReturnItemID == model.provider.show.id }
+        model.path.append(1)
+        try await Task.sleep(for: .seconds(2))
+        XCTAssertEqual(model.trailerReturnItemID, model.provider.show.id,
+                       "Covered Home must not rotate away from the title playing in detail.")
+        model.path.removeAll()
+        try await waitUntil { model.trailerReturnItemID == "next-hero" }
+    }
+
     private func withTrailerFixture(
+        videoFrames: Int = 30,
         _ run: (TransitionShowModel, URL) async throws -> Void
     ) async throws {
         let scene = try await activeScene()
@@ -580,7 +1110,7 @@ final class DetailTransitionVisualRegressionTests: XCTestCase {
             window.rootViewController = nil
             previous?.makeKeyAndVisible()
         }
-        let video = try await makeTrailerVideo()
+        let video = try await makeTrailerVideo(frameCount: videoFrames)
         try await run(model, video)
     }
 
@@ -1900,7 +2430,7 @@ final class DetailTransitionVisualRegressionTests: XCTestCase {
             .first { $0.activationState == .foregroundActive })
     }
 
-    private func makeTrailerVideo() async throws -> URL {
+    private func makeTrailerVideo(frameCount: Int = 30) async throws -> URL {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("detail-trailer-\(UUID()).mov")
         addTeardownBlock { try FileManager.default.removeItem(at: url) }
         let writer = try AVAssetWriter(outputURL: url, fileType: .mov)
@@ -1926,7 +2456,7 @@ final class DetailTransitionVisualRegressionTests: XCTestCase {
             memset(address, 0x80, CVPixelBufferGetDataSize(pixels))
         }
         CVPixelBufferUnlockBaseAddress(pixels, [])
-        for frame in 0..<30 {
+        for frame in 0..<frameCount {
             try await waitUntil { input.isReadyForMoreMediaData || writer.status == .failed }
             XCTAssertTrue(adaptor.append(pixels, withPresentationTime: CMTime(value: Int64(frame), timescale: 1)))
         }
@@ -1996,10 +2526,11 @@ final class DetailTransitionVisualRegressionTests: XCTestCase {
     }
 
     private func waitUntil(
+        timeout: Duration = .seconds(6),
         file: StaticString = #filePath, line: UInt = #line,
         _ condition: @MainActor () -> Bool
     ) async throws {
-        let deadline = ContinuousClock.now + .seconds(6)
+        let deadline = ContinuousClock.now + timeout
         while !condition(), ContinuousClock.now < deadline {
             try await Task.sleep(for: .milliseconds(20))
         }
@@ -2266,12 +2797,15 @@ private final class PendingDetailTrailer {
 private final class TransitionShowModel {
     let provider: TransitionShowProvider
     let detail: ItemDetailViewModel
+    var heroItems: [MediaItem]
+    var heroSettings = HeroSettings.default
     let trailer = HeroTrailerController()
     var trailerReturnItemID: String?
     let stackDepth = DetailStackDepth()
     let coveredPageID = UUID()
     let homeRecede = HomeHeroRecedeModel()
     var showsHomeHero = true
+    var fullscreenRequest: TrailerFullscreenRequest?
     var gradientEnabled = true
     @ObservationIgnored var resolveTrailer: HeroTrailerResolving = { _ in nil }
     let background = HeroBackgroundSettingsModel(store: InMemoryHeroBackgroundSettingsStore(
@@ -2281,6 +2815,7 @@ private final class TransitionShowModel {
 
     init(provider: TransitionShowProvider, relatedTitlesLoader: RelatedTitlesLoader? = nil) {
         self.provider = provider
+        heroItems = [provider.show]
         detail = ItemDetailViewModel(
             provider: provider, itemID: provider.show.id,
             initialItem: provider.show,
@@ -2295,27 +2830,67 @@ private final class TransitionShowModel {
             relatedTitlesLoader: relatedTitlesLoader
         )
     }
+
+    func openHeroDetail() {
+        let homeID = trailer.currentItemID ?? provider.show.id
+        if background.settings.detailTrailerEnabled {
+            trailer.handoffToDetail(itemID: homeID, destinationItemID: detail.state.value?.item.id)
+        }
+        DetailTransitionNavigation.prepare(for: provider.show, preservingVideo: trailer.isPlaying)
+        withCinematicDetailNavigation(for: provider.show) { path.append(1) }
+    }
 }
 
 private struct TrailerReturnHomeRoot: View {
     @Bindable var model: TransitionShowModel
+    var usesShowcase = false
     @Namespace private var focusScope
+
+    private var settings: HeroSettings {
+        var settings = model.heroSettings
+        if usesShowcase { settings.style = .heroShowcase }
+        return settings
+    }
 
     var body: some View {
         if model.showsHomeHero {
-            HomeHeroView(
-                items: [model.provider.show], settings: .default,
-                backgroundSettings: model.background.settings,
-                trailerController: model.trailer, trailerResolver: { _ in nil },
-                isFrontmost: model.path.isEmpty, spoilerSettings: .default,
-                navigationStyle: .rail, focusScope: focusScope,
-                onSelect: { _ in }, onPlay: { _ in },
-                onTrailerReturnItemChanged: { model.trailerReturnItemID = $0 },
-                recedeModel: model.homeRecede
-            )
+            if usesShowcase {
+                FocusHeroHomeView(
+                    rows: [FocusHeroRow(
+                        id: "showcase-row", itemIDs: [model.provider.show.stablePresentationID],
+                        leadItem: model.provider.show, items: [model.provider.show]
+                    )],
+                    settings: settings, spoilerSettings: .default,
+                    navigationStyle: .rail, isFrontmost: model.path.isEmpty,
+                    featuredHero: { suspended in AnyView(hero(suspended: suspended)) }
+                ) { row, reporter in
+                    MediaRowView(
+                        title: Text(verbatim: row.id), items: row.items, style: .poster,
+                        onFocusEntered: reporter.entered,
+                        onFocusChange: { if let item = $0 { reporter.focusedItem(item) } },
+                        onCardFocused: reporter.cardFocused,
+                        onSelect: { _ in model.openHeroDetail() }
+                    )
+                }
+            } else {
+                hero(suspended: false)
+            }
         } else {
             Color.clear
         }
+    }
+
+    private func hero(suspended: Bool) -> some View {
+        HomeHeroView(
+            items: model.heroItems, settings: settings,
+            backgroundSettings: model.background.settings,
+            trailerController: model.trailer, trailerResolver: model.resolveTrailer,
+            isFrontmost: model.path.isEmpty, spoilerSettings: .default,
+            navigationStyle: .rail, focusScope: focusScope,
+            onSelect: { _ in model.openHeroDetail() }, onPlay: { _ in },
+            onTrailerReturnItemChanged: { model.trailerReturnItemID = $0 },
+            recedeModel: model.homeRecede, showcaseSuspended: suspended
+        )
     }
 }
 
@@ -2325,12 +2900,20 @@ private struct TransitionShowRoot: View {
     var directEntry = false
     var artworkSettings: ArtworkSettings = .default
     var zoomEnabled = true
+    var usesHomeHero = false
+    var usesShowcase = false
 
     var body: some View {
         TabView {
             Tab("Home", systemImage: "house") {
                 NavigationStack(path: $model.path) {
-                    Button("Open show") { model.path.append(1) }
+                    Group {
+                        if usesHomeHero {
+                            TrailerReturnHomeRoot(model: model, usesShowcase: usesShowcase)
+                        } else {
+                            Button("Open show") { model.path.append(1) }
+                        }
+                    }
                         .navigationDestination(for: Int.self) { destination in
                             if destination == 2 {
                                 Button("Covered detail") {}
@@ -2342,7 +2925,12 @@ private struct TransitionShowRoot: View {
                                     stackDepth: model.stackDepth,
                                     heroTrailerResolver: model.resolveTrailer,
                                     preservesHeroTrailerOnDisappear: {
-                                        model.path.isEmpty && model.trailerReturnItemID == $0
+                                        let itemID = $0
+                                        return model.path.isEmpty && model.trailerReturnItemID.map {
+                                            $0 == itemID || (
+                                                model.trailer.isShowing($0) && model.trailer.isShowing(itemID)
+                                            )
+                                        } == true
                                     },
                                     initialEpisode: directEntry ? model.provider.episode : nil
                                 )
@@ -2362,6 +2950,14 @@ private struct TransitionShowRoot: View {
         .environment(\.plozzArtworkSettings, artworkSettings)
         .modifier(ReducedMotion())
         .detailNavigationZoom(isEnabled: zoomEnabled)
+        .background {
+            TrailerFullscreenPresentation(
+                controller: model.trailer, request: $model.fullscreenRequest, title: model.provider.show.title
+            )
+        }
+        .environment(\.heroTrailerPlayerFactory, HeroTrailerPlayerFactory { player, surface, title, dismiss in
+            BorrowedTrailerPlayer(player: player, surface: surface, title: title, onDismiss: dismiss)
+        })
     }
 }
 

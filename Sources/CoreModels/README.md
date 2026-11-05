@@ -7,6 +7,9 @@ language every other module speaks.
 
 - Domain value types: `MediaItem`, `MediaLibrary`, `MediaServer`,
   `UserSession`, `Account`, `Profile`, `MusicTrack`, `Person`, etc.
+- `MediaItem` retains optional confirmed original language, series production
+  status and whole-title catalog season/episode totals. These are independent
+  of local ownership, unwatched counts, schedules and playable audio languages.
 - The dual-provider abstraction: `MediaProvider` protocol, `ProviderKind`,
   `ProviderRegistry` / `ProviderResolving`, `ResolvedAccount`.
 - Cross-cutting UI state: `LoadState`, `AppError`.

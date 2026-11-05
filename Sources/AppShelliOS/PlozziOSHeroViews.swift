@@ -771,7 +771,11 @@ struct PlozziOSHeroStage<Foreground: View>: View {
         guard !trailerController.isPlaybackSuppressed else { return }
         guard surfaceRole != .home || !trailerController.isFeaturedReserved else { return }
         guard isActive, surfaceTrailerEnabled else {
-            trailerController.stop(ifShowing: item.id)
+            if surfaceRole == .home {
+                trailerController.stopHero(ifShowing: item.id)
+            } else {
+                trailerController.stop(ifShowing: item.id)
+            }
             return
         }
         if !trailerController.isShowing(item.id) {
@@ -788,6 +792,9 @@ struct PlozziOSHeroStage<Foreground: View>: View {
         if trailerController.isShowing(item.id) {
             // Already rolling for this item — keep the live (session) mute; don't
             // reset it to the default.
+            if surfaceRole == .detail {
+                trailerController.setPaused(false, surfaceRole: .detail)
+            }
             if !trailerController.isPlaying {
                 await startPreparedAfterLeadIn()
             }
@@ -1158,7 +1165,7 @@ private struct PlozziOSHeroBackdrop: View {
     @ViewBuilder
     private var trailerLayer: some View {
         if showsTrailer,
-           trailerController.currentItemID == itemID,
+           trailerController.isShowing(itemID),
            trailerController.isPlaying {
             HeroTrailerVideoLayer(
                 controller: trailerController,
@@ -1795,20 +1802,41 @@ private struct PlozziOSStableHomeHeroMetadata: View {
 
 struct PlozziOSHomeHeroArtworkLink: View {
     @Environment(PlozziOSAppModel.self) private var appModel
+    @Environment(HeroTrailerController.self) private var trailerController
+    @State private var showsDetail = false
 
     let item: MediaItem
     let provider: any MediaProvider
 
     var body: some View {
-        NavigationLink {
+        Button {
+            if appModel.settings.heroBackground.settings.detailTrailerEnabled {
+                let selection = DetailOpenEnvironment.initialSourceSelection(
+                    for: item,
+                    isDiscovery: DetailOpenEnvironment.isDiscovery(
+                        item, identitySources: appModel.identityIndex.identitySourcesProvider
+                    ),
+                    libraryOrigin: nil,
+                    identitySources: appModel.identityIndex.identitySourcesProvider,
+                    sourceLocality: {
+                        appModel.accountsProviders.provider(forAccountID: $0)?.connectionLocality
+                    }
+                )
+                trailerController.handoffToDetail(
+                    itemID: item.id, destinationItemID: selection.selected?.itemID ?? item.id
+                )
+            }
+            showsDetail = true
+        } label: {
+            Color.clear.contentShape(Rectangle())
+        }
+        .navigationDestination(isPresented: $showsDetail) {
             PlozziOSItemDetailView(
                 appModel: appModel,
                 provider: provider,
                 item: item,
                 seerService: appModel.seerService
             )
-        } label: {
-            Color.clear.contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityLabel("More Info")
@@ -3048,8 +3076,8 @@ struct PlozziOSDetailAudioMuteControl: View {
     let isActive: Bool
 
     var body: some View {
-        if trailer.isPlaying, trailer.activeSurfaceRole == .detail,
-           trailer.currentItemID == itemID {
+        if trailer.isPlaying, trailer.activeSurfaceRole == .detail, let itemID,
+           trailer.isShowing(itemID) {
             PlozziOSHeroAudioMuteToolbarButton(isMuted: trailer.isMuted, onToggle: trailer.toggleMuted)
         } else if let themeMusic, let themePlaybackID,
                   themeMusic.isPlaying, !themeMusic.isPreviewing,

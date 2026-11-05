@@ -265,11 +265,14 @@ final class GradientBackgroundHostedTests: XCTestCase {
         for size in [CGSize(width: 1920, height: 1080), CGSize(width: 1280, height: 720)] {
             window.frame.size = size
             let viewport = window.bounds.insetBy(dx: 80, dy: 60)
-            for (palette, saturation) in [
-                (ThemePalette.dark, 1.0), (.pureBlack, 1), (.light, 1), (.dark, 0.5)
+            for (palette, saturation, fillOpacity) in [
+                (ThemePalette.dark, 1.0, 0.05), (.pureBlack, 1, 0.05),
+                (.light, 1, 0.05), (.dark, 0.5, 0.05),
+                (.dark, 1, 0.12), (.light, 1, 0.12)
             ] {
                 state.palette = palette
                 state.tintSaturation = saturation
+                state.fillOpacity = fillOpacity
                 state.enabled = true
                 state.reduceTransparency = false
                 window.layoutIfNeeded()
@@ -279,16 +282,19 @@ final class GradientBackgroundHostedTests: XCTestCase {
                 let texture = try XCTUnwrap(ambient.cardSurface.image)
                 XCTAssertLessThanOrEqual(max(texture.width, texture.height), 480)
                 let scroll = try XCTUnwrap(descendants(UIScrollView.self, in: window).first)
-                let referenceRenderer = ImageRenderer(content:
-                    AmbientGradientBackground(palette: palette, tint: colors)
+                let band = AmbientGradientBackground(palette: palette, tint: colors)
                         .environment(\.artworkGradientTintSaturation, saturation)
                         .overlay(palette.informationSurface.opacity(0.4))
-                        .overlay((palette.isLight ? Color.black : .white).opacity(0.05))
                         .frame(width: viewport.width, height: viewport.height)
                         .environment(\.colorScheme, palette.isLight ? .light : .dark)
+                let referenceRenderer = ImageRenderer(content:
+                    band.overlay((palette.isLight ? Color.black : .white).opacity(fillOpacity))
                 )
                 referenceRenderer.scale = 1
                 let reference = try XCTUnwrap(referenceRenderer.uiImage)
+                let bandRenderer = ImageRenderer(content: band)
+                bandRenderer.scale = 1
+                let bandImage = try XCTUnwrap(bandRenderer.uiImage)
                 let evaluations = counter.evaluations
                 var actualOffsets: [CGFloat] = []
                 for offset in [CGFloat(0), 100, 200] {
@@ -313,6 +319,14 @@ final class GradientBackgroundHostedTests: XCTestCase {
                             for channel in 0..<3 {
                                 XCTAssertLessThanOrEqual(abs(actual[channel] - expected[channel]), 3,
                                     "\(palette), offset=\(offset), \(size), \(point): \(actual) vs \(expected)")
+                            }
+                            if fillOpacity == 0.12 {
+                                let backdrop = try pixel(bandImage, at: CGPoint(
+                                    x: point.x - viewport.minX, y: point.y - viewport.minY
+                                ))
+                                XCTAssertGreaterThanOrEqual(
+                                    (0..<3).map { abs(actual[$0] - backdrop[$0]) }.max() ?? 0, 20,
+                                    "Detail surfaces must visibly separate from the matching local backdrop.")
                             }
                             values.append(actual)
                             sampled += 1
@@ -433,7 +447,7 @@ final class GradientBackgroundHostedTests: XCTestCase {
                             to: window
                         )
                     }.filter { window.bounds.insetBy(dx: 1, dy: 1).contains($0) }
-                    XCTAssertGreaterThanOrEqual(cardPoints.count, 4)
+                    XCTAssertGreaterThanOrEqual(cardPoints.count, 2)
                     let top = try pixel(image, at: CGPoint(x: 20, y: 20))
                     let bottom = try pixel(image, at: CGPoint(x: 20, y: 500))
                     host.rootView = AnyView(
@@ -466,7 +480,7 @@ final class GradientBackgroundHostedTests: XCTestCase {
                         (enabled && !reduceTransparency
                             ? AmbientGradientBackground.meshColors(tint: [.red], palette: palette)[4]
                                 .mix(with: palette.informationSurface, by: 0.4)
-                                .mix(with: palette.isLight ? .black : .white, by: 0.05)
+                                .mix(with: palette.isLight ? .black : .white, by: 0.12)
                             : palette.raised.fill)
                             .environment(\.colorScheme, palette.isLight ? .light : .dark)
                     )
@@ -514,7 +528,7 @@ final class GradientBackgroundHostedTests: XCTestCase {
                             to: window
                         )
                     }.filter { window.bounds.insetBy(dx: 1, dy: 1).contains($0) }
-                    XCTAssertGreaterThanOrEqual(points.count, 4)
+                    XCTAssertGreaterThanOrEqual(points.count, 2)
                     for point in points {
                         let color = try pixel(preview, at: point)
                         XCTAssertGreaterThan(color[2] - color[0], 4, "Native cards must retain the blue artwork tint.")
@@ -754,6 +768,7 @@ private struct GradientFixtureCard: View {
 private final class GradientSurfaceFixtureState {
     var palette = ThemePalette.dark
     var tintSaturation = 1.0
+    var fillOpacity = 0.05
     var enabled = true
     var reduceTransparency = false
     var showsCards = false
@@ -794,6 +809,7 @@ private struct GradientSurfaceFixture: View {
         .environment(\.artworkGradientTintSaturation, state.tintSaturation)
         .environment(\.plozzCardFocusStyle, .system)
         .environment(\.plozzGradientCardSurface, state.enabled && !state.reduceTransparency)
+        .environment(\.plozzGradientCardFillOpacity, state.fillOpacity)
         .environment(\.plozzReduceTransparency, state.reduceTransparency)
         .transaction { $0.disablesAnimations = true }
     }

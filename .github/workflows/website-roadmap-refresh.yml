@@ -1,0 +1,45 @@
+name: Refresh website roadmap
+
+on:
+  issues:
+    types: [opened, edited, closed, reopened, deleted, labeled, unlabeled, transferred]
+  issue_comment:
+    types: [created, edited, deleted]
+  push:
+    branches: [main]
+  release:
+    types: [published, edited, deleted]
+  workflow_run:
+    workflows: [Issue triage, Discord issue bridge, TestFlight issue resolutions]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: website-roadmap-refresh
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    if: >-
+      github.repository == 'brandomoore/Plozz' &&
+      vars.WEBSITE_ROADMAP_REFRESH_ENABLED == 'true' &&
+      (github.event_name != 'issue_comment' || !github.event.issue.pull_request) &&
+      (github.event_name != 'workflow_run' ||
+        github.event.workflow_run.head_repository.full_name == 'brandomoore/Plozz')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: main
+          persist-credentials: false
+      - name: Test the fixed-target dispatcher
+        run: python3 -B -m unittest discover -s tools/tests -p test_refresh_website_roadmap.py
+      - name: Request fresh website verification
+        env:
+          WEBSITE_ROADMAP_DISPATCH_TOKEN: ${{ secrets.WEBSITE_ROADMAP_DISPATCH_TOKEN }}
+        run: python3 tools/refresh-website-roadmap.py

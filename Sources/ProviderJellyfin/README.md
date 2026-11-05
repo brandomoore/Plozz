@@ -17,6 +17,8 @@ supported capability remains at parity.
   result by source revision, and updates badges without delaying detail or Play.
 - `JellyfinDTOs` — server JSON shapes, mapped into `CoreModels` value types
   at the seam (no DTO ever leaks above this module).
+  Explicit series `Status` maps to production status on both Jellyfin and Emby;
+  missing/unknown values stay absent. `ChildCount` is never a catalog total.
 - `JellyfinDeviceProfile` + `JellyfinCapabilityProfile` — the
   direct-play / transcode capability matrix sent on `/PlaybackInfo`,
   parameterised by whether the on-device decode engine (Plozzigen) is linked
