@@ -6,7 +6,7 @@ final class MediaPersonCreditTests: XCTestCase {
         (1...40).map { MediaPerson(id: "actor-\($0)", name: "Actor \($0)", role: "Character \($0)", kind: "Actor") }
     }
 
-    func testSixBilledActorsThenKeyCrewThenEveryRemainingActor() {
+    func testEightBilledActorsThenFourCrewThenRemainingActorsAndCrew() {
         let people = cast + [
             .init(id: "music", name: "Composer", kind: "Original Music Composer"),
             .init(id: "writer", name: "Writer", kind: "Screenplay"),
@@ -17,12 +17,13 @@ final class MediaPersonCreditTests: XCTestCase {
         ]
         let item = MediaItem(id: "movie", title: "Movie", kind: .movie, people: people)
         let credits = item.detailCredits
-        XCTAssertEqual(Array(credits.prefix(6)).map(\.person), Array(cast.prefix(6)))
-        XCTAssertEqual(Array(credits[6..<11]).map(\.person.id), ["director", "writer", "producer", "exec", "music"])
-        XCTAssertEqual(Array(credits.dropFirst(11)).map(\.person), Array(cast.dropFirst(6)))
+        XCTAssertEqual(Array(credits.prefix(8)).map(\.person), Array(cast.prefix(8)))
+        XCTAssertEqual(Array(credits[8..<12]).map(\.person.id), ["director", "writer", "producer", "music"])
+        XCTAssertEqual(Array(credits[12..<44]).map(\.person), Array(cast.dropFirst(8)))
+        XCTAssertEqual(credits.last?.person.id, "exec")
         XCTAssertEqual(item.cast, cast, "Hero and provider actor-only semantics must not change.")
         XCTAssertEqual(Set(credits.map(\.id)).count, credits.count)
-        XCTAssertEqual(credits[6].caption, MediaCrewRole.director.title)
+        XCTAssertEqual(credits[8].caption, MediaCrewRole.director.title)
     }
 
     func testSparseAndCrewOnlyTitlesDoNotReserveActorSlots() {
@@ -52,9 +53,9 @@ final class MediaPersonCreditTests: XCTestCase {
         var director = cast[20]
         director.kind = "Director"
         let credits = MediaPersonCredit.ordered(cast + [director])
-        XCTAssertEqual(credits[6].person, cast[20])
+        XCTAssertEqual(credits[8].person, cast[20])
         XCTAssertEqual(credits.count, cast.count)
-        XCTAssertEqual(credits[7].person, cast[6])
+        XCTAssertEqual(credits[9].person, cast[8])
         XCTAssertEqual(credits.last?.person, cast.last)
     }
 
@@ -92,5 +93,43 @@ final class MediaPersonCreditTests: XCTestCase {
         XCTAssertEqual(credits.count, 1)
         XCTAssertEqual(credits[0].person, actor)
         XCTAssertEqual(credits[0].crewRoles, [.director, .writer])
+    }
+
+    func testMultipleRolesDoNotSpendAdditionalFeaturedCrewSlots() {
+        let people = cast + [
+            .init(id: "director", name: "Filmmaker", kind: "Director", creditIdentity: "tmdb:person:1"),
+            .init(id: "tmdb:person:1", name: "Filmmaker", kind: "Writer"),
+            .init(id: "tmdb:person:1", name: "Filmmaker", kind: "Producer"),
+            .init(id: "other-writer", name: "Another writer", kind: "Writer"),
+            .init(id: "other-producer", name: "Another producer", kind: "Producer"),
+            .init(id: "composer", name: "Composer", kind: "Composer")
+        ]
+        let credits = MediaPersonCredit.ordered(people)
+        XCTAssertEqual(credits[8].person.id, "director")
+        XCTAssertEqual(credits[8].crewRoles, [.director, .writer, .producer])
+        XCTAssertEqual(credits[9].person.id, "composer")
+        XCTAssertEqual(credits[10].person, cast[8])
+        XCTAssertEqual(Array(credits.suffix(2)).map(\.person.id), ["other-writer", "other-producer"])
+        XCTAssertEqual(credits.count, 44)
+    }
+
+    func testLongCrewCannotDisplaceTheRestOfTheCast() {
+        let directors = (1...30).map { MediaPerson(id: "director-\($0)", name: "Director \($0)", kind: "Director") }
+        let writers = (1...20).map { MediaPerson(id: "writer-\($0)", name: "Writer \($0)", kind: "Writer") }
+        let credits = MediaPersonCredit.ordered(cast + directors + writers)
+        XCTAssertEqual(Array(credits[8..<11]).map(\.person.id), ["director-1", "writer-1", "actor-9"])
+        XCTAssertEqual(credits.count, 90)
+        XCTAssertEqual(credits.filter(\.isCast).map(\.person), cast)
+    }
+
+    func testLaterAliasJoinsEarlierCardsWithoutChangingTheirFirstRoute() {
+        let director = MediaPerson(id: "native", name: "Person", kind: "Director")
+        let producer = MediaPerson(id: "tmdb:person:1", name: "Person", kind: "Producer")
+        let writer = MediaPerson(id: director.id, name: director.name, kind: "Writer",
+                                 creditIdentity: producer.id)
+        let credits = MediaPersonCredit.ordered([director, producer, writer])
+        XCTAssertEqual(credits.count, 1)
+        XCTAssertEqual(credits[0].person, director)
+        XCTAssertEqual(credits[0].crewRoles, [.director, .writer, .producer])
     }
 }

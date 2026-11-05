@@ -43,6 +43,11 @@ load-bearing.
   retaining response order for ties or absent billing and placing guest stars last.
   Producer/executive-producer and composer gaps use the same scoped credits request
   and preserve server-supplied groups; general department credits are not promoted.
+  The response retains scoped credits as matching evidence, including
+  roles already supplied by the server. A unique name plus an overlapping role on
+  that same title can join native and TMDB portraits through `creditIdentity`;
+  ambiguous names and conflicting identities stay separate. This display-only
+  link never replaces native person IDs, biography handles, or server role data.
   an episode never inherits a whole show's directing/writing credits. Exact
   external IDs take precedence and a failed ID lookup never falls back to a
   different title. A title-only match must agree on title and any supplied year.

@@ -39,6 +39,7 @@ final class FakeEnrichmentProvider: MetadataEnrichmentProvider, @unchecked Senda
         if missing.contains(.writers) { filtered.writers = output.writers }
         if missing.contains(.producers) { filtered.producers = output.producers }
         if missing.contains(.composers) { filtered.composers = output.composers }
+        filtered.creditReferences = output.creditReferences
         if missing.contains(.originalLanguage) { filtered.originalLanguage = output.originalLanguage }
         if missing.contains(.seriesStatus) { filtered.seriesStatus = output.seriesStatus }
         if missing.contains(.catalogSeasonCount) { filtered.catalogSeasonCount = output.catalogSeasonCount }

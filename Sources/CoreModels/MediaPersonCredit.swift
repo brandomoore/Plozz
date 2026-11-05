@@ -44,21 +44,40 @@ public struct MediaPersonCredit: Identifiable, Equatable, Sendable {
     }
 
     public static func ordered(_ people: [MediaPerson]) -> [Self] {
-        var credits: [Self] = []
-        var positions: [String: Int] = [:]
-        var externalPositions: [String: Int] = [:]
-        for person in people {
-            let role = MediaCrewRole(kind: person.kind)
-            guard person.isCast || role != nil else { continue }
-            let externalID = person.externalID.flatMap {
-                let value = $0.trimmingCharacters(in: .whitespacesAndNewlines)
-                return value.isEmpty ? nil : value
+        let people = people.filter { $0.isCast || MediaCrewRole(kind: $0.kind) != nil }
+        var parents = Array(people.indices)
+        var identities: [String: Int] = [:]
+        func root(_ index: Int) -> Int {
+            var current = index
+            while parents[current] != current {
+                parents[current] = parents[parents[current]]
+                current = parents[current]
             }
+            return current
+        }
+        // Resolve all aliases first: a later credit can join two earlier groups.
+        for (index, person) in people.enumerated() {
+            var aliases = ["id:\(person.id)"]
+            if let identity = person.creditIdentity, !identity.isEmpty { aliases.append("id:\(identity)") }
+            if let external = person.externalID?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !external.isEmpty { aliases.append("external:\(external)") }
+            for alias in aliases {
+                if let previous = identities[alias] {
+                    let left = root(index), right = root(previous)
+                    parents[max(left, right)] = min(left, right)
+                } else {
+                    identities[alias] = index
+                }
+            }
+        }
+        var credits: [Self] = []
+        var positions: [Int: Int] = [:]
+        for (sourceIndex, person) in people.enumerated() {
+            let identity = root(sourceIndex)
+            let role = MediaCrewRole(kind: person.kind)
             let character = person.isCast
                 ? person.role?.trimmingCharacters(in: .whitespacesAndNewlines) : nil
-            if let index = positions[person.id] ?? externalID.flatMap({ externalPositions[$0] }) {
-                positions[person.id] = index
-                if let externalID { externalPositions[externalID] = index }
+            if let index = positions[identity] {
                 credits[index].isCast = credits[index].isCast || person.isCast
                 if credits[index].person.imageURL == nil { credits[index].person.imageURL = person.imageURL }
                 if let character, !character.isEmpty, !credits[index].characters.contains(character) {
@@ -69,8 +88,7 @@ public struct MediaPersonCredit: Identifiable, Equatable, Sendable {
                     credits[index].crewRoles.sort { $0.rawValue < $1.rawValue }
                 }
             } else {
-                positions[person.id] = credits.count
-                if let externalID { externalPositions[externalID] = credits.count }
+                positions[identity] = credits.count
                 credits.append(Self(
                     id: person.id, person: person,
                     characters: character.flatMap { $0.isEmpty ? nil : [$0] } ?? [],
@@ -79,7 +97,7 @@ public struct MediaPersonCredit: Identifiable, Equatable, Sendable {
             }
         }
         let cast = credits.filter(\.isCast)
-        let leading = Array(cast.prefix(6))
+        let leading = Array(cast.prefix(8))
         var shown = Set(leading.map(\.id))
         let crew = credits.enumerated()
             .filter { !$0.element.crewRoles.isEmpty && !shown.contains($0.element.id) }
@@ -89,8 +107,22 @@ public struct MediaPersonCredit: Identifiable, Equatable, Sendable {
                 return left == right ? $0.offset < $1.offset : left < right
             }
             .map(\.element)
-        shown.formUnion(crew.map(\.id))
-        return leading + crew + cast.filter { !shown.contains($0.id) }
+        var featuredCrew: [Self] = []
+        var representedRoles = Set(leading.flatMap(\.crewRoles))
+        let roleGroups: [[MediaCrewRole]] = [
+            [.director, .creator], [.writer], [.producer, .executiveProducer], [.composer, .music]
+        ]
+        for roles in roleGroups where representedRoles.isDisjoint(with: roles) {
+            guard let person = crew.first(where: {
+                !shown.contains($0.id) && $0.crewRoles.contains(where: roles.contains)
+            }) else { continue }
+            featuredCrew.append(person)
+            shown.insert(person.id)
+            representedRoles.formUnion(person.crewRoles)
+        }
+        let remainingCast = cast.filter { !shown.contains($0.id) }
+        shown.formUnion(remainingCast.map(\.id))
+        return leading + featuredCrew + remainingCast + crew.filter { !shown.contains($0.id) }
     }
 }
 

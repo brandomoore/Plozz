@@ -421,16 +421,17 @@ public struct TMDbMetadataProvider: ArtworkProvider {
         sourceURL: URL? = nil
     ) -> MetadataEnrichment {
         var result = MetadataEnrichment()
-        let cast = Self.cast(from: response)
+        let cast = Self.cast(from: response, limit: .max)
+        var references = cast
         if missing.contains(.cast), !cast.isEmpty {
-            result.cast = SourcedValue(value: cast, source: .tmdb, sourceURL: sourceURL)
+            result.cast = SourcedValue(value: Array(cast.prefix(40)), source: .tmdb, sourceURL: sourceURL)
         }
         for (field, kind, jobs) in [
             (MetadataField.directors, "Director", Set(["Director"])),
             (MetadataField.writers, "Writer", Set(["Writer", "Screenplay", "Story", "Teleplay"])),
             (MetadataField.producers, "Producer", Set(["Producer", "Executive Producer"])),
             (MetadataField.composers, "Composer", Set(["Original Music Composer", "Composer"]))
-        ] where missing.contains(field) {
+        ] {
             var seen = Set<Int>()
             let people = (response.crew ?? []).compactMap { credit -> MediaPerson? in
                 let reportedJobs = (credit.jobs ?? []).compactMap(\.job) + [credit.job].compactMap { $0 }
@@ -443,7 +444,8 @@ public struct TMDbMetadataProvider: ArtworkProvider {
                     imageURL: credit.profile_path.flatMap { URL(string: "https://image.tmdb.org/t/p/w342\($0)") }
                 )
             }
-            if !people.isEmpty {
+            references.append(contentsOf: people)
+            if missing.contains(field), !people.isEmpty {
                 let sourced = SourcedValue(value: people, source: MetadataSource.tmdb, sourceURL: sourceURL)
                 switch field {
                 case .directors: result.directors = sourced
@@ -453,6 +455,9 @@ public struct TMDbMetadataProvider: ArtworkProvider {
                 default: preconditionFailure("Unsupported crew field")
                 }
             }
+        }
+        if !result.isEmpty {
+            result.creditReferences = SourcedValue(value: references, source: .tmdb, sourceURL: sourceURL)
         }
         return result
     }

@@ -1067,12 +1067,15 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   Missing sections leave no reserved grid cells. Cast rails lazily show the complete
   supplied cast on both platforms, without a separate More button or dialog,
   and keep person navigation bound to the owning source. The shared
-  `MediaPersonCredit` presentation places six billed actors before available
-  directors, creators, writers, producers and music credits, then the remaining
-  actors. Six is a presentation breakpoint, not a principal-cast classification.
+  `MediaPersonCredit` presentation starts with eight billed actors, then up to four
+  key-crew portraits, then the remaining actors and crew. The preview takes the
+  first available person for directing/creation, writing, production and music;
+  one person's combined roles cover those groups without adding more preview slots.
+  Eight is a presentation breakpoint, not a principal-cast classification.
   Server order is preserved within actor/crew groups. Matching person IDs or
-  explicit external identities share one portrait with combined roles; names
-  alone never merge people, and navigation retains the original provider route.
+  explicit external identities share one portrait with combined roles. Scoped
+  enrichment can also reconcile a unique same-name, same-role credit across
+  sources; names alone never merge people, and navigation retains the original provider route.
   Crew-only titles still show the rail. Information previews retain all source
   values and cap text previews by rendered lines, not an arbitrary number of
   names. Short genre and studio lists remain complete when they fit. Long text

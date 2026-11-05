@@ -223,11 +223,11 @@ public struct TMDbEnrichmentProvider: MetadataEnrichmentProvider {
     private let provider: any TMDbEnriching
     private let backdropLimit: Int
 
-    /// Version 4 retains billing order and adds production/music credits.
+    /// Version 5 retains scoped credit evidence for cross-source person matching.
     public init(
         provider: any TMDbEnriching,
         backdropLimit: Int = 4,
-        policy: ProviderPolicy = ProviderPolicy(version: 4)
+        policy: ProviderPolicy = ProviderPolicy(version: 5)
     ) {
         self.provider = provider
         self.backdropLimit = backdropLimit

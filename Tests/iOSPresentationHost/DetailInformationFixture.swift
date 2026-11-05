@@ -42,6 +42,17 @@ struct DetailInformationFixture: View {
                 MediaPerson(id: "director", name: "Film Director", kind: "Director"),
                 MediaPerson(id: "writer", name: "Film Writer", kind: "Writer"),
                 MediaPerson(id: "producer", name: "Film Producer", kind: "Producer"),
+                MediaPerson(id: "composer", name: "Film Composer", kind: "Composer"),
+                MediaPerson(id: "executive", name: "Film Executive", kind: "Executive Producer")
+            ]
+        }
+        if ProcessInfo.processInfo.arguments.contains("--detail-cast-multiple-roles") {
+            people += [
+                MediaPerson(id: "director:2907", name: "James Cameron", kind: "Director",
+                            externalID: "plex-person", creditIdentity: "tmdb:person:2710"),
+                MediaPerson(id: "writer:1509", name: "James Cameron", kind: "Writer",
+                            externalID: "plex-person", creditIdentity: "tmdb:person:2710"),
+                MediaPerson(id: "tmdb:person:2710", name: "James Cameron", kind: "Producer"),
                 MediaPerson(id: "composer", name: "Film Composer", kind: "Composer")
             ]
         }

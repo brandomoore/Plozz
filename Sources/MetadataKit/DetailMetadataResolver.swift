@@ -105,6 +105,9 @@ public actor DetailMetadataResolver {
             copy.people.append(contentsOf: people.value)
             copy.metadataProvenance.set(people, for: field)
         }
+        if let references = enrichment.creditReferences, references.source == .tmdb {
+            copy.people = reconcilingCredits(copy.people, references: references.value)
+        }
         if missing.contains(.studios), let studios = enrichment.studios, !studios.value.isEmpty {
             copy.studios = studios.value
             copy.metadataProvenance.set(studios, for: .studios)
@@ -131,5 +134,38 @@ public actor DetailMetadataResolver {
             copy.metadataProvenance.set(count, for: .catalogEpisodeCount)
         }
         return copy
+    }
+
+    private static func reconcilingCredits(_ people: [MediaPerson], references: [MediaPerson]) -> [MediaPerson] {
+        func name(_ person: MediaPerson) -> String {
+            person.name.precomposedStringWithCanonicalMapping
+                .split(whereSeparator: \.isWhitespace).joined(separator: " ").lowercased()
+        }
+        func role(_ person: MediaPerson) -> String? {
+            person.isCast ? "actor" : MediaCrewRole(kind: person.kind).map { "crew.\($0.rawValue)" }
+        }
+        let referenceGroups = Dictionary(grouping: references, by: name)
+        let nativeGroups = Dictionary(grouping: people.indices.filter {
+            !people[$0].id.hasPrefix("tmdb:person:")
+        }, by: { name(people[$0]) })
+        var result = people
+        for (name, indices) in nativeGroups {
+            guard !name.isEmpty, let candidates = referenceGroups[name],
+                  let identity = candidates.first?.id, identity.hasPrefix("tmdb:person:"),
+                  Set(candidates.map(\.id)).count == 1 else { continue }
+            let nativeIdentities = Set(indices.map {
+                let person = people[$0]
+                let external = person.externalID?.trimmingCharacters(in: .whitespacesAndNewlines)
+                return external.flatMap { $0.isEmpty ? nil : $0 } ?? person.id
+            })
+            guard nativeIdentities.count == 1,
+                  indices.allSatisfy({ people[$0].creditIdentity == nil || people[$0].creditIdentity == identity }),
+                  indices.contains(where: { index in
+                      guard let nativeRole = role(people[index]) else { return false }
+                      return candidates.contains { role($0) == nativeRole }
+                  }) else { continue }
+            for index in indices { result[index].creditIdentity = identity }
+        }
+        return result
     }
 }

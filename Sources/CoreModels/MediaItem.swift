@@ -95,6 +95,9 @@ public struct MediaPerson: Codable, Hashable, Identifiable, Sendable {
     ///
     /// Optional, so records persisted before it existed still decode.
     public var externalID: String?
+    /// Title-scoped cross-provider credit match, used only to join portrait cards.
+    /// Never replaces the source's person route or biography handle.
+    public var creditIdentity: String?
     /// A short factual line about the person — birth year and birthplace, when
     /// the source keeps them. Already formatted, because what is available
     /// varies by source and only the source knows which parts it has.
@@ -108,7 +111,8 @@ public struct MediaPerson: Codable, Hashable, Identifiable, Sendable {
         imageURL: URL? = nil,
         biography: String? = nil,
         externalID: String? = nil,
-        lifeSummary: String? = nil
+        lifeSummary: String? = nil,
+        creditIdentity: String? = nil
     ) {
         self.id = id
         self.name = name
@@ -118,6 +122,7 @@ public struct MediaPerson: Codable, Hashable, Identifiable, Sendable {
         self.biography = biography
         self.externalID = externalID
         self.lifeSummary = lifeSummary
+        self.creditIdentity = creditIdentity
     }
 
     /// True for on-screen/voice talent (vs. crew), used to build the "Cast" row.
