@@ -1,8 +1,9 @@
 # Disc-menu laboratory
 
-An isolated experiment, **not an enabled Plozz playback feature**. It runs an
-original Java Xlet through real libbluray navigation, rather than imitating a
-disc menu in SwiftUI. No production app target, playback engine dependency or
+An isolated experiment, **not an enabled Plozz playback feature**. It runs
+authored Java menus and, through a separate live prototype, native HDMV menus
+using libbluray rather than imitating a disc menu in SwiftUI.
+No production app target, playback engine dependency or
 signing setting is changed. Simulator routes install only their own test app in
 a newly created simulator; the device build route does not sign or install.
 
@@ -69,8 +70,9 @@ The successful host path uses Temurin **HotSpot 21 with `-Xint`**, not Zero.
 HotSpot still generates native interpreter stubs; this is **not proof of a
 no-executable-memory runtime or tvOS compatibility**.
 
-Only the lab's own generated Xlet is supported. Do not feed third-party discs
-into the harness. libbluray's Java SecurityManager stays enabled; the owned
+Only the lab's own generated Xlet is supported by the Java routes. Do not feed
+third-party Java discs into those routes. The separate HDMV route below rejects
+BD-J discs. libbluray's Java SecurityManager stays enabled; the owned
 libbluray source gets one explicit change disabling its otherwise unconditional
 `bluray.network.connected=YES`. Xlet initialization requires a SecurityManager
 and verifies that a network permission check is denied, without opening a socket.
@@ -228,3 +230,81 @@ Upstream references:
 [historical OpenJDK iOS port](https://openjdk.org/projects/mobile/ios.html),
 [Apple review guidelines](https://developer.apple.com/app-store/review/guidelines/).
 Downloaded dependencies retain their upstream license and notice files.
+
+## Live HDMV / AetherEngine prototype
+
+`live_build.py` packages a separate **Disc Menu Lab**, still using the experimental
+`app.plozz.lab.ZeroSmoke` identifier. This replaces the earlier standalone smoke
+app, not Plozz. It does not sign, install, or launch a physical-device app.
+It requires the existing target libbluray/FreeType builds described above:
+
+```sh
+python3 tools/disc-menu-lab/live_build.py --configuration /private/path/disc.json --region A
+```
+
+The private configuration supplies `baseURL`, `authorization`, and `files`
+(`path`/`size` records). Never commit it, embed share credentials, or publish a
+configured app. Select the intended player region explicitly with `--region`
+(`A`, `B`, or `C`); the build writes its `regionCode` into the app configuration
+rather than inheriting libbluray's Region B default.
+`relay.DiscRelay` supplies the network configuration from an explicitly scoped
+file inventory. Its caller supplies upstream authentication in memory and owns
+the server's lifetime. The device receives only a temporary disc-scoped
+capability. The default limits are two hours and 8 GiB: this is a short test
+session, not a way to watch an entire large backup. The Mac relay must remain
+reachable. HTTP is for a trusted development LAN, not a production transport.
+
+The build uses Plozz's exact AetherEngine revision and checks the independently
+resolved graph against its dependency lock. Every dynamically linked framework
+is recursively embedded and checked for the target platform and ARM64
+architecture. Required native, engine, and multimedia notices accompany the
+generated app. Physical signing must use an existing authorized development
+profile and identity, make only the app-owned framework copies writable,
+sign nested code before the app, and verify the full signed dependency chain.
+Keep the build lease through signing and installation, preserving inherited
+lease descriptors when launching subprocesses.
+
+Native navigation owns its own serial queue and HTTP cursors. AetherEngine gets
+independent readers for the explicitly selected MPLS and its title-relative
+start position; selecting another movie in the same playlist must not reset it
+to the first movie. Replacement loads are serialized and clock notifications
+carry the generation captured before throttling. Native palette/RLE graphics
+are composited over the engine's video surface; hidden overlays retain their
+bitmap until the disc clears it.
+
+The prototype follows first-play rather than forcing a menu call during a
+disc's restricted opening sequence. At engine completion, a bounded final-access-
+unit read lets libbluray resume the disc's HDMV program. Ordinary event polling
+does not consume transport video or advance the engine's read-ahead cursor.
+Clock synchronization maps title time into the current clip's presentation
+timestamp. A menu call unavailable at the current location is a visible notice,
+not a fatal navigation error; actual failures remain visible and are not
+replaced by a misleading timeout/retry prompt.
+
+Controls: directions/swipes move through the original menu, Select activates,
+Back requests the top menu, and Play/Pause controls AetherEngine. **Audio and
+subtitle choices in the original disc menu are not connected to the engine.**
+Multi-angle playback, Java menus on this route, encrypted discs, seamless
+branching, complete playmark/timer behavior, and arbitrary-disc compatibility
+are not established. This is not a production parser/security review or an
+App Store distribution candidate.
+
+`Library/Caches/live-result.json` records the originating run ID, native
+playlist/start selections, engine phases, clock samples, and sparse decoded-
+frame checksums. Logs are retained beside it. A `.playing` event alone does
+not prove video playback. The optional `--lab-auto` launch argument drives the
+specific development three-choice menu sequence, including an Up press during
+the opening video when no menu is active. Directional/select input is admitted
+only while libbluray reports an interactive menu; an unavailable key must not
+stop the player. Physical remote input cancels the automated sequence and hands
+control to the user. This is not a generic disc test
+or evidence that physical Siri Remote input works. Launch without that argument
+for manual testing. Backgrounding stops the native session and engine.
+
+On a physical Apple TV, this route has played the opening sequence, advanced
+through native HDMV navigation into the original menu, and sustained changing
+AetherEngine video frames behind it. Manual directions during the opening video
+were logged as unavailable without stopping playback; subsequent menu input
+worked. Manual takeover interrupted the three-movie automated sequence, so this
+run does **not** establish all three movie start positions on the TV. The earlier
+desktop navigation evidence and this physical playback evidence remain distinct.

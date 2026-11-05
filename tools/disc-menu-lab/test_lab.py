@@ -6,6 +6,7 @@ import struct
 import tempfile
 import sys
 import unittest
+from unittest.mock import patch
 
 import fixture
 import lab
@@ -16,6 +17,17 @@ def integer(data, offset):
 
 
 class FixtureTests(unittest.TestCase):
+    def test_build_lease_preserves_each_entrypoint(self):
+        for script in ("lab.py", "player_build.py", "live_build.py"):
+            arguments = [str(lab.HERE / script), "--simulator"]
+            with self.subTest(script=script), \
+                 patch.object(lab.sys, "argv", arguments), \
+                 patch.object(lab.runpy, "run_path", return_value={"inherited_lease_fds": lambda: ()}), \
+                 patch.object(lab.os, "execv", side_effect=RuntimeError("lease-reexec")) as execute:
+                with self.assertRaisesRegex(RuntimeError, "lease-reexec"):
+                    lab.Lab()
+                self.assertEqual(execute.call_args.args[1][-2:], arguments)
+
     def test_index_points_to_three_bdj_objects(self):
         data = fixture.index()
         start = integer(data, 8)

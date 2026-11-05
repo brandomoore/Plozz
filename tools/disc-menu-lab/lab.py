@@ -37,7 +37,7 @@ class Lab:
         if not self.lease_fds:
             os.execv(str(ROOT / "tools/with-apple-build-lease.sh"), [
                 "with-apple-build-lease.sh", "plozz/disc-menu-lab", "--",
-                sys.executable, str(HERE / "lab.py"), *sys.argv[1:],
+                sys.executable, str(Path(sys.argv[0]).resolve()), *sys.argv[1:],
             ])
         WORK.mkdir(parents=True, exist_ok=True)
         self.lock = (WORK / "lab.lock").open("a")
