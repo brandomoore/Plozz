@@ -2,6 +2,20 @@ import XCTest
 
 @MainActor
 final class TrailerFullscreenRemoteTests: XCTestCase {
+    func testFailedTrailerUsesArtworkDwellInsteadOfTrailerDuration() {
+        continueAfterFailure = false
+        let app = launch(style: "--pinned-home", extraArguments: ["--hero-trailer-failure"])
+        defer { app.terminate() }
+        let hero = app.buttons["home-hero-action-row"]
+        XCTAssertTrue(hero.waitForExistence(timeout: 30))
+        let initialLabel = hero.label
+        XCTAssertEqual(XCTWaiter.wait(for: [
+            XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+                hero.exists && hero.label != initialLabel
+            }, object: nil)
+        ], timeout: 20), .completed, "An unplayable 140-second trailer must not hold its artwork for 140 seconds.")
+    }
+
     func testUpOpensPinnedHomeTrailerAndBackRestoresHeroFocus() {
         checkHome(style: "--pinned-home", opensPlayer: true)
     }
@@ -64,17 +78,62 @@ final class TrailerFullscreenRemoteTests: XCTestCase {
         XCUIRemote.shared.press(.up)
         let player = app.otherElements["trailer-fullscreen-player"]
         XCTAssertTrue(player.waitForExistence(timeout: 8), app.debugDescription)
-        capture(app, name: "Native full-screen trailer controls")
+        capture(app, name: "Plozz full-screen trailer controls")
         for _ in 0..<2 where player.exists { XCUIRemote.shared.press(.menu) }
         wait { !player.exists && play.hasFocus }
     }
 
-    private func launch(style: String) -> XCUIApplication {
+    func testTrailerButtonReusesTheActiveTrailerPlayer() {
+        checkTrailerButton(ambient: true)
+    }
+
+    func testTrailerButtonKeepsItsRegularRouteWithoutAmbientPlayback() {
+        checkTrailerButton(ambient: false)
+    }
+
+    private func checkTrailerButton(ambient: Bool) {
+        continueAfterFailure = false
+        let app = launch(style: "--top-bar-home", extraArguments:
+            ["--continue-watching-action-probe"] + (ambient ? [] : ["--ambient-trailers-off"])
+        )
+        defer { app.terminate() }
+        let hero = app.buttons["home-hero-action-row"]
+        XCTAssertTrue(hero.waitForExistence(timeout: 30))
+        if !hero.hasFocus { XCUIRemote.shared.press(.down) }
+        wait { hero.hasFocus }
+        if ambient { wait { app.staticTexts["hero-trailer-state"].label == "playing" } }
+        XCUIRemote.shared.press(.right)
+        XCUIRemote.shared.press(.select)
+        let play = app.buttons["detail-hero-play"]
+        XCTAssertTrue(play.waitForExistence(timeout: 15))
+        wait { play.hasFocus }
+        let trailer = app.buttons["detail-hero-trailer"]
+        XCTAssertTrue(trailer.waitForExistence(timeout: 10))
+        XCUIRemote.shared.press(.right)
+        wait { trailer.hasFocus }
+        XCUIRemote.shared.press(.select)
+        let player = app.otherElements["trailer-fullscreen-player"]
+        if ambient {
+            XCTAssertTrue(player.waitForExistence(timeout: 8), app.debugDescription)
+            for _ in 0..<2 where player.exists { XCUIRemote.shared.press(.menu) }
+            XCTAssertEqual(XCTWaiter.wait(for: [
+                XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+                    !player.exists && trailer.hasFocus
+                }, object: nil)
+            ], timeout: 10), .completed, app.debugDescription)
+            XCTAssertTrue(app.staticTexts["home-playback-probe"].label.hasPrefix("0:"))
+        } else {
+            wait { app.staticTexts["home-playback-probe"].label.hasPrefix("1:trailer-") }
+            XCTAssertFalse(player.exists)
+        }
+    }
+
+    private func launch(style: String, extraArguments: [String] = []) -> XCUIApplication {
         let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.FocusHost")
         app.launchArguments = [
             "--production-home-fixture", style, "--hero-showcase-home",
             "--cached-home-hero", "--home-performance-fixture", "--hero-trailer-controls"
-        ]
+        ] + extraArguments
         app.launch()
         return app
     }

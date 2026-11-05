@@ -2,6 +2,7 @@
 import SwiftUI
 import UIKit
 import CoreModels
+import CoreNetworking
 import CoreUI
 import FeatureHomeCore
 import HeroUI
@@ -725,7 +726,7 @@ struct HomeHeroView: View {
                 if isFrontmost { resetTrailer(stopPlayer: true) }
                 return
             }
-            if trailerController.isShowing(item.id) {
+            if trailerController.isShowing(item.id), trailerController.isPlaying {
                 trailerController.claimSurface(.home, itemID: item.id)
                 trailerController.setPaused(pausedForRows, surfaceRole: .home)
                 activeTrailerDuration = trailerController.duration
@@ -753,6 +754,7 @@ struct HomeHeroView: View {
                 source = nil
             } else {
                 source = await trailerResolver(item)
+                guard !Task.isCancelled, current?.id == item.id else { return }
                 if let source {
                     trailerSourceCache[item.id] = source
                 } else {
@@ -762,24 +764,31 @@ struct HomeHeroView: View {
             guard let source,
                   !Task.isCancelled,
                   current?.id == item.id else { return }
-            // Fix the timeline BEFORE the visible 3-second lead-in starts. The
-            // progress gauge now has one immutable duration from 0→end and never
-            // jumps when the player becomes ready or the video crossfades in.
             activeTrailerSource = source
-            activeTrailerDuration = source.duration
             trailerController.prepare(
                 itemID: item.id,
                 resolvedURL: source.url,
                 muted: backgroundSettings.homeTrailerMuted
             )
             trailerController.claimSurface(.home, itemID: item.id)
-            // Do not start the progress timeline until AVPlayer is ready. This
-            // absorbs startup latency behind the static image, so 3s + duration
-            // is exact and the timer cannot cut the trailer short.
-            while !trailerController.isReady {
-                try? await Task.sleep(for: .milliseconds(50))
-                guard !Task.isCancelled, current?.id == item.id else { return }
+            // Loading and failed trailers keep the normal artwork dwell. Only a
+            // playable item earns the longer trailer timeline.
+            do {
+                guard try await trailerController.waitUntilReady(itemID: item.id) else {
+                    guard !Task.isCancelled, current?.id == item.id else { return }
+                    trailerSourceCache[item.id] = nil
+                    noFastTrailerIDs.insert(item.id)
+                    resetTrailer(stopPlayer: false)
+                    return
+                }
+            } catch is CancellationError {
+                return
+            } catch {
+                PlozzLog.app.error("Hero trailer: readiness wait failed: \(error.localizedDescription)")
+                return
             }
+            guard !Task.isCancelled, current?.id == item.id else { return }
+            activeTrailerDuration = trailerController.duration > 0 ? trailerController.duration : source.duration
             restartDwell()
             runEpoch &+= 1
             try? await Task.sleep(for: .seconds(HeroTrailerTimeline.leadIn))
@@ -797,6 +806,10 @@ struct HomeHeroView: View {
                 }
             }
             trailerController.startPrepared()
+        }
+        .onChange(of: trailerController.currentItemID) { _, itemID in
+            guard itemID == nil, isFrontmost, activeTrailerSource != nil else { return }
+            resetTrailer(stopPlayer: false)
         }
         .onChange(of: trailerController.isPaused) { _, paused in
             if paused {
@@ -1559,6 +1572,7 @@ struct HomeHeroView: View {
         // Pinned Sidebar; other layouts retain their native Up navigation.
         .trailerFullScreenOnMove(
             controller: trailerController, itemID: item.id, role: .home,
+            title: item.title,
             navigationStyle: navigationStyle,
             enabled: isFrontmost && !pausedForRows && showsTrailer,
             onMove: handleMove

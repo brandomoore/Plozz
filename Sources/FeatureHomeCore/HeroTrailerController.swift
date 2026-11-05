@@ -284,6 +284,22 @@ public final class HeroTrailerController {
         beginPlaybackIfReady()
     }
 
+    public func waitUntilReady(itemID: String, timeout: Duration = .seconds(8)) async throws -> Bool {
+        let deadline = ContinuousClock.now.advanced(by: timeout)
+        while isShowing(itemID), player.currentItem != nil {
+            try Task.checkCancellation()
+            if isReady { return true }
+            if ContinuousClock.now >= deadline {
+                HandoffDiagnostics.emit("trailer STARTUP_TIMEOUT item=\(HandoffDiagnostics.correlationID(itemID))")
+                PlozzLog.app.error("Hero trailer: preparation timed out")
+                stop(ifShowing: itemID)
+                return false
+            }
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        return false
+    }
+
     /// Applies a live mute change (e.g. the user flips the muted toggle) without
     /// reloading.
     public func setMuted(_ muted: Bool, featuredOwner: UUID? = nil) {
@@ -440,7 +456,7 @@ public final class HeroTrailerController {
         stop()
     }
 
-    /// Lends the current item to native transport controls, not another playback pipeline.
+    /// Lends the current item and renderer to transport controls without reloading.
     public func beginFullScreen(itemID: String, from role: HeroTrailerSurfaceRole) -> UUID? {
         guard role == .home || role == .detail,
               isClaimed(by: role, itemID: itemID), isPlaying, isReady,
@@ -452,12 +468,17 @@ public final class HeroTrailerController {
         let frame = decodedFrame() ?? handoffImage
         handoffImage = frame
         (surfaceView.superview as? HeroTrailerVideoLayer.HostView)?.holdFrame(frame)
-        surfaceView.playerLayer.player = nil
         #endif
         setMuted(false)
         requestedPaused = false
         applyPauseState()
         return id
+    }
+
+    public func fullScreenSurface(id: UUID) -> UIView? {
+        guard fullScreenSession?.id == id else { return nil }
+        surfaceView.playerLayer.videoGravity = .resizeAspect
+        return surfaceView
     }
 
     public func prepareFullScreenReturn(id: UUID) {
@@ -469,13 +490,15 @@ public final class HeroTrailerController {
         #endif
     }
 
-    /// The native controller must detach its player before returning the renderer.
+    /// Return the same renderer after the full-screen presentation has dismissed.
     public func endFullScreen(id: UUID) {
         guard let session = fullScreenSession, session.id == id else { return }
         fullScreenSession = nil
         activeSurfaceRole = session.role
         setMuted(session.muted)
         #if canImport(UIKit)
+        surfaceView.transform = .identity
+        surfaceView.playerLayer.videoGravity = .resizeAspectFill
         surfaceView.playerLayer.player = player
         moveSurfaceToActiveHost()
         #endif
@@ -611,6 +634,7 @@ public final class HeroTrailerController {
                 case .failed:
                     let detail = item.error.map(String.init(describing:)) ?? "unknown"
                     PlozzLog.app.error("Hero trailer: failed error=\(detail)")
+                    HandoffDiagnostics.emit("trailer FAILED item=\(HandoffDiagnostics.correlationID(self.currentItemID)) code=\((item.error as NSError?)?.code ?? 0)")
                     self.stop()
                 default:
                     break

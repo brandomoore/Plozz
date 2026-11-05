@@ -5,6 +5,7 @@ import CoreModels
 @testable import CoreUI
 @testable import FeatureHome
 import FeatureHomeCore
+@testable import FeaturePlayback
 @testable import HeroUI
 import MetadataKit
 import Observation
@@ -472,6 +473,55 @@ final class DetailTransitionVisualRegressionTests: XCTestCase {
         try await assertTrailerFullscreen(fromDetail: false)
     }
 
+    func testFailedTrailerReadinessReturnsWithoutWaitingForItsDuration() async throws {
+        try await withTrailerFixture { model, video in
+            let controller = model.trailer
+            controller.prepare(itemID: "failed", resolvedURL: video.appendingPathExtension("missing"), muted: true)
+            let start = ContinuousClock.now
+            let ready = try await controller.waitUntilReady(itemID: "failed")
+            XCTAssertFalse(ready)
+            XCTAssertLessThan(start.duration(to: .now), .seconds(3))
+            XCTAssertNil(controller.currentItemID)
+        }
+    }
+
+    func testTrailerReadinessTimeoutStopsOnlyThePreparedItem() async throws {
+        try await withTrailerFixture { model, video in
+            let controller = model.trailer
+            controller.prepare(itemID: "pending", resolvedURL: video, muted: true)
+            let ready = try await controller.waitUntilReady(itemID: "pending", timeout: .zero)
+            XCTAssertFalse(ready)
+            XCTAssertNil(controller.player.currentItem)
+            controller.prepare(itemID: "replacement", resolvedURL: video, muted: true)
+            let stale = try await controller.waitUntilReady(itemID: "pending", timeout: .zero)
+            XCTAssertFalse(stale)
+            XCTAssertEqual(controller.currentItemID, "replacement")
+        }
+    }
+
+    func testBorrowedTrailerTransportCannotControlAReplacementItem() async throws {
+        try await withTrailerFixture { model, video in
+            let controller = model.trailer
+            controller.play(itemID: "hero", resolvedURL: video, muted: true)
+            controller.claimSurface(.detail, itemID: "hero")
+            try await waitUntil { controller.isPlaying && controller.duration > 0 }
+            let request = try XCTUnwrap(controller.beginFullScreen(itemID: "hero", from: .detail))
+            let surface = try XCTUnwrap(controller.fullScreenSurface(id: request))
+            let engine = BorrowedTrailerEngine(player: controller.player, surface: surface)
+            controller.stop()
+            controller.play(itemID: "replacement", resolvedURL: video, muted: true)
+            try await waitUntil { controller.isPlaying && controller.player.currentTime().seconds > 0.1 }
+            engine.pause()
+            await engine.seek(to: 12)
+            engine.setPlaybackSpeed(2)
+            engine.stop()
+            XCTAssertEqual(controller.currentItemID, "replacement")
+            XCTAssertEqual(controller.player.rate, 1)
+            XCTAssertLessThan(controller.player.currentTime().seconds, 3)
+            XCTAssertEqual(engine.status, .idle)
+        }
+    }
+
     func testDetailTrailerFullscreenSupportsSeekingAndReturnsToTheSameDetail() async throws {
         try await assertTrailerFullscreen(fromDetail: true)
     }
@@ -509,7 +559,7 @@ final class DetailTransitionVisualRegressionTests: XCTestCase {
             window.rootViewController = nil
             previous?.makeKeyAndVisible()
         }
-        try await waitUntil {
+        try await waitUntil(timeout: .seconds(12)) {
             model.trailer.isPlaying && model.trailer.player.currentTime().seconds > 0.5
                 && self.trailerLayers(in: window).contains(where: \.isReadyForDisplay)
         }
@@ -525,35 +575,43 @@ final class DetailTransitionVisualRegressionTests: XCTestCase {
             controller: model.trailer, itemID: model.provider.show.id, role: role,
             navigationStyle: .rail
         ))
-        try await waitUntil { self.nativeTrailerPlayer(in: host)?.isReadyForDisplay == true }
-        let native = try XCTUnwrap(nativeTrailerPlayer(in: host))
-        XCTAssertTrue(native.player === model.trailer.player)
-        XCTAssertTrue(native.showsPlaybackControls)
-        XCTAssertFalse(native.requiresLinearPlayback)
-        XCTAssertNil(ambientLayer.player, "Only AVKit may render while full screen.")
+        try await waitUntil { self.trailerPlayer(in: host)?.view.window != nil }
+        let player = try XCTUnwrap(trailerPlayer(in: host))
+        XCTAssertEqual(player.modalTransitionStyle, .crossDissolve)
+        XCTAssertTrue(ambientLayer.player === model.trailer.player)
+        XCTAssertTrue(trailerLayers(in: player.view).contains { $0 === ambientLayer },
+                      "Plozz controls must reuse the exact ambient renderer.")
+        XCTAssertTrue(ambientLayer.isReadyForDisplay)
         XCTAssertFalse(model.trailer.isMuted)
         XCTAssertGreaterThanOrEqual(model.trailer.player.currentTime().seconds, originalPosition)
 
-        model.trailer.player.pause()
+        player.engine.seekApplyPaused(true)
         try await Task.sleep(for: .milliseconds(150))
         let pausedPosition = model.trailer.player.currentTime().seconds
         model.trailer.setPaused(false, surfaceRole: role)
         try await Task.sleep(for: .milliseconds(200))
         XCTAssertEqual(model.trailer.player.currentTime().seconds, pausedPosition, accuracy: 0.1,
-                       "Covered hero callbacks cannot override native transport.")
+                       "Covered hero callbacks cannot override full-screen transport.")
         for seconds in [12.0, 3.0] {
-            let completed = await model.trailer.player.seek(
-                to: CMTime(seconds: seconds, preferredTimescale: 600),
-                toleranceBefore: .zero, toleranceAfter: .zero
-            )
-            XCTAssertTrue(completed)
+            player.engine.seeks.requestSeek(to: seconds)
+            try await waitUntil { !player.engine.controls.isSeeking }
             XCTAssertEqual(model.trailer.player.currentTime().seconds, seconds, accuracy: 0.2)
             XCTAssertTrue(model.trailer.player.currentItem === original)
         }
-        model.trailer.player.play()
+        player.engine.seekApplyPaused(false)
         try await waitUntil { model.trailer.player.currentTime().seconds > 3.2 }
+        player.engine.seeks.requestSeek(to: player.engine.duration)
+        try await waitUntil {
+            !player.engine.controls.isSeeking && player.engine.isPaused
+                && player.engine.currentTime >= player.engine.duration - 0.1
+        }
+        XCTAssertTrue(model.trailer.player.currentItem === original)
+        player.engine.togglePlayPause()
+        try await waitUntil {
+            !player.engine.controls.isSeeking && player.engine.currentTime > 0.2 && player.engine.currentTime < 3
+        }
         let returnPosition = model.trailer.player.currentTime().seconds
-        XCTAssertEqual(native.delegate?.playerViewControllerShouldDismiss?(native), false)
+        model.fullscreenRequest = nil
         try await waitUntil {
             !model.trailer.isFullScreen && host.presentedViewController == nil
                 && ambientLayer.player === model.trailer.player && ambientLayer.isReadyForDisplay
@@ -566,11 +624,11 @@ final class DetailTransitionVisualRegressionTests: XCTestCase {
         XCTAssertEqual(model.trailer.currentItemID, model.provider.show.id)
     }
 
-    private func nativeTrailerPlayer(in controller: UIViewController) -> AVPlayerViewController? {
-        if let native = controller as? AVPlayerViewController { return native }
+    private func trailerPlayer(in controller: UIViewController) -> BorrowedTrailerPlayer? {
+        if let player = controller as? BorrowedTrailerPlayer { return player }
         if let presented = controller.presentedViewController,
-           let native = nativeTrailerPlayer(in: presented) { return native }
-        return controller.children.lazy.compactMap { self.nativeTrailerPlayer(in: $0) }.first
+           let player = trailerPlayer(in: presented) { return player }
+        return controller.children.lazy.compactMap { self.trailerPlayer(in: $0) }.first
     }
 
     func testFullscreenEntryRequiresPinnedHomeButAllowsEveryDetailNavigationStyle() async throws {
@@ -643,7 +701,7 @@ final class DetailTransitionVisualRegressionTests: XCTestCase {
     }
 
     func testFullscreenEndRetainsTheItemForReplayUntilReturning() async throws {
-        try await withTrailerFixture { model, video in
+        try await withTrailerFixture(videoFrames: 2) { model, video in
             let controller = model.trailer
             controller.play(itemID: "hero", resolvedURL: video, muted: false)
             controller.claimSurface(.detail, itemID: "hero")
@@ -653,12 +711,7 @@ final class DetailTransitionVisualRegressionTests: XCTestCase {
             let request = try XCTUnwrap(controller.beginFullScreen(itemID: "hero", from: .detail))
             let original = try XCTUnwrap(controller.player.currentItem)
             controller.clearEndHandler(ownerID: "detail")
-            controller.player.pause()
-            let seeked = await controller.player.seek(
-                to: CMTime(seconds: controller.duration, preferredTimescale: 600),
-                toleranceBefore: .zero, toleranceAfter: .zero
-            )
-            XCTAssertTrue(seeked)
+            try await waitUntil { controller.player.currentTime().seconds >= controller.duration - 0.1 }
             NotificationCenter.default.post(name: .AVPlayerItemDidPlayToEndTime, object: original)
             XCTAssertTrue(controller.isPlaying)
             XCTAssertTrue(controller.player.currentItem === original)
@@ -1026,6 +1079,7 @@ final class DetailTransitionVisualRegressionTests: XCTestCase {
     }
 
     private func withTrailerFixture(
+        videoFrames: Int = 30,
         _ run: (TransitionShowModel, URL) async throws -> Void
     ) async throws {
         let scene = try await activeScene()
@@ -1042,7 +1096,7 @@ final class DetailTransitionVisualRegressionTests: XCTestCase {
             window.rootViewController = nil
             previous?.makeKeyAndVisible()
         }
-        let video = try await makeTrailerVideo()
+        let video = try await makeTrailerVideo(frameCount: videoFrames)
         try await run(model, video)
     }
 
@@ -2362,7 +2416,7 @@ final class DetailTransitionVisualRegressionTests: XCTestCase {
             .first { $0.activationState == .foregroundActive })
     }
 
-    private func makeTrailerVideo() async throws -> URL {
+    private func makeTrailerVideo(frameCount: Int = 30) async throws -> URL {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("detail-trailer-\(UUID()).mov")
         addTeardownBlock { try FileManager.default.removeItem(at: url) }
         let writer = try AVAssetWriter(outputURL: url, fileType: .mov)
@@ -2388,7 +2442,7 @@ final class DetailTransitionVisualRegressionTests: XCTestCase {
             memset(address, 0x80, CVPixelBufferGetDataSize(pixels))
         }
         CVPixelBufferUnlockBaseAddress(pixels, [])
-        for frame in 0..<30 {
+        for frame in 0..<frameCount {
             try await waitUntil { input.isReadyForMoreMediaData || writer.status == .failed }
             XCTAssertTrue(adaptor.append(pixels, withPresentationTime: CMTime(value: Int64(frame), timescale: 1)))
         }
@@ -2458,10 +2512,11 @@ final class DetailTransitionVisualRegressionTests: XCTestCase {
     }
 
     private func waitUntil(
+        timeout: Duration = .seconds(6),
         file: StaticString = #filePath, line: UInt = #line,
         _ condition: @MainActor () -> Bool
     ) async throws {
-        let deadline = ContinuousClock.now + .seconds(6)
+        let deadline = ContinuousClock.now + timeout
         while !condition(), ContinuousClock.now < deadline {
             try await Task.sleep(for: .milliseconds(20))
         }
@@ -2881,10 +2936,14 @@ private struct TransitionShowRoot: View {
         .environment(\.plozzArtworkSettings, artworkSettings)
         .modifier(ReducedMotion())
         .detailNavigationZoom(isEnabled: zoomEnabled)
-        .fullScreenCover(item: $model.fullscreenRequest) { request in
-            TrailerFullscreenPlayer(controller: model.trailer, sessionID: request.id)
-                .ignoresSafeArea()
+        .background {
+            TrailerFullscreenPresentation(
+                controller: model.trailer, request: $model.fullscreenRequest, title: model.provider.show.title
+            )
         }
+        .environment(\.heroTrailerPlayerFactory, HeroTrailerPlayerFactory { player, surface, title, dismiss in
+            BorrowedTrailerPlayer(player: player, surface: surface, title: title, onDismiss: dismiss)
+        })
     }
 }
 

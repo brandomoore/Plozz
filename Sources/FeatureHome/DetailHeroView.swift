@@ -170,8 +170,14 @@ struct DetailHeroView: View, Equatable {
     /// When provided, a secondary "Trailer" button is shown next to Play.
     var onPlayTrailer: (() -> Void)? = nil
     var trailerItem: MediaItem? = nil
+    @State private var trailerFullscreenButtonRequest = 0
+    @State private var trailerReturnFocus: HeroRowAction?
     private var trailerButtonLabel: some View {
-        TrailerActionButtonLabel(trailer: trailerItem)
+        TrailerActionButtonLabel(trailer:
+            heroTrailerController.isPlaying && heroTrailerController.isReady
+                && heroTrailerController.isClaimed(by: .detail, itemID: backdrop.id)
+                ? nil : trailerItem
+        )
             .frame(width: heroIconSize, height: heroIconSize)
     }
     /// The selectable versions for this title. When more than one exists and
@@ -994,8 +1000,8 @@ struct DetailHeroView: View, Equatable {
                         // Discovery keeps library-only actions suppressed but a
                         // trailer remains useful whether or not Seerr is installed.
                         if showsRequestPill { requestPill() }
-                        if let onPlayTrailer {
-                            Button(action: onPlayTrailer) {
+                        if onPlayTrailer != nil {
+                            Button { trailerFullscreenButtonRequest &+= 1 } label: {
                                 trailerButtonLabel
                             }
                             .modifier(HeroActionButtonStyle(prominent: !showsRequestPill, circular: true))
@@ -1015,8 +1021,8 @@ struct DetailHeroView: View, Equatable {
                     if (playTitle != nil && onPlay != nil) || showsPlayPlaceholder {
                         playButton(title: playTitle ?? "Play", action: onPlay)
                     }
-                    if let onPlayTrailer {
-                        Button(action: onPlayTrailer) {
+                    if onPlayTrailer != nil {
+                        Button { trailerFullscreenButtonRequest &+= 1 } label: {
                             trailerButtonLabel
                         }
                         .modifier(HeroActionButtonStyle(prominent: false, circular: true))
@@ -1058,9 +1064,21 @@ struct DetailHeroView: View, Equatable {
                 .focusSection()
                 .trailerFullScreenOnMove(
                     controller: heroTrailerController, itemID: backdrop.id, role: .detail,
+                    title: item.title,
                     enabled: isVisible && allowsDeferredActivation
-                        && heroBackground.settings.detailMode == .trailer
+                        && heroBackground.settings.detailMode == .trailer,
+                    buttonRequest: trailerFullscreenButtonRequest,
+                    onUnavailable: { onPlayTrailer?() },
+                    onPresent: { trailerReturnFocus = heroActionRowFocus ?? .play }
                 )
+                .onChange(of: heroTrailerController.isFullScreen) { _, fullScreen in
+                    guard !fullScreen, let returnFocus = trailerReturnFocus else { return }
+                    trailerReturnFocus = nil
+                    guard isVisible && allowsDeferredActivation else { return }
+                    heroActionRowFocus = returnFocus
+                    playButtonHasFocus = returnFocus == .play
+                    playButtonFocus?.wrappedValue = returnFocus == .play
+                }
                 // Keep the whole action row pinned to the hero top: this row is
                 // bottom-anchored in a hero that is full-screen-height for a
                 // childless movie, so when focus lands on any button tvOS

@@ -1083,17 +1083,25 @@ records on both platforms; error dialogs, playback routing and timeouts are unch
   the original player through source selection and is cleared when playback stops
   or changes to another item.
   On tvOS, Up from the hero action row opens an already-playing trailer with
-  native full-screen play/pause and seeking controls. Home enables this only with
+  Plozz's regular full-screen play/pause and seeking controls. Home enables this only with
   Pinned Sidebar: Top Bar and native Sidebar retain their Up navigation. Detail
   pages allow it with every navigation style and briefly show "Up for playback
   controls" above the hero after two seconds of eligible focus. The hint reuses
-  Showcase's upward chevron and never adds a focus stop. The same player/item is
-  lent to AVKit with the ambient layer detached,
-  so there are no competing video renderers. Full-screen playback enables sound
+  Showcase's upward chevron and never adds a focus stop. The Trailer button uses
+  the same presentation when that title's ambient trailer is already playing;
+  otherwise its existing provider/external-link route remains available.
+  The same player, item and decoded video layer are lent to Plozz's shared
+  transport UI, with a cross-dissolve instead of a sliding modal. Reduced Motion
+  removes the dissolve. There are no competing video renderers or source reloads.
+  Full-screen playback enables sound
   temporarily, freezes Home's carousel, and retains the finished item for seeking
   or replay. Back returns to the same page at the current position, restores the
   ambient mute choice, and resumes the hero. An actual stop/profile departure
   invalidates the presentation so dismissing it cannot revive old playback.
+  A pending or failed Home trailer keeps the normal artwork dwell, not the
+  advertised trailer duration. Preparation is bounded to eight seconds and
+  abandoned when its item is replaced. Only ready playback extends the timeline;
+  a later failure clears that extension so the carousel can continue.
 
 ## Home loading
 

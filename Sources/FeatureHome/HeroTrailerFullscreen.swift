@@ -6,6 +6,25 @@ import CoreUI
 import FeatureHomeCore
 import SwiftUI
 
+public struct HeroTrailerPlayerFactory {
+    public var make: @MainActor (AVPlayer, UIView, String, @escaping () -> Void) -> UIViewController
+
+    public init(make: @escaping @MainActor (AVPlayer, UIView, String, @escaping () -> Void) -> UIViewController) {
+        self.make = make
+    }
+}
+
+private struct HeroTrailerPlayerFactoryKey: EnvironmentKey {
+    static let defaultValue: HeroTrailerPlayerFactory? = nil
+}
+
+extension EnvironmentValues {
+    public var heroTrailerPlayerFactory: HeroTrailerPlayerFactory? {
+        get { self[HeroTrailerPlayerFactoryKey.self] }
+        set { self[HeroTrailerPlayerFactoryKey.self] = newValue }
+    }
+}
+
 struct TrailerFullscreenRequest: Identifiable {
     let id: UUID
 
@@ -69,13 +88,18 @@ extension View {
         controller: HeroTrailerController,
         itemID: String,
         role: HeroTrailerSurfaceRole,
+        title: String = "",
         navigationStyle: NavigationStyle? = nil,
         enabled: Bool = true,
+        buttonRequest: Int = 0,
+        onUnavailable: @escaping () -> Void = {},
+        onPresent: @escaping () -> Void = {},
         onMove: @escaping () -> Void = {}
     ) -> some View {
         modifier(TrailerFullscreenModifier(
             controller: controller, itemID: itemID, role: role,
-            navigationStyle: navigationStyle, enabled: enabled, onMove: onMove
+            title: title, navigationStyle: navigationStyle, enabled: enabled,
+            buttonRequest: buttonRequest, onUnavailable: onUnavailable, onPresent: onPresent, onMove: onMove
         ))
     }
 }
@@ -84,104 +108,132 @@ private struct TrailerFullscreenModifier: ViewModifier {
     let controller: HeroTrailerController
     let itemID: String
     let role: HeroTrailerSurfaceRole
+    let title: String
     let navigationStyle: NavigationStyle?
     let enabled: Bool
+    let buttonRequest: Int
+    let onUnavailable: () -> Void
+    let onPresent: () -> Void
     let onMove: () -> Void
+    @Environment(\.heroTrailerPlayerFactory) private var factory
     @State private var request: TrailerFullscreenRequest?
 
     func body(content: Content) -> some View {
         content
             .onMoveCommand { direction in
                 onMove()
-                if direction == .up { openTrailer() }
+                if direction == .up { _ = openTrailer() }
             }
             .background {
                 // Nested Home hosts can swallow SwiftUI move commands. Observe
                 // only the native focus region without consuming navigation.
-                TVFocusActivityObserver(onActivity: {}, onUp: openTrailer)
+                TVFocusActivityObserver(onActivity: {}, onUp: { _ = openTrailer() })
             }
-            .fullScreenCover(item: $request) { request in
-                TrailerFullscreenPlayer(controller: controller, sessionID: request.id)
-                    .ignoresSafeArea()
+            .background {
+                TrailerFullscreenPresentation(controller: controller, request: $request, title: title)
+            }
+            .onChange(of: buttonRequest) { _, _ in
+                if !openTrailer() { onUnavailable() }
             }
             .onChange(of: controller.isFullScreen) { _, isFullScreen in
                 if !isFullScreen { request = nil }
             }
     }
 
-    private func openTrailer() {
-        guard enabled, request == nil else { return }
+    private func openTrailer() -> Bool {
+        guard enabled, request == nil, factory != nil else { return false }
         request = TrailerFullscreenRequest(
             controller: controller, itemID: itemID, role: role,
             navigationStyle: navigationStyle
         )
+        if request != nil { onPresent() }
+        return request != nil
     }
 }
 
-struct TrailerFullscreenPlayer: UIViewControllerRepresentable {
+struct TrailerFullscreenPresentation: UIViewControllerRepresentable {
     let controller: HeroTrailerController
-    let sessionID: UUID
-    @Environment(\.dismiss) private var dismiss
+    @Binding var request: TrailerFullscreenRequest?
+    let title: String
+    @Environment(\.heroTrailerPlayerFactory) private var factory
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(controller: controller, sessionID: sessionID, dismiss: { dismiss() })
+        Coordinator(controller: controller)
     }
 
-    func makeUIViewController(context: Context) -> AVPlayerViewController {
-        let viewController = AVPlayerViewController()
-        viewController.player = controller.player
-        viewController.delegate = context.coordinator
-        viewController.showsPlaybackControls = true
-        viewController.requiresLinearPlayback = false
-        viewController.allowsPictureInPicturePlayback = false
-        viewController.videoGravity = .resizeAspect
-        viewController.view.accessibilityIdentifier = "trailer-fullscreen-player"
-        context.coordinator.holdFrameUntilReady(in: viewController)
-        return viewController
+    func makeUIViewController(context: Context) -> Anchor {
+        let anchor = Anchor()
+        anchor.view.isUserInteractionEnabled = false
+        anchor.appeared = { [weak coordinator = context.coordinator, weak anchor] in
+            if let anchor { coordinator?.reconcile(anchor: anchor) }
+        }
+        return anchor
     }
 
-    func updateUIViewController(_ viewController: AVPlayerViewController, context: Context) {}
+    func updateUIViewController(_ anchor: Anchor, context: Context) {
+        context.coordinator.request = request
+        context.coordinator.factory = factory
+        context.coordinator.title = title
+        context.coordinator.animated = !reduceMotion
+        context.coordinator.clearRequest = { request = nil }
+        context.coordinator.reconcile(anchor: anchor)
+    }
 
-    static func dismantleUIViewController(_ viewController: AVPlayerViewController, coordinator: Coordinator) {
-        coordinator.readiness?.invalidate()
-        viewController.player = nil
-        coordinator.controller.endFullScreen(id: coordinator.sessionID)
+    static func dismantleUIViewController(_ anchor: Anchor, coordinator: Coordinator) {
+        coordinator.request = nil
+        coordinator.animated = false
+        coordinator.reconcile(anchor: anchor)
     }
 
     @MainActor
-    final class Coordinator: NSObject, AVPlayerViewControllerDelegate {
+    final class Anchor: UIViewController {
+        var appeared: (() -> Void)?
+        override func viewDidAppear(_ animated: Bool) {
+            super.viewDidAppear(animated)
+            appeared?()
+        }
+    }
+
+    @MainActor
+    final class Coordinator {
         let controller: HeroTrailerController
-        let sessionID: UUID
-        let dismiss: () -> Void
-        var readiness: NSKeyValueObservation?
+        var request: TrailerFullscreenRequest?
+        var factory: HeroTrailerPlayerFactory?
+        var title = ""
+        var animated = true
+        var clearRequest: () -> Void = {}
+        private var presented: (id: UUID, player: UIViewController)?
+        private var dismissing = false
 
-        init(controller: HeroTrailerController, sessionID: UUID, dismiss: @escaping () -> Void) {
+        init(controller: HeroTrailerController) {
             self.controller = controller
-            self.sessionID = sessionID
-            self.dismiss = dismiss
         }
 
-        nonisolated func playerViewControllerShouldDismiss(_ playerViewController: AVPlayerViewController) -> Bool {
-            MainActor.assumeIsolated {
-                controller.prepareFullScreenReturn(id: sessionID)
-                dismiss()
-                return false
+        func reconcile(anchor: Anchor) {
+            if let presented {
+                guard request?.id != presented.id, !dismissing else { return }
+                dismissing = true
+                controller.prepareFullScreenReturn(id: presented.id)
+                presented.player.dismiss(animated: animated) { [self] in
+                    controller.endFullScreen(id: presented.id)
+                    self.presented = nil
+                    dismissing = false
+                    reconcile(anchor: anchor)
+                }
+                return
             }
-        }
-
-        func holdFrameUntilReady(in player: AVPlayerViewController) {
-            guard let overlay = player.contentOverlayView, let frame = controller.handoffImage else { return }
-            let image = UIImageView(image: frame)
-            image.contentMode = .scaleAspectFit
-            image.backgroundColor = .black
-            image.isUserInteractionEnabled = false
-            image.frame = overlay.bounds
-            image.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-            overlay.addSubview(image)
-            readiness = player.observe(\.isReadyForDisplay, options: [.initial, .new]) { player, _ in
-                guard player.isReadyForDisplay else { return }
-                Task { @MainActor [weak image] in image?.removeFromSuperview() }
+            guard let request, let factory, anchor.view.window != nil,
+                  let surface = controller.fullScreenSurface(id: request.id) else { return }
+            let player = factory.make(controller.player, surface, title) { [weak self] in
+                self?.clearRequest()
             }
+            // Keep the SwiftUI owner mounted so binding changes and profile
+            // revocation can dismiss the borrowed player while it is visible.
+            player.modalPresentationStyle = .overFullScreen
+            player.modalTransitionStyle = .crossDissolve
+            presented = (request.id, player)
+            anchor.present(player, animated: animated)
         }
     }
 }
