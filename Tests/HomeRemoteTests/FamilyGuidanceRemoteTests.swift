@@ -4,6 +4,92 @@ import Vision
 
 @MainActor
 final class FamilyGuidanceRemoteTests: XCTestCase {
+    func testVisibleGuidanceFocusDoesNotScrollThePage() throws {
+        let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.FocusHost")
+        app.launchArguments = ["--detail-information-fixture", "--detail-layout-guidance",
+                               "--detail-layout-scrolling"]
+        app.launch()
+        defer { app.terminate() }
+        let about = app.descendants(matching: .any)["detail-about"].firstMatch
+        let score = app.descendants(matching: .any)["detail-rating-rottenTomatoes"].firstMatch
+        let guidance = app.descendants(matching: .any)["family-guidance-tile"].firstMatch
+        let heading = app.staticTexts["Ratings"].firstMatch
+        XCTAssertTrue(about.waitForExistence(timeout: 15))
+        XCTAssertTrue(isFocused(app.buttons["detail-fixture-header"].firstMatch))
+        for _ in 0..<4 where !isFocused(about) { XCUIRemote.shared.press(.down) }
+        XCTAssertTrue(isFocused(about))
+        XCUIRemote.shared.press(.right)
+        if isFocused(guidance) { XCUIRemote.shared.press(.up) }
+        XCTAssertTrue(isFocused(score), app.debugDescription)
+        XCUIRemote.shared.press(.playPause)
+        XCTAssertTrue(isFocused(score), app.debugDescription)
+        let before = heading.frame.minY
+        XCTAssertGreaterThan(before, 60)
+        XCTAssertLessThan(before, 200)
+        XCTAssertGreaterThan(guidance.frame.minY, app.frame.minY + 40)
+        XCTAssertLessThan(guidance.frame.maxY, app.frame.maxY - 40)
+        recordScreenshot(app, name: "visible-guidance-before-focus")
+        XCUIRemote.shared.press(.down)
+        XCTAssertTrue(isFocused(guidance), app.debugDescription)
+        recordScreenshot(app, name: "visible-guidance-after-focus")
+        XCTAssertEqual(heading.frame.minY, before, accuracy: 1,
+                       "Focusing an already-visible guidance card must not move the page.")
+        XCUIRemote.shared.press(.up)
+        XCTAssertTrue(isFocused(score), app.debugDescription)
+        XCTAssertEqual(heading.frame.minY, before, accuracy: 1)
+
+        for _ in 0..<3 { XCUIRemote.shared.press(.down) }
+        XCTAssertTrue(isFocused(app.descendants(matching: .any)["detail-crew-writers-more"].firstMatch),
+                      app.debugDescription)
+        for _ in 0..<3 { XCUIRemote.shared.press(.up) }
+        XCTAssertTrue(isFocused(score), app.debugDescription)
+        let returned = heading.frame.minY
+        XCTAssertGreaterThan(guidance.frame.minY, app.frame.minY + 40)
+        XCTAssertLessThan(guidance.frame.maxY, app.frame.maxY - 40)
+        recordScreenshot(app, name: "visible-guidance-return-before-focus")
+        XCUIRemote.shared.press(.down)
+        XCTAssertTrue(isFocused(guidance), app.debugDescription)
+        recordScreenshot(app, name: "visible-guidance-return-after-focus")
+        XCTAssertEqual(heading.frame.minY, returned, accuracy: 1)
+        XCUIRemote.shared.press(.select)
+        XCTAssertTrue(app.buttons["Done"].firstMatch.waitForExistence(timeout: 5))
+        XCUIRemote.shared.press(.menu)
+        let restored = XCTNSPredicateExpectation(
+            predicate: NSPredicate { _, _ in self.isFocused(guidance) }, object: nil
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [restored], timeout: 5), .completed)
+        XCUIRemote.shared.press(.down)
+        XCTAssertTrue(isFocused(app.descendants(matching: .any)["detail-crew-directors-more"].firstMatch),
+                      app.debugDescription)
+    }
+
+    func testClippedGuidanceStillScrollsIntoView() throws {
+        let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.FocusHost")
+        app.launchArguments = ["--detail-information-fixture", "--detail-layout-guidance",
+                               "--detail-layout-scrolling", "--detail-layout-guidance-clipped"]
+        app.launch()
+        defer { app.terminate() }
+        let about = app.descendants(matching: .any)["detail-about"].firstMatch
+        let score = app.descendants(matching: .any)["detail-rating-rottenTomatoes"].firstMatch
+        let guidance = app.descendants(matching: .any)["family-guidance-tile"].firstMatch
+        XCTAssertTrue(about.waitForExistence(timeout: 15))
+        for _ in 0..<4 where !isFocused(about) { XCUIRemote.shared.press(.down) }
+        XCTAssertTrue(isFocused(about))
+        XCUIRemote.shared.press(.right)
+        if isFocused(guidance) { XCUIRemote.shared.press(.up) }
+        XCTAssertTrue(isFocused(score), app.debugDescription)
+        XCUIRemote.shared.press(.playPause)
+        XCTAssertTrue(isFocused(score), app.debugDescription)
+        let before = app.staticTexts["Ratings"].firstMatch.frame.minY
+        XCTAssertGreaterThan(guidance.frame.maxY, app.frame.maxY - 60)
+        recordScreenshot(app, name: "clipped-guidance-before-focus")
+        XCUIRemote.shared.press(.down)
+        XCTAssertTrue(isFocused(guidance), app.debugDescription)
+        XCTAssertLessThan(guidance.frame.maxY, app.frame.maxY - 40)
+        XCTAssertLessThan(app.staticTexts["Ratings"].firstMatch.frame.minY, before)
+        recordScreenshot(app, name: "clipped-guidance-after-focus")
+    }
+
     func testSummaryCardsHaveClearlyVisibleFocus() throws {
         try checkSummaryFocus(extra: [], name: "dark")
     }

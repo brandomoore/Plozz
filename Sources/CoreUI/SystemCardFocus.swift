@@ -168,6 +168,99 @@ private struct CardFocusButtonStyle<Style: ButtonStyle>: ViewModifier {
 }
 
 #if os(tvOS)
+struct NativeInformationFocusScrollGuard: UIViewRepresentable {
+    @Environment(\.plozzCardFocusStyle) private var style
+
+    func makeUIView(context: Context) -> GuardView {
+        let view = GuardView()
+        view.isUserInteractionEnabled = false
+        return view
+    }
+
+    func updateUIView(_ view: GuardView, context: Context) {
+        view.isEnabled = style.usesSystemEffect
+        if !view.isEnabled { view.restore() }
+    }
+
+    static func dismantleUIView(_ view: GuardView, coordinator: ()) {
+        view.stop()
+    }
+
+    final class GuardView: UIView {
+        var isEnabled = true
+        private weak var heldScroll: UIScrollView?
+        private var wasScrollEnabled: Bool?
+        private var generation = 0
+
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            stop()
+            if window != nil {
+                NotificationCenter.default.addObserver(
+                    self, selector: #selector(focusDidUpdate(_:)),
+                    name: UIFocusSystem.didUpdateNotification, object: nil
+                )
+            }
+        }
+
+        @objc private func focusDidUpdate(_ notification: Notification) {
+            guard isEnabled,
+                  let context = notification.userInfo?[UIFocusSystem.focusUpdateContextUserInfoKey]
+                    as? UIFocusUpdateContext,
+                  NativeFocusRegion.contains(context.previouslyFocusedItem, in: self),
+                  NativeFocusRegion.contains(context.nextFocusedItem, in: self),
+                  let coordinator = notification.userInfo?[UIFocusSystem.animationCoordinatorUserInfoKey]
+                    as? UIFocusAnimationCoordinator,
+                  let scroll = enclosingScrollView,
+                  let target = NativeFocusRegion.frame(of: context.nextFocusedItem, in: scroll) else {
+                restore()
+                return
+            }
+            let visible = scroll.bounds.inset(by: scroll.adjustedContentInset)
+            let liftedTarget = target.insetBy(dx: 0, dy: -DetailInformationLayout.focusPadding)
+            guard liftedTarget.minY >= visible.minY, liftedTarget.maxY <= visible.maxY else {
+                restore()
+                return
+            }
+            if heldScroll !== scroll {
+                restore()
+                heldScroll = scroll
+                wasScrollEnabled = scroll.isScrollEnabled
+            }
+            generation &+= 1
+            let transition = generation
+            // Suppress only this focus reveal, before UIKit schedules it. Restore
+            // at completion so the next search can still discover offscreen items.
+            scroll.isScrollEnabled = false
+            coordinator.addCoordinatedAnimations({}) { [weak self] in
+                guard let self, generation == transition else { return }
+                restore()
+            }
+        }
+
+        private var enclosingScrollView: UIScrollView? {
+            var ancestor = superview
+            while let view = ancestor {
+                if let scroll = view as? UIScrollView { return scroll }
+                ancestor = view.superview
+            }
+            return nil
+        }
+
+        func restore() {
+            generation &+= 1
+            if let wasScrollEnabled { heldScroll?.isScrollEnabled = wasScrollEnabled }
+            heldScroll = nil
+            wasScrollEnabled = nil
+        }
+
+        func stop() {
+            NotificationCenter.default.removeObserver(self)
+            restore()
+        }
+    }
+}
+
 struct NativeInformationCardStyle: ViewModifier {
     let cornerRadius: CGFloat
     @FocusState private var isFocused: Bool

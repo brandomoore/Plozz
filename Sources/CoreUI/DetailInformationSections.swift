@@ -229,6 +229,9 @@ public struct DetailInformationSections: View {
                         ratingsSection
                     }
                 }
+                #if os(tvOS)
+                .background(NativeInformationFocusScrollGuard())
+                #endif
             }
             if !informationGroups.isEmpty {
                 DetailSectionLayout(

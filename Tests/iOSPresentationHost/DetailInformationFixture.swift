@@ -238,6 +238,12 @@ struct DetailInformationFixture: View {
         ScrollViewReader { scroll in
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
+                    if ProcessInfo.processInfo.arguments.contains("--detail-layout-scrolling") {
+                        Button("Title") {}
+                            .frame(width: 496, height: 600)
+                            .padding(.leading, horizontalInset)
+                            .accessibilityIdentifier("detail-fixture-header")
+                    }
                     if Self.example == nil && !singleValue && layoutCase == nil {
                         Text(selectedPerson)
                             .accessibilityIdentifier("selected-cast-person")
@@ -252,9 +258,21 @@ struct DetailInformationFixture: View {
                         spoilerSettings: .init(hideRatingsUntilWatched:
                             ProcessInfo.processInfo.arguments.contains("--detail-layout-hide-ratings"))
                     )
+                    .id("detail-fixture-information")
+                    if ProcessInfo.processInfo.arguments.contains("--detail-layout-scrolling") {
+                        Color.clear.frame(height: 1000)
+                    }
                 }
                 .id("detail-fixture-top")
             }
+            #if os(tvOS)
+            .onPlayPauseCommand {
+                if ProcessInfo.processInfo.arguments.contains("--detail-layout-scrolling") {
+                    let clipped = ProcessInfo.processInfo.arguments.contains("--detail-layout-guidance-clipped")
+                    scroll.scrollTo(clipped ? "detail-fixture-top" : "detail-fixture-information", anchor: .top)
+                }
+            }
+            #endif
             .task {
                 if layoutCase != nil || Self.example != nil {
                     do {

@@ -1048,6 +1048,10 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   moving text keylines. About, ratings and guidance use the standard native tvOS
   card focus treatment in System mode, with semantic text contrast rather than
   the media card's subtle rim. Custom card-focus modes retain their existing fallback.
+  Within the shared About/Ratings summary, System focus moves to an already-visible
+  card suppress native page reveal only for that focus animation. Entry, clipped
+  targets, exits to lower facts and subsequent offscreen focus searches retain
+  normal scrolling; the page offset is never reset after a jump.
   Reduce Transparency and pre-Liquid-Glass systems retain the shared opaque
   surface and semantic text contrast. Only truncated
   facts open their group's full values. Full-value rows remain focusable for remote
