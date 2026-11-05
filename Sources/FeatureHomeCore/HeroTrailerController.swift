@@ -34,6 +34,18 @@ public struct HeroTrailerSource: Sendable, Equatable {
 
 public typealias HeroTrailerResolving = @Sendable (MediaItem) async -> HeroTrailerSource?
 
+/// Core Image initializes only for an actual frame, away from Home's main actor.
+actor HeroTrailerFrameRenderer {
+    private var context: CIContext?
+    var contextIdentity: ObjectIdentifier? { context.map(ObjectIdentifier.init) }
+
+    func render(_ image: CIImage) -> CGImage? {
+        let context = context ?? CIContext(options: nil)
+        self.context = context
+        return context.createCGImage(image, from: image.extent)
+    }
+}
+
 public enum HeroTrailerSurfaceRole: Sendable, Equatable {
     case home
     case detail
@@ -107,7 +119,7 @@ public final class HeroTrailerController {
     public var isPlaybackSuppressed: Bool { !playbackOwners.isEmpty }
     private var captionSelectionTask: Task<Void, Never>?
     @ObservationIgnored private var videoOutput: AVPlayerItemVideoOutput?
-    @ObservationIgnored private let imageContext = CIContext(options: nil)
+    @ObservationIgnored let handoffRenderer = HeroTrailerFrameRenderer()
 
     public init() {
         // Never let the trailer claim the Now-Playing transport or interrupt
@@ -284,7 +296,8 @@ public final class HeroTrailerController {
                itemTimeForDisplay: nil
            ) {
             let image = CIImage(cvPixelBuffer: pixelBuffer)
-            if let cgImage = imageContext.createCGImage(image, from: image.extent) {
+            if let cgImage = await handoffRenderer.render(image) {
+                guard player.currentItem === capturedItem else { return }
                 handoffImage = UIImage(cgImage: cgImage)
                 return
             }

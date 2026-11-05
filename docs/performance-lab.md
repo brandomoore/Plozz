@@ -82,6 +82,27 @@ sides. Server/network variability can outweigh small latency changes; request
 counts and deterministic concurrency regressions are separate evidence. A stock
 Jellyfin result does not reproduce an API-compatible bridge or a remote VPS.
 
+For actual tvOS Home rendering and native remote navigation, use the same
+authorized broker with `profile --workload jellyfin-home --platform tvOS
+--sim-id <owned UUID>`. The fixture waits for the profiler and UI driver before
+starting Home; login is setup, not part of the load timing. It mounts production
+`HomeView`, its normal progressive load, and real server artwork, with concurrent
+navigation-library discovery. External metadata, trailers, and discovery are
+disabled. It does not mount the complete account/profile/sidebar app shell.
+
+The driver verifies a focusable hero, finds a real horizontally navigable row,
+performs three bounded native navigation cycles, and returns to the hero.
+Saved numeric counters include metadata requests,
+row/item counts, mounted artwork, first-data/all-data timing, and display-link
+callback gaps during loading and navigation. Data timing is not first-pixel timing;
+callback gaps are simulator display-link delivery intervals, not proof of
+main-thread stalls, presented FPS, or physical-device hitch counts.
+Metadata request counts exclude artwork downloads.
+Artwork bytes use the normal bounded cache; compare repeated, warmed-byte-cache
+runs and retain the recorded starting disk-cache size rather than purging caches.
+Raw traces and XCTest evidence can contain private media: keep them local and
+publish only sanitized aggregates.
+
 ## Baseline → attribution → candidate → regression
 
 `skeletons-idle` observes 24 production `SkeletonCardView` placeholders over

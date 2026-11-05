@@ -904,8 +904,15 @@ class Lane:
         derived = self.root / ".build/performance-derived-data/tvOS/ui"
         bundle_id = "com.thatcube.Plozz.FocusHost"
         workload = getattr(self.args, "workload", "home-navigation")
+        if workload == "jellyfin-home":
+            if not self.env.get("PLOZZ_JELLYFIN_HOME_BROKER"):
+                raise Failure("Live Home UI profiling requires an authorized loopback broker.")
+            ET.SubElement(tree.getroot().find("TestAction/EnvironmentVariables"), "EnvironmentVariable",
+                          key="PLOZZ_LIVE_HOME_RUN_ID", value=self.output.name, isEnabled="YES")
         test = (
-            "LargeNativeNavigationRemoteTests/testProfileRapidHorizontalNavigation"
+            "LiveJellyfinHomeRemoteTests/testProfileRealHome"
+            if workload == "jellyfin-home"
+            else "LargeNativeNavigationRemoteTests/testProfileRapidHorizontalNavigation"
             if workload == "horizontal-navigation"
             else "DetailReturnFocusRemoteTests/testProfilePopulatedShowcaseDetailReturns"
             if workload == "detail-return"
@@ -945,7 +952,11 @@ class Lane:
             self.command("fixture-install", ["xcrun", "simctl", "install", self.args.sim_id, str(app)], 120)
             arguments = ["--production-home-fixture", "--home-performance-fixture", "--distinct-home-artwork",
                          "--home-artwork-cache-namespace=" + self.output.name]
-            if workload == "detail-return":
+            if workload == "jellyfin-home":
+                arguments = ["--live-jellyfin-home"]
+                self.env["SIMCTL_CHILD_PLOZZ_JELLYFIN_HOME_BROKER"] = self.env["PLOZZ_JELLYFIN_HOME_BROKER"]
+                self.env["SIMCTL_CHILD_PLOZZ_LIVE_HOME_RUN_ID"] = self.output.name
+            elif workload == "detail-return":
                 arguments = [
                     "--production-home-fixture", "--top-bar-home", "--return-focus-trace",
                     "--immersive-home", "--progressive-library-rows", "--populated-home-return",
@@ -1009,6 +1020,17 @@ class Lane:
             _, data_container = self.command("fixture-data-container", [
                 "xcrun", "simctl", "get_app_container", self.args.sim_id, bundle_id, "data",
             ])
+            live_metrics = {}
+            if workload == "jellyfin-home":
+                live_metrics = json.loads((Path(data_container.strip()) / "Library/Caches/live-home-ui.json").read_text())
+                for key in ("firstDataMicroseconds", "items", "mountedArtworkImages", "decodedServerArtwork", "navigationCallbacks"):
+                    if live_metrics.get(key, 0) <= 0:
+                        raise Failure("Live Home UI did not complete its real-data/artwork workload: " + key)
+                if live_metrics.get("navigationFocusChanges", 0) < 12:
+                    raise Failure("Live Home UI did not complete enough native focus transitions.")
+                if any(live_metrics.get(key, -1) != 0 for key in ("discoveryFailures", "layoutFailures", "rowFailures")):
+                    raise Failure("Live Home UI encountered a provider failure.")
+                write_json(folder / "live-home-ui.json", live_metrics)
             journal = Path(data_container.strip()) / "Library/Caches/Plozz/playback-trace.log"
             if workload == "detail-return" and not journal.is_file():
                 raise Failure("Detail-return profiling is missing its native focus journal.")
@@ -1018,6 +1040,7 @@ class Lane:
                 return {
                     "pid": pid, "bundleID": bundle_id, "arguments": arguments, "template": self.args.template,
                     "workload": workload,
+                    "liveMetrics": live_metrics,
                     "stacks": stack_sample_summary(sample_path, pid), "sample": str(sample_path),
                     "note": "Sampled simulator navigation, not device frame pacing or a full multi-provider app session.",
                 }
@@ -1036,6 +1059,7 @@ class Lane:
             return {
                 "pid": pid, "bundleID": bundle_id, "arguments": arguments, "template": self.args.template,
                 "workload": workload,
+                "liveMetrics": live_metrics,
                 "cpu": trace_tools.sample_summary(samples, pid), "trace": str(trace),
                 "note": "Instrumented simulator navigation, not device frame pacing or a full multi-provider app session.",
             }
@@ -1153,7 +1177,7 @@ def main(argv=None):
     profile.add_argument("--sim-id", required=True)
     profile.add_argument("--timeout", type=int, default=2400)
     profile.add_argument("--template", choices=("Time Profiler", "SwiftUI", "Process Sample"), default="Process Sample")
-    profile.add_argument("--workload", choices=("home-navigation", "detail-return", "horizontal-navigation"), default="home-navigation")
+    profile.add_argument("--workload", choices=("home-navigation", "detail-return", "horizontal-navigation", "jellyfin-home"), default="home-navigation")
     comparison = commands.add_parser("compare", help="Compare saved runs; never updates a baseline.")
     comparison.add_argument("baseline", type=Path)
     comparison.add_argument("candidate", type=Path)

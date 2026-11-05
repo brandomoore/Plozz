@@ -1060,6 +1060,10 @@ records on both platforms; error dialogs, playback routing and timeouts are unch
   hero showing the same title with trailers enabled. Library, Watchlist, pushed
   grids, and covered detail pages cannot retain background audio. A cancelled
   or no-longer-frontmost detail resolver cannot start a trailer after departure.
+  The shared handoff renderer initializes Core Image only when a decoded trailer
+  frame needs a snapshot, on its own actor rather than Home's main thread.
+  Idle Home does not initialize Metal for unused handoff snapshots; subsequent
+  frames reuse the context. A completed snapshot cannot replace a newer trailer.
 
 ## Home loading
 

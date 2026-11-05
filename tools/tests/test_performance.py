@@ -340,7 +340,7 @@ class RunnerFailureTests(unittest.TestCase):
             self.assertEqual(json.loads((lane.output / "result.json").read_text())["status"], "failed")
 
     def test_profile_lifecycle_preserves_evidence_and_never_drives_without_recorder(self):
-        for failure in (None, "horizontal-navigation", "detail-return", "missing-journal", "build", "identity", "readiness", "test", "early-exit",
+        for failure in (None, "jellyfin-home", "live-missing-artwork", "live-no-decoded-artwork", "live-no-focus", "live-provider-failure", "horizontal-navigation", "detail-return", "missing-journal", "build", "identity", "readiness", "test", "early-exit",
                         "finalize", "summary", "process", "sample"):
             with self.subTest(failure=failure), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
@@ -356,6 +356,7 @@ class RunnerFailureTests(unittest.TestCase):
                 args = argparse.Namespace(platform="tvOS", sim_id="owned", timeout=120, names=[],
                                           operation="profile", template="Process Sample",
                                           workload="detail-return" if failure in ("detail-return", "missing-journal")
+                                          else "jellyfin-home" if failure == "jellyfin-home" or str(failure).startswith("live-")
                                           else "horizontal-navigation" if failure == "horizontal-navigation"
                                           else "home-navigation")
                 if failure == "detail-return":
@@ -363,6 +364,18 @@ class RunnerFailureTests(unittest.TestCase):
                     journal.parent.mkdir(parents=True)
                     journal.write_text("fixture focus journal\n")
                 lane = performance.Lane(root, args, ())
+                if args.workload == "jellyfin-home":
+                    lane.env["PLOZZ_JELLYFIN_HOME_BROKER"] = "http://127.0.0.1:1234/probe"
+                    metrics = root / "data/Library/Caches/live-home-ui.json"
+                    metrics.parent.mkdir(parents=True)
+                    metrics.write_text(json.dumps({
+                        "firstDataMicroseconds": 1, "items": 76, "navigationCallbacks": 100,
+                        "decodedServerArtwork": 0 if failure == "live-no-decoded-artwork" else 10,
+                        "navigationFocusChanges": 0 if failure == "live-no-focus" else 36,
+                        "mountedArtworkImages": 0 if failure == "live-missing-artwork" else 13,
+                        "discoveryFailures": 1 if failure == "live-provider-failure" else 0,
+                        "layoutFailures": 0, "rowFailures": 0,
+                    }))
                 labels = []
                 class Recorder:
                     returncode = None
@@ -389,7 +402,9 @@ class RunnerFailureTests(unittest.TestCase):
                     if label == "navigation-test":
                         self.assertIsNone(recorder.returncode)
                         expected = (
-                            "LargeNativeNavigationRemoteTests/testProfileRapidHorizontalNavigation"
+                            "LiveJellyfinHomeRemoteTests/testProfileRealHome"
+                            if args.workload == "jellyfin-home"
+                            else "LargeNativeNavigationRemoteTests/testProfileRapidHorizontalNavigation"
                             if args.workload == "horizontal-navigation"
                             else "DetailReturnFocusRemoteTests/testProfilePopulatedShowcaseDetailReturns"
                             if args.workload == "detail-return"
@@ -409,14 +424,18 @@ class RunnerFailureTests(unittest.TestCase):
                 with patch.object(lane, "command", side_effect=command), \
                         patch.object(performance.subprocess, "Popen", side_effect=spawn), \
                         patch.object(performance, "stop_owned") as stop:
-                    if failure and failure not in ("detail-return", "horizontal-navigation"):
+                    if failure and failure not in ("detail-return", "horizontal-navigation", "jellyfin-home"):
                         with self.assertRaises(performance.Failure):
                             lane.profile_navigation([])
                     else:
                         result = lane.profile_navigation([])
                         self.assertEqual(result["pid"], 42)
                         self.assertTrue(result["stacks"]["mainThreadFrames"])
-                        if args.workload == "horizontal-navigation":
+                        if args.workload == "jellyfin-home":
+                            self.assertEqual(result["arguments"], ["--live-jellyfin-home"])
+                            self.assertEqual(result["liveMetrics"]["items"], 76)
+                            self.assertEqual(lane.env["SIMCTL_CHILD_PLOZZ_LIVE_HOME_RUN_ID"], lane.output.name)
+                        elif args.workload == "horizontal-navigation":
                             self.assertIn("--large-native-navigation-fixture", result["arguments"])
                             self.assertIn("--real-library-pages", result["arguments"])
                         else:
