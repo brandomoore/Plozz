@@ -2,6 +2,8 @@ import unittest
 from pathlib import Path
 import tempfile
 import json
+import plistlib
+from unittest.mock import patch
 
 import tvos
 import tvos_smoke
@@ -104,6 +106,96 @@ class TVOSPortTests(unittest.TestCase):
                 self.assertEqual(command["timeout"], 60)
             self.assertEqual(json.loads((lab.run_dir / "simulator-cleanup.json").read_text())[
                 "status"], "complete")
+
+    def test_device_execution_requires_device_evidence_and_matching_run(self):
+        result = {"status": "pass", "platform": "tvOS", "physical_device": True,
+                  "run_id": "current"}
+        tvos_smoke.validate_result(result, simulator=False, run_id="current")
+        with self.assertRaises(RuntimeError):
+            tvos_smoke.validate_result(result, run_id="current")
+        with self.assertRaisesRegex(RuntimeError, "different lab invocation"):
+            tvos_smoke.validate_result(result, simulator=False, run_id="another")
+        with self.assertRaises(RuntimeError):
+            tvos_smoke.validate_result({
+                **result, "platform": "tvOS Simulator", "physical_device": False,
+            }, simulator=False, run_id="current")
+        with self.assertRaises(RuntimeError):
+            tvos_smoke.validate_result({**result, "physical_device": 1},
+                                      simulator=False, run_id="current")
+
+    def test_log_copy_failure_does_not_skip_owned_simulator_cleanup(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            container = root / "container"
+            cache = container / "Library/Caches"
+            cache.mkdir(parents=True)
+            (cache / "runtime-stdout.log").write_text("runtime log")
+            (cache / "runtime-result.json").write_text(json.dumps({
+                "status": "pass", "platform": "tvOS Simulator", "physical_device": False,
+                "run_id": root.name,
+            }))
+
+            class FakeLab:
+                run_dir = root
+
+                def __init__(self):
+                    self.commands = []
+
+                def run(self, name, arguments, *, timeout):
+                    self.commands.append({"name": name, "argv": arguments,
+                                          "log": name + ".log"})
+                    text = ""
+                    if name == "list-smoke-runtimes":
+                        text = json.dumps({"runtimes": [{
+                            "identifier": "com.apple.CoreSimulator.SimRuntime.tvOS-27-0",
+                            "version": "27.0", "isAvailable": True,
+                        }]})
+                    elif name == "create-owned-smoke-simulator":
+                        text = "12345678-1234-1234-1234-123456789abc"
+                    elif name == "locate-owned-smoke-container":
+                        text = str(container)
+                    (root / (name + ".log")).write_text(text)
+
+            lab = FakeLab()
+            with patch.object(tvos_smoke.shutil, "copy2", side_effect=OSError("copy failed")):
+                with self.assertRaisesRegex(RuntimeError, "Could not retain runtime stdout"):
+                    tvos_smoke.execute(lab, root / "probe.app", "app.plozz.lab.ZeroSmoke")
+            self.assertEqual([entry["name"] for entry in lab.commands[-2:]], [
+                "shutdown-owned-smoke-simulator", "delete-owned-smoke-simulator",
+            ])
+
+    def test_app_build_is_platform_specific_and_never_signs_or_installs(self):
+        for simulator in (False, True):
+            with self.subTest(simulator=simulator), tempfile.TemporaryDirectory() as directory:
+                class FakeLab:
+                    run_dir = Path(directory)
+                    environment = {"JAVA_HOME": str(Path(directory) / "jdk")}
+
+                    def __init__(self):
+                        self.commands = []
+
+                    def run(self, name, arguments):
+                        self.commands.append({"name": name, "argv": arguments,
+                                              "log": name + ".log"})
+                        (self.run_dir / (name + ".log")).write_text("/isolated/sdk")
+
+                lab = FakeLab()
+                for name in ("runtime", "disc", "jars"):
+                    (lab.run_dir / name).mkdir()
+                app = tvos_smoke.build_app(lab, simulator=simulator,
+                                          bdj={"include": "/isolated/include", "link": []})
+                info = plistlib.loads((app / "Info.plist").read_bytes())
+                self.assertEqual(info["CFBundleIdentifier"], "app.plozz.lab.ZeroSmoke")
+                self.assertEqual(info["PlozzLabRunID"], lab.run_dir.name)
+                self.assertEqual(info["CFBundleSupportedPlatforms"],
+                                 ["AppleTVSimulator" if simulator else "AppleTVOS"])
+                self.assertEqual([entry["name"] for entry in lab.commands], [
+                    "smoke-sdk", "compile-embedded-navigation", "compile-runtime-smoke-app",
+                ])
+                target = "arm64-apple-tvos18.0" + ("-simulator" if simulator else "")
+                for command in lab.commands[1:]:
+                    arguments = command["argv"]
+                    self.assertEqual(arguments[arguments.index("-target") + 1], target)
 
 
 if __name__ == "__main__":

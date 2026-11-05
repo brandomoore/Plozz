@@ -29,8 +29,9 @@ class BDJMenuTests(unittest.TestCase):
 
     def test_blank_or_missing_text_is_not_a_menu_pass(self):
         header = b"P6\n1280 720\n255\n"
-        with self.assertRaises(ValueError):
-            validate_menu(header + b"\x00" * (1280 * 720 * 3), 1)
+        for background in (b"\x00\x00\x00", b"\x10\x14\x1c"):
+            with self.subTest(background=background), self.assertRaises(ValueError):
+                validate_menu(header + background * (1280 * 720), 1)
         data = bytearray(menu_fixture(1))
         for y in range(70, 115):
             start = len(header) + (y * 1280 + 80) * 3
@@ -44,6 +45,20 @@ class BDJMenuTests(unittest.TestCase):
                 validate_menu(data, 1)
         with self.assertRaises(ValueError):
             validate_menu(menu_fixture(1), 3)
+
+    def test_presented_screen_allows_antialiasing_but_still_requires_text(self):
+        data = bytearray(menu_fixture(2))
+        header = len(b"P6\n1280 720\n255\n")
+        for offset in range(header, len(data), 3):
+            if data[offset:offset + 3] == b"\x00\x00\x00":
+                data[offset:offset + 3] = b"\x18\x18\x18"
+        with self.assertRaisesRegex(ValueError, "label text"):
+            validate_menu(bytes(data), 2)
+        validate_menu(bytes(data), 2, rendered=True)
+        for selected in (1, 2):
+            with self.assertRaises(ValueError):
+                validate_menu(b"P6\n1280 720\n255\n" + b"\x10\x14\x1c" * (1280 * 720),
+                              selected, rendered=True)
 
 
 if __name__ == "__main__":

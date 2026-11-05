@@ -18,6 +18,7 @@ typedef struct {
 
 #ifdef PLOZZ_EMBEDDED_NAVIGATION
 extern void disc_menu_present(const uint32_t *pixels, unsigned width, unsigned height);
+extern void disc_menu_capture(const uint32_t *pixels, unsigned width, unsigned height);
 #endif
 
 static void overlay(void *opaque, const BD_ARGB_OVERLAY *event) {
@@ -54,6 +55,11 @@ static void overlay(void *opaque, const BD_ARGB_OVERLAY *event) {
             memcpy(state->presented, state->pixels,
                    (size_t)state->width * state->height * sizeof(uint32_t));
             state->frames++;
+            if (state->width == 1280 && state->height == 720) {
+                printf("OVERLAY frame=%u left=%08x right=%08x\n", state->frames,
+                       state->presented[270 * 1280 + 100],
+                       state->presented[270 * 1280 + 680]);
+            }
 #ifdef PLOZZ_EMBEDDED_NAVIGATION
             disc_menu_present(state->presented, state->width, state->height);
 #endif
@@ -110,6 +116,9 @@ static int snapshot(Overlay *state, const char *path) {
         }
     }
     if (file && fclose(file)) ok = 0;
+#ifdef PLOZZ_EMBEDDED_NAVIGATION
+    if (ok) disc_menu_capture(state->presented, state->width, state->height);
+#endif
     pthread_mutex_unlock(&state->lock);
     return ok;
 }
@@ -205,6 +214,7 @@ int disc_menu_navigation(int argc, char **argv) {
     ok = 1;
 
 finish:
+    printf("NAVIGATION closing\n");
     bd_close(disc);
     if (state.failed) ok = 0;
     free(state.pixels);

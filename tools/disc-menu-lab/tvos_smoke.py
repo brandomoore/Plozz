@@ -7,14 +7,19 @@ import time
 import uuid
 
 
-def validate_result(result: dict) -> None:
-    if (result.get("status") != "pass" or result.get("platform") != "tvOS Simulator"
-            or result.get("physical_device") is not False):
+def validate_result(result: dict, *, simulator: bool = True, run_id: str | None = None) -> None:
+    platform = "tvOS Simulator" if simulator else "tvOS"
+    if (result.get("status") != "pass" or result.get("platform") != platform
+            or result.get("physical_device") is not (not simulator)):
         raise RuntimeError(f"Java runtime probe did not pass: {result}")
+    if run_id is not None and result.get("run_id") != run_id:
+        raise RuntimeError("Runtime evidence belongs to a different lab invocation")
 
 
-def run(lab, *, bdj: dict | None = None) -> None:
+def build_app(lab, *, bdj: dict | None = None, simulator: bool = True) -> Path:
     from lab import HERE
+    sdk_name = "appletvsimulator" if simulator else "appletvos"
+    target = "arm64-apple-tvos18.0" + ("-simulator" if simulator else "")
     app = lab.run_dir / "ZeroSmoke.app"
     app.mkdir()
     shutil.copytree(lab.run_dir / "runtime", app / "runtime")
@@ -28,20 +33,20 @@ def run(lab, *, bdj: dict | None = None) -> None:
     else:
         for directory in ("disc", "jars"):
             shutil.copytree(lab.run_dir / directory, app / directory)
-    lab.run("smoke-sdk", ["xcrun", "--sdk", "appletvsimulator", "--show-sdk-path"])
+    lab.run("smoke-sdk", ["xcrun", "--sdk", sdk_name, "--show-sdk-path"])
     sdk = (lab.run_dir / lab.commands[-1]["log"]).read_text().strip()
     extra = []
     if bdj:
         lab.run("compile-embedded-navigation", [
-            "xcrun", "--sdk", "appletvsimulator", "clang",
-            "-target", "arm64-apple-tvos18.0-simulator", "-isysroot", sdk,
+            "xcrun", "--sdk", sdk_name, "clang",
+            "-target", target, "-isysroot", sdk,
             "-DPLOZZ_EMBEDDED_NAVIGATION", "-I", bdj["include"],
             "-c", HERE / "navigation.c", "-o", lab.run_dir / "navigation.o",
         ])
         extra = ["-DPLOZZ_BDJ_SMOKE", lab.run_dir / "navigation.o", *bdj["link"]]
     lab.run("compile-runtime-smoke-app", [
-        "xcrun", "--sdk", "appletvsimulator", "clang",
-        "-target", "arm64-apple-tvos18.0-simulator", "-isysroot", sdk,
+        "xcrun", "--sdk", sdk_name, "clang",
+        "-target", target, "-isysroot", sdk,
         "-fobjc-arc", "-Wall", "-Wextra", "-Werror",
         "-I", java / "include", "-I", java / "include/darwin",
         HERE / "runtime_smoke.m", "-o", app / "ZeroSmoke",
@@ -55,10 +60,12 @@ def run(lab, *, bdj: dict | None = None) -> None:
     with (app / "Info.plist").open("wb") as output:
         plistlib.dump({
             "CFBundleIdentifier": identifier, "CFBundleExecutable": "ZeroSmoke",
-            "CFBundleName": "Zero Smoke", "CFBundlePackageType": "APPL",
+            "CFBundleName": "Disc Menu Lab" if bdj else "Zero Smoke",
+            "CFBundlePackageType": "APPL",
             "CFBundleVersion": "1", "CFBundleShortVersionString": "1.0",
+            "PlozzLabRunID": lab.run_dir.name,
             "MinimumOSVersion": "18.0", "UIDeviceFamily": [3],
-            "CFBundleSupportedPlatforms": ["AppleTVSimulator"],
+            "CFBundleSupportedPlatforms": ["AppleTVSimulator" if simulator else "AppleTVOS"],
             "UILaunchScreen": {},
             "UIApplicationSceneManifest": {
                 "UIApplicationSupportsMultipleScenes": False,
@@ -70,10 +77,15 @@ def run(lab, *, bdj: dict | None = None) -> None:
                 },
             },
         }, output)
+    return app
+
+
+def run(lab, *, bdj: dict | None = None) -> None:
+    app = build_app(lab, bdj=bdj)
     for index, library in enumerate(sorted(app.rglob("*.dylib"))):
         lab.run(f"sign-smoke-library-{index}", ["codesign", "--force", "--sign", "-", library])
     lab.run("sign-runtime-smoke-app", ["codesign", "--force", "--sign", "-", app])
-    execute(lab, app, identifier, artifacts=(
+    execute(lab, app, "app.plozz.lab.ZeroSmoke", artifacts=(
         ("menu-first.ppm", "menu-second.ppm", "episode-1.m2ts", "episode-2.m2ts")
         if bdj else ()))
 
@@ -91,6 +103,7 @@ def execute(lab, app: Path, identifier: str, *, artifacts: tuple[str, ...] = ())
         raise RuntimeError("No compatible tvOS simulator runtime is installed")
     runtime = max(available, key=lambda value: tuple(map(int, value["version"].split("."))))
     simulator = None
+    container = None
     cleanup_errors = []
     try:
         lab.run("create-owned-smoke-simulator", [
@@ -118,7 +131,7 @@ def execute(lab, app: Path, identifier: str, *, artifacts: tuple[str, ...] = ())
             f"--stdout={lab.run_dir / 'app-stdout.log'}",
             f"--stderr={lab.run_dir / 'app-stderr.log'}", simulator, identifier,
         ], timeout=30)
-        result_path = container / "Documents/runtime-result.json"
+        result_path = container / "Library/Caches/runtime-result.json"
         deadline = time.monotonic() + 120
         while not result_path.exists():
             if time.monotonic() >= deadline:
@@ -128,14 +141,22 @@ def execute(lab, app: Path, identifier: str, *, artifacts: tuple[str, ...] = ())
             time.sleep(1)
         result = json.loads(result_path.read_text())
         (lab.run_dir / "runtime-result.json").write_text(json.dumps(result, indent=2) + "\n")
-        validate_result(result)
+        validate_result(result, run_id=lab.run_dir.name)
         for name in artifacts:
-            shutil.copy2(container / "Documents" / name, lab.run_dir / name)
+            shutil.copy2(container / "Library/Caches" / name, lab.run_dir / name)
         if artifacts:
             lab.run("capture-owned-bdj-screen", [
                 "xcrun", "simctl", "io", simulator, "screenshot", lab.run_dir / "simulator-menu.png",
             ], timeout=30)
     finally:
+        if container is not None:
+            for name in ("stdout", "stderr"):
+                log = container / f"Library/Caches/runtime-{name}.log"
+                if log.exists():
+                    try:
+                        shutil.copy2(log, lab.run_dir / f"app-{name}.log")
+                    except OSError as error:
+                        cleanup_errors.append(f"Could not retain runtime {name}: {error}")
         if simulator:
             for name, operation in (("shutdown", "shutdown"), ("delete", "delete")):
                 try:

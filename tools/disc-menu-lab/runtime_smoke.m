@@ -1,31 +1,58 @@
 #import <UIKit/UIKit.h>
 #include <jni.h>
 #include <pthread.h>
+#include <TargetConditionals.h>
+#include <stdio.h>
+
+static UILabel *statusLabel;
+static NSString *statusText = @"Running automated checks...";
 
 #ifdef PLOZZ_BDJ_SMOKE
 static UIImageView *menuView;
 static UIImage *menuImage;
+static UIImage *menuSnapshot;
+static BOOL presentationFinished;
+
+static UIImage *menuFrame(const uint32_t *pixels, unsigned width, unsigned height) {
+    NSData *bytes = [NSData dataWithBytes:pixels length:(size_t)width * height * 4];
+    CGDataProviderRef provider = CGDataProviderCreateWithCFData((__bridge CFDataRef)bytes);
+    CGColorSpaceRef colors = CGColorSpaceCreateDeviceRGB();
+    CGImageRef image = CGImageCreate(width, height, 8, 32, width * 4, colors,
+        kCGBitmapByteOrder32Little | kCGImageAlphaFirst, provider, NULL, false,
+        kCGRenderingIntentDefault);
+    UIImage *frame = nil;
+    if (image) {
+        frame = [UIImage imageWithCGImage:image];
+        CGImageRelease(image);
+    } else {
+        NSLog(@"Failed to create a CGImage for the BD-J overlay");
+    }
+    CGColorSpaceRelease(colors);
+    CGDataProviderRelease(provider);
+    return frame;
+}
 
 void disc_menu_present(const uint32_t *pixels, unsigned width, unsigned height) {
     @autoreleasepool {
-        NSData *bytes = [NSData dataWithBytes:pixels length:(size_t)width * height * 4];
-        CGDataProviderRef provider = CGDataProviderCreateWithCFData((__bridge CFDataRef)bytes);
-        CGColorSpaceRef colors = CGColorSpaceCreateDeviceRGB();
-        CGImageRef image = CGImageCreate(width, height, 8, 32, width * 4, colors,
-            kCGBitmapByteOrder32Little | kCGImageAlphaFirst, provider, NULL, false,
-            kCGRenderingIntentDefault);
-        if (image) {
-            UIImage *frame = [UIImage imageWithCGImage:image];
+        UIImage *frame = menuFrame(pixels, width, height);
+        if (frame) {
             dispatch_async(dispatch_get_main_queue(), ^{
+                if (presentationFinished) return;
                 menuImage = frame;
                 menuView.image = frame;
             });
-            CGImageRelease(image);
-        } else {
-            NSLog(@"Failed to create a CGImage for the BD-J overlay");
         }
-        CGColorSpaceRelease(colors);
-        CGDataProviderRelease(provider);
+    }
+}
+
+void disc_menu_capture(const uint32_t *pixels, unsigned width, unsigned height) {
+    @autoreleasepool {
+        UIImage *frame = menuFrame(pixels, width, height);
+        if (frame) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                menuSnapshot = frame;
+            });
+        }
     }
 }
 #endif
@@ -33,16 +60,35 @@ void disc_menu_present(const uint32_t *pixels, unsigned width, unsigned height) 
 static void saveResult(NSString *status, NSString *detail) {
     @autoreleasepool {
         NSDictionary *result = @{@"status": status, @"detail": detail,
-                                 @"platform": @"tvOS Simulator", @"physical_device": @NO};
+            @"platform": TARGET_OS_SIMULATOR ? @"tvOS Simulator" : @"tvOS",
+            @"physical_device": TARGET_OS_SIMULATOR ? @NO : @YES,
+            @"run_id": [NSBundle.mainBundle objectForInfoDictionaryKey:@"PlozzLabRunID"]};
         NSError *error = nil;
         NSData *data = [NSJSONSerialization dataWithJSONObject:result options:0 error:&error];
         NSString *directory = NSSearchPathForDirectoriesInDomains(
-            NSDocumentDirectory, NSUserDomainMask, YES).firstObject;
+            NSCachesDirectory, NSUserDomainMask, YES).firstObject;
         NSString *path = [directory stringByAppendingPathComponent:@"runtime-result.json"];
         if (!data || ![data writeToFile:path options:NSDataWritingAtomic error:&error]) {
             NSLog(@"Runtime evidence write failed: %@", error);
         }
         NSLog(@"Runtime smoke %@: %@", status, detail);
+        dispatch_async(dispatch_get_main_queue(), ^{
+            BOOL passed = [status isEqualToString:@"pass"];
+#ifdef PLOZZ_BDJ_SMOKE
+            presentationFinished = YES;
+            if (passed && menuSnapshot) {
+                menuImage = menuSnapshot;
+                menuView.image = menuSnapshot;
+                statusText = @"Checks passed - captured menu\nNot interactive. You can leave.";
+            } else {
+                statusText = [NSString stringWithFormat:@"Checks incomplete: %@\nSee runtime logs.", detail];
+            }
+#else
+            statusText = passed ? @"Java checks passed. You can leave." :
+                [NSString stringWithFormat:@"Java checks failed: %@", detail];
+#endif
+            statusLabel.text = statusText;
+        });
     }
 }
 
@@ -50,10 +96,21 @@ static void *runJava(void *unused) {
     (void)unused;
     @autoreleasepool {
         NSString *resources = NSBundle.mainBundle.bundlePath;
+        NSString *evidence = NSSearchPathForDirectoriesInDomains(
+            NSCachesDirectory, NSUserDomainMask, YES).firstObject;
+        if (!freopen([[evidence stringByAppendingPathComponent:@"runtime-stdout.log"] fileSystemRepresentation],
+                     "w", stdout) ||
+            !freopen([[evidence stringByAppendingPathComponent:@"runtime-stderr.log"] fileSystemRepresentation],
+                     "w", stderr)) {
+            saveResult(@"failed", @"Could not open runtime evidence logs.");
+            return NULL;
+        }
+        setbuf(stdout, NULL);
+        setbuf(stderr, NULL);
 #ifdef PLOZZ_BDJ_SMOKE
         extern int disc_menu_navigation(int argc, char **argv);
         NSString *directory = NSSearchPathForDirectoriesInDomains(
-            NSDocumentDirectory, NSUserDomainMask, YES).firstObject;
+            NSCachesDirectory, NSUserDomainMask, YES).firstObject;
         NSString *disc = [resources stringByAppendingPathComponent:@"disc"];
         NSString *home = [resources stringByAppendingPathComponent:@"runtime"];
         NSString *jars = [[resources stringByAppendingPathComponent:@"jars"] stringByAppendingString:@"/"];
@@ -153,6 +210,21 @@ static void *runJava(void *unused) {
     menuView.image = menuImage;
     [self.window.rootViewController.view addSubview:menuView];
 #endif
+    statusLabel = [[UILabel alloc] init];
+    statusLabel.translatesAutoresizingMaskIntoConstraints = NO;
+    statusLabel.numberOfLines = 0;
+    statusLabel.textAlignment = NSTextAlignmentCenter;
+    statusLabel.textColor = UIColor.whiteColor;
+    statusLabel.backgroundColor = [UIColor.blackColor colorWithAlphaComponent:0.8];
+    statusLabel.font = [UIFont systemFontOfSize:24];
+    statusLabel.text = statusText;
+    UIView *root = self.window.rootViewController.view;
+    [root addSubview:statusLabel];
+    [NSLayoutConstraint activateConstraints:@[
+        [statusLabel.leadingAnchor constraintEqualToAnchor:root.safeAreaLayoutGuide.leadingAnchor],
+        [statusLabel.trailingAnchor constraintEqualToAnchor:root.safeAreaLayoutGuide.trailingAnchor],
+        [statusLabel.bottomAnchor constraintEqualToAnchor:root.safeAreaLayoutGuide.bottomAnchor constant:-12],
+    ]];
     [self.window makeKeyAndVisible];
 }
 @end

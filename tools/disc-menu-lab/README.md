@@ -2,9 +2,9 @@
 
 An isolated experiment, **not an enabled Plozz playback feature**. It runs an
 original Java Xlet through real libbluray navigation, rather than imitating a
-disc menu in SwiftUI. No app target, playback engine dependency, signing setting,
-or physical-device installation is changed. The optional runtime smoke route
-installs only its own test app in a newly created simulator.
+disc menu in SwiftUI. No production app target, playback engine dependency or
+signing setting is changed. Simulator routes install only their own test app in
+a newly created simulator; the device build route does not sign or install.
 
 ## Run
 
@@ -19,6 +19,7 @@ python3 tools/disc-menu-lab/lab.py tvos-build
 python3 tools/disc-menu-lab/lab.py tvos-runtime
 python3 tools/disc-menu-lab/lab.py tvos-smoke
 python3 tools/disc-menu-lab/lab.py tvos-bdj
+python3 tools/disc-menu-lab/lab.py tvos-bdj-device-build
 ```
 
 `bootstrap` downloads prerequisites only; `host` builds libbluray and its Java
@@ -170,7 +171,9 @@ the selected M2TS samples, stdout/stderr, `bdj-result.json` and simulator-cleanu
 evidence. The initial display flush can contain only the background, so the
 harness waits for painted choice colors and text rather than counting any
 frame as menu readiness. Independent output assertions reject blank text,
-wrong selection, truncated images and incorrect decoded clip colors.
+wrong selection, truncated images and incorrect decoded clip colors. They also
+check the captured device/simulator screen, allowing text antialiasing from
+display scaling while retaining exact checks for the original Java buffers.
 
 This proves the original menu execution and navigation path on Simulator, not
 continuous audiovisual playback, Siri Remote hardware input, performance on
@@ -180,8 +183,42 @@ including the fixture's absent HDMV MovieObject file and the intentionally
 denied network permission check. The runner does not infer a full compatibility
 pass from this deliberately small original disc.
 
-Plozz playback integration has not been changed. No physical Apple TV has run
-this experiment. A distributable implementation also needs
+`tvos-bdj-device-build` builds the same authored-menu app for physical tvOS,
+using separate device-native libraries. It deliberately **does not sign,
+install or launch** anything. Its result is
+`device-app-built-not-signed-or-executed`, not a runtime pass. Physical execution
+requires separate authorization and an existing valid development profile and
+identity covering the test bundle ID and target device; the lab does not create
+Apple account resources or change Plozz signing.
+
+Runtime receipts and menu/stream evidence use the app's `Library/Caches`
+directory, which is writable on tvOS. Each receipt includes its originating lab
+run ID and the compile-time device/simulator identity. A stale receipt or a
+simulator receipt cannot establish successful hardware execution.
+
+### Physical-device result and visible completion
+
+The authored BD-J probe has also **executed on a physical Apple TV 4K
+(2nd generation), launched without an attached debugger**. Its matching device
+receipt, both actual menu buffers, both selected streams and an actual device
+screenshot were retrieved and checked. Signing used an existing development
+identity/profile; no new Apple account resources were created. Normal Plozz
+remained untouched.
+
+Hardware testing exposed a harness presentation race: after selecting the
+second playlist, the stream-read check could finish while an asynchronous menu
+repaint had published only its background. Closing the test then left that
+incomplete image onscreen even though the earlier menu snapshots were correct.
+The app now shows progress and, after shutdown, an explicitly labelled
+**captured menu, not an interactive session**, with a completion message.
+It retains the last successfully captured menu rather than leaving a
+partially painted frame as its final screen. Both runtime variants show when
+their automated checks have finished. Runtime stdout/stderr and overlay
+selection diagnostics are retained in the app cache and simulator run evidence.
+
+This hardware result still does not establish continuous audiovisual playback,
+Siri Remote navigation, arbitrary-disc compatibility or a production security
+boundary. Plozz playback integration has not been changed. A distributable implementation also needs
 license/notice review and an App Review decision; support for arbitrary external
 Java media applications must not be described as preapproved.
 
