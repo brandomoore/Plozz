@@ -462,6 +462,12 @@ value outside it, not just a large mismatch.
 Use exact real tracker identities for unmatched-library checks. Distinguish
 discarding an unconfirmed selection on relaunch from cancelling an in-flight
 delivery; the former is not evidence of queued-mutation recovery.
+For active-playback checks, correlate sync diagnostics with native player
+open/close times and independently compare saved progress with the real player's
+position. Calibrate capture with an observed attempt and respect the automatic
+interval. If foreground admission postpones the attempt until player dismissal,
+record that separately from a per-item playback skip; only the skip diagnostic
+proves that guard ran. Unchanged history alone proves neither.
 
 ## App-hosted focus integration
 

@@ -3159,6 +3159,25 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         try pauseAndClose()
     }
 
+    func testOpenPlaybackSessionAcrossForeground() async throws {
+        try require(preservesProcess, "Keep the newly enrolled sync permission in the same process")
+        try require(detailPlayButton.exists && detailPlayButton.isHittable, "Expected the exact movie detail")
+        startedPlayback = true
+        detailPlayButton.tap()
+        try require(app.buttons["Close player"].waitForExistence(timeout: 45), "Expected actual playback")
+        try await Task.sleep(for: .seconds(10))
+        XCUIDevice.shared.press(.home)
+        try require(app.wait(for: .runningBackground, timeout: 10), "Expected actual background entry")
+        app.activate()
+        try require(app.wait(for: .runningForeground, timeout: 15), "Expected actual foreground entry")
+        try require(app.buttons["Close player"].waitForExistence(timeout: 30),
+                    "Expected the original player session to remain open")
+        try pausePlayback()
+        recordState()
+        try await Task.sleep(for: .seconds(65))
+        try pauseAndClose(maximumElapsedSeconds: 45, minimumElapsedSeconds: 8)
+    }
+
     func testRestartAndPauseBelowResumeThreshold() async throws {
         XCTAssertTrue(detailPlayButton.exists && detailPlayButton.isHittable)
         startedPlayback = true

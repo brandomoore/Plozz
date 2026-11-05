@@ -208,6 +208,10 @@ public final class TrackerHistorySyncController {
         guard error == nil, isEnabled, let grant else { return }
         guard manual || (identity.allowsForegroundChecks
             && Date().timeIntervalSince(grant.lastAttemptAt ?? .distantPast) >= 15 * 60) else { return }
+        #if canImport(OSLog)
+        Logger(subsystem: "com.plozz.app", category: "tracker-history")
+            .debug("Tracker history synchronization started")
+        #endif
         isBusy = true
         generation = UUID()
         let current = generation
@@ -287,7 +291,13 @@ public final class TrackerHistorySyncController {
                 var selected: Set<UUID> = []
                 var continuations: Set<UUID> = []
                 for row in rows {
-                    if row.comparison == .playing { continue }
+                    if row.comparison == .playing {
+                        #if canImport(OSLog)
+                        Logger(subsystem: "com.plozz.app", category: "tracker-history")
+                            .debug("Tracker history synchronization skipped active playback")
+                        #endif
+                        continue
+                    }
                     let receipt: Receipt
                     let targetKey = row.target.map { Self.digest(Data($0.id.utf8)) }
                     let blocked = targetKey.map { buckets[Self.bucket($0)].blockedTargets.contains($0) } ?? false
@@ -332,6 +342,10 @@ public final class TrackerHistorySyncController {
             persisted.reviewCount = Self.reviewCount(buckets)
             try store.save(persisted, for: grantKey())
             grant = persisted
+            #if canImport(OSLog)
+            Logger(subsystem: "com.plozz.app", category: "tracker-history")
+                .debug("Tracker history synchronization completed")
+            #endif
         } catch {
             if generation == current { report(error) }
         }

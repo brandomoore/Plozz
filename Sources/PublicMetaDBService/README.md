@@ -185,7 +185,11 @@ is paused in the current process and the UI asks the user to retry before closin
 the app; it does not claim revocation survived a restart.
 
 Only non-destructive, conflict-free changes use the existing guarded outbox.
-Current playback is deferred. Changed server state, incompatible or ambiguous
+Current playback is deferred without consuming the new record. The `tracker-history`
+debug events distinguish attempt start, completion, and per-item playback deferral
+without logging titles or account IDs. A foreground event does not itself prove an
+attempt ran: foreground admission and the automatic interval still apply.
+Changed server state, incompatible or ambiguous
 matches, unsupported facts, removals, and unconfirmed deliveries require review.
 Category consent limits which new changes can be imported; it does not hide
 competing records from the complete tracker snapshot. An existing watched record
