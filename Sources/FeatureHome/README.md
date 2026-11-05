@@ -446,7 +446,8 @@ records on both platforms; error dialogs, playback routing and timeouts are unch
   a centered native empty state with a neutral stack symbol, source attribution,
   and extra vertical breathing room, without error details or retry controls.
   A small native Customize Home action opens the active profile's existing
-  Home editor so viewers can keep or hide the row. The editor's own empty-state
+  Home editor so viewers can keep or hide the row. Its text uses the theme's
+  neutral primary ink, not an inherited system accent. The editor's own empty-state
   previews omit this action, and opening it does not change row preferences.
   Customize Home shares the same completed-load
   evidence, distinguishing typed failures, empty results, and saved sections

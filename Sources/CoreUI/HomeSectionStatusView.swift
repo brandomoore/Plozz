@@ -2,6 +2,7 @@ import SwiftUI
 import CoreModels
 
 public struct HomeSectionStatusView: View {
+    @Environment(\.themePalette) private var palette
     private let issue: HomeSectionIssue
     private let onRetry: () -> Void
     private let onSeeAll: (() -> Void)?
@@ -40,6 +41,7 @@ public struct HomeSectionStatusView: View {
                                 .frame(minHeight: 44)
                         }
                         .buttonStyle(.borderless)
+                        .tint(palette.primaryText)
                         .accessibilityIdentifier("home-section-customize")
                     }
                     if let onSeeAll { Button("See all", action: onSeeAll) }

@@ -104,10 +104,51 @@ final class HomeSectionStatusViewTests: XCTestCase {
         XCTAssertFalse(text.contains("Retry"), text)
     }
 
+    func testCustomizationActionUsesNeutralThemeInkInsteadOfInheritedBlue() async throws {
+        #if os(tvOS)
+        let width: CGFloat = 1000
+        #else
+        let width: CGFloat = 360
+        #endif
+        for (name, palette) in [("dark", ThemePalette.dark), ("light", ThemePalette.light)] {
+            let image = try await render(
+                .empty, width: width, onCustomizeHome: {}, palette: palette, inheritedTint: .blue
+            )
+            let action = try XCTUnwrap(
+                observations(image).first { $0.topCandidates(1).first?.string == "Customize Home" }
+            ).boundingBox
+            let crop = try XCTUnwrap(image.cropping(to: CGRect(
+                x: action.minX * CGFloat(image.width),
+                y: (1 - action.maxY) * CGFloat(image.height),
+                width: action.width * CGFloat(image.width),
+                height: action.height * CGFloat(image.height)
+            ).integral))
+            var pixels = [UInt8](repeating: 0, count: crop.width * crop.height * 4)
+            try pixels.withUnsafeMutableBytes { bytes in
+                let context = try XCTUnwrap(CGContext(
+                    data: bytes.baseAddress, width: crop.width, height: crop.height,
+                    bitsPerComponent: 8, bytesPerRow: crop.width * 4,
+                    space: CGColorSpaceCreateDeviceRGB(),
+                    bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue
+                ))
+                context.draw(crop, in: CGRect(x: 0, y: 0, width: crop.width, height: crop.height))
+            }
+            let coloredPixels = stride(from: 0, to: pixels.count, by: 4).filter { offset in
+                let red = Int(pixels[offset]), green = Int(pixels[offset + 1]), blue = Int(pixels[offset + 2])
+                return max(red, max(green, blue)) - min(red, min(green, blue)) > 16
+            }.count
+            XCTAssertEqual(coloredPixels, 0, "\(name): the action must use neutral theme ink, not accent blue.")
+            if let directory = ProcessInfo.processInfo.environment["PLOZZ_HOME_STATUS_SNAPSHOTS"] {
+                let url = URL(fileURLWithPath: directory).appendingPathComponent("empty-customize-neutral-\(name).png")
+                try XCTUnwrap(UIImage(cgImage: image).pngData()).write(to: url)
+            }
+        }
+    }
+
     private func render(
         _ reason: HomeSectionIssue.Reason, width: CGFloat,
         textSize: DynamicTypeSize = .large, onSeeAll: (() -> Void)? = nil,
-        onCustomizeHome: (() -> Void)? = nil
+        onCustomizeHome: (() -> Void)? = nil, palette: ThemePalette = .dark, inheritedTint: Color? = nil
     ) async throws -> CGImage {
         let issue = HomeSectionIssue(
             choice: .init(
@@ -121,13 +162,14 @@ final class HomeSectionStatusViewTests: XCTestCase {
                 issue: issue, showsTitle: false, onSeeAll: onSeeAll,
                 onCustomizeHome: onCustomizeHome, onRetry: {}
             )
-                .environment(\.themePalette, .dark)
-                .environment(\.colorScheme, .dark)
+                .environment(\.themePalette, palette)
+                .environment(\.colorScheme, palette.isLight ? .light : .dark)
                 .environment(\.locale, Locale(identifier: "en_US"))
                 .environment(\.dynamicTypeSize, textSize)
+                .tint(inheritedTint)
                 .frame(width: width)
                 .fixedSize(horizontal: false, vertical: true)
-                .background(ThemePalette.dark.backgroundBase)
+                .background(palette.backgroundBase)
                 .ignoresSafeArea()
         #if os(iOS)
         let renderer = ImageRenderer(content: content)
@@ -141,7 +183,7 @@ final class HomeSectionStatusViewTests: XCTestCase {
         let previousKeyWindow = UIApplication.shared.connectedScenes
             .compactMap { $0 as? UIWindowScene }.flatMap(\.windows).first(where: \.isKeyWindow)
         let window = UIWindow(frame: CGRect(origin: .zero, size: host.sizeThatFits(in: proposal)))
-        window.overrideUserInterfaceStyle = .dark
+        window.overrideUserInterfaceStyle = palette.isLight ? .light : .dark
         window.rootViewController = host
         window.makeKeyAndVisible()
         defer {
