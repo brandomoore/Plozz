@@ -97,7 +97,7 @@ public struct MediaPersonCredit: Identifiable, Equatable, Sendable {
             }
         }
         let cast = credits.filter(\.isCast)
-        let leading = Array(cast.prefix(8))
+        let leading = Array(cast.prefix(7))
         var shown = Set(leading.map(\.id))
         let crew = credits.enumerated()
             .filter { !$0.element.crewRoles.isEmpty && !shown.contains($0.element.id) }

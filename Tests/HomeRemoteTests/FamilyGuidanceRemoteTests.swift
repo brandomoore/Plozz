@@ -159,7 +159,7 @@ final class FamilyGuidanceRemoteTests: XCTestCase {
         XCTAssertFalse(app.staticTexts["detail-more-title"].exists)
     }
 
-    func testBoundedCrewFollowsEightActorsAndKeepsPersonNavigation() throws {
+    func testBoundedCrewFollowsSevenActorsAndKeepsPersonNavigation() throws {
         let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.FocusHost")
         app.launchArguments = ["--detail-information-fixture", "--detail-cast-crew"]
         app.launch()
@@ -167,20 +167,20 @@ final class FamilyGuidanceRemoteTests: XCTestCase {
         let first = app.buttons["Person 1"].firstMatch
         XCTAssertTrue(first.waitForExistence(timeout: 15))
         XCTAssertTrue(isFocused(first), app.debugDescription)
-        for _ in 0..<8 { XCUIRemote.shared.press(.right) }
+        for _ in 0..<7 { XCUIRemote.shared.press(.right) }
         // The circular control exposes its final caption as the focused AX node.
         XCTAssertTrue(isFocused(app.buttons["Director"].firstMatch), app.debugDescription)
         XCTAssertTrue(app.buttons["Film Director"].exists)
-        recordScreenshot(app, name: "director-after-eight-actors")
+        recordScreenshot(app, name: "director-after-seven-actors")
         XCUIRemote.shared.press(.select)
         XCTAssertEqual(app.staticTexts["selected-cast-person"].label, "Film Director")
         for (name, focusLabel) in [("Film Writer", "Writer"), ("Film Producer", "Producer"),
-                                   ("Film Composer", "Composer"), ("Person 9", "Person 9")] {
+                                   ("Film Composer", "Composer"), ("Person 8", "Person 8")] {
             XCUIRemote.shared.press(.right)
             XCTAssertTrue(app.buttons[name].exists)
             XCTAssertTrue(isFocused(app.buttons[focusLabel].firstMatch), app.debugDescription)
         }
-        for _ in 9..<40 { XCUIRemote.shared.press(.right) }
+        for _ in 8..<40 { XCUIRemote.shared.press(.right) }
         XCTAssertTrue(isFocused(app.buttons["Person 40"].firstMatch), app.debugDescription)
         XCUIRemote.shared.press(.right)
         XCTAssertTrue(isFocused(app.buttons["Executive Producer"].firstMatch), app.debugDescription)
@@ -194,7 +194,7 @@ final class FamilyGuidanceRemoteTests: XCTestCase {
         app.launch()
         defer { app.terminate() }
         XCTAssertTrue(app.buttons["Person 1"].firstMatch.waitForExistence(timeout: 15))
-        for _ in 0..<8 { XCUIRemote.shared.press(.right) }
+        for _ in 0..<7 { XCUIRemote.shared.press(.right) }
         XCTAssertTrue(isFocused(app.buttons["Director, Writer, Producer"].firstMatch), app.debugDescription)
         XCTAssertEqual(app.buttons.matching(NSPredicate(format: "label == %@", "James Cameron")).count, 1)
         recordScreenshot(app, name: "one-cameron-three-roles")
@@ -203,7 +203,7 @@ final class FamilyGuidanceRemoteTests: XCTestCase {
         XCUIRemote.shared.press(.right)
         XCTAssertTrue(isFocused(app.buttons["Composer"].firstMatch), app.debugDescription)
         XCUIRemote.shared.press(.right)
-        XCTAssertTrue(isFocused(app.buttons["Person 9"].firstMatch), app.debugDescription)
+        XCTAssertTrue(isFocused(app.buttons["Person 8"].firstMatch), app.debugDescription)
     }
 
     func testLongDetailsUseTheSameReadableCard() throws {
