@@ -194,6 +194,15 @@ Already identified, owned, unsupported, and personal-media items skip this work.
   Dedicated server square backgrounds take precedence on compact Home and detail
   heroes under Recommended or Library artwork preferences. They are not poster
   substitutes; an explicit online preference still uses this portrait lookup first.
+- **Landscape title artwork is a separate capability.** Artwork-only landscape
+  cards may request `landscapeCardURL` when native title art is absent. TMDB
+  selects language-tagged backdrops from its existing images response, preferring
+  the requested language, then English, then vote order. Untagged backgrounds
+  are not title-art candidates. Language metadata is a signal, not OCR.
+  Unsupported providers return no title-art result; ordinary hero ranking and
+  logos are unchanged. Cache keys isolate this role and language, and live
+  provider enablement/order still apply. Logo-composited cards request clean
+  backgrounds instead, avoiding an intentional second title over this artwork.
 - **No required user subscription or user-supplied key.** App credentials and
   keyless endpoints coexist; missing credentials disable only their provider.
 - **No UI imports.** Provider and composition logic stay outside the shells.

@@ -13,6 +13,7 @@ final class CollectionSectionTests: XCTestCase {
         var edited = section
         edited.name = "  My movies  "
         edited.cardStyle = .landscape
+        edited.titleLogo = .off
         XCTAssertEqual(edited.title, "My movies")
         XCTAssertEqual(edited.source, section.source)
         XCTAssertEqual(edited.rowID, .section("section"))
@@ -37,6 +38,24 @@ final class CollectionSectionTests: XCTestCase {
         }
     }
 
+    func testTitleLogoDefaultsForExistingRowsAndRoundTripsEveryMode() throws {
+        let encoded = try JSONEncoder().encode(section)
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        object.removeValue(forKey: "titleLogo")
+        let legacy = try JSONDecoder().decode(
+            CollectionSection.self, from: JSONSerialization.data(withJSONObject: object)
+        )
+        XCTAssertEqual(legacy.titleLogo, .automatic)
+        XCTAssertEqual(legacy.source, section.source)
+        for mode in LandscapeTitleLogo.allCases {
+            var edited = section
+            edited.titleLogo = mode
+            XCTAssertEqual(
+                try JSONDecoder().decode(CollectionSection.self, from: JSONEncoder().encode(edited)), edited
+            )
+        }
+    }
+
     @MainActor
     func testAddingAndEditingPreserveArrangementAndDefaultProfileIsolation() throws {
         let suite = "CollectionSectionTests.\(UUID())"
@@ -57,6 +76,7 @@ final class CollectionSectionTests: XCTestCase {
         var edited = section
         edited.name = "New name"
         edited.cardStyle = .landscape
+        edited.titleLogo = .on
         try model.saveCollectionSection(edited, catalog: catalog)
         XCTAssertEqual(model.visibility.collectionSections, [edited])
         XCTAssertEqual(catalog.sections(in: model.visibility).enabled, expected)

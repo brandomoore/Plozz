@@ -92,6 +92,15 @@ struct CollectionSectionSettingsView: View {
                 }
                 .pickerStyle(.segmented)
                 .accessibilityIdentifier("collection-section-card-style")
+                if draft.cardStyle == .landscape {
+                    Picker("Title logo", selection: $draft.titleLogo) {
+                        ForEach(LandscapeTitleLogo.allCases, id: \.self) { mode in
+                            Text(mode.title).tag(mode)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .accessibilityIdentifier("collection-section-title-logo")
+                }
                 Text(verbatim: draft.title).font(.headline)
                 previewContent
             }
@@ -152,6 +161,7 @@ struct CollectionSectionSettingsView: View {
         .environment(\.plozzCardCaptionView, .home)
         .environment(\.plozzCardCaptionSettings, cards.captions)
         .environment(\.plozzArtworkSettings, cards.artwork)
+        .environment(\.plozzLandscapeTitleLogo, draft.titleLogo)
     }
 
     private var currentCatalog: HomeSectionCatalog {

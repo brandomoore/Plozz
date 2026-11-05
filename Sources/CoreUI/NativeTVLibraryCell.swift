@@ -139,18 +139,27 @@ public final class NativeTVLibraryCell: UICollectionViewCell, DetailTransitionFo
         let variant: ArtworkImageVariant = style == .poster ? .posterCard : .landscapeCard
         let maxAspect: CGFloat? = style == .poster
             && item.map { !PosterCardPresentation.preservesContainerArtwork(for: $0.kind) } != false ? 0.9 : nil
-        let policy = environment.plozzArtworkPolicy
-        let fallback = item.flatMap { CardArtworkPolicy.standard.posterFallback(for: $0) }
+        let inheritedPolicy = environment.plozzArtworkPolicy
+        let policy = item.map {
+            CardArtworkPolicy.standard.presentationPolicy(for: $0, style: style, inheriting: inheritedPolicy)
+        } ?? inheritedPolicy
+        let prefersPrimaryReference = item.map {
+            CardArtworkPolicy.standard.prefersPrimaryReference(for: $0, style: style, policy: inheritedPolicy)
+        } ?? false
+        let fallback = item.flatMap {
+            CardArtworkPolicy.standard.artworkFallback(for: $0, style: style, policy: inheritedPolicy)
+        }
+        let policyIdentity = policy.identity + (prefersPrimaryReference ? "|primary-key-art" : "")
         let identity = item.map { CardArtworkPolicy.standard.pinIdentity(for: $0) }
-        if styleChanged || references != artworkReferences || artworkPolicyIdentity != policy.identity
+        if styleChanged || references != artworkReferences || artworkPolicyIdentity != policyIdentity
             || artworkItemIdentity != identity {
             artworkItemIdentity = identity
             imageTask?.cancel()
             artworkReferences = references
-            artworkPolicyIdentity = policy.identity
+            artworkPolicyIdentity = policyIdentity
             // Adopt only the first candidate synchronously. A cached fallback must
             // never overtake a preferred image that has not finished loading.
-            if !(policy.prefersOnlineArtwork && fallback != nil),
+            if prefersPrimaryReference || !(policy.prefersOnlineArtwork && fallback != nil),
                let reference = references.first, case .remote(let url) = reference {
                 artwork = ArtworkImageCache.shared.cachedImage(for: url, variant: variant)
             } else {
@@ -166,7 +175,8 @@ public final class NativeTVLibraryCell: UICollectionViewCell, DetailTransitionFo
             if artwork == nil, !references.isEmpty || fallback != nil {
                 imageTask = Task { [weak self] in
                     let result = await ArtworkFirstPaintResolver.resolve(
-                        references: references, variant: variant, maxAspectRatio: maxAspect,
+                        references: references, prefersPrimaryReference: prefersPrimaryReference,
+                        variant: variant, maxAspectRatio: maxAspect,
                         asyncOnlineURL: fallback.map { resolve in
                             {
                                 await ArtworkSession.artworkResolveLimiter.run {

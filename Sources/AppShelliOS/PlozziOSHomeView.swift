@@ -730,6 +730,7 @@ struct PlozziOSHomeView: View {
                         }
                     }
                 }
+                .environment(\.plozzLandscapeTitleLogo, presentation.choice.collectionSection?.titleLogo ?? .off)
                 .plozziOSHomeScrollRow(presentation.id)
             }
         }

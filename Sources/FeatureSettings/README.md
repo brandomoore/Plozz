@@ -567,6 +567,13 @@ watch history and planning-list behavior are documented in
   presentation as Layout (see [Home terminology](../../CONTEXT.md)). Choose a source collection first,
   then edit its name and Posters, Landscape or Featured presentation with the layout control immediately above a real-title
   preview. The preview uses the existing artwork preferences and spoiler protection.
+  Landscape adds **Title logo: Auto / On / Off** for movie/show cards. Auto is
+  the default for new and existing collection rows: retain native title artwork
+  when available, otherwise compose a background with the title logo. On uses the
+  shared background/logo treatment; Off keeps artwork only. Known titled images
+  and poster fallbacks never receive a duplicate logo. The preference persists
+  with each row, survives layout changes and profile transfer, and previews
+  without saving until the user applies the edit. Episode stills are unchanged.
   Each navigation destination explicitly forwards the active profile's card settings,
   including Add row's nested creation destination; iOS navigation does not
   inherit dependencies injected only into the preceding page.

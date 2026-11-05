@@ -68,6 +68,12 @@ supported capability remains at parity.
 
 ## Home browsing
 
+Movie and series `Thumb` images populate the shared `landscapeCard` artwork
+placement, independently of Home/detail backdrop ordering. The same mapping
+applies to Emby. Only advertised images are used; episode thumbnails keep their
+existing placement. Shared row presentation decides whether to use that key art
+or a clean backdrop with a logo; it does not branch on the server brand.
+
 Home browse feeds and collection membership request `DateCreated` so client-side
 Date added sorting uses library dates on both Jellyfin and Emby, without changing
 the server-authored feed membership or default order.

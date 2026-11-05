@@ -222,6 +222,32 @@ public struct TMDbMetadataProvider: ArtworkProvider {
 
     // MARK: - Lookups
 
+    public func landscapeCardURL(for query: MetadataQuery) async -> URL? {
+        guard access.isEnabled, query.contentType != .music,
+              let id = await resolveID(for: query),
+              let images = await images(forID: id, isTV: query.isTV),
+              let path = Self.landscapeCardPath(images.backdrops, preferredLanguage: query.artworkLanguage)
+        else { return nil }
+        return URL(string: "\(imageBase)/w1280\(path)")
+    }
+
+    static func landscapeCardPath(_ images: [Image]?, preferredLanguage: String) -> String? {
+        let language = MetadataQuery.normalizedArtworkLanguage(preferredLanguage)
+        let titled = (images ?? []).filter {
+            $0.file_path?.isEmpty == false
+                && ($0.iso_639_1 == language || $0.iso_639_1 == "en")
+        }
+        return titled.enumerated().min {
+            let left = $0.element.iso_639_1 == language ? 0 : 1
+            let right = $1.element.iso_639_1 == language ? 0 : 1
+            if left != right { return left < right }
+            let leftScore = $0.element.vote_average ?? 0
+            let rightScore = $1.element.vote_average ?? 0
+            if leftScore != rightScore { return leftScore > rightScore }
+            return $0.offset < $1.offset
+        }?.element.file_path
+    }
+
     public func portraitHeroURL(for query: MetadataQuery) async -> URL? {
         guard access.isEnabled, query.contentType != .music,
               let id = await resolveID(for: query),

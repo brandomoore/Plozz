@@ -2654,6 +2654,13 @@ public struct JellyfinProvider: MediaProvider, ServerRatingsProviding, SeriesRes
         for dto: BaseItemDto,
         client: JellyfinClient
     ) -> [ArtworkSelection] {
+        let landscape: [ArtworkSelection]
+        if dto.Type == "Movie" || dto.Type == "Series",
+           let thumb = imageURL(for: dto, kind: .thumb, maxWidth: 3840, client: client) {
+            landscape = [.init(placement: .landscapeCard, references: [.remote(thumb)])]
+        } else {
+            landscape = []
+        }
         var candidates: [HeroArtworkCandidate] = []
         for (index, tag) in (dto.BackdropImageTags ?? []).enumerated() {
             guard let url = client.imageURL(
@@ -2688,13 +2695,13 @@ public struct JellyfinProvider: MediaProvider, ServerRatingsProviding, SeriesRes
                 "jellyfin pool=\(candidates.count) backdropTags=\((dto.BackdropImageTags ?? []).count) "
                 + "thumb=\(dto.ImageTags?["Thumb"] != nil) title=\(dto.Name ?? "?") — NO SELECTION"
             }
-            return []
+            return landscape
         }
         HeroArtDiagnostics.emitOnce(stage: "jf-pool", key: dto.Id) {
             "jellyfin pool=\(candidates.count) backdropTags=\((dto.BackdropImageTags ?? []).count) "
             + "thumb=\(dto.ImageTags?["Thumb"] != nil) title=\(dto.Name ?? "?")"
         }
-        return HeroArtworkPlanner.selections(for: candidates)
+        return HeroArtworkPlanner.selections(for: candidates) + landscape
     }
 
     /// Builds an *item-owned* image URL only when the DTO actually advertises

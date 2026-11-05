@@ -1458,6 +1458,11 @@ final class HomeRowArrangementHostedTests: XCTestCase {
                 let text = lines.map(\.0).joined(separator: " ")
                 XCTAssertTrue(text.contains("Weekend picks"), text)
                 XCTAssertTrue(text.contains("Orbit"), "Preview must display the provider's title: \(text)")
+                if style == .landscape {
+                    for label in ["Auto", "On", "Off"] {
+                        XCTAssertTrue(text.contains(label), "Landscape title-logo choice missing: \(text)")
+                    }
+                }
                 XCTAssertGreaterThan(try self.y("Posters", in: lines), try self.y("Orbit", in: lines))
                 XCTAssertTrue(visibility.visibility.collectionSections.isEmpty, "Previewing does not save a section.")
             }
