@@ -14,14 +14,17 @@ enum DetailInformationLayout {
     static let cellPadding = PlozzTheme.Spacing.large
     static let gutter = PlozzTheme.Spacing.large
     static let focusPadding: CGFloat = 22
-    static let factSpacing = focusPadding * 2 + PlozzTheme.Spacing.small
-    static let sectionSpacing = factSpacing
+    static let verticalFocusPadding = PlozzTheme.Spacing.small
+    static let factSpacing = verticalFocusPadding * 2 + PlozzTheme.Spacing.small
+    static let factColumnSpacing = focusPadding * 2 + PlozzTheme.Spacing.small
+    static let sectionSpacing = factColumnSpacing
     static let headingSpacing = PlozzTheme.Spacing.medium
     static let cornerRadius: CGFloat = 20
     #else
     static let cellPadding = PlozzTheme.Spacing.medium
     static let gutter = PlozzTheme.Spacing.medium
     static let factSpacing = gutter
+    static let factColumnSpacing = gutter
     static let sectionSpacing = PlozzTheme.Spacing.xLarge
     static let headingSpacing = PlozzTheme.Spacing.small
     static let cornerRadius: CGFloat = 16
@@ -1082,7 +1085,8 @@ private struct DetailInformationGroup: View {
         DetailFactLayout(
             pairsShortFacts: pairsShortFacts && !dynamicTypeSize.isAccessibilitySize,
             minimumColumnWidth: minimumFactWidth,
-            spacing: DetailInformationLayout.factSpacing
+            horizontalSpacing: DetailInformationLayout.factColumnSpacing,
+            verticalSpacing: DetailInformationLayout.factSpacing
         ) {
             ForEach(group.previewFacts) { fact in
                 factCell(fact)
@@ -1121,10 +1125,11 @@ private struct DetailCompactFactKey: LayoutValueKey {
 private struct DetailFactLayout: Layout {
     let pairsShortFacts: Bool
     let minimumColumnWidth: CGFloat
-    let spacing: CGFloat
+    let horizontalSpacing: CGFloat
+    let verticalSpacing: CGFloat
 
     private func frames(for width: CGFloat, subviews: Subviews) -> [CGRect] {
-        let halfWidth = max(0, (width - spacing) / 2)
+        let halfWidth = max(0, (width - horizontalSpacing) / 2)
         var frames: [CGRect] = []
         var pending: Int?
         var nextY: CGFloat = 0
@@ -1133,7 +1138,7 @@ private struct DetailFactLayout: Layout {
                 && subview[DetailCompactFactKey.self]
                 && subview.sizeThatFits(.unspecified).width <= halfWidth
             if let previous = pending, !compact {
-                nextY = frames[previous].maxY + spacing
+                nextY = frames[previous].maxY + verticalSpacing
                 pending = nil
             }
             let childWidth = compact ? halfWidth : width
@@ -1141,15 +1146,15 @@ private struct DetailFactLayout: Layout {
             if let previous = pending {
                 let rowHeight = max(height, frames[previous].height)
                 frames[previous].size.height = rowHeight
-                frames.append(CGRect(x: halfWidth + spacing, y: nextY, width: childWidth, height: rowHeight))
-                nextY += rowHeight + spacing
+                frames.append(CGRect(x: halfWidth + horizontalSpacing, y: nextY, width: childWidth, height: rowHeight))
+                nextY += rowHeight + verticalSpacing
                 pending = nil
             } else {
                 frames.append(CGRect(x: 0, y: nextY, width: childWidth, height: height))
                 if compact {
                     pending = index
                 } else {
-                    nextY += height + spacing
+                    nextY += height + verticalSpacing
                 }
             }
         }
@@ -1189,7 +1194,8 @@ private struct DetailInformationFocus: ViewModifier {
                 if isFocused {
                     Color.clear
                         .plozzGlassCard(cornerRadius: DetailInformationLayout.cornerRadius, isFocused: true)
-                        .padding(-DetailInformationLayout.focusPadding)
+                        .padding(.horizontal, -DetailInformationLayout.focusPadding)
+                        .padding(.vertical, -DetailInformationLayout.verticalFocusPadding)
                         .allowsHitTesting(false)
                 }
             }

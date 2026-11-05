@@ -282,6 +282,7 @@ public struct PlozzFocusableCardModifier: ViewModifier {
     @Environment(\.plozzReduceTransparency) private var reduceTransparency
     @Environment(\.plozzCardFocusStyle) private var focusStyle
     @Environment(\.plozzRestingCardSurface) private var restingSurface
+    @Environment(\.plozzNativeInformationFocus) private var informationFocus
 
     public init(
         cornerRadius: CGFloat,
@@ -301,10 +302,16 @@ public struct PlozzFocusableCardModifier: ViewModifier {
     public func body(content: Content) -> some View {
         #if os(tvOS)
         if focusStyle.usesSystemEffect {
-            NativeTVCard(content: content.padding(focusPadding), focus: $focused, isEnabled: true, action: {})
-                .focused($focused.focusState)
-                .zIndex(focused ? 1 : 0)
-                .accessibilityRemoveTraits(.isButton)
+            if informationFocus {
+                Button {} label: { content.padding(focusPadding) }
+                    .modifier(NativeInformationCardStyle(cornerRadius: cornerRadius))
+                    .accessibilityRemoveTraits(.isButton)
+            } else {
+                NativeTVCard(content: content.padding(focusPadding), focus: $focused, isEnabled: true, action: {})
+                    .focused($focused.focusState)
+                    .zIndex(focused ? 1 : 0)
+                    .accessibilityRemoveTraits(.isButton)
+            }
         } else {
             content
                 .background { surface }

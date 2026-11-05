@@ -21,7 +21,6 @@ struct FamilyGuidanceTile: View {
     let summary: FamilyGuidanceSummary
     @State private var isPresented = false
     @Environment(\.familyGuidanceProvider) private var provider
-    @Environment(\.themePalette) private var palette
     #if os(iOS)
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @ScaledMetric(relativeTo: .title2) private var scaledAgeSize: CGFloat = 30
@@ -35,7 +34,7 @@ struct FamilyGuidanceTile: View {
                     .frame(minWidth: expandedContentWidth, idealWidth: expandedContentWidth)
                 compactContent
             }
-            .foregroundStyle(palette.primaryText)
+            .plozzForeground(.primary)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(DetailInformationLayout.cellPadding)
         }
@@ -76,7 +75,7 @@ struct FamilyGuidanceTile: View {
             .frame(minHeight: compactIconSize * 1.5)
             Text(verbatim: "Common Sense")
                 .font(sourceFont)
-                .foregroundStyle(palette.secondaryText)
+                .plozzForeground(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .multilineTextAlignment(.center)
@@ -108,14 +107,14 @@ struct FamilyGuidanceTile: View {
                 .font(summaryFont)
                 .lineLimit(2)
                 .fixedSize(horizontal: false, vertical: true)
-                .foregroundStyle(palette.secondaryText)
+                .plozzForeground(.secondary)
         }
     }
 
     private var disclosure: some View {
         Image(systemName: "chevron.forward")
             .font(sourceFont)
-            .foregroundStyle(palette.secondaryText)
+            .plozzForeground(.secondary)
             .accessibilityHidden(true)
     }
 

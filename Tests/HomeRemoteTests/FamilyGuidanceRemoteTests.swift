@@ -1,8 +1,59 @@
 import XCTest
 import UIKit
+import Vision
 
 @MainActor
 final class FamilyGuidanceRemoteTests: XCTestCase {
+    func testSummaryCardsHaveClearlyVisibleFocus() throws {
+        try checkSummaryFocus(extra: [], name: "dark")
+    }
+
+    func testSummaryCardsKeepLightFocusReadable() throws {
+        try checkSummaryFocus(extra: ["--detail-layout-light"], name: "light")
+    }
+
+    func testSummaryCardsKeepOpaqueFocusReadable() throws {
+        try checkSummaryFocus(extra: ["--detail-layout-reduced-transparency"], name: "opaque")
+    }
+
+    private func checkSummaryFocus(extra: [String], name: String) throws {
+        let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.FocusHost")
+        app.launchArguments = ["--detail-information-fixture", "--detail-layout-rich"] + extra
+        app.launch()
+        defer { app.terminate() }
+        let about = app.descendants(matching: .any)["detail-about"].firstMatch
+        let score = app.descendants(matching: .any)["detail-rating-rottenTomatoes"].firstMatch
+        XCTAssertTrue(about.waitForExistence(timeout: 15))
+        XCTAssertTrue(score.exists, app.debugDescription)
+        for _ in 0..<4 where !isFocused(about) { XCUIRemote.shared.press(.up) }
+        XCTAssertTrue(isFocused(about))
+        let aboutRegion = about.frame.insetBy(dx: 30, dy: 30)
+        let scoreRegion = score.frame.insetBy(dx: 30, dy: 30)
+        let focusedAbout = try XCTUnwrap(app.screenshot().image.cgImage)
+        try assertSummaryTextContrast(focusedAbout, containing: ["documentary", "collectors"], in: about.frame, app: app)
+        recordScreenshot(app, name: "summary-focus-\(name)-about")
+        XCUIRemote.shared.press(.right)
+        XCTAssertTrue(isFocused(score), app.debugDescription)
+        let focusedScore = try XCTUnwrap(app.screenshot().image.cgImage)
+        try assertSummaryTextContrast(focusedScore, containing: ["96%"], in: score.frame, app: app)
+        recordScreenshot(app, name: "summary-focus-\(name)-rating")
+        for region in [aboutRegion, scoreRegion] {
+            XCTAssertGreaterThan(
+                try changedPixelFraction(focusedAbout, focusedScore, frame: region, app: app), 0.45,
+                "Focus must visibly change the card interior, not just add a faint rim."
+            )
+        }
+        XCUIRemote.shared.press(.left)
+        XCTAssertTrue(isFocused(about))
+        XCUIRemote.shared.press(.select)
+        XCTAssertTrue(app.descendants(matching: .any)["detail-reader-card"].firstMatch.waitForExistence(timeout: 5))
+        XCUIRemote.shared.press(.menu)
+        let restored = XCTNSPredicateExpectation(
+            predicate: NSPredicate { _, _ in self.isFocused(about) }, object: nil
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [restored], timeout: 5), .completed)
+    }
+
     func testCastRailKeepsAllPeopleAndNavigationWithoutMore() throws {
         let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.FocusHost")
         app.launchArguments = ["--detail-information-fixture"]
@@ -90,6 +141,8 @@ final class FamilyGuidanceRemoteTests: XCTestCase {
         let genres = app.descendants(matching: .any)["detail-details-genres-more"].firstMatch
         let streaming = app.descendants(matching: .any)["detail-availability-streaming-more"].firstMatch
         XCTAssertTrue(year.waitForExistence(timeout: 15))
+        XCUIRemote.shared.press(.down)
+        XCTAssertTrue(isFocused(streaming))
         let details = app.staticTexts["Details"].firstMatch
         let availability = app.staticTexts["Release & Availability"].firstMatch
         let crew = app.staticTexts["Crew"].firstMatch
@@ -112,6 +165,7 @@ final class FamilyGuidanceRemoteTests: XCTestCase {
         for value in ["Ended", "8", "100", "French", "JustWatch"] {
             XCTAssertTrue(app.staticTexts[value].exists, value)
         }
+        XCUIRemote.shared.press(.up)
         for _ in 0..<4 where !isFocused(about) { XCUIRemote.shared.press(.up) }
         XCTAssertTrue(isFocused(about))
         XCUIRemote.shared.press(.right)
@@ -228,12 +282,12 @@ final class FamilyGuidanceRemoteTests: XCTestCase {
         for label in [textFrames[0], textFrames[2]] {
             let paddingRegions = [
                 CGRect(x: label.minX - 18, y: label.midY - 5, width: 8, height: 10),
-                CGRect(x: label.minX + 12, y: label.minY - 18, width: 30, height: 8)
+                CGRect(x: label.minX + 12, y: label.minY - 10, width: 30, height: 8)
             ]
             for region in paddingRegions {
                 let change = try changedPixelFraction(before, after, frame: region, app: app)
                 XCTAssertGreaterThan(change, 0.5,
-                                     "Glass must provide visible breathing room beyond the previous 8pt outset.")
+                                     "Glass must preserve horizontal and vertical breathing room.")
             }
         }
         for (element, frame) in zip(text, textFrames) {
@@ -244,9 +298,11 @@ final class FamilyGuidanceRemoteTests: XCTestCase {
             let change = try changedPixelFraction(before, after, frame: frame, app: app)
             XCTAssertLessThan(change, 0.02, "The highlight must not paint over \(neighbor.label).")
         }
-        XCTAssertGreaterThanOrEqual(neighbors[1].frame.minY - textFrames[1].maxY, 44,
-                                    "The next fact must leave room for both 22pt focus outsets.")
-        XCTAssertGreaterThanOrEqual(textFrames[2].minY - neighbors[5].frame.maxY, 22,
+        let factGap = neighbors[1].frame.minY - textFrames[1].maxY
+        XCTAssertGreaterThanOrEqual(factGap, 24,
+                                    "The next fact must leave room for both 12pt vertical focus outsets.")
+        XCTAssertLessThanOrEqual(factGap, 40, "Short facts must not retain the old 56pt row gap.")
+        XCTAssertGreaterThanOrEqual(textFrames[2].minY - neighbors[5].frame.maxY, 12,
                                     "The focus surface must clear its section heading.")
     }
 
@@ -671,6 +727,32 @@ final class FamilyGuidanceRemoteTests: XCTestCase {
         let image = try XCTUnwrap(app.screenshot().image.cgImage)
         let frame = label.exists ? label.frame : element.frame
         let pixels = try pixels(image, frame: frame, app: app)
+        assertTextContrast(pixels, message: "Focused metadata must remain readable in both native and opaque highlights.")
+    }
+
+    private func assertSummaryTextContrast(
+        _ image: CGImage, containing expected: [String], in frame: CGRect, app: XCUIApplication
+    ) throws {
+        let request = VNRecognizeTextRequest()
+        request.recognitionLevel = .accurate
+        request.recognitionLanguages = ["en-US"]
+        try VNImageRequestHandler(cgImage: image).perform([request])
+        for text in expected {
+            let observation = try XCTUnwrap(request.results?.first {
+                guard $0.topCandidates(1).first?.string.localizedCaseInsensitiveContains(text) == true else { return false }
+                let center = CGPoint(x: $0.boundingBox.midX * app.frame.width,
+                                     y: (1 - $0.boundingBox.midY) * app.frame.height)
+                return frame.contains(center)
+            }, "The focused card must actually display readable text containing \(text).")
+            let bounds = observation.boundingBox
+            let textFrame = CGRect(x: bounds.minX * app.frame.width, y: (1 - bounds.maxY) * app.frame.height,
+                                   width: bounds.width * app.frame.width, height: bounds.height * app.frame.height)
+            assertTextContrast(try pixels(image, frame: textFrame, app: app),
+                               message: "Focused summary text must retain contrast: \(text)")
+        }
+    }
+
+    private func assertTextContrast(_ pixels: [UInt8], message: String) {
         let luminances = stride(from: 0, to: pixels.count, by: 4).map { offset -> Double in
             let channels = (0..<3).map { channel -> Double in
                 let value = Double(pixels[offset + channel]) / 255
@@ -682,7 +764,7 @@ final class FamilyGuidanceRemoteTests: XCTestCase {
         guard !luminances.isEmpty else { return }
         let contrast = (luminances[luminances.count * 95 / 100] + 0.05)
             / (luminances[luminances.count * 5 / 100] + 0.05)
-        XCTAssertGreaterThan(contrast, 3, "Focused metadata must remain readable in both native and opaque highlights.")
+        XCTAssertGreaterThan(contrast, 3, message)
     }
 
     private func changedPixelFraction(
@@ -691,7 +773,7 @@ final class FamilyGuidanceRemoteTests: XCTestCase {
         let first = try pixels(before, frame: frame, app: app)
         let second = try pixels(after, frame: frame, app: app)
         XCTAssertEqual(first.count, second.count)
-        guard first.count == second.count, !first.isEmpty else { return 1 }
+        guard first.count == second.count, !first.isEmpty else { return 0 }
         let changed = stride(from: 0, to: first.count, by: 4).filter { offset in
             // Native glass on a light backdrop can lift each channel by only 4-5 steps.
             (0..<3).reduce(0) { $0 + abs(Int(first[offset + $1]) - Int(second[offset + $1])) } > 12

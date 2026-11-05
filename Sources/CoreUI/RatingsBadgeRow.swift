@@ -331,7 +331,6 @@ public struct RatingTile: View {
 
 /// Shared score geometry inside a rating tile.
 struct RatingValue: View {
-    @Environment(\.themePalette) private var palette
     #if os(iOS)
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     #endif
@@ -350,7 +349,7 @@ struct RatingValue: View {
                     .frame(height: iconRowHeight)
                 Text(rating.displayValue)
                     .font(valueFont)
-                    .foregroundStyle(palette.primaryText)
+                    .plozzForeground(.primary)
                     .lineLimit(1)
                     .minimumScaleFactor(0.6)
             }

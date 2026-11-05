@@ -138,19 +138,26 @@ public extension View {
     func plozzCardFocusButtonStyle<Style: ButtonStyle>(
         _ fallback: Style, cornerRadius: CGFloat, contentSuppliesProjection: Bool = false
     ) -> some View {
-        modifier(CardFocusButtonStyle(fallback: fallback, contentSuppliesProjection: contentSuppliesProjection))
+        modifier(CardFocusButtonStyle(fallback: fallback, cornerRadius: cornerRadius,
+                                      contentSuppliesProjection: contentSuppliesProjection))
     }
 }
 
 private struct CardFocusButtonStyle<Style: ButtonStyle>: ViewModifier {
     let fallback: Style
+    let cornerRadius: CGFloat
     let contentSuppliesProjection: Bool
     @Environment(\.plozzCardFocusStyle) private var style
+    @Environment(\.plozzNativeInformationFocus) private var informationFocus
 
     func body(content: Content) -> some View {
         #if os(tvOS)
         if style.usesSystemEffect {
-            content.buttonStyle(NativeTVCardButtonStyle())
+            if informationFocus {
+                content.modifier(NativeInformationCardStyle(cornerRadius: cornerRadius))
+            } else {
+                content.buttonStyle(NativeTVCardButtonStyle())
+            }
         } else {
             content.buttonStyle(fallback).focusEffectDisabled()
         }
@@ -159,6 +166,27 @@ private struct CardFocusButtonStyle<Style: ButtonStyle>: ViewModifier {
         #endif
     }
 }
+
+#if os(tvOS)
+struct NativeInformationCardStyle: ViewModifier {
+    let cornerRadius: CGFloat
+    @FocusState private var isFocused: Bool
+
+    private var usesOpaqueFocus: Bool {
+        if #available(tvOS 26.0, *) { false } else { true }
+    }
+
+    func body(content: Content) -> some View {
+        content
+            .buttonStyle(.card)
+            .buttonBorderShape(.roundedRectangle(radius: cornerRadius))
+            .environment(\.settingsRowIsFocused, isFocused && usesOpaqueFocus)
+            .environment(\.settingsRowFocusForeground, .black)
+            .focused($isFocused)
+            .zIndex(isFocused ? 1 : 0)
+    }
+}
+#endif
 
 private struct NativeMediaButtonStyle: ViewModifier {
     @Environment(\.plozzCardStyle) private var cardStyle

@@ -1043,8 +1043,11 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   Playback uses quieter type, including a bounded filename preview.
   TV facts use stable borderless native buttons for scroll-by-focus, with no resting
   fill. The shared Liquid Glass surface sits in a focus-only, non-sizing underlay
-  with the original 22pt outset. Facts and columns reserve 56pt gutters, leaving
-  12pt between neighboring focus surfaces without moving text keylines.
+  with a 22pt horizontal and 12pt vertical outset. Facts reserve 36pt row gaps
+  and 56pt column gaps, leaving 12pt between neighboring focus surfaces without
+  moving text keylines. About, ratings and guidance use the standard native tvOS
+  card focus treatment in System mode, with semantic text contrast rather than
+  the media card's subtle rim. Custom card-focus modes retain their existing fallback.
   Reduce Transparency and pre-Liquid-Glass systems retain the shared opaque
   surface and semantic text contrast. Only truncated
   facts open their group's full values. Full-value rows remain focusable for remote
@@ -1067,7 +1070,7 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   to the final text baseline. Its soft fade is limited to one measured line at
   the current font size, leaving the previous line intact. Truncation compares
   full and visible text at the same allocated width, so native fitting probes
-  do not prematurely mask short values. Cast expansion sits beneath its rail.
+  do not prematurely mask short values.
   Sections are eagerly measured so lower facts participate in scrollable height.
   About and TV fact controls keep the same native owner when truncation changes; only
   their More action and accessibility role change. Switching between separate read-only
@@ -1091,11 +1094,13 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   `version` values. Invalid input fails rather than substituting fixture metadata.
   Keep captured server data private; label captures with their source, region,
   and whether enrichment was applied. This input is not part of the production app.
-- **Detail information focus** — the tvOS About/Ratings cards use
-  native focus with at most 2% growth and 6pt of expansion per edge, leaving
-  clearance within the shared grid gutters. Focused read-only cards and card buttons draw
-  above their peers. This policy does not change ordinary media-card growth,
-  custom focus styles, or touch layouts.
+- **Detail information focus** — About, ratings and family guidance use the
+  standard tvOS card button style in System mode. The system owns the lift,
+  highlight and enlargement; shared grid gutters must keep the painted surfaces
+  separate throughout focus transitions. Text retains the selected theme on
+  Liquid Glass systems and uses dark text on the older opaque focus plate.
+  Focused read-only cards and card buttons draw above their peers.
+  Ordinary media cards, custom focus styles and touch layouts are unchanged.
 - **Native artwork focus comparison** — launch the separate tvOS focus host
   with `--native-artwork-focus-comparison`. It compares the current poster,
   a single-image poster, a content-masked poster with separate overlays, and a

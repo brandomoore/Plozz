@@ -67,8 +67,7 @@ final class NativeInformationCardHostedTests: XCTestCase {
         ] {
             var item = MediaItem(
                 id: "summary", title: "Slow Horses", kind: .series,
-                overview: "A dysfunctional team of MI5 agents navigate the espionage world's smoke and mirrors to defend the UK from sinister forces.",
-                productionYear: 2022
+                overview: "A dysfunctional team of MI5 agents navigate the espionage world's smoke and mirrors to defend the UK from sinister forces."
             )
             if longOverview {
                 item.overview = String(repeating: item.overview ?? "", count: 8)
@@ -95,15 +94,12 @@ final class NativeInformationCardHostedTests: XCTestCase {
             )
             window.makeKeyAndVisible()
             try await Task.sleep(for: .milliseconds(500))
-            let cards = nativeCards(in: window)
+            let cards = focusItems(in: window)
             let expectedCount = count + (hasGuidance ? 1 : 0) + 1
             XCTAssertEqual(cards.count, expectedCount,
                            "Each score owns a tile; guidance participates in the same grid.")
             guard cards.count == expectedCount else { continue }
-            let frames = try cards.map { card in
-                let container = try XCTUnwrap(card.superview)
-                return container.convert(container.bounds, to: window)
-            }
+            let frames = try cards.map { try focusFrame($0, in: window) }
             let about = frames[0]
             let ratings = Array(frames.dropFirst())
             let contentWidth = window.bounds.inset(by: window.safeAreaInsets).width - 160
@@ -227,12 +223,9 @@ final class NativeInformationCardHostedTests: XCTestCase {
             )
             window.makeKeyAndVisible()
             try await Task.sleep(for: .milliseconds(500))
-            let cards = nativeCards(in: window)
+            let cards = focusItems(in: window)
             XCTAssertEqual(cards.count, count)
-            let frames = try cards.map { card in
-                let container = try XCTUnwrap(card.superview)
-                return container.convert(container.bounds, to: window)
-            }
+            let frames = try cards.map { try focusFrame($0, in: window) }
             let content = window.bounds.inset(by: window.safeAreaInsets).insetBy(dx: 80, dy: 0)
             let columnWidth = (content.width - 2 * DetailInformationLayout.sectionSpacing) / 3
             let width = count == 1 ? max(220, (columnWidth - DetailInformationLayout.sectionSpacing) / 2)
@@ -260,13 +253,10 @@ final class NativeInformationCardHostedTests: XCTestCase {
         defer { window.isHidden = true; window.rootViewController = nil; previous?.makeKeyAndVisible() }
         window.makeKeyAndVisible()
         try await Task.sleep(for: .milliseconds(500))
-        let cards = nativeCards(in: window)
+        let cards = focusItems(in: window)
         XCTAssertEqual(cards.count, 2)
         guard cards.count == 2 else { return }
-        let frames = try cards.map { card in
-            let container = try XCTUnwrap(card.superview)
-            return container.convert(container.bounds, to: window)
-        }
+        let frames = try cards.map { try focusFrame($0, in: window) }
         XCTAssertGreaterThan(frames[1].minY, frames[0].maxY)
         XCTAssertLessThan(frames[1].height, 160, "A stacked score must not inherit the synopsis height.")
         XCTAssertGreaterThan(frames[0].height, frames[1].height + 40)
@@ -299,13 +289,13 @@ final class NativeInformationCardHostedTests: XCTestCase {
             window.rootViewController = host
             window.makeKeyAndVisible()
             try await Task.sleep(for: .milliseconds(500))
-            let card = try XCTUnwrap(nativeCards(in: window).first)
+            let card = try XCTUnwrap(focusItems(in: window).first)
             host.target = card
             host.setNeedsFocusUpdate()
             host.updateFocusIfNeeded()
             try await Task.sleep(for: .milliseconds(300))
-            XCTAssertTrue(card.isFocused)
-            let surface = try XCTUnwrap(NativeFocusProjection.artworkFrame(of: card.contentView, in: window))
+            XCTAssertTrue(UIFocusSystem.focusSystem(for: window)?.focusedItem === card)
+            let surface = try focusFrame(card, in: window)
             let textRegion = surface.insetBy(dx: 24, dy: 24).intersection(window.bounds).integral
             let pixels = try informationPixels(window)
             var darkPixels = 0
@@ -400,8 +390,12 @@ final class NativeInformationCardHostedTests: XCTestCase {
                     ["Year", "Runtime", "Content Rating"].contains($0.topCandidates(1).first?.string ?? "")
                 }
                 XCTAssertEqual(labels.count, 3)
-                XCTAssertEqual(Set(labels.map { Int($0.boundingBox.midY * 1080) }).count, 3,
-                               "Facts stack under their section instead of stretching across the page.")
+                let year = try XCTUnwrap(labels.first { $0.topCandidates(1).first?.string == "Year" })
+                let runtime = try XCTUnwrap(labels.first { $0.topCandidates(1).first?.string == "Runtime" })
+                let rating = try XCTUnwrap(labels.first { $0.topCandidates(1).first?.string == "Content Rating" })
+                XCTAssertEqual(year.boundingBox.midY * 1080, runtime.boundingBox.midY * 1080, accuracy: 3)
+                XCTAssertGreaterThan(year.boundingBox.minY, rating.boundingBox.maxY,
+                                     "Short facts pair within their reading column; the following row stays below.")
             }
             if index == 1 {
                 let writerLabel = try XCTUnwrap(observations.first {
@@ -572,20 +566,15 @@ final class NativeInformationCardHostedTests: XCTestCase {
         window.makeKeyAndVisible()
         window.layoutIfNeeded()
         try await Task.sleep(for: .milliseconds(500))
-        let cards = nativeCards(in: window).sorted {
-            let first = $0.convert($0.bounds, to: window)
-            let second = $1.convert($1.bounds, to: window)
-            return abs(first.minY - second.minY) > 1 ? first.minY < second.minY : first.minX < second.minX
-        }
+        let cards = focusItems(in: window)
         XCTAssertEqual(cards.count, 8)
         for card in cards {
-            XCTAssertEqual(card.cardBackgroundColor, UIColor(ThemePalette.dark.raised.fill))
-            XCTAssertGreaterThan(card.bounds.height, 60)
+            XCTAssertGreaterThan(try focusFrame(card, in: window).height, 60)
         }
         let firstCard = try XCTUnwrap(cards.first)
         let lastCard = try XCTUnwrap(cards.last)
-        let first = firstCard.convert(firstCard.bounds, to: window)
-        let last = lastCard.convert(lastCard.bounds, to: window)
+        let first = try focusFrame(firstCard, in: window)
+        let last = try focusFrame(lastCard, in: window)
         XCTAssertGreaterThan(last.minY, first.maxY + 20)
         let image = DetailTransitionSnapshot.image(of: window)
         let request = VNRecognizeTextRequest()
@@ -624,9 +613,7 @@ final class NativeInformationCardHostedTests: XCTestCase {
             window.makeKeyAndVisible()
             window.layoutIfNeeded()
             try await Task.sleep(for: .milliseconds(200))
-            let cards = nativeCards(in: window).sorted {
-                $0.convert($0.bounds, to: window).minX < $1.convert($1.bounds, to: window).minX
-            }
+            let cards = focusItems(in: window)
             XCTAssertEqual(cards.count, 2)
             let front = try XCTUnwrap(cards.first)
             let back = try XCTUnwrap(cards.last)
@@ -634,13 +621,13 @@ final class NativeInformationCardHostedTests: XCTestCase {
             host.setNeedsFocusUpdate()
             host.updateFocusIfNeeded()
             let deadline = ContinuousClock.now + .seconds(3)
-            while !front.isFocused, ContinuousClock.now < deadline {
+            while UIFocusSystem.focusSystem(for: window)?.focusedItem !== front, ContinuousClock.now < deadline {
                 try await Task.sleep(for: .milliseconds(20))
             }
-            XCTAssertTrue(front.isFocused)
+            XCTAssertTrue(UIFocusSystem.focusSystem(for: window)?.focusedItem === front)
             try await Task.sleep(for: .milliseconds(350))
-            let frontFrame = try XCTUnwrap(NativeFocusProjection.artworkFrame(of: front.contentView, in: window))
-            let backFrame = try XCTUnwrap(NativeFocusProjection.artworkFrame(of: back.contentView, in: window))
+            let frontFrame = try focusFrame(front, in: window)
+            let backFrame = try focusFrame(back, in: window)
             let overlap = frontFrame.intersection(backFrame)
             XCTAssertGreaterThan(overlap.width, 8, "The stacking test must actually overlap.")
             let image = DetailTransitionSnapshot.image(of: window)
@@ -683,20 +670,22 @@ final class NativeInformationCardHostedTests: XCTestCase {
         let previous = scene.windows.first(where: \.isKeyWindow)
         let window = UIWindow(windowScene: scene)
         window.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
-        let model = NativeInformationRefreshModel()
-        model.item.kind = kind
-        model.item.overview = String(repeating: "A film about friendship and unexpected choices. ", count: 9)
-        model.item.ratings = [
+        var item = MediaItem(id: "summary-focus", title: "A summer story", kind: kind)
+        item.overview = String(repeating: "A film about friendship and unexpected choices. ", count: 9)
+        item.ratings = [
             .init(source: .rottenTomatoes, value: 64, scale: .percent),
             .init(source: .rottenTomatoesAudience, value: 80, scale: .percent),
             .init(source: .imdb, value: 6.5, scale: .outOfTen),
             .init(source: .tmdb, value: 6.2, scale: .outOfTen)
         ]
-        model.item.familyGuidance = FamilyGuidanceSummary(
+        item.familyGuidance = FamilyGuidanceSummary(
             recommendedAge: 13, qualityRating: nil, overview: "A short content advisory."
         )
         let host = NativeInformationFocusHost(rootView: AnyView(
-            NativeInformationRefreshView(model: model)
+            ScrollView { DetailInformationSections(item: item, horizontalInset: 80) }
+                .environment(\.plozzCardFocusStyle, .system)
+                .environment(\.themePalette, .dark)
+                .environment(\.colorScheme, .dark)
                 .frame(width: width, height: 1080)
                 .frame(maxWidth: .infinity, alignment: .leading)
         ))
@@ -710,26 +699,26 @@ final class NativeInformationCardHostedTests: XCTestCase {
         }
         window.layoutIfNeeded()
         try await Task.sleep(for: .milliseconds(600))
-        let cards = nativeCards(in: window)
+        let cards = focusItems(in: window)
         XCTAssertEqual(cards.count, 6, "Only About, four scores and guidance own permanent card surfaces.")
+        let backgroundX = Int(try XCTUnwrap(cards.map { try focusFrame($0, in: window).minX }.min()) - 40)
         var samples: [String] = []
         for (index, card) in cards.enumerated() {
             host.target = card
             host.setNeedsFocusUpdate()
             host.updateFocusIfNeeded()
             let until = ContinuousClock.now + .seconds(3)
-            while !card.isFocused, ContinuousClock.now < until {
+            while UIFocusSystem.focusSystem(for: window)?.focusedItem !== card, ContinuousClock.now < until {
                 try await Task.sleep(for: .milliseconds(20))
             }
-            XCTAssertTrue(card.isFocused, "card \(index)")
+            XCTAssertTrue(UIFocusSystem.focusSystem(for: window)?.focusedItem === card, "card \(index)")
             for _ in 0..<8 {
                 try await Task.sleep(for: .milliseconds(45))
-                let projected = try XCTUnwrap(NativeFocusProjection.artworkFrame(of: card.contentView, in: window))
-                samples.append("card=\(index) size=\(card.contentSize) increase=\(card.focusSizeIncrease) projected=\(projected)")
-                XCTAssertLessThanOrEqual(projected.width, card.contentSize.width * 1.03 + 1, "card \(index)")
-                XCTAssertLessThanOrEqual(projected.height, card.contentSize.height * 1.03 + 1, "card \(index)")
+                let pixels = try informationPixels(window)
+                let projected = try paintedCardFrame(card, in: window, pixels: pixels, backgroundX: backgroundX)
+                samples.append("card=\(index) layout=\(try focusFrame(card, in: window)) painted=\(projected)")
                 for (otherIndex, other) in cards.enumerated() where other !== card {
-                    let resting = try XCTUnwrap(NativeFocusProjection.artworkFrame(of: other.contentView, in: window))
+                    let resting = try paintedCardFrame(other, in: window, pixels: pixels, backgroundX: backgroundX)
                     let overlap = projected.intersection(resting)
                     XCTAssertTrue(overlap.isNull || overlap.width < 1 || overlap.height < 1,
                                   "Focused card \(index) overlaps card \(otherIndex) by \(overlap)")
@@ -791,9 +780,9 @@ final class NativeInformationCardHostedTests: XCTestCase {
         }
         window.layoutIfNeeded()
         try await Task.sleep(for: .seconds(1))
-        let cards = nativeCards(in: window).filter { !$0.isFocused }
+        let cards = focusItems(in: window).filter { UIFocusSystem.focusSystem(for: window)?.focusedItem !== $0 }
         XCTAssertGreaterThanOrEqual(cards.count, 3)
-        let frames = cards.map { $0.contentView.convert($0.contentView.bounds, to: window).insetBy(dx: 12, dy: 12) }
+        let frames = try cards.map { try focusFrame($0, in: window).insetBy(dx: 12, dy: 12) }
         let baseline = try informationPixels(window)
         var changes: [Int] = []
         for tick in 1...12 {
@@ -855,6 +844,10 @@ final class NativeInformationCardHostedTests: XCTestCase {
         XCTAssertLessThanOrEqual(placedSize.height, 280)
         let baseline = try informationPixels(window)
         let region = card.contentView.convert(card.contentView.bounds, to: window).insetBy(dx: 12, dy: 12).integral
+        let baselineImage = XCTAttachment(image: DetailTransitionSnapshot.image(of: window))
+        baselineImage.name = "native-information-sizing-baseline"
+        baselineImage.lifetime = .keepAlways
+        add(baselineImage)
         var sizes: [CGSize] = []
         var changedPixels: [Int] = []
         for tick in 0..<8 {
@@ -916,9 +909,9 @@ final class NativeInformationCardHostedTests: XCTestCase {
         try await Task.sleep(for: .milliseconds(100))
         model.showsInformation = true
         try await Task.sleep(for: .seconds(3))
-        let cards = nativeCards(in: window).filter { !$0.isFocused }
+        let cards = focusItems(in: window).filter { UIFocusSystem.focusSystem(for: window)?.focusedItem !== $0 }
         XCTAssertGreaterThanOrEqual(cards.count, 3)
-        let frames = cards.map { $0.contentView.convert($0.contentView.bounds, to: window).insetBy(dx: 12, dy: 12) }
+        let frames = try cards.map { try focusFrame($0, in: window).insetBy(dx: 12, dy: 12) }
         let baseline = try informationPixels(window)
         var counts: [Int] = []
         var shimmerCounts: [Int] = []
@@ -1047,14 +1040,11 @@ final class NativeInformationCardHostedTests: XCTestCase {
         window.makeKeyAndVisible()
         host.view.layoutIfNeeded()
         try await Task.sleep(for: .seconds(2))
-        let cards = nativeCards(in: window)
-        XCTAssertFalse(cards.isEmpty)
-        for card in cards {
-            XCTAssertEqual(card.cardBackgroundColor, UIColor(ThemePalette.dark.raised.fill))
-        }
-        let before = cards.map { $0.convert($0.bounds, to: window) }
+        let cards = focusItems(in: window)
+        XCTAssertGreaterThanOrEqual(cards.count, 5)
+        let before = try cards.map { try focusFrame($0, in: window) }
         try await Task.sleep(for: .seconds(1))
-        let after = cards.map { $0.convert($0.bounds, to: window) }
+        let after = try cards.map { try focusFrame($0, in: window) }
         for (index, frame) in after.enumerated() {
             XCTAssertGreaterThan(frame.width, 100)
             XCTAssertLessThanOrEqual(frame.maxX, window.bounds.maxX)
@@ -1062,7 +1052,6 @@ final class NativeInformationCardHostedTests: XCTestCase {
             XCTAssertLessThan(frame.height, 1080)
             XCTAssertEqual(frame.height, before[index].height, accuracy: 1)
             XCTAssertEqual(frame.width, before[index].width, accuracy: 1)
-            XCTAssertEqual(cards[index].intrinsicContentSize.width, frame.width, accuracy: 1)
         }
         let attachment = XCTAttachment(string: after.map(String.init(describing:)).joined(separator: "\n"))
         attachment.name = "native-information-card-frames"
@@ -1113,6 +1102,67 @@ final class NativeInformationCardHostedTests: XCTestCase {
 
     private func nativeCards(in view: UIView) -> [TVCardView] {
         (view as? TVCardView).map { [$0] } ?? view.subviews.flatMap(nativeCards(in:))
+    }
+
+    private func focusItems(in window: UIWindow) -> [any UIFocusItem] {
+        var containers: [any UIFocusItemContainer] = [window]
+        var seen = Set<ObjectIdentifier>()
+        var items: [ObjectIdentifier: any UIFocusItem] = [:]
+        while let container = containers.popLast() {
+            guard seen.insert(ObjectIdentifier(container)).inserted else { continue }
+            for item in container.focusItems(in: container.coordinateSpace.convert(window.bounds, from: window)) {
+                if let child = item.focusItemContainer { containers.append(child) }
+                if let view = item as? UIView { containers.append(view) }
+                if item.canBecomeFocused, !(item is UIScrollView) { items[ObjectIdentifier(item)] = item }
+            }
+        }
+        return items.values.sorted {
+            let first = (try? focusFrame($0, in: window)) ?? .zero
+            let second = (try? focusFrame($1, in: window)) ?? .zero
+            return abs(first.minY - second.minY) > 1 ? first.minY < second.minY : first.minX < second.minX
+        }
+    }
+
+    private func focusFrame(_ item: any UIFocusItem, in window: UIWindow) throws -> CGRect {
+        if let view = item as? UIView { return view.convert(view.bounds, to: window) }
+        var frame: CGRect?
+        var environment: (any UIFocusEnvironment)? = item
+        while let current = environment {
+            if frame == nil, let container = current.focusItemContainer {
+                frame = container.coordinateSpace.convert(item.frame, to: window)
+            }
+            if let scroll = current as? UIScrollView {
+                // SwiftUI's virtual items omit the scroll content's horizontal safe-area inset.
+                return try XCTUnwrap(frame).offsetBy(dx: scroll.safeAreaInsets.left, dy: 0)
+            }
+            environment = current.parentFocusEnvironment
+        }
+        return try XCTUnwrap(frame, "A native focus item must provide its coordinate space.")
+    }
+
+    private func paintedCardFrame(
+        _ item: any UIFocusItem, in window: UIWindow, pixels: [UInt8], backgroundX: Int
+    ) throws -> CGRect {
+        let frame = try focusFrame(item, in: window)
+        let background = (Int(frame.midY) * 1920 + backgroundX) * 4
+        func hasSurface(x: Int, y: Int) -> Bool {
+            guard x >= 0, x < 1920, y >= 0, y < 1080 else { return false }
+            let offset = (y * 1920 + x) * 4
+            return (0..<3).contains { Int(pixels[offset + $0]) - Int(pixels[background + $0]) > 20 }
+        }
+        var left = Int(frame.minX + 20)
+        var right = Int(frame.maxX - 20)
+        var top = Int(frame.minY + 20)
+        var bottom = Int(frame.maxY - 20)
+        while hasSurface(x: left - 1, y: Int(frame.midY)) { left -= 1 }
+        while hasSurface(x: right + 1, y: Int(frame.midY)) { right += 1 }
+        while hasSurface(x: Int(frame.midX), y: top - 1) { top -= 1 }
+        while hasSurface(x: Int(frame.midX), y: bottom + 1) { bottom += 1 }
+        let painted = CGRect(x: left, y: top, width: right - left + 1, height: bottom - top + 1)
+        XCTAssertGreaterThan(painted.width, frame.width * 0.8, "The probe must find a substantial card surface.")
+        XCTAssertGreaterThan(painted.height, frame.height * 0.8, "The probe must find a substantial card surface.")
+        XCTAssertTrue(painted.contains(CGPoint(x: frame.midX, y: frame.midY)))
+        return painted
     }
 
     private struct NativeInformationThemeProbe: View {
@@ -1185,7 +1235,7 @@ private struct NativeInformationStackingFixture: View {
 
 @MainActor
 private final class NativeInformationFocusHost: UIHostingController<AnyView> {
-    weak var target: UIView?
+    weak var target: (any UIFocusItem)?
     override var preferredFocusEnvironments: [any UIFocusEnvironment] {
         target.map { [$0] } ?? super.preferredFocusEnvironments
     }
