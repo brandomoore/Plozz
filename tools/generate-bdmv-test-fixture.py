@@ -28,12 +28,17 @@ def main():
     # Recognition is playlist-driven; this synthetic index has no menus or BD-J.
     (output / "BDMV/index.bdmv").write_bytes(b"INDX0200" + bytes(32))
     for clip, color, frequency, duration in (
-        ("00001", "red", 440, 8), ("00002", "blue", 880, 8), ("00003", "green", 220, 20)
+        ("00001", "red", 440, 8), ("00002", "blue", 880, 8), ("00003", "green", 220, 20),
+        ("00004", "yellow", 660, 8)
     ):
+        mapping = ["-map", "0:v", "-map", "1:a"]
+        if clip == "00004":
+            mapping += ["-map", "1:a"]
         subprocess.run([
             "ffmpeg", "-hide_banner", "-loglevel", "error", "-n",
             "-f", "lavfi", "-i", f"color=c={color}:size=1280x720:rate=24",
             "-f", "lavfi", "-i", f"sine=frequency={frequency}:sample_rate=48000",
+            *mapping,
             "-t", str(duration), "-c:v", "libx264", "-preset", "veryfast",
             "-threads", "2", "-pix_fmt", "yuv420p", "-g", "24", "-bf", "0",
             "-c:a", "ac3", "-b:a", "192k", "-ac", "2",

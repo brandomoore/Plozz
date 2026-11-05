@@ -84,6 +84,10 @@ final class DiscPlaybackTests: XCTestCase {
         XCTAssertEqual(DiscMenuInspection.availability(index: index), .unavailable(.missingMenu))
         index[56] = 0x80
         XCTAssertEqual(DiscMenuInspection.availability(index: index), .unavailable(.unsupportedRuntime))
+        for version in ["0240", "0300"] {
+            index.replaceSubrange(4..<8, with: version.utf8)
+            XCTAssertEqual(DiscMenuInspection.availability(index: index), .unavailable(.unsupportedRuntime))
+        }
         for end in 0..<index.count {
             XCTAssertEqual(DiscMenuInspection.availability(index: index.prefix(end)), .unknown)
         }

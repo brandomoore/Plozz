@@ -57,10 +57,11 @@ def stream_entry(pid: int, attributes: bytes) -> bytes:
     return b"\x03\x01" + u16(pid) + bytes([len(attributes)]) + attributes
 
 
-def playlist(clip: str) -> bytes:
-    streams = bytes(2) + b"\x01\x01" + bytes(10)
+def playlist(clip: str, audio_pids=(0x1100,)) -> bytes:
+    streams = bytes(2) + bytes([1, len(audio_pids)]) + bytes(10)
     streams += stream_entry(0x1011, b"\x1b\x51")
-    streams += stream_entry(0x1100, b"\x81\x31eng")
+    for pid in audio_pids:
+        streams += stream_entry(pid, b"\x81\x31eng")
     item = clip.encode("ascii") + b"M2TS" + u16(1) + b"\0"
     item += u32(0) + u32(8 * 45000) + bytes(8) + b"\x80\0\0\0"
     item += u16(len(streams)) + streams
@@ -71,14 +72,15 @@ def playlist(clip: str) -> bytes:
             bytes(20) + application + bytes(6) + body + marks)
 
 
-def clip_info(packet_count: int) -> bytes:
+def clip_info(packet_count: int, audio_pids=(0x1100,)) -> bytes:
     clip = section(bytes(2) + b"\x01\x01" + u32(0) + u32(1200000) +
                    u32(packet_count) + bytes(128) + u16(0))
     sequence = section(b"\0\x01" + u32(0) + b"\x01\0" +
                        u16(0x1011) + u32(0) + u32(0) + u32(8 * 45000))
     streams = u16(0x1011) + b"\x03\x1b\x51\x30"
-    streams += u16(0x1100) + b"\x05\x81\x31eng"
-    program = section(b"\0\x01" + u32(0) + u16(0x100) + b"\x02\0" + streams)
+    for pid in audio_pids:
+        streams += u16(pid) + b"\x05\x81\x31eng"
+    program = section(b"\0\x01" + u32(0) + u16(0x100) + bytes([1 + len(audio_pids), 0]) + streams)
     sequence_offset = 40 + len(clip)
     program_offset = sequence_offset + len(sequence)
     cpi_offset = program_offset + len(program)
@@ -117,6 +119,14 @@ def create_hdmv_metadata(destination: Path, source_clips: Path) -> None:
             raise ValueError("Expected complete original M2TS clips")
         (destination / f"BDMV/PLAYLIST/{clip}.mpls").write_bytes(playlist(clip))
         (destination / f"BDMV/CLIPINF/{clip}.clpi").write_bytes(clip_info(size // 192))
+
+    multi_audio = source_clips / "00004.m2ts"
+    if multi_audio.exists():
+        size = multi_audio.stat().st_size
+        if not size or size % 192:
+            raise ValueError("Expected a complete original multi-audio M2TS clip")
+        (destination / "audio-selection.mpls").write_bytes(playlist("00004", (0x1101, 0x1100)))
+        (destination / "BDMV/CLIPINF/00004.clpi").write_bytes(clip_info(size // 192, (0x1100, 0x1101)))
 
 
 def create(destination: Path, source_clips: Path) -> None:

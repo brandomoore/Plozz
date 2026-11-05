@@ -66,12 +66,32 @@ final class WebDAVDiscPlaybackHostedTests: XCTestCase {
         try await checkBluRayPlayback(startPosition: 0, discMenus: true)
     }
 
-    private func checkBluRayPlayback(startPosition: Double, discMenus: Bool = false) async throws {
+    func testNativeHDMVMissingOpeningRecoversToTopMenu() async throws {
+        try await checkBluRayPlayback(startPosition: 0, discMenus: true, missingOpening: true)
+    }
+
+    func testNativeHDMVFiniteStillHonorsPauseAndResumesNavigation() async throws {
+        try await checkBluRayPlayback(startPosition: 0, discMenus: true, discStillSeconds: 2)
+    }
+
+    func testNativeHDMVInfiniteStillKeepsFrameUntilMenuCommand() async throws {
+        try await checkBluRayPlayback(startPosition: 0, discMenus: true, discStillSeconds: 0)
+    }
+
+    func testNativeHDMVAudioSelectionUsesPIDRatherThanOrdinal() async throws {
+        try await checkBluRayPlayback(startPosition: 0, discMenus: true, discAudioSelection: true)
+    }
+
+    private func checkBluRayPlayback(
+        startPosition: Double, discMenus: Bool = false, missingOpening: Bool = false,
+        discStillSeconds: UInt16? = nil, discAudioSelection: Bool = false
+    ) async throws {
         let root = try XCTUnwrap(Bundle(for: Self.self).resourceURL)
             .appendingPathComponent("Fixtures/bluray-test-pattern")
         let subpaths = try FileManager.default.subpathsOfDirectory(atPath: root.path)
         var files: [String: URL] = [:]
         var sizes: [String: Int] = [:]
+        var overrides: [String: Data] = [:]
         var directories: Set<String> = [""]
         for path in subpaths {
             let url = root.appendingPathComponent(path)
@@ -96,10 +116,34 @@ final class WebDAVDiscPlaybackHostedTests: XCTestCase {
                     sizes[path] = try XCTUnwrap(values.fileSize)
                 }
             }
+            if discAudioSelection {
+                let playlist = metadata.appendingPathComponent("audio-selection.mpls")
+                files["BDMV/PLAYLIST/00001.mpls"] = playlist
+                sizes["BDMV/PLAYLIST/00001.mpls"] = try Data(contentsOf: playlist).count
+            }
+            if missingOpening {
+                let clipInfo = "BDMV/CLIPINF/00001.clpi"
+                files["BDMV/BACKUP/CLIPINF/00001.clpi"] = files.removeValue(forKey: clipInfo)
+                sizes["BDMV/BACKUP/CLIPINF/00001.clpi"] = sizes.removeValue(forKey: clipInfo)
+                directories.formUnion(["BDMV/BACKUP", "BDMV/BACKUP/CLIPINF"])
+                files.removeValue(forKey: "BDMV/STREAM/00001.m2ts")
+                sizes.removeValue(forKey: "BDMV/STREAM/00001.m2ts")
+            }
+            if let discStillSeconds {
+                let path = "BDMV/PLAYLIST/00001.mpls"
+                var data = try Data(contentsOf: XCTUnwrap(files[path]))
+                let playlistStart = data[8..<12].reduce(0) { ($0 << 8) | Int($1) }
+                let item = playlistStart + 12
+                data[item + 29] = discStillSeconds == 0 ? 2 : 1
+                data[item + 30] = UInt8(discStillSeconds >> 8)
+                data[item + 31] = UInt8(truncatingIfNeeded: discStillSeconds)
+                overrides[path] = data
+            }
         }
         let fixtureFiles = files
         let fixtureSizes = sizes
         let fixtureDirectories = directories
+        let fixtureOverrides = overrides
         let reads = FixtureReads()
         let server = try IPTVTestHTTPServer { request in
             let target = String(request.split(separator: " ").dropFirst().first ?? "")
@@ -129,6 +173,11 @@ final class WebDAVDiscPlaybackHostedTests: XCTestCase {
                   range.count == 2, let start = Int(range[0]), let end = Int(range[1]),
                   start >= 0, end >= start, end < size else { return .init(status: 416) }
             reads.record(path)
+            if let data = fixtureOverrides[path] {
+                return .init(data: data.subdata(in: start..<(end + 1)), status: 206, headers: [
+                    "Content-Range": "bytes \(start)-\(end)/\(size)", "ETag": "\"fixture\""
+                ])
+            }
             return .init(file: file, status: 206, headers: [
                 "Content-Range": "bytes \(start)-\(end)/\(size)", "ETag": "\"fixture\""
             ], range: start..<(end + 1))
@@ -138,9 +187,11 @@ final class WebDAVDiscPlaybackHostedTests: XCTestCase {
         try await checkPlayback(
             base: base, path: "BDMV/index.bdmv", credential: .anonymous,
             seekPositions: discMenus ? [2] : [10, 2, 13], startPosition: startPosition,
-            discMenus: discMenus
+            discMenus: discMenus, expectedDiscPlaylist: missingOpening ? 2 : 1,
+            discStillSeconds: discStillSeconds, discAudioSelection: discAudioSelection
         )
-        XCTAssertTrue(reads.contains("BDMV/STREAM/00001.m2ts"))
+        XCTAssertEqual(reads.contains("BDMV/STREAM/00001.m2ts"), !missingOpening && !discAudioSelection)
+        XCTAssertEqual(reads.contains("BDMV/STREAM/00004.m2ts"), discAudioSelection)
         XCTAssertTrue(reads.contains("BDMV/STREAM/00002.m2ts"))
         XCTAssertFalse(reads.contains("BDMV/STREAM/00003.m2ts"), "The largest clip is not the selected movie")
     }
@@ -346,7 +397,8 @@ final class WebDAVDiscPlaybackHostedTests: XCTestCase {
         base: URL, path: String, credential: WebDAVCredential, seekPositions: [Double],
         startPosition: Double = 0, sustainedPlaybackSeconds: Int = 0,
         requiresNativeHLS: Bool = false, recordIO: (@Sendable (String) async -> Void)? = nil,
-        discMenus: Bool = false
+        discMenus: Bool = false, expectedDiscPlaylist: Int = 1, discStillSeconds: UInt16? = nil,
+        discAudioSelection: Bool = false
     ) async throws {
         let environment = ProcessInfo.processInfo.environment
         let detailPlayDelay: Duration?
@@ -556,15 +608,45 @@ final class WebDAVDiscPlaybackHostedTests: XCTestCase {
         }
         if discMenus {
             let menu = try XCTUnwrap(engine.discMenu)
-            XCTAssertEqual(menu.playlist, 1, "Native first play must select its own playlist")
+            XCTAssertEqual(menu.playlist, expectedDiscPlaylist, "Native navigation must select the authored playlist")
             XCTAssertNil(menu.failure)
-            menu.openMenu()
+            if discAudioSelection {
+                try await wait(engine: engine, seconds: 10) { engine.currentAudioTrackID == 2 }
+                XCTAssertEqual(menu.playlist, 1)
+                XCTAssertNil(menu.notice)
+                engine.selectAudioTrack(try XCTUnwrap(engine.audioTracks.first { $0.id == 1 }))
+                try await wait(engine: engine, seconds: 15) { engine.currentAudioTrackID == 1 }
+                XCTAssertEqual(menu.playlist, 1, "The player choice must not escape to another playlist")
+                XCTAssertNil(menu.notice)
+            }
+            if let discStillSeconds {
+                try await wait(engine: engine, seconds: 20) { menu.isStill && menu.failure == nil }
+                engine.pause()
+                try await Task.sleep(for: .seconds(3))
+                XCTAssertTrue(menu.isStill, "User pause must suspend the authored still timer")
+                XCTAssertEqual(menu.playlist, 1)
+                let heldFrame = await engine.hasRenderedVideoFrame()
+                XCTAssertTrue(heldFrame, "A still must retain the presented video frame")
+                engine.play()
+                if discStillSeconds == 0 {
+                    try await Task.sleep(for: .seconds(1))
+                    XCTAssertTrue(menu.isStill, "An infinite still must not advance by itself")
+                    menu.openMenu()
+                } else {
+                    let resumed = ContinuousClock.now
+                    try await wait(engine: engine, seconds: 10) { menu.playlist == 2 }
+                    XCTAssertGreaterThan(resumed.duration(to: .now), .seconds(1))
+                }
+            } else {
+                menu.openMenu()
+            }
             try await wait(engine: engine, seconds: 45) {
                 guard menu.playlist == 2, menu.failure == nil else { return false }
                 return await engine.hasRenderedVideoFrame()
             }
             try await waitForPlayback(engine, after: 0.5, before: 5)
             XCTAssertNil(menu.failure)
+            XCTAssertFalse(menu.isStill)
             engine.stop()
             await engine.drainTransport()
             return

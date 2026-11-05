@@ -87,7 +87,7 @@ public enum DiscMenuInspection {
         guard index.count >= 40, index.count <= 2 * 1_024 * 1_024 else { return .unknown }
         let bytes = [UInt8](index)
         let header = String(decoding: bytes.prefix(8), as: UTF8.self)
-        guard header == "INDX0100" || header == "INDX0200" else { return .unknown }
+        guard ["INDX0100", "INDX0200", "INDX0240", "INDX0300"].contains(header) else { return .unknown }
         func word(_ offset: Int) -> Int {
             bytes[offset..<offset + 4].reduce(0) { ($0 << 8) | Int($1) }
         }

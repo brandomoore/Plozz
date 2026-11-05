@@ -30,7 +30,10 @@
     unsigned _width, _height, _clip, _region;
     NSInteger _playlist, _generation;
     BOOL _selectionPending, _stopPending, _failed, _synchronizing, _hasPalette, _finishing, _menuOpen;
-    BOOL _openingRecoveryAttempted, _userSelected, _trackNoticeShown;
+    BOOL _timedStill, _vmStill;
+    NSTimeInterval _stillRemaining, _lastStillTick;
+    BOOL _openingRecoveryAttempted, _userSelected, _pgEnabled;
+    unsigned _audioStream, _subtitleStream;
     NSUInteger _finishBytes;
 }
 @property(atomic) BOOL stopped;
@@ -389,7 +392,21 @@ static unsigned component(double value) {
 
 - (void)pump {
     if (self.stopped || _failed || !_disc) return;
+    NSTimeInterval now = NSProcessInfo.processInfo.systemUptime;
+    if (_timedStill && _stillRemaining > 0 && !self.playbackPaused) {
+        _stillRemaining = MAX(0, _stillRemaining - (now - _lastStillTick));
+        if (_stillRemaining == 0) {
+            // A final still returns zero because there is no next clip. The
+            // following read delivers EOF and resumes the original HDMV program.
+            bd_read_skip_still(_disc);
+            _timedStill = NO;
+            [self publishStillResuming:NO];
+            _finishing = YES;
+        }
+    }
+    _lastStillTick = now;
     BOOL drained = NO;
+    BOOL audioChanged = NO, subtitleChanged = NO;
     uint8_t tail[65536];
     for (unsigned i = 0; i < 128; i++) {
         BD_EVENT event = {0};
@@ -407,36 +424,51 @@ static unsigned component(double value) {
         }
         if (!event.event) { drained = YES; break; }
         printf("HDMV event=%u parameter=%u\n", event.event, event.param);
-        if (event.event == BD_EVENT_STILL_TIME || (event.event == BD_EVENT_STILL && event.param)) {
-            [self fail:@"This disc requires still-frame navigation that is not supported yet."];
-            return;
+        if (event.event == BD_EVENT_STILL_TIME) {
+            if (event.param > 300) { [self fail:@"Invalid disc still duration"]; return; }
+            _timedStill = YES;
+            _stillRemaining = event.param;
+            _lastStillTick = NSProcessInfo.processInfo.systemUptime;
+            _finishing = NO;
+            [self publishStillResuming:NO];
+        } else if (event.event == BD_EVENT_STILL) {
+            _vmStill = event.param != 0;
+            [self publishStillResuming:!_vmStill];
         }
-        if (_userSelected && !_trackNoticeShown &&
-            (event.event == BD_EVENT_AUDIO_STREAM || event.event == BD_EVENT_PG_TEXTST_STREAM ||
-             event.event == BD_EVENT_PG_TEXTST)) {
-            _trackNoticeShown = YES;
-            dispatch_async(dispatch_get_main_queue(), ^{
-                if (!self.stopped && self.noticeChanged) {
-                    self.noticeChanged(@"Disc track selections aren't supported. Use playback controls.");
-                }
-            });
+        if (event.event == BD_EVENT_AUDIO_STREAM) {
+            _audioStream = event.param; audioChanged = YES;
+        } else if (event.event == BD_EVENT_PG_TEXTST_STREAM) {
+            _subtitleStream = event.param; subtitleChanged = YES;
+        } else if (event.event == BD_EVENT_PG_TEXTST) {
+            _pgEnabled = event.param != 0; subtitleChanged = YES;
         }
         if (event.event == BD_EVENT_PLAYLIST) {
             _finishing = NO;
+            _timedStill = NO; _vmStill = NO;
+            [self publishStillResuming:NO];
             if (_title) bd_free_title_info(_title);
             _title = bd_get_playlist_info(_disc, event.param, 0);
             if (!_title || !_title->clip_count || _title->clip_count > 1000 || _title->angle_count > 1) {
                 [self fail:@"Unsupported disc playlist"]; return;
             }
+            for (unsigned i = 0; i + 1 < _title->clip_count; i++) {
+                if (_title->clips[i].still_mode != BLURAY_STILL_NONE) {
+                    [self fail:@"This disc requires a pause between video clips that is not supported yet."];
+                    return;
+                }
+            }
             _playlist = event.param; _selectionPending = YES; _stopPending = NO;
         } else if (event.event == BD_EVENT_PLAYLIST_STOP) {
             _stopPending = YES; _finishing = NO;
+            _timedStill = NO; _vmStill = NO;
+            [self publishStillResuming:NO];
         } else if (event.event == BD_EVENT_END_OF_TITLE) {
             _finishing = NO;
         } else if (event.event == BD_EVENT_SEEK && !_synchronizing && _playlist >= 0) {
             _selectionPending = YES;
         } else if (event.event == BD_EVENT_PLAYITEM) {
             _clip = event.param;
+            audioChanged = YES; subtitleChanged = YES;
         } else if (event.event == BD_EVENT_MENU) {
             _menuOpen = event.param != 0;
             BOOL visible = _menuOpen;
@@ -471,7 +503,76 @@ static unsigned component(double value) {
         dispatch_async(dispatch_get_main_queue(), ^{
             if (!self.stopped && self.selectionChanged) self.selectionChanged(playlist, position, generation);
         });
+        audioChanged = YES; subtitleChanged = YES;
     }
+    [self publishTracksAudio:audioChanged subtitles:subtitleChanged];
+}
+
+- (NSInteger)pidForStream:(unsigned)stream subtitle:(BOOL)subtitle {
+    if (!_title || _clip >= _title->clip_count || !stream) return -1;
+    BLURAY_CLIP_INFO *clip = &_title->clips[_clip];
+    unsigned count = subtitle ? clip->pg_stream_count : clip->audio_stream_count;
+    BLURAY_STREAM_INFO *streams = subtitle ? clip->pg_streams : clip->audio_streams;
+    if (stream > count || !streams || streams[stream - 1].subpath_id != 0xff) return -1;
+    return streams[stream - 1].pid;
+}
+
+- (void)publishTracksAudio:(BOOL)audio subtitles:(BOOL)subtitles {
+    if ((!audio && !subtitles) || _playlist < 0 || !_title || _failed) return;
+    NSInteger audioPID = [self pidForStream:_audioStream subtitle:NO];
+    NSInteger subtitlePID = [self pidForStream:_subtitleStream subtitle:YES];
+    NSInteger generation = _generation;
+    BOOL enabled = _pgEnabled;
+    BOOL hasAudio = _audioStream && _audioStream != 0xff;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (self.stopped) return;
+        if (audio && hasAudio && self.audioPIDChanged) {
+            self.audioPIDChanged(audioPID, generation);
+        }
+        if (subtitles && self.subtitlePIDChanged) self.subtitlePIDChanged(subtitlePID, enabled, generation);
+    });
+}
+
+- (void)selectTrackPID:(NSInteger)pid subtitle:(BOOL)subtitle generation:(NSInteger)generation
+           completion:(void (^)(BOOL))completion {
+    dispatch_async(self.queue, ^{
+        BOOL accepted = NO;
+        if (!self.stopped && !self->_failed && self->_disc) {
+            [self pump];
+            if (!self->_failed && generation == self->_generation &&
+                self->_title && self->_clip < self->_title->clip_count) {
+                BLURAY_CLIP_INFO *clip = &self->_title->clips[self->_clip];
+                unsigned count = subtitle ? clip->pg_stream_count : clip->audio_stream_count;
+                unsigned stream = subtitle ? self->_subtitleStream : self->_audioStream;
+                BOOL enabled = !(subtitle && pid < 0);
+                if (enabled) {
+                    stream = 0;
+                    for (unsigned i = 1; i <= count; i++) {
+                        if ([self pidForStream:i subtitle:subtitle] == pid) { stream = i; break; }
+                    }
+                }
+                if (!enabled || stream) {
+                    int result = bd_select_stream(self->_disc,
+                        subtitle ? BLURAY_PG_TEXTST_STREAM : BLURAY_AUDIO_STREAM, stream, enabled);
+                    [self pump];
+                    accepted = !self->_failed && result >= 0 && generation == self->_generation &&
+                        (subtitle ? self->_pgEnabled == enabled &&
+                            (!enabled || [self pidForStream:self->_subtitleStream subtitle:YES] == pid)
+                         : [self pidForStream:self->_audioStream subtitle:NO] == pid);
+                }
+            }
+        }
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (!self.stopped) completion(accepted);
+        });
+    });
+}
+
+- (void)publishStillResuming:(BOOL)resume {
+    BOOL active = _timedStill || _vmStill;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (!self.stopped && self.stillChanged) self.stillChanged(active, resume && !active);
+    });
 }
 
 - (void)key:(unsigned)key {

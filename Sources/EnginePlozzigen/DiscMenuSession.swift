@@ -45,14 +45,22 @@ final class DiscMenuSession {
     private var lastClockUpdate = Date.distantPast
     private let load: (TransportDiscDirectoryReader, TimeInterval) async throws -> Void
     private let pause: () -> Void
+    private let resume: () -> Void
     private let isPaused: () -> Bool
+    private let selectAudio: (Int) -> Bool
+    private let selectSubtitle: (Int, Bool) -> Bool
+    private var pendingAudioPID: Int?
+    private var pendingSubtitle: (pid: Int, enabled: Bool)?
 
     init(
         reader: TransportDiscDirectoryReader, region: UInt32?,
         state: DiscMenuPlaybackState,
         load: @escaping (TransportDiscDirectoryReader, TimeInterval) async throws -> Void,
         pause: @escaping () -> Void,
-        isPaused: @escaping () -> Bool
+        resume: @escaping () -> Void,
+        isPaused: @escaping () -> Bool,
+        selectAudio: @escaping (Int) -> Bool,
+        selectSubtitle: @escaping (Int, Bool) -> Bool
     ) throws {
         guard let independent = reader.makeIndependentReader() as? TransportDiscDirectoryReader else {
             throw CancellationError()
@@ -61,7 +69,10 @@ final class DiscMenuSession {
         self.state = state
         self.load = load
         self.pause = pause
+        self.resume = resume
         self.isPaused = isPaused
+        self.selectAudio = selectAudio
+        self.selectSubtitle = selectSubtitle
         let source = source
         guard let native = HDMVSession(
             files: Dictionary(uniqueKeysWithValues: reader.discFiles.map { ($0.path, NSNumber(value: $0.size)) }),
@@ -84,8 +95,35 @@ final class DiscMenuSession {
                 self.state.isMenuVisible = visible
             }
         }
+        native.stillChanged = { [weak self] active, resumePlayback in
+            MainActor.assumeIsolated {
+                guard let self, !self.stopped else { return }
+                let wasStill = self.state.isStill
+                self.state.isStill = active
+                if active {
+                    self.deadline?.cancel()
+                    self.pause()
+                } else if wasStill, resumePlayback, !self.isPaused() {
+                    self.resume()
+                }
+            }
+        }
         native.selectionChanged = { [weak self] playlist, position, generation in
             MainActor.assumeIsolated { self?.select(playlist, position: position, generation: generation) }
+        }
+        native.audioPIDChanged = { [weak self] pid, generation in
+            MainActor.assumeIsolated {
+                guard let self, !self.stopped, self.generation == generation else { return }
+                self.pendingAudioPID = pid
+                self.tracksReady()
+            }
+        }
+        native.subtitlePIDChanged = { [weak self] pid, enabled, generation in
+            MainActor.assumeIsolated {
+                guard let self, !self.stopped, self.generation == generation else { return }
+                self.pendingSubtitle = (pid, enabled)
+                self.tracksReady()
+            }
         }
         native.statusChanged = { [weak self] reason in
             MainActor.assumeIsolated { self?.fail(reason) }
@@ -118,6 +156,9 @@ final class DiscMenuSession {
         guard !stopped, generation > self.generation else { return }
         self.generation = generation
         loadedGeneration = nil
+        pendingAudioPID = nil
+        pendingSubtitle = nil
+        state.hasSubtitleSelection = false
         state.region = native?.selectedRegion ?? state.region
         let previous = selectionTask
         previous?.cancel()
@@ -134,6 +175,7 @@ final class DiscMenuSession {
                 self.loadedGeneration = generation
                 self.state.playlist = playlist
                 self.state.isOpening = false
+                self.tracksReady()
                 self.firstLoad?.resume()
                 self.firstLoad = nil
             } catch is CancellationError {
@@ -160,13 +202,51 @@ final class DiscMenuSession {
         native?.ended(loadedGeneration)
     }
 
+    func setPaused(_ paused: Bool) { native?.playbackPaused = paused }
+
+    func tracksReady() {
+        guard !stopped, loadedGeneration == generation else { return }
+        if let pid = pendingAudioPID {
+            pendingAudioPID = nil
+            if !selectAudio(pid) {
+                pendingAudioPID = pid
+                state.notice = String(localized: "The disc's selected audio track is unavailable.")
+            }
+        }
+        if let selection = pendingSubtitle {
+            pendingSubtitle = nil
+            if !selectSubtitle(selection.pid, selection.enabled) {
+                pendingSubtitle = selection
+                state.notice = String(localized: "The disc's selected subtitle track is unavailable.")
+            }
+        }
+    }
+
+    func chooseTrack(pid: Int, subtitle: Bool, completion: @escaping () -> Void) {
+        guard !stopped, let loadedGeneration, let native else {
+            state.notice = String(localized: "Wait for the disc video before selecting a track.")
+            return
+        }
+        native.selectTrackPID(pid, subtitle: subtitle, generation: loadedGeneration) { [weak self] accepted in
+            MainActor.assumeIsolated {
+                guard let self, !self.stopped, self.loadedGeneration == loadedGeneration else { return }
+                if accepted {
+                    if subtitle { self.pendingSubtitle = nil } else { self.pendingAudioPID = nil }
+                    completion()
+                } else {
+                    self.state.notice = String(localized: "The disc does not allow that track selection here.")
+                }
+            }
+        }
+    }
+
     private func armDeadline() {
         deadline?.cancel()
         deadline = Task { [weak self] in
             var activeSeconds = 0
             while activeSeconds < 45 {
                 do { try await Task.sleep(for: .seconds(1)) } catch { return }
-                guard let self, !self.stopped, !self.state.isMenuVisible else { return }
+                guard let self, !self.stopped, !self.state.isMenuVisible, !self.state.isStill else { return }
                 if !self.isPaused() { activeSeconds += 1 }
             }
             self?.fail(String(localized: "Disc playback did not start in time."))
@@ -187,9 +267,9 @@ final class DiscMenuSession {
         stopped = true
         selectionTask?.cancel()
         deadline?.cancel()
-        source.reader.close()
         noticeTask?.cancel()
         native?.stop()
+        source.reader.close()
         retiredNative = native
         native = nil
         firstLoad?.resume(throwing: CancellationError())

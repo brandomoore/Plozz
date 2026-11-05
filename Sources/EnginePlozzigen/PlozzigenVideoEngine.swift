@@ -411,6 +411,13 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
     private var discSession: DiscMenuSession?
     public var discMenu: DiscMenuPlaybackState? { discMenuPresentation }
     #endif
+    private var isHoldingDiscStill: Bool {
+        #if canImport(DiscNavigation) && canImport(UIKit)
+        discSession?.state.isStill == true
+        #else
+        false
+        #endif
+    }
     private let scrubStillExtractors = NSHashTable<PlozzigenScrubStillExtractor>.weakObjects()
     #if canImport(UIKit)
     private let videoView: UIView
@@ -637,7 +644,11 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
                             guard self.outputLoadGeneration == outputGeneration, !Task.isCancelled else {
                                 throw CancellationError()
                             }
-                            if self.intendsPause { self.engine.pause() } else { self.engine.play() }
+                            if self.intendsPause || self.discMenuPresentation.isStill {
+                                self.engine.pause()
+                            } else {
+                                self.engine.play()
+                            }
                             self.publishProbedSourceFacts(
                                 format: self.engine.sourceVideoFormat, generation: probeGeneration
                             )
@@ -648,7 +659,30 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
                             self.syncTracks()
                         },
                         pause: { [weak self] in self?.engine.pause() },
-                        isPaused: { [weak self] in self?.intendsPause ?? true }
+                        resume: { [weak self] in self?.engine.play() },
+                        isPaused: { [weak self] in self?.intendsPause ?? true },
+                        selectAudio: { [weak self] pid in
+                            guard let self else { return false }
+                            let tracks = self.engine.audioTracks.filter { $0.mpegTSPID == pid }
+                            guard tracks.count == 1, let track = tracks.first else { return false }
+                            if self.engine.activeAudioTrackIndex != track.id {
+                                self.engine.selectAudioTrack(index: track.id)
+                            }
+                            return true
+                        },
+                        selectSubtitle: { [weak self] pid, enabled in
+                            guard let self else { return false }
+                            if enabled {
+                                let tracks = self.engine.subtitleTracks.filter { $0.mpegTSPID == pid }
+                                guard pid >= 0, tracks.count == 1, let track = tracks.first,
+                                      let mediaTrack = self.subtitleTracks.first(where: { $0.id == track.id })
+                                else { return false }
+                                self.applySubtitleTrack(mediaTrack)
+                            } else {
+                                self.applySubtitleTrack(nil)
+                            }
+                            return true
+                        }
                     )
                     discSession = session
                     try await session.start()
@@ -1229,12 +1263,19 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
 
     public func play() {
         intendsPause = false
+        #if canImport(DiscNavigation) && canImport(UIKit)
+        discSession?.setPaused(false)
+        if discSession?.state.isStill == true { return }
+        #endif
         engine.play()
         isPaused = false
     }
 
     public func pause() {
         intendsPause = true
+        #if canImport(DiscNavigation) && canImport(UIKit)
+        discSession?.setPaused(true)
+        #endif
         engine.pause()
         isPaused = true
     }
@@ -1412,6 +1453,18 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
 
     public func selectAudioTrack(_ track: MediaTrack?) {
         guard let track else { return }
+        #if canImport(DiscNavigation) && canImport(UIKit)
+        if let discSession {
+            guard let pid = engine.audioTracks.first(where: { $0.id == track.id })?.mpegTSPID else {
+                discMenuPresentation.notice = String(localized: "The selected audio track has no disc identity.")
+                return
+            }
+            discSession.chooseTrack(pid: pid, subtitle: false) { [weak self] in
+                self?.engine.selectAudioTrack(index: track.id)
+            }
+            return
+        }
+        #endif
         if let serverRenditionAudio {
             if track.id != serverRenditionAudio.selectedID {
                 PlozzLog.playback.error("Server audio selection requires a new provider rendition.")
@@ -1544,6 +1597,35 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
     }
 
     public func selectSubtitleTrack(_ track: MediaTrack?) {
+        #if canImport(DiscNavigation) && canImport(UIKit)
+        if let discSession {
+            if discMenuPresentation.hasSubtitleSelection, discMenuPresentation.subtitleTrackID == track?.id {
+                return
+            }
+            let sourceTrack = engine.subtitleTracks.first { $0.id == track?.id }
+            guard track == nil || sourceTrack?.mpegTSPID != nil || sourceTrack?.isExternal == true else {
+                discMenuPresentation.notice = String(localized: "The selected subtitle track has no disc identity.")
+                return
+            }
+            discSession.chooseTrack(pid: sourceTrack?.mpegTSPID ?? -1, subtitle: true) { [weak self] in
+                self?.applySubtitleTrack(track)
+            }
+            return
+        }
+        #endif
+        applySubtitleTrack(track)
+    }
+
+    private func applySubtitleTrack(_ track: MediaTrack?) {
+        #if canImport(DiscNavigation) && canImport(UIKit)
+        let discSelectionChanged = discSession != nil && (
+            !discMenuPresentation.hasSubtitleSelection || discMenuPresentation.subtitleTrackID != track?.id
+        )
+        if discSession != nil {
+            discMenuPresentation.hasSubtitleSelection = true
+            discMenuPresentation.subtitleTrackID = track?.id
+        }
+        #endif
         clearASS()
         synchronizeNativeSubtitleOutput()
         if nativeSubtitleOutput != nil {
@@ -1556,6 +1638,9 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
         } else {
             engine.clearSubtitle()
         }
+        #if canImport(DiscNavigation) && canImport(UIKit)
+        if discSelectionChanged { onTracksChanged?() }
+        #endif
     }
 
     public func supportsSubtitleTimingAdjustments(for track: MediaTrack) -> Bool {
@@ -2003,7 +2088,7 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
                     // the user intends to stay paused, treat that as a phantom:
                     // re-assert the pause on the engine and keep our paused state
                     // rather than surfacing a "playing" overlay over a held frame.
-                    if self.intendsPause {
+                    if self.intendsPause || self.isHoldingDiscStill {
                         self.engine.pause()
                         self.isPaused = true
                         if self.status != .ready { self.status = .ready }
@@ -2308,6 +2393,9 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
         // already run once at playResolved, so tell the VM to rebuild the menu now
         // that the lists are populated — otherwise the subtitle/audio menu is
         // empty for the whole session.
+        #if canImport(DiscNavigation) && canImport(UIKit)
+        discSession?.tracksReady()
+        #endif
         onTracksChanged?()
     }
 }

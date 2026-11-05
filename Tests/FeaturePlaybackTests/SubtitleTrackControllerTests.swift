@@ -63,6 +63,32 @@ final class SubtitleTrackControllerTests: XCTestCase {
 
     // MARK: - Subtitle OFF
 
+    #if canImport(UIKit)
+    func testDiscSelectionsOwnTheOverlayWithoutChangingRememberedPreferences() {
+        let (sut, host, engine) = makeSUT(engineKind: .plozzigen)
+        let disc = DiscMenuPlaybackState()
+        engine.discMenu = disc
+        engine.subtitleTracks = [embeddedText(5), embeddedText(9, language: "ja")]
+        engine.audioTracks = [audio(1, language: "en"), audio(2, language: "ja")]
+        engine.currentAudioTrackID = 1
+        disc.hasSubtitleSelection = true
+        disc.subtitleTrackID = 9
+        sut.loadTrackOptions()
+        XCTAssertEqual(sut.selectedSubtitleTrackID, 9)
+        XCTAssertEqual(engine.lastSelectedSubtitleID, 9)
+        XCTAssertTrue(host.recordedSubtitle.isEmpty)
+        disc.subtitleTrackID = nil
+        sut.loadTrackOptions()
+        XCTAssertNil(sut.selectedSubtitleTrackID)
+        XCTAssertTrue(engine.lastSubtitleSelectionCleared)
+        sut.selectAudioOption(id: 2)
+        XCTAssertTrue(host.recordedAudioLanguage.isEmpty)
+        XCTAssertEqual(sut.selectedAudioTrackID, 1, "Disc controls reflect confirmed playback, not an optimistic pick")
+        sut.queueImportedAudio(language: "ja")
+        XCTAssertEqual(engine.audioSelections.count, 1, "Series memory must not override disc navigation")
+    }
+    #endif
+
     func testAudioSelectionImportAndRestorationUseHostRouting() {
         for action in 0..<3 {
             let (sut, host, engine) = makeSUT(engineKind: .plozzigen)
@@ -657,6 +683,9 @@ private final class SpyTrackEngine: VideoEngine {
     var audioTracks: [MediaTrack] = []
     var subtitleTracks: [MediaTrack] = []
     var currentAudioTrackID: Int?
+    #if canImport(UIKit)
+    var discMenu: DiscMenuPlaybackState?
+    #endif
 
     var onProgress: (@MainActor () -> Void)?
     var onFailure: (@MainActor (AppError) -> Void)?

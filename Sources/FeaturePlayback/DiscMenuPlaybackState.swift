@@ -7,6 +7,9 @@ public final class DiscMenuPlaybackState {
     public var image: UIImage?
     public var isOpening = true
     public var isMenuVisible = false
+    public var isStill = false
+    public var hasSubtitleSelection = false
+    public var subtitleTrackID: Int?
     public var failure: String?
     public var notice: String?
     public var region: UInt32 = 1
@@ -20,6 +23,9 @@ public final class DiscMenuPlaybackState {
         image = nil
         isOpening = true
         isMenuVisible = false
+        isStill = false
+        hasSubtitleSelection = false
+        subtitleTrackID = nil
         failure = nil
         notice = nil
         region = 1

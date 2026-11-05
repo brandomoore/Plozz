@@ -6,12 +6,16 @@ NS_ASSUME_NONNULL_BEGIN
 
 @interface HDMVSession : NSObject
 @property(nonatomic) BOOL automaticRegion;
+@property(atomic) BOOL playbackPaused;
 @property(nonatomic, readonly) unsigned selectedRegion;
 @property(nonatomic, copy) void (^imageChanged)(UIImage * _Nullable image);
 @property(nonatomic, copy) void (^selectionChanged)(NSInteger playlist, double position, NSInteger generation);
 @property(nonatomic, copy) void (^statusChanged)(NSString *status);
 @property(nonatomic, copy) void (^noticeChanged)(NSString *notice);
 @property(nonatomic, copy) void (^menuVisibilityChanged)(BOOL visible);
+@property(nonatomic, copy) void (^stillChanged)(BOOL active, BOOL resumePlayback);
+@property(nonatomic, copy) void (^audioPIDChanged)(NSInteger pid, NSInteger generation);
+@property(nonatomic, copy) void (^subtitlePIDChanged)(NSInteger pid, BOOL enabled, NSInteger generation);
 - (nullable instancetype)initWithFiles:(NSDictionary<NSString *, NSNumber *> *)files
                                region:(unsigned)region
                             readRange:(NSData * _Nullable (^)(NSString *, int64_t, int64_t))readRange;
@@ -23,6 +27,8 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)menu;
 - (void)updateTime:(double)seconds generation:(NSInteger)generation;
 - (void)ended:(NSInteger)generation;
+- (void)selectTrackPID:(NSInteger)pid subtitle:(BOOL)subtitle generation:(NSInteger)generation
+           completion:(void (^)(BOOL accepted))completion;
 - (void)stop;
 - (void)drainWithCompletion:(void (^)(void))completion NS_SWIFT_NAME(drain(completion:));
 @end
