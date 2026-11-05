@@ -51,7 +51,7 @@ struct TrailerPlaybackCue: View {
             Chevron()
                 .frame(width: 44, height: 14)
                 .accessibilityHidden(true)
-            Text("Up for playback controls")
+            Text("Up for playback controls", comment: "tvOS detail-page hint: press Up on the remote to open full-screen trailer playback controls. Up is the remote direction.")
                 .font(.caption)
                 .foregroundStyle(.white.opacity(0.8))
                 .shadow(color: .black, radius: 4)
@@ -88,7 +88,7 @@ extension View {
         controller: HeroTrailerController,
         itemID: String,
         role: HeroTrailerSurfaceRole,
-        title: String = "",
+        title: String = "", // l10n:content - provider-supplied media title
         navigationStyle: NavigationStyle? = nil,
         enabled: Bool = true,
         buttonRequest: Int = 0,
@@ -108,7 +108,7 @@ private struct TrailerFullscreenModifier: ViewModifier {
     let controller: HeroTrailerController
     let itemID: String
     let role: HeroTrailerSurfaceRole
-    let title: String
+    let title: String // l10n:content - provider-supplied media title
     let navigationStyle: NavigationStyle?
     let enabled: Bool
     let buttonRequest: Int
@@ -154,7 +154,7 @@ private struct TrailerFullscreenModifier: ViewModifier {
 struct TrailerFullscreenPresentation: UIViewControllerRepresentable {
     let controller: HeroTrailerController
     @Binding var request: TrailerFullscreenRequest?
-    let title: String
+    let title: String // l10n:content - provider-supplied media title
     @Environment(\.heroTrailerPlayerFactory) private var factory
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 

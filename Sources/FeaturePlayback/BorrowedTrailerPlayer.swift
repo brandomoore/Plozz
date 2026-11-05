@@ -14,7 +14,7 @@ public final class BorrowedTrailerPlayer: UIViewController {
     private let input: PlayerInputViewController
 
     public init(
-        player: AVPlayer, surface: UIView, title: String,
+        player: AVPlayer, surface: UIView, title: String, // l10n:content - provider-supplied media title
         settings: PlaybackSettings = .default, palette: ThemePalette = .dark,
         onDismiss: @escaping () -> Void
     ) {
