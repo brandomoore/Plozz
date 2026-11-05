@@ -379,6 +379,9 @@ struct HomeTab: View {
                     // server picker), so best-source selection still happens there and
                     // at play time (requestPlay).
                     let item = $0
+                    if heroBackground.settings.detailTrailerEnabled {
+                        heroTrailerController.handoffToDetail(itemID: item.id)
+                    }
                     let handsOffTrailer = heroTrailerController.isShowing(item.id)
                         && heroTrailerController.isPlaying
                     #if os(tvOS)

@@ -347,7 +347,9 @@ public struct ItemDetailView: View {
             // item, do nothing — the picture keeps rolling (and keeps its live
             // session mute) while metadata swaps.
             guard !heroTrailerController.isShowing(item.id) else {
-                heroTrailerController.setPaused(false)
+                heroTrailerController.claimSurface(.detail, itemID: item.id)
+                heroTrailerController.setPaused(false, surfaceRole: .detail)
+                heroTrailerController.startPrepared()
                 return
             }
             try? await Task.sleep(for: .seconds(3))
@@ -362,6 +364,7 @@ public struct ItemDetailView: View {
                 resolvedURL: source.url,
                 muted: heroBackground.settings.detailTrailerMuted
             )
+            heroTrailerController.claimSurface(.detail, itemID: item.id)
         }
         .confirmationDialog(
             "Request as Admin?",

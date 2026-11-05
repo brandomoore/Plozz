@@ -568,8 +568,7 @@ struct HomeHeroView: View {
         }
         .onDisappear {
             onTrailerReturnItemChanged(nil)
-            // Leaving Home means nobody can see this trailer, so it should stop
-            // streaming and decoding rather than play on behind another screen.
+            // Detail may already own the same player; only release Home's work.
             resetTrailer(stopPlayer: true)
         }
         .onChange(of: trailerReturnItemID, initial: true) { _, itemID in
@@ -722,6 +721,7 @@ struct HomeHeroView: View {
                 return
             }
             if trailerController.isShowing(item.id) {
+                trailerController.claimSurface(.home, itemID: item.id)
                 trailerController.setEndHandler(ownerID: "home-hero") { [itemID = item.id] in
                     guard current?.id == itemID, items.count > 1 else { return }
                     page(
@@ -760,6 +760,7 @@ struct HomeHeroView: View {
                 resolvedURL: source.url,
                 muted: backgroundSettings.homeTrailerMuted
             )
+            trailerController.claimSurface(.home, itemID: item.id)
             // Do not start the progress timeline until AVPlayer is ready. This
             // absorbs startup latency behind the static image, so 3s + duration
             // is exact and the timer cannot cut the trailer short.
@@ -2285,7 +2286,7 @@ struct HomeHeroView: View {
             pausedAt = Date()
             runEpoch &+= 1
         }
-        trailerController.setPaused(true)
+        trailerController.setPaused(true, surfaceRole: .home)
     }
 
     /// Resumes the auto-advance when the hero un-recedes (focus returns to the hero
@@ -2302,10 +2303,10 @@ struct HomeHeroView: View {
         }
         if activeTrailerDuration > 0 {
             pausedAt = nil
-            trailerController.setPaused(false)
+            trailerController.setPaused(false, surfaceRole: .home)
         } else {
             restartDwell()
-            trailerController.setPaused(false)
+            trailerController.setPaused(false, surfaceRole: .home)
         }
         runEpoch &+= 1
     }

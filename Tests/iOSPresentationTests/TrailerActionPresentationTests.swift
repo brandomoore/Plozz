@@ -1,7 +1,9 @@
 #if os(iOS)
+import AVFoundation
 import CoreModels
 import CoreUI
 import FeatureHomeCore
+import Observation
 import SwiftUI
 import UIKit
 import Vision
@@ -10,6 +12,52 @@ import XCTest
 
 @MainActor
 final class TrailerActionPresentationTests: XCTestCase {
+    func testHomeToDetailRetainsTrailerAcrossSurfaceDisappearance() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let directory = try XCTUnwrap(Bundle(for: Self.self).url(
+            forResource: "Fixtures", withExtension: nil
+        )).appendingPathComponent("active-picture-hls")
+        let server = try SubtitleFixtureServer(directory: directory)
+        defer { server.stop() }
+        let port = try await server.start()
+        let url = try XCTUnwrap(URL(string: "http://127.0.0.1:\(port)/active-picture.m3u8"))
+        let fixture = TrailerHandoffFixture(url: url)
+        let host = UIHostingController(rootView: TrailerHandoffRoot(fixture: fixture))
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer {
+            fixture.controller.stop()
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        let deadline = ContinuousClock.now + .seconds(15)
+        while fixture.controller.player.currentTime().seconds < 0.5, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertTrue(fixture.controller.isPlaying)
+        let original = try XCTUnwrap(fixture.controller.player.currentItem)
+        let position = fixture.controller.player.currentTime().seconds
+        fixture.controller.setMuted(false)
+        fixture.controller.handoffToDetail(itemID: fixture.item.id)
+        fixture.showsDetail = true
+        let handoffDeadline = ContinuousClock.now + .seconds(2)
+        while ContinuousClock.now < handoffDeadline {
+            XCTAssertTrue(fixture.controller.player.currentItem === original)
+            XCTAssertEqual(fixture.controller.player.rate, 1)
+            XCTAssertFalse(fixture.controller.isMuted)
+            XCTAssertGreaterThanOrEqual(fixture.controller.player.currentTime().seconds, position)
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertGreaterThan(fixture.controller.player.currentTime().seconds, position + 1)
+        XCTAssertTrue(fixture.controller.isClaimed(by: .detail, itemID: fixture.item.id))
+        host.rootView = TrailerHandoffRoot(fixture: fixture, isVisible: false)
+        try await Task.sleep(for: .milliseconds(300))
+        XCTAssertNil(fixture.controller.player.currentItem, "Leaving detail still stops its ambient trailer.")
+    }
+
     func testTrailerLabelRemainsIconOnlyEvenWhenParentRequestsText() {
         for external in [false, true] {
             let trailer = external
@@ -211,6 +259,52 @@ final class TrailerActionPresentationTests: XCTestCase {
             context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
         }
         return stride(from: 3, to: pixels.count, by: 4).map { pixels[$0] }
+    }
+}
+
+@MainActor @Observable
+private final class TrailerHandoffFixture {
+    let controller = HeroTrailerController()
+    let settings = HeroBackgroundSettingsModel(store: InMemoryHeroBackgroundSettingsStore(
+        HeroBackgroundSettings(homeTrailerEnabled: true, detailMode: .trailer)
+    ))
+    let item = MediaItem(id: "handoff", title: "Handoff", kind: .movie, allowsTitleBasedMetadataMatching: false)
+    let url: URL
+    var showsDetail = false
+
+    init(url: URL) { self.url = url }
+}
+
+private struct TrailerHandoffRoot: View {
+    @Bindable var fixture: TrailerHandoffFixture
+    var isVisible = true
+
+    var body: some View {
+        NavigationStack {
+            if isVisible {
+                PlozziOSHeroStage(
+                    item: fixture.item,
+                    presentation: HeroPresentation(item: fixture.item, artworkStyle: .landscape, surface: .home),
+                    style: .landscape, surfaceRole: .home, isActive: !fixture.showsDetail,
+                    trailerController: fixture.controller, backgroundSettings: fixture.settings,
+                    trailerResolver: { [url = fixture.url] item in
+                        HeroTrailerSource(ownerItemID: item.id, trailerItemID: "clip", url: url, duration: 120)
+                    }
+                ) { EmptyView() }
+                .navigationDestination(isPresented: $fixture.showsDetail) {
+                    PlozziOSHeroStage(
+                        item: fixture.item,
+                        presentation: HeroPresentation(item: fixture.item, artworkStyle: .landscape, surface: .detail),
+                        style: .landscape, surfaceRole: .detail, isActive: true,
+                        trailerController: fixture.controller, backgroundSettings: fixture.settings,
+                        trailerResolver: { _ in
+                            XCTFail("The handoff must reuse the prepared trailer, not resolve it again.")
+                            return nil
+                        }
+                    ) { EmptyView() }
+                }
+            }
+        }
     }
 }
 

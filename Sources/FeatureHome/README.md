@@ -1060,6 +1060,11 @@ records on both platforms; error dialogs, playback routing and timeouts are unch
   hero showing the same title with trailers enabled. Library, Watchlist, pushed
   grids, and covered detail pages cannot retain background audio. A cancelled
   or no-longer-frontmost detail resolver cannot start a trailer after departure.
+  Home transfers the matching trailer to detail before navigation starts (when
+  detail trailers are enabled). Home disappearance and late scroll/recede
+  callbacks cannot stop or pause that player; its item, position and live mute
+  choice survive the handoff on TV and mobile. Leaving for another destination
+  or backgrounding the app still stops ambient playback.
 
 ## Home loading
 

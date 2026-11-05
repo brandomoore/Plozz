@@ -179,6 +179,17 @@ public final class HeroTrailerController {
         activeSurfaceRole == role && currentItemID == itemID
     }
 
+    /// Transfer before pushing detail, so Home's disappearance cannot tear down
+    /// the shared item regardless of SwiftUI lifecycle callback ordering.
+    public func handoffToDetail(itemID: String) {
+        guard isShowing(itemID), !isFeaturedReserved else { return }
+        claimSurface(.detail, itemID: itemID)
+        endHandlerOwnerID = nil
+        endHandler = nil
+        setPaused(false)
+        startPrepared()
+    }
+
     public func releaseSurface(_ role: HeroTrailerSurfaceRole) {
         guard activeSurfaceRole == role else { return }
         activeSurfaceRole = nil
@@ -320,12 +331,17 @@ public final class HeroTrailerController {
     /// Freezes/resumes the ambient trailer in lockstep with the hero's
     /// auto-advance pause so the wall-clock progress gauge and picture never
     /// drift apart during remote interaction or recede.
-    public func setPaused(_ paused: Bool, featuredOwner: UUID? = nil) {
+    public func setPaused(
+        _ paused: Bool,
+        surfaceRole: HeroTrailerSurfaceRole? = nil,
+        featuredOwner: UUID? = nil
+    ) {
         if isFeaturedReserved, featuredOwner == nil {
             suspendedHeroPause = paused
             return
         }
         guard featuredOwnerID == featuredOwner else { return }
+        if let surfaceRole, let activeSurfaceRole, surfaceRole != activeSurfaceRole { return }
         requestedPaused = paused
         applyPauseState()
     }
@@ -370,10 +386,10 @@ public final class HeroTrailerController {
         PlozzLog.app.info("Hero trailer: stopped")
     }
 
-    /// A receded Home hero must not stop a focused card's reservation, including
-    /// while that card is still resolving its trailer.
-    public func stopHero() {
-        guard !isFeaturedReserved else { return }
+    /// Home cleanup cannot stop a trailer transferred to detail or a focused card.
+    public func stopHero(ifShowing itemID: String? = nil) {
+        guard !isFeaturedReserved, activeSurfaceRole != .detail else { return }
+        if let itemID, !isShowing(itemID) { return }
         stop()
     }
 

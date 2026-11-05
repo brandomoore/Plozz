@@ -455,6 +455,116 @@ final class DetailTransitionVisualRegressionTests: XCTestCase {
         XCTAssertEqual(controller.player.rate, 0)
     }
 
+    func testHomeToDetailKeepsThePlayingTrailerThroughHomeDisappearance() async throws {
+        let scene = try await activeScene()
+        let directory = try XCTUnwrap(Bundle(for: Self.self).url(
+            forResource: "Fixtures", withExtension: nil
+        )).appendingPathComponent("active-picture-hls")
+        let server = try SubtitleFixtureServer(directory: directory)
+        defer { server.stop() }
+        let port = try await server.start()
+        let video = try XCTUnwrap(URL(string: "http://127.0.0.1:\(port)/active-picture.m3u8"))
+        let model = TransitionShowModel(provider: TransitionShowProvider(artwork: try await seedArtwork()))
+        model.background.settings.homeTrailerEnabled = true
+        model.background.settings.detailMode = .trailer
+        model.resolveTrailer = { item in
+            HeroTrailerSource(ownerItemID: item.id, trailerItemID: "clip", url: video, duration: 120)
+        }
+        let host = UIHostingController(rootView: TransitionShowRoot(model: model, usesHomeHero: true))
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer {
+            model.trailer.stop()
+            model.detail.suspendEnrichment()
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        try await waitUntil {
+            model.trailer.isPlaying && model.trailer.player.currentTime().seconds > 0.5
+                && self.trailerLayers(in: window).contains(where: \.isReadyForDisplay)
+        }
+        model.trailer.setMuted(false)
+        let original = try XCTUnwrap(model.trailer.player.currentItem)
+        let position = model.trailer.player.currentTime().seconds
+        model.openHeroDetail()
+        // Exercise actual Home teardown even on OS versions that keep a covered
+        // NavigationStack root mounted.
+        model.showsHomeHero = false
+        let deadline = ContinuousClock.now + .seconds(2)
+        while ContinuousClock.now < deadline {
+            XCTAssertTrue(model.trailer.player.currentItem === original,
+                          "Home disappearance must not discard the trailer adopted by detail.")
+            XCTAssertEqual(model.trailer.player.rate, 1)
+            XCTAssertFalse(model.trailer.isMuted, "Keep the live mute choice, not the detail default.")
+            XCTAssertGreaterThanOrEqual(model.trailer.player.currentTime().seconds, position)
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertGreaterThan(model.trailer.player.currentTime().seconds, position + 1)
+        XCTAssertEqual(model.stackDepth.depth, 1)
+        XCTAssertTrue(trailerLayers(in: window).contains { $0.player === model.trailer.player && $0.isReadyForDisplay })
+    }
+
+    func testTrailerHandoffProtectsAgainstLateHomeCleanupButNotRealDeparture() async throws {
+        try await withTrailerFixture { model, video in
+            let controller = model.trailer
+            controller.play(itemID: "hero", resolvedURL: video, muted: false)
+            controller.claimSurface(.home, itemID: "hero")
+            try await waitUntil { controller.isPlaying && controller.player.currentTime().seconds > 0.1 }
+            let original = try XCTUnwrap(controller.player.currentItem)
+            controller.setPaused(true, surfaceRole: .home)
+            controller.handoffToDetail(itemID: "hero")
+            let position = controller.player.currentTime().seconds
+            controller.stopHero(ifShowing: "hero")
+            controller.setPaused(true, surfaceRole: .home)
+            controller.stopHero()
+            XCTAssertTrue(controller.player.currentItem === original)
+            XCTAssertTrue(controller.isClaimed(by: .detail, itemID: "hero"))
+            XCTAssertFalse(controller.isMuted)
+            XCTAssertEqual(controller.player.rate, 1)
+            try await waitUntil { controller.player.currentTime().seconds > position + 0.1 }
+
+            let playbackOwner = UUID()
+            controller.suspendForPlayback(owner: playbackOwner)
+            controller.handoffToDetail(itemID: "hero")
+            XCTAssertEqual(controller.player.rate, 0, "A navigation handoff cannot override full playback.")
+            controller.resumeAfterPlayback(owner: playbackOwner)
+            controller.stop(ifShowing: "hero")
+            XCTAssertNil(controller.player.currentItem, "Leaving detail still releases the player.")
+        }
+    }
+
+    func testUnmatchedHomeNavigationDoesNotReserveATrailerForDetail() async throws {
+        try await withTrailerFixture { model, video in
+            let controller = model.trailer
+            controller.prepare(itemID: "hero", resolvedURL: video, muted: true)
+            controller.claimSurface(.home, itemID: "hero")
+            controller.handoffToDetail(itemID: "other")
+            XCTAssertTrue(controller.isClaimed(by: .home, itemID: "hero"))
+            controller.stopHero(ifShowing: "hero")
+            XCTAssertNil(controller.player.currentItem)
+        }
+    }
+
+    func testPreparedHomeTrailerStartsInDetailWithoutReplacingItsItem() async throws {
+        try await withTrailerFixture { model, video in
+            let controller = model.trailer
+            controller.prepare(itemID: "hero", resolvedURL: video, muted: false)
+            let original = try XCTUnwrap(controller.player.currentItem)
+            controller.handoffToDetail(itemID: "hero")
+            controller.stopHero()
+            try await waitUntil { controller.isPlaying && controller.player.currentTime().seconds > 0.1 }
+            XCTAssertTrue(controller.player.currentItem === original)
+            XCTAssertFalse(controller.isMuted)
+        }
+    }
+
+    private func trailerLayers(in view: UIView) -> [AVPlayerLayer] {
+        (view.layer as? AVPlayerLayer).map { [$0] } ?? view.subviews.flatMap { trailerLayers(in: $0) }
+    }
+
     func testProductionDetailStopsTrailerAfterReturningToNonHeroRoot() async throws {
         try await withTrailerFixture { model, video in
             model.path.append(1)
@@ -2295,6 +2405,13 @@ private final class TransitionShowModel {
             relatedTitlesLoader: relatedTitlesLoader
         )
     }
+
+    func openHeroDetail() {
+        if background.settings.detailTrailerEnabled {
+            trailer.handoffToDetail(itemID: provider.show.id)
+        }
+        path.append(1)
+    }
 }
 
 private struct TrailerReturnHomeRoot: View {
@@ -2306,10 +2423,10 @@ private struct TrailerReturnHomeRoot: View {
             HomeHeroView(
                 items: [model.provider.show], settings: .default,
                 backgroundSettings: model.background.settings,
-                trailerController: model.trailer, trailerResolver: { _ in nil },
+                trailerController: model.trailer, trailerResolver: model.resolveTrailer,
                 isFrontmost: model.path.isEmpty, spoilerSettings: .default,
                 navigationStyle: .rail, focusScope: focusScope,
-                onSelect: { _ in }, onPlay: { _ in },
+                onSelect: { _ in model.openHeroDetail() }, onPlay: { _ in },
                 onTrailerReturnItemChanged: { model.trailerReturnItemID = $0 },
                 recedeModel: model.homeRecede
             )
@@ -2325,12 +2442,19 @@ private struct TransitionShowRoot: View {
     var directEntry = false
     var artworkSettings: ArtworkSettings = .default
     var zoomEnabled = true
+    var usesHomeHero = false
 
     var body: some View {
         TabView {
             Tab("Home", systemImage: "house") {
                 NavigationStack(path: $model.path) {
-                    Button("Open show") { model.path.append(1) }
+                    Group {
+                        if usesHomeHero {
+                            TrailerReturnHomeRoot(model: model)
+                        } else {
+                            Button("Open show") { model.path.append(1) }
+                        }
+                    }
                         .navigationDestination(for: Int.self) { destination in
                             if destination == 2 {
                                 Button("Covered detail") {}

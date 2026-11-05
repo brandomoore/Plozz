@@ -683,7 +683,7 @@ private struct PlozziOSCanonicalItemDetailView: View {
         .onScrollGeometryChange(for: Bool.self) { geometry in
             geometry.contentOffset.y > trailerPauseThreshold
         } action: { _, isPastHalfHero in
-            trailerController.setPaused(isPastHalfHero)
+            trailerController.setPaused(isPastHalfHero, surfaceRole: .detail)
         }
         .onScrollGeometryChange(for: CGFloat.self) { geometry in
             let topOffset = geometry.contentOffset.y
