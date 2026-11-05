@@ -255,7 +255,10 @@ public struct TMDbEnrichmentProvider: MetadataEnrichmentProvider {
         if missing.contains(.episodeThumbnail), let url = await provider.artworkURL(.thumbnail, for: query) {
             out.episodeStillURL = SourcedValue(value: url, source: .tmdb)
         }
-        let detailFields = missing.intersection([.cast, .directors, .writers, .studios, .genres, .overview, .taglines])
+        let detailFields = missing.intersection([
+            .cast, .directors, .writers, .studios, .genres, .overview, .taglines,
+            .originalLanguage, .seriesStatus, .catalogSeasonCount, .catalogEpisodeCount
+        ])
         if !detailFields.isEmpty {
             do {
                 out.fillMissing(from: try await provider.detailMetadata(for: query, missing: detailFields))

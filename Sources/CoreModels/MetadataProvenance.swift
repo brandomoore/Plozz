@@ -64,6 +64,10 @@ public struct MetadataField: RawRepresentable, Codable, Hashable, Sendable {
     // local sidecar parser can attribute the extra descriptive facts an NFO
     // carries (Kodi/Jellyfin `movie`/`tvshow`/`episodedetails` documents).
     public static let originalTitle = Self(rawValue: "originalTitle")
+    public static let originalLanguage = Self(rawValue: "originalLanguage")
+    public static let seriesStatus = Self(rawValue: "seriesStatus")
+    public static let catalogSeasonCount = Self(rawValue: "catalogSeasonCount")
+    public static let catalogEpisodeCount = Self(rawValue: "catalogEpisodeCount")
     /// The catalog's SORT projection only (never `assets.sort_title`, which stays
     /// scan-owned) — see `ShareCatalogStore`'s grid ORDER BY.
     public static let sortTitle = Self(rawValue: "sortTitle")

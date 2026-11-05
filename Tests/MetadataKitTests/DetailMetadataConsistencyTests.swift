@@ -3,6 +3,170 @@ import XCTest
 @testable import MetadataKit
 
 final class DetailMetadataConsistencyTests: XCTestCase {
+    private let titleFactFields: Set<MetadataField> = [
+        .originalLanguage, .seriesStatus, .catalogSeasonCount, .catalogEpisodeCount
+    ]
+
+    func testTitleFactsUseOneIdentityCheckedDetailRequest() async throws {
+        let fixture = TMDbTVDBDiscoveryFixture { request, _ in
+            XCTAssertEqual(request.url?.path, "/3/tv/1408")
+            return .init(json: """
+            {"original_language":"en","status":"Ended","number_of_seasons":8,"number_of_episodes":177}
+            """)
+        }
+        let provider = TMDbEnrichmentProvider(provider: TMDbMetadataProvider(
+            access: .directToken("test-token"), detailHTTP: fixture.http
+        ))
+        let cache = ProviderResultCache()
+        let pipeline = MetadataEnrichmentPipeline(
+            providers: [CachedEnrichmentProvider(base: provider, cache: cache)],
+            config: .init(order: [.tmdb])
+        )
+        let item = MediaItem(id: "show", title: "House", kind: .series, providerIDs: ["Tmdb": "1408"])
+        for _ in 0..<2 {
+            let result = await pipeline.enrich(
+                MetadataQuery(item), requesting: titleFactFields, tier: .foregroundFill
+            )
+            XCTAssertEqual(result.originalLanguage?.value, "en")
+            XCTAssertEqual(result.seriesStatus?.value, .ended)
+            XCTAssertEqual(result.catalogSeasonCount?.value, 8)
+            XCTAssertEqual(result.catalogEpisodeCount?.value, 177)
+            XCTAssertEqual(result.filledFields, titleFactFields)
+            let enriched = DetailMetadataResolver.applying(result, to: item)
+            XCTAssertEqual(enriched.catalogEpisodeCount, 177)
+            XCTAssertEqual(enriched.metadataProvenance[.seriesStatus]?.source, .tmdb)
+            XCTAssertEqual(enriched.metadataProvenance[.originalLanguage]?.sourceURL?.path, "/3/tv/1408")
+            XCTAssertEqual(enriched.providerIDs, item.providerIDs)
+        }
+        let requests = await fixture.recorded()
+        XCTAssertEqual(requests.count, 1, "The existing facts request and cache must serve all four fields.")
+    }
+
+    func testDiscoverRequestsTheSameTitleFactsAndPreservesKnownValues() async {
+        let enrichment = MetadataEnrichment(
+            originalLanguage: .init(value: "fr", source: .tmdb),
+            seriesStatus: .init(value: .returning, source: .tmdb),
+            catalogSeasonCount: .init(value: 4, source: .tmdb),
+            catalogEpisodeCount: .init(value: 30, source: .tmdb)
+        )
+        let provider = FakeEnrichmentProvider(id: .tmdb, capabilities: [.canonicalText], output: enrichment)
+        let resolver = ExternalTitleMetadataResolver(pipeline: .init(
+            providers: [provider], config: .init(order: [.tmdb])
+        ))
+        let item = MediaItem(
+            id: "external", title: "Series", originalLanguage: "en", seriesStatus: .ended,
+            kind: .series, providerIDs: ["Tmdb": "123"]
+        )
+        let result = await resolver.resolve(item: item, regionCode: "US")
+        XCTAssertEqual(result.enrichment.catalogSeasonCount?.value, 4)
+        XCTAssertEqual(result.enrichment.catalogEpisodeCount?.value, 30)
+        XCTAssertNil(result.enrichment.originalLanguage)
+        XCTAssertNil(result.enrichment.seriesStatus)
+        let applied = DetailMetadataResolver.applying(result.enrichment, to: item)
+        XCTAssertEqual(applied.originalLanguage, "en")
+        XCTAssertEqual(applied.seriesStatus, .ended)
+        XCTAssertEqual(applied.catalogEpisodeCount, 30)
+    }
+
+    func testUnknownFactsDoNotInventStatusLanguageOrCatalogSize() async throws {
+        let fixture = TMDbTVDBDiscoveryFixture { _, _ in
+            .init(json: #"{"original_language":"xx","status":"In Production","number_of_seasons":0,"number_of_episodes":-1}"#)
+        }
+        let provider = TMDbMetadataProvider(access: .directToken("test-token"), detailHTTP: fixture.http)
+        let item = MediaItem(id: "series", title: "Series", kind: .series, providerIDs: ["Tmdb": "1"])
+        let result = try await provider.detailMetadata(for: MetadataQuery(item), missing: titleFactFields)
+        XCTAssertTrue(result.isEmpty)
+        XCTAssertEqual(MediaSeriesStatus(providerValue: "Returning Series"), .returning)
+        XCTAssertEqual(MediaSeriesStatus(providerValue: " Continuing "), .returning)
+        XCTAssertEqual(MediaSeriesStatus(providerValue: "Ended"), .ended)
+        XCTAssertEqual(MediaSeriesStatus(providerValue: "Cancelled"), .canceled)
+        XCTAssertEqual(MediaSeriesStatus(providerValue: "Canceled"), .canceled)
+        XCTAssertNil(MediaSeriesStatus(providerValue: "Unknown"))
+        XCTAssertNil(MediaSeriesStatus(providerValue: ""))
+    }
+
+    func testTitleFactsNeverLeakOntoChildrenOrPersonalVideos() async throws {
+        let enrichment = MetadataEnrichment(
+            originalLanguage: .init(value: "en", source: .tmdb),
+            seriesStatus: .init(value: .ended, source: .tmdb),
+            catalogSeasonCount: .init(value: 8, source: .tmdb),
+            catalogEpisodeCount: .init(value: 177, source: .tmdb)
+        )
+        for kind: MediaItemKind in [.movie, .series, .season, .episode, .video] {
+            let item = MediaItem(id: "item", title: "Title", kind: kind, unwatchedEpisodeCount: 9)
+            let missing = DetailMetadataResolver.missingFields(in: item)
+            XCTAssertEqual(missing.contains(.originalLanguage), kind == .movie || kind == .series)
+            XCTAssertEqual(missing.contains(.catalogEpisodeCount), kind == .series)
+            let applied = DetailMetadataResolver.applying(enrichment, to: item)
+            XCTAssertEqual(applied.catalogEpisodeCount, kind == .series ? 177 : nil)
+            XCTAssertEqual(applied.unwatchedEpisodeCount, 9)
+        }
+        let fixture = TMDbTVDBDiscoveryFixture { _, _ in
+            .init(json: #"{"original_language":"en","status":"Ended","number_of_seasons":8,"number_of_episodes":177}"#)
+        }
+        let provider = TMDbMetadataProvider(access: .directToken("test-token"), detailHTTP: fixture.http)
+        let movie = MediaItem(id: "movie", title: "Movie", kind: .movie, providerIDs: ["Tmdb": "1"])
+        let result = try await provider.detailMetadata(for: MetadataQuery(movie), missing: titleFactFields)
+        XCTAssertEqual(result.originalLanguage?.value, "en")
+        XCTAssertNil(result.seriesStatus)
+        XCTAssertNil(result.catalogSeasonCount)
+        XCTAssertNil(result.catalogEpisodeCount)
+    }
+
+    func testTitleMatchingOptOutStillPermitsOnlyExplicitIdentityFacts() async throws {
+        let fixture = TMDbTVDBDiscoveryFixture { request, _ in
+            XCTAssertEqual(request.url?.path, "/3/tv/1408")
+            return .init(json: #"{"status":"Ended","original_language":"en"}"#)
+        }
+        let provider = TMDbMetadataProvider(access: .directToken("test-token"), detailHTTP: fixture.http)
+        var item = MediaItem(
+            id: "series", title: "Do not search this title", kind: .series,
+            allowsTitleBasedMetadataMatching: false
+        )
+        let noMatch = try await provider.detailMetadata(
+            for: DetailMetadataResolver.metadataQuery(for: item), missing: titleFactFields
+        )
+        XCTAssertTrue(noMatch.isEmpty)
+        item.providerIDs = ["Tmdb": "1408"]
+        let query = DetailMetadataResolver.metadataQuery(for: item)
+        XCTAssertEqual(query.title, "")
+        let matched = try await provider.detailMetadata(for: query, missing: titleFactFields)
+        XCTAssertEqual(DetailMetadataResolver.applying(matched, to: item).seriesStatus, .ended)
+        let requests = await fixture.recorded()
+        XCTAssertEqual(requests.count, 1)
+    }
+
+    func testTitleFactsRoundTripAndRespectGapOnlyMerging() throws {
+        var first = MetadataEnrichment(
+            originalLanguage: .init(value: "fr", source: .server),
+            seriesStatus: .init(value: .ended, source: .server),
+            catalogSeasonCount: .init(value: 3, source: .server)
+        )
+        let incoming = MetadataEnrichment(
+            originalLanguage: .init(value: "en", source: .tmdb),
+            seriesStatus: .init(value: .returning, source: .tmdb),
+            catalogSeasonCount: .init(value: 4, source: .tmdb),
+            catalogEpisodeCount: .init(value: 20, source: .tmdb)
+        )
+        first.fillMissing(from: incoming, skipping: [.catalogEpisodeCount])
+        XCTAssertNil(first.catalogEpisodeCount)
+        first.fillMissing(from: incoming)
+        let restored = try JSONDecoder().decode(MetadataEnrichment.self, from: JSONEncoder().encode(first))
+        XCTAssertEqual(restored, first)
+        XCTAssertEqual(restored.originalLanguage?.value, "fr")
+        XCTAssertEqual(restored.seriesStatus?.value, .ended)
+        XCTAssertEqual(restored.catalogSeasonCount?.value, 3)
+        XCTAssertEqual(restored.catalogEpisodeCount?.value, 20)
+        let item = DetailMetadataResolver.applying(restored, to: .init(id: "series", title: "Series", kind: .series))
+        XCTAssertEqual(DetailMetadataResolver.applying(incoming, to: item), item)
+        XCTAssertEqual(try JSONDecoder().decode(MediaItem.self, from: JSONEncoder().encode(item)), item)
+        let oldItem = try JSONDecoder().decode(MediaItem.self, from: Data(#"{"id":"old","title":"Old","kind":"series"}"#.utf8))
+        XCTAssertNil(oldItem.originalLanguage)
+        XCTAssertNil(oldItem.seriesStatus)
+        XCTAssertNil(oldItem.catalogSeasonCount)
+        XCTAssertNil(oldItem.catalogEpisodeCount)
+    }
+
     func testConflictingCachedTitleMatchCannotRedirectAuthoritativeIMDbCredits() async throws {
         try await verifyConflictingCachedTitleMatch(seedDownstreamCache: false)
     }

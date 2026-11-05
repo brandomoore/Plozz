@@ -25,6 +25,49 @@ final class DetailInformationPreviewTests: XCTestCase {
         )
     }
 
+    func testSingleScorePromotesDetailsButAvailabilityLeadsOtherSupportingSections() {
+        var item = MediaItem(
+            id: "film", title: "Film", kind: .movie, overview: "A synopsis.", productionYear: 2020,
+            people: [.init(id: "director", name: "Director", kind: "Director")],
+            ratings: [.init(source: .tmdb, value: 8, scale: .outOfTen)]
+        )
+        let availability = ExternalTitleAvailability(regionCode: "US", watchOffers: [
+            .init(providerID: 1, providerName: "Service", kind: .subscription, regionCode: "US")
+        ])
+        func sections() -> DetailInformationSections {
+            DetailInformationSections(item: item, horizontalInset: 24, externalAvailability: availability)
+        }
+        XCTAssertEqual(sections().sectionIDs, ["about", "ratings", "details", "availability", "crew"])
+        XCTAssertEqual(sections().informationGroups.first?.id, "availability")
+        item.ratings.append(.init(source: .imdb, value: 8, scale: .outOfTen))
+        XCTAssertEqual(sections().sectionIDs, ["about", "ratings", "availability", "details", "crew"])
+    }
+
+    func testConfirmedTitleFactsDoNotUseLocalCountsOrAudioTracks() throws {
+        var item = MediaItem(
+            id: "series", title: "Series", originalLanguage: "fr", seriesStatus: .returning,
+            catalogSeasonCount: 3, catalogEpisodeCount: 17, kind: .series, unwatchedEpisodeCount: 2
+        )
+        func facts() -> [InformationFact] {
+            DetailInformationSections(item: item, horizontalInset: 24)
+                .informationGroups.first { $0.id == "details" }?.facts ?? []
+        }
+        XCTAssertEqual(facts().first { $0.id == "series-status" }?.value, MediaSeriesStatus.returning.displayName)
+        XCTAssertEqual(facts().first { $0.id == "seasons" }?.value, 3.formatted())
+        XCTAssertEqual(facts().first { $0.id == "episodes" }?.value, 17.formatted())
+        XCTAssertEqual(facts().first { $0.id == "original-language" }?.value,
+                       Locale.current.localizedString(forLanguageCode: "fr"))
+        item.catalogEpisodeCount = nil
+        item.catalogSeasonCount = 0
+        item.originalLanguage = "und"
+        item.seriesStatus = nil
+        XCTAssertTrue(facts().isEmpty)
+        item.kind = .movie
+        item.seriesStatus = .ended
+        item.catalogEpisodeCount = 17
+        XCTAssertTrue(facts().isEmpty)
+    }
+
     func testCrewPreviewRetainsEveryNameForMore() throws {
         let people = (1...60).map { MediaPerson(id: "\($0)", name: "Director \($0)", kind: "Director") }
         let item = MediaItem(id: "series", title: "Series", kind: .series, people: people)

@@ -1001,13 +1001,17 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
 - **Detail information layout** — TV and mobile share ordered information
   sections. About and Ratings sit beside each other when both have readable space;
   otherwise they stack. Side-by-side About and Ratings share top and bottom
-  edges; stacked sections keep their natural height. Numeric scores use
+  edges for multi-tile groups; stacked sections keep their natural height. Numeric scores use
   individual equal-width tiles in one grid. Each icon-and-score pair is centered
   as a unit, with its source centered underneath
   and a consistent gap measured from the mark's visible edge. Rows start at the
   leading grid line. On TV, multiple ratings use up to two reading columns;
-  a lone score or guide uses only one. Regular-width mobile ratings fill their
-  allocated reading column. A lone phone score keeps its compact tile.
+  a lone guide uses only one. A lone score without guidance uses roughly half
+  a reading column and keeps its natural height, instead of matching About.
+  Details fills the third TV column, or sits below the score in a two-column
+  layout; supporting sections can start beneath About without waiting for the
+  whole fact list. Phone sections remain stacked with a compact score tile.
+  Regular-width mobile multi-tile ratings fill their allocated reading column.
   Family guidance completes the remaining columns of the final score row, or
   starts the next row when the score row is full. On TV it spans at most two
   score columns, keeping its prose within a reading column. A narrow guidance tile shows
@@ -1023,6 +1027,10 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   the adjacent ratings group. Missing summary content reserves no column.
   About occupies one reading column instead of absorbing leftover space.
   Supporting sections are unboxed, with headings above vertically stacked facts.
+  Release & Availability leads the lower sections, followed by Details, Crew
+  and Playback (Details is promoted alongside a lone score). Original language
+  is distinct from playable audio. Series status and total seasons/episodes
+  appear only when confirmed; totals describe the catalog, not library ownership.
   TV prefers three columns and regular-width mobile prefers two, falling back
   when the window or text size cannot support readable widths. Regular-width mobile
   information is centered within a 1120pt maximum, without narrowing the hero or

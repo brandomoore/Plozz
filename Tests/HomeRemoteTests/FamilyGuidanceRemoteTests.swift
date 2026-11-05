@@ -3,6 +3,67 @@ import UIKit
 
 @MainActor
 final class FamilyGuidanceRemoteTests: XCTestCase {
+    func testCompactScorePromotesFactsAndKeepsAvailabilityLeading() throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".json")
+        let example: [String: Any] = [
+            "item": [
+                "id": "series", "title": "A series", "kind": "series",
+                "overview": String(repeating: "A story about friends working together. ", count: 8),
+                "productionYear": 2020, "originalLanguage": "fr", "seriesStatus": "ended",
+                "catalogSeasonCount": 8, "catalogEpisodeCount": 100,
+                "ratings": [["source": "tmdb", "value": 8.1, "scale": "outOfTen"]],
+                "people": [["id": "director", "name": "A director", "kind": "Director"]]
+            ],
+            "availability": [
+                "regionCode": "US", "releaseEvents": [],
+                "watchOffers": [
+                    ["providerID": 1, "providerName": "Stream service", "kind": "subscription", "regionCode": "US"]
+                ]
+            ]
+        ]
+        try JSONSerialization.data(withJSONObject: example).write(to: url)
+        defer { XCTAssertNoThrow(try FileManager.default.removeItem(at: url)) }
+        let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.FocusHost")
+        app.launchArguments = ["--detail-information-fixture"]
+        app.launchEnvironment["PLOZZ_DETAIL_EXAMPLE_PATH"] = url.path
+        app.launch()
+        defer { app.terminate() }
+        let about = app.descendants(matching: .any)["detail-about"].firstMatch
+        let score = app.descendants(matching: .any)["detail-rating-tmdb"].firstMatch
+        let year = app.descendants(matching: .any)["detail-details-year-more"].firstMatch
+        let streaming = app.descendants(matching: .any)["detail-availability-streaming-more"].firstMatch
+        XCTAssertTrue(year.waitForExistence(timeout: 15))
+        let details = app.staticTexts["Details"].firstMatch
+        let availability = app.staticTexts["Release & Availability"].firstMatch
+        let crew = app.staticTexts["Crew"].firstMatch
+        XCTAssertEqual(details.frame.minY, app.staticTexts["Ratings"].firstMatch.frame.minY, accuracy: 1)
+        XCTAssertEqual(year.frame.minX, about.frame.minX + 2 * (about.frame.width + 56), accuracy: 1)
+        XCTAssertLessThanOrEqual(score.frame.width, about.frame.width / 2)
+        XCTAssertLessThan(score.frame.height, about.frame.height)
+        XCTAssertEqual(availability.frame.minX, about.frame.minX, accuracy: 1)
+        XCTAssertEqual(crew.frame.minX, score.frame.minX, accuracy: 1)
+        XCTAssertEqual(crew.frame.minY, availability.frame.minY, accuracy: 1)
+        XCTAssertLessThan(availability.frame.minY, app.staticTexts["Original Language"].firstMatch.frame.minY)
+        for value in ["Ended", "8", "100", "French", "JustWatch"] {
+            XCTAssertTrue(app.staticTexts[value].exists, value)
+        }
+        for _ in 0..<4 where !isFocused(about) { XCUIRemote.shared.press(.up) }
+        XCTAssertTrue(isFocused(about))
+        XCUIRemote.shared.press(.right)
+        XCUIRemote.shared.press(.right)
+        XCTAssertTrue(isFocused(year), "The promoted facts must be reachable beside the score.")
+        let yearLabel = year.staticTexts.element(boundBy: 0)
+        let yearFrame = yearLabel.frame
+        try assertFocusedFactContrast(year, in: app)
+        XCUIRemote.shared.press(.left)
+        XCUIRemote.shared.press(.left)
+        XCUIRemote.shared.press(.down)
+        XCTAssertTrue(isFocused(streaming), "Down from About must reach the leading availability section.")
+        XCTAssertEqual(yearLabel.frame, yearFrame, "Focus must not move promoted fact text.")
+        try assertFocusedFactContrast(streaming, in: app)
+        recordScreenshot(app, name: "compact-score-leading-availability")
+    }
+
     func testUnboxedFocusIsVisibleWithoutMovingOrCoveringNeighbors() throws {
         try checkUnboxedFocus(extra: [], name: "gradient")
     }
@@ -114,13 +175,11 @@ final class FamilyGuidanceRemoteTests: XCTestCase {
                                "--detail-many-release-events", "--detail-layout-flat"]
         app.launch()
         defer { app.terminate() }
-        let year = app.descendants(matching: .any)["detail-details-year-more"].firstMatch
+        let about = app.descendants(matching: .any)["detail-about"].firstMatch
         let more = app.buttons["detail-availability-more"]
-        XCTAssertTrue(year.waitForExistence(timeout: 15))
-        for _ in 0..<8 where !isFocused(year) { XCUIRemote.shared.press(.down) }
-        XCTAssertTrue(isFocused(year))
-        XCUIRemote.shared.press(.right)
-        XCUIRemote.shared.press(.right)
+        XCTAssertTrue(about.waitForExistence(timeout: 15))
+        for _ in 0..<4 where !isFocused(about) { XCUIRemote.shared.press(.up) }
+        XCTAssertTrue(isFocused(about))
         for _ in 0..<16 where !isFocused(more) { XCUIRemote.shared.press(.down) }
         XCTAssertTrue(isFocused(more), app.debugDescription)
         try assertFocusedFactContrast(more, in: app)

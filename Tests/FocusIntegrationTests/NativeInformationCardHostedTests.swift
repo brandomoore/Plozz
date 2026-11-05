@@ -73,7 +73,10 @@ final class NativeInformationCardHostedTests: XCTestCase {
             XCTAssertEqual(ratings[0].minY, about.minY, accuracy: 1)
             XCTAssertGreaterThan(ratings[0].minX, about.maxX)
             let tileCount = count + (hasGuidance ? 1 : 0)
-            let ratingsWidth = tileCount > 1 ? 2 * columnWidth + DetailInformationLayout.sectionSpacing : columnWidth
+            let compactScore = count == 1 && !hasGuidance
+            let compactWidth = max(220, (columnWidth - DetailInformationLayout.sectionSpacing) / 2)
+            let ratingsWidth = tileCount > 1 ? 2 * columnWidth + DetailInformationLayout.sectionSpacing
+                : (compactScore ? compactWidth : columnWidth)
             let columns = hasGuidance ? min(4, max(2, count + 1)) : min(4, count > 4 ? (count + 1) / 2 : count)
             let cellWidth = (ratingsWidth - CGFloat(columns - 1) * DetailInformationLayout.gutter) / CGFloat(columns)
             for score in ratings.prefix(count) {
@@ -84,13 +87,18 @@ final class NativeInformationCardHostedTests: XCTestCase {
                                    "Four TV scores should read across one row rather than a 2-by-2 grid.")
                 }
             }
-            if tileCount == 1 {
+            if tileCount == 1 && !compactScore {
                 XCTAssertEqual(ratings[0].width, columnWidth, accuracy: 1,
                                "A lone score or guide must occupy only one reading column.")
             }
             XCTAssertEqual(try XCTUnwrap(ratings.map(\.maxX).max()), ratings[0].minX + ratingsWidth, accuracy: 1)
-            XCTAssertEqual(try XCTUnwrap(ratings.map(\.maxY).max()), about.maxY, accuracy: 1,
-                           "About and Ratings must share a bottom edge: scores=\(count), guidance=\(hasGuidance), long=\(longOverview), frames=\(frames)")
+            if compactScore {
+                XCTAssertLessThan(ratings[0].height, about.height,
+                                  "A single score must not stretch to match the synopsis.")
+            } else {
+                XCTAssertEqual(try XCTUnwrap(ratings.map(\.maxY).max()), about.maxY, accuracy: 1,
+                               "Multi-tile About and Ratings must share a bottom edge: frames=\(frames)")
+            }
             if hasGuidance {
                 let guide = try XCTUnwrap(ratings.last)
                 let column = count % columns
@@ -192,7 +200,8 @@ final class NativeInformationCardHostedTests: XCTestCase {
             }
             let content = window.bounds.inset(by: window.safeAreaInsets).insetBy(dx: 80, dy: 0)
             let columnWidth = (content.width - 2 * DetailInformationLayout.sectionSpacing) / 3
-            let width = count == 1 ? columnWidth : 2 * columnWidth + DetailInformationLayout.sectionSpacing
+            let width = count == 1 ? max(220, (columnWidth - DetailInformationLayout.sectionSpacing) / 2)
+                : 2 * columnWidth + DetailInformationLayout.sectionSpacing
             XCTAssertEqual(try XCTUnwrap(frames.map(\.minX).min()), content.minX, accuracy: 1)
             XCTAssertEqual(try XCTUnwrap(frames.map(\.maxX).max()), content.minX + width, accuracy: 1,
                            "Missing About must not reserve a column or stretch ratings across the whole page.")

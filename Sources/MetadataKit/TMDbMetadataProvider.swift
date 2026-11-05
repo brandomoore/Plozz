@@ -359,7 +359,10 @@ public struct TMDbMetadataProvider: ArtworkProvider {
             result = Self.creditMetadata(credits, missing: missing, sourceURL: url)
         }
         try Task.checkCancellation()
-        if !missing.isDisjoint(with: [.genres, .studios, .taglines, .overview]) {
+        if !missing.isDisjoint(with: [
+            .genres, .studios, .taglines, .overview,
+            .originalLanguage, .seriesStatus, .catalogSeasonCount, .catalogEpisodeCount
+        ]) {
             let base = "/3/\(query.isTV ? "tv" : "movie")/\(id)"
             if let url = url(base),
                let facts = try await detailResponse(DetailFacts.self, url: url) {
@@ -370,8 +373,26 @@ public struct TMDbMetadataProvider: ArtworkProvider {
                     result.studios = SourcedValue(value: values, source: .tmdb, sourceURL: url)
                 }
                 if query.kind == .movie || query.kind == .series || query.kind == .video {
+                    if missing.contains(.originalLanguage),
+                       let language = facts.original_language?.tmdbNonEmpty,
+                       !["xx", "und", "zxx", "mul"].contains(language.lowercased()),
+                       Locale(identifier: "en").localizedString(forLanguageCode: language) != nil {
+                        result.originalLanguage = SourcedValue(value: language, source: .tmdb, sourceURL: url)
+                    }
                     if missing.contains(.overview), let text = facts.overview?.tmdbNonEmpty {
                         result.overview = SourcedValue(value: text, source: .tmdb, sourceURL: url)
+                    }
+                    if query.kind == .series {
+                        if missing.contains(.seriesStatus),
+                           let status = facts.status.flatMap(MediaSeriesStatus.init(providerValue:)) {
+                            result.seriesStatus = SourcedValue(value: status, source: .tmdb, sourceURL: url)
+                        }
+                        if missing.contains(.catalogSeasonCount), let count = facts.number_of_seasons, count > 0 {
+                            result.catalogSeasonCount = SourcedValue(value: count, source: .tmdb, sourceURL: url)
+                        }
+                        if missing.contains(.catalogEpisodeCount), let count = facts.number_of_episodes, count > 0 {
+                            result.catalogEpisodeCount = SourcedValue(value: count, source: .tmdb, sourceURL: url)
+                        }
                     }
                     if missing.contains(.taglines), let text = facts.tagline?.tmdbNonEmpty {
                         result.tagline = SourcedValue(value: text, source: .tmdb, sourceURL: url)
@@ -816,6 +837,10 @@ public struct TMDbMetadataProvider: ArtworkProvider {
         let tagline: String?
         let genres: [NamedFact]?
         let production_companies: [NamedFact]?
+        let original_language: String?
+        let status: String?
+        let number_of_seasons: Int?
+        let number_of_episodes: Int?
     }
     struct NamedFact: Decodable, Sendable {
         let name: String?

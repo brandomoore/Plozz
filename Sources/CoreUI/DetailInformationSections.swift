@@ -161,7 +161,52 @@ public struct DetailInformationSections: View {
         #endif
     }
 
+    @ViewBuilder
     private var sectionBody: some View {
+        if isSingleRating {
+            DetailSingleRatingLayout(
+                preferredColumns: informationSectionColumns,
+                minimumColumnWidth: informationSectionMinimumWidth,
+                ratingMinimumWidth: ratingMinimumWidth,
+                hasOverview: hasAbout,
+                hasDetails: !detailFacts.isEmpty,
+                spacing: sectionSpacing
+            ) {
+                if hasAbout { aboutSection }
+                ratingsSection
+                if let details = informationGroups.first(where: { $0.id == "details" }) {
+                    informationGroup(details)
+                }
+                ForEach(informationGroups.filter { $0.id != "details" }) { group in
+                    informationGroup(group)
+                }
+            }
+        } else {
+            standardSectionBody
+        }
+    }
+
+    private var aboutSection: some View {
+        detailSection(title: LocalizedStringResource(
+            "mediaDetail.section.about",
+            defaultValue: "About",
+            comment: "Header of the synopsis section on a movie or series detail page. A noun meaning 'about this title', not the Settings > About page."
+        )) {
+            aboutContent.frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .id("about")
+    }
+
+    private var ratingsSection: some View {
+        detailSection(title: "Ratings") { ratingsContent }
+            .id("ratings")
+    }
+
+    private var isSingleRating: Bool {
+        sortedRatings.count == 1 && familyGuidanceSummary == nil
+    }
+
+    private var standardSectionBody: some View {
         VStack(alignment: .leading, spacing: sectionSpacing) {
             if hasAbout || hasRatings {
                 DetailSummaryLayout(
@@ -174,21 +219,10 @@ public struct DetailInformationSections: View {
                     spacing: sectionSpacing
                 ) {
                     if hasAbout {
-                        detailSection(title: LocalizedStringResource(
-                            "mediaDetail.section.about",
-                            defaultValue: "About",
-                            comment: "Header of the synopsis section on a movie or series detail page. A noun meaning 'about this title', not the Settings > About page."
-                        )) {
-                            aboutContent
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                        .id("about")
+                        aboutSection
                     }
                     if hasRatings {
-                        detailSection(title: "Ratings") {
-                            ratingsContent
-                        }
-                        .id("ratings")
+                        ratingsSection
                     }
                 }
             }
@@ -295,7 +329,8 @@ public struct DetailInformationSections: View {
         var result: [String] = []
         if hasAbout { result.append("about") }
         if hasRatings { result.append("ratings") }
-        result += informationGroups.map(\.id)
+        if isSingleRating, !detailFacts.isEmpty { result.append("details") }
+        result += informationGroups.filter { !isSingleRating || $0.id != "details" }.map(\.id)
         return result
     }
 
@@ -657,13 +692,13 @@ public struct DetailInformationSections: View {
 
     var informationGroups: [InformationGroup] {
         [
-            InformationGroup(id: "details", title: "Details", facts: detailFacts),
-            InformationGroup(id: "crew", title: "Crew", facts: crewFacts),
             InformationGroup(
                 id: "availability",
                 title: "Release & Availability",
                 facts: availabilityFacts
             ),
+            InformationGroup(id: "details", title: "Details", facts: detailFacts),
+            InformationGroup(id: "crew", title: "Crew", facts: crewFacts),
             InformationGroup(id: "playback", title: "Playback", facts: playbackFacts)
         ]
         .filter { !$0.facts.isEmpty }
@@ -703,6 +738,22 @@ public struct DetailInformationSections: View {
         }
         if let runtime = item.runtime?.runtimeBadgeText {
             facts.append(InformationFact(id: "runtime", label: "Runtime", value: runtime))
+        }
+        if item.kind == .series {
+            if let status = item.seriesStatus {
+                facts.append(InformationFact(id: "series-status", label: "Status", value: status.displayName))
+            }
+            if let count = item.catalogSeasonCount, count > 0 {
+                facts.append(InformationFact(id: "seasons", label: "Total Seasons", value: count.formatted()))
+            }
+            if let count = item.catalogEpisodeCount, count > 0 {
+                facts.append(InformationFact(id: "episodes", label: "Total Episodes", value: count.formatted()))
+            }
+        }
+        if let code = nonempty(item.originalLanguage),
+           !["xx", "und", "zxx", "mul"].contains(code.lowercased()),
+           let language = Locale.current.localizedString(forLanguageCode: code) {
+            facts.append(InformationFact(id: "original-language", label: "Original Language", value: language))
         }
         if showsContentRatings, let rating = nonempty(item.officialRating) {
             facts.append(InformationFact(id: "content-rating", label: "Content Rating", value: rating))
@@ -1128,7 +1179,7 @@ struct DetailSectionLayout: Layout {
     let minimumColumnWidth: CGFloat
     let spacing: CGFloat
 
-    private func columnCount(for width: CGFloat) -> Int {
+    func columnCount(for width: CGFloat) -> Int {
         max(1, Int(min(CGFloat(preferredColumns), (width + spacing) / (minimumColumnWidth + spacing))))
     }
 
@@ -1154,6 +1205,67 @@ struct DetailSectionLayout: Layout {
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
         let width = proposal.width.flatMap { $0.isFinite ? $0 : nil }
             ?? minimumColumnWidth * CGFloat(preferredColumns) + CGFloat(preferredColumns - 1) * spacing
+        return CGSize(width: width, height: frames(for: width, subviews: subviews).map(\.maxY).max() ?? 0)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        for (subview, frame) in zip(subviews, frames(for: bounds.width, subviews: subviews)) {
+            subview.place(at: CGPoint(x: bounds.minX + frame.minX, y: bounds.minY + frame.minY),
+                          anchor: .topLeading, proposal: .init(frame.size))
+        }
+    }
+}
+
+/// A lone score keeps its natural height. Details uses the spare column, while
+/// lower sections can begin beneath About instead of waiting for a long fact list.
+private struct DetailSingleRatingLayout: Layout {
+    let preferredColumns: Int
+    let minimumColumnWidth: CGFloat
+    let ratingMinimumWidth: CGFloat
+    let hasOverview: Bool
+    let hasDetails: Bool
+    let spacing: CGFloat
+
+    private func frames(for width: CGFloat, subviews: Subviews) -> [CGRect] {
+        let grid = DetailSectionLayout(
+            preferredColumns: preferredColumns, minimumColumnWidth: minimumColumnWidth, spacing: spacing
+        )
+        let columns = grid.columnCount(for: width)
+        let columnWidth = grid.columnWidth(for: width)
+        let ratingIndex = hasOverview ? 1 : 0
+        let detailsIndex = hasDetails ? ratingIndex + 1 : nil
+        let lowerStart = ratingIndex + 1 + (hasDetails ? 1 : 0)
+        let ratingWidth = min(columnWidth, columns == 1 ? ratingMinimumWidth
+                              : max(ratingMinimumWidth, (columnWidth - spacing) / 2))
+        var bottoms = Array(repeating: CGFloat.zero, count: columns)
+        var frames: [CGRect] = []
+        for (index, subview) in subviews.enumerated() {
+            let column: Int
+            if columns == 1 || index == lowerStart {
+                column = 0
+            } else if index == ratingIndex {
+                column = hasOverview ? 1 : 0
+            } else if index == detailsIndex {
+                column = columns >= 3 ? (hasOverview ? 2 : 1) : 1
+            } else {
+                column = bottoms.indices.min { bottoms[$0] < bottoms[$1] } ?? 0
+            }
+            let childWidth = index == ratingIndex ? ratingWidth : columnWidth
+            let height = subview.sizeThatFits(.init(width: childWidth, height: nil)).height
+            let frame = CGRect(x: CGFloat(column) * (columnWidth + spacing),
+                               y: bottoms[column], width: childWidth, height: height)
+            frames.append(frame)
+            bottoms[column] = frame.maxY + spacing
+            if columns >= 3, index == lowerStart - 1 {
+                let summaryBottom = frames.prefix(ratingIndex + 1).map(\.maxY).max() ?? 0
+                bottoms = bottoms.map { max($0, summaryBottom + spacing) }
+            }
+        }
+        return frames
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let width = proposal.width.flatMap { $0.isFinite ? $0 : nil } ?? minimumColumnWidth
         return CGSize(width: width, height: frames(for: width, subviews: subviews).map(\.maxY).max() ?? 0)
     }
 

@@ -76,6 +76,15 @@ public actor DetailMetadataResolver {
         if !item.people.contains(where: { $0.kind?.lowercased() == "writer" }) { missing.insert(.writers) }
         if item.studios.isEmpty { missing.insert(.studios) }
         if item.genres.isEmpty { missing.insert(.genres) }
+        if item.kind == .movie || item.kind == .series,
+           item.originalLanguage?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false {
+            missing.insert(.originalLanguage)
+        }
+        if item.kind == .series {
+            if item.seriesStatus == nil { missing.insert(.seriesStatus) }
+            if (item.catalogSeasonCount ?? 0) <= 0 { missing.insert(.catalogSeasonCount) }
+            if (item.catalogEpisodeCount ?? 0) <= 0 { missing.insert(.catalogEpisodeCount) }
+        }
         return missing
     }
 
@@ -98,6 +107,23 @@ public actor DetailMetadataResolver {
         if missing.contains(.genres), let genres = enrichment.genres, !genres.value.isEmpty {
             copy.genres = genres.value
             copy.metadataProvenance.set(genres, for: .genres)
+        }
+        if missing.contains(.originalLanguage), let language = enrichment.originalLanguage,
+           !language.value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            copy.originalLanguage = language.value
+            copy.metadataProvenance.set(language, for: .originalLanguage)
+        }
+        if missing.contains(.seriesStatus), let status = enrichment.seriesStatus {
+            copy.seriesStatus = status.value
+            copy.metadataProvenance.set(status, for: .seriesStatus)
+        }
+        if missing.contains(.catalogSeasonCount), let count = enrichment.catalogSeasonCount, count.value > 0 {
+            copy.catalogSeasonCount = count.value
+            copy.metadataProvenance.set(count, for: .catalogSeasonCount)
+        }
+        if missing.contains(.catalogEpisodeCount), let count = enrichment.catalogEpisodeCount, count.value > 0 {
+            copy.catalogEpisodeCount = count.value
+            copy.metadataProvenance.set(count, for: .catalogEpisodeCount)
         }
         return copy
     }

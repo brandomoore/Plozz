@@ -85,15 +85,19 @@ final class DetailInformationInteractionTests: XCTestCase {
         }
     }
 
-    func testSingleScoreFillsOneTabletColumnWithoutWideningPhoneTile() {
+    func testSingleScoreUsesHalfTabletColumnWithoutWideningPhoneTile() {
         launch(["--detail-layout-lupin"])
         let score = app.descendants(matching: .any)["detail-rating-tmdb"].firstMatch
         let about = app.descendants(matching: .any)["detail-about"].firstMatch
         XCTAssertTrue(score.waitForExistence(timeout: 10))
         XCTAssertTrue(about.exists)
         if UIDevice.current.userInterfaceIdiom == .pad {
-            XCTAssertEqual(score.frame.width, about.frame.width, accuracy: 1)
+            XCTAssertEqual(score.frame.width, max(160, (about.frame.width - 32) / 2), accuracy: 1)
             XCTAssertGreaterThan(score.frame.minX, about.frame.maxX)
+            XCTAssertLessThan(score.frame.height, about.frame.height)
+            let details = app.staticTexts["Details"].firstMatch
+            XCTAssertEqual(details.frame.minX, score.frame.minX, accuracy: 1)
+            XCTAssertGreaterThan(details.frame.minY, score.frame.maxY)
         } else {
             XCTAssertEqual(score.frame.width, 160, accuracy: 1,
                            "The compact phone score must retain its existing width.")
@@ -165,14 +169,20 @@ final class DetailInformationInteractionTests: XCTestCase {
                 let year = app.staticTexts["Year"].firstMatch
                 let runtime = app.staticTexts["Runtime"].firstMatch
                 let genres = app.staticTexts["Genres"].firstMatch
-                XCTAssertEqual(year.frame.minX, heading.frame.minX, accuracy: 1)
+                let details = app.staticTexts["Details"].firstMatch
+                XCTAssertEqual(year.frame.minX, details.frame.minX, accuracy: 1)
                 XCTAssertEqual(runtime.frame.minX, year.frame.minX, accuracy: 1)
                 XCTAssertEqual(genres.frame.minX, year.frame.minX, accuracy: 1)
                 XCTAssertGreaterThan(runtime.frame.minY, year.frame.maxY)
                 let crew = app.staticTexts["Crew"].firstMatch
                 if columnWidth < contentWidth {
-                    XCTAssertEqual(crew.frame.minX, heading.frame.minX + columnWidth + 32, accuracy: 1)
-                    XCTAssertEqual(crew.frame.minY, app.staticTexts["Details"].firstMatch.frame.minY, accuracy: 1)
+                    if fixture == "discover" {
+                        XCTAssertEqual(details.frame.minX, heading.frame.minX + columnWidth + 32, accuracy: 1)
+                        XCTAssertEqual(crew.frame.minX, heading.frame.minX, accuracy: 1)
+                    } else {
+                        XCTAssertEqual(crew.frame.minX, heading.frame.minX + columnWidth + 32, accuracy: 1)
+                        XCTAssertEqual(crew.frame.minY, details.frame.minY, accuracy: 1)
+                    }
                 } else {
                     XCTAssertEqual(crew.frame.minX, heading.frame.minX, accuracy: 1)
                     XCTAssertGreaterThan(crew.frame.minY, genres.frame.maxY)

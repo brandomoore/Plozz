@@ -2377,6 +2377,7 @@ public struct JellyfinProvider: MediaProvider, ServerRatingsProviding, SeriesRes
             id: dto.Id,
             title: dto.Name ?? "Untitled",
             originalTitle: dto.OriginalTitle,
+            seriesStatus: kind == .series ? dto.Status.flatMap(MediaSeriesStatus.init(providerValue:)) : nil,
             kind: kind,
             overview: dto.Overview,
             parentTitle: dto.SeriesName ?? dto.SeasonName,

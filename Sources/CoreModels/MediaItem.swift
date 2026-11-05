@@ -214,6 +214,12 @@ public struct MediaItem: Codable, Hashable, Identifiable, Sendable {
     /// English title here. Used as an extra cross-server discovery query so a
     /// title named differently on each server is still found and matched by id.
     public var originalTitle: String?
+    /// Confirmed original language, not an available audio track or classification heuristic.
+    public var originalLanguage: String?
+    public var seriesStatus: MediaSeriesStatus?
+    /// Whole-title catalog totals, never counts of locally available or unwatched episodes.
+    public var catalogSeasonCount: Int?
+    public var catalogEpisodeCount: Int?
     public var kind: MediaItemKind
     public var overview: String?
     /// Authenticated parent-series text for Home heroes, never an episode synopsis.
@@ -526,6 +532,10 @@ public struct MediaItem: Codable, Hashable, Identifiable, Sendable {
         id: String,
         title: String,  // l10n:content — media title (server/provider content)
         originalTitle: String? = nil,
+        originalLanguage: String? = nil,
+        seriesStatus: MediaSeriesStatus? = nil,
+        catalogSeasonCount: Int? = nil,
+        catalogEpisodeCount: Int? = nil,
         kind: MediaItemKind,
         watchlistAliasID: MediaAliasID? = nil,
         watchlistAddedAt: Date? = nil,
@@ -602,6 +612,10 @@ public struct MediaItem: Codable, Hashable, Identifiable, Sendable {
         self.fileBrowserContainerID = fileBrowserContainerID
         self.title = title
         self.originalTitle = originalTitle
+        self.originalLanguage = originalLanguage
+        self.seriesStatus = seriesStatus
+        self.catalogSeasonCount = catalogSeasonCount
+        self.catalogEpisodeCount = catalogEpisodeCount
         self.kind = kind
         self.overview = overview
         self.parentTitle = parentTitle
@@ -684,6 +698,7 @@ public struct MediaItem: Codable, Hashable, Identifiable, Sendable {
         case watchlistAddedAt
         case fileBrowserContainerID, artworkLookupSubject
         case originalTitle, seriesSynopsis
+        case originalLanguage, seriesStatus, catalogSeasonCount, catalogEpisodeCount
         case productionYear, releaseDate, officialRating, genres, people, studios, tags, taglines
         case librarySortValues
         case familyGuidance
@@ -720,6 +735,11 @@ public struct MediaItem: Codable, Hashable, Identifiable, Sendable {
         )
         title = try container.decode(String.self, forKey: .title)
         originalTitle = try container.decodeIfPresent(String.self, forKey: .originalTitle)
+        originalLanguage = try container.decodeIfPresent(String.self, forKey: .originalLanguage)
+        seriesStatus = try container.decodeIfPresent(String.self, forKey: .seriesStatus)
+            .flatMap(MediaSeriesStatus.init(rawValue:))
+        catalogSeasonCount = try container.decodeIfPresent(Int.self, forKey: .catalogSeasonCount)
+        catalogEpisodeCount = try container.decodeIfPresent(Int.self, forKey: .catalogEpisodeCount)
         kind = try container.decode(MediaItemKind.self, forKey: .kind)
         overview = try container.decodeIfPresent(String.self, forKey: .overview)
         seriesSynopsis = try container.decodeIfPresent(MediaSeriesSynopsis.self, forKey: .seriesSynopsis)

@@ -32,8 +32,8 @@ load-bearing.
   library is enriched with a one-time burst of calls, then effectively
   none.
 - `MetadataHTTP` — internal lightweight `URLSession` transport for enrichment.
-- `DetailMetadataResolver` — fills missing cast, directors, writers, studios and
-  genres after a provider's full detail response, using the same pipeline on
+- `DetailMetadataResolver` — fills missing cast, directors, writers, studios,
+  genres and confirmed title facts after a provider's full detail response, using the same pipeline on
   tvOS and iOS/iPadOS. Cast and crew are separate gaps: an existing cast does not
   hide missing directors, and adding cast never erases server crew. Source
   changes and cancellation discard stale results. Household source preferences
@@ -54,6 +54,12 @@ load-bearing.
   less-identified query, even when a provider returns no IDs with its fields.
   TMDB transport failures report provider health, rather than caching an outage
   or revoked credential as an authoritative absence of credits.
+  Movie/series original language and series production status/catalog totals
+  use the existing identity-checked TMDB detail response, with sourced-field
+  provenance and gap-only merging. Discover requests the same fields. Unknown
+  statuses and nonpositive totals remain absent; local episode counts, empty
+  schedules and audio-selection heuristics are not evidence for these facts.
+  Series facts never propagate to seasons/episodes or personal-video mode.
   Artwork, playable identity, file/stream facts and Common Sense are not filled
   by this resolver.
 - `HeroDiscoveryProviding` — separate candidate-feed seam for TMDB,
