@@ -86,7 +86,7 @@ class Lab:
             print("\n".join(log.read_text(errors="replace").splitlines()[-65:]), file=sys.stderr)
             raise RuntimeError(f"{name} exited {status}; evidence: {log}")
 
-    def dependencies(self, *, zero: bool = False) -> dict[str, Path]:
+    def dependencies(self, *, zero: bool = False, bdj: bool = False) -> dict[str, Path]:
         if platform.system() != "Darwin" or platform.machine() != "arm64":
             raise RuntimeError("The pinned host JDK currently targets Apple Silicon macOS only")
         specifications = json.loads((HERE / "dependencies.json").read_text())
@@ -94,6 +94,8 @@ class Lab:
         dependencies.mkdir(parents=True, exist_ok=True)
         resolved = {}
         for name, specification in specifications.items():
+            if name == "menu-fonts" and not bdj:
+                continue
             if name in ("zero-source", "libffi-source") and not zero:
                 continue
             fingerprint = specification.get("sha256", specification.get("sha512"))[:16]
@@ -255,7 +257,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("command", choices=[
         "bootstrap", "host", "navigate", "zero-probe", "tvos-build", "tvos-runtime",
-        "tvos-smoke",
+        "tvos-smoke", "tvos-bdj",
     ])
     args = parser.parse_args()
     def interrupted(signum, frame):
@@ -265,11 +267,16 @@ def main() -> int:
     try:
         lab = Lab()
         dependencies = lab.dependencies(zero=args.command in (
-            "zero-probe", "tvos-build", "tvos-runtime", "tvos-smoke"))
-        if args.command in ("tvos-build", "tvos-runtime", "tvos-smoke"):
+            "zero-probe", "tvos-build", "tvos-runtime", "tvos-smoke", "tvos-bdj"),
+            bdj=args.command == "tvos-bdj")
+        if args.command in ("tvos-build", "tvos-runtime", "tvos-smoke", "tvos-bdj"):
             import tvos
             tvos.build(lab, dependencies, runtime=args.command != "tvos-build",
-                       simulator=args.command == "tvos-smoke")
+                       simulator=args.command in ("tvos-smoke", "tvos-bdj"),
+                       bdj=args.command == "tvos-bdj")
+            if args.command == "tvos-bdj":
+                import tvos_bdj
+                tvos_bdj.run(lab, dependencies)
             if args.command == "tvos-smoke":
                 import tvos_smoke
                 tvos_smoke.run(lab)

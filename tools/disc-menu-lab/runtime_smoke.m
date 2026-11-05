@@ -2,6 +2,34 @@
 #include <jni.h>
 #include <pthread.h>
 
+#ifdef PLOZZ_BDJ_SMOKE
+static UIImageView *menuView;
+static UIImage *menuImage;
+
+void disc_menu_present(const uint32_t *pixels, unsigned width, unsigned height) {
+    @autoreleasepool {
+        NSData *bytes = [NSData dataWithBytes:pixels length:(size_t)width * height * 4];
+        CGDataProviderRef provider = CGDataProviderCreateWithCFData((__bridge CFDataRef)bytes);
+        CGColorSpaceRef colors = CGColorSpaceCreateDeviceRGB();
+        CGImageRef image = CGImageCreate(width, height, 8, 32, width * 4, colors,
+            kCGBitmapByteOrder32Little | kCGImageAlphaFirst, provider, NULL, false,
+            kCGRenderingIntentDefault);
+        if (image) {
+            UIImage *frame = [UIImage imageWithCGImage:image];
+            dispatch_async(dispatch_get_main_queue(), ^{
+                menuImage = frame;
+                menuView.image = frame;
+            });
+            CGImageRelease(image);
+        } else {
+            NSLog(@"Failed to create a CGImage for the BD-J overlay");
+        }
+        CGColorSpaceRelease(colors);
+        CGDataProviderRelease(provider);
+    }
+}
+#endif
+
 static void saveResult(NSString *status, NSString *detail) {
     @autoreleasepool {
         NSDictionary *result = @{@"status": status, @"detail": detail,
@@ -22,6 +50,27 @@ static void *runJava(void *unused) {
     (void)unused;
     @autoreleasepool {
         NSString *resources = NSBundle.mainBundle.bundlePath;
+#ifdef PLOZZ_BDJ_SMOKE
+        extern int disc_menu_navigation(int argc, char **argv);
+        NSString *directory = NSSearchPathForDirectoriesInDomains(
+            NSDocumentDirectory, NSUserDomainMask, YES).firstObject;
+        NSString *disc = [resources stringByAppendingPathComponent:@"disc"];
+        NSString *home = [resources stringByAppendingPathComponent:@"runtime"];
+        NSString *jars = [[resources stringByAppendingPathComponent:@"jars"] stringByAppendingString:@"/"];
+        NSString *options = [NSString stringWithFormat:
+            @"-Xint -Xrs -XX:-UsePerfData -XX:+UseSerialGC "
+            "-XX:+UnlockDiagnosticVMOptions -XX:-ImplicitNullChecks "
+            "-Djava.security.manager=allow -Djava.io.tmpdir=%@ "
+            "-XX:ErrorFile=%@hs_err_pid%%p.log", NSTemporaryDirectory(), NSTemporaryDirectory()];
+        setenv("LIBBLURAY_CP", jars.UTF8String, 1);
+        setenv("JAVA_TOOL_OPTIONS", options.UTF8String, 1);
+        setenv("BD_DEBUG_MASK", "0x00000800", 1);
+        char *arguments[] = {"navigation", (char *)disc.UTF8String,
+                            (char *)home.UTF8String, (char *)directory.UTF8String};
+        int result = disc_menu_navigation(4, arguments);
+        saveResult(result == 0 ? @"pass" : @"failed",
+                   @"BD-J navigation: ARGB menu, Enter, top menu, Right, Enter, two playlist reads.");
+#else
         NSString *classes = [resources stringByAppendingPathComponent:@"classes"];
         NSArray<NSString *> *settings = @[
             @"-Xint", @"-Xrs", @"-Xms16m", @"-Xmx128m", @"-XX:+UseSerialGC",
@@ -81,6 +130,7 @@ static void *runJava(void *unused) {
             saveResult(@"pass", @"Zero executed arithmetic, JNI exceptions, file I/O, SHA-256, "
                 "a Java thread, process rejection, network permission denial, and VM teardown.");
         }
+#endif
     }
     return NULL;
 }
@@ -96,6 +146,13 @@ static void *runJava(void *unused) {
     (void)options;
     self.window = [[UIWindow alloc] initWithWindowScene:(UIWindowScene *)scene];
     self.window.rootViewController = [[UIViewController alloc] init];
+#ifdef PLOZZ_BDJ_SMOKE
+    menuView = [[UIImageView alloc] initWithFrame:self.window.bounds];
+    menuView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    menuView.contentMode = UIViewContentModeScaleAspectFit;
+    menuView.image = menuImage;
+    [self.window.rootViewController.view addSubview:menuView];
+#endif
     [self.window makeKeyAndVisible];
 }
 @end

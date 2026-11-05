@@ -13,7 +13,7 @@ def validate_result(result: dict) -> None:
         raise RuntimeError(f"Java runtime probe did not pass: {result}")
 
 
-def run(lab) -> None:
+def run(lab, *, bdj: dict | None = None) -> None:
     from lab import HERE
     app = lab.run_dir / "ZeroSmoke.app"
     app.mkdir()
@@ -21,11 +21,24 @@ def run(lab) -> None:
     classes = app / "classes"
     classes.mkdir()
     java = Path(lab.environment["JAVA_HOME"])
-    lab.run("compile-java-runtime-probe", [
-        java / "bin/javac", "-d", classes, HERE / "RuntimeSmoke.java",
-    ])
+    if not bdj:
+        lab.run("compile-java-runtime-probe", [
+            java / "bin/javac", "-d", classes, HERE / "RuntimeSmoke.java",
+        ])
+    else:
+        for directory in ("disc", "jars"):
+            shutil.copytree(lab.run_dir / directory, app / directory)
     lab.run("smoke-sdk", ["xcrun", "--sdk", "appletvsimulator", "--show-sdk-path"])
     sdk = (lab.run_dir / lab.commands[-1]["log"]).read_text().strip()
+    extra = []
+    if bdj:
+        lab.run("compile-embedded-navigation", [
+            "xcrun", "--sdk", "appletvsimulator", "clang",
+            "-target", "arm64-apple-tvos18.0-simulator", "-isysroot", sdk,
+            "-DPLOZZ_EMBEDDED_NAVIGATION", "-I", bdj["include"],
+            "-c", HERE / "navigation.c", "-o", lab.run_dir / "navigation.o",
+        ])
+        extra = ["-DPLOZZ_BDJ_SMOKE", lab.run_dir / "navigation.o", *bdj["link"]]
     lab.run("compile-runtime-smoke-app", [
         "xcrun", "--sdk", "appletvsimulator", "clang",
         "-target", "arm64-apple-tvos18.0-simulator", "-isysroot", sdk,
@@ -35,7 +48,8 @@ def run(lab) -> None:
         "-L", app / "runtime/lib/zero", "-ljvm",
         "-Wl,-rpath,@executable_path/runtime/lib/zero",
         "-Wl,-rpath,@executable_path/runtime/lib",
-        "-framework", "UIKit", "-framework", "Foundation",
+        *extra,
+        "-framework", "UIKit", "-framework", "Foundation", "-framework", "CoreGraphics",
     ])
     identifier = "app.plozz.lab.ZeroSmoke"
     with (app / "Info.plist").open("wb") as output:
@@ -59,10 +73,12 @@ def run(lab) -> None:
     for index, library in enumerate(sorted(app.rglob("*.dylib"))):
         lab.run(f"sign-smoke-library-{index}", ["codesign", "--force", "--sign", "-", library])
     lab.run("sign-runtime-smoke-app", ["codesign", "--force", "--sign", "-", app])
-    execute(lab, app, identifier)
+    execute(lab, app, identifier, artifacts=(
+        ("menu-first.ppm", "menu-second.ppm", "episode-1.m2ts", "episode-2.m2ts")
+        if bdj else ()))
 
 
-def execute(lab, app: Path, identifier: str) -> None:
+def execute(lab, app: Path, identifier: str, *, artifacts: tuple[str, ...] = ()) -> None:
     lab.run("list-smoke-runtimes", ["xcrun", "simctl", "list", "runtimes", "-j"], timeout=30)
     runtimes = json.loads((lab.run_dir / lab.commands[-1]["log"]).read_text())["runtimes"]
     available = [
@@ -113,6 +129,12 @@ def execute(lab, app: Path, identifier: str) -> None:
         result = json.loads(result_path.read_text())
         (lab.run_dir / "runtime-result.json").write_text(json.dumps(result, indent=2) + "\n")
         validate_result(result)
+        for name in artifacts:
+            shutil.copy2(container / "Documents" / name, lab.run_dir / name)
+        if artifacts:
+            lab.run("capture-owned-bdj-screen", [
+                "xcrun", "simctl", "io", simulator, "screenshot", lab.run_dir / "simulator-menu.png",
+            ], timeout=30)
     finally:
         if simulator:
             for name, operation in (("shutdown", "shutdown"), ("delete", "delete")):

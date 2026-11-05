@@ -204,6 +204,29 @@ def prepare_source(pristine: Path, destination: Path) -> None:
             ("#include <net/if_arp.h>",
              "#ifndef PLOZZ_TVOS\n#include <net/if_arp.h>\n#endif"),
         ],
+        "make/modules/java.desktop/lib/Awt2dLibraries.gmk": [
+            (
+                "LIBAWT_EXTRA_SRC := \\\n",
+                "LIBAWT_EXTRA_SRC := \\\n"
+                "    $(TOPDIR)/src/java.desktop/macosx/native/libawt_lwawt/awt/InitIDs.m \\\n",
+            ),
+            (
+                "LIBAWT_EXTRA_HEADER_DIRS := \\\n",
+                "LIBAWT_EXFILES += awt_LoadLibrary.c\n"
+                "LIBAWT_EXTRA_HEADER_DIRS := \\\n"
+                "    $(TOPDIR)/src/java.desktop/macosx/native/libawt_lwawt/awt \\\n",
+            ),
+            (
+                "    LIBS_macosx := -lmlib_image \\\n"
+                "        -framework Cocoa \\\n"
+                "        -framework OpenGL \\\n"
+                "        -framework Metal \\\n"
+                "        -framework JavaRuntimeSupport \\\n"
+                "        -framework ApplicationServices \\\n"
+                "        -framework AudioToolbox, \\",
+                "    LIBS_macosx := -lmlib_image, \\",
+            ),
+        ],
         "make/modules/java.base/Lib.gmk": [
             (
                 "    LIBS_macosx := -framework CoreFoundation -framework CoreServices, \\",
@@ -226,6 +249,29 @@ def prepare_source(pristine: Path, destination: Path) -> None:
     process_target = destination / "src/java.base/unix/native/libjava/tvos_process.c"
     if not process_target.exists() or process_target.read_text() != process_source:
         process_target.write_text(process_source)
+    desktop_make = destination / "make/modules/java.desktop/Lib.gmk"
+    text = (pristine / "make/modules/java.desktop/Lib.gmk").read_text()
+    text += (
+        "\n# BDToolkit owns windowing; only portable raster/image/font support is built.\n"
+        "TARGETS := $(BUILD_LIBMLIB_IMAGE) $(BUILD_LIBAWT) $(BUILD_LIBLCMS) "
+        "$(BUILD_LIBJAVAJPEG) $(BUILD_LIBFREETYPE)\n")
+    if desktop_make.read_text() != text:
+        desktop_make.write_text(text)
+    loader = Path(__file__).with_name("tvos_awt.c").read_text()
+    target = destination / "src/java.desktop/share/native/libawt/tvos_awt.c"
+    if not target.exists() or target.read_text() != loader:
+        target.write_text(loader)
+    toolkit = (pristine / "src/java.desktop/macosx/native/libawt_lwawt/awt/LWCToolkit.m").read_text()
+    start = "JNIEXPORT void JNICALL\nJava_sun_awt_SunToolkit_closeSplashScreen"
+    end = "\n\n\n// TODO: definitely doesn't belong here"
+    if toolkit.count(start) != 1 or toolkit.count(end) != 1:
+        raise ValueError("Upstream splash cleanup function boundaries changed")
+    splash = toolkit[toolkit.index(start):toolkit.index(end)]
+    notice = toolkit[:toolkit.index("*/") + 2]
+    target = destination / "src/java.desktop/share/native/libawt/tvos_splash.c"
+    text = notice + "\n#include <jni.h>\n#include <dlfcn.h>\n\n" + splash + "\n"
+    if not target.exists() or target.read_text() != text:
+        target.write_text(text)
 
 
 def stage_runtime(build_dir: Path, destination: Path) -> None:
@@ -244,7 +290,7 @@ def stage_runtime(build_dir: Path, destination: Path) -> None:
 
 
 def build(lab, dependencies: dict[str, Path], *, runtime: bool = False,
-          simulator: bool = False) -> Path:
+          simulator: bool = False, bdj: bool = False) -> Path:
     from lab import WORK
     sdk_name = "appletvsimulator" if simulator else "appletvos"
     lab.run("tvos-sdk", ["xcrun", "--sdk", sdk_name, "--show-sdk-path"])
@@ -328,6 +374,13 @@ def build(lab, dependencies: dict[str, Path], *, runtime: bool = False,
         lab.run("compile-tvos-java-base", [
             "make", "java.base-java", "java.base-libs", "java.base-gendata", "JOBS=4",
         ], cwd=build_dir, timeout=1200)
+        if bdj:
+            modules = ("java.datatransfer", "java.xml", "java.prefs", "java.logging",
+                       "java.rmi", "java.desktop")
+            lab.run("compile-tvos-bdj-modules", [
+                "make", *(f"{module}-java" for module in modules),
+                "java.desktop-libs", "java.desktop-gendata", "JOBS=4",
+            ], cwd=build_dir, timeout=1200)
         for index, native in enumerate(sorted(
                 (build_dir / "support/modules_libs/java.base").rglob("*.dylib"))):
             lab.run(f"verify-library-{index}-platform", ["otool", "-l", native])
@@ -337,10 +390,18 @@ def build(lab, dependencies: dict[str, Path], *, runtime: bool = False,
             validate_platform(headers, architecture, simulator=simulator)
         staged = lab.run_dir / "runtime"
         stage_runtime(build_dir, staged)
+        if bdj:
+            for module in modules:
+                shutil.copytree(build_dir / f"jdk/modules/{module}", staged / f"modules/{module}")
+                for category, output in (("libs", "lib"), ("conf", "conf"),
+                                         ("legal", f"legal/{module}")):
+                    origin = build_dir / f"support/modules_{category}/{module}"
+                    if origin.exists():
+                        shutil.copytree(origin, staged / output, dirs_exist_ok=True)
         result.update({
-            "status": "java-base-staged-not-executed",
+            "status": "bdj-runtime-staged-not-executed" if bdj else "java-base-staged-not-executed",
             "runtime": str(staged.relative_to(WORK)),
-            "modules": ["java.base"],
+            "modules": ["java.base", *modules] if bdj else ["java.base"],
         })
         (lab.run_dir / "tvos-result.json").write_text(json.dumps(result, indent=2) + "\n")
     return build_dir

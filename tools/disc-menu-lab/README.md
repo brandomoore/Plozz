@@ -18,6 +18,7 @@ python3 tools/disc-menu-lab/lab.py navigate
 python3 tools/disc-menu-lab/lab.py tvos-build
 python3 tools/disc-menu-lab/lab.py tvos-runtime
 python3 tools/disc-menu-lab/lab.py tvos-smoke
+python3 tools/disc-menu-lab/lab.py tvos-bdj
 ```
 
 `bootstrap` downloads prerequisites only; `host` builds libbluray and its Java
@@ -114,7 +115,8 @@ Current scope and deliberate limitations:
   limitation. URL-specific system-proxy selection uses CFNetwork when enabled
   with `java.net.useSystemProxies`; it is not exercised by the offline probe.
 - Desktop Metal/printing dependencies are not needed for this `java.base` build.
-  Their omission is **not** a port of `java.desktop`, AWT or BD-J graphics.
+  Their omission alone is not a port of `java.desktop`; the separate BD-J route
+  below adds a deliberately limited offscreen AWT implementation.
 
 `tvos-smoke` builds a separate **tvOS Simulator** variant and an original
 `app.plozz.lab.ZeroSmoke` app. It creates one owned simulator, boots it, installs
@@ -127,7 +129,7 @@ library alone is not a pass. No connection is attempted.
 This probe **passed on tvOS 27 Simulator with the Zero interpreter**, including
 VM teardown and owned-simulator cleanup. The executable-memory guards were
 enabled. This advances the result beyond cross-compilation, but it does not
-establish physical-device behavior or run the Blu-ray menu/AWT layer on tvOS.
+establish physical-device behavior.
 SecurityManager deprecation warnings remain visible rather than suppressed.
 
 The runner retains app stdout/stderr, runtime results and any JVM fatal-error
@@ -135,10 +137,51 @@ log found on timeout, and shuts down/deletes only its owned simulator in a
 `finally` path. It does not reset shared simulator services. Simulator evidence
 must not be presented as physical Apple TV execution.
 
-Separately, libbluray's Darwin build assumes DiskArbitration and desktop JVM
-discovery. Its Apple TV build, BD-J runtime modules and Plozz playback integration
-have not been implemented here. No physical Apple TV has run this experiment.
-A distributable implementation also needs
+## Actual BD-J menu on tvOS Simulator
+
+`tvos-bdj` has **executed the authored Java disc menu on tvOS 27 Simulator using
+Zero and target-built libbluray**. It renders the real ARGB callbacks in a native
+UIKit image surface, sends Enter, returns to the top menu, moves Right and
+selects the second playlist. Both selected streams must decode to their expected
+red/blue test colors. The simulator app is separate from Plozz.
+
+The route adds matching `java.desktop`, `java.datatransfer`, `java.xml`,
+`java.prefs`, `java.logging` and `java.rmi` classes. It builds OpenJDK's portable
+AWT raster/image libraries and bundled FreeType, reuses upstream lightweight
+AWT initialization and splash-cleanup code, and replaces desktop window-server
+loading with a loader that accepts **only libbluray's BDToolkit**. This is not a
+general-purpose Java desktop port: AppKit, native desktop controls, printing,
+system audio/MIDI, macOS fontmanager, native preferences and desktop integration
+are not supplied. Untested APIs may fail.
+
+The isolated libbluray source copy removes DiskArbitration, uses the existing
+directory mount implementation, builds its bundled libudfread for the target,
+and requires an application-provided `lib/zero` runtime. It does not spawn the
+desktop Java locator or fall back to a host JVM. Native metadata XML parsing and
+fontconfig are disabled for this fixture; Java XML support remains present.
+The original Xlet still checks that disc networking is denied.
+
+Font rendering uses pinned DejaVu 2.37 fonts, explicitly mapped by their real
+file names; no system-font extraction or proprietary font bundling is involved.
+Font and native dependency notices are retained in the staged runtime.
+
+Each run retains `menu-first.png`, `menu-second.png`, `simulator-menu.png`,
+the selected M2TS samples, stdout/stderr, `bdj-result.json` and simulator-cleanup
+evidence. The initial display flush can contain only the background, so the
+harness waits for painted choice colors and text rather than counting any
+frame as menu readiness. Independent output assertions reject blank text,
+wrong selection, truncated images and incorrect decoded clip colors.
+
+This proves the original menu execution and navigation path on Simulator, not
+continuous audiovisual playback, Siri Remote hardware input, performance on
+Apple TV, commercial-disc compatibility, network-share caching, or a complete
+security boundary. Upstream initialization/teardown warnings remain in the logs,
+including the fixture's absent HDMV MovieObject file and the intentionally
+denied network permission check. The runner does not infer a full compatibility
+pass from this deliberately small original disc.
+
+Plozz playback integration has not been changed. No physical Apple TV has run
+this experiment. A distributable implementation also needs
 license/notice review and an App Review decision; support for arbitrary external
 Java media applications must not be described as preapproved.
 

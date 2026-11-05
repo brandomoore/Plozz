@@ -16,6 +16,10 @@ typedef struct {
     int failed;
 } Overlay;
 
+#ifdef PLOZZ_EMBEDDED_NAVIGATION
+extern void disc_menu_present(const uint32_t *pixels, unsigned width, unsigned height);
+#endif
+
 static void overlay(void *opaque, const BD_ARGB_OVERLAY *event) {
     Overlay *state = opaque;
     if (!event || event->plane != 1) return;
@@ -50,6 +54,9 @@ static void overlay(void *opaque, const BD_ARGB_OVERLAY *event) {
             memcpy(state->presented, state->pixels,
                    (size_t)state->width * state->height * sizeof(uint32_t));
             state->frames++;
+#ifdef PLOZZ_EMBEDDED_NAVIGATION
+            disc_menu_present(state->presented, state->width, state->height);
+#endif
         } else {
             state->failed = 1;
         }
@@ -70,6 +77,26 @@ static unsigned frame_count(Overlay *state) {
     return result;
 }
 
+static int menu_ready(Overlay *state, unsigned selected) {
+    if (!selected) return 1;
+    pthread_mutex_lock(&state->lock);
+    int ok = !state->failed && state->presented && state->width == 1280 && state->height == 720;
+    for (unsigned episode = 1; ok && episode <= 2; episode++) {
+        unsigned left = 80 + (episode - 1) * 580;
+        uint32_t expected = episode == selected ? 0x00ffff00 : 0x00808080;
+        ok = (state->presented[270 * 1280 + left + 20] & 0x00ffffff) == expected;
+        unsigned black = 0;
+        for (unsigned y = 315; y < 345; y++) {
+            for (unsigned x = left + 40; x < left + 220; x++) {
+                if ((state->presented[y * 1280 + x] & 0x00ffffff) == 0) black++;
+            }
+        }
+        ok = ok && black >= 100;
+    }
+    pthread_mutex_unlock(&state->lock);
+    return ok;
+}
+
 static int snapshot(Overlay *state, const char *path) {
     pthread_mutex_lock(&state->lock);
     FILE *file = fopen(path, "wb");
@@ -88,7 +115,8 @@ static int snapshot(Overlay *state, const char *path) {
 }
 
 static int pump(BLURAY *disc, Overlay *state, unsigned minimum_frames,
-                unsigned expected_playlist, const char *output, int wait_menu) {
+                unsigned expected_playlist, const char *output, int wait_menu,
+                unsigned expected_selection) {
     FILE *file = output ? fopen(output, "wb") : NULL;
     if (output && !file) return 0;
     double deadline = now() + 15;
@@ -117,7 +145,8 @@ static int pump(BLURAY *disc, Overlay *state, unsigned minimum_frames,
             if (fwrite(buffer, 1, (size_t)count, file) != (size_t)count) break;
             bytes += (size_t)count;
         }
-        if (frame_count(state) >= minimum_frames && (!wait_menu || menu_seen) &&
+        if (frame_count(state) >= minimum_frames && menu_ready(state, expected_selection) &&
+            (!wait_menu || menu_seen) &&
             (!expected_playlist || (playlist == expected_playlist && bytes >= 65536))) {
             ok = 1;
             break;
@@ -135,11 +164,12 @@ static int key(BLURAY *disc, unsigned code) {
            bd_user_input(disc, -1, code | BD_VK_KEY_RELEASED) >= 0;
 }
 
-int main(int argc, char **argv) {
+int disc_menu_navigation(int argc, char **argv) {
     if (argc != 4) {
         fprintf(stderr, "usage: navigation AUTHORED_DISC JAVA_HOME EVIDENCE_DIRECTORY\n");
         return 2;
     }
+
     setbuf(stdout, NULL);
     Overlay state = {.lock = PTHREAD_MUTEX_INITIALIZER};
     BLURAY *disc = bd_init();
@@ -158,20 +188,20 @@ int main(int argc, char **argv) {
     printf("DISC detected=%u bdj=%u handled=%u titles=%u\n",
            info->bluray_detected, info->bdj_detected, info->bdj_handled, info->num_titles);
     if (!info->bluray_detected || !info->bdj_detected || !info->bdj_handled) goto finish;
-    if (!bd_play(disc) || !pump(disc, &state, 1, 0, NULL, 0)) goto finish;
+    if (!bd_play(disc) || !pump(disc, &state, 1, 0, NULL, 0, 1)) goto finish;
     snprintf(path, sizeof(path), "%s/menu-first.ppm", argv[3]);
     if (!snapshot(&state, path) || !key(disc, BD_VK_ENTER)) goto finish;
     snprintf(path, sizeof(path), "%s/episode-1.m2ts", argv[3]);
-    if (!pump(disc, &state, 1, 1, path, 0)) goto finish;
+    if (!pump(disc, &state, 1, 1, path, 0, 0)) goto finish;
 
     unsigned frames = frame_count(&state);
-    if (bd_menu_call(disc, -1) <= 0 || !pump(disc, &state, frames, 0, NULL, 1)) goto finish;
+    if (bd_menu_call(disc, -1) <= 0 || !pump(disc, &state, frames, 0, NULL, 1, 1)) goto finish;
     frames = frame_count(&state);
-    if (!key(disc, BD_VK_RIGHT) || !pump(disc, &state, frames + 1, 0, NULL, 0)) goto finish;
+    if (!key(disc, BD_VK_RIGHT) || !pump(disc, &state, frames + 1, 0, NULL, 0, 2)) goto finish;
     snprintf(path, sizeof(path), "%s/menu-second.ppm", argv[3]);
     if (!snapshot(&state, path) || !key(disc, BD_VK_ENTER)) goto finish;
     snprintf(path, sizeof(path), "%s/episode-2.m2ts", argv[3]);
-    if (!pump(disc, &state, 1, 2, path, 0)) goto finish;
+    if (!pump(disc, &state, 1, 2, path, 0, 0)) goto finish;
     ok = 1;
 
 finish:
@@ -183,3 +213,9 @@ finish:
     printf("NAVIGATION %s\n", ok ? "PASS" : "FAIL");
     return ok ? 0 : 1;
 }
+
+#ifndef PLOZZ_EMBEDDED_NAVIGATION
+int main(int argc, char **argv) {
+    return disc_menu_navigation(argc, argv);
+}
+#endif
