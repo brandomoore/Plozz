@@ -78,11 +78,20 @@ especially on multi-feature discs. Direct playback retains normal tracking.
 Authored primary audio/subtitle selections map playlist stream identities to
 the engine's actual MPEG-TS PIDs, never its track-list order. Player selections
 also update the disc VM and respect its operation restrictions. Missing,
-ambiguous or separate-subpath tracks remain explicitly unavailable. Disc choices
-drive the subtitle overlay without changing remembered series preferences.
+ambiguous or separate-subpath tracks remain explicitly unavailable. When two
+decoder representations share a PID (such as TrueHD and its AC-3 companion),
+the already-active matching representation satisfies the disc selection.
+Recovered track warnings clear independently of other track or navigation notices.
+Disc choices drive the subtitle overlay without changing remembered series preferences.
 The engine exposes menu state only for an active menu request; ordinary playback
 must still apply its normal subtitle defaults and remembered track selections.
 Arbitrary-disc compatibility and distribution readiness are not established.
+Menu graphics cannot end an in-flight video-load state; authored video transitions
+retain a loading indicator until their load completes. Returning from a disc menu
+creates a fresh transport focus owner and re-arms the controls' idle timeout;
+retired hosts cannot keep their previous focus/panel state or idle timer.
+Floating disc actions join the tvOS focus order only while the transport's
+button layer is active, so they cannot take the video surface's initial focus.
 BD-J networking and durable disc storage are disabled. libbluray still creates
 temporary binding-unit and persistent-storage directories for disc applications;
 their arbitrary writes do not yet have a complete quota. The JVM has bounded

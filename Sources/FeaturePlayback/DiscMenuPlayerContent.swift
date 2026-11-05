@@ -76,6 +76,12 @@ struct DiscMenuPlayerContent: View {
                 #endif
             }
         }
+        .overlay {
+            if state.isOpening && state.failure == nil && (!model.showBringUpSpinner || state.image != nil) {
+                ProgressView()
+                    .allowsHitTesting(false)
+            }
+        }
         .overlay(alignment: .bottom) {
             if let notice = state.notice, state.failure == nil {
                 Text(verbatim: notice).padding().background(.regularMaterial)

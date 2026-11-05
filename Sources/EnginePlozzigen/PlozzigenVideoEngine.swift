@@ -705,10 +705,12 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
                         isPaused: { [weak self] in self?.intendsPause ?? true },
                         selectAudio: { [weak self] pid in
                             guard let self else { return false }
-                            let tracks = self.engine.audioTracks.filter { $0.mpegTSPID == pid }
-                            guard tracks.count == 1, let track = tracks.first else { return false }
-                            if self.engine.activeAudioTrackIndex != track.id {
-                                self.engine.selectAudioTrack(index: track.id)
+                            guard let trackID = Self.discAudioTrackID(
+                                pid: pid, tracks: self.engine.audioTracks,
+                                activeTrackID: self.engine.activeAudioTrackIndex
+                            ) else { return false }
+                            if self.engine.activeAudioTrackIndex != trackID {
+                                self.engine.selectAudioTrack(index: trackID)
                             }
                             return true
                         },
@@ -2405,6 +2407,17 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
                 isCommentary: track.isCommentary
             )
         }
+    }
+
+    static func discAudioTrackID(pid: Int, tracks: [TrackInfo], activeTrackID: Int?) -> Int? {
+        guard (0x20..<0x1fff).contains(pid) else { return nil }
+        let matches = tracks.filter { $0.mpegTSPID == pid }
+        // TrueHD and its AC-3 companion can share a transport PID. If the
+        // engine already renders that PID, preserve its supported representation.
+        if let activeTrackID, matches.contains(where: { $0.id == activeTrackID }) {
+            return activeTrackID
+        }
+        return matches.count == 1 ? matches.first?.id : nil
     }
 
     private func syncTracks() {

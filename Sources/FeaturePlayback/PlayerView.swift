@@ -308,6 +308,10 @@ public struct PlayerView: View {
                                 }
                             }
                             .padding()
+                            #if os(tvOS)
+                            .disabled(!viewModel.controls.controlBarVisible)
+                            .opacity(viewModel.controls.controlsVisible ? 1 : 0)
+                            #endif
                     } else if showsDiscVideoAction {
                         Button("Disc videos") { showsDiscVideos = true }
                             .contextMenu {
@@ -316,6 +320,9 @@ public struct PlayerView: View {
                                 }
                             }
                             .padding()
+                            #if os(tvOS)
+                            .disabled(viewModel.phase == .ready && !viewModel.controls.controlBarVisible)
+                            #endif
                     }
                 }
                 .overlay(alignment: .bottom) {

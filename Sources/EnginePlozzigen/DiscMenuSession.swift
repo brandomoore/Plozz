@@ -149,8 +149,10 @@ final class DiscMenuSession {
                 guard let self, !self.stopped else { return }
                 self.state.image = image
                 if image != nil {
-                    self.deadline?.cancel()
-                    self.state.isOpening = false
+                    if self.selectionTask == nil || self.loadedGeneration == self.generation {
+                        self.deadline?.cancel()
+                        self.state.isOpening = false
+                    }
                     self.firstLoad?.resume()
                     self.firstLoad = nil
                 }
@@ -232,6 +234,8 @@ final class DiscMenuSession {
         loadedGeneration = nil
         pendingAudioPID = nil
         pendingSubtitle = nil
+        state.audioSelectionUnavailable = false
+        state.subtitleSelectionUnavailable = false
         state.hasSubtitleSelection = false
         state.region = native?.selectedRegion ?? state.region
         let previous = selectionTask
@@ -302,16 +306,18 @@ final class DiscMenuSession {
         guard !stopped, loadedGeneration == generation else { return }
         if let pid = pendingAudioPID {
             pendingAudioPID = nil
-            if !selectAudio(pid) {
+            let available = selectAudio(pid)
+            state.audioSelectionUnavailable = !available
+            if !available {
                 pendingAudioPID = pid
-                state.notice = String(localized: "The disc's selected audio track is unavailable.")
             }
         }
         if let selection = pendingSubtitle {
             pendingSubtitle = nil
-            if !selectSubtitle(selection.pid, selection.enabled) {
+            let available = selectSubtitle(selection.pid, selection.enabled)
+            state.subtitleSelectionUnavailable = !available
+            if !available {
                 pendingSubtitle = selection
-                state.notice = String(localized: "The disc's selected subtitle track is unavailable.")
             }
         }
     }
@@ -325,7 +331,13 @@ final class DiscMenuSession {
             MainActor.assumeIsolated {
                 guard let self, !self.stopped, self.loadedGeneration == loadedGeneration else { return }
                 if accepted {
-                    if subtitle { self.pendingSubtitle = nil } else { self.pendingAudioPID = nil }
+                    if subtitle {
+                        self.pendingSubtitle = nil
+                        self.state.subtitleSelectionUnavailable = false
+                    } else {
+                        self.pendingAudioPID = nil
+                        self.state.audioSelectionUnavailable = false
+                    }
                     completion()
                 } else {
                     self.state.notice = String(localized: "The disc does not allow that track selection here.")

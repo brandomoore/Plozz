@@ -414,6 +414,9 @@ final class PlayerInputViewController: UIViewController, UIGestureRecognizerDele
         startSubtitleClock()
 #if os(tvOS)
         remoteTouchInput.start()
+        if controlBarHost != nil, model.controlsVisible {
+            scheduleAutoHide()
+        }
 #endif
     }
 
@@ -421,6 +424,7 @@ final class PlayerInputViewController: UIViewController, UIGestureRecognizerDele
         super.viewDidDisappear(animated)
         refreshTask?.cancel()
         refreshTask = nil
+        cancelAutoHide()
         stopRemoteScan()
         cancelScrubCommit()
         resetSwipePreviewCadence()
@@ -570,6 +574,14 @@ final class PlayerInputViewController: UIViewController, UIGestureRecognizerDele
     /// interaction is off so indirect-touch scrub pans flow to the surface and it
     /// can't steal focus.
     func attachControls(themePalette: ThemePaletteBox) {
+        // A disc menu can replace this host while retaining the controls model.
+        // Focus and panel state belong to this new host, not the retired one.
+        model.controlBarVisible = false
+        model.isPanelOpen = false
+        model.controlBar.focusArmed = false
+        model.controlBar.settled = false
+        model.controlBar.infoCardOpen = false
+        model.controlBar.episodeBrowserOpen = false
         // The remote's Play/Pause reaches the view model as a Now Playing command
         // while video plays; this is where it becomes the same input as a press.
         model.remotePlayPause.onSystemCommand = { [weak self] in
