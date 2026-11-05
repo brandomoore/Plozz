@@ -1973,6 +1973,12 @@ struct MainTabView: View {
             "\(seer.connectionRevision)|\(activeProfile.id)|\(activeProfile.seerrUserID.map(String.init) ?? "admin")|\(activeProfile.seerrServerIdentity?.canonicalURL ?? "")"
         )
         .environment(heroTrailerController)
+        .environment(\.heroTrailerPlayerFactory, HeroTrailerPlayerFactory { player, surface, title, dismiss in
+            BorrowedTrailerPlayer(
+                player: player, surface: surface, title: title,
+                settings: playbackModel.settings, palette: resolvedPalette, onDismiss: dismiss
+            )
+        })
         .onChange(of: isLiveTVProfileAuthorized(), initial: true) { _, authorized in
             if authorized {
                 heroTrailerController.resumeAfterPlayback(owner: profileTrailerSuppressionID)

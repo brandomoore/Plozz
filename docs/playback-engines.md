@@ -414,12 +414,16 @@ headers when updating the vendored sources, and update sources, public headers,
 binary checksums, and bundled notices together.
 
 Plozz pins the playback-corrected
-[AetherEngine fork](https://github.com/brandomoore/AetherEngine/tree/45e37ed2e6b66ea520229a6fb8b0f973fe155fda)
-at commit `45e37ed2e6b66ea520229a6fb8b0f973fe155fda`, integrating upstream
+[AetherEngine fork](https://github.com/brandomoore/AetherEngine/tree/5873655f4c5669843ac8c9bfc8574733759ea6f5)
+at commit `5873655f4c5669843ac8c9bfc8574733759ea6f5`, integrating upstream
 **7.53.1** (`0839aeee18dd0818c5c307a3c5ecba8ea3161b22`).
 Playback diagnostics show `AetherEngine v7.53.1`, read from the linked engine
 rather than a duplicated version constant. The exact fork commit remains in
 attributions because the upstream version does not identify Plozz's patches.
+Native audio readback and subtitle selection use bounded off-main media-selection
+reads, so an unresponsive media service does not block the UI actor. Plozz treats
+AVFoundation's media-services reset as one fresh same-engine recovery, not a
+codec failure, and retains numeric audio-session failure evidence.
 The 7.51.0 integration includes 7.50.0's 24-bit PCM spatial-bed output with
 route-selected APAC for AirPlay. The 7.53.1 update advances FFmpegBuild to
 3.11.1; LibDovi 2.1.0 and LibTrueHD 3.1.0 remain unchanged.

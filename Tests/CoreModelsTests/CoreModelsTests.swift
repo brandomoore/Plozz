@@ -211,6 +211,15 @@ final class SpoilerSettingsTests: XCTestCase {
         XCTAssertTrue(enabled.shouldHideText(for: item))
     }
 
+    func testBriefPlayKeepsSpoilerProtectionUntilTheResumeThreshold() {
+        for position in [2.0, 59, 60] {
+            let item = episode(percentage: position / 3600, resume: position)
+            XCTAssertEqual(enabled.shouldHideThumbnail(for: item), position < 60)
+            XCTAssertTrue(enabled.shouldHideText(for: item))
+            XCTAssertFalse(enabled.shouldHideThumbnail(for: episode(played: true, resume: position)))
+        }
+    }
+
     func testNegligiblePercentageIsStillUnwatched() {
         let item = episode(percentage: 0.005)
         XCTAssertTrue(enabled.shouldHideThumbnail(for: item))

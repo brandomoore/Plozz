@@ -20,6 +20,7 @@ enum EngineFailureAction: Equatable {
     /// Rebuild a *fresh* Plozzigen instance for the same network-file source and
     /// re-resolve (drains the old SMB session first). Fires at most once.
     case retryFreshNetworkFile(resume: TimeInterval)
+    case retryMediaServices(kind: PlaybackEngineKind, resume: TimeInterval)
     /// Re-resolve on the *other* engine at the last known position. Fires at most
     /// once.
     case swapAlternate(kind: PlaybackEngineKind, resume: TimeInterval)
@@ -38,6 +39,7 @@ struct EngineFallbackState: Equatable {
     var hasTriedAlternateEngine = false
     var hasRetriedNetworkFileEngine = false
     var hasAttemptedTranscodeFallback = false
+    var hasRetriedMediaServices = false
 }
 
 /// The cross-engine fallback decision, extracted from
@@ -68,10 +70,16 @@ enum EngineFailurePolicy {
         alternateEngineKind: PlaybackEngineKind?,
         resume: TimeInterval,
         allowsCompatibilityFallback: Bool = true,
+        mediaServicesReset: Bool = false,
         state: inout EngineFallbackState
     ) -> EngineFailureAction {
         guard tokenMatches else { return .ignoreStale }
         guard hasRequest else { return .failNoRequest }
+        if mediaServicesReset {
+            guard !state.hasRetriedMediaServices else { return .exhausted }
+            state.hasRetriedMediaServices = true
+            return .retryMediaServices(kind: currentEngineKind, resume: resume)
+        }
         guard allowsCompatibilityFallback else { return .exhausted }
 
         // 1a) A network-file source that failed on Plozzigen retries a *fresh*
@@ -129,6 +137,8 @@ protocol EngineHandoffCoordinatorHost: AnyObject {
     /// The view model's current dynamic-range load generation — a retry that races
     /// a superseding load (which bumps this) while transport drains is abandoned.
     var handoffDynamicRangeLoadGeneration: UInt { get }
+    var handoffMediaServicesResumePosition: TimeInterval { get }
+    func handoffPrepareMediaServicesRecovery()
 
     /// Records the range whose criteria the next `playResolved` should re-apply
     /// unchanged after a fresh-engine retry (or clears it).
@@ -141,7 +151,8 @@ protocol EngineHandoffCoordinatorHost: AnyObject {
     func handoffPlayResolved(
         _ request: PlaybackRequest,
         engineKind: PlaybackEngineKind,
-        startPosition: TimeInterval
+        startPosition: TimeInterval,
+        recoveryEvent: PlaybackDiagnosticJournal.Event
     ) async
     /// Re-resolve from the provider (optionally forcing a server transcode).
     func handoffStartPlayback(forceTranscode: Bool, resumeOverride: TimeInterval?) async
@@ -190,6 +201,18 @@ final class EngineHandoffCoordinator {
 
     /// Once-only fallback guards — see ``EngineFailurePolicy``.
     @ObservationIgnored private var fallbackState = EngineFallbackState()
+    @ObservationIgnored private var mediaServicesRecoveryToken: UUID?
+
+    var isAwaitingMediaServicesRecovery: Bool {
+        notePresentedFrame()
+        return mediaServicesRecoveryToken == engineToken
+    }
+
+    func notePresentedFrame() {
+        if mediaServicesRecoveryToken == engineToken, engine.hasPresentedVideoFrame {
+            mediaServicesRecoveryToken = nil
+        }
+    }
     /// Bumped the moment the first routed engine is committed; suppresses the
     /// unnecessary `engineToken` bump for that first selection.
     @ObservationIgnored private var hasCommittedInitialEngine = false
@@ -296,7 +319,7 @@ final class EngineHandoffCoordinator {
         // doesn't race the old cursor's asynchronous deinit release — the race
         // that made the previous fresh-engine retry re-fail in ~3ms.
         await oldEngine.drainTransport()
-        guard !host.handoffDidStop,
+        guard !Task.isCancelled, !host.handoffDidStop,
               host.handoffDynamicRangeLoadGeneration == replacementGeneration else {
             return false
         }
@@ -408,6 +431,7 @@ final class EngineHandoffCoordinator {
 
     func resetFallbackState() {
         fallbackState = EngineFallbackState()
+        mediaServicesRecoveryToken = nil
     }
 
     /// Formats the typed `.unknown` payload as a redacted ` detail=…` suffix for a
@@ -423,7 +447,7 @@ final class EngineHandoffCoordinator {
     /// following the fallback chain (see ``EngineFailurePolicy``) and carrying out
     /// the chosen action. Each step fires at most once so the chain can never loop.
     func handleEngineFailure(_ error: AppError, sourceEngineToken: UUID) async {
-        guard let host else { return }
+        guard let host, !host.handoffDidStop, !Task.isCancelled else { return }
         let detail = Self.redactedFailureDetail(error)
         let itemID = host.handoffItemID
         let request = host.handoffRequest
@@ -435,8 +459,9 @@ final class EngineHandoffCoordinator {
             isNetworkFile = false
         }
 
+        let mediaServicesReset = engine.streamingFailure?.kind == .mediaServicesReset
         let resumeFrom = max(engine.furthestObservedPosition, engine.currentTime)
-        let resume = resumeFrom > 1
+        let resume = mediaServicesReset ? host.handoffMediaServicesResumePosition : resumeFrom > 1
             ? resumeFrom
             : (host.handoffStartPositionOverride ?? request?.startPosition ?? 0)
 
@@ -449,9 +474,10 @@ final class EngineHandoffCoordinator {
             currentEngineKind: currentEngineKind,
             alternateEngineKind: alternateEngineKind,
             resume: resume,
-            allowsCompatibilityFallback: PlayerViewModel.streamingFailure(
+            allowsCompatibilityFallback: !isAwaitingMediaServicesRecovery && PlayerViewModel.streamingFailure(
                 error, evidence: engine.streamingFailure
             )?.allowsCodecFallback != false,
+            mediaServicesReset: mediaServicesReset,
             state: &fallbackState
         )
 
@@ -482,12 +508,26 @@ final class EngineHandoffCoordinator {
                 preserveDisplayMode: preservedRange != nil
             ) else { return }
             host.handoffSetPendingPreservedDynamicRange(preservedRange)
-            await host.handoffPlayResolved(request, engineKind: .plozzigen, startPosition: resume)
+            await host.handoffPlayResolved(
+                request, engineKind: .plozzigen, startPosition: resume, recoveryEvent: .compatibilityRetry
+            )
+
+        case .retryMediaServices(let kind, let resume):
+            guard let request else { host.handoffSetPhase(.failed(error)); return }
+            HandoffDiagnostics.emit("engine MEDIA_SERVICES_RESET retry=fresh engine=\(kind.rawValue)")
+            host.handoffPrepareMediaServicesRecovery()
+            guard await replaceEngineForRetry(kind, preserveDisplayMode: false) else { return }
+            mediaServicesRecoveryToken = engineToken
+            await host.handoffPlayResolved(
+                request, engineKind: kind, startPosition: resume, recoveryEvent: .mediaServicesRetry
+            )
 
         case .swapAlternate(let kind, let resume):
             guard let request else { host.handoffSetPhase(.failed(error)); return }
             PlozzLog.playback.info("Engine failed; swapping to the alternate engine")
-            await host.handoffPlayResolved(request, engineKind: kind, startPosition: resume)
+            await host.handoffPlayResolved(
+                request, engineKind: kind, startPosition: resume, recoveryEvent: .compatibilityRetry
+            )
 
         case .forceServerTranscode(let resume):
             PlozzLog.playback.info("Direct play failed; retrying with server transcode")

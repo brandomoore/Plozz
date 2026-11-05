@@ -483,9 +483,31 @@ public extension MediaItem {
         return remainingRuntimeLabel(for: runtime) != nil
     }
 
-    /// In-progress fraction (`0..<1`) for a resumable item, or `nil` when it has
-    /// not been started or is already finished. Drives the detail Play button's
-    /// small progress bar.
+    /// Whether browsing surfaces should show playback as started. Saved positions
+    /// remain untouched; playable titles share Continue Watching's minimum.
+    /// Container percentages count completed children, not elapsed playback.
+    var hasVisiblePlaybackProgress: Bool {
+        switch kind {
+        case .movie, .episode, .video:
+            let minimum = ContinueWatchingPolicy.minimumResumePosition(duration: runtime)
+            if let position = resumePosition, position.isFinite, position > 0 {
+                return position >= minimum
+            }
+            guard let percentage = playedPercentage, percentage.isFinite, percentage > 0 else {
+                return false
+            }
+            // Without a position or duration, retain the provider's progress
+            // rather than guess how many seconds its percentage represents.
+            guard let runtime, runtime.isFinite, runtime > 0 else { return true }
+            return percentage >= minimum / runtime
+        default:
+            return (resumePosition ?? 0) > 0 || (playedPercentage ?? 0) > 0
+        }
+    }
+
+    /// In-progress fraction (`0..<1`) for a resumable item, or `nil` below the
+    /// display threshold or when already finished. Drives the detail Play
+    /// button and episode chip without changing the saved playback position.
     var resumeProgressFraction: Double? { opensExternalSource ? nil : cardProgressFraction }
 
     /// Bare remaining-time text for an in-progress item (e.g. `20m`), or `nil`
@@ -537,6 +559,7 @@ public extension MediaItem {
     /// percentage fallback still defers to it, because a watched title reports a
     /// percentage of 1 that describes the *previous* viewing, not this one.
     private var cardProgressFraction: Double? {
+        guard hasVisiblePlaybackProgress else { return nil }
         if let runtime, runtime > 0, let resume = resumePosition, resume > 0 {
             let fraction = resume / runtime
             if fraction < 1 { return fraction }

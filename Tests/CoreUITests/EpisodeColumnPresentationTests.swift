@@ -33,6 +33,23 @@ final class EpisodeColumnPresentationTests: XCTestCase {
         XCTAssertTrue(presentation.accessibilityLabel.contains("25 percent watched"))
     }
 
+    func testBriefPlayKeepsFullRuntimeUnwatchedAccessibilityAndSpoilerProtection() {
+        let item = episode(runtime: 3600, resumePosition: 2, playedPercentage: 2.0 / 3600)
+        let presentation = EpisodeColumnPresentation(item: item, spoilerSettings: .default)
+        XCTAssertEqual(presentation.metadataText, "1h")
+        XCTAssertNil(presentation.progress)
+        XCTAssertFalse(presentation.isWatched)
+        XCTAssertTrue(presentation.accessibilityLabel.contains("Unwatched"))
+        XCTAssertFalse(presentation.accessibilityLabel.contains("percent watched"))
+        for mode in [SpoilerSettings.Mode.blur, .placeholder] {
+            let protected = EpisodeColumnPresentation(
+                item: item, spoilerSettings: SpoilerSettings(isEnabled: true, mode: mode)
+            )
+            XCTAssertEqual(protected.artworkTreatment, mode == .blur ? .blurred : .placeholder)
+            XCTAssertNil(protected.visibleOverview)
+        }
+    }
+
     /// A rewatch shows where the viewer is, not where they once finished.
     ///
     /// "Already watched" was being read as "no progress" in every presentation

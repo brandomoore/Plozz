@@ -440,7 +440,10 @@ records on both platforms; error dialogs, playback routing and timeouts are unch
   leaves Next Up stale behind a cross-refresh item cache.
   Continue Watching admits ordinary resume positions at 5% of duration, bounded
   between 5 and 60 seconds (60 seconds when duration is unknown). Saving resume
-  progress is independent of this visibility threshold. Unstarted Next Up episodes
+  progress is independent of this visibility threshold. Detail and card progress
+  indicators use the same minimum, so brief plays still look unstarted. A
+  percentage-only item uses its runtime when available; without either a position
+  or duration, its reported progress is retained. Unstarted Next Up episodes
   remain eligible; trailers never enter the row or propagate watch state to their
   parent title. The same policy covers optimistic updates, queued-write overlays,
   cached content, library/server rows, and their browse grids. Grid filtering
@@ -803,6 +806,10 @@ records on both platforms; error dialogs, playback routing and timeouts are unch
   target. The opening card selects identity, not ongoing watch state: TV and
   mobile resolve the loaded episode with live resume data, never reapplying the
   original card's watched flag after a toggle.
+  Playback resume reconciliation excludes sources of another media kind. A
+  series page's source inventory must not clear its hero episode's saved position
+  or contribute the show's watched state; eligible episode sources still use
+  the shared cross-server resume policy.
   An episode's show breadcrumb is a single native button showing only the show
   title and chevron, without a background or border in either focus state.
   Play takes initial focus when available; Up then reaches
@@ -1075,6 +1082,54 @@ records on both platforms; error dialogs, playback routing and timeouts are unch
   frame needs a snapshot, on its own actor rather than Home's main thread.
   Idle Home does not initialize Metal for unused handoff snapshots; subsequent
   frames reuse the context. A completed snapshot cannot replace a newer trailer.
+  Immediate live-surface moves retain a separate synchronous renderer, also
+  initialized only after a decoded frame is available.
+  Home transfers the matching trailer to detail before navigation starts (when
+  detail trailers are enabled). Home disappearance and late scroll/recede
+  callbacks cannot stop or pause that player; its item, position and live mute
+  choice survive the handoff on TV and mobile. Leaving for another destination
+  or backgrounding the app still stops ambient playback.
+  Home, detail and featured cards share one persistent video layer, moved only
+  into the owning surface's mounted host. Offscreen navigation hosts cannot take
+  it, and there is no second invisible layer competing for decoded frames.
+  Hero + Showcase uses the same round-trip contract: covering Home retains its
+  same-title return receiver and suspends carousel advancement. Returning restores
+  the trailer's elapsed timeline rather than restarting or immediately paging.
+  Scoped detail cleanup requires an exact handler owner, including while a
+  pre-navigation transfer has no handler; delayed featured focus cannot take
+  a trailer already owned by detail.
+  A trailer handoff bypasses artwork covers in both navigation directions;
+  cached or late artwork cannot cover live video. Home renders trailer visibility
+  from the shared controller on its first returning frame, and the outgoing video
+  host holds a decoded frame while the persistent layer moves.
+  Routers register the exact source ID selected for the destination alongside
+  the Home ID. This is a playback-scoped alias, not a title/name match: it retains
+  the original player through source selection and is cleared when playback stops
+  or changes to another item.
+  On tvOS, Up from the hero action row opens an already-playing trailer with
+  Plozz's regular full-screen play/pause and seeking controls. Home enables this only with
+  Pinned Sidebar: Top Bar and native Sidebar retain their Up navigation. Detail
+  pages allow it with every navigation style and briefly show "Up for playback
+  controls" above the hero after two seconds of eligible focus. The hint reuses
+  Showcase's upward chevron and never adds a focus stop. The Trailer button uses
+  the same presentation when that title's ambient trailer is already playing;
+  otherwise its existing provider/external-link route remains available.
+  The same player, item and decoded video layer are lent to Plozz's shared
+  transport UI, with a cross-dissolve instead of a sliding modal. Reduced Motion
+  removes the dissolve. There are no competing video renderers or source reloads.
+  Full-screen playback enables sound
+  temporarily, freezes Home's carousel, and retains the finished item for seeking
+  or replay. Back returns to the same page at the current position, restores the
+  ambient mute choice, and resumes the hero. An actual stop/profile departure
+  invalidates the presentation so dismissing it cannot revive old playback.
+  On Back, a retained trailer frame covers the outgoing player while the live
+  layer returns to the hero before the dissolve begins. Carousel and focus
+  callbacks remain suspended until dismissal completes; the hero is never
+  revealed while its video surface is still in the full-screen player.
+  A pending or failed Home trailer keeps the normal artwork dwell, not the
+  advertised trailer duration. Preparation is bounded to eight seconds and
+  abandoned when its item is replaced. Only ready playback extends the timeline;
+  a later failure clears that extension so the carousel can continue.
 
 ## Home loading
 

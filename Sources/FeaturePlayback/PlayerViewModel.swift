@@ -813,6 +813,7 @@ public final class PlayerViewModel {
         }
         engine.onProgress = { [weak self] in
             guard let self, self.engineToken == callbackEngineToken else { return }
+            self.engineHandoff.notePresentedFrame()
             // Jellyfin (non-idempotent) next-episode prefetch fires once the
             // hand-off window opens; idempotent providers prefetch eagerly instead.
             self.nextEpisodeCoordinator.maybeStartWindowedNextPrefetch()
@@ -840,7 +841,8 @@ public final class PlayerViewModel {
                 guard let self, self.engineToken == callbackEngineToken,
                       self.streamingLoadGeneration == failureGeneration else { return }
                 let canRetry = failureEvidence?.allowsCodecFallback ?? (error == .invalidResponse)
-                if (canRetry || failureEvidence?.kind == .hdrConversion),
+                if !self.engineHandoff.isAwaitingMediaServicesRecovery,
+                   (canRetry || failureEvidence?.kind == .hdrConversion),
                    self.retryStreamingCodecIfNeeded(failure: failureEvidence) { return }
                 self.streamingQuality.error = Self.streamingFailure(error, evidence: failureEvidence)
                 await self.engineHandoff.handleEngineFailure(
@@ -3004,6 +3006,25 @@ extension PlayerViewModel: EngineHandoffCoordinatorHost {
     }
     var handoffDidStop: Bool { didStop }
     var handoffDynamicRangeLoadGeneration: UInt { dynamicRangeLoadGeneration }
+    var handoffMediaServicesResumePosition: TimeInterval {
+        controls.pendingSeekTarget ?? (phase == .ready
+            ? currentResumePosition()
+            : streamingResumePosition ?? startPositionOverride ?? request?.startPosition ?? 0)
+    }
+
+    func handoffPrepareMediaServicesRecovery() {
+        streamingResumePosition = handoffMediaServicesResumePosition
+        if phase == .ready { streamingTrackSnapshot = subtitleController.streamSnapshot() }
+        streamingLoadGeneration += 1
+        dynamicRangeLoadGeneration &+= 1
+        streamingQuality.error = nil
+        streamingQuality.failureReport = nil
+        engineHandoff.cancelWatchdog()
+        progressReporter.cancel()
+        seekCoordinator.cancelAll()
+        subtitleOverlay.cancelAll()
+        phase = .loading
+    }
 
     func handoffSetPendingPreservedDynamicRange(_ range: SourceDynamicRange?) {
         pendingPreservedDynamicRange = range
@@ -3016,9 +3037,10 @@ extension PlayerViewModel: EngineHandoffCoordinatorHost {
     func handoffPlayResolved(
         _ request: PlaybackRequest,
         engineKind: PlaybackEngineKind,
-        startPosition: TimeInterval
+        startPosition: TimeInterval,
+        recoveryEvent: PlaybackDiagnosticJournal.Event = .compatibilityRetry
     ) async {
-        recordPlayback(.compatibilityRetry)
+        recordPlayback(recoveryEvent)
         beginDiagnosticAttempt()
         await playResolved(request, engineKind: engineKind, startPosition: startPosition)
     }
@@ -3083,7 +3105,8 @@ extension PlayerViewModel: EngineHandoffCoordinatorHost {
         let evidence = engine.streamingFailure
         recordPlayback(.startupTimedOut)
         recordPlaybackFailure(evidence.map(StreamingQualityError.playback) ?? .startupTimedOut)
-        if (evidence?.allowsCodecFallback != false || evidence?.kind == .hdrConversion),
+        if !engineHandoff.isAwaitingMediaServicesRecovery,
+           (evidence?.allowsCodecFallback != false || evidence?.kind == .hdrConversion),
            retryStreamingCodecIfNeeded(failure: evidence) { return true }
         streamingQuality.error = evidence.map(StreamingQualityError.playback) ?? .startupTimedOut
         return false

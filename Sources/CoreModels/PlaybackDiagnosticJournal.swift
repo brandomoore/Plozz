@@ -9,7 +9,7 @@ public final class PlaybackDiagnosticJournal: @unchecked Sendable {
     public enum Event: String, Codable, Sendable {
         case requested, resolved, loading, loaded, firstFrame, failed, startupTimedOut, ended
         case compatibilityRetry, codecRetry, renditionRestart, stopped, phaseChanged, engineUnavailable
-        case releaseStarted, releaseFinished, failureEvidence
+        case releaseStarted, releaseFinished, failureEvidence, mediaServicesRetry
     }
     public enum Source: String, Codable, Sendable {
         case unknown, serverFile, serverHLS, localFile, assetPackage, networkFile, separateAudio, libraryChannel

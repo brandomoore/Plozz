@@ -1,10 +1,49 @@
 import AetherEngine
 import CoreModels
+import FeaturePlayback
 import Foundation
 import XCTest
 @testable import EnginePlozzigen
 
 final class PlozzigenPlaybackFailureTests: XCTestCase {
+    func testMediaServicesResetIsNotACodecFailure() throws {
+        let failure = try XCTUnwrap(PlozzigenPlaybackFailure.classify(.init(
+            kind: .nativeItemFailed, message: "private",
+            underlyingDomain: "AVFoundationErrorDomain", underlyingCode: -11819
+        )))
+        XCTAssertEqual(failure.kind, .mediaServicesReset)
+        XCTAssertEqual(failure.diagnosticCode, "AVFoundation -11819")
+        XCTAssertFalse(failure.allowsCodecFallback)
+    }
+
+    func testAudioSessionStagePreservesNumericEvidenceWithoutEngineInfo() throws {
+        let error = NSError(domain: NSOSStatusErrorDomain, code: 561210739, userInfo: [
+            NSLocalizedDescriptionKey: "private https://fixture.test?token=secret"
+        ])
+        let failure = NativePlaybackFailure.audioSessionFailure(error)
+        XCTAssertEqual(failure.kind, .audioOutputFailed)
+        XCTAssertEqual(failure.engineFailure, .audioSessionFailed)
+        XCTAssertEqual(failure.diagnosticCode, "OSStatus 561210739")
+        XCTAssertEqual(failure.underlyingErrors.first?.domain, .osstatus)
+        XCTAssertFalse(failure.allowsCodecFallback)
+        XCTAssertFalse(String(localized: failure.userMessage).contains("secret"))
+        let journal = PlaybackDiagnosticJournal.Failure(.playback(failure))
+        let restored = try JSONDecoder().decode(
+            PlaybackDiagnosticJournal.Failure.self, from: JSONEncoder().encode(journal)
+        )
+        XCTAssertEqual(restored, journal)
+        XCTAssertEqual(restored.nativeCode, 561210739)
+        XCTAssertEqual(restored.engineFailure, .audioSessionFailed)
+    }
+
+    func testUntypedNativeErrorKeepsItsNumericEvidence() throws {
+        let failure = try XCTUnwrap(PlozzigenPlaybackFailure.classify(
+            nil, fallbackError: NSError(domain: NSOSStatusErrorDomain, code: 561210739)
+        ))
+        XCTAssertEqual(failure.kind, .unknown, "A numeric code without stage context cannot invent an audio failure.")
+        XCTAssertEqual(failure.diagnosticCode, "OSStatus 561210739")
+    }
+
     func testHTTPRefusalRetainsStatusAndNeverBecomesACodecFailure() throws {
         for (status, kind) in [
             (401, StreamingPlaybackFailure.Kind.accessDenied), (403, .accessDenied),
