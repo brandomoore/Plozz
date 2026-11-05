@@ -54,7 +54,7 @@ final class DiscPlayerHandoffHostedTests: XCTestCase {
         attachment.lifetime = .keepAlways
         add(attachment)
         XCTAssertTrue(focused is PlayerInputView,
-                      "The floating disc action must not strand input outside transport: \(String(describing: focused))")
+                      "The disc toolbar action must not strand input outside transport: \(String(describing: focused))")
         let input = try XCTUnwrap(descendants(window.rootViewController).compactMap {
             $0 as? PlayerInputViewController
         }.first)

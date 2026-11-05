@@ -38,9 +38,12 @@ struct DiscMenuPlayerContent: View {
                 #endif
             } else {
                 #if os(tvOS)
-                Color.clear
-                    .contentShape(Rectangle())
-                    .focusable()
+                Button { state.sendKey(16) } label: {
+                    Color.clear.contentShape(Rectangle())
+                }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Select")
+                    .accessibilityIdentifier("disc-menu-select")
                     .focused($menuFocused)
                     .onMoveCommand {
                         switch $0 {
@@ -51,7 +54,6 @@ struct DiscMenuPlayerContent: View {
                         @unknown default: break
                         }
                     }
-                    .onTapGesture { state.sendKey(16) }
                     .onPlayPauseCommand { model.togglePlayPause() }
                     .onExitCommand { showsActions = true }
                     .onAppear { menuFocused = true }

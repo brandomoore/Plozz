@@ -90,8 +90,11 @@ Menu graphics cannot end an in-flight video-load state; authored video transitio
 retain a loading indicator until their load completes. Returning from a disc menu
 creates a fresh transport focus owner and re-arms the controls' idle timeout;
 retired hosts cannot keep their previous focus/panel state or idle timer.
-Floating disc actions join the tvOS focus order only while the transport's
-button layer is active, so they cannot take the video surface's initial focus.
+Disc menu / Disc videos lives in the existing transport button row on TV and
+mobile, not in a separate floating action. It follows the row's focus and
+visibility lifecycle, so it cannot take the video surface's initial focus.
+The TV disc navigation surface uses a native Select button; directional input
+only sends the corresponding disc arrow key, not an activation.
 BD-J networking and durable disc storage are disabled. libbluray still creates
 temporary binding-unit and persistent-storage directories for disc applications;
 their arbitrary writes do not yet have a complete quota. The JVM has bounded

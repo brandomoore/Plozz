@@ -297,34 +297,6 @@ public struct PlayerView: View {
             )
         } else {
             ordinaryPhaseContent
-                .overlay(alignment: .topTrailing) {
-                    if viewModel.isDiscMenuPlayback, let state = viewModel.videoEngine.discMenu {
-                        Button("Disc menu") { state.openMenu() }
-                            .contextMenu {
-                                Button("Disc videos") { showsDiscVideos = true }
-                                Button("Play video") { viewModel.playVideoWithoutMenus() }
-                                Button("Try another region") {
-                                    viewModel.retryDiscMenu(region: state.region == 1 ? 2 : state.region == 2 ? 4 : 1)
-                                }
-                            }
-                            .padding()
-                            #if os(tvOS)
-                            .disabled(!viewModel.controls.controlBarVisible)
-                            .opacity(viewModel.controls.controlsVisible ? 1 : 0)
-                            #endif
-                    } else if showsDiscVideoAction {
-                        Button("Disc videos") { showsDiscVideos = true }
-                            .contextMenu {
-                                if viewModel.isSelectedDiscVideo {
-                                    Button("Play video") { viewModel.playVideoWithoutMenus() }
-                                }
-                            }
-                            .padding()
-                            #if os(tvOS)
-                            .disabled(viewModel.phase == .ready && !viewModel.controls.controlBarVisible)
-                            #endif
-                    }
-                }
                 .overlay(alignment: .bottom) {
                     if viewModel.isDiscMenuPlayback,
                        let notice = viewModel.videoEngine.discMenu?.notice {
@@ -346,12 +318,6 @@ public struct PlayerView: View {
         #endif
     }
 
-    private var showsDiscVideoAction: Bool {
-        guard viewModel.hasDiscVideos else { return false }
-        if case .failed = viewModel.phase { return true }
-        return viewModel.controls.controlsVisible
-    }
-
     @ViewBuilder
     private var ordinaryPhaseContent: some View {
         switch viewModel.phase {
@@ -371,15 +337,25 @@ public struct PlayerView: View {
             readyPlayerContainer
 
         case .failed:
-            StreamingPlaybackFailureView(
-                message: viewModel.playbackFailureReport?.message
-                    ?? viewModel.streamingQualityError?.userMessage
-                    ?? StreamingPlaybackFailure(kind: .unknown).userMessage,
-                report: viewModel.playbackFailureReport,
-                showsForcedTranscodingHint: viewModel.showsForcedTranscodingFailureHint,
-                onRetry: { viewModel.retryPlayback() },
-                onDismiss: { dismissPlayer() }
-            )
+            VStack(spacing: 24) {
+                StreamingPlaybackFailureView(
+                    message: viewModel.playbackFailureReport?.message
+                        ?? viewModel.streamingQualityError?.userMessage
+                        ?? StreamingPlaybackFailure(kind: .unknown).userMessage,
+                    report: viewModel.playbackFailureReport,
+                    showsForcedTranscodingHint: viewModel.showsForcedTranscodingFailureHint,
+                    onRetry: { viewModel.retryPlayback() },
+                    onDismiss: { dismissPlayer() }
+                )
+                if viewModel.hasDiscVideos {
+                    Button("Disc videos") { showsDiscVideos = true }
+                        .contextMenu {
+                            if viewModel.isSelectedDiscVideo {
+                                Button("Play video") { viewModel.playVideoWithoutMenus() }
+                            }
+                        }
+                }
+            }
         }
     }
 

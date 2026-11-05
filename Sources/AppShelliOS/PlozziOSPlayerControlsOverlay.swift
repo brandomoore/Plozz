@@ -723,6 +723,7 @@ struct PlozziOSPlayerTransport<PlaybackControls: View>: View {
     let supportsVideoZoom: Bool
     let hasVersions: Bool
     let menuPresentation: PlayerMenuPresentation
+    @State private var discPresentationOwner = UUID()
     @Binding var isCardOpen: Bool
     let onInteraction: () -> Void
     /// The full player bounds, not this bottom cluster's intrinsic size.
@@ -865,6 +866,14 @@ struct PlozziOSPlayerTransport<PlaybackControls: View>: View {
     private var trackControlGroup: some View {
         let item = viewModel.currentPlaybackItem
         return PlayerGlassControlGroup {
+            if viewModel.isDiscMenuPlayback || viewModel.hasDiscVideos {
+                PlayerDiscControlsButton(
+                    model: viewModel, onInteraction: onInteraction,
+                    onPresentationChanged: {
+                        menuPresentation.setPresented($0, owner: discPresentationOwner)
+                    }
+                )
+            }
             PlayerMoreMenuButton(
                 model: viewModel.controls,
                 availability: .init(

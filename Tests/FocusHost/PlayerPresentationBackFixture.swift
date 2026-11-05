@@ -249,3 +249,40 @@ private final class PlayerPresentationBackEngine: VideoEngine {
     func selectSubtitleTrack(_ track: MediaTrack?) {}
     func makeVideoOutputView() -> UIView { output }
 }
+
+@MainActor
+struct DiscMenuInputFixture: View {
+    @State private var fixture = DiscMenuInputFixtureState()
+
+    var body: some View {
+        DiscMenuPlayerContent(
+            model: fixture.player, state: fixture.menu,
+            dismiss: {}, showVideos: {}
+        )
+        .overlay(alignment: .topLeading) {
+            Text(verbatim: fixture.keys.map(String.init).joined(separator: ","))
+                .accessibilityIdentifier("disc-input-keys")
+                .allowsHitTesting(false)
+        }
+    }
+}
+
+@MainActor
+@Observable
+private final class DiscMenuInputFixtureState {
+    let player: PlayerViewModel
+    let menu = DiscMenuPlaybackState()
+    var keys: [UInt32] = []
+
+    init() {
+        let engine = PlayerPresentationBackEngine()
+        player = PlayerViewModel(
+            provider: PlayerPresentationBackProvider(holdDetails: false, offerVersions: false),
+            itemID: "disc-input-fixture", engineFactory: .init(makeNative: { _ in engine })
+        )
+        menu.isActive = true
+        menu.isOpening = false
+        menu.isMenuVisible = true
+        menu.sendKey = { [weak self] key in self?.keys.append(key) }
+    }
+}
