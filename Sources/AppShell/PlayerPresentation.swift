@@ -233,7 +233,7 @@ struct PlayerPresentation: View {
         }
         let deviceSettings = ExternalPlayerSettingsModel.shared
         deviceSettings.migrateIfNeeded(from: playbackSettings.externalPlayer)
-        guard deviceSettings.settings.player != .builtIn else { return false }
+        guard activeRequest.item.effectiveExternalPlayer(default: deviceSettings.settings).player != .builtIn else { return false }
         do {
             guard let externalContext else { throw ExternalPlayerError.unavailable }
             let opened = try await ExternalPlaybackRuntime.shared.launch(

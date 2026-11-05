@@ -348,7 +348,7 @@ struct PlozziOSPlayerView: View {
         }
         let deviceSettings = ExternalPlayerSettingsModel.shared
         deviceSettings.migrateIfNeeded(from: appModel.settings.playback.settings.externalPlayer)
-        guard deviceSettings.settings.player != .builtIn else { return false }
+        guard item.effectiveExternalPlayer(default: deviceSettings.settings).player != .builtIn else { return false }
         do {
             let model = appModel
             let opened = try await ExternalPlaybackRuntime.shared.launch(

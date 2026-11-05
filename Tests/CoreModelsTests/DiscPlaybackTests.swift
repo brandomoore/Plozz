@@ -83,10 +83,10 @@ final class DiscPlaybackTests: XCTestCase {
         index[63] = 0xff
         XCTAssertEqual(DiscMenuInspection.availability(index: index), .unavailable(.missingMenu))
         index[56] = 0x80
-        XCTAssertEqual(DiscMenuInspection.availability(index: index), .unavailable(.unsupportedRuntime))
+        XCTAssertEqual(DiscMenuInspection.availability(index: index), .unknown)
         for version in ["0240", "0300"] {
             index.replaceSubrange(4..<8, with: version.utf8)
-            XCTAssertEqual(DiscMenuInspection.availability(index: index), .unavailable(.unsupportedRuntime))
+            XCTAssertEqual(DiscMenuInspection.availability(index: index), .unknown)
         }
         for end in 0..<index.count {
             XCTAssertEqual(DiscMenuInspection.availability(index: index.prefix(end)), .unknown)
@@ -95,12 +95,12 @@ final class DiscPlaybackTests: XCTestCase {
         XCTAssertEqual(DiscMenuInspection.availability(index: index), .unknown)
     }
 
-    func testKnownUnavailableSelectedVersionKeepsDirectDefault() throws {
+    func testPreviouslyUnsupportedJavaMenuCanBeAttempted() throws {
         var disc = MediaVersion(id: "disc", container: "bdmv")
         disc.discMenuAvailability = .unavailable(.unsupportedRuntime)
         var item = MediaItem(id: "disc", title: "Fixture", kind: .movie)
         item.versions = [disc]
-        XCTAssertEqual(item.effectiveDiscPlayback(default: .openMenu), .playVideo)
+        XCTAssertEqual(item.effectiveDiscPlayback(default: .openMenu), .openMenu)
         XCTAssertEqual(try JSONDecoder().decode(MediaVersion.self, from: JSONEncoder().encode(disc)), disc)
     }
 }

@@ -2414,6 +2414,7 @@ struct PlozziOSDetailHeroForeground: View {
             .contextMenu {
                 if let playableItem {
                     DiscPlaybackAlternativeAction(item: playableItem) { onPlay($0, false) }
+                    ExternalPlaybackActions(item: playableItem) { onPlay(playableItem.requestingExternalPlayer($0), false) }
                 }
                 detailContextMenu
             }

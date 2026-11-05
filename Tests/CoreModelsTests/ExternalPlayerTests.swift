@@ -5,6 +5,19 @@ final class ExternalPlayerTests: XCTestCase {
     private let media = URL(string: "https://server.test/media/a%20b.mkv?token=synthetic%2Bvalue&x=1#part")!
     private let nonce = UUID()
 
+    func testOnePlaySelectionIsTransientAndPreservesVersionIdentity() throws {
+        let item = MediaItem(id: "movie", title: "Movie", kind: .movie, selectedVersionID: "edition")
+        let selected = item.requestingExternalPlayer(.vlc)
+        XCTAssertEqual(selected.selectedVersionID, "edition")
+        XCTAssertEqual(selected.externalPlayerOverride, .vlc)
+        XCTAssertEqual(selected.discPlaybackOverride, .playVideo)
+        XCTAssertTrue(selected.explicitSourceSelection)
+        XCTAssertNil(item.externalPlayerOverride)
+        let restored = try JSONDecoder().decode(MediaItem.self, from: JSONEncoder().encode(selected))
+        XCTAssertNil(restored.externalPlayerOverride)
+        XCTAssertEqual(selected.effectiveExternalPlayer(default: .init(player: .infuse)).player, .vlc)
+    }
+
     func testCallbackPlayersCarryNestedURLsResumeSubtitlesAndUniqueReturnScheme() throws {
         for player in [ExternalPlayer.nativePlayer, .infuse] {
             let subtitles = (0..<10).map { URL(string: "https://server.test/\($0).srt?token=test&lang=en")! }

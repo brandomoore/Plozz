@@ -76,7 +76,9 @@ public extension MediaItem {
         let version = selectedVersion ?? (versions.count == 1 ? versions.first : nil)
         let container = (version?.container ?? mediaInfo?.container)?.lowercased()
         guard container == "bdmv" else { return nil }
-        return version?.discMenuAvailability ?? .unknown
+        let availability = version?.discMenuAvailability ?? .unknown
+        // Older library snapshots classified all Java menus as unsupported.
+        return availability == .unavailable(.unsupportedRuntime) ? .unknown : availability
     }
 }
 
@@ -102,7 +104,7 @@ public enum DiscMenuInspection {
             let object = Int(bytes[offset + 22]) << 8 | Int(bytes[offset + 23])
             return object == 0xffff ? .unavailable(.missingMenu) : .unknown
         case 2:
-            return .unavailable(.unsupportedRuntime)
+            return .unknown
         default:
             return .unknown
         }

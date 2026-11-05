@@ -37,8 +37,29 @@ final class NetworkDiscLocatorTests: XCTestCase {
                 index, .init(path: "BDMV/STREAM/00001.m2ts", locator: clip)
             ]))
         }
+
         XCTAssertThrowsError(try NetworkDiscLocator(anchor: anchor, files: [
             index, .init(path: "bdmv/INDEX.BDMV", locator: anchor)
+        ]))
+    }
+
+    func testJavaDiscIdentityCannotExpandTheMediaRoot() throws {
+        let anchor = try file("Movie/BDMV/index.bdmv")
+        let index = try NetworkDiscLocator.File(path: "BDMV/index.bdmv", locator: anchor)
+        for path in ["CERTIFICATE/id.bdmv", "Certificate/BACKUP/ID.BDMV"] {
+            let identity = try NetworkDiscLocator.File(path: path, locator: file("Movie/" + path))
+            XCTAssertNoThrow(try NetworkDiscLocator(anchor: anchor, files: [index, identity]))
+            let foreign = try NetworkDiscLocator.File(path: path, locator: file("Other/" + path))
+            XCTAssertThrowsError(try NetworkDiscLocator(anchor: anchor, files: [index, foreign]))
+        }
+        let unrelated = try NetworkDiscLocator.File(
+            path: "CERTIFICATE/private.dat", locator: file("Movie/CERTIFICATE/private.dat")
+        )
+        XCTAssertThrowsError(try NetworkDiscLocator(anchor: anchor, files: [index, unrelated]))
+        let inside = try file("index.bdmv")
+        XCTAssertThrowsError(try NetworkDiscLocator(anchor: inside, files: [
+            .init(path: "BDMV/index.bdmv", locator: inside),
+            .init(path: "CERTIFICATE/id.bdmv", locator: file("CERTIFICATE/id.bdmv"))
         ]))
     }
 }

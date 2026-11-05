@@ -759,14 +759,16 @@ let package = Package(
 
         .target(
             name: "CLibbluray",
+            dependencies: ["Libfreetype"],
             path: "Vendor/Libbluray",
-            exclude: ["COPYING", "UPSTREAM.json"],
+            exclude: ["COPYING", "UPSTREAM.json", "jni/LICENSE", "jni/ADDITIONAL_LICENSE_INFO", "jni/UPSTREAM.json"],
             sources: [
                 "UnavailableRuntimes.c",
                 "contrib/libudfread/src/default_blockinput.c",
                 "contrib/libudfread/src/ecma167.c", "contrib/libudfread/src/udfread.c",
                 "src/libbluray/bluray.c", "src/libbluray/register.c",
                 "src/libbluray/bdj/bdjo_parse.c",
+                "src/libbluray/bdj/bdj.c", "src/libbluray/bdj/native",
                 "src/libbluray/bdnav", "src/libbluray/decoders",
                 "src/libbluray/disc", "src/libbluray/hdmv",
                 "src/file/file.c", "src/file/filesystem.c",
@@ -779,6 +781,9 @@ let package = Package(
             publicHeadersPath: "include",
             cSettings: [
                 .define("HAVE_CONFIG_H", to: "1"), .headerSearchPath("."), .headerSearchPath("src"),
+                .define("PLOZZ_EMBEDDED_BDJ", to: "1"), .define("HAVE_FT2", to: "1"),
+                .headerSearchPath("jni"),
+                .headerSearchPath("../Libass/dependency-headers/Libfreetype/freetype2"),
                 .headerSearchPath("src/libbluray"), .headerSearchPath("contrib/libudfread/src")
             ],
             linkerSettings: [.linkedFramework("CoreFoundation")]

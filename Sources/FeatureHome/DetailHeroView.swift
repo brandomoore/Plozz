@@ -71,6 +71,7 @@ struct DetailHeroView: View, Equatable {
             // Presence, not identity — see above.
             && (lhs.onPlay == nil) == (rhs.onPlay == nil)
             && (lhs.onPlayDisc == nil) == (rhs.onPlayDisc == nil)
+            && (lhs.onPlayExternal == nil) == (rhs.onPlayExternal == nil)
             && (lhs.onPlayTrailer == nil) == (rhs.onPlayTrailer == nil)
             && lhs.trailerItem == rhs.trailerItem
             && (lhs.onSelectVersion == nil) == (rhs.onSelectVersion == nil)
@@ -154,6 +155,7 @@ struct DetailHeroView: View, Equatable {
     let playTitle: LocalizedStringResource?
     let onPlay: (() -> Void)?
     var onPlayDisc: ((DiscPlaybackBehavior) -> Void)? = nil
+    var onPlayExternal: ((ExternalPlayer) -> Void)? = nil
     var showsPlayPlaceholder: Bool = false
     var onRetryPlaybackInventory: (() -> Void)?
     var isRetryingPlaybackInventory = false
@@ -1470,6 +1472,13 @@ struct DetailHeroView: View, Equatable {
                     preparePrimaryAction()
                     heroTrailerController.stop()
                     onPlayDisc(behavior)
+                }
+            }
+            if let onPlayExternal {
+                ExternalPlaybackActions(item: (actionItem ?? item).selectingVersion(selectedVersionID)) { player in
+                    preparePrimaryAction()
+                    heroTrailerController.stop()
+                    onPlayExternal(player)
                 }
             }
             heroContextMenu

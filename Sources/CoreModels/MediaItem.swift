@@ -487,6 +487,7 @@ public struct MediaItem: Codable, Hashable, Identifiable, Sendable {
 
     /// One-play intent, excluded from persisted media metadata.
     public var discPlaybackOverride: DiscPlaybackBehavior? = nil
+    public var externalPlayerOverride: ExternalPlayer? = nil
 
     /// Every server that holds this same title, captured by the cross-server
     /// merge (``MediaItemMerger``). Primary source first (it backs this card's

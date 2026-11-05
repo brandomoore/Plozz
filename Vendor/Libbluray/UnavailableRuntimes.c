@@ -1,50 +1,69 @@
-#include "libbluray/bdj/bdj.h"
+#include "bdj_runtime.h"
 #include "file/dl.h"
 #include "util/logging.h"
-#include <assert.h>
+#include <dlfcn.h>
+#include <limits.h>
+#include <pthread.h>
+#include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
-/* This target deliberately contains no JVM or optional decryption libraries. */
-int bdj_jvm_available(BDJ_CONFIG *storage) {
-    (void)storage;
-    return BDJ_CHECK_NO_JVM;
+static char runtime_root[PATH_MAX], cache_root[PATH_MAX], jar_root[PATH_MAX];
+static pthread_mutex_t runtime_lock = PTHREAD_MUTEX_INITIALIZER;
+static int runtime_quarantined;
+
+void plozz_bdj_quarantine(void) {
+    pthread_mutex_lock(&runtime_lock);
+    runtime_quarantined = 1;
+    pthread_mutex_unlock(&runtime_lock);
 }
 
-BDJAVA *bdj_open(const char *path, struct bluray *disc, const char *id, BDJ_CONFIG *storage) {
-    (void)path; (void)disc; (void)id; (void)storage;
-    BD_DEBUG(DBG_CRIT, "BD-J is unavailable in this HDMV-only build\n");
-    return NULL;
+int plozz_bdj_is_quarantined(void) {
+    pthread_mutex_lock(&runtime_lock);
+    int result = runtime_quarantined;
+    pthread_mutex_unlock(&runtime_lock);
+    return result;
 }
 
-void bdj_close(BDJAVA *context) { assert(context == NULL); }
-
-int bdj_process_event(BDJAVA *context, unsigned event, unsigned parameter) {
-    (void)context; (void)event; (void)parameter;
-    return 0;
+int plozz_bdj_configure(const char *runtime, const char *cache) {
+    char canonical_runtime[PATH_MAX], canonical_cache[PATH_MAX];
+    if (!runtime || !cache || !realpath(runtime, canonical_runtime) || !realpath(cache, canonical_cache))
+        return 0;
+    pthread_mutex_lock(&runtime_lock);
+    int ok = 0;
+    if (runtime_root[0]) {
+        ok = !strcmp(runtime_root, canonical_runtime) && !strcmp(cache_root, canonical_cache);
+    } else if (strlen(canonical_runtime) + sizeof("/jars/") < sizeof(jar_root)) {
+        strlcpy(runtime_root, canonical_runtime, sizeof(runtime_root));
+        strlcpy(cache_root, canonical_cache, sizeof(cache_root));
+        snprintf(jar_root, sizeof(jar_root), "%s/jars/", runtime_root);
+        ok = 1;
+    }
+    pthread_mutex_unlock(&runtime_lock);
+    return ok;
 }
 
-void bdj_config_cleanup(BDJ_CONFIG *storage) {
-    free(storage->persistent_root); storage->persistent_root = NULL;
-    free(storage->cache_root); storage->cache_root = NULL;
-    free(storage->java_home); storage->java_home = NULL;
-    free(storage->classpath[0]); storage->classpath[0] = NULL;
-    free(storage->classpath[1]); storage->classpath[1] = NULL;
-}
+const char *plozz_bdj_cache_root(void) { return cache_root; }
 
 void *dl_dlopen(const char *path, const char *version) {
-    (void)path; (void)version;
-    BD_DEBUG(DBG_CRIT, "Optional runtime libraries are unavailable\n");
-    return NULL;
+    (void)version;
+    char allowed[PATH_MAX], candidate[PATH_MAX];
+    if (plozz_bdj_is_quarantined() || !runtime_root[0] || !path ||
+        snprintf(allowed, sizeof(allowed), "%s/lib/zero/libjvm.dylib", runtime_root) >= sizeof(allowed) ||
+        snprintf(candidate, sizeof(candidate), "%s.dylib", path) >= sizeof(candidate) ||
+        strcmp(candidate, allowed)) {
+        BD_DEBUG(DBG_CRIT, "Optional library is outside the bundled Java runtime\n");
+        return NULL;
+    }
+    return dlopen(allowed, RTLD_NOW | RTLD_GLOBAL | RTLD_NODELETE);
 }
 
 void *dl_dlsym(void *handle, const char *symbol) {
-    (void)handle; (void)symbol;
-    return NULL;
+    return handle && symbol ? dlsym(handle, symbol) : NULL;
 }
 
 int dl_dlclose(void *handle) {
-    (void)handle;
-    return -1;
+    return handle ? dlclose(handle) : -1;
 }
 
-const char *dl_get_path(void) { return NULL; }
+const char *dl_get_path(void) { return jar_root[0] ? jar_root : NULL; }

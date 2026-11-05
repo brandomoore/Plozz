@@ -30,16 +30,31 @@ final class ShareProviderLocatorTests: XCTestCase {
         let backup = try RemoteFileEntry(
             relativePath: "\(root)/BACKUP/CLIPINF/00002.clpi", kind: .file, size: 256, strongETag: "\"backup\""
         )
-        let folders = try ["PLAYLIST", "STREAM", "BACKUP"].map {
+        let java = try ["JAR/00000.jar", "JAR/00000/menu.png", "BDJO/00000.bdjo", "AUXDATA/00000.otf"].map {
+            try RemoteFileEntry(relativePath: "\(root)/\($0)", kind: .file, size: 128, strongETag: "\"java\"")
+        }
+        let folders = try ["PLAYLIST", "STREAM", "BACKUP", "JAR", "BDJO", "AUXDATA"].map {
             try RemoteFileEntry(relativePath: "\(root)/\($0)", kind: .directory)
         }
+        let certificate = try RemoteFileEntry(
+            relativePath: "Test Pattern (2026)/CERTIFICATE/id.bdmv",
+            kind: .file, size: 128, strongETag: "\"disc-id\""
+        )
         for scheme in ["smb", "sftp", "ftp", "ftps", "http", "https"] {
             let fileSystem = LocatorFakeFileSystem(statEntry: index, directoryTree: [
                 root: [index, objects] + folders,
+                "Test Pattern (2026)": [try RemoteFileEntry(
+                    relativePath: "Test Pattern (2026)/CERTIFICATE", kind: .directory
+                )],
+                "Test Pattern (2026)/CERTIFICATE": [certificate],
                 "\(root)/PLAYLIST": [playlist],
                 "\(root)/BACKUP": [try RemoteFileEntry(relativePath: "\(root)/BACKUP/CLIPINF", kind: .directory)],
                 "\(root)/BACKUP/CLIPINF": [backup],
-                "\(root)/STREAM": clips
+                "\(root)/STREAM": clips,
+                "\(root)/JAR": [java[0], try RemoteFileEntry(relativePath: "\(root)/JAR/00000", kind: .directory)],
+                "\(root)/JAR/00000": [java[1]],
+                "\(root)/BDJO": [java[2]],
+                "\(root)/AUXDATA": [java[3]]
             ])
             let provider = makeProvider(
                 stat: index, fileSystem: fileSystem,
@@ -50,7 +65,7 @@ final class ShareProviderLocatorTests: XCTestCase {
             guard case .networkDisc(let disc) = request.playbackSource else {
                 return XCTFail("\(scheme) must use folder playback, never the first clip")
             }
-            XCTAssertEqual(disc.files.count, 6)
+            XCTAssertEqual(disc.files.count, 11)
             XCTAssertEqual(request.item.title, "Test Pattern")
             XCTAssertEqual(disc.anchor.relativePath, index.relativePath)
             XCTAssertEqual(
@@ -59,6 +74,10 @@ final class ShareProviderLocatorTests: XCTestCase {
             )
             XCTAssertTrue(disc.files.contains { $0.path == "BDMV/MovieObject.bdmv" })
             XCTAssertTrue(disc.files.contains { $0.path == "BDMV/BACKUP/CLIPINF/00002.clpi" })
+            for entry in java {
+                XCTAssertTrue(disc.files.contains { $0.locator.relativePath == entry.relativePath })
+            }
+            XCTAssertTrue(disc.files.contains { $0.path == "CERTIFICATE/id.bdmv" })
             XCTAssertNil(request.downloadableOriginalSource)
             let preparation = try await provider.playbackPreparationLocator(
                 for: request.item.id, mediaSourceID: index.relativePath

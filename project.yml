@@ -15,6 +15,7 @@ settings:
     CODE_SIGN_STYLE: Automatic
     TARGETED_DEVICE_FAMILY: "3" # Apple TV
     SWIFT_STRICT_CONCURRENCY: complete
+    LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/Frameworks @executable_path/DiscRuntime/lib @executable_path/DiscRuntime/lib/zero"
     # Build number (CFBundleVersion) fallback. tools/generate-project.sh bakes the
     # real value into the generated project on every regenerate — from the git
     # commit count (local/device/simulator builds) or PLOZZ_BUILD_NUMBER (the
@@ -63,6 +64,10 @@ targets:
   Plozz:
     type: application
     platform: tvOS
+    postBuildScripts:
+      - name: Embed disc runtime
+        script: python3 "$SRCROOT/tools/embed-disc-runtime.py"
+        basedOnDependencyAnalysis: false
     deploymentTarget: "18.0"
     sources:
       - path: App/Plozz
@@ -335,6 +340,10 @@ targets:
   PlozziOS:
     type: application
     platform: iOS
+    postBuildScripts:
+      - name: Embed disc runtime
+        script: python3 "$SRCROOT/tools/embed-disc-runtime.py"
+        basedOnDependencyAnalysis: false
     deploymentTarget: "18.0"
     sources:
       - path: App/PlozziOS
@@ -476,6 +485,10 @@ targets:
   PlozzFocusHost:
     type: application
     platform: tvOS
+    postBuildScripts:
+      - name: Embed disc runtime
+        script: python3 "$SRCROOT/tools/embed-disc-runtime.py"
+        basedOnDependencyAnalysis: false
     sources:
       - path: Tests/FocusHost
       - path: Tests/DiscoverPresentationSupport/DiscoverBrowseFixture.swift

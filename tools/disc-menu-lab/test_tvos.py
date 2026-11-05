@@ -50,6 +50,13 @@ class TVOSPortTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             tvos.validate_platform(" platform 3\n", "arm64", simulator=True)
 
+    def test_mobile_artifacts_cannot_be_confused_with_tv_artifacts(self):
+        tvos.validate_platform(" platform 2\n", "arm64", mobile=True)
+        tvos.validate_platform(" platform 7\n", "arm64", mobile=True, simulator=True)
+        for platform in ("1", "3", "8"):
+            with self.assertRaises(ValueError):
+                tvos.validate_platform(f" platform {platform}\n", "arm64", mobile=True)
+
     def test_staging_rejects_an_incomplete_runtime(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

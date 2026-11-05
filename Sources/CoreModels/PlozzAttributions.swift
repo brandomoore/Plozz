@@ -132,11 +132,21 @@ public enum PlozzAttributions {
         PlozzAttribution(
             title: "libbluray",
             detail:
-                "HDMV disc navigation uses libbluray 1.5.0 and its bundled libudfread. "
-                + "This build does not include a Java runtime or decryption libraries. "
+                "Disc navigation uses libbluray 1.5.0 and its bundled libudfread. "
+                + "This build does not include decryption libraries. "
                 + "Source: https://download.videolan.org/pub/videolan/libbluray/1.5.0/. "
                 + "Complete license texts are bundled in LibblurayNotices.txt.",
             licenses: [.init("LGPL-2.1-or-later", family: .lgpl)]
+        ),
+        PlozzAttribution(
+            title: "OpenJDK & DejaVu",
+            detail:
+                "Java disc menus use the OpenJDK Zero interpreter under GPL-2.0 "
+                + "with the Classpath exception, plus DejaVu fonts. "
+                + "Sources and build adaptations are recorded in "
+                + "tools/disc-menu-lab/dependencies.json and tools/build-disc-runtime.py. "
+                + "Complete component notices are bundled in DiscRuntime/legal.",
+            licenses: [.init("GPL-2.0 with Classpath exception", family: .gpl)]
         ),
         PlozzAttribution(
             title: "dav1d",

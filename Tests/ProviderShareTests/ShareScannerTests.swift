@@ -433,7 +433,12 @@ final class ShareScannerTests: XCTestCase {
         XCTAssertEqual(Set(movies.map(\.title)), ["Test Pattern", "Standalone"])
         let disc = movies.first { $0.title == "Test Pattern" }
         XCTAssertEqual(disc?.productionYear, 2026)
-        XCTAssertEqual(disc?.versions.map(\.id), ["Test Pattern (2026)/bDmV/INDEX.bdmv"])
+        if let disc {
+            let detail = await store.item(id: disc.id)
+            XCTAssertEqual(detail?.versions.map(\.id), ["Test Pattern (2026)/bDmV/INDEX.bdmv"])
+        } else {
+            XCTFail("The logical disc movie is missing")
+        }
         let paths = await fake.listedPaths
         XCTAssertFalse(paths.contains("Test Pattern (2026)/bDmV/STREAM"))
     }

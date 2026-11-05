@@ -585,9 +585,12 @@ private struct PlozziOSCanonicalItemDetailView: View {
                     onPlay: { selection, fromBeginning in
                         let liveTarget = seriesPlayTarget ?? detail.item
                         let fresh = playbackItem(for: liveTarget)
-                        let selected = selection.discPlaybackOverride.map {
+                        var selected = selection.discPlaybackOverride.map {
                             fresh.requestingDiscPlayback($0)
                         } ?? fresh
+                        if let player = selection.externalPlayerOverride {
+                            selected = selected.requestingExternalPlayer(player)
+                        }
                         play(selected, fromBeginning: fromBeginning)
                     },
                     trailerItem: viewModel.trailers.first,

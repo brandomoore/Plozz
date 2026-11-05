@@ -33,15 +33,20 @@ default) or **Open disc menu**. The detail Play button follows that preference;
 its hold menu offers the opposite action for this play only. Direct playback
 does not create a navigation session and keeps its normal resume/watch behavior.
 
-The initial menu implementation supports HDMV in media-share BDMV folders.
-`DiscNavigation` statically links pinned libbluray 1.5.0 without a JVM or optional
+Menu navigation supports HDMV and a bundled BD-J interpreter in media-share BDMV folders.
+`DiscNavigation` statically links pinned libbluray 1.5.0 without optional
 decryption loaders. It drives original navigation and graphics while the existing
 Plozzigen adapter plays the selected playlist or its bounded play items. Separate transport cursors
 retain the same account, credential revision, file identity and root allowlist.
-The normal app does not use the lab's HTTP relay or embed its Java runtime.
+The normal app uses the production transport resolver, not the lab's HTTP relay.
+BD-J uses the pinned OpenJDK Zero interpreter and libbluray's offscreen AWT.
+Java graphics can open before any video is selected; authored playback then uses
+the same playlist and renderer path as HDMV. Java callbacks copy and composite
+their graphics before publishing on the main thread. Only one Java disc session
+can own the process-wide JVM, including while an old session is closing.
 
-Detail inspection recognizes 0100, 0200, 0240 and 0300 index layouts and can hide
-a declared BD-J top menu or an explicitly absent menu.
+Detail inspection recognizes 0100, 0200, 0240 and 0300 index layouts, including
+declared BD-J top menus. Only an explicitly absent or unsupported menu is hidden.
 Unfamiliar, damaged or temporarily unreadable metadata stays unknown,
 not permanently unsupported. A conservative MovieObject inspection recognizes
 the tested region-register/warning-loop pattern and selects A, B or C before
@@ -73,9 +78,40 @@ the engine's actual MPEG-TS PIDs, never its track-list order. Player selections
 also update the disc VM and respect its operation restrictions. Missing,
 ambiguous or separate-subpath tracks remain explicitly unavailable. Disc choices
 drive the subtitle overlay without changing remembered series preferences.
-BD-J, arbitrary-disc compatibility
-and distribution readiness are not established. Bundled LGPL notices are
+Arbitrary-disc compatibility and distribution readiness are not established.
+BD-J networking and persistent disc storage are disabled. The JVM has bounded
+heap, metaspace and direct-memory allocations; source resource inventories and
+expanded JAR entries/bytes are bounded, and archive paths cannot escape their
+mount. These limits are not process isolation: Java CPU use, thread creation and
+uncooperative Xlet shutdown are not hard-bounded. Incomplete Java shutdown
+quarantines the runtime until app restart rather than allowing surviving disc
+threads to access a later session. The disc policy stays installed while those
+threads remain. Bundled LGPL notices are
 attribution, not a conclusion that App Store distribution requirements are met.
+
+Build the matching runtime before building an app or hosted test:
+`tools/with-apple-build-lease.sh plozz/disc-runtime -- python3 tools/build-disc-runtime.py --sdk appletvsimulator`.
+Use `appletvos`, `iphoneos` or `iphonesimulator` for the other destinations.
+The builder verifies pinned downloads, checks each native library's platform,
+retains licenses and records its build-input fingerprint. The app embed phase
+rejects missing or stale receipts and signs copied native libraries when signing
+is enabled. Assets remain under `.build`; do not commit generated runtimes.
+The current raw-dylib bundle layout still requires distribution validation.
+The authored Java hosted test covers menu-only startup, both selected videos,
+pause/resume, top-menu return, end-of-media callbacks and repeated sessions.
+Run it alone with `TEST_RUNNER_PLOZZ_BDJ_SHUTDOWN_CHECK=1` to also exercise a
+bounded interruption-resistant fixture thread and refusal of subsequent Java
+sessions. That opt-in case intentionally quarantines its test process.
+Private-disc acceptance on tvOS Simulator also covered an original Java language
+selector, UHD feature playback and pause/resume, the original top menu, and its
+Play action returning to the same feature with continued video progression.
+That is evidence for the exercised disc and paths, not universal compatibility
+or physical-device performance. Private disc contents are not included in CI.
+
+On supported non-disc server items, the Play button's hold menu also offers
+installed external players through **Play in**. This is a one-play override, not
+a change to the saved external-player preference; it retains the selected source
+and version and uses the existing authorization, launch and fallback path.
 
 The hosted `testNativeHDMVFirstPlayAndTopMenuUseProductionTransport` uses original
 synthetic navigation metadata generated by `fixture.create_hdmv_metadata` in

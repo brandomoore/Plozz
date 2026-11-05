@@ -3878,11 +3878,6 @@ static int _read_ext(BLURAY *bd, unsigned char *buf, int len, BD_EVENT *event)
         }
     }
 
-    if (len < 1) {
-        /* just polled events ? */
-        return 0;
-    }
-
     if (bd->title_type == title_bdj) {
         if (bd->end_of_playlist == 1) {
             _bdj_event(bd, BDJ_EVENT_END_OF_PLAYLIST, bd_psr_read(bd->regs, PSR_PLAYLIST));
@@ -3900,6 +3895,11 @@ static int _read_ext(BLURAY *bd, unsigned char *buf, int len, BD_EVENT *event)
             _queue_event(bd, BD_EVENT_IDLE, 1);
             return 0;
         }
+    }
+
+    if (len < 1) {
+        /* just polled events ? */
+        return 0;
     }
 
     int bytes = _bd_read_locked(bd, buf, len);

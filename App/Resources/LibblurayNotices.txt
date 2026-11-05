@@ -2,6 +2,14 @@ libbluray 1.5.0 and bundled libudfread
 Source archive: https://download.videolan.org/pub/videolan/libbluray/1.5.0/libbluray-1.5.0.tar.xz
 Plozz build adaptations: Vendor/Libbluray and Sources/DiscNavigation.
 
+BD-J runtime: OpenJDK Zero, with application-specific interpreter and AWT
+adaptations in tools/disc-menu-lab/tvos.py and tools/build-disc-runtime.py.
+Pinned source archives and checksums: tools/disc-menu-lab/dependencies.json.
+OpenJDK and its component license notices are retained in DiscRuntime/legal.
+ASM bytecode support retains its notice in DiscRuntime/legal/asm/LICENSE.txt.
+The bundled DejaVu font license is retained in DiscRuntime/legal/dejavu/LICENSE.
+JNI header notices and the OpenJDK Classpath exception are in Vendor/Libbluray/jni.
+
                   GNU LESSER GENERAL PUBLIC LICENSE
                        Version 2.1, February 1999
 

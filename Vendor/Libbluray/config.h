@@ -6,3 +6,4 @@
 #define HAVE_FCNTL_H 1
 #define HAVE_UNISTD_H 1
 #define VERSION "1.5.0"
+#define JDK_HOME ""

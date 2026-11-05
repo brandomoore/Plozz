@@ -24,12 +24,17 @@ public struct NetworkDiscLocator: Hashable, Sendable {
         }
         let parent = (anchor.relativePath as NSString).deletingLastPathComponent
         let root = parent.isEmpty ? "" : parent + "/"
+        let discParent = (parent as NSString).deletingLastPathComponent
+        let discRoot = discParent.isEmpty ? "" : discParent + "/"
         var totalSize: Int64 = 0
         for file in files {
             let components = file.path.split(separator: "/")
             let sum = totalSize.addingReportingOverflow(file.locator.representation.size)
-            guard file.path.lowercased().hasPrefix("bdmv/"),
-                  file.locator.relativePath == root + components.dropFirst().joined(separator: "/"),
+            let isDiscID = ["certificate/id.bdmv", "certificate/backup/id.bdmv"].contains(file.path.lowercased())
+            let expectedPath = isDiscID ? discRoot + file.path
+                : root + components.dropFirst().joined(separator: "/")
+            guard (file.path.lowercased().hasPrefix("bdmv/") || (isDiscID && !parent.isEmpty)),
+                  file.locator.relativePath == expectedPath,
                   file.locator.accountID == anchor.accountID,
                   file.locator.sourceID == anchor.sourceID,
                   file.locator.credentialRevision == anchor.credentialRevision,

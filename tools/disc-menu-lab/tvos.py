@@ -13,15 +13,16 @@ def replace_once(text: str, original: str, replacement: str) -> str:
     return text.replace(original, replacement)
 
 
-def validate_platform(headers: str, architecture: str, *, simulator: bool = False) -> None:
+def validate_platform(headers: str, architecture: str, *, simulator: bool = False, mobile: bool = False) -> None:
     platforms = re.findall(r"^\s*platform\s+(\S+)", headers, re.MULTILINE)
-    if platforms != ["8" if simulator else "3"] or architecture.strip() != "arm64":
-        raise ValueError("Expected one arm64 binary for the selected tvOS platform")
+    expected = ("7" if simulator else "2") if mobile else ("8" if simulator else "3")
+    if platforms != [expected] or architecture.strip() != "arm64":
+        raise ValueError("Expected one arm64 binary for the selected Apple platform")
 
 
 def validate_jvm(headers: str, imports: str, exports: str, architecture: str,
-                 *, simulator: bool = False) -> None:
-    validate_platform(headers, architecture, simulator=simulator)
+                 *, simulator: bool = False, mobile: bool = False) -> None:
+    validate_platform(headers, architecture, simulator=simulator, mobile=mobile)
     if re.search(r"_(pthread_jit_write_protect_np|posix_spawn|fork|task_set_exception_ports)\b", imports):
         raise ValueError("The tvOS JVM still imports unsupported process/JIT APIs")
     if not re.search(r"\bT _JNI_CreateJavaVM\b", exports):
@@ -290,13 +291,14 @@ def stage_runtime(build_dir: Path, destination: Path) -> None:
 
 
 def build(lab, dependencies: dict[str, Path], *, runtime: bool = False,
-          simulator: bool = False, bdj: bool = False) -> Path:
+          simulator: bool = False, bdj: bool = False, mobile: bool = False) -> Path:
     from lab import WORK
-    sdk_name = "appletvsimulator" if simulator else "appletvos"
+    sdk_name = ("iphonesimulator" if simulator else "iphoneos") if mobile else (
+        "appletvsimulator" if simulator else "appletvos")
     lab.run("tvos-sdk", ["xcrun", "--sdk", sdk_name, "--show-sdk-path"])
     sdk = (lab.run_dir / lab.commands[-1]["log"]).read_text().strip()
-    target = "arm64-apple-tvos18.0" + ("-simulator" if simulator else "")
-    variant = "tvossim" if simulator else "tvos"
+    target = ("arm64-apple-ios18.0" if mobile else "arm64-apple-tvos18.0") + ("-simulator" if simulator else "")
+    variant = ("iossim" if simulator else "ios") if mobile else ("tvossim" if simulator else "tvos")
     ffi_build = WORK / f"{variant}-libffi"
     ffi_install = ffi_build / "install"
     ffi_build.mkdir(exist_ok=True)
@@ -361,7 +363,7 @@ def build(lab, dependencies: dict[str, Path], *, runtime: bool = False,
     exports = (lab.run_dir / lab.commands[-1]["log"]).read_text()
     lab.run("verify-tvos-jvm-architecture", ["lipo", "-archs", library])
     architecture = (lab.run_dir / lab.commands[-1]["log"]).read_text()
-    validate_jvm(headers, imports, exports, architecture, simulator=simulator)
+    validate_jvm(headers, imports, exports, architecture, simulator=simulator, mobile=mobile)
     result = {
         "status": "jvm-cross-compiled-not-executed",
         "target": target,
@@ -387,7 +389,7 @@ def build(lab, dependencies: dict[str, Path], *, runtime: bool = False,
             headers = (lab.run_dir / lab.commands[-1]["log"]).read_text()
             lab.run(f"verify-library-{index}-architecture", ["lipo", "-archs", native])
             architecture = (lab.run_dir / lab.commands[-1]["log"]).read_text()
-            validate_platform(headers, architecture, simulator=simulator)
+            validate_platform(headers, architecture, simulator=simulator, mobile=mobile)
         staged = lab.run_dir / "runtime"
         stage_runtime(build_dir, staged)
         if bdj:

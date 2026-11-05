@@ -689,28 +689,17 @@ public struct ItemDetailView: View {
                             // here guarantees the play target derives from
                             // the SAME source of truth the UI most recently
                             // showed.
-                            let liveSources = viewModel.sources
-                            let liveServerChoices = self.serverChoices(from: liveSources)
-                            let liveSource = self.effectiveSource(for: detail.item, sources: liveSources, serverChoices: liveServerChoices)
-                            let liveVersions = self.effectiveVersions(for: detail.item, sources: liveSources, activeAccountID: liveSource?.accountID)
-                            let liveVersionID = self.effectiveVersionID(for: detail.item, in: liveVersions)
-                            let item = self.playItem(for: detail.item, sources: liveSources, activeAccountID: liveSource?.accountID, versionID: liveVersionID)
+                            let item = self.currentPlayItem(for: detail.item)
                             if !item.opensExternalSource { playbackPreparation.handoff(item) }
                             onPlay(item)
                         } : nil,
                         onPlayDisc: canPlay ? { behavior in
-                            let sources = viewModel.sources
-                            let source = self.effectiveSource(
-                                for: detail.item, sources: sources, serverChoices: self.serverChoices(from: sources)
-                            )
-                            let versions = self.effectiveVersions(
-                                for: detail.item, sources: sources, activeAccountID: source?.accountID
-                            )
-                            let item = self.playItem(
-                                for: detail.item, sources: sources, activeAccountID: source?.accountID,
-                                versionID: self.effectiveVersionID(for: detail.item, in: versions)
-                            )
+                            let item = self.currentPlayItem(for: detail.item)
                             onPlay(item.requestingDiscPlayback(behavior))
+                        } : nil,
+                        onPlayExternal: canPlay ? { player in
+                            let item = self.currentPlayItem(for: detail.item)
+                            onPlay(item.requestingExternalPlayer(player))
                         } : nil,
                         showsPlayPlaceholder: !usesExternalDetail && DetailPlaybackSelection.showsPlayPlaceholder(
                             for: detail.item, hasPlayTarget: canPlay,
@@ -1020,6 +1009,16 @@ public struct ItemDetailView: View {
             for: item,
             sources: sources,
             activeAccountID: activeAccountID
+        )
+    }
+
+    private func currentPlayItem(for item: MediaItem) -> MediaItem {
+        let sources = viewModel.sources
+        let source = effectiveSource(for: item, sources: sources, serverChoices: serverChoices(from: sources))
+        let versions = effectiveVersions(for: item, sources: sources, activeAccountID: source?.accountID)
+        return playItem(
+            for: item, sources: sources, activeAccountID: source?.accountID,
+            versionID: effectiveVersionID(for: item, in: versions)
         )
     }
 

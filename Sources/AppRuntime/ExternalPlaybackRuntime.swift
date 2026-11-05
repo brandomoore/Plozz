@@ -146,6 +146,7 @@ public final class ExternalPlaybackRuntime {
         context: @escaping @MainActor () -> ExternalPlaybackContext,
         isPresented: @escaping @MainActor () -> Bool
     ) async throws -> Bool {
+        let selection = item.effectiveExternalPlayer(default: selection)
         let initial = context()
         let generation = launchID
         do {
@@ -165,7 +166,24 @@ public final class ExternalPlaybackRuntime {
             } else {
                 PlozzLog.playback.error("External player preparation failed; retrying playback in Plozz.")
             }
+
             return false
+        }
+    }
+
+    public func availablePlayers(
+        for item: MediaItem, context: ExternalPlaybackContext, selection: ExternalPlayerSettings
+    ) -> [ExternalPlayer] {
+        guard context.isAuthorized, item.kind == .movie || item.kind == .episode,
+              !item.opensExternalSource, item.discMenuAvailability == nil,
+              let account = context.accounts.first(where: { $0.account.id == item.sourceAccountID })
+                ?? (item.sourceAccountID == nil ? context.accounts.first : nil),
+              [.jellyfin, .emby, .plex].contains(account.provider.kind) else { return [] }
+        return ExternalPlayer.supported.filter { player in
+            guard player != selection.player else { return false }
+            if player == .builtIn { return true }
+            guard let scheme = player.scheme, let url = URL(string: scheme + "://") else { return false }
+            return canOpen(url)
         }
     }
 

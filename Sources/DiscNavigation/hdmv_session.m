@@ -6,7 +6,25 @@
 #include "libbluray/decoders/overlay.h"
 #include "file/filesystem.h"
 #endif
+#if __has_include(<bdj_runtime.h>)
+#include <bdj_runtime.h>
+#endif
 #include <math.h>
+
+@interface DiscARGBPlane : NSObject
+@property(nonatomic) NSMutableData *pixels;
+@property(nonatomic) unsigned width, height;
+@property(nonatomic) UIImage *image;
+@end
+@implementation DiscARGBPlane
+@end
+
+static dispatch_semaphore_t javaSessionGate(void) {
+    static dispatch_semaphore_t gate;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ gate = dispatch_semaphore_create(1); });
+    return gate;
+}
 
 #if PLOZZ_DISC_MENU_LAB
 @interface LabHTTPGuard : NSObject <NSURLSessionTaskDelegate>
@@ -35,6 +53,9 @@
     BOOL _openingRecoveryAttempted, _userSelected, _pgEnabled;
     unsigned _audioStream, _subtitleStream;
     NSUInteger _finishBytes;
+    BOOL _javaSession, _javaLease, _lastPlaybackPaused, _javaFramePending;
+    NSMutableDictionary<NSNumber *, DiscARGBPlane *> *_javaPlanes;
+    UIImage *_javaFrame;
 }
 @property(atomic) BOOL stopped;
 @property(nonatomic) dispatch_queue_t queue;
@@ -52,6 +73,7 @@
 - (nullable NSData *)range:(NSString *)path offset:(int64_t)offset length:(int64_t)length;
 - (void)pump;
 - (void)overlay:(const BD_OVERLAY *)event;
+- (void)argbOverlay:(const BD_ARGB_OVERLAY *)event;
 @end
 
 @interface LabFile : NSObject
@@ -155,6 +177,9 @@ static BD_DIR_H *openDirectory(void *opaque, const char *path) {
 static void overlay(void *opaque, const BD_OVERLAY *event) {
     [(__bridge HDMVSession *)opaque overlay:event];
 }
+static void argbOverlay(void *opaque, const BD_ARGB_OVERLAY *event) {
+    [(__bridge HDMVSession *)opaque argbOverlay:event];
+}
 static unsigned component(double value) {
     return (unsigned)MAX(0, MIN(255, lround(value)));
 }
@@ -167,11 +192,18 @@ static unsigned component(double value) {
     if (!files.count || files.count > 4096 || !readRange || (region != 1 && region != 2 && region != 4)) return nil;
     NSMutableDictionary<NSString *, NSMutableSet *> *directories = [NSMutableDictionary dictionary];
     NSMutableSet *identities = [NSMutableSet set];
+    uint64_t resourceSize = 0;
     for (NSString *path in files) {
         NSArray *parts = [path componentsSeparatedByString:@"/"];
-        if (![path.uppercaseString hasPrefix:@"BDMV/"] || [parts containsObject:@".."] ||
+        BOOL discID = [@[@"CERTIFICATE/ID.BDMV", @"CERTIFICATE/BACKUP/ID.BDMV"] containsObject:path.uppercaseString];
+        if ((!discID && ![path.uppercaseString hasPrefix:@"BDMV/"]) || [parts containsObject:@".."] ||
             [parts containsObject:@"."] || [parts containsObject:@""] || files[path].longLongValue < 0 ||
             [identities containsObject:path.uppercaseString]) return nil;
+        if (![path.uppercaseString hasPrefix:@"BDMV/STREAM/"]) {
+            uint64_t size = files[path].unsignedLongLongValue;
+            if (size > 64 * 1024 * 1024 || resourceSize > 128 * 1024 * 1024 - size) return nil;
+            resourceSize += size;
+        }
         [identities addObject:path.uppercaseString];
         for (NSUInteger i = 0; i < parts.count; i++) {
             NSString *parent = [[parts subarrayWithRange:NSMakeRange(0, i)] componentsJoinedByString:@"/"];
@@ -366,11 +398,48 @@ static unsigned component(double value) {
                 if (region) self->_region = region;
             }
         }
+        NSURL *runtime = [NSBundle.mainBundle.resourceURL URLByAppendingPathComponent:@"DiscRuntime"];
+#if __has_include(<bdj_runtime.h>)
+        static NSURL *cache;
+        static dispatch_once_t cacheOnce;
+        dispatch_once(&cacheOnce, ^{
+            cache = [[NSFileManager.defaultManager URLsForDirectory:NSCachesDirectory inDomains:NSUserDomainMask].firstObject
+                URLByAppendingPathComponent:[@"DiscJava-" stringByAppendingString:NSUUID.UUID.UUIDString]];
+        });
+        NSError *cacheError = nil;
+        if ([NSFileManager.defaultManager fileExistsAtPath:runtime.path] &&
+            (![NSFileManager.defaultManager createDirectoryAtURL:cache withIntermediateDirectories:YES
+                                                      attributes:nil error:&cacheError] ||
+             !plozz_bdj_configure(runtime.fileSystemRepresentation, cache.fileSystemRepresentation))) {
+            [self fail:@"Could not prepare the disc runtime"]; return;
+        }
+#endif
         self->_disc = bd_init();
+        if (self->_disc) {
+            bd_set_player_setting_str(self->_disc, BLURAY_PLAYER_JAVA_HOME, runtime.fileSystemRepresentation);
+            bd_set_player_setting(self->_disc, BLURAY_PLAYER_SETTING_PERSISTENT_STORAGE, 0);
+        }
         if (!self->_disc || !bd_open_files(self->_disc, (__bridge void *)self, openDirectory, openFile)) {
             [self fail:@"Could not open the disc"]; return;
         }
         const BLURAY_DISC_INFO *info = bd_get_disc_info(self->_disc);
+        self->_javaSession = info && info->bdj_detected;
+        if (self->_javaSession) {
+#if __has_include(<bdj_runtime.h>)
+            if (plozz_bdj_is_quarantined()) {
+                [self fail:@"The previous Java menu did not close. Restart Plozz to open another Java menu"]; return;
+            }
+#endif
+            if (dispatch_semaphore_wait(javaSessionGate(), DISPATCH_TIME_NOW) != 0) {
+                [self fail:@"Another disc menu is still closing"]; return;
+            }
+            self->_javaLease = YES;
+            self->_javaPlanes = [NSMutableDictionary dictionary];
+            if (!info->bdj_handled) {
+                [self fail:@"The Java disc runtime is unavailable"]; return;
+            }
+            bd_register_argb_overlay_proc(self->_disc, (__bridge void *)self, argbOverlay, NULL);
+        }
         if (!info || !info->bluray_detected || !info->top_menu_supported ||
             info->aacs_detected || info->bdplus_detected) {
             [self fail:@"This disc's menu format is not supported"]; return;
@@ -393,6 +462,14 @@ static unsigned component(double value) {
 - (void)pump {
     if (self.stopped || _failed || !_disc) return;
     NSTimeInterval now = NSProcessInfo.processInfo.systemUptime;
+    if (_javaSession && self.playbackPaused != _lastPlaybackPaused) {
+        _lastPlaybackPaused = self.playbackPaused;
+        if (_title && bd_set_rate(_disc, _lastPlaybackPaused ? 0 : 90000) < 0) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                if (!self.stopped && self.noticeChanged) self.noticeChanged(@"The disc restricted that playback control.");
+            });
+        }
+    }
     if (_timedStill && _stillRemaining > 0 && !self.playbackPaused) {
         _stillRemaining = MAX(0, _stillRemaining - (now - _lastStillTick));
         if (_stillRemaining == 0) {
@@ -422,7 +499,13 @@ static unsigned component(double value) {
                 [self fail:@"Disc end-of-playlist read budget exceeded"]; return;
             }
         }
-        if (!event.event) { drained = YES; break; }
+        if (!event.event || event.event == BD_EVENT_IDLE) {
+            if (event.event == BD_EVENT_IDLE && event.param == 1 && !_vmStill) {
+                _vmStill = YES;
+                [self publishStillResuming:NO];
+            }
+            drained = YES; break;
+        }
         printf("HDMV event=%u parameter=%u\n", event.event, event.param);
         if (event.event == BD_EVENT_STILL_TIME) {
             if (event.param > 300) { [self fail:@"Invalid disc still duration"]; return; }
@@ -483,6 +566,9 @@ static unsigned component(double value) {
             _clip = event.param;
             audioChanged = YES; subtitleChanged = YES;
         } else if (event.event == BD_EVENT_MENU) {
+            @synchronized (self) {
+                if (self->_javaPlanes.count) continue;
+            }
             _menuOpen = event.param != 0;
             BOOL visible = _menuOpen;
             dispatch_async(dispatch_get_main_queue(), ^{
@@ -763,12 +849,115 @@ static unsigned component(double value) {
     });
 }
 
+- (void)argbOverlay:(const BD_ARGB_OVERLAY *)event {
+    if (!event || event->plane > 2 || self.stopped) return;
+    @synchronized (self) {
+        if (self.stopped) return;
+        NSNumber *key = @(event->plane);
+        DiscARGBPlane *plane = _javaPlanes[key];
+        if (event->cmd == BD_ARGB_OVERLAY_INIT) {
+            if (!event->w || !event->h || event->w > 1920 || event->h > 1080) {
+                dispatch_async(self.queue, ^{ [self fail:@"Invalid Java disc graphics dimensions"]; });
+                return;
+            }
+            plane = [DiscARGBPlane new];
+            plane.width = event->w; plane.height = event->h;
+            plane.pixels = [NSMutableData dataWithLength:(NSUInteger)event->w * event->h * 4];
+            _javaPlanes[key] = plane;
+            return;
+        }
+        if (event->cmd == BD_ARGB_OVERLAY_DRAW) {
+            if (!plane || !event->argb || event->stride < event->w ||
+                (unsigned)event->x + event->w > plane.width || (unsigned)event->y + event->h > plane.height) {
+                dispatch_async(self.queue, ^{ [self fail:@"Invalid Java disc graphics region"]; });
+                return;
+            }
+            uint32_t *pixels = plane.pixels.mutableBytes;
+            for (unsigned row = 0; row < event->h; row++)
+                memcpy(pixels + (event->y + row) * plane.width + event->x,
+                       event->argb + row * event->stride, event->w * sizeof(uint32_t));
+            return;
+        }
+        if (event->cmd == BD_ARGB_OVERLAY_CLOSE) {
+            [_javaPlanes removeObjectForKey:key];
+        } else if (event->cmd == BD_ARGB_OVERLAY_FLUSH && plane) {
+            NSData *pixels = [plane.pixels copy];
+            const uint32_t *values = pixels.bytes;
+            BOOL visible = NO;
+            for (NSUInteger index = 0; index < pixels.length / sizeof(uint32_t); index++) {
+                if (values[index] >> 24) { visible = YES; break; }
+            }
+            plane.image = nil;
+            if (visible) {
+                CGDataProviderRef provider = CGDataProviderCreateWithCFData((__bridge CFDataRef)pixels);
+                CGColorSpaceRef space = CGColorSpaceCreateDeviceRGB();
+                CGImageRef image = CGImageCreate(plane.width, plane.height, 8, 32, plane.width * 4, space,
+                    kCGBitmapByteOrder32Little | kCGImageAlphaFirst, provider, NULL, false, kCGRenderingIntentDefault);
+                plane.image = image ? [UIImage imageWithCGImage:image] : nil;
+                if (image) CGImageRelease(image);
+                CGColorSpaceRelease(space); CGDataProviderRelease(provider);
+                if (!plane.image) {
+                    dispatch_async(self.queue, ^{ [self fail:@"Could not render Java disc graphics"]; });
+                    return;
+                }
+            }
+        } else {
+            dispatch_async(self.queue, ^{ [self fail:@"Unknown Java disc graphics command"]; });
+            return;
+        }
+        unsigned width = 0, height = 0;
+        for (DiscARGBPlane *part in _javaPlanes.allValues) {
+            if (part.image) { width = MAX(width, part.width); height = MAX(height, part.height); }
+        }
+        _javaFrame = nil;
+        if (width && height) {
+            CGColorSpaceRef space = CGColorSpaceCreateDeviceRGB();
+            CGContextRef context = CGBitmapContextCreate(NULL, width, height, 8, width * 4, space,
+                kCGBitmapByteOrder32Little | kCGImageAlphaPremultipliedFirst);
+            CGColorSpaceRelease(space);
+            if (!context) {
+                dispatch_async(self.queue, ^{ [self fail:@"Could not compose Java disc graphics"]; });
+                return;
+            }
+            for (NSNumber *number in @[@2, @0, @1]) {
+                DiscARGBPlane *part = _javaPlanes[number];
+                if (part.image) CGContextDrawImage(context, CGRectMake(0, 0, part.width, part.height), part.image.CGImage);
+            }
+            CGImageRef image = CGBitmapContextCreateImage(context);
+            _javaFrame = image ? [UIImage imageWithCGImage:image] : nil;
+            if (image) CGImageRelease(image);
+            CGContextRelease(context);
+            if (!_javaFrame) {
+                dispatch_async(self.queue, ^{ [self fail:@"Could not compose Java disc graphics"]; });
+                return;
+            }
+        }
+        if (!_javaFramePending) {
+            _javaFramePending = YES;
+            dispatch_async(dispatch_get_main_queue(), ^{
+                UIImage *image;
+                @synchronized (self) {
+                    image = self->_javaFrame;
+                    self->_javaFramePending = NO;
+                }
+                if (!self.stopped) {
+                    dispatch_async(self.queue, ^{ self->_menuOpen = image != nil; });
+                    if (self.imageChanged) self.imageChanged(image);
+                    if (self.menuVisibilityChanged) self.menuVisibilityChanged(image != nil);
+                }
+            });
+        }
+    }
+}
+
 - (void)stop {
     self.stopped = YES;
     [self.http invalidateAndCancel];
     dispatch_async(self.queue, ^{
         if (self.timer) { dispatch_source_cancel(self.timer); self.timer = nil; }
         if (self->_disc) { bd_close(self->_disc); self->_disc = NULL; }
+        if (self->_javaLease) { dispatch_semaphore_signal(javaSessionGate()); self->_javaLease = NO; }
+        @synchronized (self) { [self->_javaPlanes removeAllObjects]; self->_javaFrame = nil; }
         if (self->_title) { bd_free_title_info(self->_title); self->_title = NULL; }
         free(self->_pixels); self->_pixels = NULL;
         free(self->_indices); self->_indices = NULL;

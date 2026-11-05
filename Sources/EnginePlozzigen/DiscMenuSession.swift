@@ -96,6 +96,12 @@ final class DiscMenuSession {
             MainActor.assumeIsolated {
                 guard let self, !self.stopped else { return }
                 self.state.image = image
+                if image != nil {
+                    self.deadline?.cancel()
+                    self.state.isOpening = false
+                    self.firstLoad?.resume()
+                    self.firstLoad = nil
+                }
             }
         }
         native.menuVisibilityChanged = { [weak self] visible in

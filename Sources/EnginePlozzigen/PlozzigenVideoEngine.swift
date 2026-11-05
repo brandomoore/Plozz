@@ -670,6 +670,7 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
                             self.publishProbedSourceFacts(
                                 format: self.engine.sourceVideoFormat, generation: probeGeneration
                             )
+                            self.beginObservingLateSourceFormatChanges(generation: probeGeneration)
                             self.chapters = MediaChapter.normalized(self.engine.mediaChapters.map {
                                 MediaChapter(start: $0.startSeconds, title: $0.name)
                             }, duration: self.engine.duration)
@@ -705,6 +706,9 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
                     )
                     discSession = session
                     try await session.start()
+                    guard self.outputLoadGeneration == outputGeneration, !Task.isCancelled else { return }
+                    status = .ready
+                    return
                     #else
                     throw MediaTransportError.unsupportedCapability("disc menu runtime")
                     #endif

@@ -86,6 +86,14 @@ final class WebDAVDiscPlaybackHostedTests: XCTestCase {
         try await checkBluRayPlayback(startPosition: 0, discMenus: true, discIntermediateStill: true)
     }
 
+    func testJavaMenuPlaysBothChoicesAndReopensAfterShutdown() async throws {
+        let quarantine = ProcessInfo.processInfo.environment["PLOZZ_BDJ_SHUTDOWN_CHECK"] == "1"
+        for iteration in 0..<2 {
+            try await checkBluRayPlayback(startPosition: 0, discMenus: true, discJava: true,
+                                         discJavaQuarantine: quarantine && iteration == 1)
+        }
+    }
+
     func testNativeHDMVShortRepeatedItemReachesItsOwnStill() async throws {
         try await checkBluRayPlayback(startPosition: 0, discMenus: true,
                                       discIntermediateStill: true, discShortSecondItem: true)
@@ -94,7 +102,7 @@ final class WebDAVDiscPlaybackHostedTests: XCTestCase {
     private func checkBluRayPlayback(
         startPosition: Double, discMenus: Bool = false, missingOpening: Bool = false,
         discStillSeconds: UInt16? = nil, discAudioSelection: Bool = false, discIntermediateStill: Bool = false,
-        discShortSecondItem: Bool = false
+        discShortSecondItem: Bool = false, discJava: Bool = false, discJavaQuarantine: Bool = false
     ) async throws {
         let root = try XCTUnwrap(Bundle(for: Self.self).resourceURL)
             .appendingPathComponent("Fixtures/bluray-test-pattern")
@@ -115,7 +123,7 @@ final class WebDAVDiscPlaybackHostedTests: XCTestCase {
         }
         if discMenus {
             let metadata = try XCTUnwrap(Bundle(for: Self.self).resourceURL)
-                .appendingPathComponent("Fixtures/hdmv-navigation")
+                .appendingPathComponent(discJava ? "Fixtures/bdj-navigation" : "Fixtures/hdmv-navigation")
             for path in try FileManager.default.subpathsOfDirectory(atPath: metadata.path) {
                 let url = metadata.appendingPathComponent(path)
                 let values = try url.resourceValues(forKeys: [.isDirectoryKey, .fileSizeKey])
@@ -230,7 +238,8 @@ final class WebDAVDiscPlaybackHostedTests: XCTestCase {
             seekPositions: discMenus ? [2] : [10, 2, 13], startPosition: startPosition,
             discMenus: discMenus, expectedDiscPlaylist: missingOpening ? 2 : 1,
             discStillSeconds: discStillSeconds, discAudioSelection: discAudioSelection,
-            discIntermediateStill: discIntermediateStill, discShortSecondItem: discShortSecondItem
+            discIntermediateStill: discIntermediateStill, discShortSecondItem: discShortSecondItem,
+            discJava: discJava, discJavaQuarantine: discJavaQuarantine
         )
         XCTAssertEqual(reads.contains("BDMV/STREAM/00001.m2ts"), !missingOpening && !discAudioSelection)
         XCTAssertEqual(reads.contains("BDMV/STREAM/00004.m2ts"), discAudioSelection)
@@ -408,6 +417,9 @@ final class WebDAVDiscPlaybackHostedTests: XCTestCase {
             let seekPositions: [Double]
             let startPosition: Double?
             let discMenuInspection: Bool?
+            let discJavaInspection: Bool?
+            let discJavaKeys: [UInt32]?
+            let discJavaFeaturePlayback: Bool?
         }
         let data: Data
         if let json = environment["PLOZZ_WEBDAV_PLAYBACK_JSON"] {
@@ -429,14 +441,20 @@ final class WebDAVDiscPlaybackHostedTests: XCTestCase {
               input.baseURL.password == nil, input.baseURL.query == nil,
               startPosition.isFinite, startPosition >= 0,
               !input.seekPositions.isEmpty, input.seekPositions.count <= 3,
-              input.seekPositions.allSatisfy({ $0.isFinite && $0 >= 0 }) else {
+              input.seekPositions.allSatisfy({ $0.isFinite && $0 >= 0 }),
+              (input.discJavaKeys ?? []).count <= 4,
+              (input.discJavaKeys ?? []).allSatisfy({ [12, 13, 14, 15, 16].contains($0) }) else {
             throw CheckFailure.invalidInput
         }
         try await checkPlayback(
             base: input.baseURL, path: input.relativePath,
             credential: .password(username: input.username, password: input.password, policy: .automatic),
             seekPositions: input.seekPositions, startPosition: startPosition, sustainedPlaybackSeconds: 60,
-            discMenus: input.discMenuInspection == true, discMenuInspection: input.discMenuInspection == true
+            discMenus: input.discMenuInspection == true || input.discJavaInspection == true,
+            discMenuInspection: input.discMenuInspection == true,
+            discJavaInspection: input.discJavaInspection == true,
+            discJavaKeys: input.discJavaKeys ?? [],
+            discJavaFeaturePlayback: input.discJavaFeaturePlayback == true
         )
     }
 
@@ -446,7 +464,9 @@ final class WebDAVDiscPlaybackHostedTests: XCTestCase {
         requiresNativeHLS: Bool = false, recordIO: (@Sendable (String) async -> Void)? = nil,
         discMenus: Bool = false, expectedDiscPlaylist: Int = 1, discStillSeconds: UInt16? = nil,
         discAudioSelection: Bool = false, discIntermediateStill: Bool = false, discShortSecondItem: Bool = false,
-        discMenuInspection: Bool = false
+        discMenuInspection: Bool = false, discJava: Bool = false, discJavaInspection: Bool = false,
+        discJavaKeys: [UInt32] = [], discJavaQuarantine: Bool = false,
+        discJavaFeaturePlayback: Bool = false
     ) async throws {
         let environment = ProcessInfo.processInfo.environment
         let detailPlayDelay: Duration?
@@ -622,6 +642,119 @@ final class WebDAVDiscPlaybackHostedTests: XCTestCase {
 
         let started = ContinuousClock.now
         try await perform(engine: engine) { await engine.load(request: request, startPosition: startPosition) }
+        if discJava {
+            let menu = try XCTUnwrap(engine.discMenu)
+            try await wait(engine: engine, seconds: 45) {
+                menu.failure != nil || (menu.image != nil && menu.isMenuVisible)
+            }
+            XCTAssertNil(menu.failure)
+            XCTAssertNil(menu.playlist, "A menu-only Java title must not silently start a video")
+            menu.sendKey(16)
+            try await wait(engine: engine, seconds: 45) {
+                guard menu.playlist == 1, !menu.isMenuVisible, menu.failure == nil else { return false }
+                return await engine.hasRenderedVideoFrame()
+            }
+            try await waitForPlayback(engine, after: 1, before: 6)
+            engine.pause()
+            let position = engine.currentTime
+            try await Task.sleep(for: .seconds(1))
+            XCTAssertEqual(engine.currentTime, position, accuracy: 0.2)
+            engine.play()
+            try await waitForPlayback(engine, after: position + 0.5, before: 7)
+            menu.openMenu()
+            try await wait(engine: engine, seconds: 30) { menu.image != nil && menu.isMenuVisible }
+            menu.sendKey(15)
+            menu.sendKey(16)
+            try await wait(engine: engine, seconds: 45) {
+                guard menu.playlist == 2, !menu.isMenuVisible, menu.failure == nil else { return false }
+                return await engine.hasRenderedVideoFrame()
+            }
+            try await waitForPlayback(engine, after: 1, before: 6)
+            try await wait(engine: engine, seconds: 15) { menu.image != nil && menu.isMenuVisible }
+            XCTAssertNil(menu.failure)
+            if discJavaQuarantine {
+                let previousImage = try XCTUnwrap(menu.image?.pngData())
+                menu.sendKey(13)
+                try await wait(engine: engine, seconds: 5) { menu.image?.pngData() != previousImage }
+            }
+            engine.stop()
+            await engine.drainTransport()
+            if discJavaQuarantine {
+                await engine.load(request: request, startPosition: 0)
+                let failure = try XCTUnwrap(engine.discMenu?.failure)
+                XCTAssertTrue(failure.contains("Restart Plozz"), failure)
+            }
+            return
+        }
+        if discJavaInspection {
+            let menu = try XCTUnwrap(engine.discMenu)
+            try await wait(engine: engine, seconds: 60) { menu.failure != nil || menu.image != nil }
+            XCTAssertNil(menu.failure)
+            try await Task.sleep(for: .seconds(30))
+            XCTAssertNil(menu.failure)
+            let image = try XCTUnwrap(menu.image)
+            let directory = try XCTUnwrap(FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first)
+            try XCTUnwrap(image.pngData()).write(to: directory.appendingPathComponent("disc-java-inspection.png"))
+            print("WEBDAV_DISC javaMenuReadySeconds=\(started.duration(to: .now)) playlist=\(menu.playlist ?? -1)")
+            for (index, key) in discJavaKeys.enumerated() {
+                menu.sendKey(key)
+                try await Task.sleep(for: .seconds(30))
+                XCTAssertNil(menu.failure)
+                if let image = menu.image {
+                    try XCTUnwrap(image.pngData()).write(
+                        to: directory.appendingPathComponent("disc-java-step-\(index).png"))
+                }
+                let rendered = await engine.hasRenderedVideoFrame()
+                print("WEBDAV_DISC javaStep=\(index) playlist=\(menu.playlist ?? -1) position=\(engine.currentTime) rendered=\(rendered)")
+            }
+            if discJavaFeaturePlayback {
+                try await wait(engine: engine, seconds: 90) {
+                    guard engine.duration > 600, engine.currentTime > 2, menu.failure == nil else { return false }
+                    return await engine.hasRenderedVideoFrame()
+                }
+                let position = engine.currentTime
+                try await Task.sleep(for: .seconds(10))
+                XCTAssertGreaterThan(engine.currentTime, position + 8)
+                engine.pause()
+                let paused = engine.currentTime
+                try await Task.sleep(for: .seconds(1))
+                XCTAssertEqual(engine.currentTime, paused, accuracy: 0.2)
+                engine.play()
+                try await waitForPlayback(engine, after: paused + 1, before: paused + 8)
+                if let failure = menu.failure { return XCTFail(failure) }
+                print("WEBDAV_DISC javaFeatureVerified playlist=\(menu.playlist ?? -1) position=\(engine.currentTime)")
+                let featureDuration = engine.duration
+                let featurePlaylist = menu.playlist
+                menu.openMenu()
+                try await Task.sleep(for: .seconds(20))
+                var visibleSince: ContinuousClock.Instant?
+                try await wait(engine: engine, seconds: 60) {
+                    guard menu.image != nil && menu.isMenuVisible else {
+                        visibleSince = nil
+                        return false
+                    }
+                    let now = ContinuousClock.now
+                    if visibleSince == nil { visibleSince = now }
+                    return visibleSince!.duration(to: now) >= .seconds(2)
+                }
+                XCTAssertNil(menu.failure)
+                let topMenu = try XCTUnwrap(menu.image?.pngData())
+                try topMenu.write(to: directory.appendingPathComponent("disc-java-top-menu.png"))
+                menu.sendKey(16)
+                try await wait(engine: engine, seconds: 60) {
+                    guard abs(engine.duration - featureDuration) < 0.5,
+                          menu.playlist == featurePlaylist, engine.currentTime > 2, !menu.isMenuVisible,
+                          menu.failure == nil else { return false }
+                    return await engine.hasRenderedVideoFrame()
+                }
+                let selectedPosition = engine.currentTime
+                try await waitForPlayback(engine, after: selectedPosition + 2, before: selectedPosition + 10)
+                print("WEBDAV_DISC javaTopMenuPlayVerified playlist=\(menu.playlist ?? -1) position=\(engine.currentTime)")
+            }
+            engine.stop()
+            await engine.drainTransport()
+            return
+        }
         if discMenuInspection {
             let menu = try XCTUnwrap(engine.discMenu)
             try await wait(engine: engine, seconds: 60) {

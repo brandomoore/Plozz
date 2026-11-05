@@ -1,3 +1,4 @@
+#include "bdj_runtime.h"
 /*
  * This file is part of libbluray
  * Copyright (C) 2010  William Hahne
@@ -58,7 +59,7 @@
 #endif
 
 struct bdjava_s {
-#if defined(__APPLE__) && !defined(HAVE_BDJ_J2ME)
+#if defined(__APPLE__) && !defined(HAVE_BDJ_J2ME) && !defined(PLOZZ_EMBEDDED_BDJ)
     void   *h_libjli;
 #endif
     void   *h_libjvm;
@@ -238,7 +239,7 @@ static inline char *_utf8_to_cp(const char *utf8)
 static const char *jre_plugin_path = MACOS_JRE_HOME;
 #endif
 
-#if defined(__APPLE__) && !defined(HAVE_BDJ_J2ME)
+#if defined(__APPLE__) && !defined(HAVE_BDJ_J2ME) && !defined(PLOZZ_EMBEDDED_BDJ)
 
 #define MACOS_JAVA_HOME "/usr/libexec/java_home"
 static char *_java_home_macos()
@@ -343,7 +344,7 @@ static void *_jvm_dlopen_a(const char *java_home,
   return dll;
 }
 
-#if defined(__APPLE__) && !defined(HAVE_BDJ_J2ME)
+#if defined(__APPLE__) && !defined(HAVE_BDJ_J2ME) && !defined(PLOZZ_EMBEDDED_BDJ)
 static void *_load_jli_macos()
 {
     const char *java_home = NULL;
@@ -397,8 +398,7 @@ static void *_load_jvm(const char **p_java_home, const char *app_java_home)
 # else
 #  ifdef __APPLE__
     static const char * const jvm_path[] = {NULL, JDK_HOME, MACOS_JRE_HOME};
-    static const char * const jvm_dir[]  = {"jre/lib/server",
-                                            "lib/server"};
+    static const char * const jvm_dir[] = {"lib/zero"};
 #  else
     static const char * const jvm_path[] = {NULL,
                                             JDK_HOME,
@@ -467,7 +467,7 @@ static void *_load_jvm(const char **p_java_home, const char *app_java_home)
     }
 #endif
 
-#if defined(__APPLE__) && !defined(HAVE_BDJ_J2ME)
+#if defined(__APPLE__) && !defined(HAVE_BDJ_J2ME) && !defined(PLOZZ_EMBEDDED_BDJ)
     java_home = _java_home_macos();
     if (java_home) {
         handle = _jvm_dlopen_a(java_home, jvm_dir, num_jvm_dir, jvm_lib);
@@ -747,6 +747,11 @@ static int _get_method(JNIEnv *env, jclass *cls, jmethodID *method_id,
 static int _bdj_init(JNIEnv *env, struct bluray *bd, const char *disc_root, const char *bdj_disc_id,
                      BDJ_CONFIG *storage)
 {
+    if (plozz_bdj_is_quarantined()) {
+        BD_DEBUG(DBG_BDJ | DBG_CRIT, "Java runtime is quarantined after incomplete shutdown\n");
+        return 0;
+    }
+
     if (!bdj_register_native_methods(env)) {
         BD_DEBUG(DBG_BDJ | DBG_CRIT, "Couldn't register native methods.\n");
     }
@@ -917,9 +922,17 @@ static int _create_jvm(void *jvm_lib, const char *java_home, BDJ_CONFIG *cfg,
     option[n++].optionString = str_dup   ("-Dawt.toolkit=java.awt.BDToolkit");
     option[n++].optionString = str_dup   ("-Djava.awt.graphicsenv=java.awt.BDGraphicsEnvironment");
     option[n++].optionString = str_dup   ("-Djava.awt.headless=false");
-    option[n++].optionString = str_dup   ("-Xms256M");
-    option[n++].optionString = str_dup   ("-Xmx256M");
+    option[n++].optionString = str_dup   ("-Xms16M");
+    option[n++].optionString = str_dup   ("-Xmx128M");
     option[n++].optionString = str_dup   ("-Xss2048k");
+    option[n++].optionString = str_dup("-Djava.security.manager=allow");
+    option[n++].optionString = str_dup("-XX:+UseSerialGC");
+    option[n++].optionString = str_dup("-XX:ActiveProcessorCount=2");
+    option[n++].optionString = str_dup("-XX:MaxMetaspaceSize=96M");
+    option[n++].optionString = str_dup("-XX:MaxDirectMemorySize=32M");
+    option[n++].optionString = str_printf("-Djava.home=%s", java_home);
+    option[n++].optionString = str_printf("-Djava.io.tmpdir=%s", plozz_bdj_cache_root());
+
 #ifdef HAVE_BDJ_J2ME
     option[n++].optionString = str_printf("-Djava.home=%s", java_home);
     option[n++].optionString = str_printf("-Xbootclasspath/a:%s/lib/xmlparser.jar", java_home);
@@ -1030,7 +1043,7 @@ BDJAVA* bdj_open(const char *path, struct bluray *bd,
         return NULL;
     }
 
-#if defined(__APPLE__) && !defined(HAVE_BDJ_J2ME)
+#if defined(__APPLE__) && !defined(HAVE_BDJ_J2ME) && !defined(PLOZZ_EMBEDDED_BDJ)
     /* On macOS we need to load libjli to workaround a bug where the wrong
      * version would be used: https://bugs.openjdk.java.net/browse/JDK-7131356
      */
@@ -1065,7 +1078,7 @@ BDJAVA* bdj_open(const char *path, struct bluray *bd,
         return NULL;
     }
 
-#if defined(__APPLE__) && !defined(HAVE_BDJ_J2ME)
+#if defined(__APPLE__) && !defined(HAVE_BDJ_J2ME) && !defined(PLOZZ_EMBEDDED_BDJ)
     bdjava->h_libjli = jli_lib;
 #endif
     bdjava->h_libjvm = jvm_lib;
@@ -1113,10 +1126,13 @@ void bdj_close(BDJAVA *bdjava)
             if ((*env)->ExceptionOccurred(env)) {
                 (*env)->ExceptionDescribe(env);
                 BD_DEBUG(DBG_BDJ | DBG_CRIT, "Failed to shutdown BD-J (uncaught exception)\n");
+                plozz_bdj_quarantine();
                 (*env)->ExceptionClear(env);
             }
 
             (*env)->DeleteLocalRef(env, shutdown_class);
+        } else {
+            plozz_bdj_quarantine();
         }
 
         bdj_unregister_native_methods(env);
@@ -1130,7 +1146,7 @@ void bdj_close(BDJAVA *bdjava)
         dl_dlclose(bdjava->h_libjvm);
     }
 
-#if defined(__APPLE__) && !defined(HAVE_BDJ_J2ME)
+#if defined(__APPLE__) && !defined(HAVE_BDJ_J2ME) && !defined(PLOZZ_EMBEDDED_BDJ)
     if (bdjava->h_libjli) {
         dl_dlclose(bdjava->h_libjli);
     }
