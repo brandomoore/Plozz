@@ -19,7 +19,7 @@
             "Better handling of Silo Home loading and request limits.",
             "More reliable watch-progress syncing after connection changes.",
             "Resume progress for short Plex extras is saved on this device.",
-            "Some Dolby Vision seek previews are no longer available; playback is unchanged."
+            "Some DV seek previews are no longer available; playback is unchanged."
           ]
         },
         {
