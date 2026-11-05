@@ -1,5 +1,58 @@
 # PublicMetaDBService
 
+## Development checkpoint: 5 November 2026
+
+The PublicMetaDB and shared tracker-sync branch is paused, not release-ready.
+Implementation spans personal-key connection, playback reporting, reviewed and
+ongoing history imports, explicit exports, lists/catalog, community contributions,
+and shared support for existing trackers. Implemented surfaces are not equivalent
+to completed real-data acceptance.
+
+The acceptance ledger at this checkpoint contains 74 completed, 13 in-progress
+and 14 pending tasks. These are differently sized scenarios and parent tasks,
+not a feature-completion percentage. Historical evidence covers selected real
+Jellyfin, Plex, Emby, Silo, SMB and NFS routes on owned simulators; it does not
+establish every provider/platform combination or physical-device behavior.
+
+The latest completed checks cover fresh iPhone/iPad profile setup and two
+separate consent boundaries: an inactive consenting profile cannot authorize
+either an active disconnected profile or an active connected-but-unconsented
+profile. Both cases used actual remote playback changes, the real automatic-sync
+interval, native foreground transitions and independent profile-scoped store
+reads. Returning to the original profile required review of conflicting local
+progress rather than overwriting it. Experimental permissions were revoked.
+The profile setup fix is in `ffef584bfc61b83f11ade5259e0fec18a4c36ea6`;
+`ecc3eb7ce4e32f053616e5c323dd65ea82041992` fixes hosted PIN-fixture readiness,
+not production authorization.
+
+Outstanding acceptance is grouped below; partial coverage remains useful:
+
+| Area | Remaining work |
+| --- | --- |
+| Safety and recovery | Actual per-item playback guard, ambiguous/incomplete identity, key/server-user switching, in-flight cancellation, uncertain delivery and coexistence |
+| History routes | Remaining provider/platform, episode/share and lifecycle coverage for imports, exports and ongoing synchronization |
+| Community | Remaining ratings/season ownership, partial-result and lifecycle cases; markers/highlights, votes, external IDs and anime mappings |
+| Watchlists | Universal-watchlist consent, synchronization and recovery |
+| Existing trackers | Real end-to-end Trakt, Simkl, WeTrakr, AniList, MyAnimeList and Last.fm campaigns |
+| Final audit | Current-source evidence reconciliation and outstanding scoped test-session credential hygiene |
+
+Resume with one maintainer-agreed milestone rather than automatically expanding
+or restarting the whole campaign. The maintainer's private recovery package
+`publicmetadb-20261105` contains the portable task/dependency ledger, frozen
+audits, raw test evidence, helper scripts and a saved uncommitted connection-test
+delta. It is intentionally outside Git and the deleted-worktree boundary.
+Recover that delta only if absent, and consult the package's `RESUME.md` before
+using historical runners. No credentials or private server identities belong in
+this document.
+
+Preserve the distinction between historical evidence and fresh validation.
+Inspect current source and external state, rebuild only the required current
+app/driver, and rerun affected cases. Old absolute paths and `.xctestrun` manifests
+are not runnable after removing build outputs. Retain immutable result records
+separately from reusable build directories; do not recreate every historical
+DerivedData directory. See [tracker acceptance](../../docs/testing-policy.md#opt-in-tracker-acceptance)
+for the native-action and independent-readback requirements.
+
 Dropping a whole TV show is an explicit, confirmed tracker-only action. A fresh
 read prevents redundant writes; a complete readback must confirm the drop, even
 after a lost acknowledgement. Movies and individual seasons/episodes are not

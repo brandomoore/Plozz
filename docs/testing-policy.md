@@ -469,6 +469,16 @@ interval. If foreground admission postpones the attempt until player dismissal,
 record that separately from a per-item playback skip; only the skip diagnostic
 proves that guard ran. Unchanged history alone proves neither.
 
+When pausing an acceptance campaign, preserve its task/dependency ledger, exact
+source identity, uncommitted test changes, independent state snapshots, raw
+results and attachments outside any removable worktree or session directory.
+Keep credentials and private evidence out of Git. Separate reproducible build
+products from historical evidence: use reusable incremental build directories
+and immutable per-run result directories. Restoring evidence does not restore
+simulator state, credentials or runnable manifests. Rebuild the required current
+driver, recheck external state and rerun affected scenarios; never promote an
+old result or an incomplete task to a fresh pass.
+
 ## App-hosted focus integration
 
 Episode-panel fixtures activate native window focus before reissuing their
