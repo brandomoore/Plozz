@@ -9,6 +9,33 @@ import XCTest
 
 @MainActor
 final class DetailCardSurfacePresentationTests: XCTestCase {
+    func testPersonCaptionUsesRequestedLocaleWithoutChangingContentOrIdentity() throws {
+        let people: [MediaPerson] = [
+            .init(id: "person", name: "Person", role: "A character", kind: "Actor"),
+            .init(id: "person", name: "Person", kind: "Director"),
+            .init(id: "person", name: "Person", kind: "Writer"),
+            .init(id: "person", name: "Person", kind: "Producer")
+        ]
+        let credit = try XCTUnwrap(MediaPersonCredit.ordered(people).first)
+        let originalID = credit.id
+        for language in ["en", "fr", "en"] {
+            let bundleURL = try XCTUnwrap(Bundle.main.url(forResource: language, withExtension: "lproj"))
+            let bundle = try XCTUnwrap(Bundle(url: bundleURL))
+            let labels = ["Director", "Writer", "Producer"].map {
+                bundle.localizedString(forKey: $0, value: nil, table: "Localizable")
+            }
+            if language == "fr" {
+                XCTAssertNotEqual(labels[0], "Director", "Require a real translation, not English fallback.")
+            }
+            XCTAssertEqual(
+                credit.caption(locale: Locale(identifier: language)),
+                "A character\n" + labels.joined(separator: ", ")
+            )
+            XCTAssertEqual(credit.person, people[0])
+            XCTAssertEqual(credit.id, originalID)
+        }
+    }
+
     func testDetailSectionsKeepReadableColumnsAndFillTheShortestColumn() async throws {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
         let previous = scene.windows.first(where: \.isKeyWindow)

@@ -4041,6 +4041,7 @@ struct PlozziOSInlineEpisodeEntry: View {
 /// down-arrow** when complete (a settled status, not an action). Hidden when the
 /// episode isn't downloaded — download itself is started from the ⋯ menu.
 private struct PlozziOSCastSection: View {
+    @Environment(\.locale) private var locale
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.plozzMetrics) private var metrics
     @Environment(\.themePalette) private var palette
@@ -4098,7 +4099,7 @@ private struct PlozziOSCastSection: View {
                                     maxWidth: .infinity,
                                     alignment: .top
                                 )
-                            if let role = credit.caption {
+                            if let role = credit.caption(locale: locale) {
                                 Text(role)
                                     .font(.caption)
                                     .plozzForeground(.secondary)

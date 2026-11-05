@@ -16,15 +16,15 @@ public enum MediaCrewRole: Int, CaseIterable, Sendable {
         }
     }
 
-    public var title: String {
+    public var title: LocalizedStringResource {
         switch self {
-        case .director: String(localized: "Director")
-        case .creator: String(localized: "Creator")
-        case .writer: String(localized: "Writer")
-        case .producer: String(localized: "Producer")
-        case .executiveProducer: String(localized: "Executive Producer")
-        case .composer: String(localized: "Composer")
-        case .music: String(localized: "Music")
+        case .director: "Director"
+        case .creator: "Creator"
+        case .writer: "Writer"
+        case .producer: "Producer"
+        case .executiveProducer: "Executive Producer"
+        case .composer: "Composer"
+        case .music: "Music"
         }
     }
 }
@@ -37,8 +37,13 @@ public struct MediaPersonCredit: Identifiable, Equatable, Sendable {
     public private(set) var crewRoles: [MediaCrewRole]
     public private(set) var isCast: Bool
 
-    public var caption: String? {
-        let lines = [characters.joined(separator: ", "), crewRoles.map(\.title).joined(separator: ", ")]
+    public func caption(locale: Locale) -> String? {
+        let roles = crewRoles.map {
+            var title = $0.title
+            title.locale = locale
+            return String(localized: title) // l10n:content - Joins role labels at render time using the view's current locale.
+        }
+        let lines = [characters.joined(separator: ", "), roles.joined(separator: ", ")]
             .filter { !$0.isEmpty }
         return lines.isEmpty ? nil : lines.joined(separator: "\n")
     }

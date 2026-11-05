@@ -54,6 +54,7 @@ public struct DetailInformationSections: View {
     @State private var overviewFullHeight: CGFloat = 0
     @State private var overviewVisibleHeight: CGFloat = 0
     @Environment(\.themePalette) private var palette
+    @Environment(\.locale) private var locale
     @Environment(\.gradientBackgroundsEnabled) private var gradientEnabled
     @Environment(\.plozzShowsContentRatings) private var showsContentRatings
     @Environment(\.plozzReduceTransparency) private var reduceTransparency
@@ -703,7 +704,10 @@ public struct DetailInformationSections: View {
         }
         if item.kind == .series {
             if let status = item.seriesStatus {
-                facts.append(InformationFact(id: "series-status", label: "Status", value: status.displayName))
+                var name = status.displayName
+                name.locale = locale
+                let value = String(localized: name) // l10n:content - Measured fact text resolves on each render with the environment locale.
+                facts.append(InformationFact(id: "series-status", label: "Status", value: value))
             }
             if let count = item.catalogSeasonCount, count > 0 {
                 facts.append(InformationFact(id: "seasons", label: "Total Seasons", value: count.formatted()))

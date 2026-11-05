@@ -71,6 +71,7 @@ private struct CastMemberCard: View {
     private var person: MediaPerson { credit.person }
 
     @Environment(\.plozzMetrics) private var metrics
+    @Environment(\.locale) private var locale
     /// Installed per navigation stack. When absent the tile stays inert, which is
     /// the right behaviour on surfaces that have nowhere to push a person to.
     @Environment(\.mediaPersonNavigator) private var navigateToPerson
@@ -99,7 +100,7 @@ private struct CastMemberCard: View {
                         .font(.system(size: 22 * Self.scale, weight: .semibold))
                         .foregroundStyle(.primary)
                         .fixedSize(horizontal: false, vertical: true)
-                    if let role = credit.caption {
+                    if let role = credit.caption(locale: locale) {
                         Text(role)
                             .font(.system(size: 19 * Self.scale))
                             .plozzForeground(.secondary)

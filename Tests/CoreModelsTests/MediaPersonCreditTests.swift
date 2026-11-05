@@ -23,7 +23,7 @@ final class MediaPersonCreditTests: XCTestCase {
         XCTAssertEqual(credits.last?.person.id, "exec")
         XCTAssertEqual(item.cast, cast, "Hero and provider actor-only semantics must not change.")
         XCTAssertEqual(Set(credits.map(\.id)).count, credits.count)
-        XCTAssertEqual(credits[7].caption, MediaCrewRole.director.title)
+        XCTAssertEqual(credits[7].caption(locale: .current), String(localized: MediaCrewRole.director.title))
     }
 
     func testSparseAndCrewOnlyTitlesDoNotReserveActorSlots() {
@@ -45,8 +45,8 @@ final class MediaPersonCreditTests: XCTestCase {
         XCTAssertEqual(credits[0].person, cast[0])
         XCTAssertEqual(credits[0].characters, ["Character 1"])
         XCTAssertEqual(credits[0].crewRoles, [.director, .writer])
-        XCTAssertEqual(credits[0].caption,
-                       "Character 1\n\(MediaCrewRole.director.title), \(MediaCrewRole.writer.title)")
+        XCTAssertEqual(credits[0].caption(locale: .current),
+                       "Character 1\n\(String(localized: MediaCrewRole.director.title)), \(String(localized: MediaCrewRole.writer.title))")
     }
 
     func testLaterActorWhoDirectsIsPromotedWithoutLosingTheirRoute() {

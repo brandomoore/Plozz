@@ -15,11 +15,11 @@ public enum MediaSeriesStatus: String, Codable, Hashable, Sendable {
         }
     }
 
-    public var displayName: String {
+    public var displayName: LocalizedStringResource {
         switch self {
-        case .returning: String(localized: "Returning", comment: "Confirmed production status of a TV series.")
-        case .ended: String(localized: "Ended", comment: "Confirmed production status of a TV series.")
-        case .canceled: String(localized: "Canceled", comment: "Confirmed production status of a TV series.")
+        case .returning: LocalizedStringResource("Returning", comment: "Confirmed production status of a TV series.")
+        case .ended: LocalizedStringResource("Ended", comment: "Confirmed production status of a TV series.")
+        case .canceled: LocalizedStringResource("Canceled", comment: "Confirmed production status of a TV series.")
         }
     }
 }

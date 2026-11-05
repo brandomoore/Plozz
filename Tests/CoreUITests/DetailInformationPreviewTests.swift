@@ -52,7 +52,7 @@ final class DetailInformationPreviewTests: XCTestCase {
             DetailInformationSections(item: item, horizontalInset: 24)
                 .informationGroups.first { $0.id == "details" }?.facts ?? []
         }
-        XCTAssertEqual(facts().first { $0.id == "series-status" }?.value, MediaSeriesStatus.returning.displayName)
+        XCTAssertEqual(facts().first { $0.id == "series-status" }?.value, String(localized: MediaSeriesStatus.returning.displayName))
         XCTAssertEqual(facts().first { $0.id == "seasons" }?.value, 3.formatted())
         XCTAssertEqual(facts().first { $0.id == "episodes" }?.value, 17.formatted())
         XCTAssertEqual(facts().first { $0.id == "original-language" }?.value,
