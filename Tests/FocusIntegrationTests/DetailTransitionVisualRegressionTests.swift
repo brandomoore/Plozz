@@ -1,4 +1,5 @@
 import AVFoundation
+import AVKit
 @testable import AppShell
 import CoreModels
 @testable import CoreUI
@@ -465,6 +466,208 @@ final class DetailTransitionVisualRegressionTests: XCTestCase {
 
     func testThirdHeroTitleKeepsItsTrailerWhenDetailSelectsAnotherSourceID() async throws {
         try await assertTrailerRoundTrip(usesShowcase: true, alternateSource: true)
+    }
+
+    func testHomeTrailerFullscreenSupportsSeekingAndReturnsToTheSameHero() async throws {
+        try await assertTrailerFullscreen(fromDetail: false)
+    }
+
+    func testDetailTrailerFullscreenSupportsSeekingAndReturnsToTheSameDetail() async throws {
+        try await assertTrailerFullscreen(fromDetail: true)
+    }
+
+    private func assertTrailerFullscreen(fromDetail: Bool) async throws {
+        let scene = try await activeScene()
+        let directory = try XCTUnwrap(Bundle(for: Self.self).url(
+            forResource: "Fixtures", withExtension: nil
+        )).appendingPathComponent("active-picture-hls")
+        let server = try SubtitleFixtureServer(directory: directory)
+        defer { server.stop() }
+        let port = try await server.start()
+        let video = try XCTUnwrap(URL(string: "http://127.0.0.1:\(port)/active-picture.m3u8"))
+        let model = TransitionShowModel(provider: TransitionShowProvider(artwork: try await seedArtwork()))
+        model.background.settings.homeTrailerEnabled = true
+        model.background.settings.detailMode = .trailer
+        model.heroItems.append(MediaItem(
+            id: "another-title", title: "Another title", kind: .movie,
+            allowsTitleBasedMetadataMatching: false
+        ))
+        model.resolveTrailer = { item in
+            HeroTrailerSource(ownerItemID: item.id, trailerItemID: "clip", url: video, duration: 18)
+        }
+        let host = UIHostingController(rootView: TransitionShowRoot(
+            model: model, usesHomeHero: true, usesShowcase: true
+        ))
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer {
+            model.trailer.stop()
+            model.detail.suspendEnrichment()
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        try await waitUntil {
+            model.trailer.isPlaying && model.trailer.player.currentTime().seconds > 0.5
+                && self.trailerLayers(in: window).contains(where: \.isReadyForDisplay)
+        }
+        if fromDetail {
+            model.openHeroDetail()
+            try await waitUntil { model.stackDepth.depth == 1 && model.detail.state.value?.childrenLoaded == true }
+        }
+        let role: HeroTrailerSurfaceRole = fromDetail ? .detail : .home
+        let original = try XCTUnwrap(model.trailer.player.currentItem)
+        let ambientLayer = try XCTUnwrap(trailerLayers(in: window).first { $0.player === model.trailer.player })
+        let originalPosition = model.trailer.player.currentTime().seconds
+        model.fullscreenRequest = try XCTUnwrap(TrailerFullscreenRequest(
+            controller: model.trailer, itemID: model.provider.show.id, role: role,
+            navigationStyle: .rail
+        ))
+        try await waitUntil { self.nativeTrailerPlayer(in: host)?.isReadyForDisplay == true }
+        let native = try XCTUnwrap(nativeTrailerPlayer(in: host))
+        XCTAssertTrue(native.player === model.trailer.player)
+        XCTAssertTrue(native.showsPlaybackControls)
+        XCTAssertFalse(native.requiresLinearPlayback)
+        XCTAssertNil(ambientLayer.player, "Only AVKit may render while full screen.")
+        XCTAssertFalse(model.trailer.isMuted)
+        XCTAssertGreaterThanOrEqual(model.trailer.player.currentTime().seconds, originalPosition)
+
+        model.trailer.player.pause()
+        try await Task.sleep(for: .milliseconds(150))
+        let pausedPosition = model.trailer.player.currentTime().seconds
+        model.trailer.setPaused(false, surfaceRole: role)
+        try await Task.sleep(for: .milliseconds(200))
+        XCTAssertEqual(model.trailer.player.currentTime().seconds, pausedPosition, accuracy: 0.1,
+                       "Covered hero callbacks cannot override native transport.")
+        for seconds in [12.0, 3.0] {
+            let completed = await model.trailer.player.seek(
+                to: CMTime(seconds: seconds, preferredTimescale: 600),
+                toleranceBefore: .zero, toleranceAfter: .zero
+            )
+            XCTAssertTrue(completed)
+            XCTAssertEqual(model.trailer.player.currentTime().seconds, seconds, accuracy: 0.2)
+            XCTAssertTrue(model.trailer.player.currentItem === original)
+        }
+        model.trailer.player.play()
+        try await waitUntil { model.trailer.player.currentTime().seconds > 3.2 }
+        let returnPosition = model.trailer.player.currentTime().seconds
+        XCTAssertEqual(native.delegate?.playerViewControllerShouldDismiss?(native), false)
+        try await waitUntil {
+            !model.trailer.isFullScreen && host.presentedViewController == nil
+                && ambientLayer.player === model.trailer.player && ambientLayer.isReadyForDisplay
+        }
+        XCTAssertTrue(model.trailer.player.currentItem === original)
+        XCTAssertTrue(model.trailer.isClaimed(by: role, itemID: model.provider.show.id))
+        XCTAssertTrue(model.trailer.isMuted, "Restore the ambient mute choice.")
+        XCTAssertEqual(model.path, fromDetail ? [1] : [])
+        try await waitUntil { model.trailer.player.currentTime().seconds > returnPosition + 0.2 }
+        XCTAssertEqual(model.trailer.currentItemID, model.provider.show.id)
+    }
+
+    private func nativeTrailerPlayer(in controller: UIViewController) -> AVPlayerViewController? {
+        if let native = controller as? AVPlayerViewController { return native }
+        if let presented = controller.presentedViewController,
+           let native = nativeTrailerPlayer(in: presented) { return native }
+        return controller.children.lazy.compactMap { self.nativeTrailerPlayer(in: $0) }.first
+    }
+
+    func testFullscreenEntryRequiresPinnedHomeButAllowsEveryDetailNavigationStyle() async throws {
+        try await withTrailerFixture { model, video in
+            let controller = model.trailer
+            controller.play(itemID: "home", resolvedURL: video, muted: true)
+            controller.claimSurface(.home, itemID: "home")
+            try await waitUntil { controller.isPlaying }
+            for style in [NavigationStyle.tabBar, .sidebar] {
+                XCTAssertNil(TrailerFullscreenRequest(
+                    controller: controller, itemID: "home", role: .home, navigationStyle: style
+                ))
+                XCTAssertTrue(controller.isClaimed(by: .home, itemID: "home"))
+            }
+            let request = try XCTUnwrap(TrailerFullscreenRequest(
+                controller: controller, itemID: "home", role: .home, navigationStyle: .rail
+            ))
+            controller.endFullScreen(id: request.id)
+            controller.handoffToDetail(itemID: "home", destinationItemID: "selected-source")
+            for style in NavigationStyle.allCases {
+                let request = try XCTUnwrap(TrailerFullscreenRequest(
+                    controller: controller, itemID: "selected-source", role: .detail, navigationStyle: style
+                ))
+                controller.endFullScreen(id: request.id)
+            }
+            let detailRequest = try XCTUnwrap(TrailerFullscreenRequest(
+                controller: controller, itemID: "selected-source", role: .detail, navigationStyle: .tabBar
+            ))
+            let original = controller.player.currentItem
+            controller.stopHero()
+            controller.stop(ifShowing: "selected-source")
+            controller.prepare(itemID: "stale", resolvedURL: video, muted: true)
+            XCTAssertFalse(controller.reserveFeaturedSurface(owner: UUID()))
+            XCTAssertTrue(controller.player.currentItem === original)
+            XCTAssertTrue(controller.isFullScreen)
+            controller.stop()
+            controller.endFullScreen(id: detailRequest.id)
+            XCTAssertNil(controller.player.currentItem, "Dismissal cannot resurrect revoked playback.")
+            XCTAssertFalse(controller.isFullScreen)
+        }
+    }
+
+    func testFullscreenUpObserverIsScopedAndReleasesPressAndSwipeRecognizers() {
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 600, height: 400))
+        let observer = TVFocusActivityObserver.ObserverView(
+            frame: CGRect(x: 100, y: 100, width: 300, height: 100)
+        )
+        let control = TrailerFocusItem(frame: CGRect(x: 140, y: 120, width: 60, height: 44))
+        let outside = TrailerFocusItem(frame: CGRect(x: 440, y: 120, width: 60, height: 44))
+        var upRequests = 0
+        observer.onUp = { upRequests += 1 }
+        window.addSubview(observer)
+        window.addSubview(control)
+        window.addSubview(outside)
+        XCTAssertFalse(observer.observePress(.upArrow, focusedItem: outside))
+        XCTAssertFalse(observer.observePress(.downArrow, focusedItem: control))
+        XCTAssertFalse(observer.observePress(.select, focusedItem: control))
+        XCTAssertEqual(upRequests, 0)
+        XCTAssertFalse(observer.observePress(.upArrow, focusedItem: control))
+        XCTAssertEqual(upRequests, 1)
+        XCTAssertEqual(window.gestureRecognizers?.filter { $0.delegate === observer }.count, 2)
+        observer.stop()
+        XCTAssertFalse(window.gestureRecognizers?.contains { $0.delegate === observer } ?? false)
+        XCTAssertFalse(observer.observePress(.upArrow, focusedItem: control))
+        XCTAssertEqual(upRequests, 1)
+    }
+
+    private final class TrailerFocusItem: UIView {
+        override var canBecomeFocused: Bool { true }
+    }
+
+    func testFullscreenEndRetainsTheItemForReplayUntilReturning() async throws {
+        try await withTrailerFixture { model, video in
+            let controller = model.trailer
+            controller.play(itemID: "hero", resolvedURL: video, muted: false)
+            controller.claimSurface(.detail, itemID: "hero")
+            try await waitUntil { controller.isPlaying && controller.duration > 0 }
+            var endings = 0
+            controller.setEndHandler(ownerID: "detail") { endings += 1 }
+            let request = try XCTUnwrap(controller.beginFullScreen(itemID: "hero", from: .detail))
+            let original = try XCTUnwrap(controller.player.currentItem)
+            controller.clearEndHandler(ownerID: "detail")
+            controller.player.pause()
+            let seeked = await controller.player.seek(
+                to: CMTime(seconds: controller.duration, preferredTimescale: 600),
+                toleranceBefore: .zero, toleranceAfter: .zero
+            )
+            XCTAssertTrue(seeked)
+            NotificationCenter.default.post(name: .AVPlayerItemDidPlayToEndTime, object: original)
+            XCTAssertTrue(controller.isPlaying)
+            XCTAssertTrue(controller.player.currentItem === original)
+            XCTAssertEqual(endings, 0)
+            controller.endFullScreen(id: request)
+            XCTAssertEqual(endings, 1)
+            XCTAssertFalse(controller.isPlaying)
+            XCTAssertFalse(controller.isMuted)
+        }
     }
 
     private func assertTrailerRoundTrip(usesShowcase: Bool, alternateSource: Bool = false) async throws {
@@ -2533,6 +2736,7 @@ private final class TransitionShowModel {
     let coveredPageID = UUID()
     let homeRecede = HomeHeroRecedeModel()
     var showsHomeHero = true
+    var fullscreenRequest: TrailerFullscreenRequest?
     var gradientEnabled = true
     @ObservationIgnored var resolveTrailer: HeroTrailerResolving = { _ in nil }
     let background = HeroBackgroundSettingsModel(store: InMemoryHeroBackgroundSettingsStore(
@@ -2677,6 +2881,10 @@ private struct TransitionShowRoot: View {
         .environment(\.plozzArtworkSettings, artworkSettings)
         .modifier(ReducedMotion())
         .detailNavigationZoom(isEnabled: zoomEnabled)
+        .fullScreenCover(item: $model.fullscreenRequest) { request in
+            TrailerFullscreenPlayer(controller: model.trailer, sessionID: request.id)
+                .ignoresSafeArea()
+        }
     }
 }
 

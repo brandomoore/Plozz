@@ -1082,6 +1082,18 @@ records on both platforms; error dialogs, playback routing and timeouts are unch
   the Home ID. This is a playback-scoped alias, not a title/name match: it retains
   the original player through source selection and is cleared when playback stops
   or changes to another item.
+  On tvOS, Up from the hero action row opens an already-playing trailer with
+  native full-screen play/pause and seeking controls. Home enables this only with
+  Pinned Sidebar: Top Bar and native Sidebar retain their Up navigation. Detail
+  pages allow it with every navigation style and briefly show "Up for playback
+  controls" above the hero after two seconds of eligible focus. The hint reuses
+  Showcase's upward chevron and never adds a focus stop. The same player/item is
+  lent to AVKit with the ambient layer detached,
+  so there are no competing video renderers. Full-screen playback enables sound
+  temporarily, freezes Home's carousel, and retains the finished item for seeking
+  or replay. Back returns to the same page at the current position, restores the
+  ambient mute choice, and resumes the hero. An actual stop/profile departure
+  invalidates the presentation so dismissing it cannot revive old playback.
 
 ## Home loading
 

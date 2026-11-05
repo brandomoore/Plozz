@@ -1056,6 +1056,11 @@ struct DetailHeroView: View, Equatable {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .focusScope(heroActionsScope)
                 .focusSection()
+                .trailerFullScreenOnMove(
+                    controller: heroTrailerController, itemID: backdrop.id, role: .detail,
+                    enabled: isVisible && allowsDeferredActivation
+                        && heroBackground.settings.detailMode == .trailer
+                )
                 // Keep the whole action row pinned to the hero top: this row is
                 // bottom-anchored in a hero that is full-screen-height for a
                 // childless movie, so when focus lands on any button tvOS
@@ -1184,6 +1189,16 @@ struct DetailHeroView: View, Equatable {
         }
         // Artwork (including an inherited trailer) is visible immediately. Only
         // the foreground fades, keeping its focus targets and geometry stable.
+        .overlay(alignment: .top) {
+            TrailerPlaybackCue(isEligible:
+                isVisible && heroBackground.settings.detailMode == .trailer
+                    && heroTrailerController.isPlaying
+                    && heroTrailerController.isClaimed(by: .detail, itemID: backdrop.id)
+                    && (heroActionRowFocus != nil || playButtonHasFocus || playButtonFocus?.wrappedValue == true)
+                    && seriesRecedeModel?.isReceded != true
+            )
+            .padding(.top, 40)
+        }
         .onAppear {
             isVisible = true
             guard !heroVisible else { return }

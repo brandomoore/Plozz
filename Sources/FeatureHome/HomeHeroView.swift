@@ -566,6 +566,7 @@ struct HomeHeroView: View {
             withAnimation(.easeInOut(duration: 0.35)) { heroVisible = true }
         }
         .onDisappear {
+            guard !trailerController.isFullScreen else { return }
             if let item = current, trailerController.isClaimed(by: .detail, itemID: item.id) {
                 onTrailerReturnItemChanged(item.id)
             } else {
@@ -715,6 +716,7 @@ struct HomeHeroView: View {
         // Fast/local trailers only: resolution and the three-second still-image
         // lead-in overlap. The same single player persists into detail navigation.
         .task(id: trailerTaskKey) {
+            guard !trailerController.isFullScreen else { return }
             guard isFrontmost, !showcaseSuspended, !trailerController.isFeaturedReserved, backgroundSettings.homeTrailerEnabled,
                   let item = current else {
                 // When detail is pushed over Home, relinquish control without
@@ -817,7 +819,7 @@ struct HomeHeroView: View {
         // the user was looking at it. Instead, real remote input pauses it (see
         // `noteInteraction`), so it never pages out from under an interacting user.
         .task(id: autoAdvanceKey) {
-            guard isFrontmost, settings.autoAdvance, items.count > 1 else { return }
+            guard isFrontmost, !trailerController.isFullScreen, settings.autoAdvance, items.count > 1 else { return }
             if pausedForRows {
                 pauseWhileReceded()
                 return
@@ -828,7 +830,11 @@ struct HomeHeroView: View {
             // Fire after the *remaining* dwell so that resuming after a pause
             // finishes the countdown from where it froze instead of restarting it.
             let duration = currentDwellDuration
-            let remaining = max(0, duration - Date().timeIntervalSince(dwellStart))
+            let position = trailerController.player.currentTime().seconds
+            let elapsed = showsTrailer && position.isFinite
+                ? HeroTrailerTimeline.leadIn + position
+                : Date().timeIntervalSince(dwellStart)
+            let remaining = max(0, duration - elapsed)
             try? await Task.sleep(nanoseconds: UInt64(remaining * 1_000_000_000))
             guard !Task.isCancelled else { return }
             HeroFocusDiagnostics.emit("auto-advance FIRE (from idx=\(index)) | \(hfState())")
@@ -904,7 +910,7 @@ struct HomeHeroView: View {
     /// forever. Because the restart re-derives its sleep from `dwellStart`, an
     /// ordinary set update resumes the countdown rather than restarting it.
     private var autoAdvanceKey: String {
-        "\(index)-\(advanceToken)-\(runEpoch)-\(slideToken)-\(activeTrailerDuration)-\(items.count)-\(isFrontmost)"
+        "\(index)-\(advanceToken)-\(runEpoch)-\(slideToken)-\(activeTrailerDuration)-\(items.count)-\(isFrontmost)-\(trailerController.isFullScreen)"
     }
 
     /// One continuous wall-clock timeline from initial still through trailer end.
@@ -928,7 +934,7 @@ struct HomeHeroView: View {
     }
 
     private var trailerTaskKey: String {
-        "\(current?.id ?? "-")|\(backgroundSettings.homeTrailerEnabled)|\(isFrontmost)|\(trailerController.isFeaturedReserved)|\(showcaseSuspended)"
+        "\(current?.id ?? "-")|\(backgroundSettings.homeTrailerEnabled)|\(isFrontmost)|\(trailerController.isFeaturedReserved)|\(showcaseSuspended)|\(trailerController.isFullScreen)"
     }
 
     // MARK: - Content column
@@ -1549,12 +1555,14 @@ struct HomeHeroView: View {
         // target leaf. Apple's guidance is to put `.onMoveCommand` on a container
         // rather than the focused element, and doing so is what lets the leaf's
         // `.onTapGesture` (Select) fire reliably — a move handler on the same view
-        // was intercepting the select press. Its ONLY job now is to pause the
-        // auto-advance on any directional input (see `handleMove`): all
-        // paging/interior behaviour is driven by the invisible Left/Right guards,
-        // Up is left to the system, and the Down-recede is driven by the page
-        // scroll in `HomeView` — not by this handler.
-        .onMoveCommand { _ in handleMove() }
+        // was intercepting the select press. Up opens the active trailer with
+        // Pinned Sidebar; other layouts retain their native Up navigation.
+        .trailerFullScreenOnMove(
+            controller: trailerController, itemID: item.id, role: .home,
+            navigationStyle: navigationStyle,
+            enabled: isFrontmost && !pausedForRows && showsTrailer,
+            onMove: handleMove
+        )
         .preloadDetailBackdropOnFocus(for: current, isFocused: focus != nil && isFrontmost)
         .onChange(of: focus) { old, new in
             pinnedSidebarInteraction?.setHeroFocused(new != nil)
@@ -2299,6 +2307,7 @@ struct HomeHeroView: View {
     /// slide the user lands back on a fresh full dwell and re-keys the fire `.task`.
     /// No-op if the carousel wasn't paused.
     private func resumeFromRecede() {
+        guard !trailerController.isFullScreen else { return }
         guard settings.autoAdvance, items.count > 1, pausedAt != nil else { return }
         if pendingTrailerAdvance {
             pendingTrailerAdvance = false
@@ -2329,6 +2338,7 @@ struct HomeHeroView: View {
     /// the pause was held so the gauge continues from where it froze, then re-keys
     /// the fire `.task` to sleep the remaining time.
     private func resumeAutoAdvance() {
+        guard !trailerController.isFullScreen else { return }
         guard let pausedAt else { return }
         // Never let the idle timer (from an earlier in-hero interaction) restart
         // paging while the hero is receded — focus is down on Continue Watching and

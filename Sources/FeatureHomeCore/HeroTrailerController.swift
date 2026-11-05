@@ -38,6 +38,7 @@ public enum HeroTrailerSurfaceRole: Sendable, Equatable {
     case home
     case detail
     case featured
+    case fullScreen
 }
 
 /// Shared, app-level owner of the **hero trailer** — one muted (by default)
@@ -74,6 +75,8 @@ public final class HeroTrailerController {
     public private(set) var activeSurfaceRole: HeroTrailerSurfaceRole?
     public private(set) var featuredOwnerID: UUID?
     public var isFeaturedReserved: Bool { featuredOwnerID != nil }
+    public var isFullScreen: Bool { activeSurfaceRole == .fullScreen }
+    @ObservationIgnored private var fullScreenSession: (id: UUID, role: HeroTrailerSurfaceRole, muted: Bool)?
     /// The resolved trailer duration in seconds once known (`0` until ready).
     /// Drives the hero's dwell length so the progress bar spans the full trailer.
     public private(set) var duration: TimeInterval = 0
@@ -169,6 +172,7 @@ public final class HeroTrailerController {
     /// Marks the frontmost renderer. Touch surfaces use this to keep a Home →
     /// detail handoff alive while still stopping playback when Home truly leaves.
     public func claimSurface(_ role: HeroTrailerSurfaceRole, itemID: String) {
+        guard !isFullScreen else { return }
         guard !isFeaturedReserved || role == .featured else { return }
         guard currentItemID == nil || isShowing(itemID) else { return }
         if activeSurfaceRole != role {
@@ -187,7 +191,7 @@ public final class HeroTrailerController {
     /// Transfer before pushing detail, so Home's disappearance cannot tear down
     /// the shared item regardless of SwiftUI lifecycle callback ordering.
     public func handoffToDetail(itemID: String, destinationItemID: String? = nil) {
-        guard isShowing(itemID), !isFeaturedReserved else { return }
+        guard isShowing(itemID), !isFeaturedReserved, !isFullScreen else { return }
         // The router supplies the exact source selected for this detail page.
         // Keep Home's identity too; the same title can have different server IDs.
         playbackIdentity?.detailItemID = destinationItemID
@@ -200,6 +204,7 @@ public final class HeroTrailerController {
     }
 
     public func releaseSurface(_ role: HeroTrailerSurfaceRole) {
+        guard !isFullScreen else { return }
         guard activeSurfaceRole == role else { return }
         activeSurfaceRole = nil
     }
@@ -210,12 +215,13 @@ public final class HeroTrailerController {
         ownerID: String,
         _ handler: @escaping @MainActor () -> Void
     ) {
-        guard !isFeaturedReserved else { return }
+        guard !isFeaturedReserved, !isFullScreen else { return }
         endHandlerOwnerID = ownerID
         endHandler = handler
     }
 
     public func clearEndHandler(ownerID: String) {
+        guard !isFullScreen else { return }
         guard endHandlerOwnerID == ownerID else { return }
         endHandlerOwnerID = nil
         endHandler = nil
@@ -225,7 +231,7 @@ public final class HeroTrailerController {
     /// playing) if the same item is already showing. `muted` follows the profile's
     /// trailer-audio preference.
     public func play(itemID: String, resolvedURL: URL, muted: Bool, featuredOwner: UUID? = nil) {
-        guard !isPlaybackSuppressed, featuredOwnerID == featuredOwner else { return }
+        guard !isFullScreen, !isPlaybackSuppressed, featuredOwnerID == featuredOwner else { return }
         prepare(itemID: itemID, resolvedURL: resolvedURL, muted: muted, featuredOwner: featuredOwner)
         autoplayWhenReady = true
         beginPlaybackIfReady()
@@ -235,7 +241,7 @@ public final class HeroTrailerController {
     /// the item ready behind the still image, then starts one exact 3s+duration
     /// timeline only after readiness is known.
     public func prepare(itemID: String, resolvedURL: URL, muted: Bool, featuredOwner: UUID? = nil) {
-        guard !isPlaybackSuppressed, featuredOwnerID == featuredOwner else { return }
+        guard !isFullScreen, !isPlaybackSuppressed, featuredOwnerID == featuredOwner else { return }
         if currentItemID == itemID, player.currentItem != nil {
             player.isMuted = muted
             isMuted = muted
@@ -346,6 +352,7 @@ public final class HeroTrailerController {
         surfaceRole: HeroTrailerSurfaceRole? = nil,
         featuredOwner: UUID? = nil
     ) {
+        guard !isFullScreen else { return }
         if isFeaturedReserved, featuredOwner == nil {
             suspendedHeroPause = paused
             return
@@ -388,6 +395,7 @@ public final class HeroTrailerController {
     /// Stops playback and releases the item. Called on navigate-away / advance /
     /// mode-off so the single player never lingers.
     public func stop() {
+        fullScreenSession = nil
         featuredOwnerID = nil
         suspendedHeroPause = nil
         guard isPlaying || currentItemID != nil else { return }
@@ -398,13 +406,13 @@ public final class HeroTrailerController {
 
     /// Home cleanup cannot stop a trailer transferred to detail or a focused card.
     public func stopHero(ifShowing itemID: String? = nil) {
-        guard !isFeaturedReserved, activeSurfaceRole != .detail else { return }
+        guard !isFullScreen, !isFeaturedReserved, activeSurfaceRole != .detail else { return }
         if let itemID, !isShowing(itemID) { return }
         stop()
     }
 
     public func reserveFeaturedSurface(owner: UUID) -> Bool {
-        guard !isPlaybackSuppressed, activeSurfaceRole != .detail else { return false }
+        guard !isFullScreen, !isPlaybackSuppressed, activeSurfaceRole != .detail else { return false }
         if featuredOwnerID == owner { return true }
         let heroPause = suspendedHeroPause ?? requestedPaused
         stop()
@@ -426,9 +434,59 @@ public final class HeroTrailerController {
     /// Stops only if the currently-loaded item is `itemID` (a scoped teardown so a
     /// stale view's disappear can't stop a trailer that already advanced).
     public func stop(ifShowing itemID: String, ownedBy ownerID: String? = nil) {
+        guard !isFullScreen else { return }
         guard isShowing(itemID) else { return }
         if let ownerID, ownerID != endHandlerOwnerID { return }
         stop()
+    }
+
+    /// Lends the current item to native transport controls, not another playback pipeline.
+    public func beginFullScreen(itemID: String, from role: HeroTrailerSurfaceRole) -> UUID? {
+        guard role == .home || role == .detail,
+              isClaimed(by: role, itemID: itemID), isPlaying, isReady,
+              !isPlaybackSuppressed, !isFeaturedReserved else { return nil }
+        let id = UUID()
+        fullScreenSession = (id, role, isMuted)
+        activeSurfaceRole = .fullScreen
+        #if canImport(UIKit)
+        let frame = decodedFrame() ?? handoffImage
+        handoffImage = frame
+        (surfaceView.superview as? HeroTrailerVideoLayer.HostView)?.holdFrame(frame)
+        surfaceView.playerLayer.player = nil
+        #endif
+        setMuted(false)
+        requestedPaused = false
+        applyPauseState()
+        return id
+    }
+
+    public func prepareFullScreenReturn(id: UUID) {
+        guard fullScreenSession?.id == id else { return }
+        #if canImport(UIKit)
+        let frame = decodedFrame() ?? handoffImage
+        handoffImage = frame
+        (surfaceView.superview as? HeroTrailerVideoLayer.HostView)?.holdFrame(frame)
+        #endif
+    }
+
+    /// The native controller must detach its player before returning the renderer.
+    public func endFullScreen(id: UUID) {
+        guard let session = fullScreenSession, session.id == id else { return }
+        fullScreenSession = nil
+        activeSurfaceRole = session.role
+        setMuted(session.muted)
+        #if canImport(UIKit)
+        surfaceView.playerLayer.player = player
+        moveSurfaceToActiveHost()
+        #endif
+        let position = player.currentTime().seconds
+        if duration > 0, position.isFinite, position >= duration - 0.1 {
+            isPlaying = false
+            endHandler?()
+        } else {
+            requestedPaused = false
+            applyPauseState()
+        }
     }
 
     #if canImport(UIKit)
@@ -438,6 +496,7 @@ public final class HeroTrailerController {
         case .home: homeHost = host
         case .detail: detailHost = host
         case .featured: featuredHost = host
+        case .fullScreen: return
         }
         moveSurfaceToActiveHost()
     }
@@ -448,6 +507,7 @@ public final class HeroTrailerController {
         case .home: host = homeHost
         case .detail: host = detailHost
         case .featured: host = featuredHost
+        case .fullScreen: return
         case nil: host = nil
         }
         // Keep the outgoing picture until the receiving host actually mounts.
@@ -480,6 +540,9 @@ public final class HeroTrailerController {
         statusObservation = nil
         if resetItem {
             player.replaceCurrentItem(with: nil)
+            #if canImport(UIKit)
+            surfaceView.playerLayer.player = player
+            #endif
             videoOutput = nil
             handoffImage = nil
             isPlaying = false
@@ -526,6 +589,8 @@ public final class HeroTrailerController {
         ) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self else { return }
+                // Native controls retain the finished item for replay and seeking.
+                guard !self.isFullScreen else { return }
                 self.isPlaying = false
                 self.endHandler?()
             }

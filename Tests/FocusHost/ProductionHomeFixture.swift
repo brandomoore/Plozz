@@ -254,6 +254,10 @@ struct ProductionHomeFixture: View {
                             Text(verbatim: fixture.trailer.currentItemID ?? "none")
                                 .accessibilityIdentifier("detail-sequence-trailer-owner")
                         }
+                        if ProcessInfo.processInfo.arguments.contains("--hero-trailer-controls") {
+                            Text(verbatim: fixture.trailer.isPlaying ? "playing" : "waiting")
+                                .accessibilityIdentifier("hero-trailer-state")
+                        }
                         if ProcessInfo.processInfo.arguments.contains("--progressive-home-load") {
                             Text(verbatim: fixture.model.loadingRows.contains(.continueWatching) ? "pending" : "ready")
                                 .accessibilityIdentifier("home-fixture-resume-state")
@@ -953,6 +957,11 @@ private struct ProductionHomeContent: View {
                         heroFeaturedProvider: { limit in await fixture.featuredContent(limit: limit) },
                         heroArtworkProvider: { $0.backdropURL },
                         heroArtworkValidator: { _ in true },
+                        heroTrailerResolver: { [url = fixture.trailerURL] item in
+                            url.map {
+                                HeroTrailerSource(ownerItemID: item.id, trailerItemID: "clip", url: $0, duration: 60)
+                            }
+                        },
                         navigationStyle: isPinned
                             ? .rail
                             : (ProcessInfo.processInfo.arguments.contains("--native-sidebar-home")
@@ -1201,7 +1210,7 @@ private final class ProductionHomeState {
             : ProcessInfo.processInfo.arguments.contains("--immersive-home") ? .followsFocus : .carousel
         settings.showsDiscoverRow = ProcessInfo.processInfo.arguments.contains("--showcase-discover-fixture")
         heroSettings.settings = settings
-        background.settings.homeTrailerEnabled = false
+        background.settings.homeTrailerEnabled = ProcessInfo.processInfo.arguments.contains("--hero-trailer-controls")
         if trailerURL != nil { background.settings.detailMode = .trailer }
     }
 
@@ -1242,7 +1251,8 @@ private final class ProductionHomeState {
             color: .white
         )
         let trailerURL: URL?
-        if ProcessInfo.processInfo.arguments.contains("--library-detail-sequence") {
+        if ProcessInfo.processInfo.arguments.contains("--library-detail-sequence")
+            || ProcessInfo.processInfo.arguments.contains("--hero-trailer-controls") {
             do {
                 trailerURL = try await makeTrailerVideo()
             } catch {
