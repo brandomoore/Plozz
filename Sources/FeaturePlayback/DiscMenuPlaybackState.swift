@@ -32,9 +32,23 @@ public final class DiscMenuPlaybackState {
     public var playlist: Int?
     public var playItem: Int?
     public var sendKey: (UInt32) -> Void = { _ in }
+    public var sendPointerClick: (UInt16, UInt16) -> Void = { _, _ in }
     public var openMenu: () -> Void = {}
 
     public init() {}
+
+    public func activate(at point: CGPoint, in bounds: CGRect) {
+        guard isActive, isMenuVisible, failure == nil, let image = image?.cgImage,
+              image.width > 0, image.height > 0,
+              image.width <= Int(UInt16.max), image.height <= Int(UInt16.max),
+              point.x.isFinite, point.y.isFinite,
+              let rect = SubtitleOverlayGeometry.aspectFitRect(
+                in: bounds, aspectRatio: CGFloat(image.width) / CGFloat(image.height)
+              ), rect.contains(point) else { return }
+        let x = min(image.width - 1, Int((point.x - rect.minX) * CGFloat(image.width) / rect.width))
+        let y = min(image.height - 1, Int((point.y - rect.minY) * CGFloat(image.height) / rect.height))
+        sendPointerClick(UInt16(x), UInt16(y))
+    }
 
     public func reset() {
         isActive = false
@@ -52,6 +66,7 @@ public final class DiscMenuPlaybackState {
         playlist = nil
         playItem = nil
         sendKey = { _ in }
+        sendPointerClick = { _, _ in }
         openMenu = {}
     }
 }

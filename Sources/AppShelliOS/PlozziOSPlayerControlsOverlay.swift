@@ -866,24 +866,26 @@ struct PlozziOSPlayerTransport<PlaybackControls: View>: View {
     private var trackControlGroup: some View {
         let item = viewModel.currentPlaybackItem
         return PlayerGlassControlGroup {
-            if viewModel.isDiscMenuPlayback || viewModel.hasDiscVideos {
-                PlayerDiscControlsButton(
-                    model: viewModel, onInteraction: onInteraction,
-                    onPresentationChanged: {
-                        menuPresentation.setPresented($0, owner: discPresentationOwner)
-                    }
+            HStack(spacing: 0) {
+                if viewModel.isDiscMenuPlayback || viewModel.hasDiscVideos {
+                    PlayerDiscControlsButton(
+                        model: viewModel, onInteraction: onInteraction,
+                        onPresentationChanged: {
+                            menuPresentation.setPresented($0, owner: discPresentationOwner)
+                        }
+                    )
+                }
+                PlayerMoreMenuButton(
+                    model: viewModel.controls,
+                    availability: .init(
+                        maximumSpeed: viewModel.maximumPlaybackSpeed, video: supportsVideoZoom,
+                        quality: viewModel.streamingQualityAvailable, versions: hasVersions
+                    ),
+                    presentation: menuPresentation,
+                    layout: .init(size: availableSize),
+                    actions: menuActions(for: item)
                 )
             }
-            PlayerMoreMenuButton(
-                model: viewModel.controls,
-                availability: .init(
-                    maximumSpeed: viewModel.maximumPlaybackSpeed, video: supportsVideoZoom,
-                    quality: viewModel.streamingQualityAvailable, versions: hasVersions
-                ),
-                presentation: menuPresentation,
-                layout: .init(size: availableSize),
-                actions: menuActions(for: item)
-            )
         }
         .accessibilityIdentifier("player-track-controls")
     }

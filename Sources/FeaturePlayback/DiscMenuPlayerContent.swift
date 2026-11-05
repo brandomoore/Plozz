@@ -17,9 +17,7 @@ struct DiscMenuPlayerContent: View {
                 fitsInsideSafeArea: false
             )
             .ignoresSafeArea()
-            if let image = state.image {
-                Image(uiImage: image).resizable().scaledToFit().ignoresSafeArea().allowsHitTesting(false)
-            }
+            DiscMenuArtwork(state: state)
             if let failure = state.failure {
                 VStack(spacing: 24) {
                     Text("Disc menu unavailable").font(.title2)
@@ -58,23 +56,9 @@ struct DiscMenuPlayerContent: View {
                     .onExitCommand { showsActions = true }
                     .onAppear { menuFocused = true }
                 #else
-                VStack {
-                    HStack {
-                        Button("Close", action: dismiss)
-                        Spacer()
-                        Button("Disc menu") { showsActions = true }
-                    }
-                    Spacer()
-                    if state.isMenuVisible {
-                        HStack(spacing: 20) {
-                            key("Up", symbol: "arrow.up", code: 12)
-                            key("Down", symbol: "arrow.down", code: 13)
-                            key("Left", symbol: "arrow.left", code: 14)
-                            key("Right", symbol: "arrow.right", code: 15)
-                            key("Select", symbol: "checkmark", code: 16)
-                        }
-                    }
-                }.padding()
+                DiscMenuTouchControls(
+                    state: state, showActions: { showsActions = true }
+                )
                 #endif
             }
         }
@@ -105,11 +89,77 @@ struct DiscMenuPlayerContent: View {
         model.retryDiscMenu(region: state.region == 1 ? 2 : state.region == 2 ? 4 : 1)
     }
 
-    #if !os(tvOS)
-    private func key(_ title: LocalizedStringResource, symbol: String, code: UInt32) -> some View {
-        Button { state.sendKey(code) } label: { Label(title, systemImage: symbol) }
-            .labelStyle(.iconOnly)
-    }
-    #endif
 }
+
+struct DiscMenuArtwork: View {
+    let state: DiscMenuPlaybackState
+
+    var body: some View {
+        if let image = state.image {
+            GeometryReader { geometry in
+                Image(uiImage: image)
+                    .resizable().scaledToFit()
+                    .frame(width: geometry.size.width, height: geometry.size.height)
+                    #if os(iOS)
+                    .contentShape(Rectangle())
+                    .gesture(SpatialTapGesture().onEnded {
+                        state.activate(at: $0.location, in: CGRect(origin: .zero, size: geometry.size))
+                    })
+                    .accessibilityHidden(true)
+                    #else
+                    .allowsHitTesting(false)
+                    #endif
+            }
+            .ignoresSafeArea()
+        }
+    }
+}
+
+#if os(iOS)
+struct DiscMenuTouchControls: View {
+    let state: DiscMenuPlaybackState
+    let showActions: () -> Void
+
+    var body: some View {
+        VStack {
+            Spacer()
+            HStack {
+                Spacer()
+                PlayerGlassControlGroup {
+                    HStack(spacing: 0) {
+                        DiscMenuTouchButton(title: "Disc menu", symbol: "opticaldisc", action: showActions)
+                        if state.isMenuVisible {
+                            DiscMenuTouchButton(title: "Up", symbol: "arrow.up") { state.sendKey(12) }
+                            DiscMenuTouchButton(title: "Down", symbol: "arrow.down") { state.sendKey(13) }
+                            DiscMenuTouchButton(title: "Left", symbol: "arrow.left") { state.sendKey(14) }
+                            DiscMenuTouchButton(title: "Right", symbol: "arrow.right") { state.sendKey(15) }
+                            DiscMenuTouchButton(title: "Select", symbol: "checkmark") { state.sendKey(16) }
+                        }
+                    }
+                }
+            }
+        }
+        .modifier(PlayerTouchChromePadding())
+    }
+}
+
+private struct DiscMenuTouchButton: View {
+    let title: LocalizedStringResource
+    let symbol: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.title3)
+                .imageScale(.large)
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(PlayerGlassCircleButtonStyle(diameter: 44))
+        .accessibilityLabel(Text(title))
+        .accessibilityIdentifier("disc-menu-control-\(symbol)")
+    }
+}
+#endif
 #endif

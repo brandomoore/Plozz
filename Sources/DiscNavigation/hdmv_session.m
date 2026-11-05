@@ -3,6 +3,7 @@
 #include <CLibbluray.h>
 #else
 #include "libbluray/bluray.h"
+#include "libbluray/keys.h"
 #include "libbluray/decoders/overlay.h"
 #include "file/filesystem.h"
 #endif
@@ -13,6 +14,7 @@
 #include <fcntl.h>
 #include <sys/file.h>
 #include <unistd.h>
+#include <mach/mach.h>
 
 @interface HDMVDiscVideo ()
 @property(nonatomic) NSInteger playlist;
@@ -865,6 +867,28 @@ static unsigned component(double value) {
         [self pump];
     });
 }
+- (void)clickAtX:(uint16_t)x y:(uint16_t)y {
+    dispatch_async(self.queue, ^{
+        if (self.stopped || self->_failed || !self->_disc) return;
+        [self pump];
+        if (self->_failed || !self->_menuOpen) return;
+        int selected = bd_mouse_select(self->_disc, -1, x, y);
+        int activated = 0;
+        // BD-J reports successful mouse delivery as zero; HDMV reports a hit as one.
+        // HDMV itself rejects mouse activation after a miss (never substitute Enter).
+        if (selected >= 0) {
+            if (selected > 0 || self->_javaSession) self->_userSelected = YES;
+            activated = bd_user_input(self->_disc, -1, BD_VK_MOUSE_ACTIVATE);
+        }
+        if (selected < 0 || activated < 0) {
+            NSLog(@"Disc navigation pointer unavailable: selection=%d activation=%d", selected, activated);
+            dispatch_async(dispatch_get_main_queue(), ^{
+                if (!self.stopped && self.noticeChanged) self.noticeChanged(@"Use the arrow controls for this menu.");
+            });
+        }
+        [self pump];
+    });
+}
 - (void)menu {
     dispatch_async(self.queue, ^{
         if (self.stopped || self->_failed || !self->_disc) return;
@@ -1006,6 +1030,13 @@ static unsigned component(double value) {
 }
 
 - (void)argbOverlay:(const BD_ARGB_OVERLAY *)event {
+    // Java drawing threads do not provide Cocoa's per-event autorelease pools.
+    @autoreleasepool {
+        [self handleARGBOverlay:event];
+    }
+}
+
+- (void)handleARGBOverlay:(const BD_ARGB_OVERLAY *)event {
     if (!event || event->plane > 2 || self.stopped) return;
     @synchronized (self) {
         if (self.stopped) return;
@@ -1072,7 +1103,7 @@ static unsigned component(double value) {
                 kCGBitmapByteOrder32Little | kCGImageAlphaPremultipliedFirst);
             CGColorSpaceRelease(space);
             if (!context) {
-                dispatch_async(self.queue, ^{ [self fail:@"Could not compose Java disc graphics"]; });
+                [self failJavaGraphicsAtStage:@"context" width:width height:height];
                 return;
             }
             for (NSNumber *number in @[@2, @0, @1]) {
@@ -1084,7 +1115,7 @@ static unsigned component(double value) {
             if (image) CGImageRelease(image);
             CGContextRelease(context);
             if (!_javaFrame) {
-                dispatch_async(self.queue, ^{ [self fail:@"Could not compose Java disc graphics"]; });
+                [self failJavaGraphicsAtStage:@"snapshot" width:width height:height];
                 return;
             }
         }
@@ -1104,6 +1135,24 @@ static unsigned component(double value) {
             });
         }
     }
+}
+
+- (void)failJavaGraphicsAtStage:(NSString *)stage width:(unsigned)width height:(unsigned)height {
+    task_vm_info_data_t memory = {0};
+    mach_msg_type_number_t count = TASK_VM_INFO_COUNT;
+    BOOL measured = task_info(mach_task_self(), TASK_VM_INFO, (task_info_t)&memory, &count) == KERN_SUCCESS;
+    NSString *event = [NSString stringWithFormat:
+        @"disc GRAPHICS_FAILURE stage=%@ width=%u height=%u planes=%lu footprintBytes=%llu",
+        stage, width, height, (unsigned long)_javaPlanes.count,
+        measured ? (unsigned long long)memory.phys_footprint : 0];
+    dispatch_async(self.queue, ^{
+        if (self.stopped || self->_failed) return;
+        NSLog(@"%@", event);
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (self.diagnosticEvent) self.diagnosticEvent(event);
+        });
+        [self fail:@"Could not compose Java disc graphics"];
+    });
 }
 
 - (void)stop {

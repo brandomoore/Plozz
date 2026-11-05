@@ -4,6 +4,8 @@ import java.awt.Color;
 import java.awt.Font;
 import java.awt.Graphics;
 import java.awt.event.KeyEvent;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
 import javax.media.Manager;
 import javax.media.MediaLocator;
 import javax.media.Player;
@@ -64,6 +66,16 @@ public final class MenuXlet extends HContainer implements Xlet, UserEventListene
         setBounds(0, 0, 1280, 720);
         scene.setLayout(null);
         scene.add(this);
+        addMouseListener(new MouseAdapter() {
+            public void mouseClicked(MouseEvent event) {
+                if (event.getY() < 250 || event.getY() >= 470) return;
+                if (event.getX() >= 80 && event.getX() < 600) selected = 1;
+                else if (event.getX() >= 660 && event.getX() < 1180) selected = 2;
+                else return;
+                playSelected();
+                repaint();
+            }
+        });
         try {
             serviceContext = ServiceContextFactory.getInstance().getServiceContext(context);
             serviceContext.addListener(this);
@@ -125,6 +137,7 @@ public final class MenuXlet extends HContainer implements Xlet, UserEventListene
                 player = null;
             }
             scene.setVisible(true);
+            requestFocus();
             repaint();
         }
     }
@@ -132,6 +145,7 @@ public final class MenuXlet extends HContainer implements Xlet, UserEventListene
     public void controllerUpdate(ControllerEvent event) {
         if (event instanceof EndOfMediaEvent) {
             scene.setVisible(true);
+            requestFocus();
             repaint();
         }
     }

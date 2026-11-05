@@ -250,6 +250,8 @@ struct PresentationHostApp: App {
                 PlayerLayoutFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--device-setup-fixture") {
                 DeviceSetupInteractionFixture()
+            } else if ProcessInfo.processInfo.arguments.contains("--disc-touch-fixture") {
+                DiscTouchFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--player-glass-fixture") {
                 PlayerGlassAppearanceFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--playback-failure-fixture") {

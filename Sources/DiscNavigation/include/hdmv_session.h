@@ -20,6 +20,7 @@ NS_ASSUME_NONNULL_BEGIN
     double inTime, double outTime, double playlistStart, double position, NSInteger generation);
 @property(nonatomic, copy) void (^statusChanged)(NSString *status);
 @property(nonatomic, copy) void (^noticeChanged)(NSString *notice);
+@property(nonatomic, copy, nullable) void (^diagnosticEvent)(NSString *event);
 @property(nonatomic, copy) void (^menuVisibilityChanged)(BOOL visible);
 @property(nonatomic, copy) void (^stillChanged)(BOOL active, BOOL resumePlayback);
 @property(nonatomic, copy) void (^audioPIDChanged)(NSInteger pid, NSInteger generation);
@@ -35,6 +36,7 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)listVideosWithCompletion:(void (^)(NSArray<HDMVDiscVideo *> * _Nullable videos,
                                          NSString * _Nullable failure))completion;
 - (void)key:(unsigned)key;
+- (void)clickAtX:(uint16_t)x y:(uint16_t)y NS_SWIFT_NAME(click(x:y:));
 - (void)menu;
 - (void)updateTime:(double)seconds generation:(NSInteger)generation;
 - (void)ended:(NSInteger)generation;

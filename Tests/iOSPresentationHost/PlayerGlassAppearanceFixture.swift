@@ -3,6 +3,42 @@ import CoreUI
 import SwiftUI
 import UIKit
 
+struct DiscTouchFixture: View {
+    @State private var state = DiscMenuPlaybackState()
+    @State private var pointers = 0
+    @State private var keys = 0
+
+    var body: some View {
+        ZStack {
+            Color.black.ignoresSafeArea()
+            DiscMenuArtwork(state: state)
+            DiscMenuTouchControls(state: state) {
+                let format = UIGraphicsImageRendererFormat()
+                format.scale = 1
+                state.image = UIGraphicsImageRenderer(
+                    size: CGSize(width: 1280, height: 720), format: format
+                ).image {
+                    UIColor.systemIndigo.setFill()
+                    $0.fill(CGRect(x: 0, y: 0, width: 1280, height: 720))
+                }
+                state.isMenuVisible = true
+            }
+            VStack {
+                Text(verbatim: "Disc touch fixture: \(pointers) taps, \(keys) keys")
+                    .accessibilityIdentifier("disc-touch-events")
+                Spacer()
+            }
+            .foregroundStyle(.white)
+            .allowsHitTesting(false)
+        }
+        .onAppear {
+            state.isActive = true
+            state.sendPointerClick = { _, _ in pointers += 1 }
+            state.sendKey = { _ in keys += 1 }
+        }
+    }
+}
+
 struct PlayerGlassAppearanceFixture: View {
     @State private var light = false
     @State private var reduced = false

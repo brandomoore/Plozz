@@ -26,6 +26,7 @@ public struct PlayerDiscControlsButton: View {
             Button(action: activate) {
                 Image(systemName: "opticaldisc")
                     .font(.title3)
+                    .imageScale(.large)
                     .frame(width: 44, height: 44)
                     .contentShape(Rectangle())
             }

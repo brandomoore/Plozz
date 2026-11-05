@@ -519,6 +519,10 @@ targets:
   PlozziOSPresentationHost:
     type: application
     platform: iOS
+    postBuildScripts:
+      - name: Embed disc runtime
+        script: python3 "$SRCROOT/tools/embed-disc-runtime.py"
+        basedOnDependencyAnalysis: false
     sources:
       - path: Tests/iOSPresentationHost
       - path: Tests/DiscoverPresentationSupport/DiscoverBrowseFixture.swift

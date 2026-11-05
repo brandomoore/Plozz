@@ -95,6 +95,15 @@ mobile, not in a separate floating action. It follows the row's focus and
 visibility lifecycle, so it cannot take the video surface's initial focus.
 The TV disc navigation surface uses a native Select button; directional input
 only sends the corresponding disc arrow key, not an activation.
+Mobile menu navigation reuses the player's glass control group and keeps the
+shell's single Close action. Taps inside the aspect-fitted menu image are mapped
+to disc pixels and sent as native pointer selection/activation; taps in the
+letterbox area never activate a previously selected button. Arrow and Select
+controls remain available for discs that do not implement pointer input.
+Java graphics callbacks drain temporary Cocoa objects after each event, including
+on long-lived Java drawing threads. Composition failures record the failing stage,
+canvas dimensions, plane count and measured process footprint in the playback
+trace; these diagnostics do not by themselves establish the allocation's cause.
 BD-J networking and durable disc storage are disabled. libbluray still creates
 temporary binding-unit and persistent-storage directories for disc applications;
 their arbitrary writes do not yet have a complete quota. The JVM has bounded

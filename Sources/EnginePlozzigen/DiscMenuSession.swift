@@ -204,6 +204,9 @@ final class DiscMenuSession {
         native.statusChanged = { [weak self] reason in
             MainActor.assumeIsolated { self?.fail(reason) }
         }
+        native.diagnosticEvent = { event in
+            HandoffDiagnostics.emit(event)
+        }
         native.noticeChanged = { [weak self] notice in
             MainActor.assumeIsolated {
                 guard let self, !self.stopped else { return }
@@ -216,6 +219,7 @@ final class DiscMenuSession {
             }
         }
         state.sendKey = { [weak self] in self?.native?.key($0) }
+        state.sendPointerClick = { [weak self] x, y in self?.native?.click(x: x, y: y) }
         state.openMenu = { [weak self] in self?.native?.menu() }
     }
 
@@ -368,6 +372,7 @@ final class DiscMenuSession {
     func fail(_ reason: String) {
         guard !stopped, state.failure == nil else { return }
         PlozzLog.playback.error("Disc navigation failed: \(reason)")
+        HandoffDiagnostics.emit("disc FAILURE reason=\(HandoffDiagnostics.redactedDetail(reason))")
         state.failure = reason
         state.isOpening = false
         pause()
@@ -389,6 +394,7 @@ final class DiscMenuSession {
         firstLoad?.resume(throwing: CancellationError())
         firstLoad = nil
         state.sendKey = { _ in }
+        state.sendPointerClick = { _, _ in }
         state.openMenu = {}
     }
 

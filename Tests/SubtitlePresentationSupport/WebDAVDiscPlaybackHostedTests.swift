@@ -710,8 +710,10 @@ final class WebDAVDiscPlaybackHostedTests: XCTestCase {
             try await waitForPlayback(engine, after: position + 0.5, before: 7)
             menu.openMenu()
             try await wait(engine: engine, seconds: 30) { menu.image != nil && menu.isMenuVisible }
-            menu.sendKey(15)
-            menu.sendKey(16)
+            menu.sendPointerClick(10, 10)
+            try await Task.sleep(for: .milliseconds(300))
+            XCTAssertTrue(menu.isMenuVisible, "A pointer miss must not activate the selected episode")
+            menu.sendPointerClick(920, 360)
             try await wait(engine: engine, seconds: 45) {
                 guard menu.playlist == 2, !menu.isMenuVisible, menu.failure == nil else { return false }
                 return await engine.hasRenderedVideoFrame()
