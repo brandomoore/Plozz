@@ -56,6 +56,7 @@ struct NavigationRailFocusHost<Content: View>: UIViewControllerRepresentable {
             target[NavigationChromeModel.self] = source[NavigationChromeModel.self]
             target[ProfilesModel.self] = source[ProfilesModel.self]
             target[HeroTrailerController.self] = source[HeroTrailerController.self]
+            target.heroTrailerPlayerFactory = source.heroTrailerPlayerFactory
             target[HeroBackgroundSettingsModel.self] = source[HeroBackgroundSettingsModel.self]
             target[HeroSettingsModel.self] = source[HeroSettingsModel.self]
             target[LibraryPresentationSettingsModel.self] = source[LibraryPresentationSettingsModel.self]

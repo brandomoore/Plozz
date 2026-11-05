@@ -258,7 +258,9 @@ public final class NativeSubtitleCueOutput: NSObject, AVPlayerItemLegibleOutputP
             }
             guard let group, !Task.isCancelled,
                   self.renderingGeneration == generation, self.item === item else { return }
-            let current = item.currentMediaSelection.selectedMediaOption(in: group)
+            guard let reading = await NativeMediaSelectionReader.shared.read(item: item, group: group),
+                  !Task.isCancelled, self.renderingGeneration == generation, self.item === item else { return }
+            let current = reading.option
             if let current { self.selectedOption = current }
             let selected = self.selectionEnabled ? (current ?? self.selectedOption) : nil
             item.select(nil, in: group)

@@ -1131,6 +1131,161 @@ final class StreamingPlaybackTests: XCTestCase {
         XCTAssertEqual(engine.positions.count, 1)
     }
 
+    func testMediaServicesResetKeepsRenditionTracksAndRewoundPositionOnAFreshEngine() async throws {
+        let provider = QualityPlaybackProvider()
+        let first = QualityEngine()
+        let replacement = QualityEngine()
+        var creations = 0
+        var options = StreamingPlaybackOptions(quality: .hd720)
+        options.audioTrack = .init(id: 4, kind: .audio, displayTitle: "Japanese", language: "jpn")
+        let model = PlayerViewModel(
+            provider: provider, itemID: "movie", mediaSourceID: "version",
+            playbackSettings: .init(resumeRewindInterval: .five),
+            streamingOptions: options,
+            engineFactory: .init(makeNative: { _ in
+                creations += 1
+                return creations == 1 ? first : replacement
+            })
+        )
+        await model.load()
+        model.selectSubtitleOption(id: 6)
+        model.setPaused(true)
+        model.setPlaybackSpeed(1.5)
+        first.currentTime = 37
+        first.furthestObservedPosition = 400
+        first.streamingFailure = .init(kind: .mediaServicesReset, domain: .avFoundation, code: -11819)
+        let staleCallback = try XCTUnwrap(first.onFailure)
+        staleCallback(.invalidResponse)
+        staleCallback(.invalidResponse)
+        await wait { replacement.positions.count == 1 && model.phase == .ready }
+        XCTAssertEqual(creations, 2)
+        XCTAssertEqual(replacement.positions, [37], "A reset must not jump to the pre-rewind high water mark.")
+        XCTAssertEqual(replacement.loadedRequests.first?.streamURL, first.loadedRequests.first?.streamURL)
+        XCTAssertEqual(replacement.loadedRequests.first?.playSessionID, first.loadedRequests.first?.playSessionID)
+        XCTAssertEqual(replacement.loadedRequests.first?.streamingSessionID, "quality-1")
+        XCTAssertEqual(replacement.loadedQualities, [.hd720])
+        XCTAssertEqual(replacement.currentAudioTrackID, 4)
+        XCTAssertEqual(replacement.selectedSubtitleID, 6)
+        XCTAssertEqual(replacement.playbackSpeed, 1.5)
+        XCTAssertTrue(replacement.isPaused)
+        XCTAssertNil(model.streamingQualityError)
+        staleCallback(.invalidResponse)
+        await Task.yield()
+        XCTAssertEqual(creations, 2)
+        let calls = await provider.calls
+        let released = await provider.released
+        XCTAssertEqual(calls.count, 1)
+        XCTAssertEqual(calls.first?.source, "version")
+        XCTAssertTrue(released.isEmpty)
+        let audioFailure = NativePlaybackFailure.audioSessionFailure(
+            NSError(domain: NSOSStatusErrorDomain, code: 561210739)
+        )
+        replacement.streamingFailure = audioFailure
+        replacement.onFailure?(.invalidResponse)
+        await wait { if case .failed = model.phase { return true }; return false }
+        XCTAssertEqual(model.streamingQualityError, .playback(audioFailure))
+        XCTAssertEqual(creations, 2, "Audio-session failure cannot launch codec/transcode retries.")
+        await model.stop()
+    }
+
+    func testMediaServicesResetUsesPendingSeekAndDoesNotLoop() async {
+        let provider = QualityPlaybackProvider()
+        let first = QualityEngine()
+        let replacement = QualityEngine()
+        var creations = 0
+        let model = PlayerViewModel(
+            provider: provider, itemID: "movie",
+            engineFactory: .init(makeNative: { _ in
+                creations += 1
+                return creations == 1 ? first : replacement
+            })
+        )
+        await model.load()
+        first.currentTime = 250
+        model.controls.pendingSeekTarget = 0.5
+        first.streamingFailure = .init(kind: .mediaServicesReset, domain: .avFoundation, code: -11819)
+        first.onFailure?(.invalidResponse)
+        await wait { replacement.positions.count == 1 && model.phase == .ready }
+        XCTAssertEqual(replacement.positions, [0.5])
+        replacement.streamingFailure = first.streamingFailure
+        replacement.onFailure?(.invalidResponse)
+        await wait { if case .failed = model.phase { return true }; return false }
+        XCTAssertEqual(creations, 2)
+        let calls = await provider.calls
+        XCTAssertTrue(calls.isEmpty)
+        await model.stop()
+    }
+
+    func testStopDuringMediaServicesDrainCannotRecreatePlayback() async {
+        let (model, first, provider) = make()
+        await model.load()
+        let gate = QualityDecisionGate()
+        first.drainGate = gate
+        first.streamingFailure = .init(kind: .mediaServicesReset, domain: .avFoundation, code: -11819)
+        first.onFailure?(.invalidResponse)
+        await gate.waitUntilEntered()
+        await model.stop()
+        await gate.release()
+        await Task.yield()
+        XCTAssertEqual(first.positions.count, 1)
+        let calls = await provider.calls
+        XCTAssertEqual(calls.count, 1)
+    }
+
+    func testMediaServicesRecoveryCannotCascadeBeforePresentingVideo() async {
+        for presented in [false, true] {
+            let provider = QualityPlaybackProvider()
+            let first = QualityEngine()
+            let replacement = QualityEngine()
+            var creations = 0
+            let model = PlayerViewModel(
+                provider: provider, itemID: "movie", streamingOptions: .init(quality: .hd720),
+                engineFactory: .init(makeNative: { _ in
+                    creations += 1
+                    return creations == 1 ? first : replacement
+                })
+            )
+            await model.load()
+            first.streamingFailure = .init(kind: .mediaServicesReset, domain: .avFoundation, code: -11819)
+            first.onFailure?(.invalidResponse)
+            await wait { replacement.positions.count == 1 && model.phase == .ready }
+            if presented {
+                replacement.hasPresentedVideoFrame = true
+                replacement.onProgress?()
+                replacement.hasPresentedVideoFrame = false
+            }
+            replacement.streamingFailure = .init(kind: .unknown, domain: .avFoundation, code: -11800)
+            replacement.onFailure?(.invalidResponse)
+            if presented {
+                await wait { replacement.positions.count == 2 && model.phase == .ready }
+            } else {
+                await wait { if case .failed = model.phase { return true }; return false }
+            }
+            let calls = await provider.calls
+            XCTAssertEqual(calls.count, presented ? 2 : 1)
+            await model.stop()
+        }
+    }
+
+    func testQualityChangeSupersedesMediaServicesDrain() async {
+        let (model, first, provider) = make()
+        await model.load()
+        let gate = QualityDecisionGate()
+        first.drainGate = gate
+        first.streamingFailure = .init(kind: .mediaServicesReset, domain: .avFoundation, code: -11819)
+        first.onFailure?(.invalidResponse)
+        await gate.waitUntilEntered()
+        first.streamingFailure = nil
+        model.changeStreamingOptions(.init(quality: .sd480))
+        await wait { first.positions.count == 2 && model.phase == .ready }
+        await gate.release()
+        await Task.yield()
+        XCTAssertEqual(first.loadedQualities, [.hd720, .sd480])
+        let calls = await provider.calls
+        XCTAssertEqual(calls.count, 2)
+        await model.stop()
+    }
+
     func testNetworkStreamFailureSkipsCodecRetryAndKeepsItsEvidence() async {
         let (model, engine, provider) = make()
         await model.load()
@@ -1825,8 +1980,11 @@ private final class QualityEngine: VideoEngine {
     var selectedSubtitleID: Int?
     var onPause: (@MainActor () -> Void)?
     var isPlaybackPositionReady: Bool { status == .ready }
+    var hasPresentedVideoFrame = false
     var positions: [TimeInterval] = []
     var loadedQualities: [StreamingQuality] = []
+    var loadedRequests: [PlaybackRequest] = []
+    var playbackSpeed: Double = 1
     var onProgress: (@MainActor () -> Void)?
     var onFailure: (@MainActor (AppError) -> Void)?
     var onDiagnosticPhaseChanged: (@MainActor (PlaybackDiagnosticJournal.Phase) -> Void)?
@@ -1841,6 +1999,7 @@ private final class QualityEngine: VideoEngine {
     func load(request: PlaybackRequest, startPosition: TimeInterval) async {
         if let loadGate { self.loadGate = nil; await loadGate.suspend() }
         positions.append(startPosition)
+        loadedRequests.append(request)
         if let quality = request.streamingOptions?.quality { loadedQualities.append(quality) }
         currentTime = startPosition
         audioTracks = request.audioTracks
@@ -1854,6 +2013,7 @@ private final class QualityEngine: VideoEngine {
     func play() { isPaused = false }
     func pause() { isPaused = true; onPause?() }
     func seek(to seconds: TimeInterval) async { currentTime = seconds }
+    func setPlaybackSpeed(_ rate: Double) { playbackSpeed = rate }
     func stop() {
         status = .idle
         currentTime = 0

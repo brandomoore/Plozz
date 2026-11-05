@@ -672,10 +672,11 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
                 "Plozzigen load failed at \(stage): "
                     + HandoffDiagnostics.redactedDetail(detail)
             )
-            streamingFailure = PlozzigenPlaybackFailure.classify(
-                stage == "resolve" || stage == "audioSession" ? nil : engine.errorInfo,
-                fallbackError: error
-            )
+            streamingFailure = stage == "audioSession"
+                ? NativePlaybackFailure.audioSessionFailure(error)
+                : PlozzigenPlaybackFailure.classify(
+                    stage == "resolve" ? nil : engine.errorInfo, fallbackError: error
+                )
             let err: AppError = error as? AppError ?? .unknown(detail)
             status = .failed(err)
             onFailure?(err)
@@ -1375,7 +1376,9 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
                                           },
                                           channels: singleAudio?.channels)
                 }
-                let selected = item.currentMediaSelection.selectedMediaOption(in: group)
+                guard let reading = await NativeMediaSelectionReader.shared.read(item: item, group: group),
+                      !Task.isCancelled, self.engine.currentAVPlayer?.currentItem === item else { return }
+                let selected = reading.option
                 next.selectedID = options.firstIndex { $0 == selected }.map { Self.bypassAudioIDBase + $0 }
             } else if !muxed.isEmpty {
                 next.source = .muxed(muxed)

@@ -580,9 +580,11 @@ public enum DetailTransitionNavigation {
     }
 
     /// The central routers call this too, covering More Info and non-card links.
-    public static func prepare(for item: MediaItem, artworkSnapshot: UIImage? = nil) {
+    public static func prepare(
+        for item: MediaItem, artworkSnapshot: UIImage? = nil, preservingVideo: Bool = false
+    ) {
         guard let window = activeWindow else { return }
-        prepare(for: item, in: window, source: nil, artworkSnapshot: artworkSnapshot)
+        prepare(for: item, in: window, source: nil, artworkSnapshot: artworkSnapshot, preservingVideo: preservingVideo)
     }
 
     /// A system Play route may push details underneath its player, without an entrance.
@@ -608,27 +610,35 @@ public enum DetailTransitionNavigation {
 
     static func prepare(
         for item: MediaItem, in window: UIWindow, source: DetailTransitionSourceReference?,
-        artworkSnapshot: UIImage? = nil
+        artworkSnapshot: UIImage? = nil, preservingVideo: Bool = false
     ) {
         guard isZoomEnabled(in: window), !UIAccessibility.isReduceMotionEnabled,
               [.movie, .series, .episode, .season].contains(item.kind) else { return }
         let key = ObjectIdentifier(window)
         guard suppressed[key] == nil else { return }
-        if pending[key]?.itemKey == item.stablePresentationID { return }
+        if let existing = pending[key], existing.itemKey == item.stablePresentationID {
+            if preservingVideo { existing.preserveVideo() }
+            return
+        }
         pending.removeValue(forKey: key)?.discard()
-        let screen = artworkSnapshot.map(DetailTransitionSurface.init(image:))
-            ?? DetailTransitionSnapshot.surface(of: window)
+        let screen = preservingVideo ? DetailTransitionSurface()
+            : artworkSnapshot.map(DetailTransitionSurface.init(image:))
+                ?? DetailTransitionSnapshot.surface(of: window)
         let geometry = source?.geometry(in: window)
         let frame = geometry?.frame
-        let card = frame.map { DetailTransitionSnapshot.surface(of: window, frame: $0) }
+        let card = preservingVideo ? nil : frame.map { DetailTransitionSnapshot.surface(of: window, frame: $0) }
         let entry = PendingDetailEntrance(
             window: window, itemKey: item.stablePresentationID,
             source: card == nil ? nil : source, card: card, sourceFrame: frame,
             sourceCornerRadius: geometry?.cornerRadius ?? 0, screen: screen
         )
         pending[key] = entry
-        entry.overlay.destination.image = source?.artworkPolicy.flatMap {
-            cachedDestinationArtwork(for: item, policy: $0)
+        if preservingVideo {
+            entry.preserveVideo()
+        } else {
+            entry.overlay.destination.image = source?.artworkPolicy.flatMap {
+                cachedDestinationArtwork(for: item, policy: $0)
+            }
         }
         entry.start()
         // A direct-play route must never leave a prepared navigation cover behind.
@@ -662,7 +672,7 @@ public enum DetailTransitionNavigation {
               let entry = pending[ObjectIdentifier(window)],
               entry.itemKey == item.stablePresentationID,
               entry.overlay.destination.image == nil, entry.backdropRequest == nil else { return }
-        guard let policy = entry.source?.artworkPolicy,
+        guard !entry.preservesVideo, let policy = entry.source?.artworkPolicy,
               let request = DetailBackdropArtworkRequest(item: item, policy: policy) else { return }
         entry.backdropRequest = request
         entry.backdropDelivery = Task { @MainActor [weak entry] in
@@ -705,6 +715,7 @@ final class PendingDetailEntrance {
     var animator: UIViewPropertyAnimator?
     private(set) var landedAt: CFTimeInterval?
     private var hasStarted = false
+    private(set) var preservesVideo = false
     var onLanded: (() -> Void)?
     let windowSize: CGSize
     let scrollPositions: [DetailTransitionScrollPosition]
@@ -736,7 +747,7 @@ final class PendingDetailEntrance {
     }
 
     func start(allowsMissingArtwork: Bool = false) {
-        guard !hasStarted else { return }
+        guard !hasStarted, !preservesVideo else { return }
         overlay.configureOpening(sourceFrame: sourceFrame, cornerRadius: sourceCornerRadius)
         guard overlay.destination.image != nil || allowsMissingArtwork else { return }
         hasStarted = true
@@ -748,6 +759,17 @@ final class PendingDetailEntrance {
         }
         // Submit motion before the router constructs or loads the destination.
         CATransaction.flush()
+    }
+
+    func preserveVideo() {
+        preservesVideo = true
+        backdropDelivery?.cancel()
+        backdropDelivery = nil
+        backdropRequest?.cancel()
+        backdropRequest = nil
+        animator?.stopAnimation(true)
+        animator = nil
+        overlay.preserveVideo()
     }
 
     func discard() {
@@ -801,6 +823,7 @@ public final class TVDetailEntranceSession {
     private(set) var returnArtwork: DetailTransitionSurface?
     @ObservationIgnored private var returnBackground: DetailTransitionSurface?
     @ObservationIgnored private var destinationArtwork: UIImage?
+    @ObservationIgnored private var preservesVideo = false
     public let timing: DetailEntranceTiming
     let usesZoom: Bool
     @ObservationIgnored private var hasStarted = false
@@ -846,7 +869,7 @@ public final class TVDetailEntranceSession {
     }
 
     public func resolvedDestinationArtwork(_ image: UIImage) {
-        guard usesZoom, !isClosing else { return }
+        guard usesZoom, !isClosing, !preservesVideo else { return }
         destinationArtwork = image
         backdropIsAvailable = true
         backdropIsResolved = true
@@ -862,6 +885,13 @@ public final class TVDetailEntranceSession {
 
     public func resolvedDestinationVideo() {
         guard usesZoom, !isClosing else { return }
+        preservesVideo = true
+        destinationArtwork = nil
+        earlyDestinationArtwork = nil
+        returnArtwork = nil
+        returnBackground = nil
+        opening?.preserveVideo()
+        overlay?.preserveVideo()
         backdropIsAvailable = true
         backdropIsResolved = true
         if backdropResolvedAt == nil { backdropResolvedAt = CACurrentMediaTime() }
@@ -922,10 +952,11 @@ public final class TVDetailEntranceSession {
         navigationChrome = DetailTransitionNavigation.chromeModel(in: window)
         navigationChrome?.detailAppeared(chromeToken)
         let pending = DetailTransitionNavigation.take(in: window)
+        preservesVideo = preservesVideo || pending?.preservesVideo == true
         source = pending?.source
         sourceKey = pending?.itemKey
-        returnArtwork = pending?.card
-        returnBackground = pending?.overlay.screen
+        returnArtwork = preservesVideo ? nil : pending?.card
+        returnBackground = preservesVideo ? nil : pending?.overlay.screen
         activationGeometry = pending?.sourceFrame.map {
             DetailTransitionSourceGeometry(frame: $0, cornerRadius: pending?.sourceCornerRadius ?? 0)
         }
@@ -943,7 +974,12 @@ public final class TVDetailEntranceSession {
             guard let self, pageIsVisible, !isClosing, primaryActionPressGeneration == 0 else { return }
             primaryActionPressGeneration &+= 1
         }
-        cover.destination.image = earlyDestinationArtwork ?? cover.destination.image
+        if preservesVideo {
+            pending?.preserveVideo()
+            cover.preserveVideo()
+        } else {
+            cover.destination.image = earlyDestinationArtwork ?? cover.destination.image
+        }
         destinationArtwork = cover.destination.image
         earlyDestinationArtwork = nil
         if let pending {
@@ -958,7 +994,9 @@ public final class TVDetailEntranceSession {
 
     private func startOpeningIfReady() {
         guard !isClosing, !artworkHasLanded, let overlay else { return }
-        if waitsForBackdrop, backdropIsResolved, !backdropIsAvailable {
+        if preservesVideo, backdropIsAvailable {
+            land()
+        } else if waitsForBackdrop, backdropIsResolved, !backdropIsAvailable {
             finishImmediately()
         } else if waitsForBackdrop, backdropIsAvailable, overlay.destination.image == nil {
             land()
@@ -1124,7 +1162,7 @@ public final class TVDetailEntranceSession {
         let interrupted = !artworkHasLanded || (waitsForBackdrop && !backdropIsAvailable)
         // Restore the source page immediately. A detail-page snapshot would
         // keep its background visible until the native pop finished.
-        let screen = activationWindowSize == window.bounds.size
+        let screen = !preservesVideo && activationWindowSize == window.bounds.size
             ? returnBackground ?? DetailTransitionSurface()
             : DetailTransitionSurface()
         screen.alpha = 1
@@ -1142,6 +1180,7 @@ public final class TVDetailEntranceSession {
         cover.destination.image = destinationArtwork
         cover.destination.alpha = destinationArtwork == nil ? 0 : 1
         cover.card.alpha = destinationArtwork == nil ? 1 : 0
+        if preservesVideo { cover.preserveVideo() }
         window.addSubview(cover)
         overlay = cover
         // The source is hidden until the native pop, so its visibility is not
@@ -1150,7 +1189,7 @@ public final class TVDetailEntranceSession {
             && activationWindowSize == window.bounds.size
         let target = validSource ? activationGeometry : nil
         let animation = UIViewPropertyAnimator(duration: timing.reverse, curve: .easeInOut)
-        if let target, returnArtwork != nil, !interrupted {
+        if let target, returnArtwork != nil, !interrupted, !preservesVideo {
             cover.layoutIfNeeded()
             animation.addAnimations {
                 cover.cardContainer.frame = target.frame
@@ -1159,7 +1198,7 @@ public final class TVDetailEntranceSession {
                 cover.card.alpha = 1
             }
         } else {
-            cover.cardContainer.isHidden = interrupted
+            cover.cardContainer.isHidden = interrupted || preservesVideo
             animation.addAnimations { cover.cardContainer.alpha = 0 }
         }
         animation.addCompletion { [weak self] position in
@@ -1589,6 +1628,13 @@ final class DetailTransitionOverlay: UIView {
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    func preserveVideo() {
+        backgroundColor = .clear
+        screen.isHidden = true
+        cardContainer.isHidden = true
+        destination.image = nil
+    }
 
     override func layoutSubviews() {
         super.layoutSubviews()

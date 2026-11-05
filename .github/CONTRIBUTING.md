@@ -30,6 +30,10 @@ public-mirroring notice and bridge are activated. Forum guidelines explain what
 is copied and how votes work. See [Discord bridge behavior and privacy
 limits](../docs/discord-bridge.md); ordinary chat channels are not mirrored.
 
+The [website roadmap](https://plozz.app/roadmap/) is generated from verified
+GitHub state. See [event-driven refresh and recovery](../docs/website-roadmap.md)
+for its automation setup; do not edit the generated feed manually.
+
 ## Development pipeline
 
 Keep defects, review findings, UI adjustments, and test failures arising from

@@ -247,9 +247,10 @@ let package = Package(
         // availability. FFmpegBuild 3.11.1 adds AV1 forward-keyframe detection.
         // Audio shaping and low-resolution upscaling remain opt-in and disabled.
         // Resume preroll backfill no longer opens a false native-scrub landing watch.
+        // Native media-selection IPC uses bounded off-main readers during media-service stalls.
         .package(
             url: "https://github.com/brandomoore/AetherEngine",
-            revision: "7cd91ee1a55401d59ca385e247a5c6308b7d27ea",
+            revision: "5873655f4c5669843ac8c9bfc8574733759ea6f5",
             traits: []
         ),
         // NOTE: FFmpegBuild (FFmpeg n8.1.x media libraries) and LibDovi (Dolby Vision

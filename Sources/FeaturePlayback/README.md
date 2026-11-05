@@ -32,6 +32,12 @@ bounded language-match/accessibility flags without track titles or URLs.
     The adapter loads the server-selected source, never a preview-only original.
     See [playback engines](../../docs/playback-engines.md#routing-logic).
 - **View model / view** —
+  - `BorrowedTrailerPlayer` hosts the same TV transport and seek coordinator over
+    the hero's existing AVPlayer and persistent video surface. The app shell
+    injects this presentation into Home, keeping feature modules independent.
+    It does not resolve a source, start provider reporting, change display mode,
+    or stop the borrowed player on dismissal. Only available transport capabilities
+    are exposed; the hero owner restores ambient playback and mute state.
   - `PlayerViewModel` orchestrates engine lifecycle, audio/subtitle
     selection, scrub state, resume, and progress reporting.
   - Resume progress is saved independently of Continue Watching eligibility:
@@ -1760,6 +1766,17 @@ and stale seek completions cannot finish a newer target. A failed/cancelled load
 cannot report playback started while its failure callback is still queued.
 Terminal managed-stream failures stop the decoder so audio cannot continue
 behind the error screen and immediately release the owned server rendition.
+An AVFoundation media-services reset (`-11819`) rebuilds the same engine once,
+without changing codecs, renegotiating the source, or releasing its server
+rendition. Recovery keeps the actual playhead (or pending seek), pause, speed and
+track choices. Stop, a newer load, duplicate callbacks and a second reset cannot
+resurrect or repeatedly rebuild playback. Until the replacement presents video,
+another failure is terminal rather than a codec/transcode cascade; a recovered
+session retains its normal compatibility handling. Audio-session setup failures retain
+their OSStatus domain/code and the specific audio-session error message.
+Native media-selection reads run off the UI actor with two reader lanes per
+library and a half-second waiter deadline. Timeout is not an empty selection,
+and blocked native workers keep their lane until they actually return.
 Retry/dismiss joins that same cleanup instead of issuing duplicate stop requests.
 Retry copy names the codec requested, not an encoder we cannot prove ran; the
 negotiated codec is shown separately and all attempts are journaled.

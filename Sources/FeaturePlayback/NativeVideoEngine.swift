@@ -236,7 +236,7 @@ public final class NativeVideoEngine: VideoEngine {
         }
         #endif
         status = .loading
-        configureAudioSession()
+        loadFailure = nil
         // Tear down any previous player (e.g. a failed direct-play attempt being
         // retried under a transcode) without reporting a stop.
         teardownPlayer()
@@ -245,6 +245,20 @@ public final class NativeVideoEngine: VideoEngine {
         #endif
 
         self.request = request
+        do {
+            try await configureAudioSession()
+        } catch {
+            guard generation == loadGeneration, !Task.isCancelled else { return }
+            loadFailure = NativePlaybackFailure.audioSessionFailure(error)
+            HandoffDiagnostics.emit("native AUDIO_SESSION_FAILED code=\(loadFailure?.diagnosticCode ?? "unreported")")
+            status = .failed(.invalidResponse)
+            onFailure?(.invalidResponse)
+            return
+        }
+        guard generation == loadGeneration, !Task.isCancelled else { return }
+        #if !os(macOS)
+        observeAudioRouteChanges(AVAudioSession.sharedInstance())
+        #endif
         let streamURL: URL?
         if case .some(.authenticatedHTTP(let locator)) = request.playbackSource {
             do {
@@ -822,20 +836,15 @@ public final class NativeVideoEngine: VideoEngine {
 
     // MARK: - Audio session
 
-    /// Best-effort: configure the shared audio session for video playback so
-    /// multichannel/Atmos passthrough and spatialization route correctly. Never
-    /// blocks or fails playback — any error is swallowed.
-    private func configureAudioSession() {
+    private func configureAudioSession() async throws {
         #if !os(macOS)
-        let session = AVAudioSession.sharedInstance()
-        do {
+        try await Task.detached {
+            let session = AVAudioSession.sharedInstance()
             try session.setCategory(.playback, mode: .moviePlayback, options: [])
             try session.setSupportsMultichannelContent(true)
             try session.setActive(true)
-        } catch {
-            PlozzLog.playback.debug("Audio session configuration failed (non-fatal)")
-        }
-        observeAudioRouteChanges(session)
+        }.value
+        try Task.checkCancellation()
         #endif
     }
 
@@ -893,7 +902,9 @@ public final class NativeVideoEngine: VideoEngine {
         return request.isManifestStream ? .nativeHLS : .nativeFile
     }
 
+    @ObservationIgnored private var loadFailure: StreamingPlaybackFailure?
     public var streamingFailure: StreamingPlaybackFailure? {
+        if let loadFailure { return loadFailure }
         guard let item = player?.currentItem else { return nil }
         let lastError = item.errorLog()?.events.last
         guard item.error != nil || lastError != nil else { return nil }
@@ -1339,11 +1350,12 @@ public final class NativeVideoEngine: VideoEngine {
             if let track { option = await Self.legibleOption(for: track, in: group) }
             else { option = nil }
             guard !Task.isCancelled, self.player?.currentItem === item else { return }
-            if let option, self.nativeSubtitleOutput?.isSelecting(option) == true,
-               item.currentMediaSelection.selectedMediaOption(in: group) == option {
+            guard let reading = await NativeMediaSelectionReader.shared.read(item: item, group: group),
+                  !Task.isCancelled, self.player?.currentItem === item else { return }
+            let current = reading.option
+            if let option, self.nativeSubtitleOutput?.isSelecting(option) == true, current == option {
                 return
             }
-            let current = item.currentMediaSelection.selectedMediaOption(in: group)
             if current?.mediaSubTypes.contains(NSNumber(value: kCMSubtitleFormatType_3GText)) == true {
                 // An active tx3g decoder can keep a removed output on tvOS 27.
                 // HLS switches must stay direct: an intermediate Off can lose paused cues.

@@ -391,7 +391,7 @@ native-only remux path, and required conversions.
 This ownership was cross-checked against
 [Sodalite's stream selection](https://github.com/superuser404notfound/Sodalite/blob/31799bde53e2d93384216b3f9b2523600896ef2b/Sodalite/Player/PlaybackStreamSelection.swift),
 [Swiftfin's playback builder](https://github.com/jellyfin/Swiftfin/blob/b0cb3127b1cef57b6508581be1cfe9addd5539a2/Shared/Objects/MediaPlayerManager/MediaPlayerItem/MediaPlayerItem%2BBuild.swift),
-and the [linked engine's pipeline contract](https://github.com/brandomoore/AetherEngine/blob/45e37ed2e6b66ea520229a6fb8b0f973fe155fda/docs/architecture.md).
+and the [linked engine's pipeline contract](https://github.com/brandomoore/AetherEngine/blob/5873655f4c5669843ac8c9bfc8574733759ea6f5/docs/architecture.md).
 These are protocol/design references, not copied implementations. Client
 differences do not establish the cause of an individual playback failure.
 

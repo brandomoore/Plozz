@@ -92,8 +92,10 @@ public enum NativePlaybackFailure {
         let network = errors.first { $0.domain == NSURLErrorDomain }
         let av = errors.first { $0.domain == AVFoundationErrorDomain }
         let media = errors.first { $0.domain == "CoreMediaErrorDomain" }
-        let evidence = network ?? av ?? media
-        let domain: StreamingPlaybackFailure.Domain? = network != nil ? .url : av != nil ? .avFoundation : media != nil ? .coreMedia : nil
+        let osStatus = errors.first { $0.domain == NSOSStatusErrorDomain }
+        let evidence = network ?? av ?? media ?? osStatus
+        let domain: StreamingPlaybackFailure.Domain? = network != nil ? .url : av != nil ? .avFoundation
+            : media != nil ? .coreMedia : osStatus != nil ? .osStatus : nil
         let http = httpStatus.flatMap { (400...599).contains($0) ? $0 : nil }
         var kind: StreamingPlaybackFailure.Kind
         if http == 401 || http == 403 { kind = .accessDenied }
@@ -115,6 +117,8 @@ public enum NativePlaybackFailure {
                  .clientCertificateRequired: kind = .network
             default: kind = .unknown
             }
+        } else if av?.code == AVError.Code.mediaServicesWereReset.rawValue {
+            kind = .mediaServicesReset
         } else if let av, [AVError.Code.decoderNotFound.rawValue,
                           AVError.Code.fileFormatNotRecognized.rawValue, AVError.Code.decodeFailed.rawValue].contains(av.code) {
             kind = .unsupportedFormat
@@ -132,6 +136,15 @@ public enum NativePlaybackFailure {
             kind: kind, domain: domain, code: evidence?.code, httpStatus: http,
             provider: kind == .hdrConversion || kind == .hdrConversionUnconfirmed ? provider : nil,
             underlyingErrors: PlaybackFailureEvidence.ErrorCode.chain(error)
+        )
+    }
+
+    public static func audioSessionFailure(_ error: Error) -> StreamingPlaybackFailure {
+        let classified = classify(error as NSError)
+        return .init(
+            kind: classified.kind == .mediaServicesReset ? .mediaServicesReset : .audioOutputFailed,
+            domain: classified.domain, code: classified.code,
+            engineFailure: .audioSessionFailed, underlyingErrors: classified.underlyingErrors
         )
     }
 }
