@@ -16,7 +16,9 @@ enum PlozzigenPlaybackFailure {
             return NSError(domain: domain, code: code)
         } ?? (fallbackError as NSError?)
         let classified = NativePlaybackFailure.classify(underlying, httpStatus: httpStatus)
-        guard let info else { return classified.kind == .unknown ? nil : classified }
+        guard let info else {
+            return classified.kind == .unknown && classified.domain == nil ? nil : classified
+        }
         var kind = classified.kind
         if info.kind == .sourceRateLimited {
             kind = .rateLimited

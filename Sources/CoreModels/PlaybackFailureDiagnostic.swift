@@ -31,7 +31,7 @@ public struct PlaybackFailureDiagnostic: Codable, Equatable, Sendable {
         }
     }
     public enum Domain: String, Codable, Sendable {
-        case none, url, avfoundation, coremedia, posix, other
+        case none, url, avfoundation, coremedia, posix, osstatus, other
 
         public init(_ domain: String?) {
             switch domain {
@@ -40,6 +40,7 @@ public struct PlaybackFailureDiagnostic: Codable, Equatable, Sendable {
             case "AVFoundationErrorDomain": self = .avfoundation
             case "CoreMediaErrorDomain": self = .coremedia
             case NSPOSIXErrorDomain: self = .posix
+            case NSOSStatusErrorDomain: self = .osstatus
             default: self = .other
             }
         }
