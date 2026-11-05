@@ -11,7 +11,7 @@ final class HomeSectionStatusViewTests: XCTestCase {
     func testEmptySectionReservesSpaceWithoutRecoveryControls() async throws {
         #if os(tvOS)
         let widths: [CGFloat] = [800, 1600]
-        let minimumHeight = 220
+        let minimumHeight = 336
         #else
         let widths: [CGFloat] = [280, 360, 760]
         let minimumHeight = 180
@@ -89,6 +89,13 @@ final class HomeSectionStatusViewTests: XCTestCase {
         XCTAssertFalse(text.contains("Details"), text)
         XCTAssertFalse(text.contains("Retry"), text)
         XCTAssertLessThan(image.height, 700)
+        let dismiss = try bounds(of: "Dismiss", in: image)
+        let customize = try bounds(of: "Customize Home", in: image)
+        XCTAssertEqual(dismiss.midY, customize.midY, accuracy: 0.02, "Keep the actions side by side.")
+        XCTAssertLessThan(dismiss.maxX, customize.minX)
+        #if os(iOS)
+        XCTAssertEqual(image.height, 360, "Use a compact 180-point row at standard text size.")
+        #endif
         if let directory = ProcessInfo.processInfo.environment["PLOZZ_HOME_STATUS_SNAPSHOTS"] {
             let url = URL(fileURLWithPath: directory).appendingPathComponent("empty-customize-\(Int(width)).png")
             try XCTUnwrap(UIImage(cgImage: image).pngData()).write(to: url)
@@ -146,6 +153,15 @@ final class HomeSectionStatusViewTests: XCTestCase {
                 try XCTUnwrap(UIImage(cgImage: image).pngData()).write(to: url)
             }
         }
+    }
+
+    private func bounds(of text: String, in image: CGImage) throws -> CGRect {
+        let matches = try observations(image).compactMap { observation -> CGRect? in
+            guard let line = observation.topCandidates(1).first,
+                  let range = line.string.range(of: text) else { return nil }
+            return try line.boundingBox(for: range)?.boundingBox
+        }
+        return try XCTUnwrap(matches.first, "Missing text: \(text)")
     }
 
     private func render(

@@ -3,6 +3,7 @@ import CoreModels
 
 public struct HomeSectionStatusView: View {
     @Environment(\.themePalette) private var palette
+    @Environment(\.plozzMetrics) private var metrics
     private let issue: HomeSectionIssue
     private let onRetry: () -> Void
     private let onSeeAll: (() -> Void)?
@@ -32,30 +33,21 @@ public struct HomeSectionStatusView: View {
                     .font(.headline)
             }
             if issue.reason == .empty {
-                ContentUnavailableView {
-                    Label(issue.summary, systemImage: "rectangle.stack")
-                } description: {
+                VStack(spacing: 12) {
+                    Text(issue.summary)
+                        .font(.headline)
                     HomeSectionSourceLabel(issue: issue)
-                } actions: {
-                    if let onDismissEmpty {
-                        Button("Dismiss", action: onDismissEmpty)
-                            .plozzActionButton(role: .secondary)
-                            .tint(palette.primaryText)
-                            .accessibilityIdentifier("home-section-dismiss-empty")
+                        .font(.subheadline)
+                        .plozzForeground(.secondary)
+                    ViewThatFits(in: .horizontal) {
+                        HStack(spacing: 12) { emptyActions }
+                            .fixedSize(horizontal: true, vertical: false)
+                        VStack(spacing: 12) { emptyActions }
                     }
-                    if let onCustomizeHome {
-                        Button("Customize Home", action: onCustomizeHome)
-                            .plozzActionButton(role: .secondary)
-                            .tint(palette.primaryText)
-                            .accessibilityIdentifier("home-section-customize")
-                    }
-                    if let onSeeAll { Button("See all", action: onSeeAll) }
                 }
-                #if os(tvOS)
-                .frame(maxWidth: .infinity, minHeight: 220)
-                #else
-                .frame(maxWidth: .infinity, minHeight: 180)
-                #endif
+                .multilineTextAlignment(.center)
+                .padding(.vertical, 24)
+                .frame(maxWidth: .infinity, minHeight: emptyRowHeight)
                 .accessibilityIdentifier("home-section-empty")
             } else {
                 MediaRowStatusContent(message: issue.summary, symbol: symbol) {
@@ -83,6 +75,31 @@ public struct HomeSectionStatusView: View {
                 Text(issue.explanation)
             }
         }
+    }
+
+    private var emptyRowHeight: CGFloat {
+        #if os(tvOS)
+        metrics.posterHeight * 0.8
+        #else
+        metrics.usesDesktopSizing ? metrics.posterHeight * 0.8 : 180
+        #endif
+    }
+
+    @ViewBuilder
+    private var emptyActions: some View {
+        if let onDismissEmpty {
+            Button("Dismiss", action: onDismissEmpty)
+                .plozzActionButton(role: .secondary)
+                .tint(palette.primaryText)
+                .accessibilityIdentifier("home-section-dismiss-empty")
+        }
+        if let onCustomizeHome {
+            Button("Customize Home", action: onCustomizeHome)
+                .plozzActionButton(role: .secondary)
+                .tint(palette.primaryText)
+                .accessibilityIdentifier("home-section-customize")
+        }
+        if let onSeeAll { Button("See all", action: onSeeAll) }
     }
 
     private var symbol: String {

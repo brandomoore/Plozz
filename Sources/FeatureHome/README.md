@@ -443,13 +443,15 @@ records on both platforms; error dialogs, playback routing and timeouts are unch
   that server's status; failures never reset saved row choices.
   Enabled sections with failed or unavailable content retain a compact warning
   on Home with source, Details, and Retry. Confirmed-empty sections instead show
-  a centered native empty state with a neutral stack symbol, source attribution,
-  and extra vertical breathing room, without error details or retry controls.
+  a centered, icon-free empty state with source attribution and vertical padding
+  sized near a normal media row, without error details or retry controls.
   A native secondary Customize Home button opens the active profile's existing
   Home editor so viewers can keep or hide the row. It uses the shared secondary
   button surface, not a bare text link. Its text uses the theme's
   neutral primary ink, not an inherited system accent. The editor's own empty-state
   previews omit this action, and opening it does not change row preferences.
+  Empty-state actions sit side by side, falling back to a vertical layout only
+  when the available width or accessibility text size requires it.
   Dismiss hides only that row's confirmed-empty Home message, persisted per
   profile without disabling or reordering the row. Titles appear automatically
   when available; loading placeholders and real failures remain visible. New
