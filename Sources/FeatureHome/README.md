@@ -1074,6 +1074,14 @@ records on both platforms; error dialogs, playback routing and timeouts are unch
   Scoped detail cleanup requires an exact handler owner, including while a
   pre-navigation transfer has no handler; delayed featured focus cannot take
   a trailer already owned by detail.
+  A trailer handoff bypasses artwork covers in both navigation directions;
+  cached or late artwork cannot cover live video. Home renders trailer visibility
+  from the shared controller on its first returning frame, and the outgoing video
+  host holds a decoded frame while the persistent layer moves.
+  Routers register the exact source ID selected for the destination alongside
+  the Home ID. This is a playback-scoped alias, not a title/name match: it retains
+  the original player through source selection and is cleared when playback stops
+  or changes to another item.
 
 ## Home loading
 

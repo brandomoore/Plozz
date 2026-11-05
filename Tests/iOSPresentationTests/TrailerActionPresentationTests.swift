@@ -13,6 +13,14 @@ import XCTest
 @MainActor
 final class TrailerActionPresentationTests: XCTestCase {
     func testHomeToDetailRetainsTrailerAcrossSurfaceDisappearance() async throws {
+        try await assertTrailerHandoff(alternateSource: false)
+    }
+
+    func testHomeToDetailRetainsTrailerAcrossSelectedSourceIDChange() async throws {
+        try await assertTrailerHandoff(alternateSource: true)
+    }
+
+    private func assertTrailerHandoff(alternateSource: Bool) async throws {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
         let directory = try XCTUnwrap(Bundle(for: Self.self).url(
             forResource: "Fixtures", withExtension: nil
@@ -21,7 +29,7 @@ final class TrailerActionPresentationTests: XCTestCase {
         defer { server.stop() }
         let port = try await server.start()
         let url = try XCTUnwrap(URL(string: "http://127.0.0.1:\(port)/active-picture.m3u8"))
-        let fixture = TrailerHandoffFixture(url: url)
+        let fixture = TrailerHandoffFixture(url: url, alternateSource: alternateSource)
         let host = UIHostingController(rootView: TrailerHandoffRoot(fixture: fixture))
         let previous = scene.windows.first(where: \.isKeyWindow)
         let window = UIWindow(windowScene: scene)
@@ -46,7 +54,7 @@ final class TrailerActionPresentationTests: XCTestCase {
         let originalLayer = try XCTUnwrap(layers(in: window).first(where: \.isReadyForDisplay))
         let position = fixture.controller.player.currentTime().seconds
         fixture.controller.setMuted(false)
-        fixture.controller.handoffToDetail(itemID: fixture.item.id)
+        fixture.controller.handoffToDetail(itemID: fixture.item.id, destinationItemID: fixture.detailItem.id)
         fixture.showsDetail = true
         let handoffDeadline = ContinuousClock.now + .seconds(2)
         while ContinuousClock.now < handoffDeadline {
@@ -279,10 +287,16 @@ private final class TrailerHandoffFixture {
         HeroBackgroundSettings(homeTrailerEnabled: true, detailMode: .trailer)
     ))
     let item = MediaItem(id: "handoff", title: "Handoff", kind: .movie, allowsTitleBasedMetadataMatching: false)
+    let detailItem: MediaItem
     let url: URL
     var showsDetail = false
 
-    init(url: URL) { self.url = url }
+    init(url: URL, alternateSource: Bool) {
+        self.url = url
+        var detail = item
+        if alternateSource { detail.id = "selected-source-copy" }
+        detailItem = detail
+    }
 }
 
 private struct TrailerHandoffRoot: View {
@@ -303,8 +317,8 @@ private struct TrailerHandoffRoot: View {
                 ) { EmptyView() }
                 .navigationDestination(isPresented: $fixture.showsDetail) {
                     PlozziOSHeroStage(
-                        item: fixture.item,
-                        presentation: HeroPresentation(item: fixture.item, artworkStyle: .landscape, surface: .detail),
+                        item: fixture.detailItem,
+                        presentation: HeroPresentation(item: fixture.detailItem, artworkStyle: .landscape, surface: .detail),
                         style: .landscape, surfaceRole: .detail, isActive: true,
                         trailerController: fixture.controller, backgroundSettings: fixture.settings,
                         trailerResolver: { _ in

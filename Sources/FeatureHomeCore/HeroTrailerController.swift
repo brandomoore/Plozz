@@ -56,7 +56,8 @@ public enum HeroTrailerSurfaceRole: Sendable, Equatable {
 @Observable
 public final class HeroTrailerController {
     /// The item id whose trailer is currently loaded/playing (`nil` when idle).
-    public private(set) var currentItemID: String?
+    public var currentItemID: String? { playbackIdentity?.itemID }
+    private var playbackIdentity: (itemID: String, detailItemID: String?)?
     /// Whether a trailer item is actively playing (has begun, not ended/stopped).
     public private(set) var isPlaying = false
     public private(set) var isReady = false
@@ -162,14 +163,14 @@ public final class HeroTrailerController {
     /// Whether this controller is already presenting `itemID` (so a hero→detail
     /// hand-off for the same title can keep playing rather than reload).
     public func isShowing(_ itemID: String) -> Bool {
-        currentItemID == itemID && currentItemID != nil
+        currentItemID != nil && (currentItemID == itemID || playbackIdentity?.detailItemID == itemID)
     }
 
     /// Marks the frontmost renderer. Touch surfaces use this to keep a Home →
     /// detail handoff alive while still stopping playback when Home truly leaves.
     public func claimSurface(_ role: HeroTrailerSurfaceRole, itemID: String) {
         guard !isFeaturedReserved || role == .featured else { return }
-        guard currentItemID == nil || currentItemID == itemID else { return }
+        guard currentItemID == nil || isShowing(itemID) else { return }
         if activeSurfaceRole != role {
             HandoffDiagnostics.emit("trailer CLAIM role=\(role) item=\(HandoffDiagnostics.correlationID(itemID))")
         }
@@ -180,13 +181,17 @@ public final class HeroTrailerController {
     }
 
     public func isClaimed(by role: HeroTrailerSurfaceRole, itemID: String) -> Bool {
-        activeSurfaceRole == role && currentItemID == itemID
+        activeSurfaceRole == role && isShowing(itemID)
     }
 
     /// Transfer before pushing detail, so Home's disappearance cannot tear down
     /// the shared item regardless of SwiftUI lifecycle callback ordering.
-    public func handoffToDetail(itemID: String) {
+    public func handoffToDetail(itemID: String, destinationItemID: String? = nil) {
         guard isShowing(itemID), !isFeaturedReserved else { return }
+        // The router supplies the exact source selected for this detail page.
+        // Keep Home's identity too; the same title can have different server IDs.
+        playbackIdentity?.detailItemID = destinationItemID
+        HandoffDiagnostics.emit("trailer HANDOFF item=\(HandoffDiagnostics.correlationID(itemID)) destination=\(HandoffDiagnostics.correlationID(destinationItemID))")
         claimSurface(.detail, itemID: itemID)
         endHandlerOwnerID = nil
         endHandler = nil
@@ -261,7 +266,7 @@ public final class HeroTrailerController {
         player.replaceCurrentItem(with: item)
         disableCaptions(on: item)
 
-        currentItemID = itemID
+        playbackIdentity = (itemID, nil)
         HandoffDiagnostics.emit("trailer QUEUED item=\(HandoffDiagnostics.correlationID(itemID)) owner=\(HandoffDiagnostics.correlationID(endHandlerOwnerID))")
         PlozzLog.app.info("Hero trailer: queued item=\(itemID) muted=\(muted) url=\(PlozzLog.redact(url: resolvedURL))")
     }
@@ -288,21 +293,13 @@ public final class HeroTrailerController {
     }
 
     /// Captures the currently displayed video frame for a seamless layer handoff.
-    /// Failure is harmless (the detail layer falls back to its normal background).
+    /// A missing frame never authorizes artwork over an active trailer.
     public func captureHandoffFrame() async {
         let capturedItem = player.currentItem
         let itemTime = player.currentTime()
-        // Fast path: use the live decoded pixel buffer when available.
-        if let videoOutput,
-           let pixelBuffer = videoOutput.copyPixelBuffer(
-               forItemTime: itemTime,
-               itemTimeForDisplay: nil
-           ) {
-            let image = CIImage(cvPixelBuffer: pixelBuffer)
-            if let cgImage = imageContext.createCGImage(image, from: image.extent) {
-                handoffImage = UIImage(cgImage: cgImage)
-                return
-            }
+        if let image = decodedFrame() {
+            handoffImage = image
+            return
         }
 
         // Decode concurrently with navigation; ignore a frame from a player item
@@ -330,6 +327,15 @@ public final class HeroTrailerController {
             PlozzLog.app.debug("Hero trailer handoff frame unavailable: \(String(describing: error))")
             handoffImage = nil
         }
+    }
+
+    private func decodedFrame() -> UIImage? {
+        guard let videoOutput,
+              let buffer = videoOutput.copyPixelBuffer(
+                forItemTime: player.currentTime(), itemTimeForDisplay: nil
+              ) else { return nil }
+        let image = CIImage(cvPixelBuffer: buffer)
+        return imageContext.createCGImage(image, from: image.extent).map { UIImage(cgImage: $0) }
     }
 
     /// Freezes/resumes the ambient trailer in lockstep with the hero's
@@ -420,7 +426,7 @@ public final class HeroTrailerController {
     /// Stops only if the currently-loaded item is `itemID` (a scoped teardown so a
     /// stale view's disappear can't stop a trailer that already advanced).
     public func stop(ifShowing itemID: String, ownedBy ownerID: String? = nil) {
-        guard currentItemID == itemID else { return }
+        guard isShowing(itemID) else { return }
         if let ownerID, ownerID != endHandlerOwnerID { return }
         stop()
     }
@@ -447,6 +453,9 @@ public final class HeroTrailerController {
         // Keep the outgoing picture until the receiving host actually mounts.
         guard let host, host.window != nil, host.controller === self,
               host.role == activeSurfaceRole, surfaceView.superview !== host else { return }
+        let frame = decodedFrame() ?? handoffImage
+        (surfaceView.superview as? HeroTrailerVideoLayer.HostView)?.holdFrame(frame)
+        host.holdFrame(frame)
         HandoffDiagnostics.emit("trailer RENDER role=\(String(describing: activeSurfaceRole)) item=\(HandoffDiagnostics.correlationID(currentItemID))")
         CATransaction.begin()
         CATransaction.setDisableActions(true)
@@ -478,7 +487,7 @@ public final class HeroTrailerController {
             requestedPaused = false
             isPaused = isPlaybackSuppressed
             pauseStartedAt = isPaused ? (pauseStartedAt ?? .now) : nil
-            currentItemID = nil
+            playbackIdentity = nil
             activeSurfaceRole = nil
             duration = 0
         }
@@ -606,6 +615,21 @@ public struct HeroTrailerVideoLayer: UIViewRepresentable {
     public final class HostView: UIView {
         fileprivate weak var controller: HeroTrailerController?
         fileprivate var role: HeroTrailerSurfaceRole = .home
+        private let heldFrame = UIImageView()
+
+        public override init(frame: CGRect) {
+            super.init(frame: frame)
+            backgroundColor = .black
+            heldFrame.contentMode = .scaleAspectFill
+            heldFrame.clipsToBounds = true
+            addSubview(heldFrame)
+        }
+
+        required init?(coder: NSCoder) { nil }
+
+        fileprivate func holdFrame(_ image: UIImage?) {
+            heldFrame.image = image
+        }
 
         public override func didMoveToWindow() {
             super.didMoveToWindow()

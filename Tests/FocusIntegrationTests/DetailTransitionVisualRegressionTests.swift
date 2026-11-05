@@ -463,7 +463,11 @@ final class DetailTransitionVisualRegressionTests: XCTestCase {
         try await assertTrailerRoundTrip(usesShowcase: true)
     }
 
-    private func assertTrailerRoundTrip(usesShowcase: Bool) async throws {
+    func testThirdHeroTitleKeepsItsTrailerWhenDetailSelectsAnotherSourceID() async throws {
+        try await assertTrailerRoundTrip(usesShowcase: true, alternateSource: true)
+    }
+
+    private func assertTrailerRoundTrip(usesShowcase: Bool, alternateSource: Bool = false) async throws {
         let scene = try await activeScene()
         let directory = try XCTUnwrap(Bundle(for: Self.self).url(
             forResource: "Fixtures", withExtension: nil
@@ -475,8 +479,20 @@ final class DetailTransitionVisualRegressionTests: XCTestCase {
         let model = TransitionShowModel(provider: TransitionShowProvider(artwork: try await seedArtwork()))
         model.background.settings.homeTrailerEnabled = true
         model.background.settings.detailMode = .trailer
+        var homeItem = model.provider.show
+        if alternateSource {
+            homeItem.id = "home-source-copy"
+            model.heroItems = [
+                MediaItem(id: "first", title: "First", kind: .movie, allowsTitleBasedMetadataMatching: false),
+                MediaItem(id: "second", title: "Second", kind: .movie, allowsTitleBasedMetadataMatching: false),
+                homeItem
+            ]
+            model.heroSettings.autoAdvanceSeconds = 1
+        }
+        let homeItemID = homeItem.id
         model.resolveTrailer = { item in
-            HeroTrailerSource(ownerItemID: item.id, trailerItemID: "clip", url: video, duration: 120)
+            guard item.id == homeItemID else { return nil }
+            return HeroTrailerSource(ownerItemID: item.id, trailerItemID: "clip", url: video, duration: 120)
         }
         let host = UIHostingController(rootView: TransitionShowRoot(
             model: model, usesHomeHero: true, usesShowcase: usesShowcase
@@ -503,7 +519,7 @@ final class DetailTransitionVisualRegressionTests: XCTestCase {
         model.openHeroDetail()
         // Exercise actual Home teardown even on OS versions that keep a covered
         // NavigationStack root mounted.
-        model.showsHomeHero = false
+        if !alternateSource { model.showsHomeHero = false }
         let deadline = ContinuousClock.now + .seconds(2)
         while ContinuousClock.now < deadline {
             XCTAssertTrue(model.trailer.player.currentItem === original,
@@ -511,6 +527,12 @@ final class DetailTransitionVisualRegressionTests: XCTestCase {
             XCTAssertEqual(model.trailer.player.rate, 1)
             XCTAssertFalse(model.trailer.isMuted, "Keep the live mute choice, not the detail default.")
             XCTAssertGreaterThanOrEqual(model.trailer.player.currentTime().seconds, position)
+            for cover in window.subviews.compactMap({ $0 as? DetailTransitionOverlay }) {
+                XCTAssertNil(cover.destination.image, "A live trailer must never be covered by destination artwork.")
+                XCTAssertTrue(cover.screen.isHidden)
+                XCTAssertTrue(cover.cardContainer.isHidden)
+                XCTAssertEqual(cover.backgroundColor, .clear)
+            }
             try await Task.sleep(for: .milliseconds(20))
         }
         XCTAssertGreaterThan(model.trailer.player.currentTime().seconds, position + 1)
@@ -528,7 +550,7 @@ final class DetailTransitionVisualRegressionTests: XCTestCase {
             model.path.removeAll()
             try await waitUntil {
                 model.stackDepth.depth == 0
-                    && model.trailer.isClaimed(by: .home, itemID: model.provider.show.id)
+                    && model.trailer.isClaimed(by: .home, itemID: homeItemID)
                     && self.trailerLayers(in: window).contains { $0 === originalLayer && $0.isReadyForDisplay }
             }
             XCTAssertTrue(model.trailer.player.currentItem === original)
@@ -586,6 +608,59 @@ final class DetailTransitionVisualRegressionTests: XCTestCase {
             controller.stopHero(ifShowing: "hero")
             XCTAssertNil(controller.player.currentItem)
         }
+    }
+
+    func testTrailerSourceAliasIsLimitedToTheTransferredPlayback() async throws {
+        try await withTrailerFixture { model, video in
+            let controller = model.trailer
+            controller.prepare(itemID: "home-copy", resolvedURL: video, muted: false)
+            let original = try XCTUnwrap(controller.player.currentItem)
+            controller.handoffToDetail(itemID: "home-copy", destinationItemID: "detail-copy")
+            XCTAssertTrue(controller.isShowing("home-copy"))
+            XCTAssertTrue(controller.isShowing("detail-copy"))
+            XCTAssertFalse(controller.isShowing("unrelated"))
+            controller.claimSurface(.detail, itemID: "detail-copy")
+            XCTAssertTrue(controller.player.currentItem === original)
+            controller.stop(ifShowing: "detail-copy")
+            XCTAssertNil(controller.player.currentItem)
+            controller.prepare(itemID: "next", resolvedURL: video, muted: true)
+            XCTAssertFalse(controller.isShowing("detail-copy"), "A prior source alias cannot match another title.")
+            controller.stop(ifShowing: "detail-copy")
+            XCTAssertEqual(controller.currentItemID, "next")
+        }
+    }
+
+    func testVideoTransitionRejectsCachedAndLateArtworkInBothDirections() async throws {
+        let fixture = FocusReturnFixture(scene: try await activeScene())
+        defer { fixture.close() }
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 32, height: 18)).image {
+            UIColor.magenta.setFill()
+            $0.fill(CGRect(x: 0, y: 0, width: 32, height: 18))
+        }
+        DetailTransitionNavigation.prepare(for: fixture.item, in: fixture.window, source: fixture.source)
+        let opening = try XCTUnwrap(fixture.window.subviews.compactMap { $0 as? DetailTransitionOverlay }.first)
+        opening.destination.image = image
+        DetailTransitionNavigation.prepare(
+            for: fixture.item, in: fixture.window, source: fixture.source, preservingVideo: true
+        )
+        XCTAssertNil(opening.destination.image)
+        let session = TVDetailEntranceSession()
+        defer { session.finishImmediately() }
+        session.resolvedDestinationArtwork(image)
+        session.attach(to: fixture.window, enabled: true, waitsForBackdrop: true)
+        session.resolvedDestinationVideo()
+        session.resolvedDestinationArtwork(image)
+        XCTAssertNil(opening.destination.image)
+        XCTAssertTrue(opening.screen.isHidden)
+        XCTAssertTrue(opening.cardContainer.isHidden)
+        XCTAssertEqual(opening.backgroundColor, .clear)
+        try await waitUntil { session.stage == .complete }
+        session.close(dismiss: {})
+        let returning = try XCTUnwrap(fixture.window.subviews.compactMap { $0 as? DetailTransitionOverlay }.first)
+        XCTAssertNil(returning.destination.image)
+        XCTAssertTrue(returning.screen.isHidden)
+        XCTAssertTrue(returning.cardContainer.isHidden)
+        XCTAssertEqual(returning.backgroundColor, .clear)
     }
 
     func testPreparedHomeTrailerStartsInDetailWithoutReplacingItsItem() async throws {
@@ -2484,9 +2559,11 @@ private final class TransitionShowModel {
     }
 
     func openHeroDetail() {
+        let homeID = trailer.currentItemID ?? provider.show.id
         if background.settings.detailTrailerEnabled {
-            trailer.handoffToDetail(itemID: provider.show.id)
+            trailer.handoffToDetail(itemID: homeID, destinationItemID: detail.state.value?.item.id)
         }
+        DetailTransitionNavigation.prepare(for: provider.show, preservingVideo: trailer.isPlaying)
         withCinematicDetailNavigation(for: provider.show) { path.append(1) }
     }
 }
@@ -2575,7 +2652,12 @@ private struct TransitionShowRoot: View {
                                     stackDepth: model.stackDepth,
                                     heroTrailerResolver: model.resolveTrailer,
                                     preservesHeroTrailerOnDisappear: {
-                                        model.path.isEmpty && model.trailerReturnItemID == $0
+                                        let itemID = $0
+                                        return model.path.isEmpty && model.trailerReturnItemID.map {
+                                            $0 == itemID || (
+                                                model.trailer.isShowing($0) && model.trailer.isShowing(itemID)
+                                            )
+                                        } == true
                                     },
                                     initialEpisode: directEntry ? model.provider.episode : nil
                                 )

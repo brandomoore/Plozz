@@ -247,6 +247,7 @@ public struct HomeHeroBackdrop: View {
 
     private var backdropSurface: some View {
         backdropImage
+            .opacity(showsTrailer ? 0 : 1)
             .frame(width: width, height: height + topOverscan)
             .clipped()
             .overlay {

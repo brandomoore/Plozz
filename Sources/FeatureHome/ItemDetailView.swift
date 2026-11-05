@@ -336,8 +336,8 @@ public struct ItemDetailView: View {
                 heroTrailerController.clearEndHandler(ownerID: trailerHandlerOwnerID)
                 return
             }
-            if let currentID = heroTrailerController.currentItemID,
-               currentID != item.id {
+            if heroTrailerController.currentItemID != nil,
+               !heroTrailerController.isShowing(item.id) {
                 heroTrailerController.stop()
             }
             // Detail owns end-of-item while it is frontmost. This replaces Home's

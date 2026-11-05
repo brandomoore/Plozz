@@ -205,7 +205,6 @@ struct HomeHeroView: View {
     /// image/timer behavior.
     @State private var activeTrailerSource: HeroTrailerSource?
     @State private var activeTrailerDuration: TimeInterval = 0
-    @State private var trailerVisible = false
     /// Trailer reached its end while interaction/recede blocked automatic paging.
     /// The video and gauge are allowed to finish; paging occurs once interaction
     /// protection is released.
@@ -532,7 +531,7 @@ struct HomeHeroView: View {
             }
         }
         .environment(\.plozzArtworkArea, artworkPolicy.heroPolicy.area)
-        .opacity(heroVisible ? 1 : 0)
+        .opacity(heroVisible || showsTrailer ? 1 : 0)
         .trackHeroExposure(
             item: current,
             isVisible: isFrontmost && !pausedForRows && heroVisible && metadataVisible
@@ -742,7 +741,6 @@ struct HomeHeroView: View {
                         forward: true
                     )
                 }
-                trailerVisible = trailerController.isPlaying
                 return
             }
             resetTrailer(stopPlayer: !trailerController.isShowing(item.id))
@@ -797,15 +795,6 @@ struct HomeHeroView: View {
                 }
             }
             trailerController.startPrepared()
-            trailerVisible = trailerController.isPlaying
-        }
-        .onChange(of: trailerController.isPlaying) { _, playing in
-            guard trailerController.currentItemID == current?.id else { return }
-            if playing {
-                trailerVisible = true
-            } else {
-                trailerVisible = false
-            }
         }
         .onChange(of: trailerController.isPaused) { _, paused in
             if paused {
@@ -879,7 +868,7 @@ struct HomeHeroView: View {
                 // whole backdrop blends together while browsing the rows below.
                 receded: receded,
                 trailerController: trailerController,
-                showsTrailer: trailerVisible,
+                showsTrailer: showsTrailer,
                 // Gate on STYLE, not the live inset. The rail hides (and publishes
                 // inset 0) during a detail push while Home remains alive underneath;
                 // using the inset would recenter artwork mid-transition.
@@ -931,6 +920,11 @@ struct HomeHeroView: View {
 
     private var trailerReturnItemID: String? {
         backgroundSettings.homeTrailerEnabled && !pausedForRows && heroVisible ? current?.id : nil
+    }
+
+    private var showsTrailer: Bool {
+        backgroundSettings.homeTrailerEnabled && trailerController.isPlaying
+            && current.map { trailerController.isShowing($0.id) } == true
     }
 
     private var trailerTaskKey: String {
@@ -2259,7 +2253,6 @@ struct HomeHeroView: View {
     }
 
     private func resetTrailer(stopPlayer: Bool) {
-        trailerVisible = false
         activeTrailerDuration = 0
         activeTrailerSource = nil
         pendingTrailerAdvance = false
