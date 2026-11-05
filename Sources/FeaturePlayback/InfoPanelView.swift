@@ -475,10 +475,17 @@ struct InfoPanelView: View {
                 }
                 .font(metrics.actionFont)
                 .lineLimit(1)
+                .truncationMode(.tail)
                 .animation(.easeOut(duration: 0.2), value: isFocused)
             }
             #if os(iOS)
-            .playerTouchPanelAction()
+            // Not `.playerTouchPanelAction()`: it pins buttons to their full
+            // text width, so a long song title pushed the card off the screen.
+            .buttonStyle(.bordered)
+            .buttonBorderShape(.capsule)
+            .tint(foreground)
+            .foregroundStyle(foreground)
+            .frame(minHeight: 44)
             #else
             .buttonStyle(InfoActionButtonStyle(
                 focused: isFocused, prominent: false,
