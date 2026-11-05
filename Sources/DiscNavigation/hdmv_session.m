@@ -30,7 +30,7 @@
     unsigned _width, _height, _clip, _region;
     NSInteger _playlist, _generation;
     BOOL _selectionPending, _stopPending, _failed, _synchronizing, _hasPalette, _finishing, _menuOpen;
-    BOOL _timedStill, _vmStill;
+    BOOL _timedStill, _vmStill, _perItem;
     NSTimeInterval _stillRemaining, _lastStillTick;
     BOOL _openingRecoveryAttempted, _userSelected, _pgEnabled;
     unsigned _audioStream, _subtitleStream;
@@ -451,12 +451,17 @@ static unsigned component(double value) {
             if (!_title || !_title->clip_count || _title->clip_count > 1000 || _title->angle_count > 1) {
                 [self fail:@"Unsupported disc playlist"]; return;
             }
+            _perItem = NO;
             for (unsigned i = 0; i + 1 < _title->clip_count; i++) {
                 if (_title->clips[i].still_mode != BLURAY_STILL_NONE) {
-                    [self fail:@"This disc requires a pause between video clips that is not supported yet."];
-                    return;
+                    _perItem = YES;
                 }
             }
+            if (_perItem && !self.playItemChanged) {
+                [self fail:@"This player cannot present pauses between disc video clips."];
+                return;
+            }
+            _clip = 0;
             _playlist = event.param; _selectionPending = YES; _stopPending = NO;
         } else if (event.event == BD_EVENT_PLAYLIST_STOP) {
             _stopPending = YES; _finishing = NO;
@@ -467,6 +472,14 @@ static unsigned component(double value) {
         } else if (event.event == BD_EVENT_SEEK && !_synchronizing && _playlist >= 0) {
             _selectionPending = YES;
         } else if (event.event == BD_EVENT_PLAYITEM) {
+            if (!_title || event.param >= _title->clip_count) {
+                [self fail:@"Invalid disc play item"]; return;
+            }
+            if (_perItem && !_synchronizing) {
+                _finishing = NO; _timedStill = NO; _vmStill = NO;
+                [self publishStillResuming:NO];
+                _selectionPending = YES;
+            }
             _clip = event.param;
             audioChanged = YES; subtitleChanged = YES;
         } else if (event.event == BD_EVENT_MENU) {
@@ -500,9 +513,24 @@ static unsigned component(double value) {
         NSInteger playlist = _playlist, generation = ++_generation;
         double position = bd_tell_time(_disc) / 90000.0;
         printf("HDMV selection=%ld position=%.3f generation=%ld\n", (long)playlist, position, (long)generation);
-        dispatch_async(dispatch_get_main_queue(), ^{
-            if (!self.stopped && self.selectionChanged) self.selectionChanged(playlist, position, generation);
-        });
+        if (_perItem) {
+            BLURAY_CLIP_INFO *item = &_title->clips[_clip];
+            if (item->out_time <= item->in_time) {
+                [self fail:@"Invalid disc play-item interval"]; return;
+            }
+            NSString *path = [NSString stringWithFormat:@"BDMV/STREAM/%s.m2ts", item->clip_id];
+            double inTime = item->in_time / 90000.0, outTime = item->out_time / 90000.0;
+            double start = item->start_time / 90000.0;
+            NSInteger playItem = _clip;
+            dispatch_async(dispatch_get_main_queue(), ^{
+                if (!self.stopped && self.playItemChanged)
+                    self.playItemChanged(playlist, playItem, path, inTime, outTime, start, position, generation);
+            });
+        } else {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                if (!self.stopped && self.selectionChanged) self.selectionChanged(playlist, position, generation);
+            });
+        }
         audioChanged = YES; subtitleChanged = YES;
     }
     [self publishTracksAudio:audioChanged subtitles:subtitleChanged];
@@ -614,13 +642,18 @@ static unsigned component(double value) {
         uint64_t size = bd_get_title_size(self->_disc);
         if (size < 192) { [self fail:@"Invalid completed playlist size"]; return; }
         self->_synchronizing = YES;
-        int64_t position = bd_seek(self->_disc, size - 192);
+        BLURAY_CLIP_INFO *item = &self->_title->clips[self->_clip];
+        uint64_t itemEnd = item->start_time + item->out_time - item->in_time;
+        int64_t position = self->_perItem
+            ? bd_seek_time(self->_disc, itemEnd - 1)
+            : bd_seek(self->_disc, size - 192);
         [self pump];
         self->_synchronizing = NO;
-        if (position < 0 || (uint64_t)position > size || size - (uint64_t)position > 16 * 1024 * 1024) {
+        if (position < 0 || (uint64_t)position > size ||
+            (!self->_perItem && size - (uint64_t)position > 16 * 1024 * 1024)) {
             [self fail:@"Completed playlist has no bounded final access point"]; return;
         }
-        // Consume only the final access unit so libbluray resumes the original HDMV program.
+        // The bounded tail stops at STILL_TIME or PLAYITEM, not the end of the whole title.
         self->_finishBytes = 0; self->_finishing = YES;
         [self pump];
     });

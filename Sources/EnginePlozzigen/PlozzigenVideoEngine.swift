@@ -633,18 +633,36 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
                     let session = try DiscMenuSession(
                         reader: reader, region: request.discRegionOverride,
                         state: discMenuPresentation,
-                        load: { [weak self] selected, position in
+                        load: { [weak self] selected, position, clip in
                             guard let self, self.outputLoadGeneration == outputGeneration, !Task.isCancelled else {
                                 throw CancellationError()
                             }
-                            try await self.engine.load(
-                                source: .custom(selected), startPosition: position > 0 ? position : nil,
-                                options: discOptions
-                            )
+                            var selectionOptions = discOptions
+                            if let clip {
+                                let opened = await Task.detached { selected.openDiscFile(clip.path) }.value
+                                guard let opened else { throw CocoaError(.fileReadNoSuchFile) }
+                                guard !Task.isCancelled, self.outputLoadGeneration == outputGeneration else {
+                                    opened.close()
+                                    throw CancellationError()
+                                }
+                                let offset = max(0, position - clip.playlistStart)
+                                selectionOptions.nativeSourcePlaybackRange =
+                                    min(clip.sourceRange.lowerBound + offset,
+                                        clip.sourceRange.upperBound - 1 / 90_000.0)..<clip.sourceRange.upperBound
+                                try await self.engine.load(source: .custom(opened, formatHint: "mpegts"),
+                                                           options: selectionOptions)
+                            } else {
+                                try await self.engine.load(
+                                    source: .custom(selected), startPosition: position > 0 ? position : nil,
+                                    options: selectionOptions
+                                )
+                            }
                             guard self.outputLoadGeneration == outputGeneration, !Task.isCancelled else {
                                 throw CancellationError()
                             }
-                            if self.intendsPause || self.discMenuPresentation.isStill {
+                            let reachedEnd: Bool
+                            if case .ended = self.engine.playbackPhase { reachedEnd = true } else { reachedEnd = false }
+                            if reachedEnd || self.intendsPause || self.discMenuPresentation.isStill {
                                 self.engine.pause()
                             } else {
                                 self.engine.play()
@@ -657,6 +675,7 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
                             }, duration: self.engine.duration)
                             self.onChaptersChanged?()
                             self.syncTracks()
+                            return reachedEnd
                         },
                         pause: { [weak self] in self?.engine.pause() },
                         resume: { [weak self] in self?.engine.play() },
@@ -2112,7 +2131,10 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
                 case .error(let msg):
                     #if canImport(DiscNavigation) && canImport(UIKit)
                     if let discSession = self.discSession {
-                        discSession.fail(String(localized: "The disc's selected video could not be played."))
+                        HandoffDiagnostics.emit("aether DISC_STATE_ERROR detail=" + HandoffDiagnostics.redactedDetail(msg))
+                        discSession.failPlayback(
+                            unsupportedInterval: self.engine.errorInfo?.kind == .authoredPlaybackIntervalUnsupported
+                        )
                         return
                     }
                     #endif
@@ -2151,7 +2173,8 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
             .sink { [weak self] time in
                 guard let self else { return }
                 #if canImport(DiscNavigation) && canImport(UIKit)
-                self.discSession?.updateTime(time, hasPresentedFrame: self.engine.hasFirstFrameReadyForDisplay)
+                self.discSession?.updateTime(time, sourceSeconds: self.engine.sourceTime,
+                                            hasPresentedFrame: self.engine.hasFirstFrameReadyForDisplay)
                 #endif
                 guard self.liveAttemptGate.activeGeneration == nil else { return }
                 if time > self.furthestObservedPosition {

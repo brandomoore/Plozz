@@ -82,9 +82,19 @@ final class WebDAVDiscPlaybackHostedTests: XCTestCase {
         try await checkBluRayPlayback(startPosition: 0, discMenus: true, discAudioSelection: true)
     }
 
+    func testNativeHDMVRepeatedClipStopsAtIntermediateStill() async throws {
+        try await checkBluRayPlayback(startPosition: 0, discMenus: true, discIntermediateStill: true)
+    }
+
+    func testNativeHDMVShortRepeatedItemReachesItsOwnStill() async throws {
+        try await checkBluRayPlayback(startPosition: 0, discMenus: true,
+                                      discIntermediateStill: true, discShortSecondItem: true)
+    }
+
     private func checkBluRayPlayback(
         startPosition: Double, discMenus: Bool = false, missingOpening: Bool = false,
-        discStillSeconds: UInt16? = nil, discAudioSelection: Bool = false
+        discStillSeconds: UInt16? = nil, discAudioSelection: Bool = false, discIntermediateStill: Bool = false,
+        discShortSecondItem: Bool = false
     ) async throws {
         let root = try XCTUnwrap(Bundle(for: Self.self).resourceURL)
             .appendingPathComponent("Fixtures/bluray-test-pattern")
@@ -139,6 +149,37 @@ final class WebDAVDiscPlaybackHostedTests: XCTestCase {
                 data[item + 31] = UInt8(truncatingIfNeeded: discStillSeconds)
                 overrides[path] = data
             }
+            if discIntermediateStill {
+                let path = "BDMV/PLAYLIST/00001.mpls"
+                let data = try Data(contentsOf: XCTUnwrap(files[path]))
+                let list = data[8..<12].reduce(0) { ($0 << 8) | Int($1) }
+                let marks = data[12..<16].reduce(0) { ($0 << 8) | Int($1) }
+                let itemLength = Int(data[list + 10]) << 8 | Int(data[list + 11])
+                var first = Data(data[(list + 12)..<(list + 12 + itemLength)])
+                var second = first
+                func write32(_ value: UInt32, into bytes: inout Data, at index: Int) {
+                    for offset in 0..<4 {
+                        bytes[index + offset] = UInt8(truncatingIfNeeded: value >> (24 - offset * 8))
+                    }
+                }
+                write32(4 * 45_000, into: &first, at: 16)
+                first[29] = 1
+                first[30] = 0
+                first[31] = 2
+                write32(4 * 45_000, into: &second, at: 12)
+                if discShortSecondItem { write32(4 * 45_000 + 1_890, into: &second, at: 16) }
+                second[29] = 2
+                var combined = Data(data[..<(list + 12)])
+                combined[list + 7] = 2
+                combined.append(first)
+                combined.append(contentsOf: [UInt8(itemLength >> 8), UInt8(truncatingIfNeeded: itemLength)])
+                combined.append(second)
+                write32(UInt32(combined.count - list - 4), into: &combined, at: list)
+                write32(UInt32(combined.count), into: &combined, at: 12)
+                combined.append(data[marks...])
+                overrides[path] = combined
+                sizes[path] = combined.count
+            }
         }
         let fixtureFiles = files
         let fixtureSizes = sizes
@@ -188,7 +229,8 @@ final class WebDAVDiscPlaybackHostedTests: XCTestCase {
             base: base, path: "BDMV/index.bdmv", credential: .anonymous,
             seekPositions: discMenus ? [2] : [10, 2, 13], startPosition: startPosition,
             discMenus: discMenus, expectedDiscPlaylist: missingOpening ? 2 : 1,
-            discStillSeconds: discStillSeconds, discAudioSelection: discAudioSelection
+            discStillSeconds: discStillSeconds, discAudioSelection: discAudioSelection,
+            discIntermediateStill: discIntermediateStill, discShortSecondItem: discShortSecondItem
         )
         XCTAssertEqual(reads.contains("BDMV/STREAM/00001.m2ts"), !missingOpening && !discAudioSelection)
         XCTAssertEqual(reads.contains("BDMV/STREAM/00004.m2ts"), discAudioSelection)
@@ -365,6 +407,7 @@ final class WebDAVDiscPlaybackHostedTests: XCTestCase {
             let relativePath: String
             let seekPositions: [Double]
             let startPosition: Double?
+            let discMenuInspection: Bool?
         }
         let data: Data
         if let json = environment["PLOZZ_WEBDAV_PLAYBACK_JSON"] {
@@ -379,7 +422,10 @@ final class WebDAVDiscPlaybackHostedTests: XCTestCase {
         }
         let input = try JSONDecoder().decode(Input.self, from: data)
         let startPosition = input.startPosition ?? 0
-        guard input.baseURL.scheme == "https", input.baseURL.user == nil,
+        let anonymousLoopback = input.baseURL.scheme == "http" &&
+            ["127.0.0.1", "::1"].contains(input.baseURL.host ?? "") &&
+            input.username.isEmpty && input.password.isEmpty
+        guard input.baseURL.scheme == "https" || anonymousLoopback, input.baseURL.user == nil,
               input.baseURL.password == nil, input.baseURL.query == nil,
               startPosition.isFinite, startPosition >= 0,
               !input.seekPositions.isEmpty, input.seekPositions.count <= 3,
@@ -389,7 +435,8 @@ final class WebDAVDiscPlaybackHostedTests: XCTestCase {
         try await checkPlayback(
             base: input.baseURL, path: input.relativePath,
             credential: .password(username: input.username, password: input.password, policy: .automatic),
-            seekPositions: input.seekPositions, startPosition: startPosition, sustainedPlaybackSeconds: 60
+            seekPositions: input.seekPositions, startPosition: startPosition, sustainedPlaybackSeconds: 60,
+            discMenus: input.discMenuInspection == true, discMenuInspection: input.discMenuInspection == true
         )
     }
 
@@ -398,7 +445,8 @@ final class WebDAVDiscPlaybackHostedTests: XCTestCase {
         startPosition: Double = 0, sustainedPlaybackSeconds: Int = 0,
         requiresNativeHLS: Bool = false, recordIO: (@Sendable (String) async -> Void)? = nil,
         discMenus: Bool = false, expectedDiscPlaylist: Int = 1, discStillSeconds: UInt16? = nil,
-        discAudioSelection: Bool = false
+        discAudioSelection: Bool = false, discIntermediateStill: Bool = false, discShortSecondItem: Bool = false,
+        discMenuInspection: Bool = false
     ) async throws {
         let environment = ProcessInfo.processInfo.environment
         let detailPlayDelay: Duration?
@@ -574,6 +622,27 @@ final class WebDAVDiscPlaybackHostedTests: XCTestCase {
 
         let started = ContinuousClock.now
         try await perform(engine: engine) { await engine.load(request: request, startPosition: startPosition) }
+        if discMenuInspection {
+            let menu = try XCTUnwrap(engine.discMenu)
+            try await wait(engine: engine, seconds: 60) {
+                if menu.failure != nil { return true }
+                guard menu.isMenuVisible, menu.isStill, menu.image != nil else { return false }
+                return await engine.hasRenderedVideoFrame()
+            }
+            XCTAssertNil(menu.failure)
+            XCTAssertTrue(menu.isMenuVisible)
+            XCTAssertTrue(menu.isStill)
+            XCTAssertNotNil(menu.image)
+            let frame = await engine.hasRenderedVideoFrame()
+            XCTAssertTrue(frame)
+            print("WEBDAV_DISC menuReadySeconds=\(started.duration(to: .now)) playlist=\(menu.playlist ?? -1) playItem=\(menu.playItem ?? -1) region=\(menu.region)")
+            try await Task.sleep(for: .seconds(5))
+            XCTAssertNil(menu.failure)
+            XCTAssertTrue(menu.isStill)
+            engine.stop()
+            await engine.drainTransport()
+            return
+        }
         if requiresNativeHLS {
             XCTAssertEqual(engine.diagnosticRoute, .localHLS, "The native ISO workload must not use a software fallback")
         }
@@ -619,7 +688,30 @@ final class WebDAVDiscPlaybackHostedTests: XCTestCase {
                 XCTAssertEqual(menu.playlist, 1, "The player choice must not escape to another playlist")
                 XCTAssertNil(menu.notice)
             }
-            if let discStillSeconds {
+            if discIntermediateStill {
+                try await wait(engine: engine, seconds: 20) { menu.isStill && menu.failure == nil }
+                XCTAssertEqual(engine.currentTime, 4, accuracy: 0.15,
+                               "The renderer must stop at the first item's out-time, not the clip EOF")
+                engine.pause()
+                try await Task.sleep(for: .seconds(3))
+                XCTAssertTrue(menu.isStill)
+                let heldFrame = await engine.hasRenderedVideoFrame()
+                XCTAssertTrue(heldFrame)
+                engine.play()
+                if !discShortSecondItem {
+                    try await wait(engine: engine, seconds: 20) {
+                        !menu.isStill && menu.playItem == 1 && menu.failure == nil && engine.currentTime > 4.2
+                    }
+                }
+                try await wait(engine: engine, seconds: 20) {
+                    menu.isStill && menu.playItem == 1 && menu.failure == nil
+                }
+                XCTAssertEqual(menu.playlist, 1, "The next item is in the same authored playlist")
+                XCTAssertEqual(engine.currentTime, discShortSecondItem ? 4.042 : 8, accuracy: 0.15)
+                let finalFrame = await engine.hasRenderedVideoFrame()
+                XCTAssertTrue(finalFrame)
+                menu.openMenu()
+            } else if let discStillSeconds {
                 try await wait(engine: engine, seconds: 20) { menu.isStill && menu.failure == nil }
                 engine.pause()
                 try await Task.sleep(for: .seconds(3))

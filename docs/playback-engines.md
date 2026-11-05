@@ -36,7 +36,7 @@ does not create a navigation session and keeps its normal resume/watch behavior.
 The initial menu implementation supports HDMV in media-share BDMV folders.
 `DiscNavigation` statically links pinned libbluray 1.5.0 without a JVM or optional
 decryption loaders. It drives original navigation and graphics while the existing
-Plozzigen adapter plays the exact selected playlist. Separate transport cursors
+Plozzigen adapter plays the selected playlist or its bounded play items. Separate transport cursors
 retain the same account, credential revision, file identity and root allowlist.
 The normal app does not use the lab's HTTP relay or embed its Java runtime.
 
@@ -56,8 +56,12 @@ Directional input is ignored when there is no active authored menu.
 Finite and infinite stills at the end of a playlist retain the rendered frame.
 User pause suspends a finite still's timer; play resumes that timer rather than
 bypassing the authored hold. Infinite stills wait for navigation input.
-Stills between play items are not yet supported; encountering one reports that
-specific limitation rather than skipping the authored pause.
+Playlists with stills between play items use individually opened clips and their
+authored source-time intervals. Native playback establishes the actual consumer
+timeline before seeking and starting, and AVPlayer's renderer-owned endpoint
+holds the frame without a sampled-clock pause. Repeated clips retain separate
+play-item identities. Software-rendered formats cannot yet use these intervals;
+that limitation is reported instead of skipping the pause or playing outside it.
 Stopping a session drains the native navigation queue before releasing its
 transport ownership.
 
@@ -81,6 +85,10 @@ it is not evidence of authored interactive graphics or commercial-disc support.
 Companion hosted regressions cover a missing opening stream with backup CLPI
 metadata, finite-still pause/resume, infinite-still menu transitions, and
 two-way audio selection with deliberately reversed playlist track ordering.
+Repeated-clip regressions cover an intermediate finite still, a final infinite
+still, and a 42-millisecond second item. An explicitly configured private-disc
+inspection also exercises original menu graphics and a held video frame through
+the production transport and playback adapter; it is opt-in, not part of CI.
 The multi-audio source is an original generated color/sine clip from
 `tools/generate-bdmv-test-fixture.py`; `fixture.create_hdmv_metadata` produces
 its alternate playlist and clip information when that clip is present.

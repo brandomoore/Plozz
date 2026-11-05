@@ -14,6 +14,7 @@ public final class DiscMenuPlaybackState {
     public var notice: String?
     public var region: UInt32 = 1
     public var playlist: Int?
+    public var playItem: Int?
     public var sendKey: (UInt32) -> Void = { _ in }
     public var openMenu: () -> Void = {}
 
@@ -30,6 +31,7 @@ public final class DiscMenuPlaybackState {
         notice = nil
         region = 1
         playlist = nil
+        playItem = nil
         sendKey = { _ in }
         openMenu = {}
     }

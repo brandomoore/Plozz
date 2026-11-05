@@ -6,6 +6,13 @@ import CoreNetworking
 @preconcurrency import AetherEngine
 @preconcurrency import DiscNavigation
 
+struct DiscMenuClip: Sendable {
+    let index: Int
+    let path: String
+    let sourceRange: Range<Double>
+    let playlistStart: Double
+}
+
 private final class DiscMenuSource: @unchecked Sendable {
     let reader: TransportDiscDirectoryReader
     init(_ reader: TransportDiscDirectoryReader) { self.reader = reader }
@@ -43,7 +50,9 @@ final class DiscMenuSession {
     private var noticeTask: Task<Void, Never>?
     private var firstLoad: CheckedContinuation<Void, Error>?
     private var lastClockUpdate = Date.distantPast
-    private let load: (TransportDiscDirectoryReader, TimeInterval) async throws -> Void
+    private let load: (TransportDiscDirectoryReader, TimeInterval, DiscMenuClip?) async throws -> Bool
+    private var playbackReader: TransportDiscDirectoryReader?
+    private var playbackClip: DiscMenuClip?
     private let pause: () -> Void
     private let resume: () -> Void
     private let isPaused: () -> Bool
@@ -55,7 +64,7 @@ final class DiscMenuSession {
     init(
         reader: TransportDiscDirectoryReader, region: UInt32?,
         state: DiscMenuPlaybackState,
-        load: @escaping (TransportDiscDirectoryReader, TimeInterval) async throws -> Void,
+        load: @escaping (TransportDiscDirectoryReader, TimeInterval, DiscMenuClip?) async throws -> Bool,
         pause: @escaping () -> Void,
         resume: @escaping () -> Void,
         isPaused: @escaping () -> Bool,
@@ -111,6 +120,13 @@ final class DiscMenuSession {
         native.selectionChanged = { [weak self] playlist, position, generation in
             MainActor.assumeIsolated { self?.select(playlist, position: position, generation: generation) }
         }
+        native.playItemChanged = { [weak self] playlist, index, path, start, end, playlistStart, position, generation in
+            MainActor.assumeIsolated {
+                self?.select(playlist, position: position, generation: generation,
+                             clip: DiscMenuClip(index: index, path: path, sourceRange: start..<end,
+                                                playlistStart: playlistStart))
+            }
+        }
         native.audioPIDChanged = { [weak self] pid, generation in
             MainActor.assumeIsolated {
                 guard let self, !self.stopped, self.generation == generation else { return }
@@ -152,7 +168,7 @@ final class DiscMenuSession {
         }
     }
 
-    private func select(_ playlist: Int, position: Double, generation: Int) {
+    private func select(_ playlist: Int, position: Double, generation: Int, clip: DiscMenuClip? = nil) {
         guard !stopped, generation > self.generation else { return }
         self.generation = generation
         loadedGeneration = nil
@@ -169,30 +185,50 @@ final class DiscMenuSession {
             await previous?.value
             guard let self, !self.stopped, !Task.isCancelled, self.generation == generation else { return }
             let reader = self.source.reader.selectingPlaylist(playlist)
+            let previousReader = self.playbackReader
+            self.playbackReader = reader
+            self.playbackClip = clip
             do {
-                try await self.load(reader, position)
+                let reachedEnd = try await self.load(reader, position, clip)
+                previousReader?.close()
                 guard !self.stopped, !Task.isCancelled, self.generation == generation else { return }
                 self.loadedGeneration = generation
                 self.state.playlist = playlist
+                self.state.playItem = clip?.index
                 self.state.isOpening = false
-                self.tracksReady()
+                if reachedEnd { self.ended() } else { self.tracksReady() }
                 self.firstLoad?.resume()
                 self.firstLoad = nil
             } catch is CancellationError {
                 reader.close()
+                previousReader?.close()
             } catch {
                 reader.close()
+                previousReader?.close()
                 guard self.generation == generation, !self.stopped else { return }
-                self.fail(String(localized: "The disc's selected video could not be played."))
+                if let engineError = error as? AetherEngineError,
+                   case .authoredPlaybackIntervalUnsupported = engineError {
+                    self.failPlayback(unsupportedInterval: true)
+                } else {
+                    self.failPlayback(unsupportedInterval: false)
+                }
             }
         }
     }
 
-    func updateTime(_ seconds: Double, hasPresentedFrame: Bool) {
+    func updateTime(_ seconds: Double, sourceSeconds: Double, hasPresentedFrame: Bool) {
         guard !stopped, let loadedGeneration, Date().timeIntervalSince(lastClockUpdate) >= 0.1 else { return }
         if hasPresentedFrame { deadline?.cancel() }
         lastClockUpdate = Date()
-        native?.updateTime(seconds, generation: loadedGeneration)
+        let playlistTime: Double
+        if let clip = playbackClip {
+            let bounded = min(max(sourceSeconds, clip.sourceRange.lowerBound),
+                              clip.sourceRange.upperBound - 1 / 90_000.0)
+            playlistTime = clip.playlistStart + bounded - clip.sourceRange.lowerBound
+        } else {
+            playlistTime = seconds
+        }
+        native?.updateTime(playlistTime, generation: loadedGeneration)
     }
 
     func ended() {
@@ -253,6 +289,12 @@ final class DiscMenuSession {
         }
     }
 
+    func failPlayback(unsupportedInterval: Bool) {
+        fail(unsupportedInterval
+             ? String(localized: "This video format cannot play the pauses required by the disc.")
+             : String(localized: "The disc's selected video could not be played."))
+    }
+
     func fail(_ reason: String) {
         guard !stopped, state.failure == nil else { return }
         PlozzLog.playback.error("Disc navigation failed: \(reason)")
@@ -270,6 +312,8 @@ final class DiscMenuSession {
         noticeTask?.cancel()
         native?.stop()
         source.reader.close()
+        playbackReader?.close()
+        playbackReader = nil
         retiredNative = native
         native = nil
         firstLoad?.resume(throwing: CancellationError())

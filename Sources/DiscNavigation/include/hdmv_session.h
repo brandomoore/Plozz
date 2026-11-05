@@ -10,6 +10,8 @@ NS_ASSUME_NONNULL_BEGIN
 @property(nonatomic, readonly) unsigned selectedRegion;
 @property(nonatomic, copy) void (^imageChanged)(UIImage * _Nullable image);
 @property(nonatomic, copy) void (^selectionChanged)(NSInteger playlist, double position, NSInteger generation);
+@property(nonatomic, copy, nullable) void (^playItemChanged)(NSInteger playlist, NSInteger playItem, NSString *path,
+    double inTime, double outTime, double playlistStart, double position, NSInteger generation);
 @property(nonatomic, copy) void (^statusChanged)(NSString *status);
 @property(nonatomic, copy) void (^noticeChanged)(NSString *notice);
 @property(nonatomic, copy) void (^menuVisibilityChanged)(BOOL visible);

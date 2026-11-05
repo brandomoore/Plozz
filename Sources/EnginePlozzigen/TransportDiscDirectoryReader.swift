@@ -126,7 +126,7 @@ private final class DiscTransportScope: @unchecked Sendable {
                 do {
                     let source = try await resolver.resolve(locator)
                     let reader = TransportIOReader(resolvedSource: source, discImageProbeEnabled: false)
-                    let file = DiscTransportFile(id: id, owner: owner, reader: reader, scope: self)
+                    let file = DiscTransportFile(id: id, owner: owner, locator: locator, reader: reader, scope: self)
                     let accepted = self.state.withLock { state in
                         guard !state.closed, !state.closedOwners.contains(owner) else { return false }
                         state.files[id] = file
@@ -203,19 +203,25 @@ private final class DiscTransportScope: @unchecked Sendable {
 private final class DiscTransportFile: IOReader, @unchecked Sendable {
     let id: UUID
     let owner: UUID
+    private let locator: NetworkFileLocator
     let reader: TransportIOReader
     private weak var scope: DiscTransportScope?
     private let closed = OSAllocatedUnfairLock(initialState: false)
 
-    init(id: UUID, owner: UUID, reader: TransportIOReader, scope: DiscTransportScope) {
+    init(id: UUID, owner: UUID, locator: NetworkFileLocator, reader: TransportIOReader, scope: DiscTransportScope) {
         self.id = id
         self.owner = owner
+        self.locator = locator
         self.reader = reader
         self.scope = scope
     }
     func read(_ buffer: UnsafeMutablePointer<UInt8>?, size: Int32) -> Int32 { reader.read(buffer, size: size) }
     func seek(offset: Int64, whence: Int32) -> Int64 { reader.seek(offset: offset, whence: whence) }
     func cancel() { reader.cancel() }
+    func makeIndependentReader() -> IOReader? {
+        guard !closed.withLock({ $0 }) else { return nil }
+        return scope?.open(locator, owner: owner)
+    }
     func close() {
         let first = closed.withLock { closed in
             guard !closed else { return false }
