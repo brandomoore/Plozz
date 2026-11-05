@@ -17,6 +17,7 @@ import CoreUI
 public struct PlayerView: View {
     @State private var viewModel: PlayerViewModel
     @State private var diagnosticsSampler = PlaybackDiagnosticsSampler()
+    @State private var showsDiscVideos = false
     /// Suspends Liquid Glass while demanding video is on screen.
     ///
     /// Optional so a player hosted outside the app root — previews, tests —
@@ -64,6 +65,11 @@ public struct PlayerView: View {
 
     public var body: some View {
         configuredPlayerStack
+        #if canImport(UIKit)
+        .sheet(isPresented: $showsDiscVideos) {
+            DiscVideoPicker(model: viewModel)
+        }
+        #endif
         #if os(iOS)
         .modifier(MobilePlaybackDisplaySleepModifier(
             playbackActive: viewModel.wantsForegroundDisplayAwake
@@ -285,16 +291,28 @@ public struct PlayerView: View {
         #if canImport(UIKit)
         if viewModel.isDiscMenuPlayback, let state = viewModel.videoEngine.discMenu,
            state.failure != nil || state.isOpening || state.isMenuVisible || state.image != nil {
-            DiscMenuPlayerContent(model: viewModel, state: state, dismiss: dismissPlayer)
+            DiscMenuPlayerContent(
+                model: viewModel, state: state, dismiss: dismissPlayer,
+                showVideos: { showsDiscVideos = true }
+            )
         } else {
             ordinaryPhaseContent
                 .overlay(alignment: .topTrailing) {
                     if viewModel.isDiscMenuPlayback, let state = viewModel.videoEngine.discMenu {
                         Button("Disc menu") { state.openMenu() }
                             .contextMenu {
+                                Button("Disc videos") { showsDiscVideos = true }
                                 Button("Play video") { viewModel.playVideoWithoutMenus() }
                                 Button("Try another region") {
                                     viewModel.retryDiscMenu(region: state.region == 1 ? 2 : state.region == 2 ? 4 : 1)
+                                }
+                            }
+                            .padding()
+                    } else if showsDiscVideoAction {
+                        Button("Disc videos") { showsDiscVideos = true }
+                            .contextMenu {
+                                if viewModel.isSelectedDiscVideo {
+                                    Button("Play video") { viewModel.playVideoWithoutMenus() }
                                 }
                             }
                             .padding()
@@ -319,6 +337,12 @@ public struct PlayerView: View {
         #else
         false
         #endif
+    }
+
+    private var showsDiscVideoAction: Bool {
+        guard viewModel.hasDiscVideos else { return false }
+        if case .failed = viewModel.phase { return true }
+        return viewModel.controls.controlsVisible
     }
 
     @ViewBuilder

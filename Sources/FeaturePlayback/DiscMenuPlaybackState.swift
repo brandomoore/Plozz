@@ -4,6 +4,7 @@ import Observation
 
 @MainActor @Observable
 public final class DiscMenuPlaybackState {
+    public var isActive = false
     public var image: UIImage?
     public var isOpening = true
     public var isMenuVisible = false
@@ -21,6 +22,7 @@ public final class DiscMenuPlaybackState {
     public init() {}
 
     public func reset() {
+        isActive = false
         image = nil
         isOpening = true
         isMenuVisible = false

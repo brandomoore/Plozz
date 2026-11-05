@@ -247,17 +247,56 @@ public final class PlayerViewModel {
     private let offlineItem: MediaItem?
     @ObservationIgnored private var discEntryOverride: DiscPlaybackBehavior?
     @ObservationIgnored private var discRegionOverride: UInt32?
+    @ObservationIgnored private var discVideoSelection: (source: PlaybackSource, playlist: Int, featureResume: TimeInterval)?
+    @ObservationIgnored private var loadedDiscVideos: (source: PlaybackSource, attempt: UUID, videos: [DiscVideo])?
     public var isDiscMenuPlayback: Bool { request?.discPlayback == .openMenu }
+    public var isSelectedDiscVideo: Bool { request?.discPlaylistOverride != nil }
+    public var hasDiscVideos: Bool {
+        if case .networkDisc = request?.playbackSource { return true }
+        return false
+    }
+
+    #if canImport(UIKit)
+    public func loadDiscVideos() async throws -> [DiscVideo] {
+        guard !didStop, let source = request?.playbackSource, case .networkDisc = source else {
+            throw AppError.unknown(String(localized: "This source does not expose disc videos."))
+        }
+        let attempt = diagnosticAttempt
+        let videos = try await engine.discVideos()
+        try Task.checkCancellation()
+        guard !didStop, diagnosticAttempt == attempt, request?.playbackSource == source else {
+            throw AppError.unknown(String(localized: "Playback changed. Open disc videos again."))
+        }
+        loadedDiscVideos = (source, attempt, videos)
+        return videos
+    }
+    #endif
+
+    public func playDiscVideo(_ video: DiscVideo) throws {
+        guard !didStop, let catalog = loadedDiscVideos,
+              catalog.attempt == diagnosticAttempt, catalog.source == request?.playbackSource,
+              catalog.videos.contains(video), (0...99999).contains(video.playlist) else {
+            throw AppError.unknown(String(localized: "Playback changed. Open disc videos again."))
+        }
+        let featureResume = request?.usesUnidentifiedDiscTimeline == true
+            ? discVideoSelection?.featureResume ?? startPositionOverride ?? request?.startPosition ?? 0
+            : currentResumePosition()
+        discVideoSelection = (catalog.source, video.playlist, featureResume)
+        discEntryOverride = .playVideo
+        restartStreamingRendition(resumeOverride: 0, replacesTimeline: true)
+    }
 
     public func playVideoWithoutMenus() {
-        guard !didStop, isDiscMenuPlayback else { return }
-        let resume = startPositionOverride ?? request?.startPosition ?? 0
+        guard !didStop, isDiscMenuPlayback || isSelectedDiscVideo else { return }
+        let resume = discVideoSelection?.featureResume ?? startPositionOverride ?? request?.startPosition ?? 0
+        discVideoSelection = nil
         discEntryOverride = .playVideo
-        restartStreamingRendition(resumeOverride: resume)
+        restartStreamingRendition(resumeOverride: resume, replacesTimeline: true)
     }
 
     public func retryDiscMenu(region: UInt32? = nil) {
         guard !didStop, isDiscMenuPlayback else { return }
+        discVideoSelection = nil
         discRegionOverride = region
         restartStreamingRendition(resumeOverride: 0)
     }
@@ -831,7 +870,7 @@ public final class PlayerViewModel {
         }
         engine.onProgress = { [weak self] in
             guard let self, self.engineToken == callbackEngineToken else { return }
-            guard !self.isDiscMenuPlayback else { return }
+            guard self.request?.usesUnidentifiedDiscTimeline != true else { return }
             // Jellyfin (non-idempotent) next-episode prefetch fires once the
             // hand-off window opens; idempotent providers prefetch eagerly instead.
             self.nextEpisodeCoordinator.maybeStartWindowedNextPrefetch()
@@ -973,6 +1012,10 @@ public final class PlayerViewModel {
         endTemporarySpeedBoost()
         nowPlaying?.end()
         guard pendingNextEpisode == nil else { return }
+        if request?.usesUnidentifiedDiscTimeline == true {
+            shouldDismiss = true
+            return
+        }
         if let playlistContext {
             guard playbackSettings.autoPlayNextPlaylistItem,
                   playlistContext.currentIndex + 1 < playlistContext.totalCount else {
@@ -1028,6 +1071,11 @@ public final class PlayerViewModel {
         controls.infoCard.hasPreviousEpisode = previousEpisode != nil
         controls.infoCard.hasNextEpisode = nextEpisode != nil
         nowPlaying?.refresh()
+        if request?.usesUnidentifiedDiscTimeline == true {
+            controls.infoCard.hasPreviousEpisode = false
+            controls.infoCard.hasNextEpisode = false
+            return
+        }
         if playlistContext == nil { nextEpisodeCoordinator.updateUpNextCard() }
         // Eagerly prefetch the next episode's resolved stream when the provider's
         // `playbackInfo` is idempotent (Plex, SMB share) — safe to resolve the
@@ -1226,11 +1274,31 @@ public final class PlayerViewModel {
                 request.discPlayback = discEntryOverride ?? .playVideo
             }
             request.discRegionOverride = discRegionOverride
-            if request.discPlayback == .openMenu { request.suppressOrdinaryWatchReporting = true }
+            if let selection = discVideoSelection {
+                guard request.playbackSource == selection.source else {
+                    await releaseStreamingSession(request, reason: .superseded)
+                    throw AppError.unknown(String(localized: "The disc source changed. Open disc videos again."))
+                }
+                request.discPlayback = .playVideo
+                request.discPlaylistOverride = selection.playlist
+                request.startPosition = 0
+                request.chapters = []
+                request.scrubPreview = nil
+                request.scrubStillSource = nil
+                request.audioTracks = []
+                request.subtitleTracks = []
+                request.preferredAudioTrackID = nil
+                request.burnedInSubtitleTrackID = nil
+                request.sourceMetadata = nil
+                request.item.runtime = nil
+            }
+            if request.usesUnidentifiedDiscTimeline { request.suppressOrdinaryWatchReporting = true }
             self.request = request
-            if request.discPlayback == .openMenu {
+            if request.usesUnidentifiedDiscTimeline {
                 nextEpisodeCoordinator.cancelPrefetch()
                 controls.upNextCard.dismissed = true
+                controls.infoCard.hasPreviousEpisode = false
+                controls.infoCard.hasNextEpisode = false
                 guard case .networkDisc = request.playbackSource else {
                     await releaseStreamingSession(request, reason: .superseded)
                     throw AppError.unknown(String(localized: "This source does not provide access to disc menus."))
@@ -1266,7 +1334,7 @@ public final class PlayerViewModel {
             // first scrobble can identify the show on trackers that require it, then
             // reconcile cross-server per-series memory. Runs for any episode: even
             // without a resolver the item may already carry series ids to reconcile.
-            if request.item.kind == .episode && request.discPlayback != .openMenu {
+            if request.item.kind == .episode && !request.usesUnidentifiedDiscTimeline {
                 enrichTask = Task { @MainActor [weak self] in await self?.enrichSeriesIDs() }
             }
 
@@ -1281,6 +1349,8 @@ public final class PlayerViewModel {
             let startPosition: TimeInterval
             if request.discPlayback == .openMenu {
                 startPosition = 0
+            } else if request.discPlaylistOverride != nil {
+                startPosition = resumeOverride ?? 0
             } else if let resumeOverride {
                 startPosition = resumeOverride
             } else {
@@ -1293,7 +1363,7 @@ public final class PlayerViewModel {
 
             // Best-effort, never blocking play(): (if enabled) fetch a missing
             // subtitle in the preferred language.
-            if request.discPlayback != .openMenu { startAutoSubtitleDownloadIfNeeded(request: request) }
+            if !request.usesUnidentifiedDiscTimeline { startAutoSubtitleDownloadIfNeeded(request: request) }
         } catch is CancellationError {
             // Leave `phase` as `.loading`; the view is dismissing.
             return
@@ -1571,6 +1641,7 @@ public final class PlayerViewModel {
         tracks: SubtitleTrackController.StreamSnapshot? = nil,
         forceTranscode: Bool = false,
         resumeOverride: TimeInterval? = nil,
+        replacesTimeline: Bool = false,
         origin: String = #function
     ) {
         endTemporarySpeedBoost()
@@ -1589,13 +1660,14 @@ public final class PlayerViewModel {
         initialLoad?.cancel()
         if phase == .ready {
             streamingResumePosition = max(0, controls.pendingSeekTarget ?? currentResumePosition())
-            streamingTrackSnapshot = tracks ?? subtitleController.streamSnapshot()
+            streamingTrackSnapshot = replacesTimeline ? nil : tracks ?? subtitleController.streamSnapshot()
         }
         let position = resumeOverride ?? streamingResumePosition ?? startPositionOverride ?? controls.currentSeconds
         streamingResumePosition = position
         let outgoing = request
         let outgoingReport = progressReporter.finishSession(
-            position: position, duration: progressReporter.knownPlaybackDuration(), scrobble: false
+            position: replacesTimeline ? currentResumePosition() : position,
+            duration: progressReporter.knownPlaybackDuration(), scrobble: false
         )
         request = nil
         streamingQuality.currentStream = .init()
@@ -1806,13 +1878,15 @@ public final class PlayerViewModel {
 
     /// Records the viewer's manual audio-language pick for the current series.
     private func recordSeriesAudioSelection(language: String?) {
-        guard let item = request?.item else { return }
+        guard let request, !request.usesUnidentifiedDiscTimeline else { return }
+        let item = request.item
         seriesMemory.recordAudioSelection(language: language, for: item)
     }
 
     /// Records the viewer's manual subtitle pick (a language, or Off) for the series.
     private func recordSeriesSubtitleSelection(_ selection: RememberedSubtitleSelection?) {
-        guard let item = request?.item else { return }
+        guard let request, !request.usesUnidentifiedDiscTimeline else { return }
+        let item = request.item
         seriesMemory.recordSubtitleSelection(selection, for: item)
     }
 
@@ -1820,7 +1894,8 @@ public final class PlayerViewModel {
     /// the series' external ids onto the item, then applies any imported choice to
     /// live playback (the engine/subtitle side effects the memory can't do itself).
     private func reconcileSeriesMemoryAcrossServers() {
-        guard let item = request?.item else { return }
+        guard let request, !request.usesUnidentifiedDiscTimeline else { return }
+        let item = request.item
         let outcome = seriesMemory.reconcile(
             item: item,
             viewerChangedAudio: subtitleController.viewerChangedAudioThisSession,
@@ -1833,7 +1908,7 @@ public final class PlayerViewModel {
             // Re-route the load-time subtitle now that the remembered value
             // resolves. Works for native (tracks present → applies now) and
             // Plozzigen (tracks arrive later → onTracksChanged re-applies).
-            if let request { subtitleController.applyInitialSubtitleForNewLoad(for: request) }
+            subtitleController.applyInitialSubtitleForNewLoad(for: request)
         }
     }
 
@@ -1875,7 +1950,7 @@ public final class PlayerViewModel {
             return
         }
         let actualEngineKind = engineHandoff.commitEngineForPlayback(engineKind)
-        if request.discPlayback == .openMenu && actualEngineKind != .plozzigen {
+        if request.usesUnidentifiedDiscTimeline && actualEngineKind != .plozzigen {
             phase = .failed(.unknown(String(localized: "This disc's menu format is not supported.")))
             return
         }
@@ -1973,14 +2048,14 @@ public final class PlayerViewModel {
         // Register the live session (idempotent) now that the server has a real
         // now-playing session, so convergence writes against this server defer
         // until stop() ends it.
-        if request.discPlayback != .openMenu { onPlaybackStarted() }
+        if !request.usesUnidentifiedDiscTimeline { onPlaybackStarted() }
         // Begin periodic mid-play convergence checkpoints from the resumed point so
         // progress fans out to other servers without waiting for Back. Seeded so the
         // first checkpoint only fires after real forward progress past the resume.
         progressReporter.startCheckpointLoop(seedPosition: startPosition)
 
         // Load skip markers once playback is live (opt-in, best-effort).
-        if request.discPlayback != .openMenu { loadSkipSegmentsIfEnabled() }
+        if !request.usesUnidentifiedDiscTimeline { loadSkipSegmentsIfEnabled() }
     }
 
     private func configureTracksAfterLoad(for request: PlaybackRequest) {
@@ -2988,7 +3063,7 @@ extension PlayerViewModel: SubtitleTrackControllerHost {
     }
 
     func trackRememberedSubtitle(for item: MediaItem) -> RememberedSubtitleSelection? {
-        rememberedSubtitle(for: item)
+        request?.usesUnidentifiedDiscTimeline == true ? nil : rememberedSubtitle(for: item)
     }
 
     func trackEffectiveSubtitleRule(for item: MediaItem) -> SubtitlePolicy.Rule {

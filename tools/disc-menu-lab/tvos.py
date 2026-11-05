@@ -145,6 +145,22 @@ def prepare_source(pristine: Path, destination: Path) -> None:
         ],
         "src/hotspot/os/bsd/os_bsd.cpp": [
             (
+                "    Arguments::set_java_home(buf);\n    if (!set_boot_path('/', ':')) {\n"
+                "        vm_exit_during_initialization",
+                """#ifdef PLOZZ_TVOS
+    const char* dll_dir = Arguments::get_dll_dir();
+    if (strlen(dll_dir) >= 11 && strcmp(dll_dir + strlen(dll_dir) - 11, "/Frameworks") == 0) {
+      if (strlen(buf) + sizeof("/DiscRuntime") > bufsize) {
+        vm_exit_during_initialization("Bundled Java home path is too long", nullptr);
+      }
+      strcat(buf, "/DiscRuntime");
+    }
+#endif
+    Arguments::set_java_home(buf);
+    if (!set_boot_path('/', ':')) {
+        vm_exit_during_initialization""",
+            ),
+            (
                 "bool os::pd_commit_memory(char* addr, size_t size, bool exec) {\n",
                 "bool os::pd_commit_memory(char* addr, size_t size, bool exec) {\n"
                 "#if defined(PLOZZ_TVOS) && defined(ZERO)\n"
@@ -172,6 +188,38 @@ def prepare_source(pristine: Path, destination: Path) -> None:
                 '  guarantee(!allow_exec, "tvOS Zero cannot map executable file data");\n'
                 "#endif\n"
                 "  int prot;",
+            ),
+        ],
+        "src/hotspot/share/runtime/os.cpp": [
+            (
+                "                        const char* pname, const char* fname) {\n  bool retval = false;",
+                """                        const char* pname, const char* fname) {
+#ifdef PLOZZ_TVOS
+  if (pname != nullptr && strlen(pname) >= 11 &&
+      strcmp(pname + strlen(pname) - 11, "/Frameworks") == 0) {
+    if (strspn(fname, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_") != strlen(fname)) {
+      return false;
+    }
+    int length = jio_snprintf(buffer, buflen, "%s/PlozzBDJ%s.framework/PlozzBDJ%s", pname, fname, fname);
+    return length > 0 && (size_t)length < buflen && file_exists(buffer);
+  }
+#endif
+  bool retval = false;""",
+            ),
+        ],
+        "src/java.base/share/classes/jdk/internal/loader/NativeLibraries.java": [
+            (
+                "            File libfile = new File(path, System.mapLibraryName(name));",
+                """            File libfile;
+            if (path.endsWith("/Frameworks")) {
+                if (!name.matches("[A-Za-z0-9_]+")) {
+                    throw new UnsatisfiedLinkError("Invalid bundled native library name");
+                }
+                String framework = "PlozzBDJ" + name;
+                libfile = new File(path, framework + ".framework/" + framework);
+            } else {
+                libfile = new File(path, System.mapLibraryName(name));
+            }""",
             ),
         ],
         "make/modules/java.base/lib/CoreLibraries.gmk": [
@@ -340,7 +388,7 @@ def build(lab, dependencies: dict[str, Path], *, runtime: bool = False,
         f"--with-sysroot={sdk}", f"--with-libffi={ffi_install}",
         f"--with-extra-cflags=-target {target} -DPLOZZ_TVOS=1",
         f"--with-extra-cxxflags=-target {target} -DPLOZZ_TVOS=1",
-        f"--with-extra-ldflags=-target {target}",
+        f"--with-extra-ldflags=-target {target} -Wl,-headerpad_max_install_names",
         "--with-jvm-features=-services,-jfr,-jvmti",
         "--with-native-debug-symbols=none", "--disable-precompiled-headers",
         "--disable-warnings-as-errors",

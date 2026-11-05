@@ -7,6 +7,7 @@ adaptations in tools/disc-menu-lab/tvos.py and tools/build-disc-runtime.py.
 Pinned source archives and checksums: tools/disc-menu-lab/dependencies.json.
 OpenJDK and its component license notices are retained in DiscRuntime/legal.
 ASM bytecode support retains its notice in DiscRuntime/legal/asm/LICENSE.txt.
+The statically linked libffi license is retained in DiscRuntime/legal/libffi/LICENSE.
 The bundled DejaVu font license is retained in DiscRuntime/legal/dejavu/LICENSE.
 JNI header notices and the OpenJDK Classpath exception are in Vendor/Libbluray/jni.
 

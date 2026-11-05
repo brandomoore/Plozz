@@ -81,6 +81,7 @@ public struct PlayerEngineCapabilities: OptionSet, Sendable {
 public protocol VideoEngine: AnyObject {
     #if canImport(UIKit)
     var discMenu: DiscMenuPlaybackState? { get }
+    func discVideos() async throws -> [DiscVideo]
     #endif
     var supportsActivePictureAnalysis: Bool { get }
     func sampleActivePicture() async -> VideoActivePictureState
@@ -382,6 +383,7 @@ public protocol VideoEngine: AnyObject {
 public extension VideoEngine {
     #if canImport(UIKit)
     var discMenu: DiscMenuPlaybackState? { nil }
+    func discVideos() async throws -> [DiscVideo] { throw CocoaError(.featureUnsupported) }
     #endif
     var supportsActivePictureAnalysis: Bool { false }
     func sampleActivePicture() async -> VideoActivePictureState { .unsupported }

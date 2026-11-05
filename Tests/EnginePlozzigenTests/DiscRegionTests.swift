@@ -3,6 +3,26 @@ import XCTest
 import DiscNavigation
 
 final class DiscRegionTests: XCTestCase {
+    @MainActor
+    func testVideoInspectionRejectsOversizedCatalogWithoutReadingOrStartingNavigation() async throws {
+        var files = Dictionary(uniqueKeysWithValues: (0...1024).map {
+            (String(format: "BDMV/PLAYLIST/%05d.mpls", $0), NSNumber(value: 64))
+        })
+        files["BDMV/index.bdmv"] = 40
+        let session = try XCTUnwrap(HDMVSession(files: files, region: 1, readRange: { _, _, _ in
+            XCTFail("An oversized catalog must be rejected before native parsing")
+            return nil
+        }))
+        defer { session.stop() }
+        let completion = expectation(description: "Catalog rejects excessive playlists")
+        session.listVideos { videos, failure in
+            XCTAssertNil(videos)
+            XCTAssertNotNil(failure)
+            completion.fulfill()
+        }
+        await fulfillment(of: [completion], timeout: 3)
+    }
+
     private func word(_ value: UInt32) -> [UInt8] {
         [24, 16, 8, 0].map { UInt8(truncatingIfNeeded: value >> $0) }
     }
@@ -85,8 +105,43 @@ final class DiscRegionTests: XCTestCase {
         await fulfillment(of: [failed], timeout: 5)
         session.stop()
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-            session.drain { continuation.resume() }
+            session.drain { drained in
+                XCTAssertTrue(drained)
+                continuation.resume()
+            }
         }
+    }
+
+    @MainActor
+    func testSlowNativeShutdownReportsPendingWithoutReleasingItsOwner() async throws {
+        let started = expectation(description: "Native read starts")
+        let release = DispatchSemaphore(value: 0)
+        let session = try XCTUnwrap(HDMVSession(
+            files: ["BDMV/index.bdmv": 40], region: 1,
+            readRange: { _, _, length in
+                started.fulfill()
+                _ = release.wait(timeout: .now() + 15)
+                return Data(repeating: 0, count: Int(length))
+            }
+        ))
+        defer { release.signal(); session.stop() }
+        session.start()
+        await fulfillment(of: [started], timeout: 5)
+        session.stop()
+        let pending = expectation(description: "Bounded drain reports pending")
+        pending.assertForOverFulfill = true
+        session.drain { drained in
+            XCTAssertFalse(drained)
+            pending.fulfill()
+        }
+        await fulfillment(of: [pending], timeout: 8)
+        release.signal()
+        let completed = expectation(description: "Native queue eventually drains")
+        session.drain { drained in
+            XCTAssertTrue(drained)
+            completed.fulfill()
+        }
+        await fulfillment(of: [completed], timeout: 5)
     }
 }
 #endif

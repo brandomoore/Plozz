@@ -1,4 +1,5 @@
 import CoreModels
+import Darwin
 import EnginePlozzigen
 import FeatureHomeCore
 import Foundation
@@ -62,6 +63,10 @@ final class WebDAVDiscPlaybackHostedTests: XCTestCase {
         try await checkBluRayPlayback(startPosition: 9)
     }
 
+    func testNativeVideoCatalogSelectsAnExplicitPlaylistWithoutMenus() async throws {
+        try await checkBluRayPlayback(startPosition: 0, inspectVideos: true)
+    }
+
     func testNativeHDMVFirstPlayAndTopMenuUseProductionTransport() async throws {
         try await checkBluRayPlayback(startPosition: 0, discMenus: true)
     }
@@ -87,11 +92,36 @@ final class WebDAVDiscPlaybackHostedTests: XCTestCase {
     }
 
     func testJavaMenuPlaysBothChoicesAndReopensAfterShutdown() async throws {
+        let manager = FileManager.default
+        let caches = try XCTUnwrap(manager.urls(for: .cachesDirectory, in: .userDomainMask).first)
+        func cacheFixture(marked: Bool) throws -> URL {
+            let root = caches.appendingPathComponent("DiscJava-\(UUID().uuidString)")
+            try manager.createDirectory(at: root, withIntermediateDirectories: false)
+            if marked {
+                try Data("Plozz disc cache v1\n".utf8).write(to: root.appendingPathComponent(".plozz-disc-cache"))
+                try Data().write(to: root.appendingPathComponent(".lease"))
+            }
+            addTeardownBlock {
+                if manager.fileExists(atPath: root.path) { try manager.removeItem(at: root) }
+            }
+            return root
+        }
+        let expired = try cacheFixture(marked: true)
+        let active = try cacheFixture(marked: true)
+        let unowned = try cacheFixture(marked: false)
+        let lease = open(active.appendingPathComponent(".lease").path, O_RDWR)
+        XCTAssertGreaterThanOrEqual(lease, 0)
+        guard lease >= 0 else { throw CheckFailure.invalidInput }
+        defer { close(lease) }
+        XCTAssertEqual(flock(lease, LOCK_EX | LOCK_NB), 0)
         let quarantine = ProcessInfo.processInfo.environment["PLOZZ_BDJ_SHUTDOWN_CHECK"] == "1"
         for iteration in 0..<2 {
             try await checkBluRayPlayback(startPosition: 0, discMenus: true, discJava: true,
                                          discJavaQuarantine: quarantine && iteration == 1)
         }
+        XCTAssertFalse(manager.fileExists(atPath: expired.path))
+        XCTAssertTrue(manager.fileExists(atPath: active.path))
+        XCTAssertTrue(manager.fileExists(atPath: unowned.path))
     }
 
     func testNativeHDMVShortRepeatedItemReachesItsOwnStill() async throws {
@@ -102,7 +132,8 @@ final class WebDAVDiscPlaybackHostedTests: XCTestCase {
     private func checkBluRayPlayback(
         startPosition: Double, discMenus: Bool = false, missingOpening: Bool = false,
         discStillSeconds: UInt16? = nil, discAudioSelection: Bool = false, discIntermediateStill: Bool = false,
-        discShortSecondItem: Bool = false, discJava: Bool = false, discJavaQuarantine: Bool = false
+        discShortSecondItem: Bool = false, discJava: Bool = false, discJavaQuarantine: Bool = false,
+        inspectVideos: Bool = false
     ) async throws {
         let root = try XCTUnwrap(Bundle(for: Self.self).resourceURL)
             .appendingPathComponent("Fixtures/bluray-test-pattern")
@@ -121,7 +152,7 @@ final class WebDAVDiscPlaybackHostedTests: XCTestCase {
                 sizes[path] = try XCTUnwrap(values.fileSize)
             }
         }
-        if discMenus {
+        if discMenus || inspectVideos {
             let metadata = try XCTUnwrap(Bundle(for: Self.self).resourceURL)
                 .appendingPathComponent(discJava ? "Fixtures/bdj-navigation" : "Fixtures/hdmv-navigation")
             for path in try FileManager.default.subpathsOfDirectory(atPath: metadata.path) {
@@ -239,7 +270,7 @@ final class WebDAVDiscPlaybackHostedTests: XCTestCase {
             discMenus: discMenus, expectedDiscPlaylist: missingOpening ? 2 : 1,
             discStillSeconds: discStillSeconds, discAudioSelection: discAudioSelection,
             discIntermediateStill: discIntermediateStill, discShortSecondItem: discShortSecondItem,
-            discJava: discJava, discJavaQuarantine: discJavaQuarantine
+            discJava: discJava, discJavaQuarantine: discJavaQuarantine, inspectVideos: inspectVideos
         )
         XCTAssertEqual(reads.contains("BDMV/STREAM/00001.m2ts"), !missingOpening && !discAudioSelection)
         XCTAssertEqual(reads.contains("BDMV/STREAM/00004.m2ts"), discAudioSelection)
@@ -466,7 +497,7 @@ final class WebDAVDiscPlaybackHostedTests: XCTestCase {
         discAudioSelection: Bool = false, discIntermediateStill: Bool = false, discShortSecondItem: Bool = false,
         discMenuInspection: Bool = false, discJava: Bool = false, discJavaInspection: Bool = false,
         discJavaKeys: [UInt32] = [], discJavaQuarantine: Bool = false,
-        discJavaFeaturePlayback: Bool = false
+        discJavaFeaturePlayback: Bool = false, inspectVideos: Bool = false
     ) async throws {
         let environment = ProcessInfo.processInfo.environment
         let detailPlayDelay: Duration?
@@ -642,6 +673,22 @@ final class WebDAVDiscPlaybackHostedTests: XCTestCase {
 
         let started = ContinuousClock.now
         try await perform(engine: engine) { await engine.load(request: request, startPosition: startPosition) }
+        if inspectVideos {
+            let videos = try await engine.discVideos()
+            XCTAssertTrue(videos.contains { $0.playlist == 1 })
+            let selected = try XCTUnwrap(videos.first { $0.playlist == 2 })
+            XCTAssertGreaterThan(selected.duration, 0)
+            XCTAssertEqual(Set(videos.map(\.playlist)).count, videos.count)
+            engine.stop()
+            await engine.drainTransport()
+            request.discPlaylistOverride = selected.playlist
+            await engine.load(request: request, startPosition: 0)
+            XCTAssertNil(engine.discMenu)
+            try await waitForPlayback(engine, after: 1, before: selected.duration)
+            let rendered = await engine.hasRenderedVideoFrame()
+            XCTAssertTrue(rendered)
+            return
+        }
         if discJava {
             let menu = try XCTUnwrap(engine.discMenu)
             try await wait(engine: engine, seconds: 45) {
@@ -680,8 +727,16 @@ final class WebDAVDiscPlaybackHostedTests: XCTestCase {
             engine.stop()
             await engine.drainTransport()
             if discJavaQuarantine {
-                await engine.load(request: request, startPosition: 0)
-                let failure = try XCTUnwrap(engine.discMenu?.failure)
+                var failure = ""
+                for _ in 0..<10 {
+                    await engine.load(request: request, startPosition: 0)
+                    failure = try XCTUnwrap(engine.discMenu?.failure)
+                    if failure.contains("Restart Plozz") { break }
+                    XCTAssertEqual(failure, "Another disc menu is still closing")
+                    engine.stop()
+                    await engine.drainTransport()
+                    try await Task.sleep(for: .seconds(2))
+                }
                 XCTAssertTrue(failure.contains("Restart Plozz"), failure)
             }
             return

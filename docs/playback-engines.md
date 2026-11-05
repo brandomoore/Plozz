@@ -22,8 +22,8 @@ transport resolver. One admission lease spans playback, independent readers
 share teardown ownership, and cancellation interrupts pending file opens.
 
 Folder downloads, external-player handoff and index-file warming are unsupported;
-the index is never treated as an original video. This adds no decryption,
-multi-angle playback or title picker. Missing, changed or unsupported disc
+the index is never treated as an original video. This adds no decryption or
+multi-angle playback. Missing, changed or unsupported disc
 contents follow the playback error path.
 
 ### Original disc navigation
@@ -67,8 +67,10 @@ timeline before seeking and starting, and AVPlayer's renderer-owned endpoint
 holds the frame without a sampled-clock pause. Repeated clips retain separate
 play-item identities. Software-rendered formats cannot yet use these intervals;
 that limitation is reported instead of skipping the pause or playing outside it.
-Stopping a session drains the native navigation queue before releasing its
-transport ownership.
+Stopping a session cancels its transport and waits up to five seconds for its
+native navigation queue. If shutdown is still pending, the queue keeps its
+native owner alive while the player can leave or start direct playback. This
+deadline does not terminate Java threads or free objects beneath an active call.
 
 For this initial integration, menu sessions deliberately do not update watched
 or resume state: a menu's playlist clock does not identify a library movie,
@@ -78,25 +80,69 @@ the engine's actual MPEG-TS PIDs, never its track-list order. Player selections
 also update the disc VM and respect its operation restrictions. Missing,
 ambiguous or separate-subpath tracks remain explicitly unavailable. Disc choices
 drive the subtitle overlay without changing remembered series preferences.
+The engine exposes menu state only for an active menu request; ordinary playback
+must still apply its normal subtitle defaults and remembered track selections.
 Arbitrary-disc compatibility and distribution readiness are not established.
-BD-J networking and persistent disc storage are disabled. The JVM has bounded
+BD-J networking and durable disc storage are disabled. libbluray still creates
+temporary binding-unit and persistent-storage directories for disc applications;
+their arbitrary writes do not yet have a complete quota. The JVM has bounded
 heap, metaspace and direct-memory allocations; source resource inventories and
 expanded JAR entries/bytes are bounded, and archive paths cannot escape their
 mount. These limits are not process isolation: Java CPU use, thread creation and
 uncooperative Xlet shutdown are not hard-bounded. Incomplete Java shutdown
 quarantines the runtime until app restart rather than allowing surviving disc
-threads to access a later session. The disc policy stays installed while those
-threads remain. Bundled LGPL notices are
+threads to access a later session. A quarantined native disc and its callback,
+graphics and transport owners are retained for in-flight JNI calls; its Java
+admission slot is not released. The disc policy stays installed while those
+threads remain. This deliberately retains resources until restart rather than
+risk a use-after-free; it is not bounded termination. Bundled LGPL notices are
 attribution, not a conclusion that App Store distribution requirements are met.
+At the next runtime initialization, cache cleanup removes only marked,
+UUID-named disc caches whose process-held lease can be acquired exclusively.
+Active/quarantined process caches and unmarked legacy directories are retained.
+The cleanup does not inspect or remove developer build caches.
 
 Build the matching runtime before building an app or hosted test:
 `tools/with-apple-build-lease.sh plozz/disc-runtime -- python3 tools/build-disc-runtime.py --sdk appletvsimulator`.
 Use `appletvos`, `iphoneos` or `iphonesimulator` for the other destinations.
 The builder verifies pinned downloads, checks each native library's platform,
 retains licenses and records its build-input fingerprint. The app embed phase
-rejects missing or stale receipts and signs copied native libraries when signing
-is enabled. Assets remain under `.build`; do not commit generated runtimes.
-The current raw-dylib bundle layout still requires distribution validation.
+rejects missing or stale receipts. Each native library is relinked into its own
+signed `PlozzBDJ*.framework` under the app's `Frameworks` directory; native
+dependencies and JVM library discovery use that layout. Even unsigned simulator
+builds ad-hoc sign rewritten frameworks so arm64 loading does not use invalidated
+linker signatures. Java modules, JARs, fonts and notices remain nonexecutable
+resources in `DiscRuntime`. Assets remain under `.build`; do not commit generated
+runtimes. `DiscRuntime/source-dependencies.json` records upstream archive URLs and
+checksums, and `DiscRuntime/legal` retains the runtime, libbluray, ASM, libffi and
+font notices. These files identify inputs, not a complete corresponding-source or
+relinking offer.
+
+The archive lane runs `tools/validate-disc-runtime.py --app <archived-app>` before
+upload. It checks device architectures/platforms, framework dependencies,
+extension version parity, executable placement, exact process-symbol imports,
+runtime resource permissions and the signed bundle. Its process-symbol denylist
+is a project guard, not a complete list of Apple's validation rules. It does not
+establish physical-device execution without a debugger, safe termination of
+arbitrary disc code, licensing compliance or approval under App Review's
+downloaded-code rules. Those remain separate release gates. The corrected JVM
+flags disable implicit null checks and reduce signal use; they do not eliminate
+all runtime signal handlers. Offscreen disc graphics require
+`java.awt.headless=false`.
+
+The native **Play video** fallback opens the automatically selected feature.
+**Disc videos** opens a native playlist list from the menu actions, menu failure
+screen, or direct-play overlay. An independent native reader enumerates playlist
+information without starting either disc VM, with limits of 1,024 playlists,
+2 MiB per playlist and 16 MiB combined playlist metadata. Entries show playlist
+identity, duration and chapter count; they do not guess feature or extra names.
+Selection is bound to the exact source and playback attempt, stops the previous
+navigation session, and restarts direct playback at the selected playlist.
+Manually chosen playlists suppress library watch/resume reports, automatic next
+episodes, library skip markers and subtitle downloads, and remembered series
+track changes. Old library chapters, runtime and trickplay do not carry across.
+Returning to **Play video** restores the ordinary feature path. These UI strings
+remain subject to design approval and the normal reviewed localization gate.
 The authored Java hosted test covers menu-only startup, both selected videos,
 pause/resume, top-menu return, end-of-media callbacks and repeated sessions.
 Run it alone with `TEST_RUNNER_PLOZZ_BDJ_SHUTDOWN_CHECK=1` to also exercise a

@@ -930,6 +930,9 @@ static int _create_jvm(void *jvm_lib, const char *java_home, BDJ_CONFIG *cfg,
     option[n++].optionString = str_dup("-XX:ActiveProcessorCount=2");
     option[n++].optionString = str_dup("-XX:MaxMetaspaceSize=96M");
     option[n++].optionString = str_dup("-XX:MaxDirectMemorySize=32M");
+    option[n++].optionString = str_dup("-XX:+UnlockDiagnosticVMOptions");
+    option[n++].optionString = str_dup("-XX:-ImplicitNullChecks");
+    option[n++].optionString = str_dup("-XX:+ReduceSignalUsage");
     option[n++].optionString = str_printf("-Djava.home=%s", java_home);
     option[n++].optionString = str_printf("-Djava.io.tmpdir=%s", plozz_bdj_cache_root());
 
@@ -1115,7 +1118,11 @@ void bdj_close(BDJAVA *bdjava)
 
     if (bdjava->jvm) {
         if ((*bdjava->jvm)->GetEnv(bdjava->jvm, (void**)&env, JNI_VERSION_1_4) != JNI_OK) {
-            (*bdjava->jvm)->AttachCurrentThread(bdjava->jvm, (void**)&env, NULL);
+            if ((*bdjava->jvm)->AttachCurrentThread(bdjava->jvm, (void**)&env, NULL) != JNI_OK) {
+                BD_DEBUG(DBG_BDJ | DBG_CRIT, "Cannot attach for Java shutdown; retaining disc\n");
+                plozz_bdj_quarantine();
+                return;
+            }
             attach = 1;
         }
 
@@ -1140,6 +1147,11 @@ void bdj_close(BDJAVA *bdjava)
         if (attach) {
             (*bdjava->jvm)->DetachCurrentThread(bdjava->jvm);
         }
+    }
+
+    /* In-flight JNI calls may still own this context after failed shutdown. */
+    if (plozz_bdj_is_quarantined()) {
+        return;
     }
 
     if (bdjava->h_libjvm) {

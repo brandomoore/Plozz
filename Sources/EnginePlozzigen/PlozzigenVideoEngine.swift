@@ -409,7 +409,13 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
     #if canImport(DiscNavigation) && canImport(UIKit)
     private let discMenuPresentation = DiscMenuPlaybackState()
     private var discSession: DiscMenuSession?
-    public var discMenu: DiscMenuPlaybackState? { discMenuPresentation }
+    public var discMenu: DiscMenuPlaybackState? {
+        discMenuPresentation.isActive ? discMenuPresentation : nil
+    }
+    public func discVideos() async throws -> [DiscVideo] {
+        guard let reader = activeDiscReader else { throw CocoaError(.fileReadNoSuchFile) }
+        return try await DiscMenuSession.videos(reader: reader)
+    }
     #endif
     private var isHoldingDiscStill: Bool {
         #if canImport(DiscNavigation) && canImport(UIKit)
@@ -525,6 +531,7 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
         discSession = nil
         guard outputLoadGeneration == outputGeneration, !Task.isCancelled else { return }
         discMenuPresentation.reset()
+        discMenuPresentation.isActive = request.discPlayback == .openMenu
         #endif
         streamingFailure = nil
         hasReachedSessionReadiness = false
@@ -624,7 +631,22 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
                     return
                 }
                 activeResolvedSource = admission
-                let reader = TransportDiscDirectoryReader(locator: locator, resolver: networkFileResolver)
+                let baseReader = TransportDiscDirectoryReader(locator: locator, resolver: networkFileResolver)
+                let reader: TransportDiscDirectoryReader
+                if let playlist = request.discPlaylistOverride {
+                    let playlistPath = String(format: "BDMV/PLAYLIST/%05d.mpls", playlist)
+                    guard request.discPlayback == .playVideo, (0...99999).contains(playlist),
+                          baseReader.discFiles.contains(where: {
+                              $0.path.caseInsensitiveCompare(playlistPath) == .orderedSame
+                          }) else {
+                        baseReader.closeAllReaders()
+                        throw MediaTransportError.unsupportedCapability("Invalid disc playlist selection")
+                    }
+                    reader = baseReader.selectingPlaylist(playlist)
+                    baseReader.close()
+                } else {
+                    reader = baseReader
+                }
                 activeDiscReader = reader
                 stage = "engine.load"
                 if request.discPlayback == .openMenu {
@@ -1408,6 +1430,7 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
     private func stopEngine(resetDisplayCriteria: Bool) {
         #if canImport(DiscNavigation) && canImport(UIKit)
         discSession?.stop()
+        discMenuPresentation.isActive = false
         #endif
         chapters = []
         serverRenditionAudio = nil

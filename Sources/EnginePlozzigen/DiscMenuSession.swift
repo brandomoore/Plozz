@@ -36,8 +36,60 @@ private final class DiscMenuSource: @unchecked Sendable {
     }
 }
 
+private final class DiscVideoInspection: @unchecked Sendable {
+    let source: DiscMenuSource
+    let native: HDMVSession
+
+    init(reader: TransportDiscDirectoryReader) throws {
+        guard let independent = reader.makeIndependentReader() as? TransportDiscDirectoryReader else {
+            throw CancellationError()
+        }
+        source = DiscMenuSource(independent)
+        let source = source
+        guard let native = HDMVSession(
+            files: Dictionary(uniqueKeysWithValues: reader.discFiles.map { ($0.path, NSNumber(value: $0.size)) }),
+            region: 1, readRange: { source.read(path: $0, offset: $1, length: $2) }
+        ) else {
+            independent.close()
+            throw CocoaError(.fileReadCorruptFile)
+        }
+        self.native = native
+    }
+
+    func stop() {
+        source.reader.close()
+        native.stop()
+    }
+}
+
 @MainActor
 final class DiscMenuSession {
+    static func videos(reader: TransportDiscDirectoryReader) async throws -> [DiscVideo] {
+        let inspection = try DiscVideoInspection(reader: reader)
+        defer { inspection.stop() }
+        let videos: [DiscVideo] = try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                inspection.native.listVideos { values, failure in
+                    if let failure {
+                        PlozzLog.playback.error("Disc video inspection failed: \(failure)")
+                        continuation.resume(throwing: CocoaError(.fileReadCorruptFile))
+                    } else if let values {
+                        continuation.resume(returning: values.map {
+                            DiscVideo(playlist: $0.playlist, duration: $0.duration, chapterCount: $0.chapterCount)
+                        })
+                    } else {
+                        PlozzLog.playback.error("Disc video inspection returned no result")
+                        continuation.resume(throwing: CocoaError(.fileReadCorruptFile))
+                    }
+                }
+            }
+        } onCancel: {
+            inspection.stop()
+        }
+        try Task.checkCancellation()
+        return videos
+    }
+
     let state: DiscMenuPlaybackState
     private let source: DiscMenuSource
     private var native: HDMVSession?
@@ -331,8 +383,11 @@ final class DiscMenuSession {
     func drain() async {
         await selectionTask?.value
         if let retiredNative {
-            await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-                retiredNative.drain { continuation.resume() }
+            let drained = await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
+                retiredNative.drain { continuation.resume(returning: $0) }
+            }
+            if !drained {
+                PlozzLog.playback.error("Disc navigation shutdown is still pending; native ownership is retained")
             }
             self.retiredNative = nil
         }

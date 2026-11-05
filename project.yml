@@ -15,7 +15,7 @@ settings:
     CODE_SIGN_STYLE: Automatic
     TARGETED_DEVICE_FAMILY: "3" # Apple TV
     SWIFT_STRICT_CONCURRENCY: complete
-    LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/Frameworks @executable_path/DiscRuntime/lib @executable_path/DiscRuntime/lib/zero"
+    LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/Frameworks"
     # Build number (CFBundleVersion) fallback. tools/generate-project.sh bakes the
     # real value into the generated project on every regenerate — from the git
     # commit count (local/device/simulator builds) or PLOZZ_BUILD_NUMBER (the

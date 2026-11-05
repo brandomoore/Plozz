@@ -84,6 +84,9 @@ def main():
     option[n++].optionString = str_dup("-XX:ActiveProcessorCount=2");
     option[n++].optionString = str_dup("-XX:MaxMetaspaceSize=96M");
     option[n++].optionString = str_dup("-XX:MaxDirectMemorySize=32M");
+    option[n++].optionString = str_dup("-XX:+UnlockDiagnosticVMOptions");
+    option[n++].optionString = str_dup("-XX:-ImplicitNullChecks");
+    option[n++].optionString = str_dup("-XX:+ReduceSignalUsage");
     option[n++].optionString = str_printf("-Djava.home=%s", java_home);
     option[n++].optionString = str_printf("-Djava.io.tmpdir=%s", plozz_bdj_cache_root());
 """)
@@ -109,9 +112,61 @@ def main():
         } else {
             plozz_bdj_quarantine();
         }""")
+    before = """            (*bdjava->jvm)->AttachCurrentThread(bdjava->jvm, (void**)&env, NULL);
+            attach = 1;
+        }
+
+        if (_get_method(env, &shutdown_class"""
+    if text.count(before) != 1:
+        raise SystemExit("Unexpected Java shutdown attachment")
+    text = text.replace(before, """            if ((*bdjava->jvm)->AttachCurrentThread(bdjava->jvm, (void**)&env, NULL) != JNI_OK) {
+                BD_DEBUG(DBG_BDJ | DBG_CRIT, "Cannot attach for Java shutdown; retaining disc\\n");
+                plozz_bdj_quarantine();
+                return;
+            }
+            attach = 1;
+        }
+
+        if (_get_method(env, &shutdown_class""")
+    before = """    if (bdjava->h_libjvm) {
+        dl_dlclose(bdjava->h_libjvm);
+    }"""
+    if text.count(before) != 1:
+        raise SystemExit("Unexpected Java native lifetime boundary")
+    text = text.replace(before, """    /* In-flight JNI calls may still own this context after failed shutdown. */
+    if (plozz_bdj_is_quarantined()) {
+        return;
+    }
+
+""" + before)
     bdj.write_text(text)
     navigation = destination / "src/libbluray/bluray.c"
     text = navigation.read_text()
+    text = '#include "bdj_runtime.h"\n' + text
+    before = "    BDJAVA         *bdjava;"
+    if text.count(before) != 1:
+        raise SystemExit("Unexpected Java context member")
+    text = text.replace(before, before + "\n    int             bdj_quarantined;")
+    before = """        bdj_close(bd->bdjava);
+        bd->bdjava = NULL;"""
+    if text.count(before) != 1:
+        raise SystemExit("Unexpected Java context shutdown")
+    text = text.replace(before, """        bdj_close(bd->bdjava);
+        bd->bdj_quarantined = plozz_bdj_is_quarantined();
+        bd->bdjava = NULL;""")
+    before = """    _close_bdj(bd);
+
+    _close_m2ts(&bd->st0);"""
+    if text.count(before) != 1:
+        raise SystemExit("Unexpected disc lifetime boundary")
+    text = text.replace(before, """    _close_bdj(bd);
+    /* A surviving JNI call may still reference any part of this disc. */
+    if (bd->bdj_quarantined) {
+        BD_DEBUG(DBG_BLURAY | DBG_CRIT, "Retaining quarantined disc until process exit\\n");
+        return;
+    }
+
+    _close_m2ts(&bd->st0);""")
     poll = """    if (len < 1) {
         /* just polled events ? */
         return 0;
@@ -134,6 +189,7 @@ def main():
         "Pinned source archives and checksums: tools/disc-menu-lab/dependencies.json.\n"
         "OpenJDK and its component license notices are retained in DiscRuntime/legal.\n"
         "ASM bytecode support retains its notice in DiscRuntime/legal/asm/LICENSE.txt.\n"
+        "The statically linked libffi license is retained in DiscRuntime/legal/libffi/LICENSE.\n"
         "The bundled DejaVu font license is retained in DiscRuntime/legal/dejavu/LICENSE.\n"
         "JNI header notices and the OpenJDK Classpath exception are in Vendor/Libbluray/jni.\n\n"
         + (destination / "COPYING").read_text()

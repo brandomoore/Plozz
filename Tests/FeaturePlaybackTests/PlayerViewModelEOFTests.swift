@@ -11,6 +11,71 @@ import UIKit
 
 @MainActor
 final class PlayerViewModelEOFTests: XCTestCase {
+    #if canImport(UIKit)
+    func testDiscPlaylistSelectionIsBoundToCatalogAndSuppressesLibraryProgress() async throws {
+        let item = MediaItem(id: "disc", title: "Disc", kind: .movie, runtime: 120)
+        let anchor = try NetworkFileLocator(
+            accountID: "fixture", sourceID: "fixture", credentialRevision: CredentialRevision(),
+            relativePath: "Movie/BDMV/index.bdmv",
+            representation: .init(
+                size: 40, identity: .init(kind: .strongETag, value: "\"index\""), consistency: .changeDetecting
+            ), formatHint: .init(container: "bdmv")
+        )
+        let disc = try NetworkDiscLocator(anchor: anchor, files: [.init(path: "BDMV/index.bdmv", locator: anchor)])
+        var request = PlaybackRequest(item: item, streamURL: URL(fileURLWithPath: "/fixture/index.bdmv"))
+        request.playbackSource = .networkDisc(disc)
+        let provider = RecordingPlaybackProvider(request: request)
+        let engine = SpyVideoEngine()
+        let video = DiscVideo(playlist: 2, duration: 6, chapterCount: 1)
+        engine.discVideoCatalog = [video]
+        let model = PlayerViewModel(
+            provider: provider, itemID: item.id,
+            engineFactory: .init(makeNative: { _ in SpyVideoEngine() }, makePlozzigen: { engine })
+        )
+        await model.load()
+        XCTAssertTrue(model.hasDiscVideos)
+        XCTAssertThrowsError(try model.playDiscVideo(video))
+        let catalog = try await model.loadDiscVideos()
+        XCTAssertEqual(catalog, [video])
+        XCTAssertThrowsError(try model.playDiscVideo(.init(playlist: 3, duration: 6, chapterCount: 1)))
+        engine.currentTime = 8
+        try model.playDiscVideo(video)
+        for _ in 0..<1000 where engine.lastLoadedRequest?.discPlaylistOverride != 2 || model.phase != .ready {
+            await Task.yield()
+        }
+        let selected = try XCTUnwrap(engine.lastLoadedRequest)
+        XCTAssertEqual(selected.discPlaylistOverride, 2)
+        XCTAssertTrue(selected.suppressOrdinaryWatchReporting)
+        XCTAssertNil(selected.item.runtime)
+        XCTAssertEqual(engine.currentTime, 0)
+        XCTAssertThrowsError(try model.playDiscVideo(video), "Old catalogs cannot control a replacement attempt")
+        let before = await provider.reports
+        XCTAssertEqual(before.last?.event, .stop)
+        XCTAssertEqual(before.last?.progress.positionSeconds, 8)
+        engine.currentTime = 5
+        engine.onProgress?()
+        model.playVideoWithoutMenus()
+        for _ in 0..<1000 where engine.lastLoadedRequest?.discPlaylistOverride != nil || model.phase != .ready {
+            await Task.yield()
+        }
+        XCTAssertNil(engine.lastLoadedRequest?.discPlaylistOverride)
+        XCTAssertEqual(engine.lastLoadedRequest?.suppressOrdinaryWatchReporting, false)
+        XCTAssertEqual(engine.currentTime, 8, "Returning to the feature restores its own timeline")
+        _ = try await model.loadDiscVideos()
+        try model.playDiscVideo(video)
+        for _ in 0..<1000 where engine.lastLoadedRequest?.discPlaylistOverride != 2 || model.phase != .ready {
+            await Task.yield()
+        }
+        let beforeEnd = await provider.reports
+        engine.onEnded?()
+        XCTAssertTrue(model.shouldDismiss)
+        XCTAssertNil(model.pendingNextEpisode)
+        await model.stop()
+        let after = await provider.reports
+        XCTAssertEqual(after.count, beforeEnd.count)
+    }
+    #endif
+
     func testLocalPlaybackBypassesServerResolutionAcrossProviders() async {
         let item = MediaItem(id: "movie", title: "Movie", kind: .movie)
         let localURL = URL(fileURLWithPath: "/fixture/download.mp4")
@@ -2816,6 +2881,10 @@ private struct LocalPlaybackFixture: OfflinePlaybackResolving {
 
 @MainActor
 private final class SpyVideoEngine: VideoEngine {
+    #if canImport(UIKit)
+    var discVideoCatalog: [DiscVideo] = []
+    func discVideos() async throws -> [DiscVideo] { discVideoCatalog }
+    #endif
     var maximumPlaybackSpeed = 4.0
     var backgroundAudioEnabled = false
     func setBackgroundAudioEnabled(_ enabled: Bool) { backgroundAudioEnabled = enabled }

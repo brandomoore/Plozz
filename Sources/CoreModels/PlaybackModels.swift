@@ -352,6 +352,8 @@ public struct PlaybackServerDecision: Codable, Hashable, Sendable {
 public struct PlaybackRequest: Hashable, Sendable {
     public var discPlayback: DiscPlaybackBehavior = .playVideo
     public var discRegionOverride: UInt32? = nil
+    public var discPlaylistOverride: Int? = nil
+    public var usesUnidentifiedDiscTimeline: Bool { discPlayback == .openMenu || discPlaylistOverride != nil }
     /// Bounded server negotiation facts, retained for optional diagnostic exports.
     public var serverDecision: PlaybackServerDecision?
     /// Library channels own a separate interval-based reporting path; accidental

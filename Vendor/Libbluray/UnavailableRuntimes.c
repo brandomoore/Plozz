@@ -55,7 +55,12 @@ void *dl_dlopen(const char *path, const char *version) {
         BD_DEBUG(DBG_CRIT, "Optional library is outside the bundled Java runtime\n");
         return NULL;
     }
-    return dlopen(allowed, RTLD_NOW | RTLD_GLOBAL | RTLD_NODELETE);
+    char framework[PATH_MAX];
+    if (snprintf(framework, sizeof(framework),
+                 "%s/../Frameworks/PlozzBDJjvm.framework/PlozzBDJjvm", runtime_root) >= sizeof(framework)) {
+        return NULL;
+    }
+    return dlopen(framework, RTLD_NOW | RTLD_GLOBAL | RTLD_NODELETE);
 }
 
 void *dl_dlsym(void *handle, const char *symbol) {

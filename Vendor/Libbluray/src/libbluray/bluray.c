@@ -1,3 +1,4 @@
+#include "bdj_runtime.h"
 /*
  * This file is part of libbluray
  * Copyright (C) 2009-2010  Obliter0n
@@ -153,6 +154,7 @@ struct bluray {
 
     /* BD-J */
     BDJAVA         *bdjava;
+    int             bdj_quarantined;
     BDJ_CONFIG      bdj_config;
     uint8_t         bdj_wait_start;  /* BD-J has selected playlist (prefetch) but not yet started playback */
 
@@ -1469,6 +1471,7 @@ static void _close_bdj(BLURAY *bd)
 {
     if (bd->bdjava != NULL) {
         bdj_close(bd->bdjava);
+        bd->bdj_quarantined = plozz_bdj_is_quarantined();
         bd->bdjava = NULL;
     }
 }
@@ -1606,6 +1609,11 @@ void bd_close(BLURAY *bd)
     }
 
     _close_bdj(bd);
+    /* A surviving JNI call may still reference any part of this disc. */
+    if (bd->bdj_quarantined) {
+        BD_DEBUG(DBG_BLURAY | DBG_CRIT, "Retaining quarantined disc until process exit\n");
+        return;
+    }
 
     _close_m2ts(&bd->st0);
     _close_preload(&bd->st_ig);

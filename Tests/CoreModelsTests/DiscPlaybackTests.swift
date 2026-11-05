@@ -2,6 +2,19 @@ import XCTest
 @testable import CoreModels
 
 final class DiscPlaybackTests: XCTestCase {
+    func testExplicitPlaylistIsNotTheLibraryTimeline() {
+        var request = PlaybackRequest(
+            item: .init(id: "disc", title: "Disc", kind: .movie),
+            streamURL: URL(fileURLWithPath: "/fixture/index.bdmv")
+        )
+        XCTAssertFalse(request.usesUnidentifiedDiscTimeline)
+        request.discPlaylistOverride = 2
+        XCTAssertTrue(request.usesUnidentifiedDiscTimeline)
+        request.discPlaylistOverride = nil
+        request.discPlayback = .openMenu
+        XCTAssertTrue(request.usesUnidentifiedDiscTimeline)
+    }
+
     func testExistingProfilesKeepDirectPlayback() throws {
         XCTAssertEqual(PlaybackSettings.default.discPlayback, .playVideo)
         for json in ["{}", #"{"discPlayback":"future-mode"}"#] {

@@ -4,6 +4,12 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
+@interface HDMVDiscVideo : NSObject
+@property(nonatomic, readonly) NSInteger playlist;
+@property(nonatomic, readonly) double duration;
+@property(nonatomic, readonly) NSInteger chapterCount;
+@end
+
 @interface HDMVSession : NSObject
 @property(nonatomic) BOOL automaticRegion;
 @property(atomic) BOOL playbackPaused;
@@ -25,6 +31,9 @@ NS_ASSUME_NONNULL_BEGIN
 - (nullable instancetype)initWithConfiguration:(NSURL *)configuration error:(NSError **)error;
 #endif
 - (void)start;
+// Use a separate, unstarted session. This reads playlists without starting either disc VM.
+- (void)listVideosWithCompletion:(void (^)(NSArray<HDMVDiscVideo *> * _Nullable videos,
+                                         NSString * _Nullable failure))completion;
 - (void)key:(unsigned)key;
 - (void)menu;
 - (void)updateTime:(double)seconds generation:(NSInteger)generation;
@@ -32,7 +41,8 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)selectTrackPID:(NSInteger)pid subtitle:(BOOL)subtitle generation:(NSInteger)generation
            completion:(void (^)(BOOL accepted))completion;
 - (void)stop;
-- (void)drainWithCompletion:(void (^)(void))completion NS_SWIFT_NAME(drain(completion:));
+// NO means shutdown is still pending; the native queue retains its ownership.
+- (void)drainWithCompletion:(void (^)(BOOL drained))completion NS_SWIFT_NAME(drain(completion:));
 @end
 
 NS_ASSUME_NONNULL_END

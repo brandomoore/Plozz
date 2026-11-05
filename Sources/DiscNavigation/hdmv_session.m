@@ -10,6 +10,17 @@
 #include <bdj_runtime.h>
 #endif
 #include <math.h>
+#include <fcntl.h>
+#include <sys/file.h>
+#include <unistd.h>
+
+@interface HDMVDiscVideo ()
+@property(nonatomic) NSInteger playlist;
+@property(nonatomic) double duration;
+@property(nonatomic) NSInteger chapterCount;
+@end
+@implementation HDMVDiscVideo
+@end
 
 @interface DiscARGBPlane : NSObject
 @property(nonatomic) NSMutableData *pixels;
@@ -19,11 +30,96 @@
 @implementation DiscARGBPlane
 @end
 
+@interface DiscDrainCompletion : NSObject
+@property(nonatomic, copy) void (^completion)(BOOL);
+- (BOOL)finish:(BOOL)drained;
+@end
+@implementation DiscDrainCompletion
+- (BOOL)finish:(BOOL)drained {
+    void (^completion)(BOOL);
+    @synchronized (self) {
+        completion = self.completion;
+        self.completion = nil;
+    }
+    if (!completion) return NO;
+    completion(drained);
+    return YES;
+}
+@end
+
 static dispatch_semaphore_t javaSessionGate(void) {
     static dispatch_semaphore_t gate;
     static dispatch_once_t once;
     dispatch_once(&once, ^{ gate = dispatch_semaphore_create(1); });
     return gate;
+}
+
+static NSURL *javaCacheRoot(void) {
+    static NSURL *cache;
+    static int lease = -1;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        NSFileManager *manager = NSFileManager.defaultManager;
+        NSURL *parent = [manager URLsForDirectory:NSCachesDirectory inDomains:NSUserDomainMask].firstObject;
+        NSData *marker = [@"Plozz disc cache v1\n" dataUsingEncoding:NSUTF8StringEncoding];
+        NSError *error = nil;
+        if (!parent || ![manager createDirectoryAtURL:parent withIntermediateDirectories:YES attributes:nil error:&error]) {
+            NSLog(@"Disc runtime cache directory is unavailable (%@ %ld)", error.domain, (long)error.code);
+            return;
+        }
+        NSArray<NSURL *> *children = [manager contentsOfDirectoryAtURL:parent
+            includingPropertiesForKeys:@[NSURLIsDirectoryKey, NSURLIsSymbolicLinkKey] options:0 error:&error];
+        if (!children) {
+            NSLog(@"Disc runtime cache inventory failed (%@ %ld)", error.domain, (long)error.code);
+            return;
+        }
+        for (NSURL *child in children) {
+            NSString *name = child.lastPathComponent;
+            if (![name hasPrefix:@"DiscJava-"] || ![[NSUUID alloc] initWithUUIDString:[name substringFromIndex:9]]) continue;
+            NSDictionary *attributes = [child resourceValuesForKeys:@[NSURLIsDirectoryKey, NSURLIsSymbolicLinkKey] error:nil];
+            if (![attributes[NSURLIsDirectoryKey] boolValue] || [attributes[NSURLIsSymbolicLinkKey] boolValue]) continue;
+            NSURL *identity = [child URLByAppendingPathComponent:@".plozz-disc-cache"];
+            NSDictionary *identityAttributes = [identity resourceValuesForKeys:@[NSURLIsSymbolicLinkKey, NSURLFileSizeKey] error:nil];
+            if (!identityAttributes || [identityAttributes[NSURLIsSymbolicLinkKey] boolValue] ||
+                [identityAttributes[NSURLFileSizeKey] unsignedLongLongValue] != marker.length ||
+                ![[NSData dataWithContentsOfURL:identity] isEqualToData:marker]) continue;
+            int previous = open([child URLByAppendingPathComponent:@".lease"].fileSystemRepresentation, O_RDWR | O_NOFOLLOW);
+            if (previous < 0) {
+                NSLog(@"Disc runtime retained an unverifiable previous cache lease (%d)", errno);
+                continue;
+            }
+            if (flock(previous, LOCK_EX | LOCK_NB) == 0) {
+                if (![manager removeItemAtURL:child error:&error]) {
+                    NSLog(@"Disc runtime cache cleanup failed (%@ %ld)", error.domain, (long)error.code);
+                }
+            } else if (errno != EWOULDBLOCK) {
+                NSLog(@"Disc runtime previous cache lease check failed (%d)", errno);
+            }
+            close(previous);
+        }
+        NSURL *candidate = [parent URLByAppendingPathComponent:[@"DiscJava-" stringByAppendingString:NSUUID.UUID.UUIDString]];
+        if (![manager createDirectoryAtURL:candidate withIntermediateDirectories:NO attributes:nil error:&error]) {
+            NSLog(@"Disc runtime cache creation failed (%@ %ld)", error.domain, (long)error.code);
+            return;
+        }
+        lease = open([candidate URLByAppendingPathComponent:@".lease"].fileSystemRepresentation,
+                     O_CREAT | O_EXCL | O_RDWR | O_NOFOLLOW, 0600);
+        if (lease < 0 || flock(lease, LOCK_EX | LOCK_NB) != 0) {
+            NSLog(@"Disc runtime cache lease failed (%d)", errno);
+            if (lease >= 0) close(lease);
+            lease = -1;
+            return;
+        }
+        if (![marker writeToURL:[candidate URLByAppendingPathComponent:@".plozz-disc-cache"]
+                       options:NSDataWritingAtomic error:&error]) {
+            NSLog(@"Disc runtime cache identity failed (%@ %ld)", error.domain, (long)error.code);
+            close(lease); lease = -1;
+            return;
+        }
+        // The process-held lease protects quarantined threads as well as active playback.
+        cache = candidate;
+    });
+    return cache;
 }
 
 #if PLOZZ_DISC_MENU_LAB
@@ -386,6 +482,71 @@ static unsigned component(double value) {
     return !self.stopped;
 }
 
+- (void)listVideosWithCompletion:(void (^)(NSArray<HDMVDiscVideo *> *, NSString *))completion {
+    dispatch_async(self.queue, ^{
+        NSMutableArray<HDMVDiscVideo *> *videos = [NSMutableArray array];
+        NSString *failure = nil;
+        NSUInteger playlistFiles = 0;
+        uint64_t playlistBytes = 0;
+        for (NSString *path in self.files) {
+            NSString *upper = path.uppercaseString;
+            if ([upper hasPrefix:@"BDMV/PLAYLIST/"] && [upper.pathExtension isEqualToString:@"MPLS"]) {
+                playlistFiles++;
+                int64_t size = self.files[path].longLongValue;
+                if (size < 0 || size > 2 * 1024 * 1024) {
+                    failure = @"Disc playlist metadata exceeds the supported limit.";
+                    break;
+                }
+                playlistBytes += (uint64_t)size;
+                if (playlistBytes > 16 * 1024 * 1024) {
+                    failure = @"Disc playlist metadata exceeds the supported limit.";
+                    break;
+                }
+            }
+        }
+        if (self.stopped || self->_disc) {
+            failure = @"The disc inspection is no longer available.";
+        } else if (playlistFiles > 1024) {
+            failure = @"This disc lists too many videos.";
+        } else if (!failure && [self prepareMetadata]) {
+            self->_disc = bd_init();
+            if (!self->_disc || !bd_open_files(self->_disc, (__bridge void *)self, openDirectory, openFile)) {
+                failure = @"The disc videos could not be read.";
+            } else {
+                uint32_t count = bd_get_titles(self->_disc, TITLES_RELEVANT, 0);
+                if (count > 1024) {
+                    failure = @"This disc lists too many videos.";
+                } else {
+                    NSMutableSet<NSNumber *> *playlists = [NSMutableSet set];
+                    for (uint32_t index = 0; index < count && !self.stopped && !self->_failed; index++) {
+                        BLURAY_TITLE_INFO *info = bd_get_title_info(self->_disc, index, 0);
+                        if (!info) { failure = @"A disc video's information could not be read."; break; }
+                        if (info->duration && info->clip_count && ![playlists containsObject:@(info->playlist)]) {
+                            HDMVDiscVideo *video = [HDMVDiscVideo new];
+                            video.playlist = info->playlist;
+                            video.duration = (double)info->duration / 90000.0;
+                            video.chapterCount = info->chapter_count;
+                            [videos addObject:video];
+                            [playlists addObject:@(info->playlist)];
+                        }
+                        bd_free_title_info(info);
+                    }
+                    if (self.stopped || self->_failed) failure = @"The disc videos could not be read.";
+                    else if (!videos.count && !failure) failure = @"This disc has no readable videos.";
+                }
+            }
+        }
+        if (!failure && (self.stopped || self->_failed || !self->_disc)) {
+            failure = @"The disc videos could not be read.";
+        }
+        [videos sortUsingComparator:^NSComparisonResult(HDMVDiscVideo *left, HDMVDiscVideo *right) {
+            if (left.duration != right.duration) return left.duration > right.duration ? NSOrderedAscending : NSOrderedDescending;
+            return [@(left.playlist) compare:@(right.playlist)];
+        }];
+        dispatch_async(dispatch_get_main_queue(), ^{ completion(failure ? nil : videos, failure); });
+    });
+}
+
 - (void)start {
     dispatch_async(self.queue, ^{
         if (self.stopped || self->_disc) return;
@@ -400,16 +561,10 @@ static unsigned component(double value) {
         }
         NSURL *runtime = [NSBundle.mainBundle.resourceURL URLByAppendingPathComponent:@"DiscRuntime"];
 #if __has_include(<bdj_runtime.h>)
-        static NSURL *cache;
-        static dispatch_once_t cacheOnce;
-        dispatch_once(&cacheOnce, ^{
-            cache = [[NSFileManager.defaultManager URLsForDirectory:NSCachesDirectory inDomains:NSUserDomainMask].firstObject
-                URLByAppendingPathComponent:[@"DiscJava-" stringByAppendingString:NSUUID.UUID.UUIDString]];
-        });
-        NSError *cacheError = nil;
-        if ([NSFileManager.defaultManager fileExistsAtPath:runtime.path] &&
-            (![NSFileManager.defaultManager createDirectoryAtURL:cache withIntermediateDirectories:YES
-                                                      attributes:nil error:&cacheError] ||
+        BOOL runtimePresent = [NSFileManager.defaultManager fileExistsAtPath:runtime.path];
+        NSURL *cache = runtimePresent ? javaCacheRoot() : nil;
+        if (runtimePresent &&
+            (!cache ||
              !plozz_bdj_configure(runtime.fileSystemRepresentation, cache.fileSystemRepresentation))) {
             [self fail:@"Could not prepare the disc runtime"]; return;
         }
@@ -422,6 +577,7 @@ static unsigned component(double value) {
         if (!self->_disc || !bd_open_files(self->_disc, (__bridge void *)self, openDirectory, openFile)) {
             [self fail:@"Could not open the disc"]; return;
         }
+        if (self.stopped) return;
         const BLURAY_DISC_INFO *info = bd_get_disc_info(self->_disc);
         self->_javaSession = info && info->bdj_detected;
         if (self->_javaSession) {
@@ -955,7 +1111,21 @@ static unsigned component(double value) {
     [self.http invalidateAndCancel];
     dispatch_async(self.queue, ^{
         if (self.timer) { dispatch_source_cancel(self.timer); self.timer = nil; }
-        if (self->_disc) { bd_close(self->_disc); self->_disc = NULL; }
+        if (self->_disc) {
+            bd_close(self->_disc);
+#if __has_include(<bdj_runtime.h>)
+            if (self->_javaLease && plozz_bdj_is_quarantined()) {
+                // libbluray retains a quarantined disc for in-flight JNI calls.
+                // Keep its callbacks, graphics and source owner alive as well.
+                static HDMVSession *quarantinedSession;
+                @synchronized (HDMVSession.class) {
+                    if (!quarantinedSession) quarantinedSession = self;
+                }
+                return;
+            }
+#endif
+            self->_disc = NULL;
+        }
         if (self->_javaLease) { dispatch_semaphore_signal(javaSessionGate()); self->_javaLease = NO; }
         @synchronized (self) { [self->_javaPlanes removeAllObjects]; self->_javaFrame = nil; }
         if (self->_title) { bd_free_title_info(self->_title); self->_title = NULL; }
@@ -965,7 +1135,15 @@ static unsigned component(double value) {
     });
 }
 
-- (void)drainWithCompletion:(void (^)(void))completion {
-    dispatch_async(self.queue, completion);
+- (void)drainWithCompletion:(void (^)(BOOL))completion {
+    DiscDrainCompletion *result = [DiscDrainCompletion new];
+    result.completion = completion;
+    dispatch_async(self.queue, ^{ [result finish:YES]; });
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC),
+                   dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+        if ([result finish:NO]) {
+            NSLog(@"Disc navigation shutdown is still pending; native ownership is retained");
+        }
+    });
 }
 @end

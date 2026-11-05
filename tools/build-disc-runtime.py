@@ -17,7 +17,9 @@ import tvos_bdj
 def source_fingerprint():
     digest = hashlib.sha256()
     for path in ["tools/build-disc-runtime.py", "tools/disc-menu-lab/dependencies.json",
-                 "tools/disc-menu-lab/tvos.py", "tools/disc-menu-lab/tvos_bdj.py"]:
+                 "tools/disc-menu-lab/lab.py", "tools/disc-menu-lab/tvos.py",
+                 "tools/disc-menu-lab/tvos_bdj.py", "tools/disc-menu-lab/tvos_process.c",
+                 "tools/disc-menu-lab/tvos_awt.c"]:
         digest.update(path.encode())
         digest.update((ROOT / path).read_bytes())
     return digest.hexdigest()
@@ -152,13 +154,15 @@ def main():
         if legal.is_dir():
             shutil.copytree(legal, runtime / "legal" / module.name, dirs_exist_ok=True)
     for name, notice in (("libbluray", bluray / "COPYING"),
-                         ("asm", bluray / "contrib/asm/LICENSE.txt")):
+                         ("asm", bluray / "contrib/asm/LICENSE.txt"),
+                         ("libffi", dependencies["libffi-source"] / "LICENSE")):
         destination = runtime / "legal" / name
         destination.mkdir()
         shutil.copy2(notice, destination / notice.name)
     shutil.copytree(dependencies["menu-fonts"] / "ttf", runtime / "lib/fonts")
     (runtime / "legal/dejavu").mkdir()
     shutil.copy2(dependencies["menu-fonts"] / "LICENSE", runtime / "legal/dejavu/LICENSE")
+    shutil.copy2(ROOT / "tools/disc-menu-lab/dependencies.json", runtime / "source-dependencies.json")
     for index, library in enumerate(sorted((runtime / "lib").rglob("*.dylib"))):
         lab.run(f"verify-app-library-{index}", ["otool", "-l", library])
         headers = (lab.run_dir / lab.commands[-1]["log"]).read_text()

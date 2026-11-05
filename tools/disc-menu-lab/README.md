@@ -345,13 +345,20 @@ The lab's success is not an App Store compliance result. In particular:
   exit behavior, and a native title/main-feature fallback before relying on menus.
 - Audit the final distribution archive and every embedded dependency against
   target SDK availability. A narrow `nm` denylist is only one check. The current
-  Debug engine binary imports `posix_spawnp`; its origin and distribution impact
-  need investigation, not a blind replacement. Unsupported function stubs must
-  preserve each API's actual error contract.
+  prior engine exported Rust standard-library wrappers and retained unused
+  `posix_spawnp` code even in Release. The pinned engine now keeps Rust
+  implementation symbols private so dead stripping can remove unreachable
+  wrappers, without changing its Swift or decoder C APIs. Keep checking each
+  final artifact rather than assuming this covers future dependencies.
+  Unsupported function stubs must preserve each API's actual error contract.
 - Replace the lab-only standalone FreeType dylib layout with supported framework
-  packaging or an appropriately licensed static link. Framework metadata and
-  deployment targets must be valid; their versions need not equal the app's.
-  Preserve applicable license texts and redistribution/relinking obligations.
+  packaging or an appropriately licensed static link when distributing a player.
+  The production app now embeds individual signed `PlozzBDJ*.framework` bundles;
+  the lab retains its independent experimental layout. The app archive lane's
+  `tools/validate-disc-runtime.py` gate checks packaging and native imports, not
+  Apple acceptance. Framework metadata and deployment targets must be valid;
+  their versions need not equal the app's. Preserve applicable license texts and
+  redistribution/relinking obligations.
 - Keep the Zero runtime's no-generated-executable-memory requirement. Validate
   JVM flags against the pinned runtime rather than copying flag lists: the port
   uses `ImplicitNullChecks`, and reduced signal usage does not eliminate all

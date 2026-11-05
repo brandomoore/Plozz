@@ -6,6 +6,7 @@ struct DiscMenuPlayerContent: View {
     let model: PlayerViewModel
     let state: DiscMenuPlaybackState
     let dismiss: () -> Void
+    let showVideos: () -> Void
     @State private var showsActions = false
     @FocusState private var menuFocused: Bool
 
@@ -25,6 +26,7 @@ struct DiscMenuPlayerContent: View {
                     Text(verbatim: failure).multilineTextAlignment(.center)
                     Button("Retry") { model.retryDiscMenu() }
                     Button("Play video") { model.playVideoWithoutMenus() }
+                    Button("Disc videos", action: showVideos)
                     Button("Try another region") { tryAnotherRegion() }
                     Button("Close", action: dismiss)
                 }
@@ -83,6 +85,7 @@ struct DiscMenuPlayerContent: View {
         .confirmationDialog("Disc menu", isPresented: $showsActions, titleVisibility: .visible) {
             Button("Open disc menu") { state.openMenu() }
             Button("Play video") { model.playVideoWithoutMenus() }
+            Button("Disc videos", action: showVideos)
             Button("Try another region") { tryAnotherRegion() }
             Button("Close", role: .destructive, action: dismiss)
         } message: {
