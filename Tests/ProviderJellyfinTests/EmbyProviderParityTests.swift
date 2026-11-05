@@ -47,6 +47,24 @@ final class EmbyProviderParityTests: XCTestCase {
         XCTAssertTrue(provider.kind.usesMediaBrowserAPI)
     }
 
+    func testReportedSeriesStatusIsIndependentOfLocalEpisodeCountsOnBothServers() async throws {
+        for kind in [ProviderKind.jellyfin, .emby] {
+            let http = StubHTTPClient()
+            http.stub(pathSuffix: "/Users/u1/Items", json: """
+            {"Items":[
+              {"Id":"show","Name":"Show","Type":"Series","Status":"Continuing","ChildCount":2},
+              {"Id":"ended","Name":"Ended","Type":"Series","Status":"Ended","ChildCount":0},
+              {"Id":"unknown","Name":"Unknown","Type":"Series"},
+              {"Id":"episode","Name":"Episode","Type":"Episode","Status":"Ended"}
+            ]}
+            """)
+            let provider = JellyfinProvider(session: makeSession(provider: kind), http: http)
+            let items = try await provider.search(query: "show", limit: 10)
+            XCTAssertEqual(items.map(\.seriesStatus), [.returning, .ended, nil, nil])
+            XCTAssertTrue(items.allSatisfy { $0.catalogSeasonCount == nil && $0.catalogEpisodeCount == nil })
+        }
+    }
+
     func testContinueWatchingUsesTheSeriesLogoForBothJellyfinAndEmby() async throws {
         for kind in [ProviderKind.jellyfin, .emby] {
             let http = StubHTTPClient()

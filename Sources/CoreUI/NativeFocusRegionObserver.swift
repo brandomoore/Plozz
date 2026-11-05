@@ -22,12 +22,17 @@ public enum NativeFocusRegion {
     }
 
     public static func contains(_ item: (any UIFocusItem)?, in region: UIView) -> Bool {
+        guard let frame = frame(of: item, in: region) else { return false }
+        return region.bounds.contains(CGPoint(x: frame.midX, y: frame.midY))
+    }
+
+    static func frame(of item: (any UIFocusItem)?, in region: UIView) -> CGRect? {
         guard let window = region.window,
               let root = owningController(of: region)?.viewIfLoaded ?? region.superview,
-              let item, item.canBecomeFocused, !region.bounds.isEmpty else { return false }
+              let item, item.canBecomeFocused, !region.bounds.isEmpty else { return nil }
         let frame: CGRect
         if let view = item as? UIView {
-            guard view.window === window, view.isDescendant(of: root) else { return false }
+            guard view.window === window, view.isDescendant(of: root) else { return nil }
             frame = view.convert(view.bounds, to: region)
         } else {
             var parent = item.parentFocusEnvironment
@@ -36,19 +41,19 @@ public enum NativeFocusRegion {
             var seen = Set<ObjectIdentifier>()
             while let environment = parent, seen.insert(ObjectIdentifier(environment)).inserted {
                 if let view = environment as? UIView {
-                    guard view.window === window else { return false }
+                    guard view.window === window else { return nil }
                     if view.isDescendant(of: root) { belongsToContent = true }
                 }
                 if container == nil { container = environment.focusItemContainer }
                 if belongsToContent, container != nil { break }
                 parent = environment.parentFocusEnvironment
             }
-            guard belongsToContent, let container else { return false }
+            guard belongsToContent, let container else { return nil }
             let coordinates: any UICoordinateSpace = region
             frame = coordinates.convert(item.frame, from: container.coordinateSpace)
         }
-        guard !frame.isEmpty, !frame.isNull, !frame.isInfinite else { return false }
-        return region.bounds.contains(CGPoint(x: frame.midX, y: frame.midY))
+        guard !frame.isEmpty, !frame.isNull, !frame.isInfinite else { return nil }
+        return frame
     }
 }
 

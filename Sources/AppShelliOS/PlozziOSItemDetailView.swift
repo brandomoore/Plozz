@@ -646,9 +646,9 @@ private struct PlozziOSCanonicalItemDetailView: View {
                     )
                 }
 
-                if !detail.item.people.filter(\.isCast).isEmpty {
+                if !detail.item.detailCredits.isEmpty {
                     PlozziOSCastSection(
-                        people: detail.item.people.filter(\.isCast),
+                        people: detail.item.people,
                         sourceAccountID: detail.item.sourceAccountID
                     )
                 }
@@ -4041,6 +4041,7 @@ struct PlozziOSInlineEpisodeEntry: View {
 /// down-arrow** when complete (a settled status, not an action). Hidden when the
 /// episode isn't downloaded — download itself is started from the ⋯ menu.
 private struct PlozziOSCastSection: View {
+    @Environment(\.locale) private var locale
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.plozzMetrics) private var metrics
     @Environment(\.themePalette) private var palette
@@ -4057,14 +4058,20 @@ private struct PlozziOSCastSection: View {
     /// list holds.
     let sourceAccountID: String?
 
+    private var credits: [MediaPersonCredit] { MediaPersonCredit.ordered(people) }
+
     var body: some View {
-        PlozziOSMediaSection(title: Text("Cast"), horizontalInset: pageInset) {
+        PlozziOSMediaSection(
+            title: credits.contains { !$0.crewRoles.isEmpty } ? Text("Cast & Crew") : Text("Cast"),
+            horizontalInset: pageInset
+        ) {
             ScrollView(.horizontal) {
                 LazyHStack(
                     alignment: .top,
                     spacing: PlozziOSMediaRailLayout.visibleGap(metrics: metrics)
                 ) {
-                    ForEach(people.prefix(20)) { person in
+                    ForEach(credits) { credit in
+                        let person = credit.person
                         Button {
                             openPerson?(person, sourceAccountID)
                         } label: {
@@ -4092,7 +4099,7 @@ private struct PlozziOSCastSection: View {
                                     maxWidth: .infinity,
                                     alignment: .top
                                 )
-                            if let role = person.role {
+                            if let role = credit.caption(locale: locale) {
                                 Text(role)
                                     .font(.caption)
                                     .plozzForeground(.secondary)
@@ -4124,6 +4131,7 @@ private struct PlozziOSCastSection: View {
                 for: .scrollContent
             )
             .scrollIndicators(.hidden)
+            .accessibilityIdentifier("detail-cast-rail")
         }
         // Symmetric scaled whitespace above and below the cast rail so it sits with
         // balanced breathing room between the hero and the info band — and the gap
