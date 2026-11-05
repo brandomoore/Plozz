@@ -1374,13 +1374,9 @@ final class PlozziOSAppModel {
 
     /// Which screen puts the setup sequence on screen.
     ///
-    /// A cover can only be presented by a view that isn't itself covered, and the
-    /// sequence starts from two very different places: creating (or resuming) a
-    /// profile from Settings, which is a sheet — so a cover asked for from the
-    /// root would be silently dropped — and resuming an abandoned setup at
-    /// launch, when Settings isn't open and the Profiles page isn't on screen to
-    /// ask from. Both sites are wired up, and this says which one owns it, so
-    /// they can never both try.
+    /// Settings owns setup while its sheet is visible; otherwise the root does.
+    /// New-profile creation first dismisses Settings so activation can rebuild
+    /// the profile-scoped shell without discarding the setup presenter.
     enum ProfileOnboardingOrigin {
         case settings
         case launch
@@ -1388,6 +1384,15 @@ final class PlozziOSAppModel {
 
     /// Whether the Settings sheet is on screen. Set by the sheet itself.
     private(set) var isSettingsPresented = false
+    private var pendingProfileCreation: (draft: ProfileDraft, isKids: Bool)?
+
+    var hasPendingProfileCreation: Bool { pendingProfileCreation != nil }
+
+    func completePendingProfileCreation() {
+        guard !isSettingsPresented, let pendingProfileCreation else { return }
+        self.pendingProfileCreation = nil
+        saveProfile(pendingProfileCreation.draft, isKids: pendingProfileCreation.isKids)
+    }
 
     /// The exact request owned by an on-screen Plex user chooser, not another modal.
     var inlinePlexPINRequest: PlexHomeUsersModel.PlexPINRequest? {
@@ -1442,14 +1447,9 @@ final class PlozziOSAppModel {
     /// the leak the gate exists to prevent, and clearing it without asking is the
     /// same thing by another route.
     func resumeProfileOnboardingIfNeeded() {
-        // `profileOnboardingID` — not just the step — because creation claims the
-        // id and origin synchronously and only raises the step a runloop turn
-        // later (so the editor sheet can close first). Switching into the new
-        // profile schedules a resume in that same window; guarding on the step
-        // alone let the resume win the race and relabel a `.settings` flow as
-        // `.launch`, so the cover was asked for from the root while Settings was
-        // still up — and silently never appeared. Exactly what the origin split
-        // exists to prevent.
+        // Creation claims the ID before switching, then yields for navigation.
+        // Its switch also schedules a resume; that must not take over the flow
+        // before creation publishes the first step.
         guard profileOnboardingStep == nil, profileOnboardingID == nil,
               pendingFirstRunStep == nil, plexHomeUsers.pendingPlexUserSelection == nil,
               pendingLibrarySelection == nil else { return }
@@ -2718,8 +2718,9 @@ final class PlozziOSAppModel {
     /// (name, avatar symbol/emoji/photo, colours) are written through; every
     /// non-cosmetic field (linked account, Plex Home bindings, Seerr identity,
     /// active-account subset) is preserved. A new profile is seeded with the
-    /// current household accounts, selected, and handed to the first-run theme
-    /// step — mirroring the previous `addProfile` behaviour.
+    /// current household accounts, selected, and handed to source setup.
+    /// Settings-origin creation waits for the entire Settings sheet to dismiss:
+    /// activating another profile rebuilds its presentation shell.
     /// - Parameter isKids: whether a NEWLY created profile is a Kids Profile.
     ///   Ignored when editing, where the flag is owned by the profile's own
     ///   settings page. Matches the tvOS picker, which has always been able to
@@ -2752,6 +2753,10 @@ final class PlozziOSAppModel {
             profile.plexHomeUserBindings = draft.plexHomeUserBindings
             profiles.update(profile)
         } else {
+            if isSettingsPresented {
+                pendingProfileCreation = (draft, isKids)
+                return
+            }
             // Created AWAITING SETUP, exactly as on tvOS. A new profile inherits
             // every server, so importing a watchlist before the user has said
             // which servers it uses — and who it watches as on them — drops the
@@ -2768,10 +2773,9 @@ final class PlozziOSAppModel {
             // present it from the wrong place. See `resumeProfileOnboardingIfNeeded`.
             profileOnboardingID = created.id
             performSelectProfile(created.id)
-            // Yielded, not set inline: this runs from inside the Add Profile
-            // sheet, and SwiftUI drops a presentation requested while another is
-            // still dismissing. One runloop turn lets the editor close first —
-            // the same reason `scheduleFirstRunStep` yields.
+            // Let navigation react to the profile switch before requesting setup.
+            // Modal creation calls this only after Settings' onDismiss;
+            // a runloop yield alone cannot wait for that dismissal.
             Task { @MainActor in
                 await Task.yield()
                 profileOnboardingStep = .libraries

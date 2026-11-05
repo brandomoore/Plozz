@@ -174,7 +174,7 @@ struct PlozziOSServerIdentityPromptView: View {
 /// which is exactly how the theme step went missing before.
 ///
 /// A view of its own rather than inline in each presenter: both root and the
-/// Profiles settings page present this (see `ProfileOnboardingOrigin`), and the
+/// Settings shell present this (see `ProfileOnboardingOrigin`), and the
 /// iOS root's body is already at the type-checker's budget.
 struct PlozziOSProfileOnboardingCover: View {
     let appModel: PlozziOSAppModel

@@ -145,6 +145,13 @@ struct PlozziOSSettingsView: View {
                 appModel: appModel, accountIDs: selection.accountIDs
             )
         }
+        // Setup belongs to the Settings shell, not a removable child page.
+        .plozzFullScreenCover(isPresented: Binding(
+            get: { appModel.isPresentingProfileOnboarding(from: .settings) },
+            set: { if !$0 { appModel.cancelProfileOnboarding() } }
+        )) {
+            PlozziOSProfileOnboardingCover(appModel: appModel)
+        }
     }
 
     /// Signs an additional user in to a server that's already added — the iOS half
@@ -1661,6 +1668,7 @@ private struct PlozziOSProfilesView: View {
     @Environment(\.themePalette) private var palette
     let appModel: PlozziOSAppModel
     @State private var showingAddProfile = false
+    @State private var pendingNewProfile: ProfileDraft?
     @State private var editingProfile: Profile?
     @State private var selectedProfileRoute: PlozziOSProfileSettingsRoute?
     /// Closes Settings, so a switch can raise its gates from the root.
@@ -1787,10 +1795,15 @@ private struct PlozziOSProfilesView: View {
                 profileID: route.profileID
             )
         }
-        .plozzSheet(isPresented: $showingAddProfile) {
+        .plozzSheet(isPresented: $showingAddProfile, onDismiss: {
+            guard let draft = pendingNewProfile else { return }
+            pendingNewProfile = nil
+            appModel.saveProfile(draft)
+        }) {
             NavigationStack {
                 PlozziOSProfileEditorHost(
                     appModel: appModel,
+                    onCreate: { pendingNewProfile = $0 },
                     onFinished: { showingAddProfile = false }
                 )
             }
@@ -1804,27 +1817,6 @@ private struct PlozziOSProfilesView: View {
                     onFinished: { editingProfile = nil }
                 )
             }
-        }
-        // New-profile setup. A profile is created holding EVERY server, so this
-        // runs before its first watchlist import and asks which servers it
-        // actually uses and who it watches as on each — otherwise the household's
-        // aggregate watchlist lands in a brand new (often child) profile. See
-        // `PlozziOSAppModel.ProfileOnboardingStep`.
-        //
-        // Presented from this page, which is the one that presents Add Profile:
-        // a cover asked for from the root would be blocked by the Settings sheet
-        // this page lives inside and silently never appear.
-        //
-        // ONE cover for the whole sequence, switching its content, rather than a
-        // cover per step: presenting on `item` would tear the cover down and put
-        // a new one up on every step, and SwiftUI drops a presentation requested
-        // while another is still dismissing — which is exactly how the theme step
-        // went missing before.
-        .plozzFullScreenCover(isPresented: Binding(
-            get: { appModel.isPresentingProfileOnboarding(from: .settings) },
-            set: { if !$0 { appModel.cancelProfileOnboarding() } }
-        )) {
-            PlozziOSProfileOnboardingCover(appModel: appModel)
         }
     }
 }

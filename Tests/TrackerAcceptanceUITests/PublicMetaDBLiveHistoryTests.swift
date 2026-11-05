@@ -72,6 +72,14 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         recordState()
     }
 
+    func testInspectProfiles() throws {
+        try openSettings()
+        try tapVisible(app.buttons["Profiles"])
+        try require(app.buttons["Add Profile"].waitForExistence(timeout: 15),
+                    "Expected the native profile list")
+        recordState()
+    }
+
     func testPrepareIsolatedShareProfile() throws {
         let name = try isolatedShareProfileName()
         try openSettings()
@@ -104,20 +112,68 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
                     "Expected the new profile's normal source setup")
     }
 
-    func testFinishIsolatedShareProfileSetup() throws {
+    func testCancelIsolatedShareProfileCreation() throws {
         let name = try isolatedShareProfileName()
+        try require(app.navigationBars["New Profile"].exists
+            && app.textFields["profile-name-input"].value as? String == name,
+                    "Cancel only the prepared dedicated profile draft")
+        try tapVisible(app.buttons["Cancel"])
+        try require(app.buttons["Add Profile"].waitForExistence(timeout: 10),
+                    "Expected the existing native profile list")
+        XCTAssertFalse(app.buttons.containing(.staticText, identifier: name).firstMatch.exists)
+    }
+
+    func testFinishIsolatedShareProfileSetup() throws {
         let share = try XCTUnwrap(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_SHARE_NAME"])
+        try finishIsolatedShareProfileSetup(selected: "NFS, \(share)", excluded: ["CubeBoi", "Silo"])
+    }
+
+    func testFinishIsolatedSMBProfileSetup() throws {
+        let share = try XCTUnwrap(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_SHARE_NAME"])
+        try finishIsolatedShareProfileSetup(selected: "SMB, \(share)", excluded: ["CubeBoi"])
+    }
+
+    func testFinishIsolatedEmbyProfileSetup() throws {
+        try require(app.switches["CubeBoi"].exists && app.switches["CubeBoi"].isHittable,
+                    "Expected the dedicated Emby source")
+        try finishIsolatedShareProfileSetup(selected: "CubeBoi", excluded: [])
+    }
+
+    func testResumeIsolatedShareProfileSetup() throws {
+        let name = try isolatedShareProfileName()
         try require(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_HISTORY_USER"] == name,
                     "Continue only as the isolated test profile")
-        try require(app.navigationBars["Libraries"].exists && app.staticTexts[
+        let picker = app.buttons.matching(NSPredicate(
+            format: "identifier BEGINSWITH 'profile-picker-' AND label == %@", name
+        ))
+        let setup = app.staticTexts[
             "Pick the servers \(name) watches with, and who they are on each."
-        ].exists, "Expected the prepared test profile")
-        try setSourceServer("NFS, \(share)", selected: true)
-        try setSourceServer("CubeBoi", selected: false)
-        try setSourceServer("Silo", selected: false)
-        XCTAssertEqual(app.switches["NFS, \(share)"].value as? String, "1")
-        XCTAssertEqual(app.switches["CubeBoi"].value as? String, "0")
-        XCTAssertEqual(app.switches["Silo"].value as? String, "0")
+        ]
+        let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            setup.exists || picker.firstMatch.isHittable
+        }, object: app)
+        try require(XCTWaiter.wait(for: [ready], timeout: 30) == .completed,
+                    "Expected the unfinished setup or its selectable profile")
+        if !setup.exists {
+            try require(picker.count == 1 && picker.element.value as? String == "",
+                        "Do not bypass a profile lock or ambiguous identity")
+            try tapVisible(picker.element)
+        }
+        try require(setup.waitForExistence(timeout: 30), "Expected the unfinished profile's real setup")
+        recordState()
+    }
+
+    private func finishIsolatedShareProfileSetup(selected: String, excluded: [String]) throws {
+        let name = try isolatedShareProfileName()
+        try require(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_HISTORY_USER"] == name,
+                    "Continue only as the isolated test profile")
+        try require(app.staticTexts[
+            "Pick the servers \(name) watches with, and who they are on each."
+        ].exists && app.buttons["Done"].exists, "Expected the prepared test profile")
+        try setSourceServer(selected, selected: true)
+        for label in excluded { try setSourceServer(label, selected: false) }
+        XCTAssertEqual(app.switches[selected].value as? String, "1")
+        for label in excluded { XCTAssertEqual(app.switches[label].value as? String, "0") }
         try tapVisible(app.buttons["Done"])
         let next = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
             self.app.buttons["Not Now"].exists || self.app.staticTexts["Choose Your Look"].exists
@@ -158,7 +214,8 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
 
     func testSwitchToSelectedTestProfile() throws {
         let target = try XCTUnwrap(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_PROFILE_TARGET"])
-        try require(target == "plozztest" || target.hasPrefix("Tracker NFS Isolation "),
+        try require(target == "plozztest" || target.hasPrefix("Tracker NFS Isolation ")
+            || target.hasPrefix("Tracker SMB Isolation "),
                     "Switch only between the dedicated test profiles")
         try require(target != ProcessInfo.processInfo.environment["PLOZZ_TRACKER_HISTORY_USER"],
                     "Expected a different target profile")
@@ -203,7 +260,8 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
 
     private func isolatedShareProfileName() throws -> String {
         let name = try XCTUnwrap(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_PROFILE_NAME"])
-        try require(name.hasPrefix("Tracker NFS Isolation ") && name.count <= 64,
+        try require((name.hasPrefix("Tracker NFS Isolation ") || name.hasPrefix("Tracker SMB Isolation "))
+            && name.count <= 64,
                     "Expected a unique dedicated share-test profile name")
         return name
     }

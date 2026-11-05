@@ -110,6 +110,13 @@ household multi-user UI on top of `CoreModels.ProfileStore`.
 - **Default profile is special.** Stable id
   `ProfileStore.defaultProfileID` (`com.plozz.profile.default`); `nil`
   settings namespace; cannot be removed. Don't break the upgrade path.
+- **Mobile creation waits for dismissal.** The Add Profile editor hands its
+  saved draft over after its native sheet dismisses. Settings then dismisses
+  before the model persists and activates the new profile: activation rebuilds
+  the profile-scoped presentation shell. The root presents source setup only
+  after that handoff, without a timer or relaunch. Cancellation creates nothing;
+  existing-profile edits remain immediate. New profiles retain their persistent
+  setup gate until the user completes source and identity selection.
 - **Plex Home onboarding is opt-in.** After linking Plex, the shared page offers
   Add all profiles or Just me. Add all commits the missing profiles first, confirms
   Profiles added (or Profiles ready when already present), then offers Choose your

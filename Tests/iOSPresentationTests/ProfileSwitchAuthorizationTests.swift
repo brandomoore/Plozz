@@ -2,6 +2,7 @@
 import CoreModels
 import CoreUI
 import FeatureAuth
+import FeatureProfiles
 import SwiftUI
 import UIKit
 import Vision
@@ -11,6 +12,66 @@ import XCTest
 
 @MainActor
 final class ProfileSwitchAuthorizationTests: XCTestCase {
+    func testNewProfileWaitsForSettingsDismissalBeforeActivating() throws {
+        let app = try makeApp()
+        let original = app.profiles.activeProfileID
+        let count = app.profiles.profiles.count
+        let draft = ProfileDraft(
+            id: nil, name: "New viewer", avatarSymbol: "person.fill", colorIndex: 1
+        )
+        app.noteSettingsPresented(true)
+
+        app.saveProfile(draft, isKids: true)
+        XCTAssertTrue(app.hasPendingProfileCreation)
+        XCTAssertEqual(app.profiles.profiles.count, count)
+        XCTAssertEqual(app.profiles.activeProfileID, original)
+        XCTAssertNil(app.profileOnboardingID)
+        app.completePendingProfileCreation()
+        XCTAssertEqual(app.profiles.profiles.count, count)
+
+        app.noteSettingsPresented(false)
+        app.completePendingProfileCreation()
+        XCTAssertFalse(app.hasPendingProfileCreation)
+        XCTAssertEqual(app.profiles.profiles.count, count + 1)
+        XCTAssertNotEqual(app.profiles.activeProfileID, original)
+        XCTAssertEqual(app.profiles.activeProfile.name, draft.name)
+        XCTAssertTrue(app.profiles.activeProfile.isKids)
+        XCTAssertTrue(app.profiles.activeProfile.needsSetup)
+        XCTAssertEqual(app.profileOnboardingID, app.profiles.activeProfileID)
+        XCTAssertTrue(app.profileOnboardingOrigin == .launch)
+
+        app.completePendingProfileCreation()
+        XCTAssertEqual(app.profiles.profiles.count, count + 1)
+    }
+
+    func testSettingsDismissalWithoutSavingDoesNotCreateAProfile() throws {
+        let app = try makeApp()
+        let original = app.profiles.activeProfileID
+        let count = app.profiles.profiles.count
+        app.noteSettingsPresented(true)
+        app.noteSettingsPresented(false)
+        app.completePendingProfileCreation()
+        XCTAssertFalse(app.hasPendingProfileCreation)
+        XCTAssertEqual(app.profiles.profiles.count, count)
+        XCTAssertEqual(app.profiles.activeProfileID, original)
+        XCTAssertNil(app.profileOnboardingID)
+    }
+
+    func testEditingAnExistingProfileDoesNotWaitForSettingsDismissal() throws {
+        let app = try makeApp()
+        let original = app.profiles.activeProfileID
+        let count = app.profiles.profiles.count
+        app.noteSettingsPresented(true)
+        app.saveProfile(ProfileDraft(
+            id: original, name: "Renamed viewer", avatarSymbol: "person.fill", colorIndex: 2
+        ))
+        XCTAssertFalse(app.hasPendingProfileCreation)
+        XCTAssertEqual(app.profiles.profiles.count, count)
+        XCTAssertEqual(app.profiles.activeProfileID, original)
+        XCTAssertEqual(app.profiles.activeProfile.name, "Renamed viewer")
+        XCTAssertNil(app.profileOnboardingID)
+    }
+
     func testCancelledVerificationCannotAuthorizeAReplacementRequest() async throws {
         let app = try makeApp()
         let original = app.profiles.activeProfileID
