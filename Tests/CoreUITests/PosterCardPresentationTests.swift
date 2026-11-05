@@ -303,24 +303,43 @@ final class PosterCardPresentationTests: XCTestCase {
         }
     }
 
-    /// A rewatch a couple of minutes into a feature film sits below one percent,
-    /// and used to render as an untouched card while the server's own app showed a
-    /// bar. Where the viewer left off is the most useful thing a card can say, and
-    /// it is no less true for being early.
-    func testAJustStartedTitleStillShowsItsProgress() {
+    func testAnAdmittedRewatchStillShowsProgressBelowOnePercent() {
         let item = MediaItem(
             id: "rewatch",
             title: "How To Train Your Dragon",
             kind: .movie,
-            resumePosition: 45,
+            resumePosition: 60,
             playedPercentage: 0.0076,
             isPlayed: true
         )
 
         XCTAssertTrue(
             MediaPlaybackIndicatorPresentation.showsProgress(for: MediaPlaybackIndicatorState(item)),
-            "A saved resume point is progress however small the fraction looks"
+            "The shared time threshold must not add a one-percent floor"
         )
+    }
+
+    func testBriefPlaybackKeepsTheUnstartedPresentationAndExistingWatchedHistory() {
+        for kind in [MediaItemKind.movie, .episode, .video] {
+            for played in [false, true] {
+                let untouched = MediaItem(id: "item", title: "Title", kind: kind, runtime: 3600, isPlayed: played)
+                var brief = untouched
+                brief.resumePosition = 2
+                brief.playedPercentage = 2.0 / 3600
+                let state = MediaPlaybackIndicatorState(brief)
+                XCTAssertEqual(state, MediaPlaybackIndicatorState(untouched))
+                XCTAssertFalse(MediaPlaybackIndicatorPresentation.showsProgress(for: state))
+                XCTAssertEqual(
+                    MediaPlaybackIndicatorPresentation.showsUnwatchedFlag(for: state, hidesStatus: false),
+                    !played
+                )
+                XCTAssertEqual(
+                    MediaPlaybackIndicatorPresentation.showsWatchedBadge(for: state, hidesStatus: false),
+                    played
+                )
+                XCTAssertEqual(brief.resumePosition, 2)
+            }
+        }
     }
 
     /// The upper bound stays: something watched through keeps its resume point
@@ -430,13 +449,13 @@ final class PosterCardPresentationTests: XCTestCase {
         )
     }
 
-    func testUnwatchedFlagOnlyShowsBeforePlaybackStarts() {
+    func testUnwatchedFlagOnlyShowsBeforeMeaningfulPlaybackStarts() {
         let untouched = MediaItem(id: "new", title: "New", kind: .episode)
         let started = MediaItem(
             id: "started",
             title: "Started",
             kind: .episode,
-            resumePosition: 12
+            resumePosition: 60
         )
 
         XCTAssertTrue(

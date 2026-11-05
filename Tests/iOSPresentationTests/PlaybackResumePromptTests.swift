@@ -9,6 +9,24 @@ import XCTest
 
 @MainActor
 final class PlaybackResumePromptTests: XCTestCase {
+    func testHiddenBriefProgressKeepsTheSavedPlaybackRequestPosition() {
+        let suite = "PlaybackResumePromptTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let episode = MediaItem(
+            id: "episode", title: "Episode", kind: .episode,
+            runtime: 3600, resumePosition: 2, sourceAccountID: "jellyfin"
+        )
+        let request = PlozziOSPlaybackRequest(
+            item: episode, startPosition: episode.resumePosition ?? 0,
+            versionPreferences: VersionPreferenceStore(defaults: defaults)
+        )
+        XCTAssertNil(request.item.resumeProgressFraction)
+        XCTAssertNil(request.item.resumeRemainingText)
+        XCTAssertEqual(request.startPosition, 2)
+        XCTAssertEqual(request.item.sourceAccountID, episode.sourceAccountID)
+    }
+
     func testEpisodeHeroRequestKeepsResumeWhenDetailSourcesDescribeItsShow() {
         let suite = "PlaybackResumePromptTests-\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!

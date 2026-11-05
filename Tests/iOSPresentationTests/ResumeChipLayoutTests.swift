@@ -12,6 +12,30 @@ final class ResumeChipLayoutTests: XCTestCase {
         case full, progressAndText, text, smallerText
     }
 
+    func testBriefPlaysRenderLikeUnstartedEpisodesWithoutChangingWatchedHistory() throws {
+        for watched in [false, true] {
+            let untouched = MediaItem(
+                id: "brief", title: "Episode", kind: .episode,
+                seasonNumber: 1, episodeNumber: 4, runtime: 3600, isPlayed: watched
+            )
+            let expected = try render(EpisodeWatchStatePill(item: untouched, showsBackground: false))
+            for position in [2.0, 59, 60] {
+                var item = untouched
+                item.resumePosition = position
+                item.playedPercentage = position / 3600
+                let actual = try render(EpisodeWatchStatePill(item: item, showsBackground: false))
+                if position < 60 || watched {
+                    try assertPixelsEqual(
+                        actual, expected, context: "Brief plays retain the idle or existing watched chip."
+                    )
+                } else {
+                    XCTAssertNotEqual(actual.pngData(), expected.pngData(), "Progress appears at the threshold.")
+                }
+                XCTAssertEqual(item.resumePosition, position)
+            }
+        }
+    }
+
     func testPortraitChipDropsDecorationsBeforeReducingText() throws {
         let metrics = PlozzMetrics.touch(density: .standard)
         let item = MediaItem(

@@ -429,7 +429,10 @@ records on both platforms; error dialogs, playback routing and timeouts are unch
   leaves Next Up stale behind a cross-refresh item cache.
   Continue Watching admits ordinary resume positions at 5% of duration, bounded
   between 5 and 60 seconds (60 seconds when duration is unknown). Saving resume
-  progress is independent of this visibility threshold. Unstarted Next Up episodes
+  progress is independent of this visibility threshold. Detail and card progress
+  indicators use the same minimum, so brief plays still look unstarted. A
+  percentage-only item uses its runtime when available; without either a position
+  or duration, its reported progress is retained. Unstarted Next Up episodes
   remain eligible; trailers never enter the row or propagate watch state to their
   parent title. The same policy covers optimistic updates, queued-write overlays,
   cached content, library/server rows, and their browse grids. Grid filtering
