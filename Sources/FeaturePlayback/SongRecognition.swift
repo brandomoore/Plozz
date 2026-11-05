@@ -36,30 +36,22 @@ enum SongRecognizer {
 
     /// Listens to everything the tap delivers until the stream ends (reload,
     /// stop) or the task is cancelled, reporting each song as it is heard and
-    /// `nil` once nothing has matched for `linger` seconds.
+    /// `nil` once nothing has matched for `linger` seconds. A seek restarts the
+    /// watch from the player, so one watch only ever hears continuous audio.
     static func watch(
         _ stream: AsyncStream<SongTapChunk>,
         report: @escaping @MainActor @Sendable (SongMatch?) -> Void
     ) async {
         let session = SHSession()
         let signals = WatchSignals()
-        HandoffDiagnostics.emit("songid WATCH_START")
         await withTaskGroup(of: Void.self) { group in
             group.addTask {
                 var current: SongMatch?
                 var lastHeard = Date.distantPast
                 var confirmation = SongConfirmation()
-                var seenJumps = 0
                 var lastError: String?
                 for await result in session.results {
                     if Task.isCancelled { return }
-                    // A skip forward or back: what was heard before belongs to
-                    // another part of the film.
-                    if signals.jumps != seenJumps {
-                        seenJumps = signals.jumps
-                        current = nil
-                        confirmation.reset()
-                    }
                     switch result {
                     case let .match(match):
                         let first = match.mediaItems.first
@@ -79,7 +71,7 @@ enum SongRecognizer {
                         lastHeard = now
                         lastError = nil
                         current = song
-                        HandoffDiagnostics.emit("songid SHOW title=\(title)")
+                        HandoffDiagnostics.emit("songid SHOW")
                         await report(song)
                     case let .error(error, _):
                         // Offline, Shazam unreachable, or the app not allowed to
@@ -102,17 +94,8 @@ enum SongRecognizer {
                 }
             }
             group.addTask {
-                var expected: Double?
                 for await chunk in stream {
                     if Task.isCancelled { break }
-                    // The audio no longer follows on from the last chunk: the
-                    // viewer skipped. Clear the card straight away.
-                    if let expected, abs(chunk.sourceTime - expected) > 2 {
-                        signals.bumpJumps()
-                        await report(nil)
-                    }
-                    expected = chunk.sourceTime
-                        + Double(chunk.buffer.frameLength) / chunk.buffer.format.sampleRate
                     if signals.isResting { continue }
                     session.matchStreamingBuffer(chunk.buffer, at: nil)
                 }
@@ -126,14 +109,10 @@ enum SongRecognizer {
     /// How long the matcher rests after an error (offline, service refused).
     static let errorRest: TimeInterval = 30
 
-    /// Shared between the audio loop and the results loop.
+    /// Lets the results loop pause the audio loop after an error.
     private final class WatchSignals: @unchecked Sendable {
         private let lock = NSLock()
-        private var jumpCount = 0
         private var restUntil = Date.distantPast
-        /// Skips forward or back seen by the audio loop.
-        var jumps: Int { lock.withLock { jumpCount } }
-        func bumpJumps() { lock.withLock { jumpCount += 1 } }
         var isResting: Bool { lock.withLock { Date() < restUntil } }
         func rest(for seconds: TimeInterval) { lock.withLock { restUntil = Date().addingTimeInterval(seconds) } }
     }
@@ -173,5 +152,4 @@ struct SongConfirmation {
         return true
     }
 
-    mutating func reset() { sightings = [:] }
 }

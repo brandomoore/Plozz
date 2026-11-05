@@ -2213,7 +2213,8 @@ public final class PlayerViewModel {
 
     /// Listens to the playing audio (the engine's decoded-audio tap, not
     /// the microphone) and keeps `controls.songID` on the song Shazam hears, so
-    /// the Info card can show it. Restarts its tap when a reload ends the old one.
+    /// the Info card can show it. Restarts its tap when a reload ends the old one,
+    /// and starts over on every seek (see `requestSeek`).
     @ObservationIgnored private var songWatchTask: Task<Void, Never>?
 
     private func startSongWatch() {
@@ -2221,17 +2222,21 @@ public final class PlayerViewModel {
         guard playbackSettings.identifySongs else { return }
         let engine = engine
         songWatchTask = Task { @MainActor [weak self] in
-            // An engine without a decoded-audio tap (or one not ready yet) is
-            // retried with a growing wait rather than polled.
-            var retry: Duration = .seconds(5)
+            // A tap that isn't ready yet gets a few tries; an engine or route
+            // without one (native playback, a server transcode) is left alone
+            // until the next load starts the watch again.
+            var misses = 0
             while !Task.isCancelled, self != nil {
                 guard let stream = engine.installSongTap() else {
-                    HandoffDiagnostics.emit("songid TAP_UNAVAILABLE")
-                    try? await Task.sleep(for: retry)
-                    retry = min(retry * 2, .seconds(120))
+                    misses += 1
+                    guard misses < 3 else {
+                        HandoffDiagnostics.emit("songid TAP_UNAVAILABLE")
+                        return
+                    }
+                    try? await Task.sleep(for: .seconds(5))
                     continue
                 }
-                retry = .seconds(5)
+                misses = 0
                 await SongRecognizer.watch(stream) { [weak self] song in
                     self?.controls.songID = song.map(SongIDState.found) ?? .idle
                 }
@@ -2262,6 +2267,11 @@ public final class PlayerViewModel {
         )
         seekCoordinator.requestSeek(to: seconds)
         foregroundReload.noteUserSeek(to: controls.pendingSeekTarget ?? seconds)
+        // What was heard before the jump belongs to another part of the film.
+        if songWatchTask != nil {
+            stopSongWatch()
+            startSongWatch()
+        }
         nowPlaying?.refresh()
     }
 

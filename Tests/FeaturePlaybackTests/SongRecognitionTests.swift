@@ -25,14 +25,17 @@ final class SongRecognitionTests: XCTestCase {
         XCTAssertTrue(confirmation.confirms(key: "score", offset: 98, at: start + 8))
     }
 
-    func testStaleSightingAndResetDoNotConfirm() {
+    func testStaleSightingDoesNotConfirm() {
         var confirmation = SongConfirmation()
         _ = confirmation.confirms(key: "song", offset: 0, at: start)
         XCTAssertFalse(confirmation.confirms(key: "song", offset: 60, at: start + 60))
+    }
 
-        _ = confirmation.confirms(key: "song", offset: 0, at: start + 100)
-        confirmation.reset()
-        XCTAssertFalse(confirmation.confirms(key: "song", offset: 10, at: start + 110))
+    func testConfirmedSongNeedsTwoNewSightingsAgain() {
+        var confirmation = SongConfirmation()
+        _ = confirmation.confirms(key: "song", offset: 0, at: start)
+        XCTAssertTrue(confirmation.confirms(key: "song", offset: 10, at: start + 10))
+        XCTAssertFalse(confirmation.confirms(key: "other", offset: 0, at: start + 12))
     }
 
     func testSoundEffectsAndUntaggedUploadsAreNotSongs() {
