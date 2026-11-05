@@ -1065,6 +1065,15 @@ records on both platforms; error dialogs, playback routing and timeouts are unch
   callbacks cannot stop or pause that player; its item, position and live mute
   choice survive the handoff on TV and mobile. Leaving for another destination
   or backgrounding the app still stops ambient playback.
+  Home, detail and featured cards share one persistent video layer, moved only
+  into the owning surface's mounted host. Offscreen navigation hosts cannot take
+  it, and there is no second invisible layer competing for decoded frames.
+  Hero + Showcase uses the same round-trip contract: covering Home retains its
+  same-title return receiver and suspends carousel advancement. Returning restores
+  the trailer's elapsed timeline rather than restarting or immediately paging.
+  Scoped detail cleanup requires an exact handler owner, including while a
+  pre-navigation transfer has no handler; delayed featured focus cannot take
+  a trailer already owned by detail.
 
 ## Home loading
 

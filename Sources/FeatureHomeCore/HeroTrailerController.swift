@@ -85,11 +85,11 @@ public final class HeroTrailerController {
     /// attach an `AVPlayerLayer`. Engine-agnostic callers must not depend on it.
     public let player = AVPlayer()
     #if canImport(UIKit)
-    /// Two persistent display layers fed by the same AVPlayer. Detail's layer is
-    /// pre-rendered invisibly on Home; Home's remains warm under the pop.
-    @ObservationIgnored fileprivate let homeSurfaceView = HeroTrailerPlayerSurfaceView()
-    @ObservationIgnored fileprivate let detailSurfaceView = HeroTrailerPlayerSurfaceView()
-    @ObservationIgnored fileprivate let featuredSurfaceView = HeroTrailerPlayerSurfaceView()
+    /// Move the decoded surface, not the player between competing display layers.
+    @ObservationIgnored fileprivate let surfaceView = HeroTrailerPlayerSurfaceView()
+    @ObservationIgnored private weak var homeHost: HeroTrailerVideoLayer.HostView?
+    @ObservationIgnored private weak var detailHost: HeroTrailerVideoLayer.HostView?
+    @ObservationIgnored private weak var featuredHost: HeroTrailerVideoLayer.HostView?
     #endif
 
     /// Fired on the main actor when the current trailer plays through to its end,
@@ -115,9 +115,7 @@ public final class HeroTrailerController {
         player.actionAtItemEnd = .pause
         player.appliesMediaSelectionCriteriaAutomatically = false
         #if canImport(UIKit)
-        homeSurfaceView.playerLayer.player = player
-        detailSurfaceView.playerLayer.player = player
-        featuredSurfaceView.playerLayer.player = player
+        surfaceView.playerLayer.player = player
         observeAppLifecycle()
         #endif
     }
@@ -172,7 +170,13 @@ public final class HeroTrailerController {
     public func claimSurface(_ role: HeroTrailerSurfaceRole, itemID: String) {
         guard !isFeaturedReserved || role == .featured else { return }
         guard currentItemID == nil || currentItemID == itemID else { return }
+        if activeSurfaceRole != role {
+            HandoffDiagnostics.emit("trailer CLAIM role=\(role) item=\(HandoffDiagnostics.correlationID(itemID))")
+        }
         activeSurfaceRole = role
+        #if canImport(UIKit)
+        moveSurfaceToActiveHost()
+        #endif
     }
 
     public func isClaimed(by role: HeroTrailerSurfaceRole, itemID: String) -> Bool {
@@ -394,7 +398,7 @@ public final class HeroTrailerController {
     }
 
     public func reserveFeaturedSurface(owner: UUID) -> Bool {
-        guard !isPlaybackSuppressed else { return false }
+        guard !isPlaybackSuppressed, activeSurfaceRole != .detail else { return false }
         if featuredOwnerID == owner { return true }
         let heroPause = suspendedHeroPause ?? requestedPaused
         stop()
@@ -417,9 +421,42 @@ public final class HeroTrailerController {
     /// stale view's disappear can't stop a trailer that already advanced).
     public func stop(ifShowing itemID: String, ownedBy ownerID: String? = nil) {
         guard currentItemID == itemID else { return }
-        if let ownerID, let endHandlerOwnerID, ownerID != endHandlerOwnerID { return }
+        if let ownerID, ownerID != endHandlerOwnerID { return }
         stop()
     }
+
+    #if canImport(UIKit)
+    fileprivate func registerHost(_ host: HeroTrailerVideoLayer.HostView, role: HeroTrailerSurfaceRole) {
+        guard host.window != nil else { return }
+        switch role {
+        case .home: homeHost = host
+        case .detail: detailHost = host
+        case .featured: featuredHost = host
+        }
+        moveSurfaceToActiveHost()
+    }
+
+    private func moveSurfaceToActiveHost() {
+        let host: HeroTrailerVideoLayer.HostView?
+        switch activeSurfaceRole {
+        case .home: host = homeHost
+        case .detail: host = detailHost
+        case .featured: host = featuredHost
+        case nil: host = nil
+        }
+        // Keep the outgoing picture until the receiving host actually mounts.
+        guard let host, host.window != nil, host.controller === self,
+              host.role == activeSurfaceRole, surfaceView.superview !== host else { return }
+        HandoffDiagnostics.emit("trailer RENDER role=\(String(describing: activeSurfaceRole)) item=\(HandoffDiagnostics.correlationID(currentItemID))")
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        surfaceView.removeFromSuperview()
+        host.addSubview(surfaceView)
+        surfaceView.frame = host.bounds
+        surfaceView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        CATransaction.commit()
+    }
+    #endif
 
     private func stopPlayback(resetItem: Bool) {
         hasStartedPlayback = false
@@ -537,8 +574,7 @@ fileprivate final class HeroTrailerPlayerSurfaceView: UIView {
     required init?(coder: NSCoder) { nil }
 }
 
-/// Reparents one of the controller's two persistent AVPlayerLayer surfaces into
-/// this SwiftUI host. The layer itself survives navigation hierarchy changes.
+/// Hosts the single persistent video layer only when this surface owns playback.
 public struct HeroTrailerVideoLayer: UIViewRepresentable {
     private let controller: HeroTrailerController
     private let role: HeroTrailerSurfaceRole
@@ -561,24 +597,21 @@ public struct HeroTrailerVideoLayer: UIViewRepresentable {
         attach(to: uiView)
     }
 
-    private var surface: HeroTrailerPlayerSurfaceView {
-        switch role {
-        case .home: controller.homeSurfaceView
-        case .detail: controller.detailSurfaceView
-        case .featured: controller.featuredSurfaceView
-        }
-    }
-
     private func attach(to host: HostView) {
-        let surface = surface
-        guard surface.superview !== host else { return }
-        surface.removeFromSuperview()
-        host.addSubview(surface)
-        surface.frame = host.bounds
-        surface.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        host.controller = controller
+        host.role = role
+        controller.registerHost(host, role: role)
     }
 
     public final class HostView: UIView {
+        fileprivate weak var controller: HeroTrailerController?
+        fileprivate var role: HeroTrailerSurfaceRole = .home
+
+        public override func didMoveToWindow() {
+            super.didMoveToWindow()
+            if window != nil { controller?.registerHost(self, role: role) }
+        }
+
         public override func layoutSubviews() {
             super.layoutSubviews()
             subviews.forEach { $0.frame = bounds }

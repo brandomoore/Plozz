@@ -567,7 +567,11 @@ struct HomeHeroView: View {
             withAnimation(.easeInOut(duration: 0.35)) { heroVisible = true }
         }
         .onDisappear {
-            onTrailerReturnItemChanged(nil)
+            if let item = current, trailerController.isClaimed(by: .detail, itemID: item.id) {
+                onTrailerReturnItemChanged(item.id)
+            } else {
+                onTrailerReturnItemChanged(nil)
+            }
             // Detail may already own the same player; only release Home's work.
             resetTrailer(stopPlayer: true)
         }
@@ -722,6 +726,14 @@ struct HomeHeroView: View {
             }
             if trailerController.isShowing(item.id) {
                 trailerController.claimSurface(.home, itemID: item.id)
+                trailerController.setPaused(pausedForRows, surfaceRole: .home)
+                activeTrailerDuration = trailerController.duration
+                restartDwell()
+                let position = trailerController.player.currentTime().seconds
+                if position.isFinite, trailerController.isPlaying {
+                    dwellStart = Date().addingTimeInterval(-(HeroTrailerTimeline.leadIn + position))
+                }
+                runEpoch &+= 1
                 trailerController.setEndHandler(ownerID: "home-hero") { [itemID = item.id] in
                     guard current?.id == itemID, items.count > 1 else { return }
                     page(
@@ -816,7 +828,7 @@ struct HomeHeroView: View {
         // the user was looking at it. Instead, real remote input pauses it (see
         // `noteInteraction`), so it never pages out from under an interacting user.
         .task(id: autoAdvanceKey) {
-            guard settings.autoAdvance, items.count > 1 else { return }
+            guard isFrontmost, settings.autoAdvance, items.count > 1 else { return }
             if pausedForRows {
                 pauseWhileReceded()
                 return
@@ -903,7 +915,7 @@ struct HomeHeroView: View {
     /// forever. Because the restart re-derives its sleep from `dwellStart`, an
     /// ordinary set update resumes the countdown rather than restarting it.
     private var autoAdvanceKey: String {
-        "\(index)-\(advanceToken)-\(runEpoch)-\(slideToken)-\(activeTrailerDuration)-\(items.count)"
+        "\(index)-\(advanceToken)-\(runEpoch)-\(slideToken)-\(activeTrailerDuration)-\(items.count)-\(isFrontmost)"
     }
 
     /// One continuous wall-clock timeline from initial still through trailer end.

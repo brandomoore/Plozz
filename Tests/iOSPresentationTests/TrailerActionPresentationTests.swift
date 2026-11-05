@@ -34,11 +34,16 @@ final class TrailerActionPresentationTests: XCTestCase {
             previous?.makeKeyAndVisible()
         }
         let deadline = ContinuousClock.now + .seconds(15)
-        while fixture.controller.player.currentTime().seconds < 0.5, ContinuousClock.now < deadline {
+        while !(fixture.controller.isPlaying && fixture.controller.player.currentTime().seconds > 0.5),
+              ContinuousClock.now < deadline {
             try await Task.sleep(for: .milliseconds(20))
         }
         XCTAssertTrue(fixture.controller.isPlaying)
         let original = try XCTUnwrap(fixture.controller.player.currentItem)
+        func layers(in view: UIView) -> [AVPlayerLayer] {
+            (view.layer as? AVPlayerLayer).map { [$0] } ?? view.subviews.flatMap { layers(in: $0) }
+        }
+        let originalLayer = try XCTUnwrap(layers(in: window).first(where: \.isReadyForDisplay))
         let position = fixture.controller.player.currentTime().seconds
         fixture.controller.setMuted(false)
         fixture.controller.handoffToDetail(itemID: fixture.item.id)
@@ -53,8 +58,12 @@ final class TrailerActionPresentationTests: XCTestCase {
         }
         XCTAssertGreaterThan(fixture.controller.player.currentTime().seconds, position + 1)
         XCTAssertTrue(fixture.controller.isClaimed(by: .detail, itemID: fixture.item.id))
+        XCTAssertTrue(layers(in: window).contains { $0 === originalLayer && $0.isReadyForDisplay })
         host.rootView = TrailerHandoffRoot(fixture: fixture, isVisible: false)
-        try await Task.sleep(for: .milliseconds(300))
+        let departureDeadline = ContinuousClock.now + .seconds(2)
+        while fixture.controller.player.currentItem != nil, ContinuousClock.now < departureDeadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
         XCTAssertNil(fixture.controller.player.currentItem, "Leaving detail still stops its ambient trailer.")
     }
 
@@ -265,6 +274,7 @@ final class TrailerActionPresentationTests: XCTestCase {
 @MainActor @Observable
 private final class TrailerHandoffFixture {
     let controller = HeroTrailerController()
+    let sidebar = PlozziOSSidebarGeometryModel()
     let settings = HeroBackgroundSettingsModel(store: InMemoryHeroBackgroundSettingsStore(
         HeroBackgroundSettings(homeTrailerEnabled: true, detailMode: .trailer)
     ))
@@ -280,8 +290,8 @@ private struct TrailerHandoffRoot: View {
     var isVisible = true
 
     var body: some View {
-        NavigationStack {
-            if isVisible {
+        if isVisible {
+            NavigationStack {
                 PlozziOSHeroStage(
                     item: fixture.item,
                     presentation: HeroPresentation(item: fixture.item, artworkStyle: .landscape, surface: .home),
@@ -304,6 +314,7 @@ private struct TrailerHandoffRoot: View {
                     ) { EmptyView() }
                 }
             }
+            .environment(fixture.sidebar)
         }
     }
 }

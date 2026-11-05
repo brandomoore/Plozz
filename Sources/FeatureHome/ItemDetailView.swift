@@ -324,11 +324,15 @@ public struct ItemDetailView: View {
         }
         .task(id: heroTrailerTaskID) {
             guard let item = viewModel.state.value?.item else { return }
-            guard isTrailerOwner,
-                  heroBackground.settings.detailMode == .trailer else {
+            guard isTrailerOwner else {
                 if isPageVisible || !preservesHeroTrailerOnDisappear(item.id) {
                     heroTrailerController.stop(ifShowing: item.id, ownedBy: trailerHandlerOwnerID)
                 }
+                heroTrailerController.clearEndHandler(ownerID: trailerHandlerOwnerID)
+                return
+            }
+            guard heroBackground.settings.detailMode == .trailer else {
+                heroTrailerController.stop(ifShowing: item.id)
                 heroTrailerController.clearEndHandler(ownerID: trailerHandlerOwnerID)
                 return
             }
