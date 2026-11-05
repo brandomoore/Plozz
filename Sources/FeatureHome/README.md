@@ -1289,6 +1289,9 @@ and reattachment, rebinding only while mounted; it does not depend on a later
 SwiftUI update to restore navigation. Featured and Showcase artwork reporters
 take ownership only while their respective stage is active, so returning to
 the featured hero republishes its displayed-image palette.
+`HeroShowcaseArtworkHostedTests` checks this ownership in a foreground window
+scene, establishes native focus, and exercises the production Up/Down handoff.
+An unattached package-test window cannot verify that focus-driven contract.
 The navigation fixture samples the bar's rendered position against stage
 progress through full transitions and rapid reversals, as well as checking
 focus ownership, final visibility, and the chevron's screen position. It requires
