@@ -100,5 +100,7 @@ public extension MetadataCapability {
         .cast: .cast,
         .directors: .cast,
         .writers: .cast,
+        .producers: .cast,
+        .composers: .cast,
     ]
 }

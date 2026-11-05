@@ -381,7 +381,7 @@ final class DetailMetadataConsistencyTests: XCTestCase {
         )
         let missing = DetailMetadataResolver.missingFields(in: item)
         XCTAssertFalse(missing.contains(.cast))
-        XCTAssertTrue(missing.isSuperset(of: [.directors, .writers, .studios, .genres]))
+        XCTAssertTrue(missing.isSuperset(of: [.directors, .writers, .producers, .composers, .studios, .genres]))
     }
 
     func testFillsEachMissingGroupWithoutReplacingServerDataOrIdentity() {
@@ -416,6 +416,17 @@ final class DetailMetadataConsistencyTests: XCTestCase {
         XCTAssertEqual(DetailMetadataResolver.applying(enrichment, to: resolved), resolved)
     }
 
+    func testServerCrewAliasesDoNotBecomeExternalGaps() {
+        let item = MediaItem(id: "movie", title: "Movie", kind: .movie, people: [
+            .init(id: "one", name: "Director", kind: "Director"),
+            .init(id: "two", name: "Writer", kind: "Screenplay"),
+            .init(id: "three", name: "Producer", kind: "ExecutiveProducer"),
+            .init(id: "four", name: "Composer", kind: "OriginalMusicComposer")
+        ])
+        XCTAssertTrue(DetailMetadataResolver.missingFields(in: item)
+            .isDisjoint(with: [.directors, .writers, .producers, .composers]))
+    }
+
     func testNoEnrichmentForPersonalVideosOrContainers() {
         for kind: MediaItemKind in [.video, .folder, .collection, .playlist, .unknown] {
             XCTAssertTrue(DetailMetadataResolver.missingFields(
@@ -436,14 +447,22 @@ final class DetailMetadataConsistencyTests: XCTestCase {
         merged.fillMissing(from: MetadataEnrichment(
             directors: .init(value: [.init(id: "two", name: "Second", kind: "Director")], source: .tmdb),
             writers: .init(value: [.init(id: "three", name: "Writer", kind: "Writer")], source: .tmdb),
+            producers: .init(value: [.init(id: "four", name: "Producer", kind: "Producer")], source: .tmdb),
+            composers: .init(value: [.init(id: "five", name: "Composer", kind: "Composer")], source: .tmdb),
             studios: .init(value: ["Studio"], source: .tmdb)
         ))
         XCTAssertEqual(merged.directors, first.directors)
-        XCTAssertTrue(merged.filledFields.isSuperset(of: [.directors, .writers, .studios]))
+        XCTAssertTrue(merged.filledFields.isSuperset(of: [.directors, .writers, .producers, .composers, .studios]))
         XCTAssertFalse(merged.isEmpty)
+        let restored = try JSONDecoder().decode(MetadataEnrichment.self, from: JSONEncoder().encode(merged))
+        XCTAssertEqual(restored.producers, merged.producers)
+        XCTAssertEqual(restored.composers, merged.composers)
+        let legacy = try JSONDecoder().decode(MetadataEnrichment.self, from: JSONEncoder().encode(first))
+        XCTAssertNil(legacy.producers)
+        XCTAssertNil(legacy.composers)
     }
 
-    func testMovieAndAggregateTVJobsMapOnlyDirectorsAndWriters() throws {
+    func testMovieAndAggregateTVJobsMapRequestedKeyCrew() throws {
         let json = """
         {"cast":[{"id":1,"name":"Actor","character":"Role"}],
          "guest_stars":[{"id":1,"name":"Actor","character":"Role"},{"id":5,"name":"Guest"}],
@@ -452,18 +471,77 @@ final class DetailMetadataConsistencyTests: XCTestCase {
            {"id":3,"name":"Writer","jobs":[{"job":"Screenplay"},{"job":"Story"}]},
            {"id":3,"name":"Writer","job":"Teleplay"},
            {"id":4,"name":"Producer","job":"Producer"},
-           {"id":6,"name":"Art director","job":"Art Direction"}]}
+           {"id":6,"name":"Art director","job":"Art Direction"},
+           {"id":7,"name":"Executive","jobs":[{"job":"Executive Producer"}]},
+           {"id":8,"name":"Composer","job":"Original Music Composer"}]}
         """
         let credits = try JSONDecoder().decode(TMDbMetadataProvider.CreditsResponse.self, from: Data(json.utf8))
-        let result = TMDbMetadataProvider.creditMetadata(credits, missing: [.cast, .directors, .writers])
+        let result = TMDbMetadataProvider.creditMetadata(credits, missing: [.cast, .directors, .writers, .producers, .composers])
         XCTAssertEqual(result.cast?.value.map(\.name), ["Actor", "Guest"])
         XCTAssertEqual(result.directors?.value.map(\.name), ["Director"])
         XCTAssertEqual(result.writers?.value.map(\.name), ["Writer"])
         XCTAssertEqual(result.directors?.value.first?.kind, "Director")
         XCTAssertEqual(result.writers?.value.first?.kind, "Writer")
+        XCTAssertEqual(result.producers?.value.map(\.name), ["Producer", "Executive"])
+        XCTAssertEqual(result.producers?.value.map(\.kind), ["Producer", "Executive Producer"])
+        XCTAssertEqual(result.composers?.value.map(\.name), ["Composer"])
         let castOnly = TMDbMetadataProvider.creditMetadata(credits, missing: [.cast])
         XCTAssertNil(castOnly.directors)
         XCTAssertNil(castOnly.writers)
+        XCTAssertNil(castOnly.producers)
+        XCTAssertNil(castOnly.composers)
+    }
+
+    func testTMDbCastUsesBillingBeforeDeduplicationAndLimitNotPopularity() throws {
+        let json = """
+        {"cast":[
+          {"id":3,"name":"Third","order":2,"popularity":1000},
+          {"id":4,"name":"Unknown first"},
+          {"id":2,"name":"Second","order":1,"roles":[{"character":"Character"}]},
+          {"id":1,"name":"First","order":0,"popularity":1},
+          {"id":5,"name":"Unknown second"},
+          {"id":1,"name":"Duplicate","order":0}],
+         "guest_stars":[{"id":2,"name":"Duplicate guest","order":0},{"id":6,"name":"Guest","order":0}]}
+        """
+        let credits = try JSONDecoder().decode(TMDbMetadataProvider.CreditsResponse.self, from: Data(json.utf8))
+        XCTAssertEqual(TMDbMetadataProvider.cast(from: credits).map(\.name),
+                       ["First", "Second", "Third", "Unknown first", "Unknown second", "Guest"])
+        XCTAssertEqual(TMDbMetadataProvider.cast(from: credits, limit: 2).map(\.name), ["First", "Second"])
+        XCTAssertEqual(TMDbMetadataProvider.cast(from: credits)[1].role, "Character")
+    }
+
+    func testProducerComposerGapsFlowThroughTMDbAdapterAndDiscoverWithoutReplacingServerCredits() async throws {
+        let fixture = TMDbTVDBDiscoveryFixture { request, _ in
+            XCTAssertEqual(request.url?.path, "/3/movie/123/credits")
+            return .init(json: """
+            {"crew":[{"id":1,"name":"Producer","job":"Producer"},
+                     {"id":2,"name":"Composer","job":"Original Music Composer"}]}
+            """)
+        }
+        let provider = TMDbEnrichmentProvider(provider: TMDbMetadataProvider(
+            access: .directToken("test-token"), detailHTTP: fixture.http
+        ))
+        let item = MediaItem(id: "movie", title: "Movie", kind: .movie, providerIDs: ["Tmdb": "123"])
+        let enrichment = await provider.enrich(MetadataQuery(item), missing: [.producers, .composers])
+        XCTAssertEqual(enrichment.filledFields, [.producers, .composers])
+        let applied = DetailMetadataResolver.applying(enrichment, to: item)
+        XCTAssertEqual(applied.people.map(\.name), ["Producer", "Composer"])
+        XCTAssertEqual(applied.metadataProvenance[.composers]?.source, .tmdb)
+        XCTAssertEqual(DetailMetadataResolver.applying(enrichment, to: applied), applied)
+
+        var curated = item
+        curated.people = [.init(id: "server", name: "Server music", kind: "Music")]
+        let fake = FakeEnrichmentProvider(id: .tmdb, capabilities: [.cast], output: enrichment)
+        let resolver = ExternalTitleMetadataResolver(pipeline: .init(
+            providers: [fake], config: .init(order: [.tmdb])
+        ))
+        let result = await resolver.resolve(item: curated, regionCode: "US")
+        XCTAssertNotNil(result.enrichment.producers)
+        XCTAssertNil(result.enrichment.composers)
+        XCTAssertEqual(DetailMetadataResolver.applying(result.enrichment, to: curated).people.map(\.name),
+                       ["Server music", "Producer"])
+        let requests = await fixture.recorded()
+        XCTAssertEqual(requests.count, 1)
     }
 
     func testEpisodeAndSeasonCreditsNeverUseWholeShowAggregate() {

@@ -87,6 +87,8 @@ public actor ExternalTitleMetadataResolver {
             .cast,
             .directors,
             .writers,
+            .producers,
+            .composers,
             .studios,
             .providerID(ProviderIDNamespace.tmdb.canonicalKey),
             .providerID(ProviderIDNamespace.tvdb.canonicalKey),
@@ -164,8 +166,11 @@ public actor ExternalTitleMetadataResolver {
             fields.insert(.detailBackdrop)
         }
         if !item.cast.isEmpty { fields.insert(.cast) }
-        if item.people.contains(where: { $0.kind?.lowercased() == "director" }) { fields.insert(.directors) }
-        if item.people.contains(where: { $0.kind?.lowercased() == "writer" }) { fields.insert(.writers) }
+        let roles = Set(item.people.compactMap { MediaCrewRole(kind: $0.kind) })
+        if roles.contains(.director) { fields.insert(.directors) }
+        if roles.contains(.writer) { fields.insert(.writers) }
+        if !roles.isDisjoint(with: [.producer, .executiveProducer]) { fields.insert(.producers) }
+        if !roles.isDisjoint(with: [.composer, .music]) { fields.insert(.composers) }
         if !item.studios.isEmpty { fields.insert(.studios) }
         if item.originalLanguage?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false {
             fields.insert(.originalLanguage)

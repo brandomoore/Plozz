@@ -90,6 +90,8 @@ public struct MetadataField: RawRepresentable, Codable, Hashable, Sendable {
     public static let cast = Self(rawValue: "cast")
     public static let directors = Self(rawValue: "directors")
     public static let writers = Self(rawValue: "writers")
+    public static let producers = Self(rawValue: "producers")
+    public static let composers = Self(rawValue: "composers")
 
     public static func providerID(_ namespace: String) -> Self {
         Self(rawValue: "providerID.\(namespace.lowercased())")

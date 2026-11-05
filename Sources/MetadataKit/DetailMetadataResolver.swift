@@ -72,8 +72,11 @@ public actor DetailMetadataResolver {
         }
         var missing = Set<MetadataField>()
         if item.cast.isEmpty { missing.insert(.cast) }
-        if !item.people.contains(where: { $0.kind?.lowercased() == "director" }) { missing.insert(.directors) }
-        if !item.people.contains(where: { $0.kind?.lowercased() == "writer" }) { missing.insert(.writers) }
+        let roles = Set(item.people.compactMap { MediaCrewRole(kind: $0.kind) })
+        if !roles.contains(.director) { missing.insert(.directors) }
+        if !roles.contains(.writer) { missing.insert(.writers) }
+        if roles.isDisjoint(with: [.producer, .executiveProducer]) { missing.insert(.producers) }
+        if roles.isDisjoint(with: [.composer, .music]) { missing.insert(.composers) }
         if item.studios.isEmpty { missing.insert(.studios) }
         if item.genres.isEmpty { missing.insert(.genres) }
         if item.kind == .movie || item.kind == .series,
@@ -94,7 +97,9 @@ public actor DetailMetadataResolver {
         for (field, people) in [
             (MetadataField.cast, enrichment.cast),
             (.directors, enrichment.directors),
-            (.writers, enrichment.writers)
+            (.writers, enrichment.writers),
+            (.producers, enrichment.producers),
+            (.composers, enrichment.composers)
         ] {
             guard missing.contains(field), let people, !people.value.isEmpty else { continue }
             copy.people.append(contentsOf: people.value)

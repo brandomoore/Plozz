@@ -10,7 +10,7 @@ public struct CastRowView: View {
     /// `nil` hides the header entirely (previously spelled as an empty string,
     /// which a LocalizedStringResource can't express).
     private let title: LocalizedStringResource?
-    private let people: [MediaPerson]
+    private let credits: [MediaPersonCredit]
     /// Leading inset for the title and first headshot. Detail pages pass the
     /// hero leading padding so the cast row aligns with the hero text above.
     private let leadingInset: CGFloat
@@ -25,13 +25,13 @@ public struct CastRowView: View {
         onFocusEntered: (() -> Void)? = nil
     ) {
         self.title = title
-        self.people = people
+        self.credits = MediaPersonCredit.ordered(people)
         self.leadingInset = leadingInset
         self.onFocusEntered = onFocusEntered
     }
 
     public var body: some View {
-        if !people.isEmpty {
+        if !credits.isEmpty {
             VStack(alignment: .leading, spacing: metrics.sectionTitleSpacing) {
                 if let title {
                     Text(title)
@@ -41,8 +41,8 @@ public struct CastRowView: View {
 
                 ScrollView(.horizontal, showsIndicators: false) {
                     LazyHStack(alignment: .top, spacing: metrics.cardSpacing) {
-                        ForEach(people) { person in
-                            CastMemberCard(person: person, onFocusEntered: onFocusEntered)
+                        ForEach(credits) { credit in
+                            CastMemberCard(credit: credit, onFocusEntered: onFocusEntered)
                         }
                     }
                     .padding(.leading, leadingInset)
@@ -66,8 +66,9 @@ public struct CastRowView: View {
 /// circular glass halo, and the person's name and role beneath. A deliberately
 /// smaller, density-aware variant of the artist/profile circular style.
 private struct CastMemberCard: View {
-    let person: MediaPerson
+    let credit: MediaPersonCredit
     let onFocusEntered: (() -> Void)?
+    private var person: MediaPerson { credit.person }
 
     @Environment(\.plozzMetrics) private var metrics
     /// Installed per navigation stack. When absent the tile stays inert, which is
@@ -98,7 +99,7 @@ private struct CastMemberCard: View {
                         .font(.system(size: 22 * Self.scale, weight: .semibold))
                         .foregroundStyle(.primary)
                         .fixedSize(horizontal: false, vertical: true)
-                    if let role = person.role {
+                    if let role = credit.caption {
                         Text(role)
                             .font(.system(size: 19 * Self.scale))
                             .plozzForeground(.secondary)

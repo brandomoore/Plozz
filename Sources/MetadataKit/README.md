@@ -32,13 +32,17 @@ load-bearing.
   library is enriched with a one-time burst of calls, then effectively
   none.
 - `MetadataHTTP` — internal lightweight `URLSession` transport for enrichment.
-- `DetailMetadataResolver` — fills missing cast, directors, writers, studios,
+- `DetailMetadataResolver` — fills missing cast, directors, writers, producers, composers, studios,
   genres and confirmed title facts after a provider's full detail response, using the same pipeline on
   tvOS and iOS/iPadOS. Cast and crew are separate gaps: an existing cast does not
   hide missing directors, and adding cast never erases server crew. Source
   changes and cancellation discard stale results. Household source preferences
   and the current TMDB credential still apply.
   TMDB credits use the movie, series, season or episode endpoint as appropriate;
+  cast uses explicit billing order before deduplication and the upstream limit,
+  retaining response order for ties or absent billing and placing guest stars last.
+  Producer/executive-producer and composer gaps use the same scoped credits request
+  and preserve server-supplied groups; general department credits are not promoted.
   an episode never inherits a whole show's directing/writing credits. Exact
   external IDs take precedence and a failed ID lookup never falls back to a
   different title. A title-only match must agree on title and any supplied year.

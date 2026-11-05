@@ -36,7 +36,16 @@ struct DetailInformationFixture: View {
     }
 
     private var cast: [MediaPerson] {
-        (1...40).map { MediaPerson(id: "actor-\($0)", name: "Person \($0)", kind: "Actor") }
+        var people = (1...40).map { MediaPerson(id: "actor-\($0)", name: "Person \($0)", kind: "Actor") }
+        if ProcessInfo.processInfo.arguments.contains("--detail-cast-crew") {
+            people += [
+                MediaPerson(id: "director", name: "Film Director", kind: "Director"),
+                MediaPerson(id: "writer", name: "Film Writer", kind: "Writer"),
+                MediaPerson(id: "producer", name: "Film Producer", kind: "Producer"),
+                MediaPerson(id: "composer", name: "Film Composer", kind: "Composer")
+            ]
+        }
+        return people
     }
 
     private var item: MediaItem {

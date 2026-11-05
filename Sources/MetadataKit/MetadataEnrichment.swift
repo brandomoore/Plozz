@@ -37,6 +37,8 @@ public struct MetadataEnrichment: Sendable, Equatable, Codable {
     public var cast: SourcedValue<[MediaPerson]>?
     public var directors: SourcedValue<[MediaPerson]>?
     public var writers: SourcedValue<[MediaPerson]>?
+    public var producers: SourcedValue<[MediaPerson]>?
+    public var composers: SourcedValue<[MediaPerson]>?
     public var studios: SourcedValue<[String]>?
     public var originalLanguage: SourcedValue<String>?
     public var seriesStatus: SourcedValue<MediaSeriesStatus>?
@@ -63,6 +65,8 @@ public struct MetadataEnrichment: Sendable, Equatable, Codable {
         cast: SourcedValue<[MediaPerson]>? = nil,
         directors: SourcedValue<[MediaPerson]>? = nil,
         writers: SourcedValue<[MediaPerson]>? = nil,
+        producers: SourcedValue<[MediaPerson]>? = nil,
+        composers: SourcedValue<[MediaPerson]>? = nil,
         studios: SourcedValue<[String]>? = nil,
         originalLanguage: SourcedValue<String>? = nil,
         seriesStatus: SourcedValue<MediaSeriesStatus>? = nil,
@@ -86,6 +90,8 @@ public struct MetadataEnrichment: Sendable, Equatable, Codable {
         self.cast = cast
         self.directors = directors
         self.writers = writers
+        self.producers = producers
+        self.composers = composers
         self.studios = studios
         self.originalLanguage = originalLanguage
         self.seriesStatus = seriesStatus
@@ -99,7 +105,7 @@ public struct MetadataEnrichment: Sendable, Equatable, Codable {
             && episodeStillURL == nil && bannerURL == nil && score == nil
             && backdropCandidates.isEmpty && upcomingEpisode == nil
             && upcomingEpisodes.isEmpty && cast == nil && cadence == nil
-            && directors == nil && writers == nil && studios == nil
+            && directors == nil && writers == nil && producers == nil && composers == nil && studios == nil
             && originalLanguage == nil && seriesStatus == nil
             && catalogSeasonCount == nil && catalogEpisodeCount == nil
     }
@@ -140,6 +146,8 @@ public struct MetadataEnrichment: Sendable, Equatable, Codable {
         if cast != nil { fields.insert(.cast) }
         if directors != nil { fields.insert(.directors) }
         if writers != nil { fields.insert(.writers) }
+        if producers != nil { fields.insert(.producers) }
+        if composers != nil { fields.insert(.composers) }
         if studios != nil { fields.insert(.studios) }
         if originalLanguage != nil { fields.insert(.originalLanguage) }
         if seriesStatus != nil { fields.insert(.seriesStatus) }
@@ -173,6 +181,8 @@ public struct MetadataEnrichment: Sendable, Equatable, Codable {
         fill(&cast, from: other.cast, field: .cast, present: present)
         fill(&directors, from: other.directors, field: .directors, present: present)
         fill(&writers, from: other.writers, field: .writers, present: present)
+        fill(&producers, from: other.producers, field: .producers, present: present)
+        fill(&composers, from: other.composers, field: .composers, present: present)
         fill(&studios, from: other.studios, field: .studios, present: present)
         fill(&originalLanguage, from: other.originalLanguage, field: .originalLanguage, present: present)
         fill(&seriesStatus, from: other.seriesStatus, field: .seriesStatus, present: present)

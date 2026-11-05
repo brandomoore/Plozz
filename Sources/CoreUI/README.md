@@ -1066,7 +1066,14 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   protected score reveals the shared score group, never the surrounding facts.
   Missing sections leave no reserved grid cells. Cast rails lazily show the complete
   supplied cast on both platforms, without a separate More button or dialog,
-  and keep person navigation bound to the owning source. Information previews retain all source
+  and keep person navigation bound to the owning source. The shared
+  `MediaPersonCredit` presentation places six billed actors before available
+  directors, creators, writers, producers and music credits, then the remaining
+  actors. Six is a presentation breakpoint, not a principal-cast classification.
+  Server order is preserved within actor/crew groups. Matching person IDs or
+  explicit external identities share one portrait with combined roles; names
+  alone never merge people, and navigation retains the original provider route.
+  Crew-only titles still show the rail. Information previews retain all source
   values and cap text previews by rendered lines, not an arbitrary number of
   names. Short genre and studio lists remain complete when they fit. Long text
   reuses the synopsis's faded inline MORE treatment beside each truncated value.

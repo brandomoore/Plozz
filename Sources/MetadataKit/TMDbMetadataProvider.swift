@@ -313,7 +313,12 @@ public struct TMDbMetadataProvider: ArtworkProvider {
 
     static func cast(from response: CreditsResponse, limit: Int = 40) -> [MediaPerson] {
         var seen = Set<Int>()
-        return ((response.cast ?? []) + (response.guest_stars ?? [])).compactMap { entry -> MediaPerson? in
+        let billed = (response.cast ?? []).enumerated().sorted {
+            let left = $0.element.order.flatMap { $0 >= 0 ? $0 : nil } ?? Int.max
+            let right = $1.element.order.flatMap { $0 >= 0 ? $0 : nil } ?? Int.max
+            return left == right ? $0.offset < $1.offset : left < right
+        }.map(\.element)
+        return (billed + (response.guest_stars ?? [])).compactMap { entry -> MediaPerson? in
             guard let name = entry.name?.trimmingCharacters(in: .whitespacesAndNewlines),
                   !name.isEmpty, let personID = entry.id, seen.insert(personID).inserted
             else { return nil }
@@ -353,7 +358,7 @@ public struct TMDbMetadataProvider: ArtworkProvider {
         guard isEnabled, query.contentType != .music,
               let id = try await detailID(for: query) else { return MetadataEnrichment() }
         var result = MetadataEnrichment()
-        if !missing.isDisjoint(with: [.cast, .directors, .writers]),
+        if !missing.isDisjoint(with: [.cast, .directors, .writers, .producers, .composers]),
            let path = Self.creditsPath(id: id, query: query), let url = url(path),
            let credits = try await detailResponse(CreditsResponse.self, url: url) {
             result = Self.creditMetadata(credits, missing: missing, sourceURL: url)
@@ -422,7 +427,9 @@ public struct TMDbMetadataProvider: ArtworkProvider {
         }
         for (field, kind, jobs) in [
             (MetadataField.directors, "Director", Set(["Director"])),
-            (MetadataField.writers, "Writer", Set(["Writer", "Screenplay", "Story", "Teleplay"]))
+            (MetadataField.writers, "Writer", Set(["Writer", "Screenplay", "Story", "Teleplay"])),
+            (MetadataField.producers, "Producer", Set(["Producer", "Executive Producer"])),
+            (MetadataField.composers, "Composer", Set(["Original Music Composer", "Composer"]))
         ] where missing.contains(field) {
             var seen = Set<Int>()
             let people = (response.crew ?? []).compactMap { credit -> MediaPerson? in
@@ -431,13 +438,20 @@ public struct TMDbMetadataProvider: ArtworkProvider {
                       let id = credit.id, let name = credit.name?.tmdbNonEmpty,
                       seen.insert(id).inserted else { return nil }
                 return MediaPerson(
-                    id: "tmdb:person:\(id)", name: name, kind: kind,
+                    id: "tmdb:person:\(id)", name: name,
+                    kind: field == .producers && !reportedJobs.contains("Producer") ? "Executive Producer" : kind,
                     imageURL: credit.profile_path.flatMap { URL(string: "https://image.tmdb.org/t/p/w342\($0)") }
                 )
             }
             if !people.isEmpty {
                 let sourced = SourcedValue(value: people, source: MetadataSource.tmdb, sourceURL: sourceURL)
-                if field == .directors { result.directors = sourced } else { result.writers = sourced }
+                switch field {
+                case .directors: result.directors = sourced
+                case .writers: result.writers = sourced
+                case .producers: result.producers = sourced
+                case .composers: result.composers = sourced
+                default: preconditionFailure("Unsupported crew field")
+                }
             }
         }
         return result
@@ -858,6 +872,7 @@ public struct TMDbMetadataProvider: ArtworkProvider {
         let character: String?
         let profile_path: String?
         let roles: [CreditRole]?
+        let order: Int?
     }
     struct CreditRole: Decodable, Sendable {
         let character: String?

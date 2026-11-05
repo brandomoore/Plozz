@@ -159,6 +159,32 @@ final class FamilyGuidanceRemoteTests: XCTestCase {
         XCTAssertFalse(app.staticTexts["detail-more-title"].exists)
     }
 
+    func testDirectorFollowsSixActorsAndKeepsPersonNavigation() throws {
+        let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.FocusHost")
+        app.launchArguments = ["--detail-information-fixture", "--detail-cast-crew"]
+        app.launch()
+        defer { app.terminate() }
+        let first = app.buttons["Person 1"].firstMatch
+        XCTAssertTrue(first.waitForExistence(timeout: 15))
+        XCTAssertTrue(isFocused(first), app.debugDescription)
+        for _ in 0..<6 { XCUIRemote.shared.press(.right) }
+        // The circular control exposes its final caption as the focused AX node.
+        XCTAssertTrue(isFocused(app.buttons["Director"].firstMatch), app.debugDescription)
+        XCTAssertTrue(app.buttons["Film Director"].exists)
+        recordScreenshot(app, name: "director-after-six-actors")
+        XCUIRemote.shared.press(.select)
+        XCTAssertEqual(app.staticTexts["selected-cast-person"].label, "Film Director")
+        for (name, focusLabel) in [("Film Writer", "Writer"), ("Film Producer", "Producer"),
+                                   ("Film Composer", "Composer"), ("Person 7", "Person 7")] {
+            XCUIRemote.shared.press(.right)
+            XCTAssertTrue(app.buttons[name].exists)
+            XCTAssertTrue(isFocused(app.buttons[focusLabel].firstMatch), app.debugDescription)
+        }
+        for _ in 7..<40 { XCUIRemote.shared.press(.right) }
+        XCTAssertTrue(isFocused(app.buttons["Person 40"].firstMatch), app.debugDescription)
+        XCTAssertFalse(app.buttons["detail-cast-more"].exists)
+    }
+
     func testLongDetailsUseTheSameReadableCard() throws {
         let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.FocusHost")
         app.launchArguments = ["--detail-information-fixture", "--detail-single-long-value"]

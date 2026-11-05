@@ -646,9 +646,9 @@ private struct PlozziOSCanonicalItemDetailView: View {
                     )
                 }
 
-                if !detail.item.people.filter(\.isCast).isEmpty {
+                if !detail.item.detailCredits.isEmpty {
                     PlozziOSCastSection(
-                        people: detail.item.people.filter(\.isCast),
+                        people: detail.item.people,
                         sourceAccountID: detail.item.sourceAccountID
                     )
                 }
@@ -4036,16 +4036,20 @@ private struct PlozziOSCastSection: View {
     /// list holds.
     let sourceAccountID: String?
 
+    private var credits: [MediaPersonCredit] { MediaPersonCredit.ordered(people) }
+
     var body: some View {
         PlozziOSMediaSection(
-            title: Text("Cast"), horizontalInset: pageInset
+            title: credits.contains { !$0.crewRoles.isEmpty } ? Text("Cast & Crew") : Text("Cast"),
+            horizontalInset: pageInset
         ) {
             ScrollView(.horizontal) {
                 LazyHStack(
                     alignment: .top,
                     spacing: PlozziOSMediaRailLayout.visibleGap(metrics: metrics)
                 ) {
-                    ForEach(people) { person in
+                    ForEach(credits) { credit in
+                        let person = credit.person
                         Button {
                             openPerson?(person, sourceAccountID)
                         } label: {
@@ -4073,7 +4077,7 @@ private struct PlozziOSCastSection: View {
                                     maxWidth: .infinity,
                                     alignment: .top
                                 )
-                            if let role = person.role {
+                            if let role = credit.caption {
                                 Text(role)
                                     .font(.caption)
                                     .plozzForeground(.secondary)

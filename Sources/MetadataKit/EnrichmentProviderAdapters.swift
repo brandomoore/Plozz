@@ -223,12 +223,11 @@ public struct TMDbEnrichmentProvider: MetadataEnrichmentProvider {
     private let provider: any TMDbEnriching
     private let backdropLimit: Int
 
-    /// Version 3 adds scoped credits and descriptive facts; older cached cast
-    /// answers may describe the whole show rather than the requested episode.
+    /// Version 4 retains billing order and adds production/music credits.
     public init(
         provider: any TMDbEnriching,
         backdropLimit: Int = 4,
-        policy: ProviderPolicy = ProviderPolicy(version: 3)
+        policy: ProviderPolicy = ProviderPolicy(version: 4)
     ) {
         self.provider = provider
         self.backdropLimit = backdropLimit
@@ -256,7 +255,7 @@ public struct TMDbEnrichmentProvider: MetadataEnrichmentProvider {
             out.episodeStillURL = SourcedValue(value: url, source: .tmdb)
         }
         let detailFields = missing.intersection([
-            .cast, .directors, .writers, .studios, .genres, .overview, .taglines,
+            .cast, .directors, .writers, .producers, .composers, .studios, .genres, .overview, .taglines,
             .originalLanguage, .seriesStatus, .catalogSeasonCount, .catalogEpisodeCount
         ])
         if !detailFields.isEmpty {
