@@ -1098,6 +1098,10 @@ records on both platforms; error dialogs, playback routing and timeouts are unch
   or replay. Back returns to the same page at the current position, restores the
   ambient mute choice, and resumes the hero. An actual stop/profile departure
   invalidates the presentation so dismissing it cannot revive old playback.
+  On Back, a retained trailer frame covers the outgoing player while the live
+  layer returns to the hero before the dissolve begins. Carousel and focus
+  callbacks remain suspended until dismissal completes; the hero is never
+  revealed while its video surface is still in the full-screen player.
   A pending or failed Home trailer keeps the normal artwork dwell, not the
   advertised trailer duration. Preparation is bounded to eight seconds and
   abandoned when its item is replaced. Only ready playback extends the timeline;

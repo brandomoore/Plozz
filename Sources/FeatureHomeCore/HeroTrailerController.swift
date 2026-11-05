@@ -76,7 +76,7 @@ public final class HeroTrailerController {
     public private(set) var featuredOwnerID: UUID?
     public var isFeaturedReserved: Bool { featuredOwnerID != nil }
     public var isFullScreen: Bool { activeSurfaceRole == .fullScreen }
-    @ObservationIgnored private var fullScreenSession: (id: UUID, role: HeroTrailerSurfaceRole, muted: Bool)?
+    @ObservationIgnored private var fullScreenSession: (id: UUID, role: HeroTrailerSurfaceRole, muted: Bool, returning: Bool)?
     /// The resolved trailer duration in seconds once known (`0` until ready).
     /// Drives the hero's dwell length so the progress bar spans the full trailer.
     public private(set) var duration: TimeInterval = 0
@@ -462,7 +462,7 @@ public final class HeroTrailerController {
               isClaimed(by: role, itemID: itemID), isPlaying, isReady,
               !isPlaybackSuppressed, !isFeaturedReserved else { return nil }
         let id = UUID()
-        fullScreenSession = (id, role, isMuted)
+        fullScreenSession = (id, role, isMuted, false)
         activeSurfaceRole = .fullScreen
         #if canImport(UIKit)
         let frame = decodedFrame() ?? handoffImage
@@ -481,16 +481,37 @@ public final class HeroTrailerController {
         return surfaceView
     }
 
-    public func prepareFullScreenReturn(id: UUID) {
-        guard fullScreenSession?.id == id else { return }
+    /// Cover the outgoing surface while restoring live video beneath it.
+    @discardableResult
+    public func prepareFullScreenReturn(id: UUID) -> UIView? {
+        guard fullScreenSession?.id == id, fullScreenSession?.returning == false else { return nil }
+        fullScreenSession?.returning = true
         #if canImport(UIKit)
         let frame = decodedFrame() ?? handoffImage
         handoffImage = frame
-        (surfaceView.superview as? HeroTrailerVideoLayer.HostView)?.holdFrame(frame)
+        let cover = UIImageView(image: frame)
+        cover.accessibilityIdentifier = "trailer-fullscreen-return-cover"
+        cover.isAccessibilityElement = false
+        cover.isUserInteractionEnabled = false
+        cover.backgroundColor = .black
+        cover.contentMode = .scaleAspectFit
+        cover.clipsToBounds = true
+        cover.bounds = surfaceView.bounds
+        cover.center = surfaceView.center
+        cover.transform = surfaceView.transform
+        cover.autoresizingMask = surfaceView.autoresizingMask
+        surfaceView.superview?.insertSubview(cover, aboveSubview: surfaceView)
+        surfaceView.transform = .identity
+        surfaceView.playerLayer.videoGravity = .resizeAspectFill
+        moveSurfaceToActiveHost()
+        surfaceView.superview?.layoutIfNeeded()
+        return cover
+        #else
+        return nil
         #endif
     }
 
-    /// Return the same renderer after the full-screen presentation has dismissed.
+    /// Release full-screen ownership once the covered return has finished.
     public func endFullScreen(id: UUID) {
         guard let session = fullScreenSession, session.id == id else { return }
         fullScreenSession = nil
@@ -499,7 +520,6 @@ public final class HeroTrailerController {
         #if canImport(UIKit)
         surfaceView.transform = .identity
         surfaceView.playerLayer.videoGravity = .resizeAspectFill
-        surfaceView.playerLayer.player = player
         moveSurfaceToActiveHost()
         #endif
         let position = player.currentTime().seconds
@@ -525,8 +545,9 @@ public final class HeroTrailerController {
     }
 
     private func moveSurfaceToActiveHost() {
+        let role = fullScreenSession?.returning == true ? fullScreenSession?.role : activeSurfaceRole
         let host: HeroTrailerVideoLayer.HostView?
-        switch activeSurfaceRole {
+        switch role {
         case .home: host = homeHost
         case .detail: host = detailHost
         case .featured: host = featuredHost
@@ -535,11 +556,11 @@ public final class HeroTrailerController {
         }
         // Keep the outgoing picture until the receiving host actually mounts.
         guard let host, host.window != nil, host.controller === self,
-              host.role == activeSurfaceRole, surfaceView.superview !== host else { return }
+              host.role == role, surfaceView.superview !== host else { return }
         let frame = decodedFrame() ?? handoffImage
         (surfaceView.superview as? HeroTrailerVideoLayer.HostView)?.holdFrame(frame)
         host.holdFrame(frame)
-        HandoffDiagnostics.emit("trailer RENDER role=\(String(describing: activeSurfaceRole)) item=\(HandoffDiagnostics.correlationID(currentItemID))")
+        HandoffDiagnostics.emit("trailer RENDER role=\(String(describing: role)) item=\(HandoffDiagnostics.correlationID(currentItemID))")
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         surfaceView.removeFromSuperview()

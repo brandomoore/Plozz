@@ -214,9 +214,10 @@ struct TrailerFullscreenPresentation: UIViewControllerRepresentable {
             if let presented {
                 guard request?.id != presented.id, !dismissing else { return }
                 dismissing = true
-                controller.prepareFullScreenReturn(id: presented.id)
+                let returnCover = controller.prepareFullScreenReturn(id: presented.id)
                 presented.player.dismiss(animated: animated) { [self] in
                     controller.endFullScreen(id: presented.id)
+                    returnCover?.removeFromSuperview()
                     self.presented = nil
                     dismissing = false
                     reconcile(anchor: anchor)

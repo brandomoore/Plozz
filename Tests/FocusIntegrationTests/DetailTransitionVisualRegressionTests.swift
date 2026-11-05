@@ -570,6 +570,7 @@ final class DetailTransitionVisualRegressionTests: XCTestCase {
         let role: HeroTrailerSurfaceRole = fromDetail ? .detail : .home
         let original = try XCTUnwrap(model.trailer.player.currentItem)
         let ambientLayer = try XCTUnwrap(trailerLayers(in: window).first { $0.player === model.trailer.player })
+        let ambientHostLayer = try XCTUnwrap(ambientLayer.superlayer)
         let originalPosition = model.trailer.player.currentTime().seconds
         model.fullscreenRequest = try XCTUnwrap(TrailerFullscreenRequest(
             controller: model.trailer, itemID: model.provider.show.id, role: role,
@@ -610,13 +611,26 @@ final class DetailTransitionVisualRegressionTests: XCTestCase {
         try await waitUntil {
             !player.engine.controls.isSeeking && player.engine.currentTime > 0.2 && player.engine.currentTime < 3
         }
+        let fullScreenSurfaceHost = try XCTUnwrap(ambientLayer.superlayer?.delegate as? UIView)
         let returnPosition = model.trailer.player.currentTime().seconds
         model.fullscreenRequest = nil
+        try await waitUntil { player.isBeingDismissed }
+        XCTAssertTrue(ambientLayer.superlayer === ambientHostLayer,
+                      "Restore the live background before the full-screen cover starts revealing the hero.")
+        XCTAssertTrue(ambientLayer.isReadyForDisplay)
+        XCTAssertTrue(model.trailer.isFullScreen,
+                      "Keep carousel and focus callbacks suspended until the return transition finishes.")
+        let returnCover = try XCTUnwrap(fullScreenSurfaceHost.subviews.compactMap { $0 as? UIImageView }
+            .first { $0.accessibilityIdentifier == "trailer-fullscreen-return-cover" })
+        XCTAssertNotNil(returnCover.image, "Cover the outgoing player with video, not artwork or black.")
+        XCTAssertTrue(returnCover.image === model.trailer.handoffImage)
         try await waitUntil {
             !model.trailer.isFullScreen && host.presentedViewController == nil
                 && ambientLayer.player === model.trailer.player && ambientLayer.isReadyForDisplay
         }
         XCTAssertTrue(model.trailer.player.currentItem === original)
+        XCTAssertTrue(ambientLayer.superlayer === ambientHostLayer)
+        XCTAssertNil(returnCover.superview, "Release the transition frame after revealing live video.")
         XCTAssertTrue(model.trailer.isClaimed(by: role, itemID: model.provider.show.id))
         XCTAssertTrue(model.trailer.isMuted, "Restore the ambient mute choice.")
         XCTAssertEqual(model.path, fromDetail ? [1] : [])
