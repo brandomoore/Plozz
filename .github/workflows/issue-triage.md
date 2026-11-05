@@ -79,14 +79,14 @@ safe-outputs:
     target: "*"
     pull-requests: false
     max: 20
-    max-labels: 1
-    allowed: ["triage: needs evidence", "triage: investigate", "triage: verify", "triage: backlog"]
+    max-labels: 2
+    allowed: ["triage: needs evidence", "triage: investigate", "triage: verify", "triage: backlog", "severity: blocking", "severity: major", "severity: normal"]
     create-if-missing: true
   remove-labels:
     target: "*"
     max: 20
     pull-requests: false
-    allowed: ["triage: needs evidence", "triage: investigate", "triage: verify", "triage: backlog"]
+    allowed: ["triage: needs evidence", "triage: investigate", "triage: verify", "triage: backlog", "severity: blocking", "severity: major", "severity: normal"]
   data:
     schema_version: number
     issue_number: number
@@ -104,6 +104,8 @@ safe-outputs:
       type: array
       items: string
     next_action: string
+    severity: string
+    severity_reason: string
   threat-detection:
     engine:
       id: copilot
@@ -173,8 +175,9 @@ issue. Treat a later affected-build report as new evidence, even after a fix.
    backlog. Read release metadata and delivery receipts where relevant.
 2. Read previous triage comments only when authored by `github-actions[bot]`
    and marked by this `issue-triage` workflow. Parse their `Structured data:`
-   JSON; accept schema version 1 (newline-separated paths/URLs) or 2 (arrays of
-   individual path/URL strings). Issue number must match, checked SHA must be
+   JSON; accept schema version 1 (newline-separated paths/URLs), 2 (arrays of
+   individual path/URL strings), or 3 (adds severity and severity_reason).
+   Issue number must match, checked SHA must be
    a valid ancestor of HEAD, and dates/paths must be valid. Missing, malformed,
    or conflicting records are unassessed, never authoritative.
 3. Process at most 20 issues. Prioritize a triggering open issue, then crashes,
@@ -190,7 +193,11 @@ issue. Treat a later affected-build report as new evidence, even after a fix.
 5. Ignore this workflow's own comments and repetitive Discord vote summaries
    when determining new report evidence. Preserve the timestamp of the last
    substantive report/reply, not the bot's updated comment timestamp.
-6. If inputs and evidence are unchanged and the record is under seven days
+6. A record without a valid version-3 severity assessment needs a one-time
+   reassessment, even when other inputs are unchanged. Include these records
+   in the oldest/unassessed rotation rather than repeatedly processing the same
+   20 issues. A maintainer severity override is not a reason to skip assessment.
+   Otherwise, if inputs and evidence are unchanged and the record is under seven days
    old, leave it alone. Do not emit a comment just because this job ran. If
    nothing warrants an update, use `noop` with a brief explanation.
 
@@ -222,6 +229,38 @@ root cause are separate facts.
   different playback failures in one discussion do not prove a shared cause.
   State conflicting evidence and limitations instead of averaging them away.
 
+## Assess user impact separately from confidence and commitment
+
+For each selected issue, also assess severity from its full discussion and
+specific reported behavior. This describes user impact, not proof of a root
+cause, a promise to fix it, or a delivery stage:
+
+- `blocking`: a core task cannot be completed on the affected configuration,
+  such as content never loading, playback consistently failing, a crash loop,
+  or a persistent hang, with no practical workaround in the report.
+- `major`: a core task is possible but seriously impaired by extreme slowness,
+  repeated failures or frequent crashes, or a substantial workaround is needed.
+- `normal`: a described impact is neither blocking nor major, including
+  cosmetic defects, minor friction and ordinary requests for new capabilities.
+- `unassessed`: the report does not describe enough impact to distinguish these
+  levels. Missing evidence is not evidence of low severity.
+
+Do not classify from title keywords, votes, emphatic language or a speculative
+code path alone. A clear report can establish reported impact without runtime
+reproduction; say "reported" in the reason when appropriate. Keep provider,
+platform, affected build and workaround limits explicit in the assessment.
+An ordinary feature request is not a blocker merely because an unimplemented
+feature cannot be used. Reassess severity when newer evidence changes the
+impact; do not lower severity solely because code was merged or a fix is
+plausible. Never infer severity from roadmap commitments.
+
+Maintain at most one automatic `severity:` label, matching blocking, major or
+normal. For unassessed, remove obsolete automatic severity labels without
+adding another. Never add, remove or otherwise change any `severity override:`
+label: those belong exclusively to the maintainer. The website always gives
+an override precedence, while retaining your current automatic assessment
+so the maintainer can choose "Automatic" later.
+
 ## Publish one concise assessment
 
 Re-read the issue before requesting writes. Skip it if now closed or if new
@@ -242,21 +281,23 @@ against the structured evidence URLs and use the issue URL without a fragment
 if the exact comment URL is unavailable.
 
 Supply the structured `data` object alongside the body:
-`schema_version: 2`, numeric `issue_number`, full `checked_sha`, ISO8601 UTC
+`schema_version: 3`, numeric `issue_number`, full `checked_sha`, ISO8601 UTC
 `checked_at`, `reported_build`, `last_reported_build`, ISO8601
 `last_report_at` (or `unknown`), `status`, `assessment`, arrays of individual
 repository-relative `relevant_paths` and individual public GitHub
-`evidence_urls`, and a short `next_action`. No personal names, account/server
+`evidence_urls`, a short `next_action`, `severity` (blocking, major, normal or
+unassessed), and a short evidence-backed `severity_reason`. No personal names, account/server
 addresses, raw logs, tokens, or private URLs. Do not claim to have checked
 anything you did not inspect. Use empty arrays rather than inventing citations.
 Never put multiple URLs in one string: escaped newlines between URLs can be
 misread by the publication sanitizer and corrupt the JSON record.
 
-Maintain only the four workflow-owned `triage:` labels. Map `needs-evidence`,
+Maintain only the four workflow-owned `triage:` labels and the three automatic
+`severity:` labels described above. Map `needs-evidence`,
 `investigate`, `verify`, and `backlog` to their corresponding allowed label,
 removing any other label from that four-label set. For `awaiting-release`,
 remove obsolete `triage:` labels but leave the delivery label alone.
-Never alter human labels or product priorities.
+Never alter human labels, severity overrides, roadmap stages or commitments.
 
 Finish with a concise run summary: issues assessed, issues remaining unchecked,
 up to five recommended next actions, and any missing evidence or blocked reads.

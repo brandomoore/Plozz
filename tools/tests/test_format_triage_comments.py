@@ -17,8 +17,10 @@ SPEC.loader.exec_module(APP)
 def comment(version=2):
     data = {
         "schema_version": version, "issue_number": 351,
-        "evidence_urls": ["https://github.com/brandomoore/Plozz/issues/351"] if version == 2 else "",
+        "evidence_urls": ["https://github.com/brandomoore/Plozz/issues/351"] if version >= 2 else "",
     }
+    if version == 3:
+        data.update(severity="blocking", severity_reason="Reported playback cannot start.")
     return {
         "id": 42, "user": {"login": "github-actions[bot]", "type": "Bot"},
         "issue_url": "https://api.github.com/repos/brandomoore/Plozz/issues/351",
@@ -29,7 +31,7 @@ def comment(version=2):
 
 class FormatTriageCommentsTests(unittest.TestCase):
     def test_public_prose_uses_validated_content_without_metadata_or_footer(self):
-        for version in (1, 2):
+        for version in (1, 2, 3):
             original = comment(version)
             for body in (original["body"], APP.collapsed_body(original)):
                 self.assertEqual(APP.public_prose({**original, "body": body}),
@@ -39,8 +41,8 @@ class FormatTriageCommentsTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             APP.public_prose({**comment(), "body": APP.MARKER})
 
-    def test_both_versions_preserve_record_prose_and_footer_exactly(self):
-        for version in (1, 2):
+    def test_supported_versions_preserve_record_prose_and_footer_exactly(self):
+        for version in (1, 2, 3):
             with self.subTest(version=version):
                 original = comment(version)
                 body = APP.collapsed_body(original)
