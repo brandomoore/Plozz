@@ -2231,6 +2231,11 @@ extension PlozzigenVideoEngine {
     /// which is exactly what ShazamKit's streaming matcher accepts.
     @MainActor
     public func installSongTap() -> AsyncStream<SongTapChunk>? {
+        // A server-transcoded HLS stream plays on the remote-HLS route, where the
+        // tap fetches the server's segments a second time. On Plex transcodes it
+        // could not decode them ("no tfhd") and a long seek then stalled playback
+        // with HTTP 404, so song identification stays off on that route.
+        guard engine.videoRoute != .remoteBypass else { return nil }
         let tap = engine.installAudioTap(channels: .downmix)
         guard engine.audioTapHasDeliverySource else {
             engine.removeAudioTap()
