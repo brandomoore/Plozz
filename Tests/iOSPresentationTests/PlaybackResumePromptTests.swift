@@ -1,5 +1,7 @@
+import AppRuntime
 import CoreModels
 import CoreUI
+import FeatureHomeCore
 import SwiftUI
 import UIKit
 import XCTest
@@ -7,6 +9,52 @@ import XCTest
 
 @MainActor
 final class PlaybackResumePromptTests: XCTestCase {
+    func testEpisodeHeroRequestKeepsResumeWhenDetailSourcesDescribeItsShow() {
+        let suite = "PlaybackResumePromptTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let preferences = VersionPreferenceStore(defaults: defaults)
+        let episode = MediaItem(
+            id: "episode", title: "Episode", kind: .episode, seriesID: "show",
+            runtime: 3_000, resumePosition: 867, playedPercentage: 0.289,
+            sourceAccountID: "jellyfin",
+            versions: [MediaVersion(id: "episode-file", height: 1080)]
+        )
+        let sources = [
+            MediaSourceRef(accountID: "jellyfin", itemID: "show", kind: .series),
+            MediaSourceRef(accountID: "plex", itemID: "other-show", kind: .series)
+        ]
+        let capabilities = MediaCapabilities.detected()
+        let source = DetailPlaybackSelection.preferredSource(
+            sourceOverride: nil, libraryOrigin: nil,
+            itemSourceAccountID: episode.sourceAccountID,
+            sources: sources, capabilities: capabilities
+        )
+        let versions = DetailPlaybackSelection.versions(
+            for: episode, sources: sources, activeAccountID: source?.accountID
+        )
+        let versionID = DetailPlaybackSelection.preferredVersionID(
+            for: episode, versions: versions, versionOverride: nil,
+            preferences: preferences, capabilities: capabilities
+        )
+        let selected = DetailPlaybackSelection.playItem(
+            for: episode, sources: sources, activeAccountID: source?.accountID,
+            versionID: versionID, explicit: false
+        )
+        let playable = PlaybackSourceSelection.bestPlayItem(
+            selected, accounts: [], identitySources: { _ in sources }
+        )
+        let request = PlozziOSPlaybackRequest(
+            item: playable, startPosition: playable.resumePosition ?? 0,
+            versionPreferences: preferences
+        )
+        XCTAssertEqual(request.item.id, episode.id)
+        XCTAssertEqual(request.item.sourceAccountID, episode.sourceAccountID)
+        XCTAssertEqual(request.startPosition, 867)
+        XCTAssertTrue(PlaybackSettings(askBeforeResuming: true)
+            .shouldAskBeforeResuming(at: request.startPosition))
+    }
+
     func testRestartChangesOnlyThePendingRequestsPosition() {
         let suite = "PlaybackResumePromptTests-\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!

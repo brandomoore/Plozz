@@ -792,6 +792,10 @@ records on both platforms; error dialogs, playback routing and timeouts are unch
   target. The opening card selects identity, not ongoing watch state: TV and
   mobile resolve the loaded episode with live resume data, never reapplying the
   original card's watched flag after a toggle.
+  Playback resume reconciliation excludes sources of another media kind. A
+  series page's source inventory must not clear its hero episode's saved position
+  or contribute the show's watched state; eligible episode sources still use
+  the shared cross-server resume policy.
   An episode's show breadcrumb is a single native button showing only the show
   title and chevron, without a background or border in either focus state.
   Play takes initial focus when available; Up then reaches

@@ -47,4 +47,50 @@ final class FurthestResumeAtPlayTests: XCTestCase {
         item = item.reconcilingPlaybackResume(acrossSources: [])
         XCTAssertEqual(item.resumePosition, 90)
     }
+
+    func testEpisodeResumeIgnoresParentContainerSources() {
+        let episode = MediaItem(
+            id: "episode", title: "Episode", kind: .episode,
+            resumePosition: 867, sourceAccountID: "jellyfin"
+        )
+        for kind in [MediaItemKind.series, .season] {
+            for parent in [
+                MediaSourceRef(accountID: "jellyfin", itemID: "parent", kind: kind),
+                MediaSourceRef(accountID: "jellyfin", itemID: "parent", kind: kind, resumePosition: 2_000),
+                MediaSourceRef(accountID: "jellyfin", itemID: "parent", kind: kind, isPlayed: true)
+            ] {
+                let routed = MediaItem.retargetedForPlayback(
+                    item: episode, sources: [parent],
+                    activeAccountID: parent.accountID, versionID: nil
+                )
+                XCTAssertEqual(routed.id, episode.id)
+                XCTAssertEqual(routed.sourceAccountID, episode.sourceAccountID)
+                XCTAssertEqual(routed.resumePosition, 867)
+            }
+        }
+    }
+
+    func testEpisodeSourcesStillReconcileWithoutParentWatchState() {
+        let episode = MediaItem(
+            id: "episode", title: "Episode", kind: .episode,
+            resumePosition: 240, sourceAccountID: "jellyfin"
+        )
+        let jellyfin = MediaSourceRef(
+            accountID: "jellyfin", itemID: "episode", kind: .episode, resumePosition: 240
+        )
+        let plex = MediaSourceRef(
+            accountID: "plex", itemID: "other-episode", kind: .episode, resumePosition: 600
+        )
+        let parent = MediaSourceRef(
+            accountID: "jellyfin", itemID: "show", kind: .series, isPlayed: true,
+            lastPlayedAt: Date()
+        )
+        let routed = MediaItem.retargetedForPlayback(
+            item: episode, sources: [jellyfin, plex, parent],
+            activeAccountID: "plex", versionID: nil
+        )
+        XCTAssertEqual(routed.id, plex.itemID)
+        XCTAssertEqual(routed.sourceAccountID, plex.accountID)
+        XCTAssertEqual(routed.resumePosition, 600)
+    }
 }
