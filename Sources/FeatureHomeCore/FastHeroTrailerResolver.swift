@@ -32,11 +32,13 @@ public enum FastHeroTrailerResolver {
                 continue
             }
             let trailers = (try? await provider.trailers(for: source.itemID)) ?? []
+            guard !Task.isCancelled else { return nil }
             guard let local = trailers.first(where: { !$0.isYouTubeTrailer }),
                   let request = try? await provider.playbackInfo(for: local.id)
             else {
                 continue
             }
+            guard !Task.isCancelled else { return nil }
 
             let url: URL?
             if let streamURL = request.streamURL {
@@ -48,8 +50,9 @@ public enum FastHeroTrailerResolver {
                 url = request.playbackSource?.publicURL
             }
 
-            if let url,
-               let duration = await HeroTrailerController.resolvedDuration(of: url) {
+            if !Task.isCancelled, let url,
+               let duration = await HeroTrailerController.resolvedDuration(of: url),
+               !Task.isCancelled {
                 return HeroTrailerSource(
                     ownerItemID: item.id,
                     trailerItemID: local.id,

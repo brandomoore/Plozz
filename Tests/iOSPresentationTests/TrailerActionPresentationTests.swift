@@ -2,6 +2,7 @@
 import CoreModels
 import CoreUI
 import FeatureHomeCore
+import FeatureSettings
 import SwiftUI
 import UIKit
 import Vision
@@ -10,6 +11,60 @@ import XCTest
 
 @MainActor
 final class TrailerActionPresentationTests: XCTestCase {
+    func testSharedTrailerSettingsRenderOnPhoneAndTabletWithThemeMusicWhenTrailersAreOff() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        let host = UIHostingController(rootView: AnyView(EmptyView()))
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        let suite = "TrailerSettingsPresentation.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        let music = ThemeMusicSettingsModel(store: ThemeMusicSettingsStore(defaults: defaults))
+        let background = HeroBackgroundSettingsModel(store: InMemoryHeroBackgroundSettingsStore(
+            HeroBackgroundSettings(detailMode: .themeMusic)
+        ))
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+            defaults.removePersistentDomain(forName: suite)
+        }
+        for width in [CGFloat(390), 1024] {
+            window.frame = CGRect(x: 0, y: 0, width: width, height: 1000)
+            host.rootView = AnyView(
+                NavigationStack {
+                    TrailersAndMusicSettingsView(background: background, themeMusic: music)
+                }
+                .environment(\.themePalette, .dark)
+                .environment(\.colorScheme, .dark)
+                .environment(\.locale, Locale(identifier: "en_US"))
+            )
+            for policy in TrailerSourcePolicy.allCases {
+                background.settings.trailerSources = policy
+                window.layoutIfNeeded()
+                try await Task.sleep(for: .milliseconds(300))
+                let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+                    window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+                }
+                let attachment = XCTAttachment(image: image)
+                attachment.name = "trailer-settings-\(Int(width))-\(policy.rawValue)"
+                attachment.lifetime = .keepAlways
+                add(attachment)
+                let request = VNRecognizeTextRequest()
+                request.recognitionLevel = .accurate
+                request.recognitionLanguages = ["en-US"]
+                try VNImageRequestHandler(cgImage: XCTUnwrap(image.cgImage)).perform([request])
+                let text = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ")
+                XCTAssertTrue(text.contains("Trailers & music"), text)
+                XCTAssertTrue(text.contains("Home autoplay"), text)
+                XCTAssertTrue(text.contains("Detail background"), text)
+                XCTAssertTrue(text.contains("Theme music volume"), text)
+                XCTAssertTrue(background.settings.themeMusicEnabled)
+            }
+        }
+    }
+
     func testTrailerLabelRemainsIconOnlyEvenWhenParentRequestsText() {
         for external in [false, true] {
             let trailer = external

@@ -1383,7 +1383,7 @@ struct DetailHeroView: View, Equatable {
             scrimTone: scrimTone,
             recedeModel: seriesRecedeModel,
             trailerController: heroTrailerController,
-            showsTrailer: heroBackground.settings.detailMode == .trailer
+            showsTrailer: heroBackground.settings.detailTrailerEnabled
                 && heroTrailerController.isShowing((backdropItem ?? item).id)
                 && heroTrailerController.isPlaying
         )

@@ -1,9 +1,27 @@
 import Foundation
 
-/// The single per-profile choice for what plays behind the hero (Home carousel
-/// and detail page). Modeled as one mode so **theme music and autoplay trailers
-/// are mutually exclusive by construction** — it is structurally impossible to
-/// enable both, which is the arbitration the UI needs.
+public enum TrailerSourcePolicy: String, Codable, CaseIterable, Sendable {
+    case off
+    case serverOnly
+    case serverAndYouTube
+
+    public var allowsServerTrailers: Bool { self != .off }
+    public var allowsYouTube: Bool { self == .serverAndYouTube }
+
+    public var displayName: LocalizedStringResource {
+        switch self {
+        case .off: "Off"
+        case .serverOnly: "Server only"
+        case .serverAndYouTube: "Server + YouTube"
+        }
+    }
+
+    public func allows(_ trailer: MediaItem) -> Bool {
+        trailer.isYouTubeTrailer ? allowsYouTube : allowsServerTrailers
+    }
+}
+
+/// Detail-page background playback. Home autoplay and manual trailers are independent.
 public enum HeroBackgroundMode: String, Codable, CaseIterable, Sendable {
     /// Static hero artwork only (today's classic behavior).
     case off
@@ -71,6 +89,7 @@ public enum HeroBackgroundMode: String, Codable, CaseIterable, Sendable {
 /// `trailerMuted`): the old mode maps to the detail page (theme music was always
 /// detail-only), and the home trailer inherits whether the old mode was `.trailer`.
 public struct HeroBackgroundSettings: Codable, Equatable, Sendable {
+    public var trailerSources: TrailerSourcePolicy
     /// Whether a trailer autoplays behind the HOME hero. Default `true`.
     public var homeTrailerEnabled: Bool
     /// Mute *default* for the home hero's trailer. Default `true`.
@@ -84,24 +103,34 @@ public struct HeroBackgroundSettings: Codable, Equatable, Sendable {
         homeTrailerEnabled: Bool = true,
         homeTrailerMuted: Bool = true,
         detailMode: HeroBackgroundMode = .trailer,
-        detailTrailerMuted: Bool = true
+        detailTrailerMuted: Bool = true,
+        trailerSources: TrailerSourcePolicy = .serverAndYouTube
     ) {
         self.homeTrailerEnabled = homeTrailerEnabled
         self.homeTrailerMuted = homeTrailerMuted
         self.detailMode = detailMode
         self.detailTrailerMuted = detailTrailerMuted
+        self.trailerSources = trailerSources
     }
 
     public static let `default` = HeroBackgroundSettings()
 
     /// Whether the DETAIL page should play theme music.
     public var themeMusicEnabled: Bool { detailMode == .themeMusic }
+    public var homeTrailerPlaybackEnabled: Bool { trailerSources.allowsServerTrailers && homeTrailerEnabled }
     /// Whether the DETAIL page should autoplay a trailer.
-    public var detailTrailerEnabled: Bool { detailMode == .trailer }
+    public var detailTrailerEnabled: Bool { trailerSources.allowsServerTrailers && detailMode == .trailer }
+    public var availableDetailModes: [HeroBackgroundMode] {
+        HeroBackgroundMode.allCases.filter { $0 != .trailer || trailerSources.allowsServerTrailers }
+    }
+    public var effectiveDetailMode: HeroBackgroundMode {
+        detailMode == .trailer && !detailTrailerEnabled ? .off : detailMode
+    }
 
     private enum CodingKeys: String, CodingKey {
         // New per-surface keys.
         case homeTrailerEnabled, homeTrailerMuted, detailMode, detailTrailerMuted
+        case trailerSources
         // Legacy single-mode keys (read for migration only).
         case mode, trailerMuted
     }
@@ -112,11 +141,14 @@ public struct HeroBackgroundSettings: Codable, Equatable, Sendable {
         try c.encode(homeTrailerMuted, forKey: .homeTrailerMuted)
         try c.encode(detailMode, forKey: .detailMode)
         try c.encode(detailTrailerMuted, forKey: .detailTrailerMuted)
+        try c.encode(trailerSources, forKey: .trailerSources)
     }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         let d = HeroBackgroundSettings.default
+        trailerSources = (try? c.decodeIfPresent(TrailerSourcePolicy.self, forKey: .trailerSources))
+            ?? d.trailerSources
         // Legacy single-mode values (present only in a pre-split persisted blob).
         let legacyMode = ((try? c.decodeIfPresent(String.self, forKey: .mode)) ?? nil)
             .flatMap { HeroBackgroundMode(rawValue: $0) }

@@ -66,6 +66,7 @@ struct PlozziOSSettingsView: View {
             }
         }
         .environment(appModel.profiles)
+        .environment(appModel.settings.themeMusic)
         .environment(\.managedProviderSetupRouter, providerSetupRouter)
         .plozzSheet(item: $providerSetupRouter.addressAccount) { account in
             let profileID = appModel.profiles.activeProfileID
@@ -1571,7 +1572,11 @@ private struct PlozziOSSettingsSearchDestination: View {
                 contentRatings: appModel.settings.contentRatings, spoilers: appModel.settings.spoilers
             )
         case .navigation: PlozziOSNavigationSettingsView(appModel: appModel)
-        case .home, .hero, .heroContent, .heroRatings, .heroTrailers, .heroDiscovery,
+        case .heroTrailers:
+            TrailersAndMusicSettingsView(
+                background: appModel.settings.heroBackground, themeMusic: appModel.settings.themeMusic
+            )
+        case .home, .hero, .heroContent, .heroRatings, .heroDiscovery,
              .heroLibraries, .heroCollections, .homeRows, .homeRowStyle, .homeFiltering, .homeLabels, .continueWatching:
             PlozziOSHomeSettingsView(
                 hero: appModel.settings.hero, heroBackground: appModel.settings.heroBackground,
@@ -2445,33 +2450,15 @@ private struct PlozziOSDetailPageSettingsView: View {
                     .settingsSearchAnchor("detail-age")
             }
             .settingsSearchGroup(["detail-age"])
-            SettingsSectionGroup("Behind the hero") {
-                Picker(
-                    "Background",
-                    selection: $heroBackground.settings.detailMode
-                ) {
-                    ForEach(HeroBackgroundMode.allCases, id: \.self) {
-                        Text($0.displayName).tag($0)
-                    }
+            SettingsSectionGroup {
+                SettingsPageLink {
+                    TrailersAndMusicSettingsView(background: heroBackground, themeMusic: themeMusic)
+                } label: {
+                    SettingsDisclosureLabel { Text("Trailers & music") }
                 }
-                .settingsSearchAnchor(
-                    "detail-background",
-                    fallbackFor: (heroBackground.settings.detailMode == .trailer ? [] : ["detail-trailer-muted"])
-                        + (heroBackground.settings.detailMode == .themeMusic ? [] : ["theme-music-volume"])
-                )
-                if heroBackground.settings.detailMode == .trailer {
-                    Toggle(
-                        "Start muted",
-                        isOn: $heroBackground.settings.detailTrailerMuted
-                    ).settingsSearchAnchor("detail-trailer-muted")
-                }
-                if heroBackground.settings.detailMode == .themeMusic {
-                    ThemeMusicVolumeControl(model: themeMusic)
-                }
-            } footer: {
-                Text("Choose what plays behind the hero on a movie or show's details screen. Trailer and theme music never play together.")
+                .settingsActionRow()
+                .accessibilityIdentifier("detail-trailers-music")
             }
-            .settingsSearchGroup(["detail-background", "detail-trailer-muted", "theme-music-volume"])
             SettingsSectionGroup("Cards") {
                 CardCaptionSettingsLink(cards: cards, scope: .detail)
             }

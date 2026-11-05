@@ -1,5 +1,16 @@
 # FeatureHome
 
+Trailer discovery and playback honor the active profile's `trailerSources`
+policy in `HeroBackgroundSettings`. Off skips trailer-specific provider and
+metadata lookups; Server only also excludes server-supplied and cached YouTube
+links. Ordinary metadata and non-trailer extras remain independent. Allowed
+manual trailers are prepared during detail loading, not on button press.
+Policy changes filter visible actions immediately, fence pending results, and
+refresh allowed sources without caching disabled lookups as missing trailers.
+Home and detail autoplay use the effective settings rather than the stored
+surface choices, so turning trailers off preserves those choices and does not
+disable detail theme music.
+
 Home history completion records returned, curated and visible item counts plus
 failed-account counts in the existing bounded recent-activity log. This separates
 an empty provider feed from local curation without recording media or account IDs.

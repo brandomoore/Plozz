@@ -7,6 +7,15 @@ system green appearance instead of inheriting the page's monochrome navigation t
 
 The Settings screen and its detail pages. Profile-aware and integration-aware.
 
+Movie & show details → Trailers & music is the shared destination for trailer
+availability, independent Home autoplay and detail background playback. Home →
+Hero links to the same controls. Off suppresses trailer lookups, manual actions,
+and autoplay without erasing surface preferences or disabling theme music.
+Server only permits local/server trailers, excluding YouTube links even when
+supplied by a server or already cached. Server + YouTube preserves background
+preparation of manual links; YouTube never autoplays. Each surface retains its
+own mute default, and detail theme music retains its profile-scoped volume.
+
 On iPad, selecting a different sidebar category discards the previous category's
 entire pushed detail stack. The reset targets the native detail navigation
 controller, not the split view, preserving sidebar scroll position and search.

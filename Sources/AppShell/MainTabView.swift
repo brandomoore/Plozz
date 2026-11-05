@@ -1993,7 +1993,7 @@ struct MainTabView: View {
             // Stop the shared trailer player only when NEITHER surface wants a
             // trailer; otherwise leave it to the active hero view. Mute is a live
             // session state on the controller, so it isn't touched here.
-            if !settings.homeTrailerEnabled && !settings.detailTrailerEnabled {
+            if !settings.homeTrailerPlaybackEnabled && !settings.detailTrailerEnabled {
                 heroTrailerController.stop()
             }
         }
