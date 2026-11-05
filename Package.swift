@@ -1057,7 +1057,8 @@ let package = Package(
         ),
         .testTarget(
             name: "FeatureHomeCoreTests",
-            dependencies: ["FeatureHomeCore", "CoreModels", "MetadataKit"]
+            dependencies: ["FeatureHomeCore", "CoreModels", "MetadataKit", "ProviderJellyfin",
+                           "CoreNetworking", "TestSupportPerformance"]
         ),
         .testTarget(
             name: "FeatureSearchCoreTests",

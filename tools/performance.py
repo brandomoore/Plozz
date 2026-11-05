@@ -19,6 +19,7 @@ import subprocess
 import sys
 import time
 import uuid
+from urllib.parse import urlparse
 import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -36,6 +37,16 @@ HOME_HOST_FITTING_COUNTERS = [
     "hostFittingMaxNanoseconds", "hostFittingReentrantCalls",
 ]
 SCENARIOS = {
+    "home-jellyfin-live": {
+        "suite": "network", "target": "FeatureHomeCoreTests", "explicitOnly": True,
+        "test": "JellyfinHomePerformanceTests/testPerformanceLiveHome",
+        "file": "Tests/FeatureHomeCoreTests/JellyfinHomePerformanceTests.swift",
+        "description": "Explicitly authorized live Jellyfin: cold layout discovery and warm Home refresh; count real requests and content-ready time, not rendered frames.",
+        "counters": ["coldRequests", "warmRequests", "coldBytes", "warmBytes",
+                     "coldViewsRequests", "warmViewsRequests", "coldDuplicateRequests", "warmDuplicateRequests",
+                     "coldFirstRowMicroseconds", "warmFirstRowMicroseconds",
+                     "coldAllRowsMicroseconds", "warmAllRowsMicroseconds", "libraries", "rows", "items"],
+    },
     **{
         f"active-picture-{players}-{state}": {
             "suite": "ui",
@@ -531,6 +542,7 @@ def select(suite, names, platform=None):
         return sorted(names)
     return [name for name, spec in SCENARIOS.items()
             if (suite == "all" or spec["suite"] == (suite or "core"))
+            and not spec.get("explicitOnly", False)
             and (not platform or platform in spec.get("platforms", ("tvOS", "iOS")))]
 
 
@@ -607,6 +619,13 @@ def configure_scheme(tree):
         action.remove(old)
     variables = ET.SubElement(action, "EnvironmentVariables")
     ET.SubElement(variables, "EnvironmentVariable", key="PLOZZ_PERFORMANCE", value="1", isEnabled="YES")
+    if broker := os.environ.get("PLOZZ_JELLYFIN_HOME_BROKER"):
+        parsed = urlparse(broker)
+        if (parsed.scheme != "http" or parsed.hostname != "127.0.0.1" or not parsed.port
+                or parsed.username or parsed.password or parsed.query or parsed.fragment):
+            raise Failure("Live Home broker must be an explicit loopback HTTP URL without credentials or a query.")
+        ET.SubElement(variables, "EnvironmentVariable", key="PLOZZ_JELLYFIN_HOME_BROKER",
+                      value=broker, isEnabled="YES")
     return tree
 
 

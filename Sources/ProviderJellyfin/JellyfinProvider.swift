@@ -15,6 +15,7 @@ public struct JellyfinProvider: MediaProvider, ServerRatingsProviding, SeriesRes
     public let accountID: String
     public let credentialRevision: CredentialRevision
     let client: JellyfinClient
+    let libraryRequests = JellyfinDiscoveryRequests<[MediaLibrary]>()
     let collectionLibraryCache = MediaBrowserCollectionLibraryCache()
     let videoPlaylistCache = VideoPlaylistSnapshotCache()
     let liveTVLeases = JellyfinLiveTVLeaseStore()
@@ -86,6 +87,12 @@ public struct JellyfinProvider: MediaProvider, ServerRatingsProviding, SeriesRes
     }
 
     public func libraries() async throws -> [MediaLibrary] {
+        try await libraryRequests.run(key: session.userID) {
+            try await loadLibraries()
+        }
+    }
+
+    private func loadLibraries() async throws -> [MediaLibrary] {
         var libraries = try await client.userViews(userID: session.userID).map { dto in
             MediaLibrary(
                 id: dto.Id,

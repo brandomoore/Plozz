@@ -4,6 +4,8 @@ Use this for the agent-driven optimization loop without installing on an Apple
 TV, iPhone, or iPad. It complements [physical profiling](performance-debugging.md),
 not a replacement for device-specific evidence. No cloud account, real media
 server, credential, or external model service is required.
+The separately authorized `home-jellyfin-live` investigation below is the
+exception; no suite, including `all`, selects it automatically.
 
 ## Agent entry point
 
@@ -54,6 +56,31 @@ both copies and fails. A simulator booted by this invocation is shut down in
 `finally`; a caller-owned simulator that was already running stays running.
 The default whole-run limit is 2,400 seconds (`--timeout`, bounded to 60–7,200).
 Cancellation/timeout stops only the owned process group and preserves evidence.
+
+### Authorized real Jellyfin Home measurement
+
+Select `--scenario home-jellyfin-live` only with permission to query a dedicated
+non-admin internal account. Set `PLOZZ_JELLYFIN_HOME_BROKER` to a short-lived
+`http://127.0.0.1:<port>/<unguessable-path>` endpoint owned by the test lane.
+The trusted broker verifies that account's identity and non-admin policy,
+authenticates using credentials read into memory, and returns JSON fields
+`baseURL`, `serverID`, `userID`, `username`, `deviceID`, and `token`.
+Never put credentials in the URL, arguments, scheme, repository, or reports.
+Stop the broker and log out its owned server session in `finally`.
+
+The test uses the production layout preparation and Home aggregator with real
+Jellyfin transport. Each sample starts fresh provider/layout state, concurrently
+discovers navigation libraries, loads Home, then refreshes Home with the same
+provider. It reports requests, duplicates, decoded response bytes, and time to
+first nonempty content row and all requested data. It does not render Home,
+download artwork, time login, restart the server, or measure scroll smoothness.
+“Cold” means fresh client state, not cold server caches. Only numerical summaries
+are attached; authenticated payloads and media identities stay in memory.
+
+Use the same server, viewer, dataset, runtime, toolchain, and workload for both
+sides. Server/network variability can outweigh small latency changes; request
+counts and deterministic concurrency regressions are separate evidence. A stock
+Jellyfin result does not reproduce an API-compatible bridge or a remote VPS.
 
 ## Baseline → attribution → candidate → regression
 

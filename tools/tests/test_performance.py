@@ -62,6 +62,23 @@ Binary Images:
 
 
 class EvidenceTests(unittest.TestCase):
+    def test_live_home_is_never_selected_by_a_suite(self):
+        self.assertEqual(performance.select(None, ["home-jellyfin-live"]), ["home-jellyfin-live"])
+        for suite in ("core", "network", "all"):
+            self.assertNotIn("home-jellyfin-live", performance.select(suite, None))
+
+    def test_live_home_broker_is_loopback_only(self):
+        for address in ("https://example.test/config", "http://user:secret@127.0.0.1:1234/",
+                        "http://127.0.0.1/config", "http://127.0.0.1:1234/?token=secret"):
+            with patch.dict(performance.os.environ, {"PLOZZ_JELLYFIN_HOME_BROKER": address}):
+                with self.assertRaises(performance.Failure):
+                    performance.package_scheme(["FeatureHomeCoreTests"])
+        with patch.dict(performance.os.environ, {"PLOZZ_JELLYFIN_HOME_BROKER": "http://127.0.0.1:1234/probe"}):
+            tree = performance.package_scheme(["FeatureHomeCoreTests"])
+            values = {row.get("key"): row.get("value")
+                      for row in tree.getroot().findall("TestAction/EnvironmentVariables/EnvironmentVariable")}
+            self.assertEqual(values["PLOZZ_JELLYFIN_HOME_BROKER"], "http://127.0.0.1:1234/probe")
+
     def test_stack_sample_separates_main_and_background_and_excludes_footer(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "sample.txt"
