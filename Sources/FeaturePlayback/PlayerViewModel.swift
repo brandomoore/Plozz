@@ -1149,6 +1149,7 @@ public final class PlayerViewModel {
         streamingQuality.preparation = .requesting
         phase = .loading
         controls.infoCard.chapters = []
+        stopSongWatch()  // a new item starts without the last song
         let bringUpStart = Date()
         bringUpStartedAt = bringUpStart
         HandoffDiagnostics.emit(
@@ -1902,6 +1903,7 @@ public final class PlayerViewModel {
         configureTracksAfterLoad(for: request)
         readySpeedBoostLoadGeneration = rangeLoadGeneration
         phase = .ready
+        startSongWatch()
         streamingQuality.preparation = .waitingForVideo
         // Hold the bring-up spinner until the engine actually presents its first
         // frame, so `.loading` → `.ready` is one continuous indicator rather than
@@ -2209,6 +2211,42 @@ public final class PlayerViewModel {
         requestSeek(to: chapter.start, origin: "chapter")
     }
 
+    /// Listens to the playing audio (the engine's decoded-audio tap, not
+    /// the microphone) and keeps `controls.songID` on the song Shazam hears, so
+    /// the Info card can show it. Restarts its tap when a reload ends the old one.
+    @ObservationIgnored private var songWatchTask: Task<Void, Never>?
+
+    private func startSongWatch() {
+        songWatchTask?.cancel()
+        guard playbackSettings.identifySongs else { return }
+        let engine = engine
+        songWatchTask = Task { @MainActor [weak self] in
+            // An engine without a decoded-audio tap (or one not ready yet) is
+            // retried with a growing wait rather than polled.
+            var retry: Duration = .seconds(5)
+            while !Task.isCancelled, self != nil {
+                guard let stream = engine.installSongTap() else {
+                    HandoffDiagnostics.emit("songid TAP_UNAVAILABLE")
+                    try? await Task.sleep(for: retry)
+                    retry = min(retry * 2, .seconds(120))
+                    continue
+                }
+                retry = .seconds(5)
+                await SongRecognizer.watch(stream) { [weak self] song in
+                    self?.controls.songID = song.map(SongIDState.found) ?? .idle
+                }
+                engine.removeSongTap()
+                try? await Task.sleep(for: .seconds(2))
+            }
+        }
+    }
+
+    private func stopSongWatch() {
+        songWatchTask?.cancel()
+        songWatchTask = nil
+        controls.songID = .idle
+    }
+
     /// Requests a committed seek. Coalesces rapid presses and defers the engine
     /// commit; owned by ``SeekScrubCoordinator``. See that type for the full
     /// coalescing / resume-confirm semantics. `origin` names the caller in the
@@ -2416,6 +2454,7 @@ public final class PlayerViewModel {
             return
         }
         guard !didStop else { return }
+        stopSongWatch()
         endTemporarySpeedBoost()
         let suspendedPosition = foregroundReload.preservedPosition
         recordPlayback(.stopped, stopReason: .requested)

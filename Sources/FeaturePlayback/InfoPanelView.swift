@@ -15,6 +15,8 @@ import MetadataKit
 /// owns none of the panel morph/focus-restore choreography — that stays in
 /// `PlayerControls` — so this is a pure content extraction.
 struct InfoPanelView: View {
+    @Environment(\.openURL) private var openURL
+
     /// The regular-size numbers, for the tvOS transport's parking offset.
     ///
     /// `PlayerControls` needs a card height before the first frame — measuring
@@ -240,8 +242,10 @@ struct InfoPanelView: View {
                     .foregroundStyle(foreground.opacity(0.82))
                     .fixedSize(horizontal: false, vertical: true)
             }
+            songRow
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .plozzFocusSection()  // the song row is reachable from the action row
     }
 
     @ViewBuilder
@@ -346,6 +350,8 @@ struct InfoPanelView: View {
                         .padding(.top, 1)
                         .layoutPriority(1)
                 }
+                songRow
+                    .padding(.top, 4)
                 // Pins the meta/badge row to the card's bottom edge. `minLength: 0`
                 // is load-bearing, not laziness: this column has 210pt, and a
                 // one-line headline plus three lines of overview plus the meta row
@@ -369,6 +375,9 @@ struct InfoPanelView: View {
             .frame(maxWidth: metrics.textColumnMaxWidth, alignment: .leading)
             .frame(maxWidth: .infinity, alignment: .leading)
             .frame(height: thumbHeight, alignment: .topLeading)
+            // The whole column is a focus section, so Left from the
+            // action buttons lands on the song row whatever its height.
+            .plozzFocusSection()
 
             // NO Spacer here. A Spacer is flexible and so is the text column, so
             // the two split the width left over by the thumbnail and the action
@@ -428,6 +437,61 @@ struct InfoPanelView: View {
             urls: model.infoCard.artworkURLs, item: model.infoCard.artworkItem,
             policy: model.artworkPolicy, cornerRadius: cornerRadius, height: height
         )
+    }
+
+    // MARK: - Song identification (#351)
+
+    /// The song playing in the scene, found in the background by Shazam. A
+    /// button: it opens the song in Apple Music.
+    @ViewBuilder
+    private var songRow: some View {
+        if case let .found(song) = model.songID {
+            let isFocused = focus == .infoSong
+            let art = (metrics.actionSize * 1.45).rounded()
+            Button {
+                if let url = song.appleMusicURL { openURL(url) }
+            } label: {
+                HStack(spacing: metrics.actionSize * 0.45) {
+                    AsyncImage(url: song.artworkURL) { image in
+                        image.resizable().scaledToFill()
+                    } placeholder: {
+                        Image(systemName: "music.note")
+                            .font(.system(size: art * 0.5, weight: .semibold))
+                    }
+                    .frame(width: art, height: art)
+                    .clipShape(RoundedRectangle(cornerRadius: art * 0.18, style: .continuous))
+                    Image(systemName: "music.note")
+                        .opacity(0.65)
+                        .accessibilityHidden(true)
+                    Text(verbatim: song.title)
+                        .layoutPriority(1)
+                    if let artist = song.artist {
+                        Text(verbatim: artist).opacity(0.65)
+                    }
+                    if isFocused, song.appleMusicURL != nil {
+                        Image(systemName: "arrow.up.forward")
+                            .transition(.identity)
+                    }
+                }
+                .font(metrics.actionFont)
+                .lineLimit(1)
+                .animation(.easeOut(duration: 0.2), value: isFocused)
+            }
+            #if os(iOS)
+            .playerTouchPanelAction()
+            #else
+            .buttonStyle(InfoActionButtonStyle(
+                focused: isFocused, prominent: false,
+                hPadding: metrics.actionVPadding, vPadding: metrics.actionVPadding * 0.5
+            ))
+            #endif
+            .accessibilityLabel(Text(verbatim: [song.title, song.artist].compactMap { $0 }.joined(separator: ", ")))
+            // No Apple Music link (not in the catalog here): shown, not a button.
+            .disabled(song.appleMusicURL == nil)
+            .focused($focus, equals: .infoSong)
+            .fixedSize(horizontal: false, vertical: true)
+            .layoutPriority(2)
+        }
     }
 
     /// An icon-only Info-card action. At rest it shows just its glyph; while

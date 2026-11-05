@@ -887,6 +887,11 @@ struct PlaybackDetailView: View {
                 SettingsControlRows {
                     LosslessAudioControl()
                         .settingsSearchAnchor("lossless-audio")
+                    Toggle("Identify songs", isOn: $playback.settings.identifySongs)
+                        .settingsSearchAnchor("identify-songs")
+                    Text("Shows the song playing in a movie or show in the player’s Info, using Shazam. Needs an internet connection.")
+                        .settingsHelperText()
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
         ]

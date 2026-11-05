@@ -409516,6 +409516,9 @@
         }
       }
     },
+    "Identify songs" : {
+
+    },
     "Idle" : {
       "comment" : "Status in metadata diagnostics when no enrichment jobs or backlogs are currently queued or running.",
       "localizations" : {
@@ -772146,6 +772149,9 @@
         }
       }
     },
+    "Shows the song playing in a movie or show in the player’s Info, using Shazam. Needs an internet connection." : {
+
+    },
     "Shuffle" : {
       "comment" : "Button on music screens that starts shuffled playback of the current album, playlist, or other visible music list.",
       "localizations" : {
@@ -1112575,6 +1112581,9 @@
           }
         }
       }
+    },
+    "shazam music song soundtrack what song is playing apple music" : {
+
     },
     "show hide card titles names captions under posters show poster titles" : {
       "localizations" : {

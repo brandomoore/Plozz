@@ -79,6 +79,10 @@ public struct PlayerEngineCapabilities: OptionSet, Sendable {
 ///    lives above the engine, not inside it.
 @MainActor
 public protocol VideoEngine: AnyObject {
+    /// Decoded playback audio for song identification (#351); nil when the engine
+    /// can't provide it. Call `removeSongTap()` when done.
+    @MainActor func installSongTap() -> AsyncStream<SongTapChunk>?
+    @MainActor func removeSongTap()
     var supportsActivePictureAnalysis: Bool { get }
     func sampleActivePicture() async -> VideoActivePictureState
     func stopActivePictureAnalysis()
@@ -377,6 +381,8 @@ public protocol VideoEngine: AnyObject {
 }
 
 public extension VideoEngine {
+    @MainActor func installSongTap() -> AsyncStream<SongTapChunk>? { nil }
+    @MainActor func removeSongTap() {}
     var supportsActivePictureAnalysis: Bool { false }
     func sampleActivePicture() async -> VideoActivePictureState { .unsupported }
     func stopActivePictureAnalysis() {}

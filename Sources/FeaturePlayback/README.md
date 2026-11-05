@@ -47,6 +47,14 @@ bounded language-match/accessibility flags without track titles or URLs.
     episodes remain server-managed. See ProviderPlex's extra resume contract.
   - `PlayerView` + `CustomPlayerContainer` host the engine's vended
     bare video surface and overlay the shared transport chrome.
+- **Song identification** (#351) — `SongRecognizer` feeds the engine's
+  decoded-audio tap (not the microphone) to ShazamKit's streaming matcher while
+  a title plays, when the profile's **Identify songs** setting is on. A song is
+  shown in the Info card only after a second match that tracks the playback
+  clock; sound-effect albums and genre-less uploads are ignored. A skip clears
+  the song. Errors (offline, service unavailable) show nothing and rest the
+  matcher for 30 seconds. Only engines with an audio tap (Plozzigen) take part;
+  others return no tap and the card simply shows no song.
 - **Subtitle rendering** — `SubtitleOverlayView` draws in-app captions from
   sidecars, Plozzigen decoders, and `NativeSubtitleCueOutput` for native legible
   tracks. `SubtitleStyleRules` remains the reduced AVPlayer styling adapter

@@ -419,6 +419,8 @@ public enum SettingsSearchCatalog {
               keywords: "remember sound track language episodes"),
         .init("lossless-audio", page: .playback, title: "Prefer lossless audio",
               keywords: "sound surround compressed HDMI ARC receiver audio compatibility"),
+        .init("identify-songs", page: .playback, title: "Identify songs",
+              keywords: "shazam music song soundtrack what song is playing apple music"),
         .init("read-ahead", page: .playback, title: "Video buffer",
               keywords: "buffering streaming cache ahead slow network stuttering loading memory"),
         .init("live-buffer", page: .playback, title: "Live TV buffer",

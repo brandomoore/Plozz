@@ -20,6 +20,8 @@ language every other module speaks.
   network/storage preferences, not profile settings. Both default to Automatic
   and are excluded from profile transfer. `EngineSessionCache` carries active
   temporary-cache usage and the engine's effective playback-safe budget.
+- `PlaybackSettings.identifySongs` (#351) is a profile preference, on by
+  default; payloads written before it existed decode as on.
 - `LosslessAudioSettingsStore` defaults on and remains device-local across
   profile changes and transfers. The audio bridge reads it for each new load;
   missing source-channel metadata does not downgrade the chosen output mode.
