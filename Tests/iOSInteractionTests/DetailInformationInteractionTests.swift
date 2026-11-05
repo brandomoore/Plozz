@@ -26,16 +26,19 @@ final class DetailInformationInteractionTests: XCTestCase {
         super.tearDown()
     }
 
-    func testCastMoreIncludesPeopleOutsideThePreviewAndKeepsNavigation() {
+    func testCastRailKeepsAllPeopleAndNavigationWithoutMore() {
         launch()
-        reveal(app.buttons["detail-cast-more"])
-        app.buttons["detail-cast-more"].tap()
-        XCTAssertTrue(app.navigationBars["Cast"].waitForExistence(timeout: 5))
-        recordMoreScreenshot("shared-reader-cast-mobile")
-        let last = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Person 40")).firstMatch
-        reveal(last)
+        let first = app.buttons["Person 1"].firstMatch
+        XCTAssertTrue(first.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertFalse(app.buttons["detail-cast-more"].exists)
+        let rail = app.scrollViews["detail-cast-rail"]
+        XCTAssertTrue(rail.exists, app.debugDescription)
+        let last = app.buttons["Person 40"].firstMatch
+        for _ in 0..<25 where !last.exists || !last.isHittable { rail.swipeLeft() }
+        XCTAssertTrue(last.isHittable, app.debugDescription)
+        recordMoreScreenshot("complete-cast-rail-mobile")
         last.tap()
-        XCTAssertTrue(app.staticTexts["Person 40"].waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertEqual(app.staticTexts["selected-cast-person"].label, "Person 40")
         XCTAssertFalse(app.navigationBars["Cast"].exists)
     }
 

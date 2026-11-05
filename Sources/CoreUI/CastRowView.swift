@@ -17,10 +17,6 @@ public struct CastRowView: View {
     private let onFocusEntered: (() -> Void)?
 
     @Environment(\.plozzMetrics) private var metrics
-    @Environment(\.mediaPersonNavigator) private var navigateToPerson
-    @State private var showsFullCast = false
-    @State private var selectedPerson: MediaPerson?
-    @FocusState private var moreFocused: Bool
 
     public init(
         title: LocalizedStringResource? = "Cast",
@@ -45,7 +41,7 @@ public struct CastRowView: View {
 
                 ScrollView(.horizontal, showsIndicators: false) {
                     LazyHStack(alignment: .top, spacing: metrics.cardSpacing) {
-                        ForEach(people.prefix(DetailPreviewLimits.cast)) { person in
+                        ForEach(people) { person in
                             CastMemberCard(person: person, onFocusEntered: onFocusEntered)
                         }
                     }
@@ -58,44 +54,9 @@ public struct CastRowView: View {
                     // the row's height is unchanged — only the clip grows.
                     .padding(.vertical, metrics.railShadowClearance)
                 }
+                .accessibilityIdentifier("detail-cast-rail")
                 .padding(.top, metrics.railClearanceOffset(for: PlozzTheme.Spacing.small))
                 .padding(.bottom, metrics.railClearanceOffset(for: PlozzTheme.Spacing.large))
-                if people.count > DetailPreviewLimits.cast {
-                    HStack {
-                        Button { showsFullCast = true } label: {
-                            DetailMoreLabel()
-                                .frame(minWidth: 44, minHeight: 44, alignment: .leading)
-                        }
-                        .buttonStyle(.borderless)
-                        .focused($moreFocused)
-                        .accessibilityIdentifier("detail-cast-more")
-                        Spacer(minLength: 0)
-                    }
-                    .padding(.leading, leadingInset)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    #if os(tvOS)
-                    .focusSection()
-                    #endif
-                }
-            }
-            .onChange(of: moreFocused) { _, focused in
-                if focused { onFocusEntered?() }
-            }
-            .onChange(of: people) { _, _ in
-                selectedPerson = nil
-                showsFullCast = false
-            }
-            .onDisappear { selectedPerson = nil }
-            .plozzSheet(isPresented: $showsFullCast, onDismiss: {
-                if let person = selectedPerson {
-                    selectedPerson = nil
-                    navigateToPerson?(person)
-                }
-            }, style: .detailReader) {
-                DetailCastList(people: people, onSelect: navigateToPerson == nil ? nil : { person in
-                    selectedPerson = person
-                    showsFullCast = false
-                })
             }
         }
     }

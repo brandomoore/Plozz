@@ -1051,16 +1051,15 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   scrolling through long lists. Mobile keeps inline expansion targets.
   All detail More dialogs share the existing About reader surface on TV:
   a content-sized 900pt card, capped at 760pt high, with a 38pt leading title,
-  48pt content insets and Menu/Back dismissal. Metadata and cast use unboxed
+  48pt content insets and Menu/Back dismissal. Metadata uses unboxed
   scrolling content, including on mobile; mobile retains its native inline title
-  and Done action. Cast More owns a full-width native focus section around its
-  compact button so Down from anywhere in the cast rail can reach it.
+  and Done action.
   Section gaps, gutters, and padding come from `DetailInformationLayout`.
   Ratings stay separate from editorial facts. Revealing one
   protected score reveals the shared score group, never the surrounding facts.
-  Missing sections leave no reserved grid cells. Cast previews show 12 people
-  on both platforms; More opens the complete supplied cast and keeps person
-  navigation bound to the owning source. Information previews retain all source
+  Missing sections leave no reserved grid cells. Cast rails lazily show the complete
+  supplied cast on both platforms, without a separate More button or dialog,
+  and keep person navigation bound to the owning source. Information previews retain all source
   values and cap text previews by rendered lines, not an arbitrary number of
   names. Short genre and studio lists remain complete when they fit. Long text
   reuses the synopsis's faded inline MORE treatment beside each truncated value.

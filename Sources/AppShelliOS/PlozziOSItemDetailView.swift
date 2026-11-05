@@ -4035,8 +4035,6 @@ private struct PlozziOSCastSection: View {
     /// The server this title came from, and therefore whose person ids its cast
     /// list holds.
     let sourceAccountID: String?
-    @State private var showsFullCast = false
-    @State private var selectedPerson: MediaPerson?
 
     var body: some View {
         PlozziOSMediaSection(
@@ -4047,7 +4045,7 @@ private struct PlozziOSCastSection: View {
                     alignment: .top,
                     spacing: PlozziOSMediaRailLayout.visibleGap(metrics: metrics)
                 ) {
-                    ForEach(people.prefix(DetailPreviewLimits.cast)) { person in
+                    ForEach(people) { person in
                         Button {
                             openPerson?(person, sourceAccountID)
                         } label: {
@@ -4107,40 +4105,12 @@ private struct PlozziOSCastSection: View {
                 for: .scrollContent
             )
             .scrollIndicators(.hidden)
-            if people.count > DetailPreviewLimits.cast {
-                Button { showsFullCast = true } label: {
-                    DetailMoreLabel()
-                        .frame(minWidth: 44, minHeight: 44, alignment: .leading)
-                }
-                .buttonStyle(.plain)
-                .padding(.horizontal, pageInset)
-                .accessibilityIdentifier("detail-cast-more")
-            }
+            .accessibilityIdentifier("detail-cast-rail")
         }
         // Symmetric scaled whitespace above and below the cast rail so it sits with
         // balanced breathing room between the hero and the info band — and the gap
         // under the (variably wrapped) names mirrors the gap over the About header.
         .padding(.vertical, verticalPadding)
-        .onChange(of: sourceAccountID) { _, _ in
-            selectedPerson = nil
-            showsFullCast = false
-        }
-        .onChange(of: people) { _, _ in
-            selectedPerson = nil
-            showsFullCast = false
-        }
-        .onDisappear { selectedPerson = nil }
-        .plozzSheet(isPresented: $showsFullCast, onDismiss: {
-            if let person = selectedPerson {
-                selectedPerson = nil
-                openPerson?(person, sourceAccountID)
-            }
-        }) {
-            DetailCastList(people: people, onSelect: openPerson == nil ? nil : { person in
-                selectedPerson = person
-                showsFullCast = false
-            })
-        }
     }
 
     private var verticalPadding: CGFloat {

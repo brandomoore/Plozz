@@ -1,8 +1,6 @@
-import CoreModels
 import Foundation
 
 public enum DetailPreviewLimits {
-    public static let cast = 12
     static let valueLines = 3
     static let facts = 9
     static let serviceLogos = 6
@@ -174,80 +172,4 @@ public struct DetailMoreSheet<Content: View>: View {
     }
 }
 
-public struct DetailCastList: View {
-    private let people: [MediaPerson]
-    private let onSelect: ((MediaPerson) -> Void)?
-
-    public init(people: [MediaPerson], onSelect: ((MediaPerson) -> Void)? = nil) {
-        self.people = people
-        self.onSelect = onSelect
-    }
-
-    public var body: some View {
-        DetailMoreSheet(title: Text("Cast")) {
-            LazyVStack(alignment: .leading, spacing: 16) {
-                ForEach(people) { person in
-                    if let onSelect {
-                        Button { onSelect(person) } label: {
-                            personLabel(person)
-                        }
-                        .buttonStyle(.borderless)
-                    } else {
-                        personLabel(person)
-                            #if os(tvOS)
-                            .focusable()
-                            #endif
-                    }
-                }
-            }
-            .accessibilityIdentifier("detail-full-cast")
-        }
-    }
-
-    private func personLabel(_ person: MediaPerson) -> some View {
-        HStack(spacing: 16) {
-            FallbackAsyncImage(
-                urls: person.imageURL.map { [$0] } ?? [],
-                variant: .personHeadshot
-            ) {
-                Image(systemName: "person.fill")
-                    .foregroundStyle(.secondary)
-            }
-            .frame(width: portraitSize, height: portraitSize)
-            .clipShape(Circle())
-            .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 4) {
-                Text(person.name)
-                    #if os(tvOS)
-                    .font(.system(size: 29, weight: .medium))
-                    #else
-                    .font(.body.weight(.medium))
-                    #endif
-                    .plozzForeground(.primary)
-                    .fixedSize(horizontal: false, vertical: true)
-                if let role = person.role, !role.isEmpty {
-                    Text(role)
-                        #if os(tvOS)
-                        .font(.system(size: 26))
-                        #else
-                        .font(.subheadline)
-                        #endif
-                        .plozzForeground(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .padding(.vertical, 8)
-        .accessibilityElement(children: .combine)
-    }
-
-    private var portraitSize: CGFloat {
-        #if os(tvOS)
-        88
-        #else
-        56
-        #endif
-    }
-}
 #endif

@@ -3,39 +3,19 @@ import UIKit
 
 @MainActor
 final class FamilyGuidanceRemoteTests: XCTestCase {
-    func testCastMoreUsesTheSharedReaderAndReturnsFocus() throws {
+    func testCastRailKeepsAllPeopleAndNavigationWithoutMore() throws {
         let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.FocusHost")
         app.launchArguments = ["--detail-information-fixture"]
         app.launch()
         defer { app.terminate() }
-        let more = app.buttons["detail-cast-more"].firstMatch
-        XCTAssertTrue(more.waitForExistence(timeout: 15))
-        for _ in 0..<4 { XCUIRemote.shared.press(.right) }
-        XCUIRemote.shared.press(.down)
-        XCTAssertTrue(isFocused(more), app.debugDescription)
-        XCTAssertLessThan(more.frame.width, 240, "The focus bridge must not stretch the button.")
-        XCUIRemote.shared.press(.select)
-        assertDetailReader(app, title: "Cast")
-        recordScreenshot(app, name: "shared-reader-cast")
-        XCUIRemote.shared.press(.menu)
-        XCTAssertTrue(more.waitForExistence(timeout: 5))
-        XCTAssertTrue(isFocused(more), "Closing the reader must return to Cast More.")
-    }
-
-    func testFullCastReaderPreservesPersonNavigation() throws {
-        let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.FocusHost")
-        app.launchArguments = ["--detail-information-fixture"]
-        app.launch()
-        defer { app.terminate() }
-        let more = app.buttons["detail-cast-more"].firstMatch
-        XCTAssertTrue(more.waitForExistence(timeout: 15))
-        XCUIRemote.shared.press(.down)
-        XCTAssertTrue(isFocused(more), app.debugDescription)
-        XCUIRemote.shared.press(.select)
-        assertDetailReader(app, title: "Cast")
-        let last = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Person 40")).firstMatch
-        for _ in 0..<45 where !isFocused(last) { XCUIRemote.shared.press(.down) }
+        let first = app.buttons["Person 1"].firstMatch
+        XCTAssertTrue(first.waitForExistence(timeout: 15))
+        XCTAssertTrue(isFocused(first), app.debugDescription)
+        XCTAssertFalse(app.buttons["detail-cast-more"].exists)
+        for _ in 1..<40 { XCUIRemote.shared.press(.right) }
+        let last = app.buttons["Person 40"].firstMatch
         XCTAssertTrue(isFocused(last), app.debugDescription)
+        recordScreenshot(app, name: "complete-cast-rail")
         XCUIRemote.shared.press(.select)
         XCTAssertTrue(app.staticTexts["selected-cast-person"].waitForExistence(timeout: 5))
         XCTAssertEqual(app.staticTexts["selected-cast-person"].label, "Person 40")

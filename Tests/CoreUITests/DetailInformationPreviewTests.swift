@@ -114,13 +114,6 @@ final class DetailInformationPreviewTests: XCTestCase {
         XCTAssertTrue(group.hasOmittedFacts)
     }
 
-    func testCastPreviewLimitLeavesTheFullInputIntact() {
-        XCTAssertEqual(DetailPreviewLimits.cast, 12)
-        let people = (1...30).map { MediaPerson(id: "\($0)", name: "Person \($0)", kind: "Actor") }
-        XCTAssertEqual(people.prefix(DetailPreviewLimits.cast).count, 12)
-        XCTAssertEqual(people.count, 30)
-    }
-
     func testRequiredAvailabilityAttributionStaysInThePreview() {
         var facts = (1...20).map { InformationFact(id: "\($0)", label: "Released", value: "Date \($0)") }
         facts.append(InformationFact(
