@@ -479,13 +479,11 @@ struct InfoPanelView: View {
                 .animation(.easeOut(duration: 0.2), value: isFocused)
             }
             #if os(iOS)
-            // Not `.playerTouchPanelAction()`: it pins buttons to their full
-            // text width, so a long song title pushed the card off the screen.
-            .buttonStyle(.bordered)
-            .buttonBorderShape(.capsule)
-            .tint(foreground)
-            .foregroundStyle(foreground)
-            .frame(minHeight: 44)
+            // Not `.playerTouchPanelAction()` (it pins buttons to their full
+            // text width, so a long title pushed the card off the screen) and
+            // not `.bordered` (on iPad's wide card it squeezed the title to
+            // nothing). A plain button with its own capsule sizes like text.
+            .buttonStyle(SongRowTouchStyle(foreground: foreground))
             #else
             .buttonStyle(InfoActionButtonStyle(
                 focused: isFocused, prominent: false,
@@ -500,6 +498,24 @@ struct InfoPanelView: View {
             .layoutPriority(2)
         }
     }
+
+    #if os(iOS)
+    /// The song row's capsule on iPhone and iPad: as wide as its content, never
+    /// wider than the card, so a long title truncates.
+    private struct SongRowTouchStyle: ButtonStyle {
+        let foreground: Color
+
+        func makeBody(configuration: Configuration) -> some View {
+            configuration.label
+                .foregroundStyle(foreground)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .frame(minHeight: 44)
+                .background(Capsule().fill(foreground.opacity(configuration.isPressed ? 0.25 : 0.14)))
+                .contentShape(Capsule())
+        }
+    }
+    #endif
 
     /// An icon-only Info-card action. At rest it shows just its glyph; while
     /// focused it **expands** to reveal its label (the tvOS stand-in for a hover
