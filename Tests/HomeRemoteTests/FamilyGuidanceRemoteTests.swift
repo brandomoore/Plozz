@@ -11,6 +11,7 @@ final class FamilyGuidanceRemoteTests: XCTestCase {
                 "overview": String(repeating: "A story about friends working together. ", count: 8),
                 "productionYear": 2020, "originalLanguage": "fr", "seriesStatus": "ended",
                 "catalogSeasonCount": 8, "catalogEpisodeCount": 100,
+                "runtime": 2640, "genres": ["Drama"],
                 "ratings": [["source": "tmdb", "value": 8.1, "scale": "outOfTen"]],
                 "people": [["id": "director", "name": "A director", "kind": "Director"]]
             ],
@@ -31,6 +32,12 @@ final class FamilyGuidanceRemoteTests: XCTestCase {
         let about = app.descendants(matching: .any)["detail-about"].firstMatch
         let score = app.descendants(matching: .any)["detail-rating-tmdb"].firstMatch
         let year = app.descendants(matching: .any)["detail-details-year-more"].firstMatch
+        let runtime = app.descendants(matching: .any)["detail-details-runtime-more"].firstMatch
+        let status = app.descendants(matching: .any)["detail-details-series-status-more"].firstMatch
+        let seasons = app.descendants(matching: .any)["detail-details-seasons-more"].firstMatch
+        let episodes = app.descendants(matching: .any)["detail-details-episodes-more"].firstMatch
+        let language = app.descendants(matching: .any)["detail-details-original-language-more"].firstMatch
+        let genres = app.descendants(matching: .any)["detail-details-genres-more"].firstMatch
         let streaming = app.descendants(matching: .any)["detail-availability-streaming-more"].firstMatch
         XCTAssertTrue(year.waitForExistence(timeout: 15))
         let details = app.staticTexts["Details"].firstMatch
@@ -39,11 +46,19 @@ final class FamilyGuidanceRemoteTests: XCTestCase {
         XCTAssertEqual(details.frame.minY, app.staticTexts["Ratings"].firstMatch.frame.minY, accuracy: 1)
         XCTAssertEqual(year.frame.minX, about.frame.minX + 2 * (about.frame.width + 56), accuracy: 1)
         XCTAssertLessThanOrEqual(score.frame.width, about.frame.width / 2)
-        XCTAssertLessThan(score.frame.height, about.frame.height)
+        XCTAssertEqual(score.frame.minY, about.frame.minY, accuracy: 1)
+        XCTAssertEqual(score.frame.maxY, about.frame.maxY, accuracy: 1)
         XCTAssertEqual(availability.frame.minX, about.frame.minX, accuracy: 1)
         XCTAssertEqual(crew.frame.minX, score.frame.minX, accuracy: 1)
         XCTAssertEqual(crew.frame.minY, availability.frame.minY, accuracy: 1)
-        XCTAssertLessThan(availability.frame.minY, app.staticTexts["Original Language"].firstMatch.frame.minY)
+        for (leading, trailing) in [(year, runtime), (status, seasons), (episodes, language)] {
+            XCTAssertEqual(leading.frame.minX, details.frame.minX, accuracy: 1)
+            XCTAssertEqual(trailing.frame.minX, details.frame.minX + (about.frame.width + 56) / 2, accuracy: 1)
+            XCTAssertEqual(leading.frame.minY, trailing.frame.minY, accuracy: 1)
+        }
+        XCTAssertGreaterThan(status.frame.minY, year.frame.maxY)
+        XCTAssertGreaterThan(episodes.frame.minY, status.frame.maxY)
+        XCTAssertGreaterThan(genres.frame.minY, episodes.frame.maxY)
         for value in ["Ended", "8", "100", "French", "JustWatch"] {
             XCTAssertTrue(app.staticTexts[value].exists, value)
         }
@@ -51,10 +66,24 @@ final class FamilyGuidanceRemoteTests: XCTestCase {
         XCTAssertTrue(isFocused(about))
         XCUIRemote.shared.press(.right)
         XCUIRemote.shared.press(.right)
+        XCTAssertTrue([year, runtime, status, seasons, episodes, language, genres].contains(where: isFocused),
+                      "Right from the score must enter the adjacent facts.")
+        for _ in 0..<4 where !isFocused(year) && !isFocused(runtime) { XCUIRemote.shared.press(.up) }
+        if isFocused(runtime) { XCUIRemote.shared.press(.left) }
         XCTAssertTrue(isFocused(year), "The promoted facts must be reachable beside the score.")
         let yearLabel = year.staticTexts.element(boundBy: 0)
         let yearFrame = yearLabel.frame
         try assertFocusedFactContrast(year, in: app)
+        XCTAssertLessThanOrEqual(year.frame.maxX + 12, runtime.frame.minX - 22,
+                                 "Paired facts must leave room for both glass focus outsets.")
+        XCUIRemote.shared.press(.right)
+        XCTAssertTrue(isFocused(runtime))
+        XCUIRemote.shared.press(.down)
+        XCTAssertTrue(isFocused(seasons))
+        XCUIRemote.shared.press(.left)
+        XCTAssertTrue(isFocused(status))
+        XCUIRemote.shared.press(.up)
+        XCTAssertTrue(isFocused(year))
         XCUIRemote.shared.press(.left)
         XCUIRemote.shared.press(.left)
         XCUIRemote.shared.press(.down)
@@ -132,6 +161,8 @@ final class FamilyGuidanceRemoteTests: XCTestCase {
         try assertFocusedFactContrast(year, in: app)
         recordScreenshot(app, name: "contained-focus-\(name)-year")
         XCUIRemote.shared.press(.right)
+        XCTAssertTrue(isFocused(app.descendants(matching: .any)["detail-details-runtime-more"].firstMatch))
+        XCUIRemote.shared.press(.right)
         XCTAssertTrue(isFocused(directors))
         let after = try XCTUnwrap(app.screenshot().image.cgImage)
         try assertFocusedFactContrast(directors, in: app)
@@ -163,7 +194,7 @@ final class FamilyGuidanceRemoteTests: XCTestCase {
             let change = try changedPixelFraction(before, after, frame: frame, app: app)
             XCTAssertLessThan(change, 0.02, "The highlight must not paint over \(neighbor.label).")
         }
-        XCTAssertGreaterThanOrEqual(neighbors[0].frame.minY - textFrames[1].maxY, 44,
+        XCTAssertGreaterThanOrEqual(neighbors[1].frame.minY - textFrames[1].maxY, 44,
                                     "The next fact must leave room for both 22pt focus outsets.")
         XCTAssertGreaterThanOrEqual(textFrames[2].minY - neighbors[5].frame.maxY, 22,
                                     "The focus surface must clear its section heading.")
@@ -209,6 +240,8 @@ final class FamilyGuidanceRemoteTests: XCTestCase {
         XCUIRemote.shared.press(.select)
         XCTAssertFalse(app.buttons["Done"].exists, "A complete fact is a reading stop, not an expansion action.")
 
+        XCUIRemote.shared.press(.right)
+        XCTAssertTrue(isFocused(app.descendants(matching: .any)["detail-details-runtime-more"].firstMatch))
         XCUIRemote.shared.press(.right)
         XCTAssertTrue(isFocused(directors), "Right must enter the neighboring unboxed column.")
         try assertFocusedFactContrast(directors, in: app)

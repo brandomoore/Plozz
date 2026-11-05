@@ -245,7 +245,8 @@ public struct DetailInformationSections: View {
             group: group,
             titleFont: group.id == "playback" ? technicalTitleFont : sectionTitleFont,
             labelFont: factLabelFont,
-            valueFont: group.id == "playback" ? technicalValueFont : factValueFont
+            valueFont: group.id == "playback" ? technicalValueFont : factValueFont,
+            pairsShortFacts: group.id == "details" && informationSectionColumns > 1
         ) {
             expandedGroup = group
         }
@@ -1100,7 +1101,15 @@ private struct DetailInformationGroup: View {
     let titleFont: Font
     let labelFont: Font
     let valueFont: Font
+    let pairsShortFacts: Bool
     let onExpand: () -> Void
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    #if os(tvOS)
+    private let minimumFactWidth: CGFloat = 220
+    #else
+    @ScaledMetric(relativeTo: .body) private var minimumFactWidth: CGFloat = 160
+    #endif
 
     var body: some View {
         VStack(alignment: .leading, spacing: DetailInformationLayout.headingSpacing) {
@@ -1115,9 +1124,14 @@ private struct DetailInformationGroup: View {
     }
 
     private var facts: some View {
-        VStack(alignment: .leading, spacing: DetailInformationLayout.factSpacing) {
+        DetailFactLayout(
+            pairsShortFacts: pairsShortFacts && !dynamicTypeSize.isAccessibilitySize,
+            minimumColumnWidth: minimumFactWidth,
+            spacing: DetailInformationLayout.factSpacing
+        ) {
             ForEach(group.previewFacts) { fact in
                 factCell(fact)
+                    .layoutValue(key: DetailCompactFactKey.self, value: fact.supportsPairing)
             }
             if group.hasOmittedFacts {
                 Button(action: onExpand) {
@@ -1141,6 +1155,62 @@ private struct DetailInformationGroup: View {
             accessibilityID: "detail-\(group.id)-\(fact.id)-more",
             onExpand: onExpand
         )
+    }
+}
+
+private struct DetailCompactFactKey: LayoutValueKey {
+    static let defaultValue = false
+}
+
+/// Keep short facts together without squeezing prose or the native focus gutters.
+private struct DetailFactLayout: Layout {
+    let pairsShortFacts: Bool
+    let minimumColumnWidth: CGFloat
+    let spacing: CGFloat
+
+    private func frames(for width: CGFloat, subviews: Subviews) -> [CGRect] {
+        let halfWidth = max(0, (width - spacing) / 2)
+        var frames: [CGRect] = []
+        var pending: Int?
+        var nextY: CGFloat = 0
+        for (index, subview) in subviews.enumerated() {
+            let compact = pairsShortFacts && halfWidth >= minimumColumnWidth
+                && subview[DetailCompactFactKey.self]
+                && subview.sizeThatFits(.unspecified).width <= halfWidth
+            if let previous = pending, !compact {
+                nextY = frames[previous].maxY + spacing
+                pending = nil
+            }
+            let childWidth = compact ? halfWidth : width
+            let height = subview.sizeThatFits(.init(width: childWidth, height: nil)).height
+            if let previous = pending {
+                let rowHeight = max(height, frames[previous].height)
+                frames[previous].size.height = rowHeight
+                frames.append(CGRect(x: halfWidth + spacing, y: nextY, width: childWidth, height: rowHeight))
+                nextY += rowHeight + spacing
+                pending = nil
+            } else {
+                frames.append(CGRect(x: 0, y: nextY, width: childWidth, height: height))
+                if compact {
+                    pending = index
+                } else {
+                    nextY += height + spacing
+                }
+            }
+        }
+        return frames
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let width = proposal.width.flatMap { $0.isFinite ? $0 : nil } ?? minimumColumnWidth
+        return CGSize(width: width, height: frames(for: width, subviews: subviews).map(\.maxY).max() ?? 0)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        for (subview, frame) in zip(subviews, frames(for: bounds.width, subviews: subviews)) {
+            subview.place(at: CGPoint(x: bounds.minX + frame.minX, y: bounds.minY + frame.minY),
+                          anchor: .topLeading, proposal: .init(frame.size))
+        }
     }
 }
 
@@ -1216,7 +1286,7 @@ struct DetailSectionLayout: Layout {
     }
 }
 
-/// A lone score keeps its natural height. Details uses the spare column, while
+/// A narrow lone score matches About's height when beside it. Details uses the spare column, while
 /// lower sections can begin beneath About instead of waiting for a long fact list.
 private struct DetailSingleRatingLayout: Layout {
     let preferredColumns: Int
@@ -1237,6 +1307,11 @@ private struct DetailSingleRatingLayout: Layout {
         let lowerStart = ratingIndex + 1 + (hasDetails ? 1 : 0)
         let ratingWidth = min(columnWidth, columns == 1 ? ratingMinimumWidth
                               : max(ratingMinimumWidth, (columnWidth - spacing) / 2))
+        let summaryHeight: CGFloat? = hasOverview && columns > 1
+            ? ceil(max(
+                subviews[0].sizeThatFits(.init(width: columnWidth, height: nil)).height,
+                subviews[ratingIndex].sizeThatFits(.init(width: ratingWidth, height: nil)).height
+            )) : nil
         var bottoms = Array(repeating: CGFloat.zero, count: columns)
         var frames: [CGRect] = []
         for (index, subview) in subviews.enumerated() {
@@ -1251,7 +1326,8 @@ private struct DetailSingleRatingLayout: Layout {
                 column = bottoms.indices.min { bottoms[$0] < bottoms[$1] } ?? 0
             }
             let childWidth = index == ratingIndex ? ratingWidth : columnWidth
-            let height = subview.sizeThatFits(.init(width: childWidth, height: nil)).height
+            let intrinsicHeight = subview.sizeThatFits(.init(width: childWidth, height: nil)).height
+            let height = (index == 0 || index == ratingIndex) ? summaryHeight ?? intrinsicHeight : intrinsicHeight
             let frame = CGRect(x: CGFloat(column) * (columnWidth + spacing),
                                y: bottoms[column], width: childWidth, height: height)
             frames.append(frame)
@@ -1423,6 +1499,15 @@ struct InformationFact: Identifiable {
     /// as the fallback when a logo is missing.
     var logos: [WatchProviderLogo] = []
     var isRequiredAttribution = false
+
+    var supportsPairing: Bool {
+        switch id {
+        case "year", "runtime", "series-status", "seasons", "episodes", "original-language", "content-rating":
+            true
+        default:
+            false
+        }
+    }
 
     var hasOmittedValues: Bool {
         if !logos.isEmpty {

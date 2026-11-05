@@ -1007,7 +1007,7 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   and a consistent gap measured from the mark's visible edge. Rows start at the
   leading grid line. On TV, multiple ratings use up to two reading columns;
   a lone guide uses only one. A lone score without guidance uses roughly half
-  a reading column and keeps its natural height, instead of matching About.
+  a reading column, matching About's height when they sit beside each other.
   Details fills the third TV column, or sits below the score in a two-column
   layout; supporting sections can start beneath About without waiting for the
   whole fact list. Phone sections remain stacked with a compact score tile.
@@ -1031,6 +1031,9 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   and Playback (Details is promoted alongside a lone score). Original language
   is distinct from playable audio. Series status and total seasons/episodes
   appear only when confirmed; totals describe the catalog, not library ownership.
+  On larger screens, short Details facts pair within their reading column.
+  Long labels/values, dates and prose retain the full column width; narrow
+  windows and large text fall back to a single list. Focus gutters stay intact.
   TV prefers three columns and regular-width mobile prefers two, falling back
   when the window or text size cannot support readable widths. Regular-width mobile
   information is centered within a 1120pt maximum, without narrowing the hero or

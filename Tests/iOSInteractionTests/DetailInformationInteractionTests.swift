@@ -94,7 +94,8 @@ final class DetailInformationInteractionTests: XCTestCase {
         if UIDevice.current.userInterfaceIdiom == .pad {
             XCTAssertEqual(score.frame.width, max(160, (about.frame.width - 32) / 2), accuracy: 1)
             XCTAssertGreaterThan(score.frame.minX, about.frame.maxX)
-            XCTAssertLessThan(score.frame.height, about.frame.height)
+            XCTAssertEqual(score.frame.minY, about.frame.minY, accuracy: 1)
+            XCTAssertEqual(score.frame.maxY, about.frame.maxY, accuracy: 1)
             let details = app.staticTexts["Details"].firstMatch
             XCTAssertEqual(details.frame.minX, score.frame.minX, accuracy: 1)
             XCTAssertGreaterThan(details.frame.minY, score.frame.maxY)
@@ -106,8 +107,52 @@ final class DetailInformationInteractionTests: XCTestCase {
 
     func testLandscapeInformationUsesReadableSectionColumns() throws {
         try checkInformationLayout(orientation: .landscapeLeft, cases: [
-            "discover", "rich", "lupin", "ratings-1-guide", "ratings-5-guide"
+            "discover", "rich", "lupin"
         ])
+    }
+
+    func testLandscapeGuidanceKeepsReadableSectionColumns() throws {
+        try checkInformationLayout(orientation: .landscapeLeft, cases: [
+            "ratings-1-guide", "ratings-5-guide"
+        ])
+    }
+
+    func testPairedFactsKeepLongValuesFullWidthAndStackAtAccessibilitySizes() throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".json")
+        let longRating = "A deliberately long provider rating description that needs the full reading column"
+        let example: [String: Any] = ["item": [
+            "id": "facts", "title": "Title", "kind": "movie", "productionYear": 2020, "runtime": 2640,
+            "officialRating": longRating,
+            "originalTitle": "An original title", "genres": ["Drama"]
+        ]]
+        try JSONSerialization.data(withJSONObject: example).write(to: url)
+        defer { XCTAssertNoThrow(try FileManager.default.removeItem(at: url)) }
+        app.launchEnvironment["PLOZZ_DETAIL_EXAMPLE_PATH"] = url.path
+        defer { app.launchEnvironment.removeValue(forKey: "PLOZZ_DETAIL_EXAMPLE_PATH") }
+        for largeText in [false, true] {
+            launch(largeText ? ["--detail-layout-large-type"] : [])
+            let year = app.staticTexts["Year"].firstMatch
+            let runtime = app.staticTexts["Runtime"].firstMatch
+            let rating = app.staticTexts["Content Rating"].firstMatch
+            XCTAssertTrue(year.waitForExistence(timeout: 10))
+            if !largeText, UIDevice.current.userInterfaceIdiom == .pad {
+                XCTAssertEqual(year.frame.minY, runtime.frame.minY, accuracy: 1)
+                XCTAssertGreaterThan(runtime.frame.minX, year.frame.maxX)
+                let columnWidth = (min(1120, app.frame.width - 48) - 32) / 2
+                XCTAssertGreaterThan(app.staticTexts[longRating].firstMatch.frame.width, columnWidth / 2,
+                                     "A long value must use the full reading column, not an orphan half-width cell.")
+            } else {
+                XCTAssertEqual(year.frame.minX, runtime.frame.minX, accuracy: 1)
+                XCTAssertGreaterThan(runtime.frame.minY, year.frame.maxY)
+            }
+            XCTAssertEqual(rating.frame.minX, year.frame.minX, accuracy: 1)
+            XCTAssertGreaterThan(rating.frame.minY, runtime.frame.maxY)
+            let originalTitle = app.staticTexts["Original Title"].firstMatch
+            reveal(originalTitle)
+            XCTAssertEqual(originalTitle.frame.minX, year.frame.minX, accuracy: 1)
+            XCTAssertGreaterThan(originalTitle.frame.minY, rating.frame.maxY)
+            app.terminate()
+        }
     }
 
     func testPortraitSparseAndReleaseInformationUseTheSameGrid() throws {
@@ -171,9 +216,14 @@ final class DetailInformationInteractionTests: XCTestCase {
                 let genres = app.staticTexts["Genres"].firstMatch
                 let details = app.staticTexts["Details"].firstMatch
                 XCTAssertEqual(year.frame.minX, details.frame.minX, accuracy: 1)
-                XCTAssertEqual(runtime.frame.minX, year.frame.minX, accuracy: 1)
+                let paired = (columnWidth - 16) / 2 >= 160
+                XCTAssertEqual(runtime.frame.minX, year.frame.minX + (paired ? (columnWidth + 16) / 2 : 0), accuracy: 1)
                 XCTAssertEqual(genres.frame.minX, year.frame.minX, accuracy: 1)
-                XCTAssertGreaterThan(runtime.frame.minY, year.frame.maxY)
+                if paired {
+                    XCTAssertEqual(runtime.frame.minY, year.frame.minY, accuracy: 1)
+                } else {
+                    XCTAssertGreaterThan(runtime.frame.minY, year.frame.maxY)
+                }
                 let crew = app.staticTexts["Crew"].firstMatch
                 if columnWidth < contentWidth {
                     if fixture == "discover" {

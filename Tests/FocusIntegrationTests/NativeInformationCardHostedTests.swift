@@ -21,7 +21,7 @@ final class NativeInformationCardHostedTests: XCTestCase {
             previous?.makeKeyAndVisible()
         }
         for (count, hasGuidance, longOverview) in [
-            (1, false, false), (2, false, false), (3, false, false), (5, false, false),
+            (1, false, false), (1, false, true), (2, false, false), (3, false, false), (5, false, false),
             (1, true, false), (2, true, false), (3, true, false),
             (4, true, false), (5, true, false), (4, false, true), (0, true, false)
         ] {
@@ -92,13 +92,8 @@ final class NativeInformationCardHostedTests: XCTestCase {
                                "A lone score or guide must occupy only one reading column.")
             }
             XCTAssertEqual(try XCTUnwrap(ratings.map(\.maxX).max()), ratings[0].minX + ratingsWidth, accuracy: 1)
-            if compactScore {
-                XCTAssertLessThan(ratings[0].height, about.height,
-                                  "A single score must not stretch to match the synopsis.")
-            } else {
-                XCTAssertEqual(try XCTUnwrap(ratings.map(\.maxY).max()), about.maxY, accuracy: 1,
-                               "Multi-tile About and Ratings must share a bottom edge: frames=\(frames)")
-            }
+            XCTAssertEqual(try XCTUnwrap(ratings.map(\.maxY).max()), about.maxY, accuracy: 1,
+                           "Side-by-side About and Ratings must share a bottom edge: frames=\(frames)")
             if hasGuidance {
                 let guide = try XCTUnwrap(ratings.last)
                 let column = count % columns
