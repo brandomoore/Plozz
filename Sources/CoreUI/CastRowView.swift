@@ -61,14 +61,21 @@ public struct CastRowView: View {
                 .padding(.top, metrics.railClearanceOffset(for: PlozzTheme.Spacing.small))
                 .padding(.bottom, metrics.railClearanceOffset(for: PlozzTheme.Spacing.large))
                 if people.count > DetailPreviewLimits.cast {
-                    Button { showsFullCast = true } label: {
-                        DetailMoreLabel()
-                            .frame(minWidth: 44, minHeight: 44, alignment: .leading)
+                    HStack {
+                        Button { showsFullCast = true } label: {
+                            DetailMoreLabel()
+                                .frame(minWidth: 44, minHeight: 44, alignment: .leading)
+                        }
+                        .buttonStyle(.borderless)
+                        .focused($moreFocused)
+                        .accessibilityIdentifier("detail-cast-more")
+                        Spacer(minLength: 0)
                     }
-                    .buttonStyle(.plain)
-                    .focused($moreFocused)
                     .padding(.leading, leadingInset)
-                    .accessibilityIdentifier("detail-cast-more")
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    #if os(tvOS)
+                    .focusSection()
+                    #endif
                 }
             }
             .onChange(of: moreFocused) { _, focused in
@@ -84,7 +91,7 @@ public struct CastRowView: View {
                     selectedPerson = nil
                     navigateToPerson?(person)
                 }
-            }) {
+            }, style: .detailReader) {
                 DetailCastList(people: people, onSelect: navigateToPerson == nil ? nil : { person in
                     selectedPerson = person
                     showsFullCast = false

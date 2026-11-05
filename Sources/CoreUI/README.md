@@ -1049,6 +1049,12 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   surface and semantic text contrast. Only truncated
   facts open their group's full values. Full-value rows remain focusable for remote
   scrolling through long lists. Mobile keeps inline expansion targets.
+  All detail More dialogs share the existing About reader surface on TV:
+  a content-sized 900pt card, capped at 760pt high, with a 38pt leading title,
+  48pt content insets and Menu/Back dismissal. Metadata and cast use unboxed
+  scrolling content, including on mobile; mobile retains its native inline title
+  and Done action. Cast More owns a full-width native focus section around its
+  compact button so Down from anywhere in the cast rail can reach it.
   Section gaps, gutters, and padding come from `DetailInformationLayout`.
   Ratings stay separate from editorial facts. Revealing one
   protected score reveals the shared score group, never the surrounding facts.

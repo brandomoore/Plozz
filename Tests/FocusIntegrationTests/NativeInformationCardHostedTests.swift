@@ -9,6 +9,46 @@ import XCTest
 
 @MainActor
 final class NativeInformationCardHostedTests: XCTestCase {
+    func testSharedDetailReaderHugsShortContentAndCapsLongContent() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        func scrollView(in view: UIView) -> UIScrollView? {
+            if let scroll = view as? UIScrollView { return scroll }
+            return view.subviews.lazy.compactMap { scrollView(in: $0) }.first
+        }
+        for long in [false, true] {
+            for light in [false, true] {
+                window.rootViewController = UIHostingController(rootView:
+                    DetailReaderCard {
+                        Text("Details").font(.system(size: 38, weight: .semibold))
+                        Text(long ? String(repeating: "A complete value that must remain readable. ", count: 100)
+                             : "Short value")
+                            .font(.system(size: 29))
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .environment(\.themePalette, light ? .light : .dark)
+                    .environment(\.plozzReduceTransparency, light)
+                )
+                window.makeKeyAndVisible()
+                try await Task.sleep(for: .milliseconds(500))
+                let scroll = try XCTUnwrap(scrollView(in: window))
+                XCTAssertEqual(scroll.bounds.width, 900, accuracy: 1)
+                XCTAssertEqual(scroll.bounds.height, long ? 760 : 220, accuracy: 1)
+                if long {
+                    XCTAssertGreaterThan(scroll.contentSize.height, scroll.bounds.height)
+                }
+            }
+        }
+    }
+
     func testSummaryAlignsSideBySideSurfacesAndScoreIconGaps() async throws {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
             .first { $0.activationState == .foregroundActive })

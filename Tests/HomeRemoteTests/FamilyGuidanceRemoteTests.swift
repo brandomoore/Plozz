@@ -3,6 +3,76 @@ import UIKit
 
 @MainActor
 final class FamilyGuidanceRemoteTests: XCTestCase {
+    func testCastMoreUsesTheSharedReaderAndReturnsFocus() throws {
+        let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.FocusHost")
+        app.launchArguments = ["--detail-information-fixture"]
+        app.launch()
+        defer { app.terminate() }
+        let more = app.buttons["detail-cast-more"].firstMatch
+        XCTAssertTrue(more.waitForExistence(timeout: 15))
+        for _ in 0..<4 { XCUIRemote.shared.press(.right) }
+        XCUIRemote.shared.press(.down)
+        XCTAssertTrue(isFocused(more), app.debugDescription)
+        XCTAssertLessThan(more.frame.width, 240, "The focus bridge must not stretch the button.")
+        XCUIRemote.shared.press(.select)
+        assertDetailReader(app, title: "Cast")
+        recordScreenshot(app, name: "shared-reader-cast")
+        XCUIRemote.shared.press(.menu)
+        XCTAssertTrue(more.waitForExistence(timeout: 5))
+        XCTAssertTrue(isFocused(more), "Closing the reader must return to Cast More.")
+    }
+
+    func testFullCastReaderPreservesPersonNavigation() throws {
+        let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.FocusHost")
+        app.launchArguments = ["--detail-information-fixture"]
+        app.launch()
+        defer { app.terminate() }
+        let more = app.buttons["detail-cast-more"].firstMatch
+        XCTAssertTrue(more.waitForExistence(timeout: 15))
+        XCUIRemote.shared.press(.down)
+        XCTAssertTrue(isFocused(more), app.debugDescription)
+        XCUIRemote.shared.press(.select)
+        assertDetailReader(app, title: "Cast")
+        let last = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Person 40")).firstMatch
+        for _ in 0..<45 where !isFocused(last) { XCUIRemote.shared.press(.down) }
+        XCTAssertTrue(isFocused(last), app.debugDescription)
+        XCUIRemote.shared.press(.select)
+        XCTAssertTrue(app.staticTexts["selected-cast-person"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.staticTexts["selected-cast-person"].label, "Person 40")
+        XCTAssertFalse(app.staticTexts["detail-more-title"].exists)
+    }
+
+    func testLongDetailsUseTheSameReadableCard() throws {
+        let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.FocusHost")
+        app.launchArguments = ["--detail-information-fixture", "--detail-single-long-value"]
+        app.launch()
+        defer { app.terminate() }
+        let more = app.buttons["detail-details-original-title-more"].firstMatch
+        XCTAssertTrue(more.waitForExistence(timeout: 15))
+        XCTAssertTrue(isFocused(more))
+        XCUIRemote.shared.press(.select)
+        assertDetailReader(app, title: "Details")
+        recordScreenshot(app, name: "shared-reader-long-details")
+        XCUIRemote.shared.press(.menu)
+        let focused = XCTNSPredicateExpectation(predicate: NSPredicate(format: "hasFocus == true"), object: more)
+        XCTAssertEqual(XCTWaiter.wait(for: [focused], timeout: 5), .completed)
+    }
+
+    private func assertDetailReader(_ app: XCUIApplication, title: String,
+                                    file: StaticString = #filePath, line: UInt = #line) {
+        let heading = app.staticTexts["detail-more-title"]
+        XCTAssertTrue(heading.waitForExistence(timeout: 5), file: file, line: line)
+        XCTAssertEqual(heading.label, title, file: file, line: line)
+        let card = app.descendants(matching: .any)["detail-reader-card"].firstMatch
+        XCTAssertTrue(card.exists, file: file, line: line)
+        XCTAssertEqual(card.frame.width, 900, accuracy: 1, file: file, line: line)
+        XCTAssertLessThanOrEqual(card.frame.height, 761, file: file, line: line)
+        XCTAssertLessThan(heading.frame.height, 50, file: file, line: line)
+        XCTAssertEqual(heading.frame.minX, card.frame.minX + 48, accuracy: 1, file: file, line: line)
+        XCTAssertTrue(heading.isHittable, file: file, line: line)
+        XCTAssertEqual(heading.frame.minY, card.frame.minY + 48, accuracy: 1, file: file, line: line)
+    }
+
     func testCompactScorePromotesFactsAndKeepsAvailabilityLeading() throws {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".json")
         let example: [String: Any] = [
@@ -216,12 +286,14 @@ final class FamilyGuidanceRemoteTests: XCTestCase {
         try assertFocusedFactContrast(more, in: app)
         recordScreenshot(app, name: "unboxed-section-more-focused")
         XCUIRemote.shared.press(.select)
-        XCTAssertTrue(app.buttons["Done"].waitForExistence(timeout: 5))
+        assertDetailReader(app, title: "Release & Availability")
+        recordScreenshot(app, name: "shared-reader-availability")
     }
 
     func testUnboxedDetailColumnsSupportRemoteExpansionAndScrolling() throws {
         let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.FocusHost")
-        app.launchArguments = ["--detail-information-fixture", "--detail-layout-rich", "--detail-layout-flat"]
+        app.launchArguments = ["--detail-information-fixture", "--detail-layout-rich",
+                               "--detail-layout-flat", "--detail-long-filename"]
         app.launch()
         defer { app.terminate() }
         let year = app.descendants(matching: .any)["detail-details-year-more"].firstMatch
@@ -238,7 +310,8 @@ final class FamilyGuidanceRemoteTests: XCTestCase {
         try assertFocusedFactContrast(year, in: app)
         recordScreenshot(app, name: "unboxed-detail-reading-stop")
         XCUIRemote.shared.press(.select)
-        XCTAssertFalse(app.buttons["Done"].exists, "A complete fact is a reading stop, not an expansion action.")
+        XCTAssertFalse(app.staticTexts["detail-more-title"].exists,
+                       "A complete fact is a reading stop, not an expansion action.")
 
         XCUIRemote.shared.press(.right)
         XCTAssertTrue(isFocused(app.descendants(matching: .any)["detail-details-runtime-more"].firstMatch))
@@ -247,7 +320,8 @@ final class FamilyGuidanceRemoteTests: XCTestCase {
         try assertFocusedFactContrast(directors, in: app)
         recordScreenshot(app, name: "unboxed-detail-directors-focused")
         XCUIRemote.shared.press(.select)
-        XCTAssertTrue(app.buttons["Done"].waitForExistence(timeout: 5))
+        assertDetailReader(app, title: "Crew")
+        recordScreenshot(app, name: "shared-reader-crew")
         let lastDirector = app.staticTexts["Director 20"]
         for _ in 0..<25 where !lastDirector.exists || !lastDirector.isHittable { XCUIRemote.shared.press(.down) }
         recordScreenshot(app, name: "unboxed-detail-full-crew")
@@ -264,6 +338,9 @@ final class FamilyGuidanceRemoteTests: XCTestCase {
         try assertFocusedFactContrast(filename, in: app)
         XCTAssertLessThan(year.frame.minY, initialTop, "Focus must scroll lower technical facts into view.")
         recordScreenshot(app, name: "unboxed-detail-playback-scrolled")
+        XCUIRemote.shared.press(.select)
+        assertDetailReader(app, title: "Playback")
+        recordScreenshot(app, name: "shared-reader-playback")
     }
 
     func testHeaderAgeIsSeparateFromTwoReviewScores() {

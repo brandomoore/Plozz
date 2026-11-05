@@ -8,13 +8,6 @@ import UIKit
 /// Shared title-level detail sections. Platform shells keep their own Cast rail
 /// first, then place this view beneath it so content and ordering stay identical
 /// while the adaptive grids naturally collapse on iPhone.
-private struct OverviewCardHeightKey: PreferenceKey {
-    static let defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = max(value, nextValue())
-    }
-}
-
 enum DetailInformationLayout {
     static let labelSpacing = PlozzTheme.Spacing.xSmall
     #if os(tvOS)
@@ -55,7 +48,6 @@ public struct DetailInformationSections: View {
     @State private var showsFullOverview = false
     @State private var expandedGroup: InformationGroup?
     @State private var ratingsRevealed = false
-    @State private var overviewCardHeight: CGFloat = 0
     @State private var overviewFullHeight: CGFloat = 0
     @State private var overviewVisibleHeight: CGFloat = 0
     @Environment(\.themePalette) private var palette
@@ -106,28 +98,37 @@ public struct DetailInformationSections: View {
                     }
             }
         }
-        .plozzSheet(item: $expandedGroup) { group in
+        .plozzSheet(item: $expandedGroup, style: .detailReader) { group in
             DetailMoreSheet(title: Text(group.title)) {
-                List {
+                LazyVStack(alignment: .leading, spacing: 28) {
                     if let current = informationGroups.first(where: { $0.id == group.id }) {
                         ForEach(current.facts) { fact in
-                            Section {
+                            VStack(alignment: .leading, spacing: 12) {
+                                Text(fact.label)
+                                    #if os(tvOS)
+                                    .font(.system(size: 26))
+                                    #else
+                                    .font(.subheadline.weight(.semibold))
+                                    #endif
+                                    .plozzForeground(.secondary)
+                                    .accessibilityAddTraits(.isHeader)
                                 if let values = fact.listValues {
                                     ForEach(values, id: \.self) { value in
                                         Text(value).fixedSize(horizontal: false, vertical: true)
+                                            .plozzForeground(.primary)
                                             #if os(tvOS)
                                             .focusable()
                                             #endif
                                     }
                                 } else {
                                     Text(fact.value).fixedSize(horizontal: false, vertical: true)
+                                        .plozzForeground(.primary)
                                         #if os(tvOS)
                                         .focusable()
                                         #endif
                                 }
-                            } header: {
-                                Text(fact.label)
                             }
+                            .frame(maxWidth: .infinity, alignment: .leading)
                         }
                     }
                 }
@@ -498,76 +499,30 @@ public struct DetailInformationSections: View {
     }
 
     private var overviewPresentationStyle: PlozzSheetStyle {
-        #if os(tvOS)
-        .floatingCard
-        #else
-        .standard
-        #endif
+        .detailReader
     }
 
     #if os(tvOS)
-    /// A centred card, sized to its text — deliberately NOT the
-    /// `NavigationStack` + `navigationTitle` used on iOS.
-    ///
-    /// tvOS renders a navigation title at display size, so a long show name was
-    /// truncated to "With You and th…" while the body text sat small beneath a
-    /// large empty gap. Apple's own detail overview is a plain card: title at
-    /// body-ish weight, a secondary line of genres, then the overview, with the
-    /// card hugging its content.
     private var tvOverviewCard: some View {
-        ZStack {
-            PlozzDialogBackdrop()
+        DetailReaderCard {
+            Text(item.title)
+                .font(.system(size: 38, weight: .semibold))
+                .foregroundStyle(palette.primaryText)
+                .fixedSize(horizontal: false, vertical: true)
 
-            ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
-                    Text(item.title)
-                        .font(.system(size: 38, weight: .semibold))
-                        .foregroundStyle(palette.primaryText)
-                        .fixedSize(horizontal: false, vertical: true)
-
-                    if !item.genres.isEmpty {
-                        Text(item.genres.prefix(3).joined(separator: ", "))
-                            .font(.system(size: 26))
-                            .plozzForeground(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-
-                    if let overview = nonempty(item.overview) {
-                        overviewText(overview)
-                            .font(.system(size: 29))
-                            .foregroundStyle(palette.primaryText)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(48)
-                // Measure what the text actually needs, so the card can be sized
-                // to it rather than guessed at.
-                .background {
-                    GeometryReader { geometry in
-                        Color.clear.preference(
-                            key: OverviewCardHeightKey.self,
-                            value: geometry.size.height
-                        )
-                    }
-                }
+            if !item.genres.isEmpty {
+                Text(item.genres.prefix(3).joined(separator: ", "))
+                    .font(.system(size: 26))
+                    .plozzForeground(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            .scrollBounceBehavior(.basedOnSize)
-            // An EXPLICIT height, between a floor and a cap.
-            //
-            // `fixedSize` + `maxHeight` was the wrong pairing: fixedSize forces
-            // the scroll view to its ideal (full content) height and the cap then
-            // clipped it, which is why the title was sliced off the top and the
-            // body ran out of the bottom. Sizing it to the measured content keeps
-            // a short overview hugged, and anything past the cap scrolls instead
-            // of overflowing.
-            .frame(
-                width: 900,
-                height: min(max(overviewCardHeight, 220), 760)
-            )
-            .onPreferenceChange(OverviewCardHeightKey.self) { overviewCardHeight = $0 }
-            .clipShape(RoundedRectangle(cornerRadius: 32, style: .continuous))
-            .plozzSurface(.overlay, cornerRadius: 32)
+
+            if let overview = nonempty(item.overview) {
+                overviewText(overview)
+                    .font(.system(size: 29))
+                    .foregroundStyle(palette.primaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
     }
     #endif

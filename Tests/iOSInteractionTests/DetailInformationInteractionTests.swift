@@ -30,6 +30,8 @@ final class DetailInformationInteractionTests: XCTestCase {
         launch()
         reveal(app.buttons["detail-cast-more"])
         app.buttons["detail-cast-more"].tap()
+        XCTAssertTrue(app.navigationBars["Cast"].waitForExistence(timeout: 5))
+        recordMoreScreenshot("shared-reader-cast-mobile")
         let last = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Person 40")).firstMatch
         reveal(last)
         last.tap()
@@ -43,6 +45,8 @@ final class DetailInformationInteractionTests: XCTestCase {
         reveal(more)
         more.tap()
         XCTAssertTrue(app.navigationBars["Crew"].waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertEqual(app.collectionViews.count, 0, "Expanded facts use the unboxed reader, not grouped list cells.")
+        recordMoreScreenshot("shared-reader-crew-mobile")
         reveal(app.staticTexts["Director 60"])
         XCTAssertTrue(app.staticTexts["Director 60"].isHittable)
     }
@@ -55,9 +59,31 @@ final class DetailInformationInteractionTests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Details"].waitForExistence(timeout: 5), app.debugDescription)
         let value = String(repeating: "A very long original title ", count: 40)
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        let expandedValue = app.collectionViews.staticTexts
+        let expandedValue = app.scrollViews.staticTexts
             .matching(NSPredicate(format: "label == %@", value)).firstMatch
         XCTAssertTrue(expandedValue.waitForExistence(timeout: 5), app.debugDescription)
+        recordMoreScreenshot("shared-reader-long-details-mobile")
+    }
+
+    private func recordMoreScreenshot(_ name: String) {
+        let capture = XCTAttachment(screenshot: app.screenshot())
+        capture.name = name
+        capture.lifetime = .keepAlways
+        add(capture)
+    }
+
+    func testCrewReaderKeepsAllNamesAtAccessibilitySizes() {
+        launch(["--detail-layout-large-type"])
+        let more = app.buttons["detail-crew-directors-more"]
+        reveal(more)
+        more.tap()
+        XCTAssertTrue(app.navigationBars["Crew"].waitForExistence(timeout: 5))
+        let last = app.staticTexts["Director 60"]
+        reveal(last)
+        XCTAssertTrue(last.isHittable)
+        XCTAssertLessThanOrEqual(last.frame.maxX, app.frame.maxX)
+        app.buttons["Done"].tap()
+        XCTAssertFalse(app.navigationBars["Crew"].exists)
     }
 
     func testFamilyGuidanceTileOpensAndDismissesItsDetails() {

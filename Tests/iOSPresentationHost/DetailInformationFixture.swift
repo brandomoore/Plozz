@@ -224,7 +224,9 @@ struct DetailInformationFixture: View {
         guard layoutCase != nil, !isUnowned else { return nil }
         return MediaVersion(
             id: "file",
-            fileName: layoutCase == "personal" ? "Summer holiday.mov"
+            fileName: ProcessInfo.processInfo.arguments.contains("--detail-long-filename")
+                ? String(repeating: "A complete media filename ", count: 40) + ".mkv"
+                : layoutCase == "personal" ? "Summer holiday.mov"
                 : "\(item.title) (\(item.productionYear ?? 2026)) - [WEBDL-2160p][DV HDR10Plus][EAC3 5.1][h265].mkv",
             width: 3840, height: 2160, bitrate: 25_300_000,
             sizeBytes: 17_800_000_000, videoCodec: "hevc",

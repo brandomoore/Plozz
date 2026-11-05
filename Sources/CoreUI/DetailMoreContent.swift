@@ -11,6 +11,58 @@ public enum DetailPreviewLimits {
 #if canImport(SwiftUI)
 import SwiftUI
 
+extension PlozzSheetStyle {
+    static var detailReader: Self {
+        #if os(tvOS)
+        .floatingCard
+        #else
+        .standard
+        #endif
+    }
+}
+
+#if os(tvOS)
+private struct DetailReaderHeightKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+
+/// The existing About reader surface, shared by every detail expansion.
+struct DetailReaderCard<Content: View>: View {
+    @ViewBuilder let content: Content
+    @State private var contentHeight: CGFloat = 0
+
+    var body: some View {
+        ZStack {
+            PlozzDialogBackdrop()
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    content
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(48)
+                .background {
+                    GeometryReader { geometry in
+                        Color.clear.preference(
+                            key: DetailReaderHeightKey.self,
+                            value: geometry.size.height
+                        )
+                    }
+                }
+            }
+            .scrollBounceBehavior(.basedOnSize)
+            .frame(width: 900, height: min(max(contentHeight, 220), 760))
+            .onPreferenceChange(DetailReaderHeightKey.self) { contentHeight = $0 }
+            .clipShape(RoundedRectangle(cornerRadius: 32, style: .continuous))
+            .plozzSurface(.overlay, cornerRadius: 32)
+            .accessibilityIdentifier("detail-reader-card")
+        }
+    }
+}
+#endif
+
 public struct DetailMoreLabel: View {
     public init() {}
 
@@ -79,6 +131,7 @@ public struct DetailMoreSheet<Content: View>: View {
     private let title: Text
     private let content: Content
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.themePalette) private var palette
 
     public init(title: Text, @ViewBuilder content: () -> Content) {
         self.title = title
@@ -86,22 +139,38 @@ public struct DetailMoreSheet<Content: View>: View {
     }
 
     public var body: some View {
-        NavigationStack {
+        #if os(tvOS)
+        DetailReaderCard {
+            title
+                .font(.system(size: 38, weight: .semibold))
+                .foregroundStyle(palette.primaryText)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityAddTraits(.isHeader)
+                .accessibilityIdentifier("detail-more-title")
             content
-                #if !os(tvOS)
-                .scrollContentBackground(.hidden)
-                #endif
-                .background { SettingsPageBackground() }
-                .navigationTitle(title)
-                #if !os(tvOS)
-                .navigationBarTitleDisplayMode(.inline)
-                #endif
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button("Done") { dismiss() }
-                    }
-                }
+                .font(.system(size: 29))
         }
+        #else
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 24) {
+                    content
+                }
+                .padding(24)
+                .frame(maxWidth: 640, alignment: .leading)
+                .frame(maxWidth: .infinity)
+            }
+            .scrollContentBackground(.hidden)
+            .background { SettingsPageBackground() }
+            .navigationTitle(title)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+        #endif
     }
 }
 
@@ -116,13 +185,19 @@ public struct DetailCastList: View {
 
     public var body: some View {
         DetailMoreSheet(title: Text("Cast")) {
-            List(people) { person in
-                if let onSelect {
-                    Button { onSelect(person) } label: {
+            LazyVStack(alignment: .leading, spacing: 16) {
+                ForEach(people) { person in
+                    if let onSelect {
+                        Button { onSelect(person) } label: {
+                            personLabel(person)
+                        }
+                        .buttonStyle(.borderless)
+                    } else {
                         personLabel(person)
+                            #if os(tvOS)
+                            .focusable()
+                            #endif
                     }
-                } else {
-                    personLabel(person)
                 }
             }
             .accessibilityIdentifier("detail-full-cast")
@@ -143,17 +218,27 @@ public struct DetailCastList: View {
             .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 4) {
                 Text(person.name)
-                    .font(.headline)
+                    #if os(tvOS)
+                    .font(.system(size: 29, weight: .medium))
+                    #else
+                    .font(.body.weight(.medium))
+                    #endif
+                    .plozzForeground(.primary)
                     .fixedSize(horizontal: false, vertical: true)
                 if let role = person.role, !role.isEmpty {
                     Text(role)
+                        #if os(tvOS)
+                        .font(.system(size: 26))
+                        #else
                         .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                        #endif
+                        .plozzForeground(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .padding(.vertical, 8)
         .accessibilityElement(children: .combine)
     }
 
