@@ -24,13 +24,21 @@ final class ShareProviderLocatorTests: XCTestCase {
                 modifiedAt: Date(timeIntervalSince1970: 100)
             )
         }
-        let folders = try ["PLAYLIST", "STREAM"].map {
+        let objects = try RemoteFileEntry(
+            relativePath: "\(root)/MovieObject.bdmv", kind: .file, size: 128, strongETag: "\"objects\""
+        )
+        let backup = try RemoteFileEntry(
+            relativePath: "\(root)/BACKUP/CLIPINF/00002.clpi", kind: .file, size: 256, strongETag: "\"backup\""
+        )
+        let folders = try ["PLAYLIST", "STREAM", "BACKUP"].map {
             try RemoteFileEntry(relativePath: "\(root)/\($0)", kind: .directory)
         }
         for scheme in ["smb", "sftp", "ftp", "ftps", "http", "https"] {
             let fileSystem = LocatorFakeFileSystem(statEntry: index, directoryTree: [
-                root: [index] + folders,
+                root: [index, objects] + folders,
                 "\(root)/PLAYLIST": [playlist],
+                "\(root)/BACKUP": [try RemoteFileEntry(relativePath: "\(root)/BACKUP/CLIPINF", kind: .directory)],
+                "\(root)/BACKUP/CLIPINF": [backup],
                 "\(root)/STREAM": clips
             ])
             let provider = makeProvider(
@@ -42,10 +50,15 @@ final class ShareProviderLocatorTests: XCTestCase {
             guard case .networkDisc(let disc) = request.playbackSource else {
                 return XCTFail("\(scheme) must use folder playback, never the first clip")
             }
-            XCTAssertEqual(disc.files.count, 4)
+            XCTAssertEqual(disc.files.count, 6)
             XCTAssertEqual(request.item.title, "Test Pattern")
             XCTAssertEqual(disc.anchor.relativePath, index.relativePath)
-            XCTAssertEqual(disc.files.last?.locator.representation.identity.kind, .modificationTime)
+            XCTAssertEqual(
+                disc.files.first(where: { $0.path == "BDMV/STREAM/00001.m2ts" })?.locator.representation.identity.kind,
+                .modificationTime
+            )
+            XCTAssertTrue(disc.files.contains { $0.path == "BDMV/MovieObject.bdmv" })
+            XCTAssertTrue(disc.files.contains { $0.path == "BDMV/BACKUP/CLIPINF/00002.clpi" })
             XCTAssertNil(request.downloadableOriginalSource)
             let preparation = try await provider.playbackPreparationLocator(
                 for: request.item.id, mediaSourceID: index.relativePath

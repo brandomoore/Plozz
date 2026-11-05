@@ -67,6 +67,7 @@ public struct PlaybackSettings: Codable, Equatable, Sendable {
     public var resumeRewindInterval: ResumeRewindInterval
 
     public var askBeforeResuming: Bool
+    public var discPlayback: DiscPlaybackBehavior
 
     public func shouldAskBeforeResuming(at position: TimeInterval?, fromBeginning: Bool = false) -> Bool {
         askBeforeResuming && !fromBeginning && (position ?? 0) > 1
@@ -199,6 +200,7 @@ public struct PlaybackSettings: Codable, Equatable, Sendable {
         skipForwardInterval: SkipInterval = .ten,
         resumeRewindInterval: ResumeRewindInterval = .five,
         askBeforeResuming: Bool = false,
+        discPlayback: DiscPlaybackBehavior = .playVideo,
         syncWatchAcrossServers: Bool = true,
         seekWithoutPausing: Bool = true,
         autoPlayNextEpisode: Bool = true,
@@ -236,6 +238,7 @@ public struct PlaybackSettings: Codable, Equatable, Sendable {
         self.skipForwardInterval = skipForwardInterval
         self.resumeRewindInterval = resumeRewindInterval
         self.askBeforeResuming = askBeforeResuming
+        self.discPlayback = discPlayback
         self.syncWatchAcrossServers = syncWatchAcrossServers
         self.seekWithoutPausing = seekWithoutPausing
         self.autoPlayNextEpisode = autoPlayNextEpisode
@@ -403,6 +406,7 @@ public extension PlaybackSettings {
         case skipForwardInterval
         case resumeRewindInterval
         case askBeforeResuming
+        case discPlayback
         case backgroundAudio
         case volumeBrightnessGestures
         case orientation
@@ -505,6 +509,8 @@ public extension PlaybackSettings {
         self.backgroundAudio = try container.decodeIfPresent(Bool.self, forKey: .backgroundAudio) ?? false
         self.askBeforeResuming = try container.decodeIfPresent(Bool.self, forKey: .askBeforeResuming)
             ?? defaults.askBeforeResuming
+        self.discPlayback = (try? container.decode(DiscPlaybackBehavior.self, forKey: .discPlayback))
+            ?? defaults.discPlayback
         self.volumeBrightnessGestures =
             try container.decodeIfPresent(Bool.self, forKey: .volumeBrightnessGestures)
             ?? defaults.volumeBrightnessGestures
@@ -591,6 +597,7 @@ public extension PlaybackSettings {
         try container.encode(skipForwardInterval, forKey: .skipForwardInterval)
         try container.encode(resumeRewindInterval, forKey: .resumeRewindInterval)
         try container.encode(askBeforeResuming, forKey: .askBeforeResuming)
+        try container.encode(discPlayback, forKey: .discPlayback)
         try container.encode(backgroundAudio, forKey: .backgroundAudio)
         try container.encode(volumeBrightnessGestures, forKey: .volumeBrightnessGestures)
         try container.encode(orientation, forKey: .orientation)

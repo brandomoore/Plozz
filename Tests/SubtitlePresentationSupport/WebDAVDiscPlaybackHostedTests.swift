@@ -62,7 +62,11 @@ final class WebDAVDiscPlaybackHostedTests: XCTestCase {
         try await checkBluRayPlayback(startPosition: 9)
     }
 
-    private func checkBluRayPlayback(startPosition: Double) async throws {
+    func testNativeHDMVFirstPlayAndTopMenuUseProductionTransport() async throws {
+        try await checkBluRayPlayback(startPosition: 0, discMenus: true)
+    }
+
+    private func checkBluRayPlayback(startPosition: Double, discMenus: Bool = false) async throws {
         let root = try XCTUnwrap(Bundle(for: Self.self).resourceURL)
             .appendingPathComponent("Fixtures/bluray-test-pattern")
         let subpaths = try FileManager.default.subpathsOfDirectory(atPath: root.path)
@@ -77,6 +81,20 @@ final class WebDAVDiscPlaybackHostedTests: XCTestCase {
             } else {
                 files[path] = url
                 sizes[path] = try XCTUnwrap(values.fileSize)
+            }
+        }
+        if discMenus {
+            let metadata = try XCTUnwrap(Bundle(for: Self.self).resourceURL)
+                .appendingPathComponent("Fixtures/hdmv-navigation")
+            for path in try FileManager.default.subpathsOfDirectory(atPath: metadata.path) {
+                let url = metadata.appendingPathComponent(path)
+                let values = try url.resourceValues(forKeys: [.isDirectoryKey, .fileSizeKey])
+                if values.isDirectory == true {
+                    directories.insert(path)
+                } else {
+                    files[path] = url
+                    sizes[path] = try XCTUnwrap(values.fileSize)
+                }
             }
         }
         let fixtureFiles = files
@@ -119,7 +137,8 @@ final class WebDAVDiscPlaybackHostedTests: XCTestCase {
         let base = try await server.start().appendingPathComponent("dav")
         try await checkPlayback(
             base: base, path: "BDMV/index.bdmv", credential: .anonymous,
-            seekPositions: [10, 2, 13], startPosition: startPosition
+            seekPositions: discMenus ? [2] : [10, 2, 13], startPosition: startPosition,
+            discMenus: discMenus
         )
         XCTAssertTrue(reads.contains("BDMV/STREAM/00001.m2ts"))
         XCTAssertTrue(reads.contains("BDMV/STREAM/00002.m2ts"))
@@ -326,7 +345,8 @@ final class WebDAVDiscPlaybackHostedTests: XCTestCase {
     private func checkPlayback(
         base: URL, path: String, credential: WebDAVCredential, seekPositions: [Double],
         startPosition: Double = 0, sustainedPlaybackSeconds: Int = 0,
-        requiresNativeHLS: Bool = false, recordIO: (@Sendable (String) async -> Void)? = nil
+        requiresNativeHLS: Bool = false, recordIO: (@Sendable (String) async -> Void)? = nil,
+        discMenus: Bool = false
     ) async throws {
         let environment = ProcessInfo.processInfo.environment
         let detailPlayDelay: Duration?
@@ -465,7 +485,8 @@ final class WebDAVDiscPlaybackHostedTests: XCTestCase {
         let prepared = preparationHandle
         defer { withExtendedLifetime(prepared) {} }
         await recordIO?("play")
-        let request = try await provider.playbackInfo(for: item.id, mediaSourceID: nil, forceTranscode: false)
+        var request = try await provider.playbackInfo(for: item.id, mediaSourceID: nil, forceTranscode: false)
+        request.discPlayback = discMenus ? .openMenu : .playVideo
         let preparationDuration = preparationStarted.duration(to: .now)
         print("WEBDAV_DISC preparationSeconds=\(preparationDuration)")
         guard request.playbackSource?.requiresNetworkFileResolver == true else {
@@ -531,7 +552,22 @@ final class WebDAVDiscPlaybackHostedTests: XCTestCase {
             engine.duration, max(startPosition, seekPositions.max()!) + Double(max(1, sustainedPlaybackSeconds))
         )
         if path.hasSuffix("index.bdmv") {
-            XCTAssertEqual(engine.duration, 16, accuracy: 0.5, "The selected playlist spans both eight-second clips")
+            XCTAssertEqual(engine.duration, discMenus ? 8 : 16, accuracy: 0.5)
+        }
+        if discMenus {
+            let menu = try XCTUnwrap(engine.discMenu)
+            XCTAssertEqual(menu.playlist, 1, "Native first play must select its own playlist")
+            XCTAssertNil(menu.failure)
+            menu.openMenu()
+            try await wait(engine: engine, seconds: 45) {
+                guard menu.playlist == 2, menu.failure == nil else { return false }
+                return await engine.hasRenderedVideoFrame()
+            }
+            try await waitForPlayback(engine, after: 0.5, before: 5)
+            XCTAssertNil(menu.failure)
+            engine.stop()
+            await engine.drainTransport()
+            return
         }
         print("WEBDAV_DISC startPosition=\(startPosition) firstPresentedPosition=\(firstPresentedPosition)")
         print("WEBDAV_DISC firstRenderedFrameSeconds=\(firstRenderedDuration) duration=\(engine.duration)")

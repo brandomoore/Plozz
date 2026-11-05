@@ -485,6 +485,9 @@ public struct MediaItem: Codable, Hashable, Identifiable, Sendable {
     /// provider/server default source".
     public var selectedVersionID: String?
 
+    /// One-play intent, excluded from persisted media metadata.
+    public var discPlaybackOverride: DiscPlaybackBehavior? = nil
+
     /// Every server that holds this same title, captured by the cross-server
     /// merge (``MediaItemMerger``). Primary source first (it backs this card's
     /// id/artwork), then the de-duplicated alternates. Each ref carries **that

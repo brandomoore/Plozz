@@ -209,6 +209,7 @@ struct PlayerPresentation: View {
             // another server's copy) and re-present at the same resume point. When
             // no untried source remains, the player's `.failed` error stays visible.
             guard handoffTask == nil, !activeRequest.item.explicitSourceSelection,
+                  viewModel?.isDiscMenuPlayback != true,
                   case .failed = phase else { return }
             let failedAccountID = activeRequest.item.selectedSourceAccountID
                 ?? activeRequest.item.sourceAccountID
@@ -227,6 +228,9 @@ struct PlayerPresentation: View {
     }
 
     private func openExternalPlayer() async -> Bool {
+        guard activeRequest.item.effectiveDiscPlayback(default: playbackSettings.discPlayback) != .openMenu else {
+            return false
+        }
         let deviceSettings = ExternalPlayerSettingsModel.shared
         deviceSettings.migrateIfNeeded(from: playbackSettings.externalPlayer)
         guard deviceSettings.settings.player != .builtIn else { return false }
@@ -356,8 +360,10 @@ struct PlayerPresentation: View {
     private func preparedRequest(_ request: PlayRequest) async throws -> PlayRequest {
         try checkPresentationAuthorization()
         guard !request.item.isYouTubeTrailer else { throw AppError.invalidResponse }
+        let opened = request.item.effectiveDiscPlayback(default: playbackSettings.discPlayback) == .openMenu
+            ? request.item.requestingDiscPlayback(.openMenu) : request.item
         let prepared = try await PlaybackVersionChoiceModel.prepareWithFailover(
-            request.item, triedAccountIDs: triedAccountIDs,
+            opened, triedAccountIDs: triedAccountIDs,
             prepare: { try await prepareVersion(versionChoice, $0) },
             nextSource: makeFailover,
             isCurrent: { isPresented && externalContext?().isAuthorized != false }

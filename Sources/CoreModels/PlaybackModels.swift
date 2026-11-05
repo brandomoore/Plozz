@@ -350,6 +350,8 @@ public struct PlaybackServerDecision: Codable, Hashable, Sendable {
 /// direct-play or transcode and hands back either a legacy resolved URL or a
 /// credential-free typed source.
 public struct PlaybackRequest: Hashable, Sendable {
+    public var discPlayback: DiscPlaybackBehavior = .playVideo
+    public var discRegionOverride: UInt32? = nil
     /// Bounded server negotiation facts, retained for optional diagnostic exports.
     public var serverDecision: PlaybackServerDecision?
     /// Library channels own a separate interval-based reporting path; accidental

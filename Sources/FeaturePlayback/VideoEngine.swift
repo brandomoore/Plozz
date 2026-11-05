@@ -79,6 +79,9 @@ public struct PlayerEngineCapabilities: OptionSet, Sendable {
 ///    lives above the engine, not inside it.
 @MainActor
 public protocol VideoEngine: AnyObject {
+    #if canImport(UIKit)
+    var discMenu: DiscMenuPlaybackState? { get }
+    #endif
     var supportsActivePictureAnalysis: Bool { get }
     func sampleActivePicture() async -> VideoActivePictureState
     func stopActivePictureAnalysis()
@@ -377,6 +380,9 @@ public protocol VideoEngine: AnyObject {
 }
 
 public extension VideoEngine {
+    #if canImport(UIKit)
+    var discMenu: DiscMenuPlaybackState? { nil }
+    #endif
     var supportsActivePictureAnalysis: Bool { false }
     func sampleActivePicture() async -> VideoActivePictureState { .unsupported }
     func stopActivePictureAnalysis() {}

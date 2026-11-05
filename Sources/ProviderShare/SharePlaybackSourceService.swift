@@ -44,14 +44,32 @@ struct SharePlaybackSourceService: Sendable {
             throw MediaTransportError.sourceChanged(reason: "Blu-ray folder structure changed")
         }
         var inventory = [disc.index]
+        inventory += disc.entries.filter {
+            $0.kind == .file && $0.name.caseInsensitiveCompare("MovieObject.bdmv") == .orderedSame
+        }
         for folder in disc.entries where folder.kind == .directory
-            && ["playlist", "clipinf", "stream"].contains(folder.name.lowercased()) {
+            && ["playlist", "clipinf", "stream", "auxdata", "backup"].contains(folder.name.lowercased()) {
             try Task.checkCancellation()
             let children = try await store.rawEntries(inDirectory: folder.relativePath)
             guard children.count <= 4_096 - inventory.count else {
                 throw MediaTransportError.unsupportedCapability("Blu-ray folder file limit")
             }
-            let expectedExtension = ["playlist": "mpls", "clipinf": "clpi", "stream": "m2ts"][folder.name.lowercased()]
+            if folder.name.lowercased() == "backup" {
+                inventory += children.filter {
+                    $0.kind == .file && ["index.bdmv", "movieobject.bdmv"].contains($0.name.lowercased())
+                }
+                for backup in children where backup.kind == .directory &&
+                    ["playlist", "clipinf"].contains(backup.name.lowercased()) {
+                    let files = try await store.rawEntries(inDirectory: backup.relativePath)
+                    guard files.count <= 4_096 - inventory.count else {
+                        throw MediaTransportError.unsupportedCapability("Blu-ray folder file limit")
+                    }
+                    let ext = backup.name.lowercased() == "playlist" ? "mpls" : "clpi"
+                    inventory += files.filter { $0.kind == .file && ($0.name as NSString).pathExtension.lowercased() == ext }
+                }
+                continue
+            }
+            let expectedExtension = ["playlist": "mpls", "clipinf": "clpi", "stream": "m2ts", "auxdata": "bdmv"][folder.name.lowercased()]
             inventory += children.filter {
                 $0.kind == .file && ($0.name as NSString).pathExtension.lowercased() == expectedExtension
             }

@@ -239,7 +239,7 @@ public struct PlayerView: View {
     /// Pure extraction — identical gating and transition.
     @ViewBuilder
     private var bringUpSpinnerOverlay: some View {
-        if viewModel.showBringUpSpinner {
+        if viewModel.showBringUpSpinner && !discMenuHasPresentation {
             if let options = viewModel.streamingOptions, options.quality != .original {
                 StreamingPlaybackLoadingView(
                     options: options, provider: viewModel.streamingProviderName,
@@ -282,6 +282,47 @@ public struct PlayerView: View {
     /// extraction — identical structure and behavior.
     @ViewBuilder
     private var phaseContent: some View {
+        #if canImport(UIKit)
+        if viewModel.isDiscMenuPlayback, let state = viewModel.videoEngine.discMenu,
+           state.failure != nil || state.isOpening || state.isMenuVisible || state.image != nil {
+            DiscMenuPlayerContent(model: viewModel, state: state, dismiss: dismissPlayer)
+        } else {
+            ordinaryPhaseContent
+                .overlay(alignment: .topTrailing) {
+                    if viewModel.isDiscMenuPlayback, let state = viewModel.videoEngine.discMenu {
+                        Button("Disc menu") { state.openMenu() }
+                            .contextMenu {
+                                Button("Play video") { viewModel.playVideoWithoutMenus() }
+                                Button("Try another region") {
+                                    viewModel.retryDiscMenu(region: state.region == 1 ? 2 : state.region == 2 ? 4 : 1)
+                                }
+                            }
+                            .padding()
+                    }
+                }
+                .overlay(alignment: .bottom) {
+                    if viewModel.isDiscMenuPlayback,
+                       let notice = viewModel.videoEngine.discMenu?.notice {
+                        Text(verbatim: notice).padding().background(.regularMaterial)
+                            .allowsHitTesting(false)
+                    }
+                }
+        }
+        #else
+        ordinaryPhaseContent
+        #endif
+    }
+
+    private var discMenuHasPresentation: Bool {
+        #if canImport(UIKit)
+        viewModel.videoEngine.discMenu.map { $0.failure != nil || $0.image != nil } ?? false
+        #else
+        false
+        #endif
+    }
+
+    @ViewBuilder
+    private var ordinaryPhaseContent: some View {
         switch viewModel.phase {
         case .loading:
             // Black backdrop that hosts the (not-yet-presenting) engine

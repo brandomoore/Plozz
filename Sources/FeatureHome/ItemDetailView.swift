@@ -698,6 +698,20 @@ public struct ItemDetailView: View {
                             if !item.opensExternalSource { playbackPreparation.handoff(item) }
                             onPlay(item)
                         } : nil,
+                        onPlayDisc: canPlay ? { behavior in
+                            let sources = viewModel.sources
+                            let source = self.effectiveSource(
+                                for: detail.item, sources: sources, serverChoices: self.serverChoices(from: sources)
+                            )
+                            let versions = self.effectiveVersions(
+                                for: detail.item, sources: sources, activeAccountID: source?.accountID
+                            )
+                            let item = self.playItem(
+                                for: detail.item, sources: sources, activeAccountID: source?.accountID,
+                                versionID: self.effectiveVersionID(for: detail.item, in: versions)
+                            )
+                            onPlay(item.requestingDiscPlayback(behavior))
+                        } : nil,
                         showsPlayPlaceholder: !usesExternalDetail && DetailPlaybackSelection.showsPlayPlaceholder(
                             for: detail.item, hasPlayTarget: canPlay,
                             childrenLoaded: detail.childrenLoaded,

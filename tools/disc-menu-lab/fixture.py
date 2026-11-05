@@ -92,6 +92,33 @@ def clip_info(packet_count: int) -> bytes:
             clip + sequence + program + cpi + u32(0))
 
 
+def create_hdmv_metadata(destination: Path, source_clips: Path) -> None:
+    """Two original eight-second playlists: first play and a looping top menu."""
+    destination.mkdir(parents=True, exist_ok=False)
+    for folder in ("PLAYLIST", "CLIPINF"):
+        (destination / "BDMV" / folder).mkdir(parents=True)
+
+    def title(number):
+        return u32(1 << 30) + u16(0) + u16(number) + bytes(4)
+
+    application = section(b"\x00\x51" + bytes(32))
+    titles = section(title(0) + title(1) + u16(1) + title(1))
+    (destination / "BDMV/index.bdmv").write_bytes(
+        b"INDX0200" + u32(78) + u32(0) + bytes(24) + application + titles)
+    objects = bytes(4) + u16(2)
+    for number in (1, 2):
+        commands = u32(0x22800000) + u32(number) + u32(0)
+        commands += u32(0x21810000) + u32(0) + u32(0)
+        objects += u16(0) + u16(2) + commands
+    (destination / "BDMV/MovieObject.bdmv").write_bytes(b"MOBJ0200" + bytes(32) + section(objects))
+    for clip in ("00001", "00002"):
+        size = (source_clips / f"{clip}.m2ts").stat().st_size
+        if not size or size % 192:
+            raise ValueError("Expected complete original M2TS clips")
+        (destination / f"BDMV/PLAYLIST/{clip}.mpls").write_bytes(playlist(clip))
+        (destination / f"BDMV/CLIPINF/{clip}.clpi").write_bytes(clip_info(size // 192))
+
+
 def create(destination: Path, source_clips: Path) -> None:
     destination.mkdir(parents=True, exist_ok=False)
     for name in ("PLAYLIST", "STREAM", "CLIPINF", "BDJO", "JAR", "AUXDATA"):

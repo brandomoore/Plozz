@@ -130,6 +130,15 @@ public enum PlozzAttributions {
             ]
         ),
         PlozzAttribution(
+            title: "libbluray",
+            detail:
+                "HDMV disc navigation uses libbluray 1.5.0 and its bundled libudfread. "
+                + "This build does not include a Java runtime or decryption libraries. "
+                + "Source: https://download.videolan.org/pub/videolan/libbluray/1.5.0/. "
+                + "Complete license texts are bundled in LibblurayNotices.txt.",
+            licenses: [.init("LGPL-2.1-or-later", family: .lgpl)]
+        ),
+        PlozzAttribution(
             title: "dav1d",
             detail:
                 "AV1 video decoding uses dav1d 1.5.4 by VideoLAN and contributors. "

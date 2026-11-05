@@ -582,9 +582,13 @@ private struct PlozziOSCanonicalItemDetailView: View {
                     // live state here guarantees playback derives from the same
                     // source of truth the UI most recently showed. (tvOS's
                     // ItemDetailView does this and documents it as CRITICAL.)
-                    onPlay: { _, fromBeginning in
+                    onPlay: { selection, fromBeginning in
                         let liveTarget = seriesPlayTarget ?? detail.item
-                        play(playbackItem(for: liveTarget), fromBeginning: fromBeginning)
+                        let fresh = playbackItem(for: liveTarget)
+                        let selected = selection.discPlaybackOverride.map {
+                            fresh.requestingDiscPlayback($0)
+                        } ?? fresh
+                        play(selected, fromBeginning: fromBeginning)
                     },
                     trailerItem: viewModel.trailers.first,
                     onPlayTrailer: { play($0) },
@@ -1054,7 +1058,8 @@ private struct PlozziOSCanonicalItemDetailView: View {
             }
             return
         }
-        if appModel.settings.playback.settings.shouldAskBeforeResuming(at: request.startPosition) {
+        if request.item.effectiveDiscPlayback(default: appModel.settings.playback.settings.discPlayback) != .openMenu,
+           appModel.settings.playback.settings.shouldAskBeforeResuming(at: request.startPosition) {
             pendingResumeRequest = request
         } else {
             playbackRequest = request

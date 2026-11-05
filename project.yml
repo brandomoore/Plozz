@@ -83,6 +83,7 @@ targets:
       - path: App/Resources/InfoPlist.xcstrings
       - path: App/Resources/ReleaseNotes.json
       - path: App/Resources/LibassNotices.txt
+      - path: App/Resources/LibblurayNotices.txt
       - path: App/Resources/LibTrueHDNotices.txt
       - path: App/Resources/LibTrueHDLicense.txt
       - path: App/Resources/LibTrueHDApacheLicense.txt
@@ -345,6 +346,7 @@ targets:
       - path: App/Resources/Localizable.xcstrings
       - path: App/Resources/ReleaseNotes.json
       - path: App/Resources/LibassNotices.txt
+      - path: App/Resources/LibblurayNotices.txt
       - path: App/Resources/LibTrueHDNotices.txt
       - path: App/Resources/LibTrueHDLicense.txt
       - path: App/Resources/LibTrueHDApacheLicense.txt

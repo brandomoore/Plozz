@@ -449,7 +449,7 @@ final class EngineHandoffCoordinator {
             currentEngineKind: currentEngineKind,
             alternateEngineKind: alternateEngineKind,
             resume: resume,
-            allowsCompatibilityFallback: PlayerViewModel.streamingFailure(
+            allowsCompatibilityFallback: request?.discPlayback != .openMenu && PlayerViewModel.streamingFailure(
                 error, evidence: engine.streamingFailure
             )?.allowsCodecFallback != false,
             state: &fallbackState

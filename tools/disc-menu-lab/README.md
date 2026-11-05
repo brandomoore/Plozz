@@ -7,6 +7,12 @@ No production app target, playback engine dependency or
 signing setting is changed. Simulator routes install only their own test app in
 a newly created simulator; the device build route does not sign or install.
 
+The shared HDMV bridge now lives in `Sources/DiscNavigation`; `live_build.py`
+enables its lab-only HTTP initializer with `PLOZZ_DISC_MENU_LAB`. Normal Plozz
+uses the authenticated transport callback instead. The separate
+[app integration](../../docs/playback-engines.md#original-disc-navigation)
+does not embed this laboratory's JVM, relay or FreeType dylib.
+
 ## Run
 
 On Apple Silicon macOS, with Python 3.12+, Xcode command-line tools, Meson, Ninja,

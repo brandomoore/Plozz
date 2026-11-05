@@ -1,9 +1,14 @@
 #import "hdmv_session.h"
+#if __has_include(<CLibbluray.h>)
+#include <CLibbluray.h>
+#else
 #include "libbluray/bluray.h"
 #include "libbluray/decoders/overlay.h"
 #include "file/filesystem.h"
+#endif
 #include <math.h>
 
+#if PLOZZ_DISC_MENU_LAB
 @interface LabHTTPGuard : NSObject <NSURLSessionTaskDelegate>
 @end
 @implementation LabHTTPGuard
@@ -14,6 +19,7 @@
     completionHandler(nil);
 }
 @end
+#endif
 
 @interface HDMVSession () {
     BLURAY *_disc;
@@ -24,6 +30,7 @@
     unsigned _width, _height, _clip, _region;
     NSInteger _playlist, _generation;
     BOOL _selectionPending, _stopPending, _failed, _synchronizing, _hasPalette, _finishing, _menuOpen;
+    BOOL _openingRecoveryAttempted, _userSelected, _trackNoticeShown;
     NSUInteger _finishBytes;
 }
 @property(atomic) BOOL stopped;
@@ -35,6 +42,8 @@
 @property(nonatomic) NSDictionary<NSString *, NSNumber *> *files;
 @property(nonatomic) NSDictionary<NSString *, NSArray<NSString *> *> *directories;
 @property(nonatomic) NSMutableDictionary<NSString *, NSData *> *metadata;
+@property(nonatomic, copy) NSData * _Nullable (^sourceRead)(NSString *, int64_t, int64_t);
+- (nullable NSString *)canonicalPath:(NSString *)path;
 - (void)fail:(NSString *)message;
 - (BOOL)prepareMetadata;
 - (nullable NSData *)range:(NSString *)path offset:(int64_t)offset length:(int64_t)length;
@@ -94,6 +103,7 @@ static int64_t readFile(BD_FILE_H *file, uint8_t *buffer, int64_t requested) {
 static BD_FILE_H *openFile(void *opaque, const char *path) {
     HDMVSession *owner = (__bridge HDMVSession *)opaque;
     NSString *name = path ? [NSString stringWithUTF8String:path] : nil;
+    name = name ? [owner canonicalPath:name] : nil;
     NSNumber *size = name ? owner.files[name] : nil;
     if (!size || owner.stopped) return NULL;
     LabFile *state = [LabFile new];
@@ -126,6 +136,10 @@ static int readDirectory(BD_DIR_H *directory, BD_DIRENT *entry) {
 static BD_DIR_H *openDirectory(void *opaque, const char *path) {
     HDMVSession *owner = (__bridge HDMVSession *)opaque;
     NSString *name = path ? [NSString stringWithUTF8String:path] : nil;
+    if (!name) return NULL;
+    for (NSString *candidate in owner.directories) {
+        if ([candidate caseInsensitiveCompare:name] == NSOrderedSame) { name = candidate; break; }
+    }
     NSArray *names = name ? owner.directories[name] : nil;
     if (!names || owner.stopped) return NULL;
     BD_DIR_H *directory = calloc(1, sizeof(*directory));
@@ -143,6 +157,46 @@ static unsigned component(double value) {
 }
 
 @implementation HDMVSession
+- (instancetype)initWithFiles:(NSDictionary<NSString *, NSNumber *> *)files
+                       region:(unsigned)region
+                    readRange:(NSData * _Nullable (^)(NSString *, int64_t, int64_t))readRange {
+    if (!(self = [super init])) return nil;
+    if (!files.count || files.count > 4096 || !readRange || (region != 1 && region != 2 && region != 4)) return nil;
+    NSMutableDictionary<NSString *, NSMutableSet *> *directories = [NSMutableDictionary dictionary];
+    NSMutableSet *identities = [NSMutableSet set];
+    for (NSString *path in files) {
+        NSArray *parts = [path componentsSeparatedByString:@"/"];
+        if (![path.uppercaseString hasPrefix:@"BDMV/"] || [parts containsObject:@".."] ||
+            [parts containsObject:@"."] || [parts containsObject:@""] || files[path].longLongValue < 0 ||
+            [identities containsObject:path.uppercaseString]) return nil;
+        [identities addObject:path.uppercaseString];
+        for (NSUInteger i = 0; i < parts.count; i++) {
+            NSString *parent = [[parts subarrayWithRange:NSMakeRange(0, i)] componentsJoinedByString:@"/"];
+            if (!directories[parent]) directories[parent] = [NSMutableSet set];
+            [directories[parent] addObject:parts[i]];
+        }
+    }
+    if (![identities containsObject:@"BDMV/INDEX.BDMV"]) return nil;
+    NSMutableDictionary *lists = [NSMutableDictionary dictionary];
+    for (NSString *key in directories) lists[key] = [[directories[key] allObjects] sortedArrayUsingSelector:@selector(compare:)];
+    _files = [files copy]; _directories = lists; _region = region; _sourceRead = [readRange copy];
+    _automaticRegion = YES;
+    _metadata = [NSMutableDictionary dictionary];
+    _queue = dispatch_queue_create("app.plozz.disc-navigation", DISPATCH_QUEUE_SERIAL);
+    _playlist = -1;
+    return self;
+}
+
+- (NSString *)canonicalPath:(NSString *)path {
+    for (NSString *candidate in self.files) {
+        if ([candidate caseInsensitiveCompare:path] == NSOrderedSame) return candidate;
+    }
+    return nil;
+}
+
+- (unsigned)selectedRegion { return _region; }
+
+#if PLOZZ_DISC_MENU_LAB
 - (instancetype)initWithConfiguration:(NSURL *)configuration error:(NSError **)error {
     if (!(self = [super init])) return nil;
     NSData *data = [NSData dataWithContentsOfURL:configuration options:0 error:error];
@@ -198,6 +252,7 @@ static unsigned component(double value) {
     _playlist = -1;
     return self;
 }
+#endif
 
 - (void)fail:(NSString *)message {
     if (_failed || self.stopped) return;
@@ -217,6 +272,13 @@ static unsigned component(double value) {
     }
     NSData *cached = self.metadata[path];
     if (cached) return [cached subdataWithRange:NSMakeRange((NSUInteger)offset, (NSUInteger)length)];
+    if (self.sourceRead) {
+        NSData *data = self.sourceRead(path, offset, length);
+        if (self.stopped) return nil;
+        if (data.length != (NSUInteger)length) { [self fail:@"Could not read the disc file"]; return nil; }
+        return data;
+    }
+#if PLOZZ_DISC_MENU_LAB
     NSString *expected = [NSString stringWithFormat:@"bytes %lld-%lld/%lld",
                           offset, offset + length - 1, size];
     for (unsigned attempt = 0; attempt < 2; attempt++) {
@@ -260,6 +322,9 @@ static unsigned component(double value) {
         return nil;
     }
     [self fail:@"Disc range retry budget exhausted"]; return nil;
+#else
+    [self fail:@"Disc reader is unavailable"]; return nil;
+#endif
 }
 
 - (BOOL)prepareMetadata {
@@ -267,12 +332,11 @@ static unsigned component(double value) {
     for (NSString *path in [[self.files allKeys] sortedArrayUsingSelector:@selector(compare:)]) {
         NSString *upper = path.uppercaseString;
         if (![upper isEqualToString:@"BDMV/INDEX.BDMV"] &&
-            ![upper isEqualToString:@"BDMV/MOVIEOBJECT.BDMV"] &&
-            ![upper hasPrefix:@"BDMV/PLAYLIST/"] && ![upper hasPrefix:@"BDMV/CLIPINF/"]) continue;
+            ![upper isEqualToString:@"BDMV/MOVIEOBJECT.BDMV"]) continue;
         int64_t size = self.files[path].longLongValue;
         total += (uint64_t)size;
         if (size > 2 * 1024 * 1024 || total > 16 * 1024 * 1024) {
-            [self fail:@"Disc navigation metadata exceeds the lab cache limit"]; return NO;
+            [self fail:@"Disc navigation metadata exceeds the supported limit"]; return NO;
         }
         NSMutableData *data = [NSMutableData dataWithCapacity:(NSUInteger)size];
         while (data.length < (NSUInteger)size) {
@@ -291,19 +355,30 @@ static unsigned component(double value) {
     dispatch_async(self.queue, ^{
         if (self.stopped || self->_disc) return;
         if (![self prepareMetadata]) return;
+        if (self.automaticRegion) {
+            NSString *index = [self canonicalPath:@"BDMV/index.bdmv"];
+            NSString *objects = [self canonicalPath:@"BDMV/MovieObject.bdmv"];
+            if (index && objects && self.metadata[index] && self.metadata[objects]) {
+                unsigned region = HDMVPreferredRegion(self.metadata[index], self.metadata[objects]);
+                if (region) self->_region = region;
+            }
+        }
         self->_disc = bd_init();
         if (!self->_disc || !bd_open_files(self->_disc, (__bridge void *)self, openDirectory, openFile)) {
             [self fail:@"Could not open the disc"]; return;
         }
         const BLURAY_DISC_INFO *info = bd_get_disc_info(self->_disc);
-        if (!info || !info->bluray_detected || info->bdj_detected || info->aacs_detected || info->bdplus_detected) {
-            [self fail:@"This lab accepts unencrypted HDMV discs only"]; return;
+        if (!info || !info->bluray_detected || !info->top_menu_supported ||
+            info->aacs_detected || info->bdplus_detected) {
+            [self fail:@"This disc's menu format is not supported"]; return;
         }
         if (!bd_set_player_setting(self->_disc, BLURAY_PLAYER_SETTING_REGION_CODE, self->_region)) {
             [self fail:@"Could not configure the selected player region"]; return;
         }
         bd_register_overlay_proc(self->_disc, (__bridge void *)self, overlay);
-        if (bd_play(self->_disc) <= 0) { [self fail:@"Disc startup failed"]; return; }
+        if (bd_play(self->_disc) <= 0 && bd_menu_call(self->_disc, -1) <= 0) {
+            [self fail:@"Disc startup failed"]; return;
+        }
         self.timer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, self.queue);
         dispatch_source_set_timer(self.timer, DISPATCH_TIME_NOW, 20 * NSEC_PER_MSEC, 5 * NSEC_PER_MSEC);
         __weak HDMVSession *weakSelf = self;
@@ -332,6 +407,20 @@ static unsigned component(double value) {
         }
         if (!event.event) { drained = YES; break; }
         printf("HDMV event=%u parameter=%u\n", event.event, event.param);
+        if (event.event == BD_EVENT_STILL_TIME || (event.event == BD_EVENT_STILL && event.param)) {
+            [self fail:@"This disc requires still-frame navigation that is not supported yet."];
+            return;
+        }
+        if (_userSelected && !_trackNoticeShown &&
+            (event.event == BD_EVENT_AUDIO_STREAM || event.event == BD_EVENT_PG_TEXTST_STREAM ||
+             event.event == BD_EVENT_PG_TEXTST)) {
+            _trackNoticeShown = YES;
+            dispatch_async(dispatch_get_main_queue(), ^{
+                if (!self.stopped && self.noticeChanged) {
+                    self.noticeChanged(@"Disc track selections aren't supported. Use playback controls.");
+                }
+            });
+        }
         if (event.event == BD_EVENT_PLAYLIST) {
             _finishing = NO;
             if (_title) bd_free_title_info(_title);
@@ -350,6 +439,10 @@ static unsigned component(double value) {
             _clip = event.param;
         } else if (event.event == BD_EVENT_MENU) {
             _menuOpen = event.param != 0;
+            BOOL visible = _menuOpen;
+            dispatch_async(dispatch_get_main_queue(), ^{
+                if (!self.stopped && self.menuVisibilityChanged) self.menuVisibilityChanged(visible);
+            });
         }
     }
     if (!drained) { [self fail:@"Disc event budget exceeded"]; return; }
@@ -362,6 +455,16 @@ static unsigned component(double value) {
     }
     if (_selectionPending && _playlist >= 0 && !_failed) {
         _selectionPending = NO;
+        for (unsigned i = 0; i < _title->clip_count; i++) {
+            NSString *clip = [NSString stringWithFormat:@"BDMV/STREAM/%s.m2ts", _title->clips[i].clip_id];
+            if (![self canonicalPath:clip]) {
+                if (!_openingRecoveryAttempted && !_userSelected) {
+                    _openingRecoveryAttempted = YES;
+                    if (bd_menu_call(_disc, -1) > 0) { [self pump]; return; }
+                }
+                [self fail:@"A video file required by the disc is missing"]; return;
+            }
+        }
         NSInteger playlist = _playlist, generation = ++_generation;
         double position = bd_tell_time(_disc) / 90000.0;
         printf("HDMV selection=%ld position=%.3f generation=%ld\n", (long)playlist, position, (long)generation);
@@ -381,6 +484,7 @@ static unsigned component(double value) {
             return;
         }
         printf("HDMV input=%u\n", key);
+        if (key == 16) self->_userSelected = YES;
         if (bd_user_input(self->_disc, -1, key) < 0) {
             NSLog(@"Disc Menu Lab: input %u is unavailable at the current menu location", key);
             dispatch_async(dispatch_get_main_queue(), ^{
@@ -536,5 +640,9 @@ static unsigned component(double value) {
         free(self->_indices); self->_indices = NULL;
         [self.metadata removeAllObjects];
     });
+}
+
+- (void)drainWithCompletion:(void (^)(void))completion {
+    dispatch_async(self.queue, completion);
 }
 @end

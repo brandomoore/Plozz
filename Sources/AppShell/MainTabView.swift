@@ -1993,6 +1993,7 @@ struct MainTabView: View {
         .environment(musicPlayerModel)
         .environment(uiDensityModel)
         .environment(cardStyleModel)
+        .environment(\.discPlaybackDefault, playbackModel.settings.discPlayback)
         .environment(watchStatusIndicatorModel)
         .environment(navigationStyleModel)
         .environment(transparencyModel)

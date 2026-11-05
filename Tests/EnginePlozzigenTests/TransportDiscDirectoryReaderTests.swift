@@ -38,6 +38,14 @@ final class TransportDiscDirectoryReaderTests: XCTestCase {
             locator: locator, resolver: SuspendedResolver(started: started, cancelled: cancelled)
         )
         XCTAssertNotNil(folder.makeIndependentReader())
+        let selected = folder.selectingPlaylist(3)
+        XCTAssertEqual(selected.preferredPlaylist, "00003.mpls")
+        XCTAssertEqual(
+            (selected.makeIndependentReader() as? TransportDiscDirectoryReader)?.preferredPlaylist,
+            "00003.mpls"
+        )
+        selected.close()
+        XCTAssertNil(folder.preferredPlaylist, "A menu selection must not alter direct-play readers")
         XCTAssertNil(folder.openDiscFile("BDMV/STREAM/missing.m2ts"))
         DispatchQueue.global().async {
             XCTAssertNil(folder.openDiscFile("bdmv/INDEX.BDMV"))

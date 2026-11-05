@@ -99,7 +99,9 @@ struct PlozziOSPlayerView: View {
                     onDismiss: orientation.close
                 )
                 .id(playerIdentity)
-                if viewModel.phase == .ready, !viewModel.showBringUpSpinner {
+                if viewModel.phase == .ready, !viewModel.showBringUpSpinner,
+                   (!viewModel.isDiscMenuPlayback ||
+                    viewModel.videoEngine.discMenu.map({ !$0.isOpening && !$0.isMenuVisible && $0.image == nil && $0.failure == nil }) ?? true) {
                     PlozziOSPlayerControlsOverlay(
                         viewModel: viewModel,
                         keyboardActions: keyboardActions,
@@ -341,6 +343,9 @@ struct PlozziOSPlayerView: View {
     private func openExternalPlayer(
         item: MediaItem, streamingOptions: StreamingPlaybackOptions? = nil
     ) async -> Bool {
+        guard item.effectiveDiscPlayback(default: appModel.settings.playback.settings.discPlayback) != .openMenu else {
+            return false
+        }
         let deviceSettings = ExternalPlayerSettingsModel.shared
         deviceSettings.migrateIfNeeded(from: appModel.settings.playback.settings.externalPlayer)
         guard deviceSettings.settings.player != .builtIn else { return false }
@@ -368,8 +373,10 @@ struct PlozziOSPlayerView: View {
     ) async throws -> MediaItem {
         let model = appModel
         let snapshot = model.identityIndex.identitySnapshotStore.current
+        let opened = item.effectiveDiscPlayback(default: model.settings.playback.settings.discPlayback) == .openMenu
+            ? item.requestingDiscPlayback(.openMenu) : item
         let selected = try await versionChoice.prepare(
-            item, provider: provider, settings: model.settings.playback,
+            opened, provider: provider, settings: model.settings.playback,
             preferences: model.versionPreferences,
             offlineResolver: model.downloads.offlineResolver,
             sourceResolver: crossServerSourceResolver(

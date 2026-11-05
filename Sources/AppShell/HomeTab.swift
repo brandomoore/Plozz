@@ -1365,7 +1365,8 @@ struct HomeTab: View {
             return
         }
         pendingPlaylistOrigin = playlistOrigin
-        if playbackSettings.shouldAskBeforeResuming(at: target.resumePosition) {
+        if target.effectiveDiscPlayback(default: playbackSettings.discPlayback) != .openMenu,
+           playbackSettings.shouldAskBeforeResuming(at: target.resumePosition) {
             HandoffDiagnostics.emit(
                 "tap RESUME_PROMPT item=\(target.id) provider=\(target.sourceAccountID ?? "nil")"
             )

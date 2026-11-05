@@ -2590,6 +2590,12 @@ struct PlozziOSPlaybackSettingsView: View {
             .settingsSearchGroup(["skip-backward", "skip-forward", "resume-rewind"])
 
             SettingsSectionGroup("Playback") {
+                Picker("Disc playback", selection: $model.settings.discPlayback) {
+                    ForEach(DiscPlaybackBehavior.allCases, id: \.self) {
+                        Text($0.title).tag($0)
+                    }
+                }
+                .settingsSearchAnchor("disc-playback")
                 Toggle("Ask to resume or start over", isOn: $model.settings.askBeforeResuming)
                     .accessibilityIdentifier("playback-ask-before-resuming")
                     .settingsSearchAnchor("ask-before-resuming")
@@ -2636,7 +2642,7 @@ struct PlozziOSPlaybackSettingsView: View {
                 ).settingsSearchAnchor("cross-server-watch-sync")
             }
             .settingsSearchGroup([
-                "ask-before-resuming", "version-selection", "remember-series-version", "background-audio",
+                "disc-playback", "ask-before-resuming", "version-selection", "remember-series-version", "background-audio",
                 "volume-brightness", "seek-without-pausing", "autoplay-next-episode",
                 "autoplay-next-playlist", "show-up-next-card", "up-next-lead", "cross-server-watch-sync"
             ])

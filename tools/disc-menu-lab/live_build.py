@@ -75,9 +75,11 @@ def build(lab, configuration, *, region, simulator=False):
     )
     lab.run("compile-live-disc-app", [
         "xcrun", "--sdk", sdk_name, "clang", "-target", target, "-isysroot", sdk,
-        "-fobjc-arc", "-Wall", "-Wextra", "-Werror",
+        "-fobjc-arc", "-Wall", "-Wextra", "-Werror", "-DPLOZZ_DISC_MENU_LAB=1",
         "-I", generated, "-I", source / "src", "-I", HERE,
-        HERE / "hdmv_session.m", HERE / "live_app.m",
+        "-I", HERE.parent.parent / "Sources/DiscNavigation/include",
+        HERE.parent.parent / "Sources/DiscNavigation/hdmv_session.m", HERE / "live_app.m",
+        HERE.parent.parent / "Sources/DiscNavigation/disc_region.m",
         native / "src/libbluray.a", native / "contrib/libudfread/src/libudfread.a",
         "-F", frameworks, "-framework", "DiscMenuPlayer",
         "-L", runtime, "-lfreetype", "-framework", "UIKit", "-framework", "Foundation",

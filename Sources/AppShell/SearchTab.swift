@@ -452,7 +452,8 @@ struct SearchTab: View {
             }
             return
         }
-        if playbackSettings.shouldAskBeforeResuming(at: target.resumePosition) {
+        if target.effectiveDiscPlayback(default: playbackSettings.discPlayback) != .openMenu,
+           playbackSettings.shouldAskBeforeResuming(at: target.resumePosition) {
             resumePrompt = target
         } else {
             playRequest = PlayRequest(item: target, startPosition: target.resumePosition ?? 0)

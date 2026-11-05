@@ -334,6 +334,10 @@ public struct ShareProvider: MediaLibraryQueryProviding, MediaFileBrowsing {
     }
 
     public func item(id: String) async throws -> MediaItem {
+        try await item(id: id, inspectDiscMenu: true)
+    }
+
+    private func item(id: String, inspectDiscMenu: Bool) async throws -> MediaItem {
         if let containerID = ShareCatalogID.containerID(forFileBrowserID: id) {
             guard let folder = await store.item(id: containerID) else {
                 throw AppError.unknown("Folder not found on share: \(containerID)")
@@ -344,7 +348,7 @@ public struct ShareProvider: MediaLibraryQueryProviding, MediaFileBrowsing {
             guard let item = await store.item(id: id) else {
                 throw AppError.unknown("Item not found on share: \(id)")
             }
-            return try await resolvingExternalLinks(in: await watchState.stamp(item))
+            return try await resolvingFileActions(in: await watchState.stamp(item), inspectDiscMenu: inspectDiscMenu)
         }
         // Indexed items (movies/series/seasons/episodes) resolve from the catalog;
         // raw file-tree ids (`share:root`, `d:`) fall back to the live browser.
@@ -366,16 +370,30 @@ public struct ShareProvider: MediaLibraryQueryProviding, MediaFileBrowsing {
             if !indexed.opensExternalSource {
                 playbackSource.measureStreamProbeIfEnabled(itemID: id)
             }
-            return try await resolvingExternalLinks(in: await watchState.stamp(indexed))
+            return try await resolvingFileActions(in: await watchState.stamp(indexed), inspectDiscMenu: inspectDiscMenu)
         }
         guard let item = await store.item(id: id) else {
             throw AppError.unknown("Item not found on share: \(id)")
         }
-        return try await resolvingExternalLinks(in: await watchState.stamp(item))
+        return try await resolvingFileActions(in: await watchState.stamp(item), inspectDiscMenu: inspectDiscMenu)
     }
 
-    private func resolvingExternalLinks(in item: MediaItem) async throws -> MediaItem {
+    private func resolvingFileActions(in item: MediaItem, inspectDiscMenu: Bool) async throws -> MediaItem {
         var result = item
+        for index in result.versions.indices where inspectDiscMenu &&
+            result.versions[index].container?.lowercased() == "bdmv" {
+            try Task.checkCancellation()
+            guard let path = result.versions[index].playbackMediaSourceID else { continue }
+            do {
+                let data = try await store.readFile(path, maximumBytes: 2 * 1_024 * 1_024)
+                try Task.checkCancellation()
+                result.versions[index].discMenuAvailability = DiscMenuInspection.availability(index: data)
+            } catch {
+                if error is CancellationError || Task.isCancelled { throw CancellationError() }
+                PlozzLog.playback.error("share.disc-menu inspection unavailable; compatibility remains unknown")
+                result.versions[index].discMenuAvailability = .unknown
+            }
+        }
         for index in result.versions.indices where result.versions[index].isExternalSource {
             try Task.checkCancellation()
             guard let path = result.versions[index].playbackMediaSourceID else { continue }
@@ -773,7 +791,7 @@ public struct ShareProvider: MediaLibraryQueryProviding, MediaFileBrowsing {
         }
         let locator = opening.locator
         onStage("item")
-        let item = try await item(id: canonicalItemID)
+        let item = try await item(id: canonicalItemID, inspectDiscMenu: false)
         // Resume from the newest canonical/legacy member-file state so a movie
         // watched before version grouping still resumes after the upgrade.
         let records = await watchState.records(for: [canonicalItemID])

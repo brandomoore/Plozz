@@ -757,6 +757,33 @@ let package = Package(
             ]
         ),
 
+        .target(
+            name: "CLibbluray",
+            path: "Vendor/Libbluray",
+            exclude: ["COPYING", "UPSTREAM.json"],
+            sources: [
+                "UnavailableRuntimes.c",
+                "contrib/libudfread/src/default_blockinput.c",
+                "contrib/libudfread/src/ecma167.c", "contrib/libudfread/src/udfread.c",
+                "src/libbluray/bluray.c", "src/libbluray/register.c",
+                "src/libbluray/bdj/bdjo_parse.c",
+                "src/libbluray/bdnav", "src/libbluray/decoders",
+                "src/libbluray/disc", "src/libbluray/hdmv",
+                "src/file/file.c", "src/file/filesystem.c",
+                "src/file/dir_posix.c", "src/file/dirs_darwin.c",
+                "src/file/file_posix.c", "src/file/mount.c",
+                "src/util/bits.c", "src/util/logging.c", "src/util/refcnt.c",
+                "src/util/time.c", "src/util/array.c", "src/util/mutex.c",
+                "src/util/event_queue.c", "src/util/strutl.c",
+            ],
+            publicHeadersPath: "include",
+            cSettings: [
+                .define("HAVE_CONFIG_H", to: "1"), .headerSearchPath("."), .headerSearchPath("src"),
+                .headerSearchPath("src/libbluray"), .headerSearchPath("contrib/libudfread/src")
+            ],
+            linkerSettings: [.linkedFramework("CoreFoundation")]
+        ),
+
         // MARK: AetherEngine integration (native HLS-fMP4 remux engine)
         //
         // Wraps AetherEngine (the upstream media-player library) behind Plozz's
@@ -767,6 +794,13 @@ let package = Package(
         // orchestration (server progress, subtitles, routing) stays in
         // FeaturePlayback / PlayerViewModel.
         .target(
+            name: "DiscNavigation",
+            dependencies: ["CLibbluray"],
+            publicHeadersPath: "include",
+            cSettings: [.unsafeFlags(["-fobjc-arc"])],
+            linkerSettings: [.linkedFramework("UIKit")]
+        ),
+        .target(
             name: "EnginePlozzigen",
             dependencies: [
                 "CoreModels",
@@ -775,6 +809,7 @@ let package = Package(
                 "FeaturePlayback",
                 .product(name: "AetherEngine", package: "AetherEngine"),
                 "Libass",
+                .target(name: "DiscNavigation", condition: .when(platforms: [.iOS, .tvOS])),
             ]
         ),
 
@@ -1170,6 +1205,7 @@ let package = Package(
         .testTarget(
             name: "EnginePlozzigenTests",
             dependencies: [
+                .target(name: "DiscNavigation", condition: .when(platforms: [.iOS, .tvOS])),
                 "CoreModels",
                 "EnginePlozzigen",
                 "MediaTransportCore",

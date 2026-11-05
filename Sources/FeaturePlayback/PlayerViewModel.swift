@@ -245,6 +245,22 @@ public final class PlayerViewModel {
     /// The item already selected by the UI. When it has a completed local copy,
     /// playback can start without first contacting the provider.
     private let offlineItem: MediaItem?
+    @ObservationIgnored private var discEntryOverride: DiscPlaybackBehavior?
+    @ObservationIgnored private var discRegionOverride: UInt32?
+    public var isDiscMenuPlayback: Bool { request?.discPlayback == .openMenu }
+
+    public func playVideoWithoutMenus() {
+        guard !didStop, isDiscMenuPlayback else { return }
+        let resume = startPositionOverride ?? request?.startPosition ?? 0
+        discEntryOverride = .playVideo
+        restartStreamingRendition(resumeOverride: resume)
+    }
+
+    public func retryDiscMenu(region: UInt32? = nil) {
+        guard !didStop, isDiscMenuPlayback else { return }
+        discRegionOverride = region
+        restartStreamingRendition(resumeOverride: 0)
+    }
     /// Short id used only to pair a construction with its deallocation in the
     /// lifecycle log.
     private let instanceID = String(UUID().uuidString.prefix(4))
@@ -657,6 +673,8 @@ public final class PlayerViewModel {
         self.offlinePlaybackResolver = offlinePlaybackResolver
         self.itemID = itemID
         self.offlineItem = offlineItem
+        self.discEntryOverride = offlineItem?.discPlaybackOverride ?? episodeItem?.discPlaybackOverride
+            ?? ((offlineItem ?? episodeItem)?.discMenuAvailability?.canAttempt == false ? .playVideo : nil)
         self.mediaSourceID = mediaSourceID
         self.behavior = behavior
         self.style = style
@@ -813,6 +831,7 @@ public final class PlayerViewModel {
         }
         engine.onProgress = { [weak self] in
             guard let self, self.engineToken == callbackEngineToken else { return }
+            guard !self.isDiscMenuPlayback else { return }
             // Jellyfin (non-idempotent) next-episode prefetch fires once the
             // hand-off window opens; idempotent providers prefetch eagerly instead.
             self.nextEpisodeCoordinator.maybeStartWindowedNextPrefetch()
@@ -1200,8 +1219,23 @@ public final class PlayerViewModel {
                 throw CancellationError()
             }
 
-            let request = resolved.request
+            var request = resolved.request
+            if case .networkDisc = request.playbackSource {
+                request.discPlayback = discEntryOverride ?? playbackSettings.discPlayback
+            } else {
+                request.discPlayback = discEntryOverride ?? .playVideo
+            }
+            request.discRegionOverride = discRegionOverride
+            if request.discPlayback == .openMenu { request.suppressOrdinaryWatchReporting = true }
             self.request = request
+            if request.discPlayback == .openMenu {
+                nextEpisodeCoordinator.cancelPrefetch()
+                controls.upNextCard.dismissed = true
+                guard case .networkDisc = request.playbackSource else {
+                    await releaseStreamingSession(request, reason: .superseded)
+                    throw AppError.unknown(String(localized: "This source does not provide access to disc menus."))
+                }
+            }
             diagnosticFacts = .init(
                 provider: provider.kind, engine: resolved.engineKind, request: request,
                 streamingOptions: streamingOptions ?? .init(quality: .original)
@@ -1232,7 +1266,7 @@ public final class PlayerViewModel {
             // first scrobble can identify the show on trackers that require it, then
             // reconcile cross-server per-series memory. Runs for any episode: even
             // without a resolver the item may already carry series ids to reconcile.
-            if request.item.kind == .episode {
+            if request.item.kind == .episode && request.discPlayback != .openMenu {
                 enrichTask = Task { @MainActor [weak self] in await self?.enrichSeriesIDs() }
             }
 
@@ -1245,7 +1279,9 @@ public final class PlayerViewModel {
             // exactly where the failed attempt was so the nudge can't compound
             // across retries.
             let startPosition: TimeInterval
-            if let resumeOverride {
+            if request.discPlayback == .openMenu {
+                startPosition = 0
+            } else if let resumeOverride {
                 startPosition = resumeOverride
             } else {
                 let base = startPositionOverride ?? request.startPosition
@@ -1257,7 +1293,7 @@ public final class PlayerViewModel {
 
             // Best-effort, never blocking play(): (if enabled) fetch a missing
             // subtitle in the preferred language.
-            startAutoSubtitleDownloadIfNeeded(request: request)
+            if request.discPlayback != .openMenu { startAutoSubtitleDownloadIfNeeded(request: request) }
         } catch is CancellationError {
             // Leave `phase` as `.loading`; the view is dismissing.
             return
@@ -1839,6 +1875,10 @@ public final class PlayerViewModel {
             return
         }
         let actualEngineKind = engineHandoff.commitEngineForPlayback(engineKind)
+        if request.discPlayback == .openMenu && actualEngineKind != .plozzigen {
+            phase = .failed(.unknown(String(localized: "This disc's menu format is not supported.")))
+            return
+        }
         streamingResumePosition = startPosition
         configureEngineCallbacks()
         diagnosticFacts = .init(
@@ -1857,7 +1897,9 @@ public final class PlayerViewModel {
         configureChaptersCallback(for: request, loadGeneration: rangeLoadGeneration)
         // Arm the stall watchdog around load() so a hang that never reports an
         // error still triggers the fallback chain instead of spinning forever.
-        engineHandoff.armPlaybackWatchdog(startPosition: startPosition)
+        if request.discPlayback != .openMenu {
+            engineHandoff.armPlaybackWatchdog(startPosition: startPosition)
+        }
         let loadStart = Date()
         engine.setBackgroundAudioEnabled(playbackSettings.backgroundAudio)
         let titles = Self.titleLines(for: request.item)
@@ -1873,6 +1915,9 @@ public final class PlayerViewModel {
         // can already be failed before that task updates the view-model phase.
         if case .failed = engine.status { return }
         if case .failed = phase { return }
+        #if canImport(UIKit)
+        if request.discPlayback == .openMenu, engine.discMenu?.failure != nil { return }
+        #endif
         recordPlayback(.loaded)
         updateChapters(for: request)
         if engineKind != .native, let facts = engine.probedSourceFacts {
@@ -1928,14 +1973,14 @@ public final class PlayerViewModel {
         // Register the live session (idempotent) now that the server has a real
         // now-playing session, so convergence writes against this server defer
         // until stop() ends it.
-        onPlaybackStarted()
+        if request.discPlayback != .openMenu { onPlaybackStarted() }
         // Begin periodic mid-play convergence checkpoints from the resumed point so
         // progress fans out to other servers without waiting for Back. Seeded so the
         // first checkpoint only fires after real forward progress past the resume.
         progressReporter.startCheckpointLoop(seedPosition: startPosition)
 
         // Load skip markers once playback is live (opt-in, best-effort).
-        loadSkipSegmentsIfEnabled()
+        if request.discPlayback != .openMenu { loadSkipSegmentsIfEnabled() }
     }
 
     private func configureTracksAfterLoad(for request: PlaybackRequest) {

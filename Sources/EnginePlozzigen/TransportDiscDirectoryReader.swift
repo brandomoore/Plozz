@@ -13,7 +13,7 @@ final class TransportDiscDirectoryReader: DiscDirectoryReader, @unchecked Sendab
     private let scope: DiscTransportScope
     private let owner = UUID()
     private let closed = OSAllocatedUnfairLock(initialState: false)
-    var preferredPlaylist: String? { nil }
+    let preferredPlaylist: String?
     var discFiles: [(path: String, size: Int64)] {
         locator.files.map { ($0.path, $0.locator.representation.size) }
     }
@@ -21,11 +21,13 @@ final class TransportDiscDirectoryReader: DiscDirectoryReader, @unchecked Sendab
     init(locator: NetworkDiscLocator, resolver: any MediaTransportNetworkFileResolving) {
         self.locator = locator
         self.scope = DiscTransportScope(resolver: resolver.withoutPlaybackAdmission())
+        self.preferredPlaylist = nil
     }
 
-    private init(locator: NetworkDiscLocator, scope: DiscTransportScope) {
+    private init(locator: NetworkDiscLocator, scope: DiscTransportScope, preferredPlaylist: String?) {
         self.locator = locator
         self.scope = scope
+        self.preferredPlaylist = preferredPlaylist
     }
 
     deinit { close() }
@@ -46,7 +48,12 @@ final class TransportDiscDirectoryReader: DiscDirectoryReader, @unchecked Sendab
     }
     func makeIndependentReader() -> IOReader? {
         guard !closed.withLock({ $0 }), !scope.isClosed else { return nil }
-        return TransportDiscDirectoryReader(locator: locator, scope: scope)
+        return TransportDiscDirectoryReader(locator: locator, scope: scope, preferredPlaylist: preferredPlaylist)
+    }
+    func selectingPlaylist(_ playlist: Int) -> TransportDiscDirectoryReader {
+        TransportDiscDirectoryReader(
+            locator: locator, scope: scope, preferredPlaylist: String(format: "%05d.mpls", playlist)
+        )
     }
     func closeAllReaders() { scope.closeAll() }
     func waitForFinalShutdown() async { await scope.drain() }

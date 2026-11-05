@@ -4,6 +4,14 @@ Aether-primary playback coordination, engine-agnostic playback surface, resume
 reporting back to the server, caption style rules, trickplay scrubbing,
 and the diagnostics overlay.
 
+Original HDMV disc navigation shares the existing player through
+`VideoEngine.discMenu`; this module does not import the native runtime.
+The profile default and transient entry intent keep direct playback separate
+from menu navigation. Menu failures require an explicit retry or direct-play
+choice, and menu clocks never reach ordinary watch reporting.
+See [disc navigation](../../docs/playback-engines.md#original-disc-navigation)
+for the initial compatibility and track-selection limits.
+
 ## Responsibility
 
 Automatic on-demand subtitle selection applies the profile's **SDH subtitles**

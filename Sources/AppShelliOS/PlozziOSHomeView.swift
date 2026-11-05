@@ -934,7 +934,8 @@ struct PlozziOSHomeView: View {
             }
             return
         }
-        if appModel.settings.playback.settings.shouldAskBeforeResuming(at: request.startPosition) {
+        if request.item.effectiveDiscPlayback(default: appModel.settings.playback.settings.discPlayback) != .openMenu,
+           appModel.settings.playback.settings.shouldAskBeforeResuming(at: request.startPosition) {
             pendingResumeRequest = request
         } else {
             playbackRequest = request

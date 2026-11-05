@@ -306,6 +306,7 @@ public struct PlozziOSRootView: View {
             accountIDs: appModel.accountsProviders.resolvedActiveAccounts.map(\.account.id)
         )
         .environment(\.plozzShowsContentRatings, appModel.settings.contentRatings.showsRatings)
+        .environment(\.discPlaybackDefault, appModel.settings.playback.settings.discPlayback)
         .environment(
             \.versionPickerAudioLanguage,
             appModel.settings.playback.settings.audioLanguagePreference.explicitLanguageCode
