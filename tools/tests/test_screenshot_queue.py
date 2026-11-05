@@ -22,7 +22,10 @@ class Fake
     @rows = manifest.fetch("groups").to_h do |g|
       [g["device"], Array.new(scenario == "full" ? 10 : 4) { |n| {"id"=>"old-#{g['device']}-#{n}", "image"=>"old-image-#{n}"} }]
     end
-    @rows["duo"] = [{"id"=>"separate-duo-placement", "image"=>"separate-duo-image"}]
+    @rows["duo"] ||= [{"id"=>"separate-duo-placement", "image"=>"separate-duo-image"}]
+    %w[iphone ipad tv].each do |device|
+      @rows[device] ||= [{"id"=>"preserved-#{device}", "image"=>"preserved-image-#{device}"}]
+    end
     @assets = {}
     manifest["groups"].each { |g| g["assets"].each { |a| @assets[a["id"]] = [a, g] } }
     @versions = manifest["after_versions"].map do |platform, baseline|
@@ -51,9 +54,11 @@ class Fake
       return {"data"=>value}
     elsif path.start_with?("v1/appAssetLibraryImages/")
       asset, group = @assets.fetch(path.split("/").last)
+      dimensions = asset["dimensions"] || group.fetch("dimensions")
+      width = dimensions[0] + (@scenario == "wrong_size" ? 1 : 0)
       return {"data"=>{"attributes"=>{"state"=>"PREPARE_FOR_SUBMISSION", "fileName"=>asset["file"],
         "referenceName"=>"sha256:#{@scenario == 'wrong_asset' ? 'wrong' : asset['sha256']}",
-        "specId"=>group["spec_id"], "imageAsset"=>{"width"=>group["dimensions"][0], "height"=>group["dimensions"][1]}}}}
+        "specId"=>asset["spec_id"] || group.fetch("spec_id"), "imageAsset"=>{"width"=>width, "height"=>dimensions[1]}}}}
     elsif path.include?("/placements?")
       query = URI.decode_www_form(path.split("?", 2).last).to_h
       raise "Image linkage must be explicitly included" unless query["include"] == "image"
@@ -117,8 +122,20 @@ puts JSON.generate({errors: errors, writes: client.writes, first_writes: first_w
 
 @unittest.skipUnless(RUBY, "Ruby is required")
 class ScreenshotQueueTests(unittest.TestCase):
-    def run_case(self, scenario):
+    def run_case(self, scenario, duo=False):
         manifest = json.loads((ROOT / "fastlane/pending-store-screenshots.json").read_text())
+        if duo:
+            manifest["id"] = "test-independent-duo-set"
+            manifest["after_versions"] = {"IOS": manifest["after_versions"]["IOS"]}
+            manifest["groups"] = [{
+                "device": "duo", "platform": "IOS", "placement_group": "IPHONE_DUO_PROFILE",
+                "assets": [{
+                    "id": f"duo-image-{index}", "file": f"duo-{index}.png",
+                    "sha256": f"{index:064x}",
+                    "spec_id": "inner-spec" if index % 2 else "outer-spec",
+                    "dimensions": [2853, 2007] if index % 2 else [1398, 2034],
+                } for index in range(10)],
+            }]
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary) / "manifest.json"
             path.write_text(json.dumps(manifest))
@@ -152,6 +169,42 @@ class ScreenshotQueueTests(unittest.TestCase):
         self.assertEqual(len(result["rows"]["iphone"]), 6)
         self.assertEqual(len(result["rows"]["tv"]), 5)
 
+    def test_duo_mixed_sizes_share_one_group_without_replaying_base_set(self):
+        for scenario in ("success", "full", "lost_receipt"):
+            with self.subTest(scenario=scenario):
+                manifest, result = self.run_case(scenario, duo=True)
+                self.assertEqual(result["errors"], [])
+                self.assertEqual(len(result["writes"]), result["first_writes"])
+                self.assertEqual(
+                    [row["image"] for row in result["rows"]["duo"]],
+                    [asset["id"] for asset in manifest["groups"][0]["assets"]],
+                )
+                self.assertEqual(set(result["state"]["platforms"]), {"IOS"})
+                for device in ("iphone", "ipad", "tv"):
+                    self.assertEqual(result["rows"][device], [{
+                        "id": f"preserved-{device}", "image": f"preserved-image-{device}",
+                    }])
+
+    def test_duo_rejects_changed_size_and_locked_or_wrong_target(self):
+        for scenario in ("baseline", "in_review", "wrong_version", "wrong_asset", "wrong_size"):
+            with self.subTest(scenario=scenario):
+                _, result = self.run_case(scenario, duo=True)
+                self.assertTrue(result["errors"])
+                self.assertEqual(result["writes"], [])
+
+    def test_committed_queues_have_independent_receipts_and_native_duo_sizes(self):
+        base = json.loads((ROOT / "fastlane/pending-store-screenshots.json").read_text())
+        duo = json.loads((ROOT / "fastlane/pending-duo-screenshots.json").read_text())
+        self.assertNotEqual(base["id"], duo["id"])
+        self.assertEqual(sum(len(group["assets"]) for group in base["groups"]), 17)
+        self.assertEqual(len(duo["groups"]), 1)
+        group = duo["groups"][0]
+        self.assertEqual(group["placement_group"], "IPHONE_DUO_PROFILE")
+        self.assertEqual(group["platform"], "IOS")
+        self.assertEqual(len(group["assets"]), 10)
+        for size in ([1398, 2034], [2853, 2007]):
+            self.assertEqual(sum(asset["dimensions"] == size for asset in group["assets"]), 5)
+
     def test_locked_old_wrong_version_and_changed_assets_refuse_writes(self):
         for scenario in ("baseline", "in_review", "wrong_version", "wrong_asset"):
             with self.subTest(scenario=scenario):
@@ -180,6 +233,7 @@ class ScreenshotQueueTests(unittest.TestCase):
         release = fastfile.split("lane :release do", 1)[1]
         self.assertLess(release.index("upload_to_app_store("), release.index("apply_queued_store_screenshots"))
         self.assertLess(release.index("apply_queued_store_screenshots"), release.index("tag_github_release("))
+        self.assertIn("%w[pending-store-screenshots.json pending-duo-screenshots.json]", fastfile)
         beta = fastfile.split("lane :beta do", 1)[1].split('desc "Build and upload tvOS plus', 1)[0]
         self.assertNotIn("apply_queued_store_screenshots", beta)
 

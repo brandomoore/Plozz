@@ -38,13 +38,28 @@ module PlozzScreenshotQueue
       raise Failure, "Invalid screenshot queue ID" unless @id.match?(/\A[a-z0-9-]+\z/)
       @path = File.join(@directory, "#{@id}.json")
       @groups = @manifest.fetch("groups")
-      raise Failure, "Expected the three approved screenshot groups" unless @groups.map { |g| g.fetch("device") }.sort == %w[ipad iphone tv]
+      devices = @groups.map { |group| group.fetch("device") }.sort
+      unless [%w[ipad iphone tv], %w[duo]].include?(devices)
+        raise Failure, "Expected the approved base set or the separate Duo set"
+      end
       @groups.each do |group|
         assets = group.fetch("assets")
-        raise Failure, "Invalid screenshot count" unless assets.length == (group["device"] == "tv" ? 5 : 6)
+        count = { "tv" => 5, "duo" => 10 }.fetch(group["device"], 6)
+        raise Failure, "Invalid screenshot count" unless assets.length == count
+        platform = group["device"] == "tv" ? "TV_OS" : "IOS"
+        raise Failure, "Wrong screenshot platform" unless group.fetch("platform") == platform
+        if group["device"] == "duo" && group.fetch("placement_group") != "IPHONE_DUO_PROFILE"
+          raise Failure, "Duo displays must share their designated placement group"
+        end
         raise Failure, "Duplicate screenshot assets" unless assets.map { |a| a.fetch("id") }.uniq.length == assets.length
         assets.each do |asset|
           raise Failure, "Missing screenshot fingerprint" unless asset.fetch("sha256").match?(/\A[0-9a-f]{64}\z/)
+          spec = asset["spec_id"] || group["spec_id"]
+          dimensions = asset["dimensions"] || group["dimensions"]
+          unless spec.is_a?(String) && !spec.empty? && dimensions.is_a?(Array) &&
+                 dimensions.length == 2 && dimensions.all? { |value| value.is_a?(Integer) && value.positive? }
+            raise Failure, "Missing screenshot size or specification"
+          end
         end
       end
     end
@@ -146,11 +161,13 @@ module PlozzScreenshotQueue
     def verify_assets(group)
       group.fetch("assets").each do |asset|
         attrs = @client.get("v1/appAssetLibraryImages/#{asset.fetch('id')}").fetch("data").fetch("attributes")
+        spec = asset["spec_id"] || group.fetch("spec_id")
+        dimensions = asset["dimensions"] || group.fetch("dimensions")
         unless %w[PREPARE_FOR_SUBMISSION APPROVED ACCEPTED].include?(attrs["state"]) &&
                attrs["fileName"] == asset.fetch("file") &&
                attrs["referenceName"].to_s.end_with?("sha256:#{asset.fetch('sha256')}") &&
-               attrs["specId"] == group.fetch("spec_id") &&
-               [attrs.dig("imageAsset", "width"), attrs.dig("imageAsset", "height")] == group.fetch("dimensions")
+               attrs["specId"] == spec &&
+               [attrs.dig("imageAsset", "width"), attrs.dig("imageAsset", "height")] == dimensions
           raise Failure, "Queued screenshot is unavailable or changed: #{asset.fetch('file')}"
         end
       end
