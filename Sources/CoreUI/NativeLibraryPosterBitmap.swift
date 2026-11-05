@@ -134,10 +134,10 @@ enum NativePosterArtworkBitmap {
         $0.fill(CGRect(x: 0, y: 0, width: 2, height: 3))
     }
 
-    static func portraitFocusCrop(for size: CGSize) -> CGSize {
-        guard size.width > 0, size.height > size.width else { return .zero }
+    static func focusCrop(for size: CGSize) -> CGSize {
+        guard size.width > 0, size.height > 0 else { return .zero }
         // Native rectangular focus trims about 2 source points horizontally.
-        // Match the portrait aspect so top and trailing content keep equal clearance.
+        // Match the artwork aspect so top and trailing content keep equal clearance.
         return CGSize(width: 2, height: 2 * size.height / size.width)
     }
 

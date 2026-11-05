@@ -312,9 +312,10 @@ public struct PosterCardView: View {
                 content: { _ in Color.clear },
                 placeholder: { Color.clear }
             )
-            .resolvedBitmap { image in
+            .resolvedBitmap { image, identity in
                 NativeTVPoster(
                     image: image,
+                    artworkIdentity: identity,
                     treatment: nativePosterTreatment,
                     aspectRatio: borderlessAspectRatio,
                     fallbackWidth: size.width,

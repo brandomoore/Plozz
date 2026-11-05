@@ -155,9 +155,10 @@ public struct FallbackAsyncImage<Content: View, Placeholder: View>: View {
     }
 
     /// Supplies the resolver's initial cached bitmap directly to native artwork,
-    /// retaining one content identity while an uncached image arrives.
+    /// retaining one content identity while an uncached image arrives. The key
+    /// identifies the displayed resolution, including its source/policy boundary.
     func resolvedBitmap<ResolvedContent: View>(
-        @ViewBuilder content: @escaping (UIImage?) -> ResolvedContent
+        @ViewBuilder content: @escaping (UIImage?, String?) -> ResolvedContent
     ) -> some View {
         ArtworkPolicyReader(policy: artworkPolicy) { policy in
             FilteredArtworkImage(
@@ -419,7 +420,7 @@ enum ArtworkSeedMemo {
 
 private enum ResolvedArtworkContent<Content: View> {
     case image((Image) -> Content)
-    case bitmap((UIImage?) -> Content)
+    case bitmap((UIImage?, String?) -> Content)
 }
 
 private struct FilteredArtworkImage<Content: View, Placeholder: View>: View {
@@ -606,7 +607,7 @@ private struct FilteredArtworkImage<Content: View, Placeholder: View>: View {
         Group {
             switch content {
             case .bitmap(let render):
-                render(image)
+                render(image, loadedKey)
             case .image(let render):
                 if let image {
                     render(Image(uiImage: image))

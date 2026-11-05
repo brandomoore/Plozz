@@ -474,11 +474,9 @@ final class NativeLibraryCardHostedTests: XCTestCase {
             ))[0], 180)
             XCTAssertEqual(before.size, poster.artworkView.bounds.size,
                            "The native alpha-mask contract must hold at 2x, including fractional layout heights.")
-            if aspect < 1 {
-                let alpha = try XCTUnwrap(before.cgImage).alphaInfo
-                XCTAssertTrue([.none, .noneSkipFirst, .noneSkipLast].contains(alpha),
-                              "Rectangular native focus requires opaque artwork without baked alpha corners.")
-            }
+            let alpha = try XCTUnwrap(before.cgImage).alphaInfo
+            XCTAssertTrue([.none, .noneSkipFirst, .noneSkipLast].contains(alpha),
+                          "Rectangular native focus requires opaque artwork without baked alpha corners.")
             let overlay = try XCTUnwrap(poster.hostedOverlay)
             controller.target = poster
             let system = try XCTUnwrap(UIFocusSystem.focusSystem(for: window))
@@ -488,7 +486,7 @@ final class NativeLibraryCardHostedTests: XCTestCase {
             XCTAssertTrue(system.focusedItem === poster)
             try assertCompositedArtworkGeometry(
                 poster.artworkView, in: window, expectedScale: nil, landmarkTolerance: 1,
-                maximumInternalScale: aspect < 1 ? 1.02 : 1
+                maximumInternalScale: 1.02
             )
             XCTAssertTrue(poster.image === before, "Native focus must always reuse the artwork bitmap.")
             XCTAssertTrue(poster.hostedOverlay === overlay, "Counts and progress must retain their live overlay.")
@@ -507,7 +505,7 @@ final class NativeLibraryCardHostedTests: XCTestCase {
         }
     }
 
-    func testSharedPosterUpdatesNativeMaskWhenAspectChanges() async throws {
+    func testSharedPosterKeepsNativeFocusTreatmentWhenAspectChanges() async throws {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
             .first { $0.activationState == .foregroundActive })
         let previous = scene.windows.first(where: \.isKeyWindow)
@@ -533,7 +531,7 @@ final class NativeLibraryCardHostedTests: XCTestCase {
             try await Task.sleep(for: .milliseconds(100))
             window.layoutIfNeeded()
             XCTAssertTrue(descendant(NativePosterButton.self, in: host.view) === poster)
-            XCTAssertEqual(poster.artworkView.masksFocusEffectToContents, aspect >= 1)
+            XCTAssertFalse(poster.artworkView.masksFocusEffectToContents)
         }
     }
 
@@ -543,6 +541,13 @@ final class NativeLibraryCardHostedTests: XCTestCase {
 
     func testNativePortraitCountStaysInsideTileWithMotionEffectOffsets() async throws {
         try await checkDirectionalPortrait(width: 280, checksSheen: false, count: 88)
+    }
+
+    func testNativeLandscapeAndSquareCardsKeepMovingHighlightAndContainedCounts() async throws {
+        for aspect: CGFloat in [ContinueWatchingCardShape.aspectRatio, 16 / 9, 1] {
+            try await checkDirectionalPortrait(width: 280, checksSheen: true, aspect: aspect)
+            try await checkDirectionalPortrait(width: 280, checksSheen: false, count: 88, aspect: aspect)
+        }
     }
 
     func testNativePortraitMotionEffectOffsetsAtRetinaRowSizes() async throws {
@@ -558,7 +563,7 @@ final class NativeLibraryCardHostedTests: XCTestCase {
 
     private func checkDirectionalPortrait(
         width: CGFloat, checksSheen: Bool, count: Int? = nil, displayScale: CGFloat = 1,
-        replacesFocusedArtwork: Bool = false
+        replacesFocusedArtwork: Bool = false, aspect: CGFloat = 2 / 3
     ) async throws {
         // Fixed interpolation offsets cover motion effects, not the remote's
         // continuous touch input or UIFocusMovementHint interaction transform.
@@ -569,17 +574,17 @@ final class NativeLibraryCardHostedTests: XCTestCase {
         window.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
         let controller = LibraryFocusController()
         controller.view.backgroundColor = .black
-        let size = CGSize(width: width, height: width * 1.5)
+        let size = CGSize(width: width, height: width / aspect)
         let source = UIGraphicsImageRenderer(size: size).image {
             (count != nil ? UIColor.red : checksSheen ? UIColor(white: 0.35, alpha: 1) : .white).setFill()
             $0.fill(CGRect(origin: .zero, size: size))
             UIColor.red.setFill()
             for x: CGFloat in [0.14, 0.84] {
-                $0.fill(CGRect(x: width * x, y: width * 0.4, width: width * 0.02, height: width * 0.4))
+                $0.fill(CGRect(x: width * x, y: size.height * 0.25, width: width * 0.02, height: size.height * 0.4))
             }
         }
         let host = UIHostingController(rootView: SharedZoomFixture(
-            image: source, aspect: 2 / 3,
+            image: source, aspect: aspect,
             item: MediaItem(id: "tilt", title: "Tilt", kind: .series,
                             unwatchedEpisodeCount: count, isPlayed: count == nil)
         ).environment(\.plozzWatchStatusIndicator, .unwatched).environment(\.displayScale, displayScale))
@@ -608,7 +613,7 @@ final class NativeLibraryCardHostedTests: XCTestCase {
             let before = poster.image
             let replacement = try XCTUnwrap(UIImage(data: XCTUnwrap(source.pngData())))
             host.rootView = SharedZoomFixture(
-                image: replacement, aspect: 2 / 3,
+                image: replacement, aspect: aspect,
                 item: MediaItem(id: "tilt", title: "Tilt", kind: .series,
                                 unwatchedEpisodeCount: count, isPlayed: count == nil)
             ).environment(\.plozzWatchStatusIndicator, .unwatched).environment(\.displayScale, displayScale)
@@ -719,7 +724,7 @@ final class NativeLibraryCardHostedTests: XCTestCase {
                 XCTAssertEqual(outside, 0, "The native highlight must not form a second edge at \(name).")
             }
             let attachment = XCTAttachment(image: rendered)
-            attachment.name = "native-poster-\(Int(width))-\(count != nil ? "count" : checksSheen ? "gray" : "white")-\(name)"
+            attachment.name = "native-poster-\(Int(width))-\(aspect)-\(count != nil ? "count" : checksSheen ? "gray" : "white")-\(name)"
             attachment.lifetime = .keepAlways
             add(attachment)
         }
@@ -1175,6 +1180,10 @@ final class NativeLibraryCardHostedTests: XCTestCase {
         defer { server.stop() }
         let port = try await server.start()
         let url = try XCTUnwrap(URL(string: "http://127.0.0.1:\(port)/artwork/\(UUID())"))
+        // This regression exercises chrome changes on completed artwork, not
+        // first-use network decoding. Arrival has separate native-host coverage.
+        let warmed = await ArtworkImageCache.shared.image(for: url, variant: .posterCard)
+        XCTAssertNotNil(warmed)
         let model = AttachedStatusModel(item: MediaItem(
             id: "status", title: "Status", kind: .series, unwatchedEpisodeCount: 21,
             posterURL: url, allowsTitleBasedMetadataMatching: false
@@ -1204,7 +1213,9 @@ final class NativeLibraryCardHostedTests: XCTestCase {
         let system = try XCTUnwrap(UIFocusSystem.focusSystem(for: window))
         system.requestFocusUpdate(to: controller)
         system.updateFocusIfNeeded()
-        let deadline = ContinuousClock.now + .seconds(5)
+        // First-use hosted layout can hold the main actor before composition
+        // starts; this checks ready-artwork updates, not startup latency.
+        let deadline = ContinuousClock.now + .seconds(20)
         while ContinuousClock.now < deadline {
             if let image = poster.image, let bitmap = image.cgImage,
                try isRed(image, at: CGPoint(x: bitmap.width / 2, y: bitmap.height / 2)) { break }
@@ -1212,7 +1223,13 @@ final class NativeLibraryCardHostedTests: XCTestCase {
         }
         let loaded = try XCTUnwrap(poster.image)
         let bitmap = try XCTUnwrap(loaded.cgImage)
-        XCTAssertTrue(try isRed(loaded, at: CGPoint(x: bitmap.width / 2, y: bitmap.height / 2)))
+        let center = CGPoint(x: bitmap.width / 2, y: bitmap.height / 2)
+        let initialAttachment = XCTAttachment(image: loaded)
+        initialAttachment.name = "home-poster-initial-composite"
+        initialAttachment.lifetime = .keepAlways
+        add(initialAttachment)
+        let centerPixel = try pixel(loaded, at: center)
+        XCTAssertTrue(try isRed(loaded, at: center), "Initial artwork center: \(centerPixel)")
         try await Task.sleep(for: .milliseconds(500))
         XCTAssertTrue(system.focusedItem === poster)
         let first = try XCTUnwrap(loaded.pngData())
@@ -1233,6 +1250,10 @@ final class NativeLibraryCardHostedTests: XCTestCase {
             while poster.image?.pngData() == beforePixels
                 && poster.indicatorView.image?.pngData() == beforeForegroundPixels
                 && ContinuousClock.now < changeDeadline {
+                let visible = try XCTUnwrap(poster.image)
+                let pixels = try XCTUnwrap(visible.cgImage)
+                XCTAssertTrue(try isRed(visible, at: CGPoint(x: pixels.width / 2, y: pixels.height / 2)),
+                              "Changing status must not cover loaded artwork with a placeholder.")
                 try await Task.sleep(for: .milliseconds(30))
             }
             XCTAssertTrue(poster.image !== before || poster.indicatorView.image !== beforeForeground,
