@@ -16,6 +16,7 @@ public struct PlexProvider: MediaProvider, AuthenticatedHTTPOriginProviding, Ser
     let liveTVLeases = PlexLiveTVLeaseStore()
     let playbackFailureDiagnostics: PlaybackFailureDiagnostics
     let libraryGenreCache = PlexLibraryGenreCache()
+    private let extraWatchState: PlexExtraWatchState?
     private let videoPlaylistCache = VideoPlaylistSnapshotCache()
     let themeArchiveResolver: @Sendable (String?) async -> URL?
     private let artworkOriginHistoryKey: String
@@ -56,6 +57,8 @@ public struct PlexProvider: MediaProvider, AuthenticatedHTTPOriginProviding, Ser
         accountID: String? = nil,
         credentialRevision: CredentialRevision = CredentialRevision(),
         cloudTokenResolver: (@Sendable () async throws -> String?)? = nil,
+        localMediaContext: LocalMediaContext? = nil,
+        durableStore: DurableLocalStateStore? = nil,
         http: HTTPClient = URLSessionHTTPClient(),
         interactiveHTTP: HTTPClient? = nil,
         hybridEngineEnabled: Bool = false,
@@ -69,6 +72,9 @@ public struct PlexProvider: MediaProvider, AuthenticatedHTTPOriginProviding, Ser
         self.session = session
         self.accountID = accountID ?? session.server.id
         self.credentialRevision = credentialRevision
+        self.extraWatchState = localMediaContext.map {
+            PlexExtraWatchState(context: $0, session: session, durableStore: durableStore)
+        }
         self.playbackFailureDiagnostics = playbackFailureDiagnostics
         self.themeArchiveResolver = themeArchiveResolver
         let deviceProfile = PlexDeviceProfile(clientIdentifier: session.deviceID)
@@ -674,7 +680,7 @@ public struct PlexProvider: MediaProvider, AuthenticatedHTTPOriginProviding, Ser
             return item
         }
         do {
-            return map(metadata: try await client.metadata(ratingKey: id))
+            return await stampExtra(map(metadata: try await client.metadata(ratingKey: id)))
         } catch let error as AppError where error == .notFound {
             // A numeric-looking id the server no longer has *might* actually be a
             // global Discover id (defensive) — retry against Discover if derivable,
@@ -701,18 +707,18 @@ public struct PlexProvider: MediaProvider, AuthenticatedHTTPOriginProviding, Ser
             }
         guard trailers.count > 1,
               let parent = try? await client.metadata(ratingKey: itemID)
-        else { return trailers.map { map(metadata: $0.element) } }
+        else { return await stampExtras(trailers.map { map(metadata: $0.element) }) }
         guard let primary = Self.ratingKey(fromPrimaryExtraKey: parent.primaryExtraKey),
               let preferred = trailers.first(where: { $0.element.ratingKey == primary })
-        else { return trailers.map { map(metadata: $0.element) } }
-        return [map(metadata: preferred.element)]
+        else { return await stampExtras(trailers.map { map(metadata: $0.element) }) }
+        return await stampExtras([map(metadata: preferred.element)]
             + trailers
                 .filter { $0.element.ratingKey != primary }
-                .map { map(metadata: $0.element) }
+                .map { map(metadata: $0.element) })
     }
 
     public func extras(for itemID: String) async throws -> [MediaExtra] {
-        try await client.extras(ratingKey: itemID, includeExternalMedia: false)
+        var extras = try await client.extras(ratingKey: itemID, includeExternalMedia: false)
             .filter(Self.isLocalExtra)
             .map { dto in
                 let rawType = dto.subtype ?? dto.extraType.map(String.init)
@@ -723,6 +729,21 @@ public struct PlexProvider: MediaProvider, AuthenticatedHTTPOriginProviding, Ser
                     supportsResume: true
                 )
             }
+        for index in extras.indices {
+            extras[index].item = await stampExtra(extras[index].item)
+        }
+        return extras
+    }
+
+    private func stampExtra(_ item: MediaItem) async -> MediaItem {
+        guard let extraWatchState else { return item }
+        return await extraWatchState.stamp(item)
+    }
+
+    private func stampExtras(_ items: [MediaItem]) async -> [MediaItem] {
+        var result: [MediaItem] = []
+        for item in items { result.append(await stampExtra(item)) }
+        return result
     }
 
     public func themeMusic(for itemID: String) async throws -> ThemeMusic? {
@@ -1162,7 +1183,7 @@ public struct PlexProvider: MediaProvider, AuthenticatedHTTPOriginProviding, Ser
                 throw error
             }
         }
-        let mappedItem = map(metadata: detail)
+        let mappedItem = await stampExtra(map(metadata: detail))
         let streams = part.Stream ?? []
         let selectedMediaSourceID = media.id.map(String.init)
         let audio = try streams.filter { $0.streamType == 2 }.map {
@@ -1687,7 +1708,41 @@ public struct PlexProvider: MediaProvider, AuthenticatedHTTPOriginProviding, Ser
         )
     }
 
+    private func recordExtraPlayback(_ progress: PlaybackProgress, event: PlaybackEvent) async throws {
+        // Playback negotiation classifies extras. Do not fetch VOD metadata for
+        // unrelated lifecycle reports such as Live TV.
+        guard let extraWatchState, await extraWatchState.isKnownExtra(progress.itemID) else { return }
+        if event == .start, progress.positionSeconds == 0 {
+            try await extraWatchState.setResume(0, itemID: progress.itemID, capturedAt: Date()) {
+                map(metadata: try await client.metadata(ratingKey: progress.itemID))
+            }
+        }
+        if event == .progress || event == .pause || event == .stop {
+            let capturedAt = Date()
+            if event == .stop, let duration = progress.durationSeconds, duration.isFinite, duration > 0,
+               progress.positionSeconds / duration >= 0.9 {
+                try await extraWatchState.setPlayed(true, itemID: progress.itemID, capturedAt: capturedAt) {
+                    map(metadata: try await client.metadata(ratingKey: progress.itemID))
+                }
+            } else if progress.positionSeconds > 1 {
+                try await extraWatchState.setResume(
+                    progress.positionSeconds, itemID: progress.itemID, capturedAt: capturedAt,
+                    duration: progress.durationSeconds
+                ) {
+                    map(metadata: try await client.metadata(ratingKey: progress.itemID))
+                }
+            }
+        }
+    }
+
     public func reportPlayback(_ progress: PlaybackProgress, event: PlaybackEvent) async throws {
+        var localStateFailure: Error?
+        do {
+            try await recordExtraPlayback(progress, event: event)
+        } catch {
+            localStateFailure = error
+            PlozzLog.playback.error("Plex extra watch state could not be recorded; still reporting the playback lifecycle.")
+        }
         let state: String
         switch event {
         case .pause: state = "paused"
@@ -1728,6 +1783,7 @@ public struct PlexProvider: MediaProvider, AuthenticatedHTTPOriginProviding, Ser
             ))
             throw error
         }
+        if let localStateFailure { throw localStateFailure }
     }
 
     public func imageURL(itemID: String, kind: ImageKind, maxWidth: Int?) -> URL? {
@@ -2016,6 +2072,8 @@ public struct PlexProvider: MediaProvider, AuthenticatedHTTPOriginProviding, Ser
             title: dto.title ?? "Untitled",
             originalTitle: dto.originalTitle,
             kind: kind,
+            isTrailer: Self.extraKind(for: dto) == .trailer,
+            isExtra: dto.type == "clip" && (dto.extraType != nil || dto.subtype != nil),
             overview: dto.summary,
             parentTitle: parentTitle,
             // A season's own ordinal lives in `index`; an episode's season number
@@ -2775,10 +2833,21 @@ public struct PlexProvider: MediaProvider, AuthenticatedHTTPOriginProviding, Ser
 
 // MARK: - Watched state
 
-extension PlexProvider: WatchStateProviding {
+extension PlexProvider: PlayedStateWriting {
     /// Toggles an item's watched state via Plex scrobble/unscrobble. Scrobbling a
     /// season or series ratingKey marks the contained episodes too.
     public func setPlayed(_ played: Bool, itemID: String) async throws {
+        try await setPlayed(played, itemID: itemID, capturedAt: Date())
+    }
+
+    public func setPlayed(_ played: Bool, itemID: String, capturedAt: Date) async throws {
+        let shouldWrite = try await extraWatchState?.setPlayed(played, itemID: itemID, capturedAt: capturedAt) {
+            map(metadata: try await client.metadata(ratingKey: itemID))
+        }
+        guard shouldWrite != false else {
+            PlozzLog.playback.debug("Ignoring stale Plex extra played write.")
+            return
+        }
         do {
             try await client.setWatched(played, ratingKey: itemID)
             ContinueWatchingDiagnostics.emit(ContinueWatchingDiagnostics.writeLine(
@@ -2843,6 +2912,13 @@ extension PlexProvider: ResumeStateWriting {
     /// converges at the server's clock. (Jellyfin, which *does* accept a
     /// `LastPlayedDate`, honours `capturedAt` — see its `ResumeStateWriting`.)
     public func setResumePosition(_ seconds: TimeInterval, itemID: String, capturedAt: Date = Date()) async throws {
+        let shouldWrite = try await extraWatchState?.setResume(seconds, itemID: itemID, capturedAt: capturedAt) {
+            map(metadata: try await client.metadata(ratingKey: itemID))
+        }
+        guard shouldWrite != false else {
+            PlozzLog.playback.debug("Ignoring stale Plex extra resume write.")
+            return
+        }
         let timeMS = PlexTime.milliseconds(fromSeconds: max(seconds, 0))
         do {
             try await client.reportProgress(ratingKey: itemID, timeMs: timeMS)

@@ -205,6 +205,7 @@ struct PlozziOSHomeView: View {
     @State private var discoveryIdentityRevision = 0
     @State private var homeHasAppeared = false
     @State private var rowBrowser: HomeRowBrowseModel?
+    @State private var showingHomeCustomization = false
     @State private var heroFreshnessRefresh = HeroFreshnessRefreshDriver()
     private let appModel: PlozziOSAppModel
     private let onAddServer: () -> Void
@@ -319,6 +320,16 @@ struct PlozziOSHomeView: View {
         .onAppear { homeHasAppeared = true }
         .environment(\.plozzCardCaptionView, .home)
         .onDisappear { homeHasAppeared = false }
+        .navigationDestination(isPresented: $showingHomeCustomization) {
+            PlozziOSHomeSettingsView(
+                hero: appModel.settings.hero, heroBackground: appModel.settings.heroBackground,
+                cards: appModel.settings.cardStyle,
+                visibility: appModel.settings.homeVisibility,
+                accounts: appModel.accountsProviders.resolvedActiveAccounts,
+                spoilerSettings: appModel.settings.spoilers.settings
+            )
+            .id(ObjectIdentifier(appModel.settings.homeVisibility))
+        }
         .navigationDestination(item: $rowBrowser) { browser in
             HomeRowBrowseView(
                 model: browser,
@@ -682,7 +693,8 @@ struct PlozziOSHomeView: View {
                         let section = row.section
                         if let issue = row.issue {
                             PlozziOSHomeSectionStatusRow(
-                                issue: issue, browseItem: row.browseItem, appModel: appModel, viewModel: viewModel
+                                issue: issue, browseItem: row.browseItem, appModel: appModel, viewModel: viewModel,
+                                onCustomizeHome: { showingHomeCustomization = true }
                             )
                         } else if let failure = row.failure {
                             PlozziOSHomeRowFailure(
@@ -2637,6 +2649,7 @@ private struct PlozziOSHomeSectionStatusRow: View {
     let browseItem: MediaItem?
     let appModel: PlozziOSAppModel
     let viewModel: HomeViewModel
+    let onCustomizeHome: () -> Void
     @Environment(\.horizontalSizeClass) private var sizeClass
     @State private var isBrowsing = false
 
@@ -2645,7 +2658,10 @@ private struct PlozziOSHomeSectionStatusRow: View {
             title: issue.choice.localizedTitle.map(Text.init) ?? Text(verbatim: issue.choice.title),
             onSeeAll: browseItem.map { _ in { isBrowsing = true } }
         ) {
-            HomeSectionStatusView(issue: issue, showsTitle: false) {
+            HomeSectionStatusView(
+                issue: issue, showsTitle: false, onCustomizeHome: onCustomizeHome,
+                onDismissEmpty: { appModel.settings.homeVisibility.setEmptyHomeRowDismissed(true, id: issue.id) }
+            ) {
                 Task { await viewModel.load(showLoadingState: false) }
             }
             .padding(.horizontal, PlozziOSPageLayout.horizontalInset(for: sizeClass))

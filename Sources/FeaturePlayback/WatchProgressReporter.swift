@@ -39,6 +39,7 @@ final class WatchProgressReporter {
     private let itemID: String
     private let scrobbler: any TraktScrobbling
     private let checkpointInterval: TimeInterval
+    private let scrobblesLibraryItem: Bool
     private let onCheckpoint: @Sendable (_ position: TimeInterval, _ watchedPercent: Double) -> Void
 
     private var checkpointTask: Task<Void, Never>?
@@ -73,6 +74,7 @@ final class WatchProgressReporter {
         itemID: String,
         scrobbler: any TraktScrobbling,
         checkpointInterval: TimeInterval,
+        scrobblesLibraryItem: Bool = true,
         onCheckpoint: @escaping @Sendable (_ position: TimeInterval, _ watchedPercent: Double) -> Void
     ) {
         self.host = host
@@ -80,6 +82,7 @@ final class WatchProgressReporter {
         self.itemID = itemID
         self.scrobbler = scrobbler
         self.checkpointInterval = checkpointInterval
+        self.scrobblesLibraryItem = scrobblesLibraryItem
         self.onCheckpoint = onCheckpoint
     }
 
@@ -149,7 +152,9 @@ final class WatchProgressReporter {
             position: position, engineDuration: knownDuration ?? 0, itemRuntime: nil
         )
         let report = Report(
-            progress: progress, event: event, item: request.item, percent: percent, scrobble: scrobble
+            progress: progress, event: event, item: request.item, percent: percent,
+            scrobble: scrobble && scrobblesLibraryItem
+                && !request.item.isExtra && !request.item.isTrailer && !request.item.isYouTubeTrailer
         )
         if event == .progress, let pendingProgress {
             pendingProgress.entry.report = report

@@ -1535,7 +1535,7 @@ public final class ItemDetailViewModel {
         if let local = provided.first(where: { !$0.isYouTubeTrailer }) {
             guard isStillLoaded(item, sourceGeneration: sourceGeneration) else { return }
             Self.trailerDiag("loadTrailers item=\(item.id) -> LOCAL trailer id=\(local.id)")
-            trailers = [tagged(local)]
+            trailers = [tagged(local.markingAsTrailer())]
             return
         }
 
@@ -1550,7 +1550,7 @@ public final class ItemDetailViewModel {
         ) {
             guard isStillLoaded(item, sourceGeneration: sourceGeneration) else { return }
             Self.trailerDiag("loadTrailers item=\(item.id) -> CROSS-SERVER LOCAL trailer id=\(crossLocal.id) account=\(ownerAccountID)")
-            trailers = [crossLocal.taggingSource(ownerAccountID)]
+            trailers = [crossLocal.markingAsTrailer().taggingSource(ownerAccountID)]
             return
         }
 
@@ -1732,6 +1732,7 @@ public final class ItemDetailViewModel {
                 return updated
             }
         }
+        trailers = trailers.map { mutation.applied(to: $0) }
         if case let .loaded(extras) = extrasState {
             extrasState = .loaded(extras.map { extra in
                 var copy = extra

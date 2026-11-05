@@ -4,6 +4,44 @@ import XCTest
 
 @MainActor
 final class HomeRowBrowseTests: XCTestCase {
+    func testContinueWatchingBrowserCuratesWithoutChangingProviderOffsets() async throws {
+        var all = (0..<125).map {
+            MediaItem(id: "\($0)", title: "Video", kind: .movie, runtime: 600, resumePosition: 2)
+        }
+        all[60].resumePosition = 30
+        all[61].resumePosition = 120
+        all[61].isTrailer = true
+        all[124].resumePosition = 45
+        let provider = BrowseFactoryProvider(all)
+        let account = ResolvedAccount(account: Account(id: "account", from: provider.session), provider: provider)
+        let server = HomeServerRowDefinition(
+            accountID: "account", serverName: "Server", providerKind: .plex,
+            section: .init(id: "resume", kind: .continueWatching)
+        )
+        let row = HomePresentationRow(
+            choice: .init(serverRow: server), source: .library(HomeServerRow(definition: server).row)
+        )
+        let visibility = HomeLibraryVisibility(rowCustomization: .init(
+            defaults: .custom, order: [row.id], shown: [row.id], serverRows: [server]
+        ))
+        let browser = HomeRowBrowseFactory.make(row, accounts: [account], visibility: visibility, isCurrent: { true })
+        await browser.load()
+        XCTAssertTrue(browser.items.isEmpty)
+        XCTAssertTrue(browser.hasMore)
+        await browser.load()
+        XCTAssertEqual(browser.items.map(\.id), ["60"])
+        await browser.load()
+        XCTAssertEqual(browser.items.map(\.id), ["60", "124"])
+        XCTAssertFalse(browser.hasMore)
+        XCTAssertNil(browser.error)
+        let offsets = await provider.offsets
+        XCTAssertEqual(offsets, [0, 60, 120])
+        browser.applyMutation(.init(itemIDs: ["60"], resumePosition: 2))
+        XCTAssertEqual(browser.items.map(\.id), ["124"])
+        browser.applyMutation(.init(itemIDs: ["60"], resumePosition: 30))
+        XCTAssertEqual(browser.items.map(\.id), ["60", "124"])
+    }
+
     func testBrowserRetainsResolvedCollectionCoverShapeForBothProviders() async throws {
         for providerKind in [ProviderKind.plex, .jellyfin] {
             let definition = HomeServerRowDefinition(

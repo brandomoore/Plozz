@@ -565,6 +565,7 @@ public final class PlayerViewModel {
     /// writes against it until playback ends — a mid-play drain can never disturb
     /// the now-playing session. Idempotent on the receiver. Defaults to a no-op.
     private let onPlaybackStarted: @Sendable () -> Void
+    private let scrobblesLibraryItem: Bool
 
     /// Periodic mid-playback convergence hook, called roughly every
     /// ``checkpointInterval`` seconds of continuous play with the current position
@@ -689,6 +690,9 @@ public final class PlayerViewModel {
         self.seriesIDResolver = seriesIDResolver
         self.onPlaybackStopped = onPlaybackStopped
         self.onPlaybackStarted = onPlaybackStarted
+        self.scrobblesLibraryItem = (offlineItem ?? episodeItem).map {
+            !$0.isExtra && !$0.isTrailer && !$0.isYouTubeTrailer
+        } ?? true
         self.onPlaybackCheckpoint = onPlaybackCheckpoint
         self.checkpointInterval = checkpointInterval
         self.adoptedResolved = adoptedResolved
@@ -727,6 +731,7 @@ public final class PlayerViewModel {
             itemID: itemID,
             scrobbler: scrobbler,
             checkpointInterval: checkpointInterval,
+            scrobblesLibraryItem: scrobblesLibraryItem,
             onCheckpoint: onPlaybackCheckpoint
         )
         self.nextEpisodeCoordinator = NextEpisodeCoordinator(

@@ -648,7 +648,7 @@ public struct HomeAggregator: Sendable {
                                 from: groups, limit: continueWatchingLimit,
                                 serverInfo: { serverInfo[$0] }, identitySources: identitySources,
                                 sortByRecency: true
-                            )
+                            ).filter(ContinueWatchingPolicy.admits)
                             PlozzLog.app.info(
                                 "Home history accounts=\(accounts.count) returned=\(perAccount.reduce(0) { $0 + $1.continueWatching.count }) curated=\(groups.reduce(0) { $0 + $1.count }) visible=\(content.continueWatching.count) failedAccounts=\(perAccount.filter { $0.failures[.continueWatching] != nil }.count)"
                             )
@@ -878,7 +878,10 @@ public struct HomeAggregator: Sendable {
                 for index in prepared.indices {
                     let candidates = prepared[index].items.map {
                         $0.taggingSource(library.accountID).taggingLibrary(library.library.id)
-                    }.filter { $0.isVisibleOnHome(isLibraryVisible: visibility.isEnabled) }
+                    }.filter {
+                        $0.isVisibleOnHome(isLibraryVisible: visibility.isEnabled)
+                            && (prepared[index].id != "continueWatching" || ContinueWatchingPolicy.admits($0))
+                    }
                     let retainsCandidates = kind == .recentlyAdded && visibility.hideWatchedRecentlyAdded
                     let preview = HomeRowPreview(candidates, limit: perLibraryLimit, retainsCandidates: retainsCandidates)
                     prepared[index].hasMore = preview.hasMore
@@ -935,8 +938,9 @@ public struct HomeAggregator: Sendable {
                         let tagged = item.taggingSource(resolved.account.id)
                         return tagged.taggingLibrary(item.libraryID ?? definition.section.libraryID)
                     }.filter {
-                        definition.section.isAccountWideHistory
-                            || $0.isVisibleOnHome(isLibraryVisible: visibility.isEnabled)
+                        (definition.section.isAccountWideHistory
+                            || $0.isVisibleOnHome(isLibraryVisible: visibility.isEnabled))
+                            && (definition.section.kind != .continueWatching || ContinueWatchingPolicy.admits($0))
                     }
                     return content
                 }

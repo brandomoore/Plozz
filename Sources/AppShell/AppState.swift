@@ -371,9 +371,14 @@ public final class AppState {
     /// per profile so a returning profile never creates a competing writer.
     @ObservationIgnored
     private var watchReconcilers: [String: WatchStateReconciler] = [:]
+    @ObservationIgnored private var watchRetryIsActive = true
+    @ObservationIgnored private lazy var watchOutboxConnectivity = WatchOutboxConnectivity { [weak self] in
+        self?.retryWatchOutboxIfAllowed()
+    }
     @ObservationIgnored
     private var trackerProfileGeneration: UInt64 = 0
     public var watchReconciler: WatchStateReconciler {
+        _ = watchOutboxConnectivity
         let profileID = profilesModel.activeProfileID
         if let existing = watchReconcilers[profileID] { return existing }
         let created = makeWatchReconciler(profileID: profileID)
@@ -587,6 +592,14 @@ public final class AppState {
                     }
                     refresh.post()
                 }
+            },
+            automaticRetryAllowed: { [weak self] in
+                await MainActor.run {
+                    guard let self else { return false }
+                    return self.watchRetryIsActive && self.isActiveProfileAuthorized
+                        && self.profilesModel.activeProfileID == profileID
+                        && self.watchOutboxConnectivity.isConnected
+                }
             }
         )
     }
@@ -596,6 +609,17 @@ public final class AppState {
     public func drainWatchOutbox() {
         let reconciler = watchReconciler
         Task { await reconciler.drain() }
+    }
+
+    func setWatchRetryActive(_ active: Bool) {
+        watchRetryIsActive = active
+        if active { retryWatchOutboxIfAllowed() }
+    }
+
+    func retryWatchOutboxIfAllowed() {
+        guard watchRetryIsActive, isActiveProfileAuthorized,
+              watchOutboxConnectivity.isConnected else { return }
+        drainWatchOutbox()
     }
 
     /// The outbox's not-yet-confirmed mutations, so the Home Continue Watching row
@@ -1462,6 +1486,8 @@ public final class AppState {
                 session: context.session,
                 accountID: context.accountID,
                 credentialRevision: context.credentialRevision,
+                localMediaContext: context.localMediaContext,
+                durableStore: durableLocalStateStore,
                 interactiveHTTP: URLSessionHTTPClient(session: .plozzInteractive),
                 hybridEngineEnabled: HybridPlayback.enabled,
                 connectionRefresh: PlexProvider.connectionRefresh(for: context.session)

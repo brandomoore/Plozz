@@ -865,6 +865,7 @@ final class JellyfinProviderMappingTests: XCTestCase {
 
         XCTAssertEqual(trailers.map(\.id), ["t1"])
         XCTAssertEqual(trailers.first?.title, "Official Trailer")
+        XCTAssertEqual(trailers.first?.isTrailer, true)
         XCTAssertTrue(stub.sentPaths.contains { $0.hasSuffix("/Users/u1/Items/m1/LocalTrailers") })
     }
 

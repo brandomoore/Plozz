@@ -1,9 +1,9 @@
 import Foundation
 
-/// Continue Watching defaults to the complete provider feed. Recency determines
+/// Continue Watching keeps eligible provider titles. Recency determines
 /// order, not membership: an older next episode still belongs until the server
-/// or viewer removes it. Optional restrictions are explicit caller overrides,
-/// never implicit Home defaults.
+/// or viewer removes it. Brief plays and trailers retain their saved progress
+/// without appearing in this row. Age restrictions are explicit caller overrides.
 public struct ContinueWatchingPolicy: Sendable, Equatable, Codable {
     /// An explicit presentation limit; `.max` keeps every eligible title.
     /// Providers use bounded requests even when the total result is unlimited.
@@ -45,10 +45,25 @@ public struct ContinueWatchingPolicy: Sendable, Equatable, Codable {
 
     public static let `default` = ContinueWatchingPolicy()
 
-    /// Everything kept, with no age bound or presentation limit.
+    /// Eligible titles with no age bound or presentation limit.
     public static let unbounded = ContinueWatchingPolicy(rowLimit: .max, nextUpCutoff: nil)
 
-    /// Whether a title passes an explicitly configured age restriction.
+    public static func minimumResumePosition(duration: TimeInterval?) -> TimeInterval {
+        guard let duration, duration.isFinite, duration > 0 else { return 60 }
+        return min(60, max(5, duration * 0.05))
+    }
+
+    /// Resume storage is independent of row eligibility. Zero-position episodes
+    /// can be Next Up suggestions and must not be discarded as brief plays.
+    public static func admits(_ item: MediaItem) -> Bool {
+        guard !item.isTrailer, !item.isYouTubeTrailer else { return false }
+        guard let position = item.resumePosition else { return true }
+        guard position.isFinite, position >= 0 else { return false }
+        if position == 0 { return item.kind == .episode }
+        return position >= minimumResumePosition(duration: item.runtime)
+    }
+
+    /// Whether an eligible title passes an explicitly configured age restriction.
     ///
     /// **Fail-open by construction.** A title is dropped only when it is known to
     /// be a suggestion *and* known to be old. Anything in progress, and anything
@@ -56,6 +71,7 @@ public struct ContinueWatchingPolicy: Sendable, Equatable, Codable {
     /// absence of evidence, and guessing from it would quietly delete a title the
     /// viewer is halfway through.
     public func keeps(_ item: MediaItem, now: Date = Date()) -> Bool {
+        guard Self.admits(item) else { return false }
         guard let nextUpCutoff else { return true }
         // Started, therefore a promise to come back. Age is irrelevant.
         if (item.resumePosition ?? 0) > 0 { return true }
@@ -65,10 +81,9 @@ public struct ContinueWatchingPolicy: Sendable, Equatable, Codable {
         return now.timeIntervalSince(lastPlayedAt) <= nextUpCutoff
     }
 
-    /// Applies an opt-in restriction before merging accounts. With the default
-    /// policy this preserves the entire feed, including old next-up episodes.
+    /// Applies progress eligibility and the optional age restriction, including
+    /// when the row has no presentation limit.
     public func curated(_ items: [MediaItem], now: Date = Date()) -> [MediaItem] {
-        guard nextUpCutoff != nil else { return items }
         return items.filter { keeps($0, now: now) }
     }
 }

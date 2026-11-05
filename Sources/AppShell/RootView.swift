@@ -985,6 +985,12 @@ public struct RootView: View {
         .onChange(of: appState.crashReportingModel.isEnabled) { _, _ in
             reconcileCrashReporting()
         }
+        .onChange(of: appState.isActiveProfileAuthorized) { _, authorized in
+            if authorized { appState.retryWatchOutboxIfAllowed() }
+        }
+        .onChange(of: appState.profilesModel.activeProfileID) { _, _ in
+            appState.retryWatchOutboxIfAllowed()
+        }
         .onReceive(NotificationCenter.default.publisher(for: MainThreadStallProbe.contextDidChange)) { _ in
             crashReporting.setScreen(CrashReportScreen(context: MainThreadStallProbe.context))
         }
@@ -1038,6 +1044,7 @@ public struct RootView: View {
                     #endif
                 },
                 onBackgroundWorkAllowed: { allowed in
+                    appState.setWatchRetryActive(allowed)
                     appState.mediaShare.setBackgroundWorkAllowed(allowed)
                 },
                 onBecameActive: {

@@ -24,6 +24,7 @@ require "shellwords"
 require "securerandom"
 require File.expand_path("../tools/lib/apple_build_lease", __dir__)
 require_relative "testflight_pipeline"
+require_relative "screenshot_queue"
 
 APP_IDENTIFIER = "com.thatcube.Plozz"
 APP_NAME       = "Plozz"
@@ -342,6 +343,27 @@ def create_app_store_version(app_id:, platform:, version:)
       relationships: { app: { data: { type: "apps", id: app_id } } }
     }
   )
+end
+
+def apply_queued_store_screenshots
+  %w[pending-store-screenshots.json pending-duo-screenshots.json].each do |manifest|
+    queue = PlozzScreenshotQueue::Queue.new(
+      client: PlozzScreenshotQueue::Client.new(Spaceship::ConnectAPI.tunes_request_client),
+      manifest_path: File.join(__dir__, manifest),
+      state_directory: File.join(ENV.fetch("XDG_STATE_HOME", File.join(Dir.home, ".local", "state")),
+                                 "plozz", "app-store-screenshots")
+    )
+    UI.success(queue.apply(marketing_version))
+  end
+rescue PlozzScreenshotQueue::Failure => error
+  UI.user_error!("App Store screenshot queue: #{error.message}. Uploaded binaries are retained; do not reupload them.")
+end
+
+desc "Apply queued screenshots to the selected editable App Store version without uploading binaries"
+lane :apply_queued_screenshots do
+  asc_api_key
+  release_notes_entry
+  apply_queued_store_screenshots
 end
 
 # The committed catalog is the sole release-note source for the app, TestFlight,
@@ -707,6 +729,8 @@ lane :release do
       force: true
     )
   end
+
+  apply_queued_store_screenshots
 
   # Tag the shipped commit and open a full GitHub release (marked "Latest") with the
   # changelog and any notes — this is a production App Store ship, not a beta.

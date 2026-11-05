@@ -250,9 +250,7 @@ let package = Package(
         .package(
             url: "https://github.com/brandomoore/AetherEngine",
             revision: "7cd91ee1a55401d59ca385e247a5c6308b7d27ea",
-            traits: [
-                "DolbyVisionStillReshaping",
-            ]
+            traits: []
         ),
         // NOTE: FFmpegBuild (FFmpeg n8.1.x media libraries) and LibDovi (Dolby Vision
         // RPU parser) are transitive dependencies — AetherEngine declares and

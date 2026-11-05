@@ -92,11 +92,34 @@ one fresh sections response instead of caching content across watch changes.
 Single-row requests use `/home/sections/{id}/items` with the same older-server
 fallback. Servers lacking both Home endpoints retain ordinary provider defaults.
 
+Silo can retain seasonal or hide-watched rows in the layout while omitting them
+from the bulk content response. Missing batch rows are checked once through
+their individual items endpoint: a valid empty response is empty content, not
+`notFound`. Actual endpoint errors, mismatched row IDs, and missing item arrays
+remain failures; the batch is not fetched again. This omission behavior is
+documented in the [upstream Home handlers](https://github.com/Silo-Server/silo-server/blob/6d1562473336738009a91475ed3f33143670c249/internal/api/handlers/home_views_service.go).
+
 Only video cards are displayed. Disabled Plozz libraries require exact membership
 in an enabled library; title matches alone never establish membership. Continue
 Watching and Next Up resolve the server-selected playable episode and retain
 resume state and verified parent artwork. Shared Home composition still owns
 multi-server merging and explicit Plozz profile customizations.
+
+Within one batch refresh, enabled-library discovery, exact membership results
+(including exclusions), and playable-item details are reused across rows. They
+are discarded at the end of the refresh, never cached across logins or watch
+changes. Membership pagination stops once the exact content ID is found, not
+merely a matching title. A rate limit stops unfinished rows promptly while
+retaining rows that already succeeded.
+
+HTTP 429 establishes a browsing cooldown on the current provider client:
+`Retry-After` seconds or HTTP dates are converted to a monotonic deadline;
+missing or malformed delays use 60 seconds. Further browsing calls fail with
+the remaining delay instead of queueing, sleeping, or replaying requests.
+In-flight responses cannot shorten an established cooldown. Playback API
+requests remain separate so a browsing quota cannot suppress progress or stop
+cleanup; they still propagate their own server refusals. Other provider clients
+and logins are independent.
 
 Missing catalog items referenced by progress or playable Home/Next Up cards are
 skipped with a secret-safe diagnostic; a stale entry cannot fail the entire row.
@@ -110,6 +133,13 @@ cursor page size. Each library is considered before the final newest-first merge
 The [native progress contract](https://github.com/Silo-Server/silo-server/blob/3bc9e58c51970f261d41848ff411713894d53243/internal/apiv2/progress.go)
 orders entries by newest update first; bounded detail loading relies on that
 order. This reduces unnecessary traffic but does not bypass server rate limits.
+
+Background identity enrichment preserves rate limits and authorization failures.
+It stops admitting item requests after either refusal, cancels remaining
+in-flight enrichment, and stops the account scan before another page or library.
+Partial scans remain incomplete and are not persisted as a complete index.
+Ordinary item-level failures remain inconclusive without hiding unrelated
+successful identities. Later refreshes can retry after the provider cooldown.
 
 These Home and device-login contracts were checked at upstream revision
 `6144c45cd65ae0f49f9f3397bbc20f7e4d60a20e`.

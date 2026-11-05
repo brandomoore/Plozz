@@ -2,6 +2,7 @@
   "sourceLanguage" : "en",
   "strings" : {
     " Reduced qualities are transcoded by your media server." : {
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -100878,6 +100879,1550 @@
                 "stringUnit" : {
                   "state" : "needs_review",
                   "value" : "已略過 %lld 個不支援或重複的項目。"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld versions" : {
+      "localizations" : {
+        "ar" : {
+          "variations" : {
+            "plural" : {
+              "few" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld إصدارات"
+                }
+              },
+              "many" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld إصدارًا"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "إصدار واحد (%lld)"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld إصدار"
+                }
+              },
+              "two" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "إصداران (%lld)"
+                }
+              },
+              "zero" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld إصدار"
+                }
+              }
+            }
+          }
+        },
+        "bg" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld версия"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld версии"
+                }
+              }
+            }
+          }
+        },
+        "ca" : {
+          "variations" : {
+            "plural" : {
+              "many" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld versions"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld versió"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld versions"
+                }
+              }
+            }
+          }
+        },
+        "cs" : {
+          "variations" : {
+            "plural" : {
+              "few" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld verze"
+                }
+              },
+              "many" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld verze"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld verze"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld verzí"
+                }
+              }
+            }
+          }
+        },
+        "da" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld version"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld versioner"
+                }
+              }
+            }
+          }
+        },
+        "de" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld Version"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld Versionen"
+                }
+              }
+            }
+          }
+        },
+        "el" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld έκδοση"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld εκδόσεις"
+                }
+              }
+            }
+          }
+        },
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld version"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld versions"
+                }
+              }
+            }
+          }
+        },
+        "es" : {
+          "variations" : {
+            "plural" : {
+              "many" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld versiones"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld versión"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld versiones"
+                }
+              }
+            }
+          }
+        },
+        "fa" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld نسخه"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld نسخه"
+                }
+              }
+            }
+          }
+        },
+        "fi" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld versio"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld versiota"
+                }
+              }
+            }
+          }
+        },
+        "fr" : {
+          "variations" : {
+            "plural" : {
+              "many" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld versions"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld version"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld versions"
+                }
+              }
+            }
+          }
+        },
+        "he" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "גרסאות: %lld"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "גרסאות: %lld"
+                }
+              },
+              "two" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "גרסאות: %lld"
+                }
+              }
+            }
+          }
+        },
+        "hi" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld वर्शन"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld वर्शन"
+                }
+              }
+            }
+          }
+        },
+        "hr" : {
+          "variations" : {
+            "plural" : {
+              "few" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld verzije"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld verzija"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld verzija"
+                }
+              }
+            }
+          }
+        },
+        "hu" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld verzió"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld verzió"
+                }
+              }
+            }
+          }
+        },
+        "id" : {
+          "variations" : {
+            "plural" : {
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld versi"
+                }
+              }
+            }
+          }
+        },
+        "it" : {
+          "variations" : {
+            "plural" : {
+              "many" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld versioni"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld versione"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld versioni"
+                }
+              }
+            }
+          }
+        },
+        "ja" : {
+          "variations" : {
+            "plural" : {
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld個のバージョン"
+                }
+              }
+            }
+          }
+        },
+        "ko" : {
+          "variations" : {
+            "plural" : {
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "버전 %lld개"
+                }
+              }
+            }
+          }
+        },
+        "ms" : {
+          "variations" : {
+            "plural" : {
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld versi"
+                }
+              }
+            }
+          }
+        },
+        "nb" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld versjon"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld versjoner"
+                }
+              }
+            }
+          }
+        },
+        "nl" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld versie"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld versies"
+                }
+              }
+            }
+          }
+        },
+        "pl" : {
+          "variations" : {
+            "plural" : {
+              "few" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld wersje"
+                }
+              },
+              "many" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld wersji"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld wersja"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld wersji"
+                }
+              }
+            }
+          }
+        },
+        "pt-BR" : {
+          "variations" : {
+            "plural" : {
+              "many" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld versões"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld versão"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld versões"
+                }
+              }
+            }
+          }
+        },
+        "ro" : {
+          "variations" : {
+            "plural" : {
+              "few" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld versiuni"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld versiune"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld de versiuni"
+                }
+              }
+            }
+          }
+        },
+        "ru" : {
+          "variations" : {
+            "plural" : {
+              "few" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld версии"
+                }
+              },
+              "many" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld версий"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld версия"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld версии"
+                }
+              }
+            }
+          }
+        },
+        "sk" : {
+          "variations" : {
+            "plural" : {
+              "few" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld verzie"
+                }
+              },
+              "many" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld verzie"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld verzia"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld verzií"
+                }
+              }
+            }
+          }
+        },
+        "sl" : {
+          "variations" : {
+            "plural" : {
+              "few" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld različice"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld različica"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld različic"
+                }
+              },
+              "two" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld različici"
+                }
+              }
+            }
+          }
+        },
+        "sr-Latn" : {
+          "variations" : {
+            "plural" : {
+              "few" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld verzije"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld verzija"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld verzija"
+                }
+              }
+            }
+          }
+        },
+        "sv" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld version"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld versioner"
+                }
+              }
+            }
+          }
+        },
+        "th" : {
+          "variations" : {
+            "plural" : {
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld เวอร์ชัน"
+                }
+              }
+            }
+          }
+        },
+        "tr" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld sürüm"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld sürüm"
+                }
+              }
+            }
+          }
+        },
+        "uk" : {
+          "variations" : {
+            "plural" : {
+              "few" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld версії"
+                }
+              },
+              "many" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld версій"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld версія"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld версії"
+                }
+              }
+            }
+          }
+        },
+        "vi" : {
+          "variations" : {
+            "plural" : {
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld phiên bản"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans" : {
+          "variations" : {
+            "plural" : {
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld 个版本"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hant" : {
+          "variations" : {
+            "plural" : {
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld 個版本"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld versions selected" : {
+      "localizations" : {
+        "ar" : {
+          "variations" : {
+            "plural" : {
+              "few" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld إصدارات محددة"
+                }
+              },
+              "many" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld إصدارًا محددًا"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "إصدار واحد محدد (%lld)"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld إصدار محدد"
+                }
+              },
+              "two" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "إصداران محددان (%lld)"
+                }
+              },
+              "zero" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld إصدار محدد"
+                }
+              }
+            }
+          }
+        },
+        "bg" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld избрана версия"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld избрани версии"
+                }
+              }
+            }
+          }
+        },
+        "ca" : {
+          "variations" : {
+            "plural" : {
+              "many" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld versions seleccionades"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld versió seleccionada"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld versions seleccionades"
+                }
+              }
+            }
+          }
+        },
+        "cs" : {
+          "variations" : {
+            "plural" : {
+              "few" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld vybrané verze"
+                }
+              },
+              "many" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld vybrané verze"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld vybraná verze"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld vybraných verzí"
+                }
+              }
+            }
+          }
+        },
+        "da" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld version valgt"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld versioner valgt"
+                }
+              }
+            }
+          }
+        },
+        "de" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld Version ausgewählt"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld Versionen ausgewählt"
+                }
+              }
+            }
+          }
+        },
+        "el" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld επιλεγμένη έκδοση"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld επιλεγμένες εκδόσεις"
+                }
+              }
+            }
+          }
+        },
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld version selected"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld versions selected"
+                }
+              }
+            }
+          }
+        },
+        "es" : {
+          "variations" : {
+            "plural" : {
+              "many" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld versiones seleccionadas"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld versión seleccionada"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld versiones seleccionadas"
+                }
+              }
+            }
+          }
+        },
+        "fa" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld نسخهٔ انتخاب‌شده"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld نسخهٔ انتخاب‌شده"
+                }
+              }
+            }
+          }
+        },
+        "fi" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld versio valittu"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld versiota valittu"
+                }
+              }
+            }
+          }
+        },
+        "fr" : {
+          "variations" : {
+            "plural" : {
+              "many" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld versions sélectionnées"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld version sélectionnée"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld versions sélectionnées"
+                }
+              }
+            }
+          }
+        },
+        "he" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "גרסאות שנבחרו: %lld"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "גרסאות שנבחרו: %lld"
+                }
+              },
+              "two" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "גרסאות שנבחרו: %lld"
+                }
+              }
+            }
+          }
+        },
+        "hi" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld वर्शन चुना गया"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld वर्शन चुने गए"
+                }
+              }
+            }
+          }
+        },
+        "hr" : {
+          "variations" : {
+            "plural" : {
+              "few" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "Odabrane %lld verzije"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "Odabrana %lld verzija"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "Odabrano %lld verzija"
+                }
+              }
+            }
+          }
+        },
+        "hu" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld verzió kiválasztva"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld verzió kiválasztva"
+                }
+              }
+            }
+          }
+        },
+        "id" : {
+          "variations" : {
+            "plural" : {
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld versi dipilih"
+                }
+              }
+            }
+          }
+        },
+        "it" : {
+          "variations" : {
+            "plural" : {
+              "many" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld versioni selezionate"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld versione selezionata"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld versioni selezionate"
+                }
+              }
+            }
+          }
+        },
+        "ja" : {
+          "variations" : {
+            "plural" : {
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld個のバージョンを選択中"
+                }
+              }
+            }
+          }
+        },
+        "ko" : {
+          "variations" : {
+            "plural" : {
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "버전 %lld개 선택됨"
+                }
+              }
+            }
+          }
+        },
+        "ms" : {
+          "variations" : {
+            "plural" : {
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld versi dipilih"
+                }
+              }
+            }
+          }
+        },
+        "nb" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld versjon valgt"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld versjoner valgt"
+                }
+              }
+            }
+          }
+        },
+        "nl" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld versie geselecteerd"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld versies geselecteerd"
+                }
+              }
+            }
+          }
+        },
+        "pl" : {
+          "variations" : {
+            "plural" : {
+              "few" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "Wybrano %lld wersje"
+                }
+              },
+              "many" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "Wybrano %lld wersji"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "Wybrano %lld wersję"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "Wybrano %lld wersji"
+                }
+              }
+            }
+          }
+        },
+        "pt-BR" : {
+          "variations" : {
+            "plural" : {
+              "many" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld versões selecionadas"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld versão selecionada"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld versões selecionadas"
+                }
+              }
+            }
+          }
+        },
+        "ro" : {
+          "variations" : {
+            "plural" : {
+              "few" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld versiuni selectate"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld versiune selectată"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld de versiuni selectate"
+                }
+              }
+            }
+          }
+        },
+        "ru" : {
+          "variations" : {
+            "plural" : {
+              "few" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "Выбраны %lld версии"
+                }
+              },
+              "many" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "Выбрано %lld версий"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "Выбрана %lld версия"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "Выбрано %lld версии"
+                }
+              }
+            }
+          }
+        },
+        "sk" : {
+          "variations" : {
+            "plural" : {
+              "few" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld vybrané verzie"
+                }
+              },
+              "many" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld vybranej verzie"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld vybraná verzia"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld vybraných verzií"
+                }
+              }
+            }
+          }
+        },
+        "sl" : {
+          "variations" : {
+            "plural" : {
+              "few" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld izbrane različice"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld izbrana različica"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld izbranih različic"
+                }
+              },
+              "two" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld izbrani različici"
+                }
+              }
+            }
+          }
+        },
+        "sr-Latn" : {
+          "variations" : {
+            "plural" : {
+              "few" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld izabrane verzije"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld izabrana verzija"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld izabranih verzija"
+                }
+              }
+            }
+          }
+        },
+        "sv" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld vald version"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld valda versioner"
+                }
+              }
+            }
+          }
+        },
+        "th" : {
+          "variations" : {
+            "plural" : {
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "เลือกแล้ว %lld เวอร์ชัน"
+                }
+              }
+            }
+          }
+        },
+        "tr" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld sürüm seçildi"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld sürüm seçildi"
+                }
+              }
+            }
+          }
+        },
+        "uk" : {
+          "variations" : {
+            "plural" : {
+              "few" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "Вибрано %lld версії"
+                }
+              },
+              "many" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "Вибрано %lld версій"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "Вибрано %lld версію"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "Вибрано %lld версії"
+                }
+              }
+            }
+          }
+        },
+        "vi" : {
+          "variations" : {
+            "plural" : {
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "Đã chọn %lld phiên bản"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans" : {
+          "variations" : {
+            "plural" : {
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "已选择 %lld 个版本"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hant" : {
+          "variations" : {
+            "plural" : {
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "已選取 %lld 個版本"
                 }
               }
             }
@@ -216686,6 +218231,226 @@
         }
       }
     },
+    "Choose Versions" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "اختيار الإصدارات"
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Избор на версии"
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Tria les versions"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Vybrat verze"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Vælg versioner"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Versionen auswählen"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Επιλέξτε εκδόσεις"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Elige versiones"
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "انتخاب نسخه‌ها"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Valitse versiot"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Choisir les versions"
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "בחירת גרסאות"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "वर्शन चुनें"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Odaberi verzije"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Verziók kiválasztása"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Pilih Versi"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Scegli versioni"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "バージョンを選択"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "버전 선택"
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Pilih Versi"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Velg versjoner"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Versies kiezen"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Wybierz wersje"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Escolher versões"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Alege versiunile"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Выбрать версии"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Vybrať verzie"
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Izberi različice"
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Izaberi verzije"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Välj versioner"
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "เลือกเวอร์ชัน"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Sürümleri seç"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Вибрати версії"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Chọn phiên bản"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "选择版本"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "選擇版本"
+          }
+        }
+      }
+    },
     "Choose Your Libraries" : {
       "localizations" : {
         "ar" : {
@@ -281147,7 +282912,6 @@
     },
     "Customize Home" : {
       "comment" : "Settings row and page title for controls that customize Home screen sections, hero behavior, and library visibility.",
-      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -309392,6 +311156,7 @@
     },
     "Download %@?" : {
       "comment" : "Title of the confirmation dialog before downloading an entire season from an iOS series detail page. %@ is the season title.",
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -314109,6 +315874,7 @@
       }
     },
     "Download all of %@?" : {
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -316754,6 +318520,7 @@
       }
     },
     "Download?" : {
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -325136,6 +326903,226 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "每個個人檔案都保有自己的設定——主題、播放、字幕、劇透、追蹤器與首頁版面。只有伺服器會共用。開啟個人檔案即可將其鎖定或設為兒童檔案。"
+          }
+        }
+      }
+    },
+    "Each selected version downloads a separate file." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "يُنزَّل كل إصدار محدد كملف منفصل."
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Всяка избрана версия се изтегля като отделен файл."
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Cada versió seleccionada es baixa com un fitxer separat."
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Každá vybraná verze se stáhne jako samostatný soubor."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Hver valgt version downloades som en separat fil."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Jede ausgewählte Version wird als separate Datei heruntergeladen."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Για κάθε επιλεγμένη έκδοση γίνεται λήψη ξεχωριστού αρχείου."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Cada versión seleccionada se descarga en un archivo independiente."
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "هر نسخهٔ انتخاب‌شده در فایلی جداگانه دانلود می‌شود."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Jokainen valittu versio ladataan erillisenä tiedostona."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Chaque version sélectionnée est téléchargée dans un fichier distinct."
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "כל גרסה שנבחרה תורד כקובץ נפרד."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "हर चुना गया वर्शन अलग फ़ाइल के रूप में डाउनलोड होगा।"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Svaka odabrana verzija preuzima se kao zasebna datoteka."
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Minden kiválasztott verzió külön fájlként töltődik le."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Setiap versi yang dipilih diunduh sebagai file terpisah."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ogni versione selezionata viene scaricata come file separato."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "選択した各バージョンは別々のファイルとしてダウンロードされます。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "선택한 버전마다 별도의 파일이 다운로드됩니다."
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Setiap versi yang dipilih dimuat turun sebagai fail berasingan."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Hver valgt versjon lastes ned som en egen fil."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Elke geselecteerde versie wordt als apart bestand gedownload."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Każda wybrana wersja zostanie pobrana jako osobny plik."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Cada versão selecionada será baixada como um arquivo separado."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Fiecare versiune selectată se descarcă într-un fișier separat."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Каждая выбранная версия скачивается отдельным файлом."
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Každá vybraná verzia sa stiahne ako samostatný súbor."
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Vsaka izbrana različica se prenese kot ločena datoteka."
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Svaka izabrana verzija preuzima se kao zasebna datoteka."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Varje vald version laddas ner som en separat fil."
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "แต่ละเวอร์ชันที่เลือกจะดาวน์โหลดเป็นไฟล์แยกกัน"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Seçilen her sürüm ayrı bir dosya olarak indirilir."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Кожна вибрана версія завантажується окремим файлом."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Mỗi phiên bản đã chọn được tải xuống thành một tệp riêng."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "每个所选版本都会下载为单独的文件。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "每個所選版本都會下載為獨立檔案。"
           }
         }
       }
@@ -538504,6 +540491,226 @@
         }
       }
     },
+    "Not selected" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "غير محدد"
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Не е избрано"
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "No seleccionat"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nevybráno"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ikke valgt"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nicht ausgewählt"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Μη επιλεγμένο"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "No seleccionado"
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "انتخاب‌نشده"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ei valittu"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Non sélectionné"
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "לא נבחר"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "नहीं चुना गया"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nije odabrano"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nincs kiválasztva"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Tidak dipilih"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Non selezionato"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "未選択"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "선택 안 됨"
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Tidak dipilih"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ikke valgt"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Niet geselecteerd"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nie wybrano"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Sem seleção"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Neselectat"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Не выбрано"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nevybrané"
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ni izbrano"
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nije izabrano"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Inte vald"
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ยังไม่ได้เลือก"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Seçili değil"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Не вибрано"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Chưa chọn"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "未选择"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "未選取"
+          }
+        }
+      }
+    },
     "Not watched" : {
       "comment" : "Accessibility value for the watched or unwatched hero toggle on tvOS when the selected item is currently unplayed.",
       "localizations" : {
@@ -554627,6 +556834,226 @@
         }
       }
     },
+    "Open an episode to change its selected versions." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "افتح حلقة لتغيير الإصدارات المحددة لها."
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Отворете епизод, за да промените избраните му версии."
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Obre un episodi per canviar-ne les versions seleccionades."
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Otevřete díl a změňte výběr verzí."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Åbn en episode for at ændre de valgte versioner."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Öffne eine Folge, um die ausgewählten Versionen zu ändern."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ανοίξτε ένα επεισόδιο για να αλλάξετε τις επιλεγμένες εκδόσεις του."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Abre un episodio para cambiar sus versiones seleccionadas."
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "برای تغییر نسخه‌های انتخاب‌شدهٔ یک قسمت، آن را باز کنید."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Avaa jakso muuttaaksesi sen versiovalintoja."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ouvrez un épisode pour modifier les versions sélectionnées."
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "יש לפתוח פרק כדי לשנות את הגרסאות שנבחרו עבורו."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "चुने गए वर्शन बदलने के लिए एपिसोड खोलें।"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Otvorite epizodu za promjenu odabranih verzija."
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "A kiválasztott verziók módosításához nyiss meg egy epizódot."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Buka episode untuk mengubah versi yang dipilih."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Apri un episodio per cambiare le versioni selezionate."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "選択済みのバージョンを変更するには、エピソードを開いてください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "에피소드를 열어 선택한 버전을 변경하세요."
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Buka episod untuk menukar versi yang dipilih."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Åpne en episode for å endre hvilke versjoner som er valgt."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Open een aflevering om de geselecteerde versies te wijzigen."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Otwórz odcinek, aby zmienić wybrane wersje."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Abra um episódio para alterar as versões selecionadas."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Deschide un episod pentru a schimba versiunile selectate."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Откройте эпизод, чтобы изменить выбранные версии."
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Otvorte diel a zmeňte vybrané verzie."
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Odprite epizodo, da spremenite izbrane različice."
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Otvorite epizodu da promenite izabrane verzije."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Öppna ett avsnitt för att ändra de valda versionerna."
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "เปิดหน้าตอนเพื่อเปลี่ยนเวอร์ชันที่เลือก"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Seçili sürümleri değiştirmek için bölüm sayfasını açın."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Відкрийте сторінку епізоду, щоб змінити вибрані версії."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Mở trang tập phim để đổi các phiên bản đã chọn."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "打开单集页面以更改所选版本。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "開啟單集頁面以變更所選版本。"
+          }
+        }
+      }
+    },
     "Open detail page" : {
       "localizations" : {
         "ar" : {
@@ -561464,6 +563891,7 @@
       }
     },
     "Original • Episodes: %@" : {
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -662760,6 +665188,226 @@
         }
       }
     },
+    "Remove this download from this device?" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "إزالة هذا التنزيل من هذا الجهاز؟"
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Да се премахне ли изтеглянето от това устройство?"
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Vols eliminar aquesta baixada d'aquest dispositiu?"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Smazat toto stažení z tohoto zařízení?"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Vil du fjerne denne download fra denne enhed?"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Diesen Download von diesem Gerät entfernen?"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Να αφαιρεθεί αυτή η λήψη από αυτή τη συσκευή;"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "¿Eliminar esta descarga de este dispositivo?"
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "این دانلود از این دستگاه حذف شود؟"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Poistetaanko tämä lataus tältä laitteelta?"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Supprimer ce téléchargement de cet appareil ?"
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "להסיר את ההורדה הזו מהמכשיר הזה?"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "यह डाउनलोड इस डिवाइस से हटाएं?"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Izbrisati ovo preuzimanje s ovog uređaja?"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Eltávolítod ezt a letöltést erről az eszközről?"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Hapus unduhan ini dari perangkat ini?"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Rimuovere questo download da questo dispositivo?"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "このダウンロードをこのデバイスから削除しますか？"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "이 기기에서 이 다운로드를 삭제할까요?"
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Alih keluar muat turun ini daripada peranti ini?"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Fjerne denne nedlastingen fra denne enheten?"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Deze download van dit apparaat verwijderen?"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Usunąć ten pobrany plik z tego urządzenia?"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Remover este download deste dispositivo?"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Elimini această descărcare de pe acest dispozitiv?"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Удалить эту загрузку с этого устройства?"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Vymazať túto stiahnutú položku z tohto zariadenia?"
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Želite izbrisati ta prenos iz te naprave?"
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ukloniti ovo preuzimanje sa ovog uređaja?"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Vill du ta bort den här nedladdningen från den här enheten?"
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ลบรายการดาวน์โหลดนี้ออกจากอุปกรณ์นี้หรือไม่?"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Bu indirme bu cihazdan kaldırılsın mı?"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Видалити це завантаження з цього пристрою?"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Xóa bản tải xuống này khỏi thiết bị này?"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "要从此设备删除此下载内容吗？"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "要從此裝置移除此下載項目嗎？"
+          }
+        }
+      }
+    },
     "Remove this source?" : {
       "localizations" : {
         "ar" : {
@@ -759357,6 +762005,226 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "顯示每個媒體庫自己的橫列"
+          }
+        }
+      }
+    },
+    "Show empty message" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "إظهار رسالة عدم وجود محتوى"
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Покажи съобщението за празен ред"
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Mostra el missatge de fila buida"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zobrazit zprávu o prázdném řádku"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Vis besked om tom række"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Hinweis bei leerer Reihe anzeigen"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Εμφάνιση μηνύματος όταν δεν υπάρχουν τίτλοι"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Mostrar mensaje si no hay títulos"
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "نمایش پیام وقتی عنوانی نیست"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Näytä tyhjän rivin viesti"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Afficher le message d’absence de titres"
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "הצגת הודעה כשאין כותרים"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "खाली पंक्ति का संदेश दिखाएँ"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Prikaži poruku za prazan redak"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Üres sor üzenetének megjelenítése"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Tampilkan pesan saat baris kosong"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Mostra messaggio per la riga vuota"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "作品がない場合のメッセージを表示"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "빈 목록 안내 표시"
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Tunjukkan mesej tiada kandungan"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Vis melding om tom rad"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Melding bij lege rij tonen"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Pokaż komunikat o braku treści"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Mostrar aviso de lista vazia"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Arată mesajul pentru rândul gol"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Показать сообщение об отсутствии контента"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zobraziť oznam o prázdnom riadku"
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Prikaži obvestilo o prazni vrstici"
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Prikaži poruku za prazan red"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Visa meddelande för tom rad"
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "แสดงข้อความเมื่อไม่มีเนื้อหา"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "“İçerik yok” mesajını göster"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Показати повідомлення «Немає вмісту»"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Hiện thông báo khi không có nội dung"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "显示无内容提示"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "顯示無內容提示"
           }
         }
       }
@@ -895189,6 +898057,7 @@
     },
     "This downloads all %lld episodes at original quality and can use significant storage and data. You can remove them anytime from Downloads." : {
       "comment" : "Confirmation message when downloading an entire season on iPhone or iPad. %lld is the number of episodes that will be downloaded.",
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "variations" : {
@@ -895938,6 +898807,7 @@
     },
     "This downloads all %lld episodes at original quality and can use significant storage and data. You can remove them anytime from Downloads.\n\n%@ free on this device." : {
       "comment" : "Confirmation message when downloading an entire season on iPhone or iPad and free space is known. %1$lld is the number of episodes, %2$@ is the free space remaining on the device.",
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -967025,6 +969895,226 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "版本 %1$@，組建 %2$@"
+          }
+        }
+      }
+    },
+    "Version %lld" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "الإصدار %lld"
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Версия %lld"
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Versió %lld"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Verze %lld"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Version %lld"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Version %lld"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Έκδοση %lld"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Versión %lld"
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "نسخهٔ %lld"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Versio %lld"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Version %lld"
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "גרסה %lld"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "वर्शन %lld"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Verzija %lld"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%lld. verzió"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Versi %lld"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Versione %lld"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "バージョン%lld"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "버전 %lld"
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Versi %lld"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Versjon %lld"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Versie %lld"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Wersja %lld"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Versão %lld"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Versiunea %lld"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Версия %lld"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Verzia %lld"
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Različica %lld"
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Verzija %lld"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Version %lld"
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "เวอร์ชัน %lld"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Sürüm %lld"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Версія %lld"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Phiên bản %lld"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "版本 %lld"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "版本 %lld"
           }
         }
       }
@@ -1078085,12 +1081175,6 @@
       "comment" : "Playback orientation preference. Follow device rotation and the system rotation lock.",
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Follow device orientation"
-          }
-        },
         "ar" : {
           "stringUnit" : {
             "state" : "needs_review",
@@ -1078131,6 +1081215,12 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "Ακολούθηση προσανατολισμού συσκευής"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Follow device orientation"
           }
         },
         "es" : {
@@ -1078541,12 +1081631,6 @@
       "comment" : "Playback orientation preference. Stay sideways and automatically follow the landscape direction, even with system rotation lock enabled.",
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Landscape auto"
-          }
-        },
         "ar" : {
           "stringUnit" : {
             "state" : "needs_review",
@@ -1078587,6 +1081671,12 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "Οριζόντια (αυτόματα)"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Landscape auto"
           }
         },
         "es" : {
@@ -1078769,12 +1081859,6 @@
       "comment" : "Playback orientation preference. Lock the player to the landscape orientation with the top of the phone on the left.",
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Landscape left"
-          }
-        },
         "ar" : {
           "stringUnit" : {
             "state" : "needs_review",
@@ -1078815,6 +1081899,12 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "Οριζόντια, κορυφή αριστερά"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Landscape left"
           }
         },
         "es" : {
@@ -1078997,12 +1082087,6 @@
       "comment" : "Playback orientation preference. Lock the player to the landscape orientation with the top of the phone on the right.",
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Landscape right"
-          }
-        },
         "ar" : {
           "stringUnit" : {
             "state" : "needs_review",
@@ -1079043,6 +1082127,12 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "Οριζόντια, κορυφή δεξιά"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Landscape right"
           }
         },
         "es" : {

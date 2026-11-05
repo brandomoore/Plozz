@@ -50,7 +50,8 @@ public struct HomePresentationRow: Identifiable, Equatable, Sendable {
     public static func resolve(
         rows: [HomeRow], content: HomeViewModel.Content, visibility: HomeLibraryVisibility,
         liveTV: HomeLiveTVSnapshot = .empty,
-        presentation: LibraryPresentationSettings = .default
+        presentation: LibraryPresentationSettings = .default,
+        showsEmptySectionMessages: Bool = true
     ) -> [Self] {
         let shared = HomeRowChoice.shared
         func entry(_ row: HomeRow) -> Self? {
@@ -173,7 +174,7 @@ public struct HomePresentationRow: Identifiable, Equatable, Sendable {
             if let existing = available.first(where: { $0.id == issue.id }) {
                 switch existing.source {
                 case let .home(row):
-                    if !row.items.isEmpty || !row.libraries.isEmpty { continue }
+                    if !row.items.isEmpty || !row.libraries.isEmpty || row.loadingPlaceholderCount > 0 { continue }
                 case let .library(row):
                     if !row.section.items.isEmpty || row.isLoading { continue }
                     browseItem = row.browseItem
@@ -181,6 +182,10 @@ public struct HomePresentationRow: Identifiable, Equatable, Sendable {
                 }
             }
             available.removeAll { $0.id == issue.id }
+            if issue.reason == .empty,
+               !showsEmptySectionMessages || visibility.dismissedEmptyHomeRows.contains(issue.id) {
+                continue
+            }
             available.append(Self(choice: issue.choice, source: .library(.init(
                 section: LibrarySection(
                     id: issue.id.presentationID, title: issue.choice.title,

@@ -1,9 +1,40 @@
 import XCTest
 @testable import CoreModels
 
-/// Home keeps all provider titles by default. Restrictions remain opt-in for
-/// callers that explicitly request them.
+/// Progress eligibility is independent of optional recency restrictions.
 final class ContinueWatchingPolicyTests: XCTestCase {
+    func testAdaptiveProgressAdmissionAtExactBoundaries() {
+        let cases: [(TimeInterval?, TimeInterval)] = [
+            (10, 5), (60, 5), (240, 12), (600, 30), (1_200, 60), (7_200, 60),
+            (nil, 60), (0, 60), (-1, 60), (.infinity, 60), (.nan, 60)
+        ]
+        for (duration, threshold) in cases {
+            var video = MediaItem(id: "video", title: "Video", kind: .video, runtime: duration)
+            XCTAssertEqual(ContinueWatchingPolicy.minimumResumePosition(duration: duration), threshold)
+            video.resumePosition = threshold - 0.001
+            XCTAssertFalse(ContinueWatchingPolicy.default.keeps(video))
+            video.resumePosition = threshold
+            XCTAssertTrue(ContinueWatchingPolicy.default.keeps(video))
+            video.resumePosition = threshold + 0.001
+            XCTAssertTrue(ContinueWatchingPolicy.default.keeps(video))
+        }
+    }
+
+    func testTrailersStayOutRegardlessOfPositionAndNextUpRemains() {
+        for position in [0.0, 30, 120] {
+            let trailer = MediaItem(
+                id: "trailer", title: "Trailer", kind: .video, isTrailer: true,
+                runtime: 120, resumePosition: position
+            )
+            XCTAssertFalse(ContinueWatchingPolicy.default.keeps(trailer))
+        }
+        XCTAssertFalse(ContinueWatchingPolicy.default.keeps(
+            .youTubeTrailer(videoID: "abcdefghijk", title: "Trailer")
+        ))
+        XCTAssertTrue(ContinueWatchingPolicy.default.keeps(
+            MediaItem(id: "next", title: "Next episode", kind: .episode, resumePosition: 0)
+        ))
+    }
 
     private let now = Date(timeIntervalSince1970: 1_800_000_000)
 

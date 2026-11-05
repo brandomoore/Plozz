@@ -1338,6 +1338,7 @@ final class WebDAVMediaTransportTests: XCTestCase {
         )
         let lease = try await session.fileSystem.openSource(for: strongETagLocator(size: 300000, revision: revision))
         XCTAssertFalse(lease.supportsPersistentByteReuse)
+        XCTAssertTrue(lease.supportsWholeFileRead)
         let cursor = try XCTUnwrap(lease.makeCursor())
         let opening = try await cursor.read(at: 0, length: 16)
         XCTAssertEqual(opening, prefix.prefix(16))
@@ -1385,6 +1386,21 @@ final class WebDAVMediaTransportTests: XCTestCase {
         } catch let error as MediaTransportError {
             guard case .permissionDenied = error else { return XCTFail("unexpected \(error)") }
         }
+        let complete = LockedValue(Data())
+        StubURLProtocol.queue(
+            StubResponse(statusCode: 200, headers: ["Content-Length": "300000"],
+                         body: Data(repeating: 9, count: 300000), onRequest: {
+                XCTAssertNil($0.value(forHTTPHeaderField: "Range"))
+                XCTAssertNil($0.value(forHTTPHeaderField: "Authorization"))
+            }), for: cdn
+        )
+        try await cursor.readWholeFile { data in
+            var bytes = complete.get()
+            bytes.append(data)
+            complete.set(bytes)
+        }
+        XCTAssertEqual(complete.get(), Data(repeating: 9, count: 300000),
+                       "Whole response must not include the earlier playback prefix")
         XCTAssertEqual(StubURLProtocol.requests(for: url).map(\.httpMethod), ["PROPFIND", "GET"])
         cursor.close()
         await lease.waitForFinalShutdown()

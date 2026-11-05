@@ -663,6 +663,75 @@ final class IdentityIndexTests: XCTestCase {
         XCTAssertFalse(result.inconclusive)
     }
 
+    func testEnrichmentStopsQueuedWorkOnProviderRefusalAndKeepsCompletedItems() async {
+        actor Calls {
+            var ids: [String] = []
+            func record(_ id: String) { ids.append(id) }
+        }
+        for failure in [AppError.rateLimited(retryAfter: 120), .unauthorized, .cancelled] {
+            let calls = Calls()
+            let items = (0..<200).map { guidlessPlexSeries("p\($0)", account: "plex") }
+            let result = await IdentityEnrichment.prepare(items, concurrency: 1) { item in
+                await calls.record(item.id)
+                if item.id == "p1" { throw failure }
+                var full = item
+                full.providerIDs = ["Tvdb": "123"]
+                return full
+            }
+            let requested = await calls.ids
+            XCTAssertEqual(requested, ["p0", "p1"])
+            XCTAssertEqual(result.indexable.map(\.id), ["p0"])
+            XCTAssertTrue(result.inconclusive)
+            XCTAssertEqual(result.interruption, failure)
+        }
+    }
+
+    func testEnrichmentRateLimitOnlyAdmitsTheInitialConcurrentWindow() async {
+        actor Calls {
+            var count = 0
+            func record() { count += 1 }
+        }
+        let calls = Calls()
+        let items = (0..<200).map { guidlessPlexSeries("p\($0)", account: "plex") }
+        let result = await IdentityEnrichment.prepare(items, concurrency: 5) { _ in
+            await calls.record()
+            throw AppError.rateLimited(retryAfter: 60)
+        }
+        let count = await calls.count
+        XCTAssertGreaterThan(count, 0)
+        XCTAssertLessThanOrEqual(count, 5)
+        XCTAssertEqual(result.interruption, .rateLimited(retryAfter: 60))
+        XCTAssertTrue(result.inconclusive)
+        XCTAssertTrue(result.indexable.isEmpty)
+    }
+
+    func testCancelledEnrichmentDoesNotStartRequests() async {
+        let items = [guidlessPlexSeries("p0", account: "plex")]
+        let task = Task {
+            withUnsafeCurrentTask { $0?.cancel() }
+            return await IdentityEnrichment.prepare(items) { _ in
+                XCTFail("Cancelled work must not fetch")
+                return nil
+            }
+        }
+        let result = await task.value
+        XCTAssertEqual(result.interruption, .cancelled)
+        XCTAssertTrue(result.inconclusive)
+    }
+
+    func testEnrichmentItemFailureDoesNotStopUnrelatedItems() async {
+        let items = (0..<3).map { guidlessPlexSeries("p\($0)", account: "plex") }
+        let result = await IdentityEnrichment.prepare(items, concurrency: 1) { item in
+            if item.id == "p1" { throw AppError.notFound }
+            var full = item
+            full.providerIDs = ["Tvdb": "123"]
+            return full
+        }
+        XCTAssertEqual(Set(result.indexable.map(\.id)), ["p0", "p2"])
+        XCTAssertTrue(result.inconclusive)
+        XCTAssertNil(result.interruption)
+    }
+
     // MARK: Snapshot store (the @Sendable bridge)
 
     func testSnapshotStoreProviderReflectsUpdates() {

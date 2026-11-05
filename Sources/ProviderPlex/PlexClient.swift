@@ -432,10 +432,9 @@ public struct PlexClient: Sendable {
     private func decodeStreamEnriched<T: Decodable>(
         _ type: T.Type,
         path: String,
-        query: [URLQueryItem],
-        preservingContainers: Bool = false
+        query: [URLQueryItem]
     ) async throws -> T {
-        let streamParameter = preservingContainers ? "includeOptionalElements" : "includeElements"
+        let streamParameter = "includeElements"
         let enriched = Endpoint(
             path: path,
             queryItems: query + [URLQueryItem(name: streamParameter, value: "Stream")],
@@ -727,11 +726,19 @@ public struct PlexClient: Sendable {
         query.append(URLQueryItem(name: "sort", value: try Self.sortQuery(for: sort)))
         query.append(URLQueryItem(name: "includeCollections", value: includeCollections ? "1" : "0"))
         query += try Self.libraryFilterQuery(filters, genreID: genreID)
+        let path = "/library/sections/\(sectionID)/all"
+        if includeCollections {
+            // Even optional Stream enrichment can silently omit collection cards
+            // and reduce totalSize in HTTP 200 responses while keeping members hidden.
+            return try await decode(
+                PlexMediaContainerResponse.self,
+                Endpoint(path: path, queryItems: query, headers: headers)
+            ).MediaContainer
+        }
         return try await decodeStreamEnriched(
             PlexMediaContainerResponse.self,
-            path: "/library/sections/\(sectionID)/all",
-            query: query,
-            preservingContainers: includeCollections
+            path: path,
+            query: query
         ).MediaContainer
     }
 

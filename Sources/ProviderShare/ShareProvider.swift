@@ -353,7 +353,7 @@ public struct ShareProvider: MediaLibraryQueryProviding, MediaFileBrowsing {
             stamped.item = extra.supportsResume
                 ? await watchState.stamp(extra.item)
                 : extra.playbackItem
-            return stamped.item
+            return stamped.playbackItem
         }
         if let indexed = await catalog.item(id: id) {
             // A user just opened this — fast-track its enrichment ahead of the

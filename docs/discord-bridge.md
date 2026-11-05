@@ -28,32 +28,39 @@ variable, a public-posting notice, and the workflow on `main`.
   no default is configured. Unique non-bot voters are counted across all Discord
   posts linked to an issue. Normal and burst reactions from the same person count
   once. The total is a bot-owned GitHub comment, not impersonated GitHub reactions.
-- GitHub comments on linked issues and issue open/closed status flow back to
-  Discord. Queued replies are sent oldest-first by creation time, with comment
-  IDs breaking ties; editing an older comment does not move it to the end.
-  A failed send stops later replies to that thread from overtaking it. Long
-  comments are split without dropping content. Bot imports do not bounce between
-  services. Ordinary report mirroring never closes or reopens a GitHub issue.
+- One editable Discord status message shows the GitHub link, open/closed state,
+  latest validated automated assessment, latest human GitHub comment, and known
+  implementation/delivery status. Routine discussion and triage edits update
+  this message instead of posting another reply. Longer text is explicitly
+  excerpted with links to the complete GitHub discussion; structured triage JSON
+  is never copied. Comment creation time and ID determine the latest comment,
+  not edit time. Bot imports do not bounce between services.
+  New messages are reserved for bot-verified implementation and external
+  TestFlight milestones, not keyword guesses from ordinary comments.
+  Ordinary report mirroring never closes or reopens a GitHub issue.
   The separate delivery watcher below closes explicitly declared fixes only
   after external TestFlight availability.
 - Other channels, private threads, bot-created posts, and posts created before
   the published activation timestamp are excluded.
 
-New GitHub-to-Discord replies use the issue number rather than a username in the
+New GitHub-to-Discord messages use the issue number rather than a username in the
 bot heading. Thread/message identifiers still maintain mappings, edits and votes;
 names are not required for synchronization. This is not anonymization: original
 links, user-written text and screenshots can still identify people.
 
 Existing attribution lines and bot-reply headings are preserved, including when
 the source text changes. There is no automatic bulk backfill, new announcement,
-or name-only update of old copies. New replies on existing threads use the new
-name-free format. Malformed existing source attribution fails visibly rather
+or name-only update of old copies. Legacy mirrored replies still receive source
+edits, but never gain new continuation messages; expanded text links to GitHub.
+An existing resolution message is reused during migration rather than announced
+again. Newly linked threads baseline any existing resolution in their single
+status message, without replaying historical milestones.
+Malformed existing source attribution fails visibly rather
 than being silently replaced.
 
-The scheduled action runs approximately every 15 minutes, not in real time.
-Synced replies appear when delivered: Discord cannot insert a delayed GitHub
-reply retroactively between native Discord messages already posted. Additional
-parts introduced by expanding an older GitHub comment also appear when synced.
+The schedule requests a run every 15 minutes, not real-time synchronization.
+Status edits do not move the message to the bottom of a thread. Genuine milestone
+messages appear when synchronized, not retroactively among native Discord replies.
 GitHub can delay or skip scheduled runs and can disable schedules after prolonged
 repository inactivity. Standard hosted runners are free for public repositories;
 Copilot matching uses the authenticated account's allowance and policies.
@@ -193,12 +200,23 @@ message footers, not in an expiring Actions cache. Keep those identifiers and
 managed-region boundaries intact. Untrusted users cannot establish a mapping
 by pasting a marker into their own GitHub issue or Discord message.
 
-The workflow serializes runs. It discovers existing mappings before writing;
-ambiguous POST failures are not immediately retried. A later run can recover a
-successfully created remote record after a lost response. Discord writes also
-use deterministic nonces. A partial source failure never publishes a partial
-voter set as a complete total. Check failed Actions runs rather than repeatedly
-rerunning a job without reading its error.
+The workflow serializes runs. Safe GET transport/server failures receive at most
+three attempts. Ambiguous writes are never blindly retried. Transient API/model
+failures and matching-budget exhaustion return exit code 75; live synchronization
+waits 20 seconds and makes at most one recovery attempt with a fresh remote index.
+That index rediscovers successfully created issues/messages after a lost response.
+Discord writes also use deterministic nonces. Authentication, permissions,
+installation, malformed data and configuration failures remain visible; recovery
+does not rotate credentials, choose another model, or weaken matching.
+
+Each process has an 11-minute matching budget, with at most three minutes per
+model request. Previously linked reports continue syncing after that budget is
+exhausted; new reports remain pending for a fresh run. The two-attempt live job
+has a 30-minute outer limit. Completed mappings survive either limit. A partial
+source failure never publishes a partial voter set as a complete total.
+Failed recovery remains a failed Actions run and requires investigation.
+These retries cannot recover a schedule that GitHub never starts; prolonged
+scheduling delays require a manual dispatch or a separately managed scheduler.
 
 Locked Discord threads retain inbound synchronization but defer outbound updates
 with a warning until unlocked; the bridge never removes a moderator's lock.
@@ -237,7 +255,10 @@ availability there is required.
 Copilot matching is conservative, not infallible. An incorrect link needs a
 maintainer correction; ordinary reports do not require manual approval. Candidate
 sets are checked in bounded batches without dropping closed issues or truncating
-report/candidate bodies. Confident matches to different issues across batches
+report/candidate bodies. Prompts are piped through stdin, not command-line
+arguments, so growing candidate sets cannot hit Linux's per-argument byte limit.
+Launch errors report their OS error number separately from actual timeouts.
+Confident matches to different issues across batches
 leave the report pending for triage rather than choosing an arbitrary target or
 creating another duplicate. A single oversized report/candidate, API budget or
 model failure is explicit.
@@ -252,6 +273,91 @@ Offline regression tests:
 
 ```bash
 python3 -m unittest discover -s tools/tests -p 'test_discord_bridge.py'
+python3 -m unittest discover -s tools/tests -p 'test_testflight_resolutions.py'
+python3 -m unittest discover -s tools/tests -p 'test_format_triage_comments.py'
+actionlint .github/workflows/discord-bridge.yml
+```
+
+## Discord roadmap
+
+`tools/discord-roadmap.py` maintains the existing
+[#roadmap channel](https://discord.com/channels/1527028230106906704/1567621289106219069)
+as a read-only view of the GitHub backlog, not a second issue tracker. It includes
+both `bug` and `enhancement` issues. It uses no model and never writes GitHub
+labels, comments, milestones, issue states, or source.
+
+| Stage | Authority |
+| --- | --- |
+| Backlog | An open tracked issue without a verified commitment or delivery. Tracking is **not a promise**. |
+| Planned | `roadmap: planned`, most recently applied by `brandomoore`. |
+| In progress | `roadmap: in progress`, most recently applied by `brandomoore`. |
+| In beta | A validated fixing-commit declaration and current external TestFlight availability on every affected platform, or App Store availability on one of those platforms. |
+| Released | Verified App Store distribution on every affected platform, with released source containing the declared fix. |
+
+Brandon chooses the two commitment labels manually; the automation does not
+create or apply them. Remove the prior commitment label before choosing another.
+Conflicting labels or an unverifiable label actor fail visibly rather than
+inventing a commitment. The `triage:` labels remain independent assessments.
+No dates, priorities, or promises are derived from issue text, votes or labels.
+
+Delivery reuses the existing bot-owned TestFlight receipt validator, source-tag
+and release-catalog checks, commit declarations, and revert detection. It queries
+App Store Connect read-only: external beta membership/state is distinct from an
+App Store version in `READY_FOR_SALE` / `READY_FOR_DISTRIBUTION`. Approval, preorder,
+pending release, main merge, GitHub release publication and issue closure alone
+never establish App Store delivery. Apple can retain the distribution state on
+superseded versions; only the highest distributed marketing version per platform
+is used, not a newer pending version or response order. Builds without a published
+source tag or whose tagged source predates the release catalog are reported as
+unverifiable and excluded, not guessed. Missing referenced tags or invalid existing
+catalogs still fail visibly. A reopened issue cannot reuse an older
+fix declaration. Expired beta builds alone do not keep an issue In beta.
+Closed reports without verified delivery and issues labeled `duplicate` are
+omitted rather than misrepresented as Released.
+
+Every entry links to its GitHub issue. Existing Discord discussions are linked
+only through validated bot-owned bridge mappings. Titles are escaped, mentions
+are disabled, and untrusted text never controls stages or API destinations.
+One editable explanation indexes the five groups. Each group has stable numbered
+pages and previous/next links. Entries are never silently truncated to fit a
+message; a board exceeding 50 pages fails visibly before writes. Surplus pages
+are edited to a retirement notice, not deleted or left advertising stale issues.
+Human messages are untouched. Deterministic nonces and bot-owned footers support
+recovery after ambiguous writes; duplicate markers fail closed. As with other
+Discord updates, a mid-run failure can leave mixed-age pages; the next run
+reconciles them. Successful writes are read back before being reported verified.
+
+### Roadmap activation
+
+The existing **Discord issue bridge** workflow owns the roadmap job and serializes
+runs. Installing the code does not activate it or change the channel's permissions.
+
+1. Merge the reviewed code to `main`. The roadmap uses the existing
+   `DISCORD_BOT_TOKEN` and `TESTFLIGHT_ASC_*` secrets, plus a read-only GitHub token.
+   The workflow always checks out `main` and its full release-tag history.
+2. Run `roadmap-check` manually. This verifies the configured bot, exact channel
+   and guild, permissions, source records and Apple availability, then prints a
+   preview without posting or changing permissions.
+3. After explicit publication approval, set `DISCORD_ROADMAP_ENABLED=true`.
+   Run `roadmap-setup` with `pin_roadmap_guide=true` to publish and pin the
+   explanation. The bot needs View Channel, Send Messages, Embed Links and Read
+   Message History; pinning additionally needs **Pin Messages**.
+4. Only with explicit permission approval, also set `make_roadmap_read_only=true`.
+   The shared channel setup helper needs Manage Permissions. It denies ordinary
+   `@everyone` posting/thread creation, preserves other role/member overrides,
+   and retains bot posting. It does not remove staff or other explicit role
+   exceptions, change visibility, create a channel, or change server roles.
+5. Scheduled updates now run on the bridge's roughly 15-minute cadence.
+   `roadmap-sync` triggers an immediate refresh without pin or permission changes.
+   Set `DISCORD_ROADMAP_ENABLED=false` to stop roadmap writes independently of
+   the forum bridge, triage and delivery watcher.
+
+The workflow cannot choose commitments on Brandon's behalf. Creating the two
+labels, assigning issues, merging code and enabling live publication remain
+separate decisions. No website roadmap is created.
+
+```bash
+PYTHONPATH=tools/tests python3 -m unittest test_discord_roadmap test_discord_bridge test_testflight_resolutions test_testflight_discord
 actionlint .github/workflows/discord-bridge.yml
 ```
 

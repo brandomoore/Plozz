@@ -745,7 +745,7 @@ public struct JellyfinProvider: MediaProvider, ServerRatingsProviding, SeriesRes
         // remote trailers are links that open in YouTube. Both are best-effort
         // so one failing doesn't hide the
         // other.
-        let local = ((try? await localTask) ?? []).map(map(item:))
+        let local = ((try? await localTask) ?? []).map { map(item: $0).markingAsTrailer() }
         let remote = ((try? await remoteTask) ?? []).compactMap { link -> MediaItem? in
             guard let url = link.Url else { return nil }
             return MediaItem.youTubeTrailer(fromURL: url, title: link.Name ?? "Trailer")
@@ -2379,6 +2379,7 @@ public struct JellyfinProvider: MediaProvider, ServerRatingsProviding, SeriesRes
             originalTitle: dto.OriginalTitle,
             seriesStatus: kind == .series ? dto.Status.flatMap(MediaSeriesStatus.init(providerValue:)) : nil,
             kind: kind,
+            isTrailer: dto.Type == "Trailer" || MediaExtraKind(rawProviderValue: dto.ExtraType) == .trailer,
             overview: dto.Overview,
             parentTitle: dto.SeriesName ?? dto.SeasonName,
             // A season's own ordinal is its `IndexNumber`; for an episode that field

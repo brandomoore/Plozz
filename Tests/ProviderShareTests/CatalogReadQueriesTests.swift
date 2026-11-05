@@ -109,6 +109,25 @@ final class CatalogReadQueriesTests: XCTestCase {
 
     // MARK: - Recently Added ordering
 
+    func testEpisodeDownloadChoicesHaveFileSizeWithoutChangingFileIdentity() throws {
+        let (connection, url) = openConnection()
+        defer { try? FileManager.default.removeItem(at: url) }
+        seedEpisode(connection, relPath: "links/episode.mkv", seriesKey: "show", seriesTitle: "Show", season: 1, episode: 1)
+        seedEpisode(connection, relPath: "torrents/episode.mkv", seriesKey: "show", seriesTitle: "Show", season: 1, episode: 1)
+        let queries = makeQueries(connection)
+        let children = queries.episodes(seriesKey: "show", season: 1)
+        let library = queries.libraryQueryEpisodes(in: .tv, offset: 0, limit: 10).items
+        for items in [children, library] {
+            XCTAssertEqual(items.count, 2, "Catalog identities remain separate; download presentation groups choices.")
+            XCTAssertTrue(items.allSatisfy { $0.mediaInfo?.fileSizeBytes == 10 })
+            XCTAssertTrue(items.allSatisfy { $0.mediaInfo?.fileName == "base" })
+            XCTAssertTrue(items.allSatisfy { $0.versions.isEmpty && $0.selectedVersionID == nil })
+            XCTAssertEqual(Set(items.map(\.id)), Set([
+                ShareCatalogID.file("links/episode.mkv"), ShareCatalogID.file("torrents/episode.mkv")
+            ]))
+        }
+    }
+
     /// Seeds a movie with explicit discovery and file-modification times.
     private func seedMovieTimed(
         _ conn: CatalogConnection,

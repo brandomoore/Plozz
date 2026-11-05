@@ -120,12 +120,23 @@ a validator, **same-size content changes during playback cannot be detected**.
 No timestamp or ETag is fabricated.
 
 These sources expose `supportsPersistentByteReuse == false` through their
-source lease. The production download opener checks this before creating a
-cursor, drains a rejected source, and reports `unsupportedSource`; existing
-partial downloads cannot resume from these bytes. Consumers must not place
-them in reusable disk byte caches. Bounded in-memory buffering and preparation
-belong only to the same live source lease. Ordinary validated sources retain
-their existing download behavior.
+source lease. Ranged playback bytes still cannot enter reusable disk caches or
+resume a partial download. WebDAV additionally implements the separate
+whole-file transfer contract: offline downloads issue one unconditional GET to
+the pinned anonymous HTTPS delivery URL, without reusing the probe prefix.
+Only HTTP 200, identity encoding and an exact complete byte count can succeed;
+redirects, partial responses, changed sizes, cancellation and truncation fail.
+The response is streamed to disk with backpressure, at most 4 MiB / 64 pending
+callbacks, and the existing download rate limiter. No whole-file memory buffer,
+credential forwarding, or relaxed TLS policy is introduced.
+
+Interrupted whole-response downloads discard their partial bytes; every retry
+or resume starts from zero after fresh DAV identity validation and delivery
+resolution. Cancellation drains admitted writes before discarding the file.
+Pause/background and profile retirement keep their existing queue ownership.
+Completed files remain available offline, but no claim is made that validators
+can detect a same-size replacement before the single response begins.
+Ordinary validated sources retain their existing ranged/resumable behavior.
 
 For playback files at least 256 KiB, the opening probe also supplies the first
 media window, avoiding a separate two-byte request followed by a header GET.

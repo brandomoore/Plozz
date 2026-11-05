@@ -33,6 +33,7 @@ public struct HomeLibraryVisibility: Codable, Equatable, Sendable {
     /// Nil preserves an existing profile's legacy combined/grouped choices.
     public var rowCustomization: HomeRowCustomization?
     public var collectionSections: [CollectionSection]
+    public var dismissedEmptyHomeRows: Set<HomeRowID>
 
     public var intent: Self {
         var copy = self
@@ -131,7 +132,8 @@ public struct HomeLibraryVisibility: Codable, Equatable, Sendable {
         rowCustomization: HomeRowCustomization? = nil,
         mergeNextUpIntoContinueWatching: Bool = true,
         collectionSections: [CollectionSection] = [],
-        hideWatchedRecentlyAdded: Bool = false
+        hideWatchedRecentlyAdded: Bool = false,
+        dismissedEmptyHomeRows: Set<HomeRowID> = []
     ) {
         self.mergeLibrariesOnHome = mergeLibrariesOnHome
         self.disabledKeys = disabledKeys
@@ -147,6 +149,7 @@ public struct HomeLibraryVisibility: Codable, Equatable, Sendable {
         self.mergeNextUpIntoContinueWatching = mergeNextUpIntoContinueWatching
         self.collectionSections = collectionSections
         self.hideWatchedRecentlyAdded = hideWatchedRecentlyAdded
+        self.dismissedEmptyHomeRows = dismissedEmptyHomeRows
     }
 
     /// Fresh profiles match their server; existing blobs retain legacy behavior.
@@ -382,6 +385,7 @@ public struct HomeLibraryVisibility: Codable, Equatable, Sendable {
         case collectionSections
         case mergeNextUpIntoContinueWatching
         case hideWatchedRecentlyAdded
+        case dismissedEmptyHomeRows
     }
 
     /// Decodes leniently so a pre-existing blob still loads: missing fields fall
@@ -429,6 +433,9 @@ public struct HomeLibraryVisibility: Codable, Equatable, Sendable {
         self.hideWatchedRecentlyAdded = try container.decodeIfPresent(
             Bool.self, forKey: .hideWatchedRecentlyAdded
         ) ?? false
+        self.dismissedEmptyHomeRows = try container.decodeIfPresent(
+            Set<HomeRowID>.self, forKey: .dismissedEmptyHomeRows
+        ) ?? []
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -447,6 +454,12 @@ public struct HomeLibraryVisibility: Codable, Equatable, Sendable {
         if !collectionSections.isEmpty { try container.encode(collectionSections, forKey: .collectionSections) }
         try container.encode(mergeNextUpIntoContinueWatching, forKey: .mergeNextUpIntoContinueWatching)
         try container.encode(hideWatchedRecentlyAdded, forKey: .hideWatchedRecentlyAdded)
+        if !dismissedEmptyHomeRows.isEmpty {
+            try container.encode(
+                dismissedEmptyHomeRows.sorted { $0.presentationID < $1.presentationID },
+                forKey: .dismissedEmptyHomeRows
+            )
+        }
     }
 }
 

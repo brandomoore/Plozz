@@ -216,7 +216,25 @@ struct PresentationHostApp: App {
 
     var body: some Scene {
         WindowGroup {
-            if let page = ProcessInfo.processInfo.arguments.first(where: { $0.hasPrefix("--onboarding-page=") }) {
+            if ProcessInfo.processInfo.arguments.contains("--home-empty-fixture") {
+                let palette = ProcessInfo.processInfo.arguments.contains("--light") ? ThemePalette.light : .dark
+                ScrollView {
+                    HomeSectionStatusView(
+                        issue: .init(
+                            choice: .init(
+                                id: .server(accountID: "fixture", section: "seasonal"),
+                                title: "Seasonal picks", isProviderDefault: true
+                            ),
+                            reason: .empty, serverName: "Media server", providerKind: .silo
+                        ),
+                        onCustomizeHome: {}, onDismissEmpty: {}, onRetry: {}
+                    )
+                    .padding(24)
+                }
+                .environment(\.themePalette, palette)
+                .preferredColorScheme(palette.isLight ? .light : .dark)
+                .background(palette.backgroundBase.ignoresSafeArea())
+            } else if let page = ProcessInfo.processInfo.arguments.first(where: { $0.hasPrefix("--onboarding-page=") }) {
                 MobileServerOnboardingFixture(
                     page: String(page.dropFirst("--onboarding-page=".count)), presentsAsSheet: true
                 )
@@ -280,6 +298,8 @@ struct PresentationHostApp: App {
                 ProfileSelectionInteractionFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--profile-picker-fixture") {
                 ProfilePickerInteractionFixture()
+            } else if ProcessInfo.processInfo.arguments.contains("--download-selection-fixture") {
+                DownloadSelectionFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--downloads-interaction-fixture") {
                 DownloadsInteractionFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--iptv-removal-fixture") {

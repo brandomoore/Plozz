@@ -2,6 +2,8 @@
 """Offline regression coverage for routing, replay, privacy, and workflow gates."""
 
 import copy
+import errno
+import hashlib
 from datetime import datetime, timezone
 import importlib.util
 import io
@@ -9,10 +11,12 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import sys
+import textwrap
 import unittest
 from contextlib import redirect_stdout
 from unittest.mock import Mock, patch
-from urllib.error import HTTPError
+from urllib.error import HTTPError, URLError
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -74,7 +78,7 @@ class GitHub:
             self.issues.append(created)
             if self.fail_after_create:
                 self.fail_after_create = False
-                raise BRIDGE.BridgeError("Ambiguous issue creation.")
+                raise BRIDGE.TransientBridgeError("Ambiguous issue creation.")
             return copy.deepcopy(created)
         if method == "POST" and path.endswith("/comments"):
             number = int(path.split("/")[-2])
@@ -232,7 +236,7 @@ class SynchronizationTests(unittest.TestCase):
             synchronize(discord, github)
         self.assertEqual(github.writes, [])
 
-    def test_existing_discord_reply_headings_stay_unchanged_new_ones_use_issue_number(self):
+    def test_legacy_reply_edits_keep_headings_and_new_replies_only_update_status(self):
         discord, github = Discord(), GitHub()
         synchronize(discord, github)
         github.comments.append({
@@ -240,11 +244,13 @@ class SynchronizationTests(unittest.TestCase):
             "issue_url": f"https://api.github.com/repos/{BRIDGE.REPO}/issues/1",
             "created_at": "2026-01-01T00:00:00Z",
         })
+        first = message(REPLY, "", BRIDGE.BOT, bot=True, embeds=[{
+            "title": "GitHub #1 - old-maintainer", "description": "First reply",
+            "url": f"https://github.com/{BRIDGE.REPO}/issues/1#issuecomment-40",
+            "footer": {"text": BRIDGE.FOOTER + "comment:40:0"},
+        }])
+        discord.messages[THREAD].append(first)
         synchronize(discord, github)
-        first = next(m for m in discord.messages[THREAD]
-                     if m.get("embeds", [{}])[0].get("footer", {}).get("text") == BRIDGE.FOOTER + "comment:40:0")
-        self.assertEqual(first["embeds"][0]["title"], "GitHub #1")
-        first["embeds"][0]["title"] = "GitHub #1 - old-maintainer"
         discord.threads[0]["thread_metadata"]["archived"] = True
         discord.writes.clear()
         synchronize(discord, github)
@@ -258,9 +264,10 @@ class SynchronizationTests(unittest.TestCase):
         synchronize(discord, github)
         self.assertEqual(first["embeds"][0]["title"], "GitHub #1 - old-maintainer")
         self.assertEqual(first["embeds"][0]["description"], "Edited first reply")
-        second = next(m for m in discord.messages[THREAD]
-                      if m.get("embeds", [{}])[0].get("footer", {}).get("text") == BRIDGE.FOOTER + "comment:41:0")
-        self.assertEqual(second["embeds"][0]["title"], "GitHub #1")
+        status = BRIDGE.discord_records(discord.messages[THREAD], "issue:1")[0]["embeds"][0]
+        self.assertIn("Second reply", status["description"])
+        self.assertEqual(BRIDGE.discord_records(discord.messages[THREAD], "comment:41:0"), [])
+        self.assertFalse(any(method == "POST" for method, _, _ in discord.writes))
 
     def test_new_report_replay_and_replies_do_not_duplicate_or_reclassify(self):
         discord, github = Discord(), GitHub()
@@ -285,7 +292,7 @@ class SynchronizationTests(unittest.TestCase):
     def test_uncertain_post_is_recovered_from_remote_record_next_run(self):
         discord, github = Discord(), GitHub()
         github.fail_after_create = True
-        with self.assertRaisesRegex(BRIDGE.BridgeError, "Ambiguous"):
+        with self.assertRaisesRegex(BRIDGE.TransientBridgeError, "Ambiguous"):
             synchronize(discord, github)
         self.assertEqual(len(github.issues), 1)
         matcher = Mock(match=Mock(side_effect=AssertionError("Must not classify an existing report.")))
@@ -298,6 +305,20 @@ class SynchronizationTests(unittest.TestCase):
         with self.assertRaisesRegex(BRIDGE.BridgeError, "model failed"):
             synchronize(Discord(), github, Mock(match=Mock(side_effect=BRIDGE.BridgeError("model failed"))))
         self.assertEqual(github.writes, [])
+
+    def test_transient_failure_preserves_completed_threads_and_fresh_run_recovers(self):
+        discord, github = Discord([thread(), thread(SECOND)]), GitHub()
+        matcher = Mock(match=Mock(side_effect=[BRIDGE.TransientBridgeError("temporary"), None]))
+        with self.assertRaises(BRIDGE.TransientBridgeError):
+            synchronize(discord, github, matcher)
+        self.assertEqual(len(github.issues), 1)
+        self.assertEqual(len(records(github, "votes")), 0)
+        recovered = synchronize(discord, github)
+        self.assertEqual(recovered.match.call_count, 1)
+        self.assertEqual(len(github.issues), 2)
+        for identifier in (THREAD, SECOND):
+            self.assertEqual(sum(m.get("author", {}).get("id") == BRIDGE.BOT
+                                 for m in discord.messages[identifier]), 1)
 
     def test_closed_original_can_receive_a_delayed_cross_post_without_reopening(self):
         discord = Discord()
@@ -394,16 +415,19 @@ class SynchronizationTests(unittest.TestCase):
             "created_at": "2026-01-01T00:00:00Z",
         })
         synchronize(discord, github)
-        mirrored = [m for m in discord.messages[THREAD] if m.get("embeds", [{}])[0].get("footer", {}).get("text", "").startswith(BRIDGE.FOOTER + "comment:40:")]
-        self.assertEqual(len(mirrored), 2)
+        mirrored = BRIDGE.discord_records(discord.messages[THREAD], "issue:1")[0]
+        self.assertIn("Hello @everyone!", mirrored["embeds"][0]["description"])
+        self.assertIn("Full text on GitHub", mirrored["embeds"][0]["description"])
+        self.assertLessEqual(len(mirrored["embeds"][0]["description"].encode("utf-16-le")) // 2, 3800)
         github.comments[-1]["body"] = "Updated reply."
         synchronize(discord, github)
-        self.assertEqual(mirrored[0]["embeds"][0]["description"], "Updated reply.")
-        self.assertEqual(mirrored[1]["embeds"][0]["description"], "(Removed by a GitHub comment edit.)")
+        self.assertIn("Updated reply.", mirrored["embeds"][0]["description"])
+        self.assertNotIn("Hello", mirrored["embeds"][0]["description"])
+        self.assertEqual(len(discord.messages[THREAD]), 2)
         self.assertEqual(records(github, "reply"), [])
         self.assertTrue(all(data["allowed_mentions"]["parse"] == [] for _, _, data in discord.writes))
 
-    def test_github_batch_is_sent_oldest_first_with_stable_ties_not_edit_order(self):
+    def test_status_uses_latest_created_comment_not_latest_edit(self):
         discord, github = Discord(), GitHub()
         synchronize(discord, github)
         for identifier, created, updated in [
@@ -421,9 +445,13 @@ class SynchronizationTests(unittest.TestCase):
             data["embeds"][0]["description"] for method, _, data in discord.writes
             if method == "POST" and ":comment:" in data["embeds"][0]["footer"]["text"]
         ]
-        self.assertEqual(posted, ["Reply 40", "Reply 41", "Reply 42"])
+        self.assertEqual(posted, [])
+        status = BRIDGE.discord_records(discord.messages[THREAD], "issue:1")[0]["embeds"][0]
+        self.assertIn("Reply 42", status["description"])
+        self.assertNotIn("Reply 41", status["description"])
+        self.assertNotIn("Reply 40", status["description"])
 
-    def test_failed_earlier_github_reply_prevents_later_replies_overtaking_it(self):
+    def test_failed_status_edit_is_retried_without_new_messages(self):
         discord, github = Discord(), GitHub()
         synchronize(discord, github)
         for identifier in (40, 41):
@@ -435,8 +463,8 @@ class SynchronizationTests(unittest.TestCase):
         original = discord.call
 
         def fail_reply(method, path, data=None, query=None):
-            if method == "POST" and ":comment:40:" in data["embeds"][0]["footer"]["text"]:
-                raise BRIDGE.BridgeError("Temporary send failure.")
+            if method == "PATCH" and data.get("embeds"):
+                raise BRIDGE.TransientBridgeError("Temporary send failure.")
             return original(method, path, data, query)
 
         with patch.object(discord, "call", side_effect=fail_reply):
@@ -448,7 +476,82 @@ class SynchronizationTests(unittest.TestCase):
             data["embeds"][0]["description"] for method, _, data in discord.writes
             if method == "POST" and ":comment:" in data["embeds"][0]["footer"]["text"]
         ]
-        self.assertEqual(posted, ["Reply 40", "Reply 41"])
+        self.assertEqual(posted, [])
+        status = BRIDGE.discord_records(discord.messages[THREAD], "issue:1")[0]["embeds"][0]
+        self.assertIn("Reply 41", status["description"])
+        self.assertEqual(len(discord.messages[THREAD]), 2)
+
+    def test_assessment_is_in_status_without_machine_record_or_repeated_posts(self):
+        discord, github = Discord(), GitHub()
+        synchronize(discord, github)
+        body = (
+            BRIDGE.TRIAGE["MARKER"] + "\nFeature is not implemented.\n\n"
+            'Structured data:\n```json\n{"schema_version":2,"issue_number":1}\n```'
+        )
+        comment = {
+            "id": 40, "body": body, "user": {"login": BRIDGE.GITHUB_BOT, "type": "Bot"},
+            "issue_url": f"https://api.github.com/repos/{BRIDGE.REPO}/issues/1",
+            "created_at": "2026-01-02T00:00:00Z",
+        }
+        comment["body"] = BRIDGE.TRIAGE["collapsed_body"](comment)
+        github.comments.append(comment)
+        synchronize(discord, github)
+        embed = BRIDGE.discord_records(discord.messages[THREAD], "issue:1")[0]["embeds"][0]
+        self.assertIn("Feature is not implemented.", embed["description"])
+        self.assertNotIn("schema_version", embed["description"])
+        self.assertNotIn("<!--", embed["description"])
+        self.assertNotIn("<details>", embed["description"])
+        discord.writes.clear()
+        synchronize(discord, github)
+        self.assertEqual(discord.writes, [])
+        self.assertEqual(len(discord.messages[THREAD]), 2)
+
+    def test_bad_assessment_does_not_block_other_threads(self):
+        discord, github = Discord([thread(), thread(SECOND)]), GitHub()
+        synchronize(discord, github)
+        github.comments.append({
+            "id": 40, "body": BRIDGE.TRIAGE["MARKER"] + "\nInvalid",
+            "user": {"login": BRIDGE.GITHUB_BOT, "type": "Bot"},
+            "issue_url": f"https://api.github.com/repos/{BRIDGE.REPO}/issues/1",
+            "created_at": "2026-01-02T00:00:00Z",
+        })
+        discord.messages[SECOND][0]["content"] = "Changed second report."
+        with self.assertRaisesRegex(BRIDGE.BridgeError, "invalid structured metadata"):
+            synchronize(discord, github)
+        self.assertIn("Changed second report.", github.issues[1]["body"])
+
+    def test_legacy_message_growth_and_shrink_never_create_continuations(self):
+        discord, github = Discord(), GitHub()
+        synchronize(discord, github)
+        comment = {
+            "id": 40, "body": "x" * 10000, "user": {"login": "maintainer"},
+            "issue_url": f"https://api.github.com/repos/{BRIDGE.REPO}/issues/1",
+            "created_at": "2026-01-02T00:00:00Z",
+        }
+        github.comments.append(comment)
+        for part in (0, 1):
+            discord.messages[THREAD].append(message(str(int(REPLY) + part), "", BRIDGE.BOT, bot=True, embeds=[{
+                "title": "Historical heading", "description": "Old",
+                "url": f"https://github.com/{BRIDGE.REPO}/issues/1#issuecomment-40",
+                "footer": {"text": BRIDGE.FOOTER + f"comment:40:{part}"},
+            }]))
+        discord.writes.clear()
+        synchronize(discord, github)
+        last = BRIDGE.discord_records(discord.messages[THREAD], "comment:40:1")[0]["embeds"][0]
+        self.assertIn("Full text on GitHub", last["description"])
+        comment["body"] = "Short correction"
+        synchronize(discord, github)
+        self.assertEqual(BRIDGE.discord_records(discord.messages[THREAD], "comment:40:1")[0]["embeds"][0]["description"],
+                         "(Removed by a GitHub comment edit.)")
+        self.assertFalse(any(method == "POST" for method, _, _ in discord.writes))
+
+    def test_discord_omits_empty_fields_without_causing_repeat_patches(self):
+        discord, github = Discord(), GitHub()
+        synchronize(discord, github)
+        BRIDGE.discord_records(discord.messages[THREAD], "issue:1")[0]["embeds"][0].pop("fields")
+        discord.writes.clear()
+        synchronize(discord, github)
+        self.assertEqual(discord.writes, [])
 
     def test_locked_thread_defers_outbound_updates_but_keeps_inbound_report(self):
         discord, github = Discord([thread(thread_metadata={"locked": True})]), GitHub()
@@ -758,6 +861,54 @@ class BoundaryTests(unittest.TestCase):
 
 
 class CopilotTests(unittest.TestCase):
+    @unittest.skipUnless(sys.platform == "linux", "Linux per-argument limit")
+    def test_old_prompt_argument_exceeds_linux_limit(self):
+        with self.assertRaises(OSError) as caught:
+            subprocess.run([sys.executable, "-c", "pass", "x" * 180000], timeout=10)
+        self.assertEqual(caught.exception.errno, errno.E2BIG)
+
+    def test_large_prompt_uses_complete_stdin_through_real_bounded_process(self):
+        prompt = "Report data: " + "x" * 200000 + "\U0001f600"
+        expected = hashlib.sha256(prompt.encode()).hexdigest()
+        real_run = subprocess.run
+
+        def fake_copilot(command, **kwargs):
+            self.assertNotIn("--prompt", command)
+            self.assertLess(max(map(len, command)), 4096)
+            self.assertEqual(kwargs["input"], prompt)
+            program = (
+                "import sys,hashlib,json; "
+                f"print(json.dumps({{'ready':hashlib.sha256(sys.stdin.buffer.read()).hexdigest()=={expected!r}}}))"
+            )
+            return real_run(command[:5] + [sys.executable, "-c", program], **kwargs)
+
+        with patch.object(BRIDGE.subprocess, "run", side_effect=fake_copilot):
+            self.assertEqual(BRIDGE.CopilotMatcher("test-only").request(prompt), {"ready": True})
+
+    def test_launch_errors_are_distinct_from_timeouts(self):
+        with patch.object(BRIDGE.subprocess, "run", side_effect=OSError(errno.E2BIG, "too large")):
+            with self.assertRaisesRegex(BRIDGE.BridgeError, f"OS error {errno.E2BIG}") as caught:
+                BRIDGE.CopilotMatcher("test-only").verify()
+            self.assertNotIsInstance(caught.exception, BRIDGE.TransientBridgeError)
+        with patch.object(BRIDGE.subprocess, "run", side_effect=subprocess.TimeoutExpired("copilot", 195)):
+            with self.assertRaisesRegex(BRIDGE.TransientBridgeError, "execution budget"):
+                BRIDGE.CopilotMatcher("test-only").verify()
+
+    def test_hard_timeout_and_transient_provider_failures_are_retryable(self):
+        for code, detail in ((124, "hard deadline"), (1, "HTTP 503 temporarily unavailable")):
+            with self.subTest(code=code), patch.object(BRIDGE.subprocess, "run",
+                    return_value=subprocess.CompletedProcess([], code, "", detail)):
+                with self.assertRaises(BRIDGE.TransientBridgeError):
+                    BRIDGE.CopilotMatcher("test-only").verify()
+
+    def test_run_budget_leaves_pending_reports_without_launching_more_processes(self):
+        matcher = BRIDGE.CopilotMatcher("test-only")
+        matcher.deadline = 0
+        with patch.object(BRIDGE.subprocess, "run") as run:
+            with self.assertRaisesRegex(BRIDGE.TransientBridgeError, "run's matching budget"):
+                matcher.verify()
+            run.assert_not_called()
+
     def test_isolated_explicit_model_and_effort_with_no_other_credentials(self):
         matcher = BRIDGE.CopilotMatcher("github_pat_test_only")
         observed = {}
@@ -777,6 +928,8 @@ class CopilotTests(unittest.TestCase):
             self.assertEqual(command[command.index("--available-tools") + 1], "--deny-tool")
             self.assertNotIn("GITHUB_TOKEN", kwargs["env"])
             self.assertNotIn("DISCORD_BOT_TOKEN", kwargs["env"])
+            self.assertNotIn("--prompt", command)
+            self.assertIn('{"ready":true}', kwargs["input"])
             self.assertEqual(kwargs["env"]["HOME"], kwargs["cwd"])
             return subprocess.CompletedProcess(command, 0, '{"ready":true}', "")
 
@@ -869,6 +1022,27 @@ class CopilotTests(unittest.TestCase):
 
 
 class APITests(unittest.TestCase):
+    def test_safe_transport_reads_retry_but_ambiguous_writes_do_not(self):
+        for method, attempts in (("GET", 3), ("POST", 1), ("PATCH", 1)):
+            with self.subTest(method=method):
+                api = BRIDGE.API("GitHub", "test-only", write=True)
+                api.opener = Mock()
+                api.opener.open.side_effect = URLError("temporary")
+                with patch.object(BRIDGE.time, "sleep"), self.assertRaises(BRIDGE.TransientBridgeError):
+                    api.call(method, "/repos/example/issues")
+                self.assertEqual(api.opener.open.call_count, attempts)
+
+    def test_transport_read_can_recover_in_same_call(self):
+        api = BRIDGE.API("GitHub", "test-only")
+        response = Mock()
+        response.__enter__ = Mock(return_value=Mock(read=Mock(return_value=b'{"ok":true}')))
+        response.__exit__ = Mock(return_value=False)
+        api.opener = Mock()
+        api.opener.open.side_effect = [URLError("temporary"), response]
+        with patch.object(BRIDGE.time, "sleep"):
+            self.assertEqual(api.call("GET", "/repos/example/issues"), {"ok": True})
+        self.assertEqual(api.opener.open.call_count, 2)
+
     def test_discord_error_code_is_reported_without_response_content(self):
         api = BRIDGE.API("Discord", "test-only", write=True)
         api.opener = Mock()
@@ -1225,9 +1399,23 @@ class PostingGuideTests(unittest.TestCase):
 
 
 class WorkflowTests(unittest.TestCase):
+    def test_live_recovery_is_bounded_and_only_for_transient_exit_code(self):
+        loop = textwrap.dedent(WORKFLOW.rsplit("        run: |\n", 1)[1])
+        for first, later, expected_code, count in ((75, 0, 0, 2), (75, 75, 75, 2), (1, 0, 1, 1), (0, 0, 0, 1)):
+            with self.subTest(first=first, later=later):
+                stub = (
+                    "attempts=0\n"
+                    "python3() { attempts=$((attempts+1)); echo attempt:$attempts; "
+                    f'if [ "$attempts" -eq 1 ]; then return {first}; else return {later}; fi; }}\n'
+                    "sleep() { :; }\n"
+                )
+                result = subprocess.run(["bash", "-c", stub + loop], capture_output=True, text=True, timeout=5)
+                self.assertEqual(result.returncode, expected_code)
+                self.assertEqual(result.stdout.count("attempt:"), count)
+
     def test_secret_bearing_jobs_never_run_from_pull_request_events(self):
         self.assertNotIn("pull_request", WORKFLOW)
-        self.assertEqual(WORKFLOW.count("persist-credentials: false"), 3)
+        self.assertEqual(WORKFLOW.count("persist-credentials: false"), 4)
         self.assertIn("cancel-in-progress: false", WORKFLOW)
         self.assertEqual(WORKFLOW.count("npm install --global --ignore-scripts @github/copilot@1.0.91"), 2)
 
@@ -1249,7 +1437,7 @@ class WorkflowTests(unittest.TestCase):
                     BRIDGE.main()
 
     def test_guide_job_is_manual_and_has_no_github_write_or_copilot_credential(self):
-        guides = WORKFLOW.split("\n  publish-guides:\n", 1)[1].split("\n  sync:\n", 1)[0]
+        guides = WORKFLOW.split("\n  publish-guides:\n", 1)[1].split("\n  roadmap:\n", 1)[0]
         self.assertIn("github.event_name == 'workflow_dispatch'", guides)
         self.assertIn("github.repository == 'brandomoore/Plozz'", guides)
         self.assertIn("inputs.mode == 'publish-guides'", guides)

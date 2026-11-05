@@ -95,6 +95,28 @@ environment variables, command arguments, configuration files or attachments.
 The broker endpoint must use an unguessable run-specific path and bind only to
 `127.0.0.1`; never publish it as a preview or expose it to the LAN.
 
+## Live watch-state verification
+
+`LiveWatchProgressTests` in `AppRuntimeTests` exercises production Jellyfin,
+Emby and Plex resume writers, metadata reads, Continue Watching feeds and the
+shared Home admission policy. Set `TEST_RUNNER_PLOZZ_LIVE_WATCH_BROKER` to a
+private, run-specific loopback broker when invoking Xcode. Its provider routes
+return `baseURL`, `username`, `userID`, `serverID`, `deviceID`, `token` and
+`allowWatchStateWrites`. Follow the credential-broker protections above and
+require dedicated internal identities with explicitly authorized disposable
+watch history. These tests are skipped without the broker.
+
+The bounded movie sample covers 2/59/60/61/90-second writes and restores original
+watched/resume values, not all historical timestamps. Provider trailers longer
+than 20 seconds in at most five sampled titles additionally exercise trailer-only
+writes and unchanged parent state; absent fixtures are reported as a coverage gap,
+not a trailer pass. Plex tests compare the native offset with the extra-only local
+fallback and recreate the provider and durable store to verify retained progress.
+These are real-server protocol checks, not decoded playback or device-UI tests.
+The Plex fixture explicitly covers its observed refusal to retain stopped resume
+offsets at 60 seconds or less. That native policy is separate from Plozz's adaptive
+row threshold; accepting the write is not evidence that the server saved it.
+
 ## The two speed wins
 
 ### 1. Build once, run many (`tools/run-tests.sh`)

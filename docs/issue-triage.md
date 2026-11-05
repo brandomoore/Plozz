@@ -4,6 +4,9 @@ The **Issue triage** GitHub Actions workflow maintains evidence-backed
 assessments of existing reports. It does not fix code, accept feature requests,
 or close issues. GitHub issues remain the source of truth; these records can
 also feed a public website board without creating another backlog.
+The [Discord roadmap](discord-bridge.md#discord-roadmap) is a separate deterministic
+view: its Planned/In progress stages are maintainer-owned, and delivery stages
+require verified Apple availability. Triage labels never select those stages.
 
 ## What the status means
 
@@ -17,6 +20,12 @@ also feed a public website board without creating another backlog.
 
 Each issue gets at most one current workflow-owned assessment comment, updated
 in place. It records the reported app build, the evidence, and one next action.
+Machine-readable records sit inside a collapsed **Automation details** section.
+After safe outputs succeed, a deterministic formatting job adds only the
+disclosure wrapper; it preserves the assessment, JSON and provenance exactly.
+It never modifies human comments or other bots' records. To preview a bulk
+presentation update, run `python3 tools/format-triage-comments.py`; add `--apply`
+to update the workflow-owned comments in place.
 Unknown builds stay unknown. Static code inspection is not reproduction, and a
 merge is not delivery. New reports after a shipped fix remain actionable.
 
@@ -51,9 +60,15 @@ oldest/unassessed reports reserved space. Initial backfill can therefore take
 multiple runs. This is eventual refresh, not an instantaneous completeness
 guarantee.
 
-Only the four `triage:` labels and the workflow's own assessment comments can
+GitHub reads are restricted to `brandomoore/Plozz` with `min-integrity: none`,
+so reports and replies from new community members are included. The default
+public-repository `approved` integrity filter silently omits some of them.
+This explicitly broadens readable input, not write authority or trust:
+all report content remains untrusted, and output safety review stays required.
+
+Only the four `triage:` labels, three automatic `severity:` labels and the workflow's own assessment comments can
 be changed. Source, release state, issue state, assignments, milestones and
-existing human labels are outside its write capabilities. A separate
+existing human labels (including severity overrides) are outside its write capabilities. A separate
 threat-detection job must succeed before safe outputs are applied; detection
 and workflow failures remain in Actions rather than creating more bug issues.
 
@@ -83,12 +98,17 @@ invoice.
 The generated comment footer includes the workflow identity and a link to the
 evidence run. The comment's **Structured data** JSON is the durable record.
 Consumers must require the `github-actions[bot]` author and `issue-triage`
-workflow marker, validate schema version 1 and matching issue number, and
+workflow marker, validate supported schema versions and matching issue number, and
 treat all strings as untrusted text. Render text safely, never as raw HTML.
 
 Records include `checked_sha`, `checked_at`, reported and last-reported app
 builds, `last_report_at`, `status`, `assessment`, relevant source paths, public
-evidence URLs and `next_action`. Paths and URLs are newline-separated strings.
+evidence URLs and `next_action`. Version 2 uses arrays of individual strings for paths and
+URLs. Version 3 adds `severity` and an evidence-backed `severity_reason`.
+Version 1 used newline-separated strings; valid legacy records remain
+readable, but malformed JSON must be reassessed, not guessed or repaired by
+parsing fragments. Multiple escaped-newline-separated URLs can be misread by
+the v1.0.1 publication sanitizer, so new records must retain the version 2 array format.
 A new issue with no record is **Not assessed**, not implicitly confirmed or
 fixed. Show assessment age and the inspected source revision. New substantive
 replies or relevant code changes mean **Awaiting reassessment** until checked;
@@ -98,6 +118,35 @@ The website board itself is a separate consumer in `brandomoore/plozz-website`;
 this workflow does not deploy that site or grant cross-repository access.
 Use live GitHub issue state and the delivery watcher's receipts for closure
 and released-build information, not an AI inference.
+
+## Severity and maintainer overrides
+
+Severity describes reported user impact independently of assessment confidence
+and roadmap commitment. The agent reads the full discussion, affected
+configuration and practical workarounds, not just titles or keywords.
+
+| Automatic label | Meaning |
+| --- | --- |
+| `severity: blocking` | A core task cannot be completed; no practical workaround is described. |
+| `severity: major` | A core task is seriously impaired by slowness, failures or a substantial workaround. |
+| `severity: normal` | Assessed impact does not meet those levels, including ordinary feature requests. |
+| No severity label | Impact is not yet assessed or cannot be established. |
+
+The website shows Blocking/Major badges and sorts these ahead of other active
+items. Unmarked cards are not necessarily assessed as low impact. Delivery
+stages remain governed by verified availability, never severity.
+
+The maintainer can set `severity override: blocking`, `severity override: major`
+or `severity override: normal` from the website card menu or GitHub.
+Only one override should be present. It always wins over automatic labels.
+Choosing **Automatic** removes the override; it does not erase the agent's
+latest assessment. Triage has no write permission for override labels and
+continues updating its own assessment even while an override exists.
+Conflicting labels are surfaced as invalid data rather than guessed.
+
+Legacy records without version-3 severity are reassessed through the existing
+20-issue rotation; initial prioritization therefore fills in over multiple
+successful runs. A failed or incomplete run is not a completed backfill.
 
 ## Editing the workflow
 

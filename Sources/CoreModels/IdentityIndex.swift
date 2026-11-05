@@ -719,10 +719,13 @@ public enum IdentityEnrichment {
         /// `true` when at least one enrichment fetch failed, so the caller should
         /// retry the account on a later warm rather than mark it conclusively built.
         public var inconclusive: Bool
+        /// A provider-wide refusal or cancellation stops the rest of this scan.
+        public var interruption: AppError?
 
-        public init(indexable: [MediaItem], inconclusive: Bool) {
+        public init(indexable: [MediaItem], inconclusive: Bool, interruption: AppError? = nil) {
             self.indexable = indexable
             self.inconclusive = inconclusive
+            self.interruption = interruption
         }
     }
 
@@ -742,12 +745,17 @@ public enum IdentityEnrichment {
     ///   - fetchFull: fetches the fuller per-item record for an item that lacks a
     ///     strong id. Return `nil` to signal the fetch **failed** (inconclusive);
     ///     return the enriched item (ideally now carrying external ids) on success.
+    ///     Throw rate limits, authorization failures and cancellation unchanged
+    ///     so the caller can stop the scan rather than draining its remaining pages.
     public static func prepare(
         _ items: [MediaItem],
         concurrency: Int = 5,
         enrichIdentifiedItems: Bool = false,
-        fetchFull: @Sendable @escaping (MediaItem) async -> MediaItem?
+        fetchFull: @Sendable @escaping (MediaItem) async throws -> MediaItem?
     ) async -> Result {
+        guard !Task.isCancelled else {
+            return Result(indexable: [], inconclusive: true, interruption: .cancelled)
+        }
         // Partition without any network work: movies/series that already carry a
         // strong identity are ingestable as-is; the rest each need one enrichment
         // round-trip. Order is irrelevant downstream (the index keys by identity /
@@ -763,35 +771,62 @@ public enum IdentityEnrichment {
         }
         guard !needsFetch.isEmpty else { return Result(indexable: indexable, inconclusive: false) }
 
-        // Enrich the guid-less items concurrently, capped by a permit gate. Each
-        // result carries (enrichedItem?, inconclusive): a nil fetch ⇒ inconclusive
-        // (retry the account on a later warm); a fetch that returns but still lacks
-        // a strong id ⇒ skipped conclusively (don't re-scan it forever).
-        let limiter = ConcurrencyLimiter(limit: concurrency)
-        let results: [(item: MediaItem?, inconclusive: Bool)] = await withTaskGroup(
-            of: (MediaItem?, Bool).self
-        ) { group in
-            for item in needsFetch {
+        // Refill a bounded window instead of queueing the whole page behind a
+        // permit gate, so a rate limit can stop work that has not started yet.
+        return await withTaskGroup(of: Result.self) { group in
+            func enqueue(_ item: MediaItem) {
                 group.addTask {
-                    guard let full = await limiter.run({ await fetchFull(item) }),
-                          full.id == item.id, full.kind == item.kind else {
-                        return (nil, true)
+                    do {
+                        try Task.checkCancellation()
+                        guard let full = try await fetchFull(item),
+                              full.id == item.id, full.kind == item.kind else {
+                            return Result(indexable: [], inconclusive: true)
+                        }
+                        try Task.checkCancellation()
+                        return Result(
+                            indexable: MediaItemIdentity.identities(for: full).isEmpty ? [] : [full],
+                            inconclusive: false
+                        )
+                    } catch is CancellationError {
+                        return Result(indexable: [], inconclusive: true, interruption: .cancelled)
+                    } catch let error as AppError {
+                        switch error {
+                        case .rateLimited, .unauthorized, .cancelled:
+                            return Result(indexable: [], inconclusive: true, interruption: error)
+                        default:
+                            return Result(indexable: [], inconclusive: true)
+                        }
+                    } catch {
+                        return Result(indexable: [], inconclusive: true)
                     }
-                    if MediaItemIdentity.identities(for: full).isEmpty { return (nil, false) }
-                    return (full, false)
                 }
             }
-            var collected: [(MediaItem?, Bool)] = []
-            for await result in group { collected.append(result) }
-            return collected
+            var next = 0
+            while next < min(max(1, concurrency), needsFetch.count) {
+                enqueue(needsFetch[next])
+                next += 1
+            }
+            var result = Result(indexable: indexable, inconclusive: false)
+            for await completed in group {
+                result.indexable += completed.indexable
+                result.inconclusive = result.inconclusive || completed.inconclusive
+                if let interruption = completed.interruption,
+                   result.interruption == nil || result.interruption == .cancelled {
+                    result.interruption = interruption
+                    group.cancelAll()
+                }
+                if Task.isCancelled {
+                    result.inconclusive = true
+                    result.interruption = result.interruption ?? .cancelled
+                    group.cancelAll()
+                }
+                if result.interruption == nil, next < needsFetch.count {
+                    enqueue(needsFetch[next])
+                    next += 1
+                }
+            }
+            return result
         }
-
-        var inconclusive = false
-        for result in results {
-            if let item = result.item { indexable.append(item) }
-            if result.inconclusive { inconclusive = true }
-        }
-        return Result(indexable: indexable, inconclusive: inconclusive)
     }
 }
 

@@ -497,6 +497,12 @@ public actor DownloadQueue {
         var attempt = 0
         while true {
             do {
+                if HandoffDiagnostics.isEnabled {
+                    HandoffDiagnostics.emit(
+                        "download ATTEMPT key=\(HandoffDiagnostics.correlationID(identityKey))"
+                            + " attempt=\(attempt + 1) original=\(record.quality == .original)"
+                    )
+                }
                 let progressPermit = DownloadMutationPermit()
                 defer { progressPermit.invalidate() }
                 guard !Task.isCancelled else { return }
@@ -554,6 +560,21 @@ public actor DownloadQueue {
                 return
             } catch {
                 attempt += 1
+                if HandoffDiagnostics.isEnabled {
+                    let native = error as NSError
+                    HandoffDiagnostics.emit(
+                        "download ERROR key=\(HandoffDiagnostics.correlationID(identityKey))"
+                            + " attempt=\(attempt) terminal=\(attempt >= maxAttempts)"
+                            + " domain=\(HandoffDiagnostics.redactedDetail(native.domain)) code=\(native.code)"
+                            + " detail=\(HandoffDiagnostics.redactedDetail(error.localizedDescription))"
+                    )
+                    if let underlying = native.userInfo[NSUnderlyingErrorKey] as? NSError {
+                        HandoffDiagnostics.emit(
+                            "download UNDERLYING key=\(HandoffDiagnostics.correlationID(identityKey))"
+                                + " domain=\(HandoffDiagnostics.redactedDetail(underlying.domain)) code=\(underlying.code)"
+                        )
+                    }
+                }
                 if attempt >= maxAttempts {
                     let message = error.localizedDescription
                     await setAttemptStatus(identityKey: identityKey, .failed,

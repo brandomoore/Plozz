@@ -444,6 +444,7 @@ final class PlozziOSAppModel {
     private(set) var seriesTrackStore: SeriesTrackPreferenceStore
     private(set) var versionPreferences: VersionPreferenceStore
     private(set) var downloads: PlozziOSDownloadsModel
+    var pendingDownloadSelection: MediaItem?
     private(set) var pendingLibrarySelection: PendingLibrarySelection?
     private(set) var pendingFirstRunStep: FirstRunStep?
     /// Drives the app to a named screen for an automated capture run. Inert unless
@@ -543,7 +544,11 @@ final class PlozziOSAppModel {
                 .some(self.downloads.cachedRecord(forSelectedVersionOf: item)?.menuState)
             },
             performDownloadAction: { [unowned self] action, item in
-                Task { await self.performDownloadMenuAction(action, on: item) }
+                let profileID = self.profiles.activeProfileID
+                Task {
+                    guard self.profiles.activeProfileID == profileID else { return }
+                    await self.performDownloadMenuAction(action, on: item)
+                }
             },
             makeActionConfirmation: { [unowned self] in self.makeLibraryActionFeedback() },
             makeWatchlistFailureFeedback: { [unowned self] in self.makeLibraryActionFeedback(onCompletion: .error) }
@@ -567,6 +572,9 @@ final class PlozziOSAppModel {
     @ObservationIgnored private var queuedLibrarySelectionBeginsFirstRun = false
     @ObservationIgnored private var postAddPresentationGeneration: UInt64 = 0
     @ObservationIgnored private var watchReconcilers: [String: WatchStateReconciler] = [:]
+    @ObservationIgnored private lazy var watchOutboxConnectivity = WatchOutboxConnectivity { [weak self] in
+        self?.retryWatchOutboxIfAllowed()
+    }
     @ObservationIgnored var universalWatchlistReconciler: WatchlistReconciler?
     @ObservationIgnored var universalWatchlistMutationStore: DurableWatchlistMutationStore?
     @ObservationIgnored var universalWatchlistNativeView: NativeWatchlistView = .empty
@@ -602,6 +610,7 @@ final class PlozziOSAppModel {
     )
 
     private var watchReconciler: WatchStateReconciler {
+        _ = watchOutboxConnectivity
         let profileID = profiles.activeProfileID
         if let existing = watchReconcilers[profileID] {
             return existing
@@ -1080,6 +1089,7 @@ final class PlozziOSAppModel {
         sceneSessionIDs = sceneSessionIDs.filter { connected.contains($0.key) }
         if let transition = applicationLifecycle.replaceScenes(scenes) {
             applicationIsActive = transition.isActive
+            if transition.isActive { retryWatchOutboxIfAllowed() }
         }
     }
 
@@ -1779,6 +1789,7 @@ final class PlozziOSAppModel {
     }
 
     private func transitionDownloads(to profileID: String) {
+        pendingDownloadSelection = nil
         let outgoing = downloads
         outgoing.beginProfileTransition()
         downloads = PlozziOSDownloadsModel(
@@ -2072,6 +2083,12 @@ final class PlozziOSAppModel {
         Task { await reconciler.drain() }
     }
 
+    func retryWatchOutboxIfAllowed() {
+        guard applicationIsActive, isActiveProfileAuthorized,
+              watchOutboxConnectivity.isConnected else { return }
+        drainWatchOutbox()
+    }
+
     func pendingWatchMutations() async -> [WatchMutation] {
         let profileID = profiles.activeProfileID
         let pending = await watchReconciler.snapshot().pending
@@ -2233,6 +2250,14 @@ final class PlozziOSAppModel {
                         } catch { return }
                     }
                     refresh.post()
+                }
+            },
+            automaticRetryAllowed: { [weak self] in
+                await MainActor.run {
+                    guard let self else { return false }
+                    return self.applicationIsActive && self.isActiveProfileAuthorized
+                        && self.profiles.activeProfileID == profileID
+                        && self.watchOutboxConnectivity.isConnected
                 }
             }
         )

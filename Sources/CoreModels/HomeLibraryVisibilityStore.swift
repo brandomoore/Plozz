@@ -235,6 +235,16 @@ public final class HomeLibraryVisibilityModel {
         store.save(visibility)
     }
 
+    public func setEmptyHomeRowDismissed(_ dismissed: Bool, id: HomeRowID) {
+        guard visibility.dismissedEmptyHomeRows.contains(id) != dismissed else { return }
+        if dismissed {
+            visibility.dismissedEmptyHomeRows.insert(id)
+        } else {
+            visibility.dismissedEmptyHomeRows.remove(id)
+        }
+        store.save(visibility)
+    }
+
     public func setHomeSectionVisible(
         _ visible: Bool, id: HomeRowID, catalog: HomeSectionCatalog
     ) throws {

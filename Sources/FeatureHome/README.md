@@ -427,15 +427,38 @@ records on both platforms; error dialogs, playback routing and timeouts are unch
   Native content requests batch by account and library so several Plex rows
   reuse one promoted-hub response. Sharing lasts only for that refresh; it never
   leaves Next Up stale behind a cross-refresh item cache.
-  Native Continue Watching keeps the complete feed through bounded pages, applying
-  library exclusions before a presentation limit. Retained native rows immediately
+  Continue Watching admits ordinary resume positions at 5% of duration, bounded
+  between 5 and 60 seconds (60 seconds when duration is unknown). Saving resume
+  progress is independent of this visibility threshold. Unstarted Next Up episodes
+  remain eligible; trailers never enter the row or propagate watch state to their
+  parent title. The same policy covers optimistic updates, queued-write overlays,
+  cached content, library/server rows, and their browse grids. Grid filtering
+  preserves raw provider continuation offsets.
+  Native Continue Watching reads the feed through bounded pages, applying
+  eligibility and library exclusions before a presentation limit. Retained native rows immediately
   honor current library visibility while discovery is pending or offline.
   Connection failures identify the affected server. The Home row arranger names
   each failed server, distinguishing offline, sign-in, and Home-loading problems
   instead of showing a blanket warning about server arrangements. Recovery clears
   that server's status; failures never reset saved row choices.
-  Enabled sections missing their content retain a compact warning on Home with
-  source, Details, and Retry. Customize Home shares the same completed-load
+  Enabled sections with failed or unavailable content retain a compact warning
+  on Home with source, Details, and Retry. Confirmed-empty sections instead show
+  a centered, icon-free empty state with source attribution and vertical padding
+  sized near a normal media row, without error details or retry controls.
+  A native secondary Customize Home button opens the active profile's existing
+  Home editor so viewers can keep or hide the row. It uses the shared secondary
+  button surface, not a bare text link. Its text uses the theme's
+  neutral primary ink, not an inherited system accent. The editor's own empty-state
+  previews omit this action, and opening it does not change row preferences.
+  Empty-state actions sit side by side, falling back to a vertical layout only
+  when the available width or accessibility text size requires it.
+  Dismiss hides only that row's confirmed-empty Home message, persisted per
+  profile without disabling or reordering the row. Titles appear automatically
+  when available; loading placeholders and real failures remain visible. New
+  row identities retain their messages, and the row's editor can restore a
+  dismissed message. tvOS Showcase omits confirmed-empty rows automatically,
+  without saving dismissals or changing other Home layouts.
+  Customize Home shares the same completed-load
   evidence, distinguishing typed failures, empty results, and saved sections
   absent from the latest refresh. Missing sections do not prove a server error:
   dynamic recommendations may be empty or changed. Normal empty default library
@@ -443,8 +466,9 @@ records on both platforms; error dialogs, playback routing and timeouts are unch
   cards remain visible, with any load warning available in the editor.
   Empty and failed Home rows use the same header and keyline as populated rows,
   including pinned-navigation clearance. Status/source and native recovery
-  actions stay compact; they do not use a full-page error panel or reserve an
-  empty poster wall. Mobile uses its ordinary media-section heading and insets.
+  actions for failures stay compact; empty states reserve a modest minimum
+  height rather than an empty poster wall and grow for larger text. Mobile uses
+  its ordinary media-section heading and insets.
   Warnings are runtime-only, scoped to the current profile, accounts, server
   users, credentials, and settings; cancellation is not a failure and successful
   recovery clears the warning. Details expose safe error categories, not URLs,
