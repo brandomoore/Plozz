@@ -257,18 +257,33 @@ final class ProfileSwitchAuthorizationTests: XCTestCase {
             window.rootViewController = nil
             previous?.makeKeyAndVisible()
         }
-        try await Task.sleep(for: .milliseconds(750))
+        // Establish visible entry before testing what survives authorization.
+        // A fixed delay can capture the first entrance frame on a busy simulator.
+        let deadline = ContinuousClock.now.advanced(by: .seconds(5))
+        var initialText = try recognizedText(window, attaching: false)
+        while (!initialText.contains("Enter your PIN") || !initialText.contains("Cancel")),
+              ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(50))
+            initialText = try recognizedText(window, attaching: false)
+        }
+        guard initialText.contains("Enter your PIN"), initialText.contains("Cancel") else {
+            _ = try recognizedText(window)
+            XCTFail("Expected visible PIN entry before authorization: \(initialText)")
+            return
+        }
         try await operation(window)
     }
 
-    private func recognizedText(_ window: UIWindow) throws -> String {
+    private func recognizedText(_ window: UIWindow, attaching: Bool = true) throws -> String {
         window.layoutIfNeeded()
         let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
             window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
         }
-        let attachment = XCTAttachment(image: image)
-        attachment.lifetime = .keepAlways
-        add(attachment)
+        if attaching {
+            let attachment = XCTAttachment(image: image)
+            attachment.lifetime = .keepAlways
+            add(attachment)
+        }
         let request = VNRecognizeTextRequest()
         request.recognitionLevel = .accurate
         try VNImageRequestHandler(cgImage: XCTUnwrap(image.cgImage)).perform([request])
