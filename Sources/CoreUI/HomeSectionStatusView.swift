@@ -7,17 +7,20 @@ public struct HomeSectionStatusView: View {
     private let onRetry: () -> Void
     private let onSeeAll: (() -> Void)?
     private let onCustomizeHome: (() -> Void)?
+    private let onDismissEmpty: (() -> Void)?
     private let showsTitle: Bool
     @State private var showsDetails = false
 
     public init(
         issue: HomeSectionIssue, showsTitle: Bool = true,
         onSeeAll: (() -> Void)? = nil, onCustomizeHome: (() -> Void)? = nil,
+        onDismissEmpty: (() -> Void)? = nil,
         onRetry: @escaping () -> Void
     ) {
         self.issue = issue
         self.onSeeAll = onSeeAll
         self.onCustomizeHome = onCustomizeHome
+        self.onDismissEmpty = onDismissEmpty
         self.showsTitle = showsTitle
         self.onRetry = onRetry
     }
@@ -34,15 +37,17 @@ public struct HomeSectionStatusView: View {
                 } description: {
                     HomeSectionSourceLabel(issue: issue)
                 } actions: {
+                    if let onDismissEmpty {
+                        Button("Dismiss", action: onDismissEmpty)
+                            .plozzActionButton(role: .secondary)
+                            .tint(palette.primaryText)
+                            .accessibilityIdentifier("home-section-dismiss-empty")
+                    }
                     if let onCustomizeHome {
-                        Button(action: onCustomizeHome) {
-                            Text("Customize Home")
-                                .font(.subheadline)
-                                .frame(minHeight: 44)
-                        }
-                        .buttonStyle(.borderless)
-                        .tint(palette.primaryText)
-                        .accessibilityIdentifier("home-section-customize")
+                        Button("Customize Home", action: onCustomizeHome)
+                            .plozzActionButton(role: .secondary)
+                            .tint(palette.primaryText)
+                            .accessibilityIdentifier("home-section-customize")
                     }
                     if let onSeeAll { Button("See all", action: onSeeAll) }
                 }

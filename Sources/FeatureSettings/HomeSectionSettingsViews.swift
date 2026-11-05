@@ -182,6 +182,7 @@ struct HomeSectionSettingsView: View {
     let libraries: [AggregatedLibrary]
     let accounts: [ResolvedAccount]
     var showsRemoveAction = true
+    @Environment(\.themePalette) private var palette
     @Environment(CardStyleSettingsModel.self) private var cards
     @Environment(LibraryPresentationSettingsModel.self) private var libraryPresentation: LibraryPresentationSettingsModel?
     #if os(tvOS)
@@ -231,6 +232,14 @@ struct HomeSectionSettingsView: View {
                 #else
                 SettingsSectionGroup { behaviorControls }
                 #endif
+            }
+            if !previewsShowcase, visibility.visibility.dismissedEmptyHomeRows.contains(choice.id) {
+                Button("Show empty message") {
+                    visibility.setEmptyHomeRowDismissed(false, id: choice.id)
+                }
+                .plozzActionButton(role: .secondary)
+                .tint(palette.primaryText)
+                .accessibilityIdentifier("home-section-restore-empty")
             }
             if showsRemoveAction {
                 Button("Remove from Home", role: .destructive) {

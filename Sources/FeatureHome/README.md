@@ -445,10 +445,17 @@ records on both platforms; error dialogs, playback routing and timeouts are unch
   on Home with source, Details, and Retry. Confirmed-empty sections instead show
   a centered native empty state with a neutral stack symbol, source attribution,
   and extra vertical breathing room, without error details or retry controls.
-  A small native Customize Home action opens the active profile's existing
-  Home editor so viewers can keep or hide the row. Its text uses the theme's
+  A native secondary Customize Home button opens the active profile's existing
+  Home editor so viewers can keep or hide the row. It uses the shared secondary
+  button surface, not a bare text link. Its text uses the theme's
   neutral primary ink, not an inherited system accent. The editor's own empty-state
   previews omit this action, and opening it does not change row preferences.
+  Dismiss hides only that row's confirmed-empty Home message, persisted per
+  profile without disabling or reordering the row. Titles appear automatically
+  when available; loading placeholders and real failures remain visible. New
+  row identities retain their messages, and the row's editor can restore a
+  dismissed message. tvOS Showcase omits confirmed-empty rows automatically,
+  without saving dismissals or changing other Home layouts.
   Customize Home shares the same completed-load
   evidence, distinguishing typed failures, empty results, and saved sections
   absent from the latest refresh. Missing sections do not prove a server error:

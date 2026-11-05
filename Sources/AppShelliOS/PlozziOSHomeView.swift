@@ -2658,7 +2658,10 @@ private struct PlozziOSHomeSectionStatusRow: View {
             title: issue.choice.localizedTitle.map(Text.init) ?? Text(verbatim: issue.choice.title),
             onSeeAll: browseItem.map { _ in { isBrowsing = true } }
         ) {
-            HomeSectionStatusView(issue: issue, showsTitle: false, onCustomizeHome: onCustomizeHome) {
+            HomeSectionStatusView(
+                issue: issue, showsTitle: false, onCustomizeHome: onCustomizeHome,
+                onDismissEmpty: { appModel.settings.homeVisibility.setEmptyHomeRowDismissed(true, id: issue.id) }
+            ) {
                 Task { await viewModel.load(showLoadingState: false) }
             }
             .padding(.horizontal, PlozziOSPageLayout.horizontalInset(for: sizeClass))

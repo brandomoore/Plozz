@@ -25,6 +25,7 @@ final class HomeSectionStatusViewTests: XCTestCase {
             XCTAssertFalse(text.contains("Retry"), text)
             XCTAssertFalse(text.contains("connection"), text)
             XCTAssertFalse(text.contains("Customize Home"), "The editor preview must not link to itself.")
+            XCTAssertFalse(text.contains("Dismiss"), "The editor retains its status evidence.")
             let summary = try XCTUnwrap(
                 observations(image).first { $0.topCandidates(1).first?.string == "No titles to show" }
             )
@@ -42,12 +43,11 @@ final class HomeSectionStatusViewTests: XCTestCase {
         }
     }
 
-    #if os(tvOS)
     func testNonemptyIssueReasonsKeepRecoveryControls() async throws {
         let reasons: [HomeSectionIssue.Reason] = [.failed(.serverUnreachable), .notReturned, .sourceUnavailable]
         for (index, reason) in reasons.enumerated() {
             let width: CGFloat = 1000
-            let image = try await render(reason, width: width, onCustomizeHome: {})
+            let image = try await render(reason, width: width, onCustomizeHome: {}, onDismissEmpty: {})
             if let directory = ProcessInfo.processInfo.environment["PLOZZ_HOME_STATUS_SNAPSHOTS"] {
                 let url = URL(fileURLWithPath: directory).appendingPathComponent("unavailable-\(index).png")
                 try XCTUnwrap(UIImage(cgImage: image).pngData()).write(to: url)
@@ -57,17 +57,19 @@ final class HomeSectionStatusViewTests: XCTestCase {
             XCTAssertTrue(text.contains("Retry"), text)
             XCTAssertTrue(text.contains("Media server"), text)
             XCTAssertFalse(text.contains("Customize Home"), text)
+            XCTAssertFalse(text.contains("Dismiss"), text)
         }
     }
-    #endif
 
     #if os(iOS)
     func testEmptySectionGrowsForAccessibilityTextWithoutClipping() async throws {
-        let normal = try await render(.empty, width: 280, onCustomizeHome: {})
-        let large = try await render(.empty, width: 280, textSize: .accessibility3, onCustomizeHome: {})
+        let normal = try await render(.empty, width: 280, onCustomizeHome: {}, onDismissEmpty: {})
+        let large = try await render(
+            .empty, width: 280, textSize: .accessibility3, onCustomizeHome: {}, onDismissEmpty: {}
+        )
         XCTAssertGreaterThan(large.height, normal.height)
         let text = try recognize(large)
-        for word in ["No", "titles", "to", "show", "Media", "server", "Customize", "Home"] {
+        for word in ["No", "titles", "to", "show", "Media", "server", "Customize", "Home", "Dismiss"] {
             XCTAssertTrue(text.contains(word), text)
         }
     }
@@ -79,9 +81,10 @@ final class HomeSectionStatusViewTests: XCTestCase {
         #else
         let width: CGFloat = 360
         #endif
-        let image = try await render(.empty, width: width, onCustomizeHome: {})
+        let image = try await render(.empty, width: width, onCustomizeHome: {}, onDismissEmpty: {})
         let text = try recognize(image)
         XCTAssertTrue(text.contains("Customize Home"), text)
+        XCTAssertTrue(text.contains("Dismiss"), text)
         XCTAssertTrue(text.contains("No titles to show"), text)
         XCTAssertFalse(text.contains("Details"), text)
         XCTAssertFalse(text.contains("Retry"), text)
@@ -148,7 +151,8 @@ final class HomeSectionStatusViewTests: XCTestCase {
     private func render(
         _ reason: HomeSectionIssue.Reason, width: CGFloat,
         textSize: DynamicTypeSize = .large, onSeeAll: (() -> Void)? = nil,
-        onCustomizeHome: (() -> Void)? = nil, palette: ThemePalette = .dark, inheritedTint: Color? = nil
+        onCustomizeHome: (() -> Void)? = nil, onDismissEmpty: (() -> Void)? = nil,
+        palette: ThemePalette = .dark, inheritedTint: Color? = nil
     ) async throws -> CGImage {
         let issue = HomeSectionIssue(
             choice: .init(
@@ -160,7 +164,7 @@ final class HomeSectionStatusViewTests: XCTestCase {
         let content =
             HomeSectionStatusView(
                 issue: issue, showsTitle: false, onSeeAll: onSeeAll,
-                onCustomizeHome: onCustomizeHome, onRetry: {}
+                onCustomizeHome: onCustomizeHome, onDismissEmpty: onDismissEmpty, onRetry: {}
             )
                 .environment(\.themePalette, palette)
                 .environment(\.colorScheme, palette.isLight ? .light : .dark)
@@ -171,19 +175,22 @@ final class HomeSectionStatusViewTests: XCTestCase {
                 .fixedSize(horizontal: false, vertical: true)
                 .background(palette.backgroundBase)
                 .ignoresSafeArea()
-        #if os(iOS)
-        let renderer = ImageRenderer(content: content)
-        renderer.scale = 2
-        return try XCTUnwrap(renderer.cgImage)
-        #else
-        // Native tvOS buttons are UIKit-backed and are omitted by ImageRenderer.
+        // Native glass controls need an application scene and render-server capture.
         let host = UIHostingController(rootView: content)
         host.safeAreaRegions = []
         let proposal = CGSize(width: width, height: 2_000)
-        let previousKeyWindow = UIApplication.shared.connectedScenes
-            .compactMap { $0 as? UIWindowScene }.flatMap(\.windows).first(where: \.isKeyWindow)
-        let window = UIWindow(frame: CGRect(origin: .zero, size: host.sizeThatFits(in: proposal)))
+        let deadline = ContinuousClock.now + .seconds(5)
+        while !UIApplication.shared.connectedScenes.contains(where: { $0.activationState == .foregroundActive }),
+              ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previousKeyWindow = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(origin: .zero, size: host.sizeThatFits(in: proposal))
         window.overrideUserInterfaceStyle = palette.isLight ? .light : .dark
+        host.overrideUserInterfaceStyle = window.overrideUserInterfaceStyle
         window.rootViewController = host
         window.makeKeyAndVisible()
         defer {
@@ -202,11 +209,10 @@ final class HomeSectionStatusViewTests: XCTestCase {
         host.view.layoutIfNeeded()
         let format = UIGraphicsImageRendererFormat()
         format.scale = 2
-        let image = UIGraphicsImageRenderer(size: size, format: format).image { context in
-            host.view.layer.render(in: context.cgContext)
+        let image = UIGraphicsImageRenderer(size: size, format: format).image { _ in
+            XCTAssertTrue(host.view.drawHierarchy(in: host.view.bounds, afterScreenUpdates: true))
         }
         return try XCTUnwrap(image.cgImage)
-        #endif
     }
 
     private func recognize(_ image: CGImage) throws -> String {

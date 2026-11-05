@@ -9,11 +9,16 @@ public struct HomeSectionStatusRow: View {
     @Environment(\.openHomeCustomization) private var openHomeCustomization
     private let issue: HomeSectionIssue
     private let onSeeAll: (() -> Void)?
+    private let onDismissEmpty: (() -> Void)?
     private let onRetry: () -> Void
 
-    public init(issue: HomeSectionIssue, onSeeAll: (() -> Void)? = nil, onRetry: @escaping () -> Void) {
+    public init(
+        issue: HomeSectionIssue, onSeeAll: (() -> Void)? = nil,
+        onDismissEmpty: (() -> Void)? = nil, onRetry: @escaping () -> Void
+    ) {
         self.issue = issue
         self.onSeeAll = onSeeAll
+        self.onDismissEmpty = onDismissEmpty
         self.onRetry = onRetry
     }
 
@@ -24,7 +29,7 @@ public struct HomeSectionStatusRow: View {
         ) {
             HomeSectionStatusView(
                 issue: issue, showsTitle: false,
-                onCustomizeHome: openHomeCustomization, onRetry: onRetry
+                onCustomizeHome: openHomeCustomization, onDismissEmpty: onDismissEmpty, onRetry: onRetry
             )
         }
     }

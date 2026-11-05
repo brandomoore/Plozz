@@ -1529,7 +1529,7 @@ public struct HomeView: View {
         var result: [(row: FocusHeroRow, source: FocusHomeRowSource)] = []
         for presentation in HomePresentationRow.resolve(
             rows: rows, content: content, visibility: visibility.visibility, liveTV: liveTV,
-            presentation: libraryPresentation?.settings ?? .default
+            presentation: libraryPresentation?.settings ?? .default, showsEmptySectionMessages: false
         ) {
             switch presentation.source {
             case let .home(row): result.append(entry(row, presentation: presentation))
@@ -1939,7 +1939,10 @@ public struct HomeView: View {
     }
 
     private func sectionStatusView(_ issue: HomeSectionIssue, browseItem: MediaItem?) -> some View {
-        HomeSectionStatusRow(issue: issue, onSeeAll: browseItem.map { item in { onSelectItem(item) } }) {
+        HomeSectionStatusRow(
+            issue: issue, onSeeAll: browseItem.map { item in { onSelectItem(item) } },
+            onDismissEmpty: { visibility.setEmptyHomeRowDismissed(true, id: issue.id) }
+        ) {
             Task { await viewModel.load(showLoadingState: false) }
         }
         .disabled(viewModel.isRefreshing)
