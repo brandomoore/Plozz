@@ -2136,6 +2136,8 @@ final class NativeLibraryCardHostedTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(poster.image).size.width, poster.contentSize.width, accuracy: 1)
         XCTAssertEqual(try XCTUnwrap(poster.image).size.height, poster.contentSize.height, accuracy: 1)
         XCTAssertTrue(poster.isFocused, "An asynchronously generated bitmap must not replace the native focus target.")
+        XCTAssertFalse(poster.artworkView.masksFocusEffectToContents,
+                       "Generated library covers must share the media cards' rectangular native focus surface.")
         poster.sendActions(for: .primaryActionTriggered)
         XCTAssertEqual(activations, 1)
         let artwork = try XCTUnwrap(NativeFocusProjection.artworkFrame(of: poster.artworkView, in: window))
@@ -2634,7 +2636,8 @@ final class NativeLibraryCardHostedTests: XCTestCase {
                     image = snapshot(window)
                     if let poster {
                         XCTAssertTrue(poster.image === restingImage, "Focus must reuse the prepared bitmap.")
-                        XCTAssertTrue(poster.artworkView.masksFocusEffectToContents)
+                        XCTAssertFalse(poster.artworkView.masksFocusEffectToContents,
+                                       "Library covers must share the media cards' rectangular native focus surface.")
                         let width = metrics.landscapeCardSlotWidth - metrics.borderlessCardSideMargin * 2
                         XCTAssertEqual(poster.contentSize.width, width, accuracy: 1)
                         XCTAssertEqual(poster.contentSize.height, width * 9 / 16, accuracy: 1)
@@ -2672,11 +2675,14 @@ final class NativeLibraryCardHostedTests: XCTestCase {
                         if aspect == "transparent" {
                             let bitmap = try XCTUnwrap(poster.image?.cgImage)
                             let pixels = try rgba(bitmap)
-                            XCTAssertLessThan(pixels[((bitmap.height - 1) * bitmap.width + bitmap.width / 2) * 4 + 3], 16,
-                                              "Keep the server cover's fading reflection; do not flatten it onto a plate.")
+                            let bottomOffset = ((bitmap.height - 1) * bitmap.width + bitmap.width / 2) * 4
+                            XCTAssertEqual(pixels[bottomOffset + 3], 255,
+                                           "Transparent reflections must fade onto the shared opaque card backing.")
+                            XCTAssertLessThan(pixels[bottomOffset], 128,
+                                              "Keep the reflection's fade instead of stretching opaque artwork over it.")
                             if !focused {
                                 let bottom = try pixel(image, at: CGPoint(x: artwork.midX, y: artwork.maxY - 3))
-                                XCTAssertGreaterThan(bottom[1], 12, "The backdrop must remain visible through the fade.")
+                                XCTAssertGreaterThan(bottom[1], 60, "The card backing must replace the darker page backdrop.")
                             }
                         }
                         if focused {

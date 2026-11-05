@@ -2508,7 +2508,6 @@ struct LibraryCardView: View {
                 providerKind: aggregated.providerKind,
                 mediaShareTransport: aggregated.transportKind,
                 showsCaption: captions.showsLabels(in: .homeLibraries, isShowcase: isShowcase),
-                preservesArtworkTransparency: true,
                 focus: $isFocused,
                 action: action
             ) {

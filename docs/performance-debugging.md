@@ -859,9 +859,9 @@ backing before composition. No clipping view or per-frame mask is added.
 Rows and Browse share `NativePosterImageView`; the existing
 UIButton or collection cell remains the sole focus owner. There is no card
 ancestor or custom animation.
-Home library covers explicitly retain alpha-masked focus to preserve server
-artwork whose reflection fades into the page. That transparency is not flattened
-onto the opaque backing used for ordinary media cards.
+Home library covers use the same rectangular focus surface. Server artwork with
+transparent reflections is flattened onto the shared opaque backing for native TV
+presentation only; cached source pixels and mobile/custom focus styles are unchanged.
 Count-tile backgrounds stay flush. The original 2pt trailing/aspect-scaled top
 padding adjustment was baked into the whole image. Applying it permanently made
 resting digits uneven. Switching images at focus changes fixed the padding but

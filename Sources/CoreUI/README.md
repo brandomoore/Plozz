@@ -1157,8 +1157,9 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   the small native internal crop (about 1-2% in hosted measurements) is an
   intentional tradeoff for retaining that native surface.
   The alpha-derived highlight mask produced an offset crescent at extreme tilt.
-  Home library covers explicitly retain their alpha-masked surface so a server's
-  transparent reflection can fade into the page instead of an opaque plate.
+  Home library covers use that same rectangular surface. Transparent server
+  reflections fade onto its opaque backing rather than into the page; the source
+  artwork and the separate caption remain unchanged.
   Images arm native enlargement only on actual focus and release it after the
   current native defocus animation completes. This applies to opaque portraits
   too: arming them before focus can mount untouched lazy-row cards already lifted.
