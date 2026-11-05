@@ -80,7 +80,9 @@ class FixtureTests(unittest.TestCase):
 
     def test_dependencies_have_pinned_https_sources(self):
         manifest = json.loads((lab.HERE / "dependencies.json").read_text())
-        self.assertEqual(set(manifest), {"libbluray", "host-jdk", "ant", "zero-source"})
+        self.assertEqual(set(manifest), {
+            "libbluray", "host-jdk", "ant", "zero-source", "libffi-source",
+        })
         for specification in manifest.values():
             self.assertTrue(specification["url"].startswith("https://"))
             algorithm = "sha256" if "sha256" in specification else "sha512"

@@ -10,9 +10,14 @@
     "root": "jdk-21.0.13+9"
   },
   "zero-source": {
-    "url": "https://codeload.github.com/openjdk/mobile/tar.gz/ecb17532dc8f3e271ad2d6550127a2253569cf9b",
-    "sha256": "04713003a9b797e5c128f48a0d6bc401d80f3475e6fcf0e7b204ee0b09a3290a",
-    "root": "mobile-ecb17532dc8f3e271ad2d6550127a2253569cf9b"
+    "url": "https://codeload.github.com/openjdk/jdk21u/tar.gz/ba94eace682733f66e623c089bcafcf4a1b8e39c",
+    "sha256": "3e4dcc21ee17db217522294ab6b937580d0367e2d0039096fd62f60fdb8fea40",
+    "root": "jdk21u-ba94eace682733f66e623c089bcafcf4a1b8e39c"
+  },
+  "libffi-source": {
+    "url": "https://github.com/libffi/libffi/releases/download/v3.4.8/libffi-3.4.8.tar.gz",
+    "sha256": "bc9842a18898bfacb0ed1252c4febcc7e78fa139fd27fdc7a3e30d9d9356119b",
+    "root": "libffi-3.4.8"
   },
   "ant": {
     "url": "https://archive.apache.org/dist/ant/binaries/apache-ant-1.10.15-bin.tar.gz",

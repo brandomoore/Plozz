@@ -94,7 +94,7 @@ class Lab:
         dependencies.mkdir(parents=True, exist_ok=True)
         resolved = {}
         for name, specification in specifications.items():
-            if name == "zero-source" and not zero:
+            if name in ("zero-source", "libffi-source") and not zero:
                 continue
             fingerprint = specification.get("sha256", specification.get("sha512"))[:16]
             destination = dependencies / f"{name}-{fingerprint}"
@@ -246,14 +246,17 @@ class Lab:
             raise RuntimeError("Zero compiled, but execution/no-JIT validation is still required")
         (self.run_dir / "zero-result.json").write_text(json.dumps({
             "status": "blocked", "attempts": failures,
-            "source": "OpenJDK mobile JDK 21 development snapshot; not a shipping runtime",
+            "source": dependencies["zero-source"].name,
         }, indent=2) + "\n")
         raise RuntimeError("Both tvOS Zero build probes failed; retained zero-result.json")
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=["bootstrap", "host", "navigate", "zero-probe"])
+    parser.add_argument("command", choices=[
+        "bootstrap", "host", "navigate", "zero-probe", "tvos-build", "tvos-runtime",
+        "tvos-smoke",
+    ])
     args = parser.parse_args()
     def interrupted(signum, frame):
         raise InterruptedError(f"Disc-menu lab interrupted by signal {signum}")
@@ -261,7 +264,15 @@ def main() -> int:
     signal.signal(signal.SIGTERM, interrupted)
     try:
         lab = Lab()
-        dependencies = lab.dependencies(zero=args.command == "zero-probe")
+        dependencies = lab.dependencies(zero=args.command in (
+            "zero-probe", "tvos-build", "tvos-runtime", "tvos-smoke"))
+        if args.command in ("tvos-build", "tvos-runtime", "tvos-smoke"):
+            import tvos
+            tvos.build(lab, dependencies, runtime=args.command != "tvos-build",
+                       simulator=args.command == "tvos-smoke")
+            if args.command == "tvos-smoke":
+                import tvos_smoke
+                tvos_smoke.run(lab)
         if args.command == "zero-probe":
             lab.zero_probe(dependencies)
         if args.command in ("host", "navigate"):

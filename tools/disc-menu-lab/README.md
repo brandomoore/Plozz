@@ -3,7 +3,8 @@
 An isolated experiment, **not an enabled Plozz playback feature**. It runs an
 original Java Xlet through real libbluray navigation, rather than imitating a
 disc menu in SwiftUI. No app target, playback engine dependency, signing setting,
-or device installation is changed.
+or physical-device installation is changed. The optional runtime smoke route
+installs only its own test app in a newly created simulator.
 
 ## Run
 
@@ -14,7 +15,9 @@ fontconfig, FreeType, libudfread and libxml2 available to pkg-config:
 ```sh
 python3 -m unittest discover -s tools/disc-menu-lab -p 'test_*.py'
 python3 tools/disc-menu-lab/lab.py navigate
-python3 tools/disc-menu-lab/lab.py zero-probe
+python3 tools/disc-menu-lab/lab.py tvos-build
+python3 tools/disc-menu-lab/lab.py tvos-runtime
+python3 tools/disc-menu-lab/lab.py tvos-smoke
 ```
 
 `bootstrap` downloads prerequisites only; `host` builds libbluray and its Java
@@ -77,30 +80,65 @@ profile/account isolation, cancellation, and a supported runtime security model.
 Java 24 removed SecurityManager support ([JEP 486](https://openjdk.org/jeps/486));
 silently removing the checks is not an acceptable upgrade path.
 
-## Apple TV Zero probe: blocked
+## Apple TV Zero runtime port
 
-The pinned OpenJDK mobile commit is a **JDK 21 development snapshot**, selected
-to investigate its existing BSD Zero sources with a compatible boot JDK.
-It is not a maintained runtime candidate for distribution.
+The port uses release-tagged **OpenJDK 21.0.13+9** sources from `jdk21u`, a matching
+host boot JDK, and pinned libffi 3.4.8. The earlier mobile EA snapshot and raw
+`zero-probe` configuration failures are historical evidence, not the current
+port's outcome. This experimental pin is not a distribution/security-update policy.
 
-Two bounded attempts are retained:
+`tvos-build` cross-compiles a genuine ARM64 tvOS Zero JVM (minimum tvOS 18).
+`tvos-runtime` also builds and stages matching `java.base` classes, native
+libraries, security configuration, CA roots and timezone data. Device-platform
+cross-compilation and staging have succeeded. Each native library's Mach-O
+platform and architecture are checked; a macOS or simulator binary cannot pass
+as a device library. The JVM must export `JNI_CreateJavaVM` and must not import
+the checked unavailable process/JIT/debugger-exception APIs.
 
-1. The explicit `aarch64-apple-tvos` target fails because its platform machinery
-   does not recognize tvOS.
-2. The Darwin target with explicit tvOS SDK/compiler flags gets further, but
-   still requires macOS desktop Metal tooling (`xcrun -sdk macosx metal`).
-   That tool was unavailable on the inspected development installation.
+The reproducible adaptations live in `tvos.py`, applied exactly once against
+checksummed pristine inputs into an owned source copy. Device and simulator
+builds have separate output/FFI directories. The build reuses BSD machinery but
+passes explicit tvOS SDK/compiler targets; it does not disguise macOS binaries.
 
-The probe reports failure, not a tvOS library. The second failure is a tooling/
-configuration blocker, **not evidence that a tvOS port is impossible**. No JVM
-object code was built and no simulator or physical Apple TV ran this experiment.
-Porting the runtime requires proper target configuration, compatible libffi and
-native libraries, OS/API adaptations and an actual no-JIT execution test; a
-desktop fallback or fake executable cannot establish those properties.
+Current scope and deliberate limitations:
+
+- Zero's code heap holds non-executable metadata. The BSD VM memory helpers
+  fail explicitly if asked to reserve, commit, protect or map executable data.
+  This is not a complete audit of every native dependency or physical-device
+  proof of no-JIT behavior.
+- External process APIs throw `UnsupportedOperationException`; first access can
+  wrap that in a class-initialization error. Desktop process enumeration,
+  launcher and macOS KeychainStore native support are not supplied.
+  An attempted KeychainStore native load fails rather than bypassing security.
+- Legacy macOS global proxy-property import is unavailable and logs that
+  limitation. URL-specific system-proxy selection uses CFNetwork when enabled
+  with `java.net.useSystemProxies`; it is not exercised by the offline probe.
+- Desktop Metal/printing dependencies are not needed for this `java.base` build.
+  Their omission is **not** a port of `java.desktop`, AWT or BD-J graphics.
+
+`tvos-smoke` builds a separate **tvOS Simulator** variant and an original
+`app.plozz.lab.ZeroSmoke` app. It creates one owned simulator, boots it, installs
+the app, and requires a structured result within 120 seconds. The JNI worker
+must execute arithmetic, catch an expected Java exception, round-trip a file,
+compute SHA-256, run a Java thread, reject process creation, deny a network
+permission check with SecurityManager enabled, and destroy the VM. Loading the
+library alone is not a pass. No connection is attempted.
+
+This probe **passed on tvOS 27 Simulator with the Zero interpreter**, including
+VM teardown and owned-simulator cleanup. The executable-memory guards were
+enabled. This advances the result beyond cross-compilation, but it does not
+establish physical-device behavior or run the Blu-ray menu/AWT layer on tvOS.
+SecurityManager deprecation warnings remain visible rather than suppressed.
+
+The runner retains app stdout/stderr, runtime results and any JVM fatal-error
+log found on timeout, and shuts down/deletes only its owned simulator in a
+`finally` path. It does not reset shared simulator services. Simulator evidence
+must not be presented as physical Apple TV execution.
 
 Separately, libbluray's Darwin build assumes DiskArbitration and desktop JVM
-discovery. Its Apple TV build, runtime packaging and Plozz playback integration
-have not been implemented here. A distributable implementation also needs
+discovery. Its Apple TV build, BD-J runtime modules and Plozz playback integration
+have not been implemented here. No physical Apple TV has run this experiment.
+A distributable implementation also needs
 license/notice review and an App Review decision; support for arbitrary external
 Java media applications must not be described as preapproved.
 
