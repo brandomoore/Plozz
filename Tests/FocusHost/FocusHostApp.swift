@@ -117,32 +117,67 @@ private struct CollectionRowEditorFixture: View {
         store: HomeLibraryVisibilityStore(namespace: "collection-row-editor-fixture")
     )
     @State private var navigation = SettingsPageNavigation<String>()
+    @State private var provider: CollectionRowEditorProvider?
 
     var body: some View {
-        let provider = CollectionRowEditorProvider()
-        let account = ResolvedAccount(account: Account(from: provider.session), provider: provider)
         SettingsPageStack(navigation: navigation, pageWidth: SettingsFormMetrics.pageWidth, onRootBack: {}) {
-            CollectionSectionSettingsView(
-                section: CollectionSection(
-                    source: .init(
-                        accountID: account.account.id, collectionID: "weekend", title: "Weekend picks",
-                        serverUserID: provider.session.userID
+            if let provider {
+                let account = ResolvedAccount(account: Account(from: provider.session), provider: provider)
+                CollectionSectionSettingsView(
+                    section: CollectionSection(
+                        source: .init(
+                            accountID: account.account.id, collectionID: "weekend", title: "Weekend picks",
+                            serverUserID: provider.session.userID
+                        ),
+                        cardStyle: .landscape,
+                        titleLogo: ProcessInfo.processInfo.arguments.contains("--collection-row-logo-on") ? .on : .default
                     ),
-                    cardStyle: .landscape
-                ),
-                isNew: true, inventory: HomeSectionCatalogModel(), visibility: visibility,
-                libraries: [], accounts: [account]
-            )
+                    isNew: true, inventory: HomeSectionCatalogModel(), visibility: visibility,
+                    libraries: [], accounts: [account]
+                )
+            } else {
+                ProgressView()
+            }
         } destination: { _ in EmptyView() }
         .environment(CardStyleSettingsModel())
         .environment(\.settingsInWorkspace, true)
         .environment(\.themePalette, .dark)
         .environment(\.colorScheme, .dark)
         .background { SettingsPageBackground() }
+        .task {
+            guard provider == nil else { return }
+            let backgroundURL = URL(string: "https://collection-fixture.invalid/\(UUID())-background.png")!
+            let logoURL = URL(string: "https://collection-fixture.invalid/\(UUID())-logo.png")!
+            let background = UIGraphicsImageRenderer(size: CGSize(width: 640, height: 360)).image {
+                UIColor(red: 0.12, green: 0.24, blue: 0.36, alpha: 1).setFill()
+                $0.fill(CGRect(x: 0, y: 0, width: 640, height: 360))
+            }
+            let logo = UIGraphicsImageRenderer(size: CGSize(width: 300, height: 90)).image { _ in
+                ("LOGO" as NSString).draw(at: CGPoint(x: 8, y: 2), withAttributes: [
+                    .font: UIFont.boldSystemFont(ofSize: 72), .foregroundColor: UIColor.white
+                ])
+            }
+            guard let cache = ArtworkSession.shared.configuration.urlCache else {
+                preconditionFailure("Collection fixture requires an artwork cache")
+            }
+            for (url, image) in [(backgroundURL, background), (logoURL, logo)] {
+                guard let data = image.pngData() else { preconditionFailure("Fixture PNG encoding failed") }
+                let response = HTTPURLResponse(
+                    url: url, statusCode: 200, httpVersion: nil,
+                    headerFields: ["Content-Type": "image/png", "Cache-Control": "max-age=3600"]
+                )!
+                cache.storeCachedResponse(
+                    CachedURLResponse(response: response, data: data), for: URLRequest(url: url)
+                )
+            }
+            provider = CollectionRowEditorProvider(background: backgroundURL, logo: logoURL)
+        }
     }
 }
 
 private struct CollectionRowEditorProvider: MediaProvider {
+    let background: URL
+    let logo: URL
     let kind: ProviderKind = .jellyfin
     let session = UserSession(
         server: MediaServer(
@@ -160,10 +195,13 @@ private struct CollectionRowEditorProvider: MediaProvider {
     }
     func item(id: String) async throws -> MediaItem { throw AppError.notFound }
     func children(of itemID: String) async throws -> [MediaItem] {
-        [
-            MediaItem(id: "orbit", title: "Orbit", kind: .movie, allowsTitleBasedMetadataMatching: false),
-            MediaItem(id: "crossing", title: "The Crossing", kind: .movie, allowsTitleBasedMetadataMatching: false)
-        ]
+        [("orbit", "Orbit"), ("crossing", "The Crossing")].map { id, title in
+            MediaItem(
+                id: id, title: title, kind: .movie, backdropURL: background, logoURL: logo,
+                allowsTitleBasedMetadataMatching: false,
+                artworkSelections: [.init(placement: .landscapeCard, references: [.remote(background)])]
+            )
+        }
     }
     func search(query: String, limit: Int) async throws -> [MediaItem] { [] }
     func playbackInfo(for itemID: String) async throws -> PlaybackRequest { throw AppError.notFound }

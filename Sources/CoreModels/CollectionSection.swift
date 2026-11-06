@@ -1,15 +1,26 @@
 import Foundation
 
 public enum LandscapeTitleLogo: String, Codable, CaseIterable, Sendable {
-    case automatic, on, off
+    case on, off
 
-    public static let `default`: Self = .automatic
+    public static let `default`: Self = .off
 
     public var title: LocalizedStringResource {
         switch self {
-        case .automatic: "Automatic"
         case .on: "On"
         case .off: "Off"
+        }
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        let value = try container.decode(String.self)
+        if value == "automatic" {
+            self = .off
+        } else if let mode = Self(rawValue: value) {
+            self = mode
+        } else {
+            throw DecodingError.dataCorruptedError(in: container, debugDescription: "Unknown landscape logo mode")
         }
     }
 }

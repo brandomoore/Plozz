@@ -38,9 +38,17 @@ public struct ContinueWatchingArtworkSource: Sendable {
     var prefersTextlessBackdrop: Bool {
         guard style == .landscape else { return false }
         guard let titleLogo else { return policy.prefersTextlessArtwork }
-        return titleLogo != .off && policy.settings.preference(in: policy.area) != .library
-            && !(titleLogo == .automatic && !policy.prefersOnlineArtwork
-                && !item.artworkReferences(for: .landscapeCard).isEmpty)
+        return titleLogo == .on && policy.settings.preference(in: policy.area) != .library
+    }
+
+    func suppressesLogo(
+        artworkAlreadyCarriesTitle: Bool, hasCurrentArtwork: Bool, textlessBackdropSuppressesLogo: Bool
+    ) -> Bool {
+        if let titleLogo {
+            return titleLogo == .off || style != .landscape || !hasCurrentArtwork
+        }
+        return style == .poster || artworkAlreadyCarriesTitle
+            || (prefersTextlessBackdrop && textlessBackdropSuppressesLogo)
     }
 
     public var identity: String {
@@ -56,9 +64,7 @@ public struct ContinueWatchingArtworkSource: Sendable {
 
     func primaryReference(textlessBackdrop: URL?) -> ArtworkReference? {
         guard style == .landscape else { return nil }
-        if let titleLogo {
-            if titleLogo == .automatic, !policy.prefersOnlineArtwork,
-               let native = item.artworkReferences(for: .landscapeCard).first { return native }
+        if titleLogo != nil {
             return prefersTextlessBackdrop ? textlessBackdrop.map(ArtworkReference.remote) : nil
         }
         return PosterCardPresentation.continueWatchingPrimaryReference(
@@ -71,12 +77,12 @@ public struct ContinueWatchingArtworkSource: Sendable {
         var ladder = item.kind == .episode
             ? item.seriesArtworkReferences(prefersPortrait: style == .poster)
             : cardPolicy.references(for: item, style: style, prefersLandscapeKeyArt: false)
-        if let titleLogo {
+        if titleLogo != nil {
             let titled = PosterCardPresentation.titleBearingArtwork(for: item)
-            let clean = item.artworkReferences(for: .homeHero, preferringLibrarySelection: true) + ladder
-            let keyArt = titleLogo == .automatic ? item.artworkReferences(for: .landscapeCard) : []
+            let candidates = item.artworkReferences(for: .homeHero, preferringLibrarySelection: true)
+                + item.artworkReferences(for: .landscapeCard) + ladder
             var seen = Set<ArtworkReference>()
-            ladder = (keyArt + clean.filter { !titled.contains($0) } + ladder)
+            ladder = (candidates.filter { !titled.contains($0) } + candidates)
                 .filter { seen.insert($0).inserted }
         }
         guard let primary = primaryReference(textlessBackdrop: textlessBackdrop) else { return ladder }

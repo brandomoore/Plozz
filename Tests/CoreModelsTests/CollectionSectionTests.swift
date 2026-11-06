@@ -45,14 +45,38 @@ final class CollectionSectionTests: XCTestCase {
         let legacy = try JSONDecoder().decode(
             CollectionSection.self, from: JSONSerialization.data(withJSONObject: object)
         )
-        XCTAssertEqual(legacy.titleLogo, .automatic)
+        XCTAssertEqual(section.titleLogo, .off)
+        XCTAssertEqual(legacy.titleLogo, .off)
         XCTAssertEqual(legacy.source, section.source)
+        XCTAssertEqual(LandscapeTitleLogo.allCases, [.on, .off])
         for mode in LandscapeTitleLogo.allCases {
             var edited = section
             edited.titleLogo = mode
             XCTAssertEqual(
                 try JSONDecoder().decode(CollectionSection.self, from: JSONEncoder().encode(edited)), edited
             )
+        }
+    }
+
+    func testRetiredAutomaticLogoModeMigratesToOffWithoutLosingTheRow() throws {
+        let encoded = try JSONEncoder().encode(section)
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        object["titleLogo"] = "automatic"
+        let restored = try JSONDecoder().decode(
+            CollectionSection.self, from: JSONSerialization.data(withJSONObject: object)
+        )
+        XCTAssertEqual(restored, section)
+        let saved = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: JSONEncoder().encode(restored)) as? [String: Any]
+        )
+        XCTAssertEqual(saved["titleLogo"] as? String, "off")
+    }
+
+    func testUnknownLogoModeIsNotSilentlyReplacedWithOff() {
+        XCTAssertThrowsError(try JSONDecoder().decode(LandscapeTitleLogo.self, from: Data("\"invalid\"".utf8))) { error in
+            guard case DecodingError.dataCorrupted = error else {
+                return XCTFail("Expected a typed data-corruption error, got \(error)")
+            }
         }
     }
 

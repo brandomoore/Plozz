@@ -865,12 +865,14 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   Jellyfin/Emby Thumb images and validated share landscape/thumb sidecars do not
   depend on the hero's backdrop ordering. Artwork-only cards can fill a missing
   native slot from enabled metadata providers; explicit Library stays native-first.
-  Custom collection rows persist Logo as Automatic (default), On or Off. Automatic
-  keeps native key art without a duplicate logo, otherwise reuses Continue
-  Watching's clean-background/logo composition. On prefers clean backgrounds;
-  Off draws artwork only. The resolved reference, not the server brand, suppresses
-  logos on known title art and poster fallbacks. This is placement metadata, not
-  pixel-level text detection. Logo-free sources retain the shared text-title
+  Custom collection rows persist Logo as On or Off (default); retired Automatic
+  values decode as Off. On prefers clean backgrounds and reuses Continue
+  Watching's logo composition, but artwork-type and textless-availability guesses
+  cannot suppress the explicitly requested overlay. It waits for the current
+  background to resolve, including a native thumbnail or poster fallback.
+  Off draws artwork only, preserving any logo embedded in that image.
+  Continue Watching keeps its separate duplicate-title protection.
+  Logo-free sources retain the shared text-title
   fallback. These choices do not change episode stills, extras, portrait cards,
   Continue Watching preferences, captions, card geometry or focus. Preview, tvOS
   and mobile rows use the same profile-scoped setting.

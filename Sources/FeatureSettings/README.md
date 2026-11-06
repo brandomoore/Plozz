@@ -569,11 +569,13 @@ watch history and planning-list behavior are documented in
   real-title preview leads the editor, with compact native **Layout** and **Logo**
   menu rows underneath rather than controls inside the preview.
   The preview uses the existing artwork preferences and spoiler protection.
-  Landscape exposes **Logo: Automatic / On / Off** for movie/show cards on all platforms. Automatic is
-  the default for new and existing collection rows: retain native title artwork
-  when available, otherwise compose a background with the title logo. On uses the
-  shared background/logo treatment; Off keeps artwork only. Known titled images
-  and poster fallbacks never receive a duplicate logo. The preference persists
+  Landscape exposes **Logo: On / Off** for movie/show cards on all platforms,
+  defaulting to Off. Older Automatic values migrate to Off; saved On/Off choices
+  remain intact. On uses the shared background/logo treatment and is never
+  suppressed by an artwork-type guess. It prefers clean backgrounds when allowed
+  by the artwork settings, but still overlays the available artwork when none is
+  found. Off adds no overlay; it cannot remove a logo embedded in the image.
+  The preference persists
   with each row, survives layout changes and profile transfer, and previews
   without saving until the user applies the edit. Episode stills are unchanged.
   Each navigation destination explicitly forwards the active profile's card settings,

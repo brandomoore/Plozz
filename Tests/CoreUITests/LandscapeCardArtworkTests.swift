@@ -41,44 +41,81 @@ final class LandscapeCardArtworkTests: XCTestCase {
         XCTAssertTrue(PosterCardPresentation.titleBearingArtwork(for: value).contains(.remote(native)))
     }
 
-    func testAutoRetainsNativeTitleArtWithoutAnUnnecessaryTextlessLookup() {
-        let value = item()
-        for preference in [ArtworkPreference.recommended, .library] {
-            let selected = source(value, mode: .automatic, preference: preference)
+    func testOnUsesCleanBackgroundsWithoutOverridingLibraryPreference() {
+        for value in [item(titled: false), item()] {
+            let selected = source(value, mode: .on)
             XCTAssertEqual(selected.policy.area, .homeRows)
-            XCTAssertFalse(selected.prefersTextlessBackdrop)
-            XCTAssertEqual(selected.primaryReference(textlessBackdrop: online), .remote(native))
-            XCTAssertEqual(selected.references(textlessBackdrop: online).first, .remote(native))
-        }
-    }
-
-    func testAutoForBackdropOnlyServersAndOnForEveryServerUseCleanBackgrounds() {
-        for (value, mode) in [(item(titled: false), LandscapeTitleLogo.automatic), (item(), .on)] {
-            let selected = source(value, mode: mode)
             XCTAssertTrue(selected.prefersTextlessBackdrop)
             XCTAssertEqual(selected.primaryReference(textlessBackdrop: online), .remote(online))
             XCTAssertEqual(selected.references(textlessBackdrop: online).first, .remote(online))
             XCTAssertEqual(selected.references(textlessBackdrop: nil).first, .remote(background))
             XCTAssertFalse(PosterCardPresentation.titleBearingArtwork(for: value).contains(.remote(background)))
-            let library = source(value, mode: mode, preference: .library)
+            let library = source(value, mode: .on, preference: .library)
             XCTAssertFalse(library.prefersTextlessBackdrop)
             XCTAssertNil(library.primaryReference(textlessBackdrop: online))
             XCTAssertEqual(library.references(textlessBackdrop: online).first, .remote(background))
         }
     }
 
-    func testExplicitOnlinePolicyCanOverrideNativeTitleArtInAuto() {
-        let selected = source(item(), mode: .automatic, preference: .online)
+    func testOnRespectsExplicitOnlinePolicyAndRetainsNativeFallbacks() {
+        let selected = source(item(), mode: .on, preference: .online)
         XCTAssertTrue(selected.prefersTextlessBackdrop)
         XCTAssertEqual(selected.primaryReference(textlessBackdrop: online), .remote(online))
         XCTAssertEqual(selected.references(textlessBackdrop: online).first, .remote(online))
         XCTAssertTrue(selected.references(textlessBackdrop: online).contains(.remote(native)))
     }
 
+    func testOnRetainsAThumbnailWhenItIsTheOnlyAvailableArtwork() {
+        let value = MediaItem(
+            id: "thumb-only", title: "Thumb only", kind: .movie,
+            artworkSelections: [.init(placement: .landscapeCard, references: [.remote(native)])]
+        )
+        XCTAssertEqual(source(value, mode: .on).references(textlessBackdrop: nil), [.remote(native)])
+    }
+
+    func testExplicitLogoChoiceIsNotOverriddenByArtworkGuesses() {
+        for preference in [ArtworkPreference.recommended, .library, .online] {
+            for titled in [true, false] {
+                for textlessSuppressesLogo in [true, false] {
+                    let on = source(item(titled: titled), mode: .on, preference: preference)
+                    XCTAssertFalse(on.suppressesLogo(
+                        artworkAlreadyCarriesTitle: titled, hasCurrentArtwork: true,
+                        textlessBackdropSuppressesLogo: textlessSuppressesLogo
+                    ))
+                    XCTAssertTrue(on.suppressesLogo(
+                        artworkAlreadyCarriesTitle: titled, hasCurrentArtwork: false,
+                        textlessBackdropSuppressesLogo: textlessSuppressesLogo
+                    ))
+                    XCTAssertTrue(source(item(titled: titled), mode: .off, preference: preference).suppressesLogo(
+                        artworkAlreadyCarriesTitle: titled, hasCurrentArtwork: true,
+                        textlessBackdropSuppressesLogo: textlessSuppressesLogo
+                    ))
+                }
+            }
+        }
+    }
+
+    func testContinueWatchingKeepsItsExistingDuplicateTitleProtection() {
+        let continuing = ContinueWatchingArtworkSource(item: item(), style: .landscape, policy: policy())
+        XCTAssertTrue(continuing.suppressesLogo(
+            artworkAlreadyCarriesTitle: true, hasCurrentArtwork: true, textlessBackdropSuppressesLogo: false
+        ))
+        XCTAssertTrue(continuing.suppressesLogo(
+            artworkAlreadyCarriesTitle: false, hasCurrentArtwork: true, textlessBackdropSuppressesLogo: true
+        ))
+        XCTAssertFalse(continuing.suppressesLogo(
+            artworkAlreadyCarriesTitle: false, hasCurrentArtwork: true, textlessBackdropSuppressesLogo: false
+        ))
+        let portrait = ContinueWatchingArtworkSource(item: item(), style: .poster, policy: policy(), titleLogo: .on)
+        XCTAssertTrue(portrait.suppressesLogo(
+            artworkAlreadyCarriesTitle: false, hasCurrentArtwork: true, textlessBackdropSuppressesLogo: false
+        ))
+    }
+
     func testModeAndLanguageChangesCannotReuseThePreviousFirstPaintIdentity() {
-        let automatic = source(item(), mode: .automatic)
+        let off = source(item(), mode: .off)
         let on = source(item(), mode: .on)
-        XCTAssertNotEqual(automatic.pinIdentity, on.pinIdentity)
+        XCTAssertNotEqual(off.pinIdentity, on.pinIdentity)
         XCTAssertNotEqual(on.pinIdentity, card.pinIdentity(for: item()))
         let english = card.presentationPolicy(for: item(), style: .landscape, inheriting: policy())
         let french = card.presentationPolicy(

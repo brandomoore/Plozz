@@ -1462,7 +1462,8 @@ final class HomeRowArrangementHostedTests: XCTestCase {
                 let layoutY = try self.y("Layout", in: lines)
                 XCTAssertGreaterThan(try self.y("Orbit", in: lines), layoutY)
                 if style == .landscape {
-                    XCTAssertTrue(text.contains("Automatic"), text)
+                    XCTAssertTrue(text.contains("Off"), text)
+                    XCTAssertFalse(text.contains("Automatic"), text)
                     let logoY = try self.y("Logo", in: lines)
                     XCTAssertGreaterThan(layoutY, logoY)
                     XCTAssertGreaterThan(logoY, try self.y("Content", in: lines))

@@ -57,8 +57,7 @@ public struct PosterCardView: View {
     #if os(tvOS)
     @State private var detailTransitionSource = DetailTransitionSourceReference()
     #endif
-    /// Whether the artwork this card ended up with already has the show's name
-    /// printed on it, in which case the card must not print it again.
+    /// Source-role hint used by Continue Watching's duplicate-title protection.
     @State private var artworkAlreadyCarriesTitle = false
     @State private var resolvedLogoArtworkIdentity: String?
     #if os(tvOS)
@@ -82,7 +81,7 @@ public struct PosterCardView: View {
     @Environment(\.plozzLandscapeTitleLogo) private var landscapeTitleLogo
 
     private var usesLandscapeTitleLogo: Bool {
-        landscapeTitleLogo != .off && !showsSeriesArtwork
+        landscapeTitleLogo == .on && !showsSeriesArtwork
             && artworkPolicy.usesLandscapeKeyArt(for: item, style: style)
     }
 
@@ -1244,8 +1243,6 @@ public struct PosterCardView: View {
         ) {
             neutralPlaceholder
         }
-        // A logo drawn over art that already shows the title says it twice — see
-        // ``titleBearingArtwork`` and ``TextlessBackdropStore/suppressesLogo(for:)``.
         .overlay { if !suppressesSeriesLogo { seriesLogo } }
     }
 
@@ -1253,14 +1250,13 @@ public struct PosterCardView: View {
         PosterCardPresentation.titleBearingArtwork(for: item)
     }
 
-    /// Whether to leave the logo off entirely, for either reason: the winning
-    /// candidate is a slot that names itself, or no textless art exists anywhere
-    /// for a show whose only art is titled promotional key art.
     private var suppressesSeriesLogo: Bool {
-        style == .poster || artworkAlreadyCarriesTitle
-            || (usesLandscapeTitleLogo && resolvedLogoArtworkIdentity != seriesSource.identity)
-            || (seriesSource.prefersTextlessBackdrop
-                && textlessBackdropStore.suppressesLogo(for: item))
+        seriesSource.suppressesLogo(
+            artworkAlreadyCarriesTitle: artworkAlreadyCarriesTitle,
+            hasCurrentArtwork: !usesLandscapeTitleLogo || resolvedLogoArtworkIdentity == seriesSource.identity,
+            textlessBackdropSuppressesLogo: seriesSource.prefersTextlessBackdrop
+                && textlessBackdropStore.suppressesLogo(for: item)
+        )
     }
 
     /// For an episode this is the spoiler-safe series ladder (never the episode's
@@ -1439,26 +1435,10 @@ enum PosterCardPresentation {
         kind == .collection || kind == .playlist || kind == .folder
     }
 
-    /// The candidates that are **key art** rather than a clean backdrop, and so
-    /// almost certainly have the show's name set into them already.
-    ///
-    /// A poster is designed to be seen alone, which means it is designed to name
-    /// itself. Laying our own wordmark over one prints the title twice.
-    ///
-    /// Deliberately decided by *provenance* rather than by looking at the picture,
-    /// and only for the poster slots — the one place where "this art names itself"
-    /// is a property of the slot rather than a guess about the show.
-    ///
-    /// Widening it to "every backdrop belonging to an anime" was tried and
-    /// reverted. Whether a given backdrop has the title burned into it is a fact
-    /// about the *pixels*, and no metadata field stands in for it: the genre/id
-    /// test it was keyed on ("Anime") was wrong in both directions at once —
-    /// Arcane matched and lost a logo it should have kept, while "Let's go
-    /// KAIKIGUMI" and "Black Cat and a Witch", the two shows the rule existed to
-    /// fix, did not match and went on doubling. A test that mislabels both the
-    /// cases it was aimed at and the cases it wasn't is not a signal, so the card
-    /// keeps its logo unless the art came from a slot that is titled by
-    /// definition.
+    /// Roles that commonly carry title text, not pixel-level text detection.
+    /// This hint prefers cleaner backgrounds and protects Continue Watching from
+    /// duplicate titles; it must not veto an explicit row-logo choice.
+    /// Genre or provider identity cannot establish whether an image contains text.
     static func titleBearingArtwork(for item: MediaItem) -> Set<ArtworkReference> {
         var titled: Set<ArtworkReference> = []
         if let poster = item.seriesPosterURL { titled.insert(.remote(poster)) }
