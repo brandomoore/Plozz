@@ -1,6 +1,7 @@
 #if os(iOS)
 import AppRuntime
 import CoreModels
+import CoreNetworking
 import CoreUI
 import FeatureHomeCore
 import FeaturePlayback
@@ -308,6 +309,7 @@ private struct PlozziOSCanonicalItemDetailView: View {
                 sourceAccountID: selectedSource?.accountID ?? item.sourceAccountID,
                 originSourceAccountID: originSourceAccountID,
                 onlineTrailerResolver: { await DetailMetadataResolver.household.trailers(for: $0) },
+                trailerSettings: appModel.settings.heroBackground,
                 initialSources: initialSources,
                 alternateProviderResolver: { accountID in
                     appModel.accountsProviders.provider(forAccountID: accountID)
@@ -358,6 +360,9 @@ private struct PlozziOSCanonicalItemDetailView: View {
             }
         }
         .artworkGradientBackground(scope: ObjectIdentifier(viewModel), isVisible: isPageVisible)
+        .task(id: appModel.settings.heroBackground.settings.trailerSources) {
+            await viewModel.refreshTrailerPolicy()
+        }
         .background(palette.backgroundBase.ignoresSafeArea())
         .onAppear {
             isPageVisible = true
@@ -1001,6 +1006,10 @@ private struct PlozziOSCanonicalItemDetailView: View {
     }
 
     private func play(_ item: MediaItem, fromBeginning: Bool = false) {
+        guard !item.isTrailer || appModel.settings.heroBackground.settings.trailerSources.allows(item) else {
+            PlozzLog.app.info("Trailer action suppressed by profile settings")
+            return
+        }
         if !item.opensExternalSource { playbackPreparation.handoff(item) }
         if item.isYouTubeTrailer {
             Task { await trailerOpening.open(item) }

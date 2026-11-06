@@ -245,6 +245,11 @@ Progress only uses the ordinary 2:3 poster and existing
 insets, watch-state rules and download badges; it does not create another bar style.
 The shared indicator falls back to the existing resume fraction when the provider
 omits a percentage, so switching treatments does not lose known progress.
+Cards, detail Play buttons and episode chips share `hasVisiblePlaybackProgress`:
+below Continue Watching's minimum position they show no progress or remaining-time
+label, and an unwatched title keeps its unstarted marker and spoiler protection.
+Saved resume positions and completed-watch history are unchanged. Series/season
+completion percentages are not timed playback and retain their existing treatment.
 They resolve movie or series posters, never episode stills or textless backdrops.
 Portrait uses zero side crop, no duplicate logo or logo dimming. Detailed keeps
 the landscape Continue Watching scrim's start, easing and depth; the slight

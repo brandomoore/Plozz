@@ -1,5 +1,16 @@
 # FeatureHome
 
+Trailer discovery and playback honor the active profile's `trailerSources`
+policy in `HeroBackgroundSettings`. Off skips trailer-specific provider and
+metadata lookups; Server only also excludes server-supplied and cached YouTube
+links. Ordinary metadata and non-trailer extras remain independent. Allowed
+manual trailers are prepared during detail loading, not on button press.
+Policy changes filter visible actions immediately, fence pending results, and
+refresh allowed sources without caching disabled lookups as missing trailers.
+Home and detail autoplay use the effective settings rather than the stored
+surface choices, so turning trailers off preserves those choices and does not
+disable detail theme music.
+
 Home history completion records returned, curated and visible item counts plus
 failed-account counts in the existing bounded recent-activity log. This separates
 an empty provider feed from local curation without recording media or account IDs.
@@ -429,7 +440,10 @@ records on both platforms; error dialogs, playback routing and timeouts are unch
   leaves Next Up stale behind a cross-refresh item cache.
   Continue Watching admits ordinary resume positions at 5% of duration, bounded
   between 5 and 60 seconds (60 seconds when duration is unknown). Saving resume
-  progress is independent of this visibility threshold. Unstarted Next Up episodes
+  progress is independent of this visibility threshold. Detail and card progress
+  indicators use the same minimum, so brief plays still look unstarted. A
+  percentage-only item uses its runtime when available; without either a position
+  or duration, its reported progress is retained. Unstarted Next Up episodes
   remain eligible; trailers never enter the row or propagate watch state to their
   parent title. The same policy covers optimistic updates, queued-write overlays,
   cached content, library/server rows, and their browse grids. Grid filtering
@@ -792,6 +806,10 @@ records on both platforms; error dialogs, playback routing and timeouts are unch
   target. The opening card selects identity, not ongoing watch state: TV and
   mobile resolve the loaded episode with live resume data, never reapplying the
   original card's watched flag after a toggle.
+  Playback resume reconciliation excludes sources of another media kind. A
+  series page's source inventory must not clear its hero episode's saved position
+  or contribute the show's watched state; eligible episode sources still use
+  the shared cross-server resume policy.
   An episode's show breadcrumb is a single native button showing only the show
   title and chevron, without a background or border in either focus state.
   Play takes initial focus when available; Up then reaches
@@ -1060,6 +1078,12 @@ records on both platforms; error dialogs, playback routing and timeouts are unch
   hero showing the same title with trailers enabled. Library, Watchlist, pushed
   grids, and covered detail pages cannot retain background audio. A cancelled
   or no-longer-frontmost detail resolver cannot start a trailer after departure.
+  The shared handoff renderer initializes Core Image only when a decoded trailer
+  frame needs a snapshot, on its own actor rather than Home's main thread.
+  Idle Home does not initialize Metal for unused handoff snapshots; subsequent
+  frames reuse the context. A completed snapshot cannot replace a newer trailer.
+  Immediate live-surface moves retain a separate synchronous renderer, also
+  initialized only after a decoded frame is available.
   Home transfers the matching trailer to detail before navigation starts (when
   detail trailers are enabled). Home disappearance and late scroll/recede
   callbacks cannot stop or pause that player; its item, position and live mute

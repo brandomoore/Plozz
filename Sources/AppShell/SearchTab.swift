@@ -2,6 +2,7 @@
 import SwiftUI
 import AppRuntime
 import CoreModels
+import CoreNetworking
 import CoreUI
 import FeatureHome
 import FeatureMusic
@@ -24,6 +25,7 @@ import LastFmService
 /// across every active account; results route to their owning provider.
 struct SearchTab: View {
     @State private var trailerOpening = YouTubeTrailerOpening()
+    @Environment(HeroBackgroundSettingsModel.self) private var heroBackground
     @State private var externalOpening = ExternalMediaOpening()
     @Environment(ProfilesModel.self) private var profilesModel: ProfilesModel?
     /// The rail's chrome model, present only under ``NavigationStyle/rail``. This
@@ -399,6 +401,7 @@ struct SearchTab: View {
             ratingsProvider: ratingsProvider,
             detailMetadataResolver: { await DetailMetadataResolver.household.resolve($0) },
             onlineTrailerResolver: { await DetailMetadataResolver.household.trailers(for: $0) },
+            trailerSettings: heroBackground,
             discoveryStatusRefresh: { await seer.requestAvailability(for: $0) },
             loadSeasonEpisodeRoster: { await seer.seasonEpisodeRoster(for: $0, seasonNumber: $1) },
             makeRelatedTitlesLoader: {
@@ -433,6 +436,10 @@ struct SearchTab: View {
 
     /// In-progress items resume directly unless the profile asks for a choice.
     private func requestPlay(_ item: MediaItem) {
+        guard !item.isTrailer || heroBackground.settings.trailerSources.allows(item) else {
+            PlozzLog.app.info("Trailer action suppressed by profile settings")
+            return
+        }
         if item.isYouTubeTrailer {
             Task { await trailerOpening.open(item) }
             return

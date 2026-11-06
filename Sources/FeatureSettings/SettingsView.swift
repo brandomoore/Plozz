@@ -374,6 +374,7 @@ public struct SettingsView: View {
             destination(for: route)
         }
         .padding(.horizontal, PlozzTheme.Metrics.screenPadding)
+        .environment(themeMusic)
         .task { await reloadLibraries() }
         .onAppear { MainThreadStallProbe.context = "settings" }
         .onChange(of: activeProfile.id) { _, _ in
@@ -923,7 +924,9 @@ public struct SettingsView: View {
         case .circadian: authorizedDestination(for: .nightShift)
         case .allScreens: authorizedDestination(for: .allScreens)
         case .navigation: authorizedDestination(for: .navigationLayout)
-        case .home, .hero, .heroContent, .heroRatings, .heroTrailers, .heroDiscovery,
+        case .heroTrailers:
+            TrailersAndMusicSettingsView(background: heroBackground, themeMusic: themeMusic)
+        case .home, .hero, .heroContent, .heroRatings, .heroDiscovery,
              .heroLibraries, .heroCollections, .homeRows, .homeRowStyle, .homeFiltering, .homeLabels, .continueWatching:
             HomeRowsSettingsView(
                 libraries: librariesStore.state.value ?? [], accounts: homeRowAccounts, visibility: homeVisibility,

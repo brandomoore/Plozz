@@ -315,46 +315,44 @@ final class SettingsWorkspaceRemoteTests: XCTestCase {
         #endif
     }
 
-    func testDetailThemeMusicUsesOneOffChoiceAndThreeVolumeLevels() throws {
+    func testSharedTrailerPolicyKeepsThemeMusicAndIndependentHomeAutoplay() throws {
         #if targetEnvironment(simulator)
-        let app = try launchSettings()
+        let app = try launchSettings(style: "tabBar", syncEnabled: false)
         defer { app.terminate() }
         try focus(section("screensNavigation", in: app), in: app)
         XCUIRemote.shared.press(.select)
         try focus(app.buttons["settings-page-title-details"], in: app)
         XCUIRemote.shared.press(.select)
-        let music = app.buttons["Theme music"]
-        try focus(music, in: app)
+        try focus(app.buttons["settings-group-detail-page-hero-mode"], in: app)
         XCUIRemote.shared.press(.select)
-        XCTAssertTrue(app.buttons["Low"].waitForExistence(timeout: 5), app.debugDescription)
-        XCTAssertEqual(app.buttons.matching(NSPredicate(format: "label == %@", "Off")).count, 1)
-        XCTAssertFalse(app.staticTexts[
-            "Choose what plays behind the hero on a title's detail page. Trailer and theme music never play together."
-        ].exists)
-        XCTAssertTrue(app.staticTexts["Play a title's theme music while you browse its detail page."].exists)
-        for level in ["Low", "Medium", "High"] {
-            let option = app.buttons[level]
+        XCTAssertTrue(app.staticTexts["Trailers & music"].waitForExistence(timeout: 5))
+        func select(_ value: String, in pickerID: String) throws {
+            try focus(app.buttons[pickerID], in: app)
+            XCUIRemote.shared.press(.select)
+            let option = app.cells.containing(.any, identifier: value).firstMatch
+            XCTAssertTrue(option.waitForExistence(timeout: 5), app.debugDescription)
             try focus(option, in: app)
             XCUIRemote.shared.press(.select)
-            XCTAssertEqual(option.value as? String, "Selected", "\(level) must remain selectable.")
         }
-        capture("detail-background-volume-options", in: app)
-        try focus(app.buttons["Off"], in: app)
-        XCUIRemote.shared.press(.select)
-        XCTAssertEqual(app.buttons["Off"].value as? String, "Selected")
-        XCTAssertFalse(app.buttons["Low"].exists, "Background Off hides the volume choices.")
-        XCUIRemote.shared.press(.menu)
-        let detailPage = app.buttons["settings-page-title-details"]
-        try focus(detailPage, in: app)
-        XCUIRemote.shared.press(.select)
-        XCTAssertEqual(app.buttons["Off"].value as? String, "Selected")
-        try focus(music, in: app)
-        XCUIRemote.shared.press(.select)
-        XCTAssertTrue(app.buttons["High"].waitForExistence(timeout: 5))
-        XCTAssertEqual(
-            app.buttons["High"].value as? String, "Selected",
-            "Switching the background retains the chosen volume."
-        )
+        try select("Theme music", in: "detail-background")
+        let volume = app.buttons["Theme music volume"]
+        XCTAssertTrue(volume.waitForExistence(timeout: 5), app.debugDescription)
+        try focus(volume, in: app)
+        let original = try XCTUnwrap(volume.value as? String)
+        XCUIRemote.shared.press(.right)
+        let adjusted = try XCTUnwrap(volume.value as? String)
+        XCTAssertNotEqual(adjusted, original)
+        try select("Off", in: "trailer-sources")
+        XCTAssertTrue(volume.exists, "Disabling trailers must not disable theme music.")
+        XCTAssertEqual(volume.value as? String, adjusted)
+        XCTAssertFalse(app.switches["hero-trailers"].isEnabled)
+        capture("trailers-off-theme-music-on", in: app)
+        try select("Server only", in: "trailer-sources")
+        XCTAssertTrue(app.switches["hero-trailers"].isEnabled)
+        XCTAssertEqual(volume.value as? String, adjusted)
+        try select("Trailer", in: "detail-background")
+        XCTAssertFalse(volume.exists)
+        capture("server-trailers-independent-autoplay", in: app)
         #else
         throw XCTSkip("Never changes detail settings on a physical device.")
         #endif
@@ -362,7 +360,7 @@ final class SettingsWorkspaceRemoteTests: XCTestCase {
 
     func testDetailSizingCannotBeSkippedBetweenBackAndBackground() throws {
         #if targetEnvironment(simulator)
-        let app = try launchSettings()
+        let app = try launchSettings(style: "tabBar", syncEnabled: false)
         defer { app.terminate() }
         try focus(section("screensNavigation", in: app), in: app)
         XCUIRemote.shared.press(.select)
@@ -387,10 +385,10 @@ final class SettingsWorkspaceRemoteTests: XCTestCase {
         press(.down, expecting: logo)
         press(.down, expecting: text)
         XCUIRemote.shared.press(.down)
-        XCTAssertTrue(["Off", "Trailer", "Theme music"].contains { hasFocus(app.buttons[$0]) },
-                      "Down from Text size must enter Background.")
-        for option in ["Off", "Trailer", "Theme music"] {
-            try focus(app.buttons[option], in: app)
+        let trailers = app.buttons["settings-group-detail-page-hero-mode"]
+        XCTAssertTrue(hasFocus(trailers), "Down from Text size must reach Trailers & music.")
+        do {
+            try focus(trailers, in: app)
             press(.up, expecting: text)
             press(.up, expecting: logo)
             press(.up, expecting: back)
@@ -409,7 +407,7 @@ final class SettingsWorkspaceRemoteTests: XCTestCase {
         let labels = app.buttons["settings-group-detail-page-card-labels"]
         try focus(labels, in: app)
         XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label ==[c] %@", "Cards")).firstMatch.exists)
-        XCTAssertLessThan(app.buttons["Theme music"].frame.maxY, labels.frame.minY)
+        XCTAssertLessThan(trailers.frame.maxY, labels.frame.minY)
         capture("detail-customization-scopes", in: app)
         #else
         throw XCTSkip("Never changes detail settings on a physical device.")
@@ -2266,7 +2264,7 @@ final class SettingsWorkspaceRemoteTests: XCTestCase {
 
     func testHeroEditorsRemainInsideTheSettingsPane() throws {
         #if targetEnvironment(simulator)
-        let app = try launchSettings()
+        let app = try launchSettings(style: "tabBar", syncEnabled: false)
         try focus(section("screensNavigation", in: app), in: app)
         XCUIRemote.shared.press(.select)
         try focus(app.buttons["settings-page-customize-home"], in: app)
@@ -2275,7 +2273,7 @@ final class SettingsWorkspaceRemoteTests: XCTestCase {
         XCTAssertTrue(hero.waitForExistence(timeout: 5))
         try focus(hero, in: app)
         XCUIRemote.shared.press(.select)
-        let fullscreen = app.buttons["Fullscreen Hero"]
+        let fullscreen = app.buttons["home-hero-on"]
         XCTAssertTrue(fullscreen.waitForExistence(timeout: 5))
         try focus(fullscreen, in: app)
         XCUIRemote.shared.press(.select)
@@ -2286,7 +2284,7 @@ final class SettingsWorkspaceRemoteTests: XCTestCase {
             try focus(stepper, in: app)
             XCTAssertGreaterThan(stepper.frame.width, 700)
             let title = app.staticTexts[label].firstMatch
-            let peer = app.staticTexts["Hide watched content"].firstMatch
+            let peer = app.staticTexts["Advance automatically"].firstMatch
             XCTAssertEqual(title.frame.minX, peer.frame.minX, accuracy: 1)
             XCTAssertEqual(title.frame.height, peer.frame.height, accuracy: 1)
             let original = try XCTUnwrap(stepper.value as? String)
@@ -2298,7 +2296,7 @@ final class SettingsWorkspaceRemoteTests: XCTestCase {
             capture("hero-stepper-\(label)", in: app)
         }
         for (page, content) in [
-            ("titles", "Hero content sources"), ("ratings", "Ratings"), ("trailers", "Trailers")
+            ("titles", "Content sources"), ("ratings", "Ratings"), ("trailers", "Trailers & music")
         ] {
             let link = app.buttons["hero-settings-\(page)"]
             try focus(link, in: app)

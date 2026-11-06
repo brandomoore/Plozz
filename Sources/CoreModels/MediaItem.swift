@@ -1435,12 +1435,14 @@ public struct MediaItem: Codable, Hashable, Identifiable, Sendable {
     /// Returns a copy whose `resumePosition` is the cross-server furthest-progress
     /// resume for `sources` (see ``MediaItemMerger/playbackResumePosition(from:)``),
     /// so the routed play item resumes at the unified position regardless of which
-    /// server backs it. A no-op when `sources` is empty (a single-server item that
-    /// was never merged keeps its own resume).
+    /// server backs it. Sources of another media kind cannot contribute watch
+    /// state; a detail page may supply its show's sources while playing an episode.
+    /// With no eligible sources, the item's own resume is preserved.
     func reconcilingPlaybackResume(acrossSources sources: [MediaSourceRef]) -> MediaItem {
-        guard !sources.isEmpty else { return self }
+        let compatible = sources.filter { $0.kind == nil || $0.kind == kind }
+        guard !compatible.isEmpty else { return self }
         var copy = self
-        copy.resumePosition = MediaItemMerger.playbackResumePosition(from: sources)
+        copy.resumePosition = MediaItemMerger.playbackResumePosition(from: compatible)
         return copy
     }
 

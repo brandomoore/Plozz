@@ -414,8 +414,8 @@ headers when updating the vendored sources, and update sources, public headers,
 binary checksums, and bundled notices together.
 
 Plozz pins the playback-corrected
-[AetherEngine fork](https://github.com/brandomoore/AetherEngine/tree/5873655f4c5669843ac8c9bfc8574733759ea6f5)
-at commit `5873655f4c5669843ac8c9bfc8574733759ea6f5`, integrating upstream
+[AetherEngine fork](https://github.com/brandomoore/AetherEngine/tree/8c7f919a4cff9f0d27d27f464657578ec08fc221)
+at commit `8c7f919a4cff9f0d27d27f464657578ec08fc221`, integrating upstream
 **7.53.1** (`0839aeee18dd0818c5c307a3c5ecba8ea3161b22`).
 Playback diagnostics show `AetherEngine v7.53.1`, read from the linked engine
 rather than a duplicated version constant. The exact fork commit remains in
@@ -671,15 +671,29 @@ search result are removed on tvOS and iOS/iPadOS. The adapter explicitly sets
 package trait is disabled. Legacy `dolbyVisionFELEnabled` values are ignored when
 loading or transferring profile settings and omitted on the next save.
 
-Normal Dolby Vision handling remains automatic. Profile 7 keeps the existing
-single-layer Profile 8.1 conversion where the display accepts Dolby Vision, or
-the HDR10 base layer otherwise; the enhancement layer is discarded. Other
-profiles' playback, ordinary audio paths, and native E-AC-3/JOC stream-copy are
-unchanged. Software still-image reshaping is separately disabled as described
-above. External players own their own decoding preferences.
+Plozz selects `DolbyVisionHandling.profile7BaseLayer` for on-demand playback,
+previews and engine-demuxed live playback. Both Profile 7 MEL and FEL play their
+authored HDR10 base, without P7-to-8.1 RPU conversion or enhancement-layer
+reconstruction. The engine classifies its demuxed source, including verified
+record corrections, rather than trusting possibly missing or inaccurate provider
+metadata. Its native remux uses plain `hvc1`, strips the Dolby configuration
+record, omits Dolby supplemental codecs, and requests base-layer display criteria.
+Source diagnostics can still identify Profile 7; output must not claim converted
+Profile 8.1. RPU/EL NALs remain unconverted and are ignored by the base-layer decoder.
+
+This intentionally gives up Profile 7 dynamic metadata, including MEL, and FEL
+residual detail. Supported single-layer Dolby Vision profiles, ordinary audio
+paths, and native E-AC-3/JOC stream-copy remain unchanged. Software still-image
+reshaping remains disabled. Direct remote HLS handed to AVPlayer, server
+transcoding, and external players own their delivered format; this policy does not
+rewrite those streams or infer their format from original-file metadata.
 
 Removing the optional reconstruction path does not establish licensing clearance
-for every remaining video or audio feature.
+for every remaining video or audio feature. Avoiding P7 conversion reduces custom
+processing; it does not remove all Dolby-related code from the distributed engine
+or establish patent permission. Open-source licensing and Apple API availability
+are not a substitute for reviewing the actual shipped implementation and applicable
+third-party rights.
 
 ## Remote AV1 Matroska startup
 

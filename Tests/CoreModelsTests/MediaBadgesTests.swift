@@ -541,6 +541,77 @@ final class MediaBadgesTests: XCTestCase {
 
     // MARK: Resume affordance (drives hero + detail Play/Resume button)
 
+    func testBriefPlaysLookUnstartedUntilTheExactContinueWatchingThreshold() {
+        let durations: [TimeInterval?] = [nil, 30, 120, 600, 1200, 3600, 7200]
+        for kind in [MediaItemKind.movie, .episode, .video] {
+            for runtime in durations {
+                let minimum = ContinueWatchingPolicy.minimumResumePosition(duration: runtime)
+                for position in [2, minimum - 0.001, minimum, minimum + 0.001] {
+                    let item = MediaItem(
+                        id: "brief", title: "Brief", kind: kind, runtime: runtime,
+                        resumePosition: position, playedPercentage: runtime.map { position / $0 }
+                    )
+                    let visible = position >= minimum
+                    XCTAssertEqual(item.hasVisiblePlaybackProgress, visible)
+                    XCTAssertEqual(ContinueWatchingPolicy.admits(item), visible)
+                    XCTAssertEqual(item.resumeProgressFraction != nil, visible && runtime != nil)
+                    XCTAssertEqual(item.resumeRemainingText != nil, visible && runtime != nil)
+                    if kind != .video {
+                        XCTAssertEqual(item.cardRuntimeIsRemaining, visible && runtime != nil)
+                        if !visible {
+                            XCTAssertEqual(item.cardRuntimeText, runtime?.runtimeBadgeText)
+                        }
+                    }
+                    XCTAssertEqual(item.resumePosition, position, "Presentation must not discard saved resume")
+                    XCTAssertEqual(item.playedPercentage, runtime.map { position / $0 })
+                    XCTAssertFalse(item.isPlayed)
+                }
+            }
+        }
+    }
+
+    func testBriefPositionOutranksAStalePercentageWithoutChangingWatchedHistory() {
+        for played in [false, true] {
+            let item = MediaItem(
+                id: "brief", title: "Brief", kind: .movie, runtime: 7200,
+                resumePosition: 2, playedPercentage: 0.5, isPlayed: played
+            )
+            XCTAssertFalse(item.hasVisiblePlaybackProgress)
+            XCTAssertNil(item.resumeProgressFraction)
+            XCTAssertNil(item.resumeRemainingText)
+            XCTAssertFalse(item.cardRuntimeIsRemaining)
+            XCTAssertEqual(item.cardRuntimeText, "2h")
+            XCTAssertEqual(item.isPlayed, played)
+            XCTAssertEqual(item.resumePosition, 2)
+        }
+    }
+
+    func testPercentageOnlyProgressUsesKnownDurationWithoutGuessingMissingTime() {
+        for percentage in [0.001, 59.0 / 3600, 60.0 / 3600, 0.5] {
+            let item = MediaItem(
+                id: "percentage", title: "Percentage", kind: .episode,
+                runtime: 3600, playedPercentage: percentage
+            )
+            XCTAssertEqual(item.resumeProgressFraction != nil, percentage >= 60.0 / 3600)
+        }
+        let unknownDuration = MediaItem(
+            id: "unknown", title: "Unknown", kind: .movie, playedPercentage: 0.02
+        )
+        XCTAssertEqual(unknownDuration.resumeProgressFraction, 0.02)
+        XCTAssertNil(unknownDuration.resumeRemainingText)
+    }
+
+    func testContainerCompletionFractionsDoNotUseThePlaybackTimeThreshold() {
+        for kind in [MediaItemKind.series, .season] {
+            let item = MediaItem(
+                id: "container", title: "Container", kind: kind,
+                runtime: 120, playedPercentage: 0.02
+            )
+            XCTAssertEqual(item.resumeProgressFraction, 0.02)
+            XCTAssertTrue(item.hasVisiblePlaybackProgress)
+        }
+    }
+
     func testResumeProgressFractionSetForPartialResumePosition() {
         let item = MediaItem(
             id: "1",

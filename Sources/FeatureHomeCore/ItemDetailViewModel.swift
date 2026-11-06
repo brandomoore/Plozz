@@ -68,11 +68,68 @@ public final class ItemDetailViewModel {
     /// Playable trailers for this item, loaded alongside detail. Empty until
     /// resolved (and when the backend has none). Each is tagged with this
     /// detail's owning account so it routes back to the right provider.
-    public private(set) var trailers: [MediaItem] = []
+    private var resolvedTrailers: [MediaItem] = []
+    public private(set) var trailers: [MediaItem] {
+        get { resolvedTrailers.filter { trailerPolicy.allows($0) } }
+        set { resolvedTrailers = newValue }
+    }
+
+    @ObservationIgnored private let trailerSettings: HeroBackgroundSettingsModel?
+    @ObservationIgnored private var preparedTrailerPolicy: TrailerSourcePolicy?
+    @ObservationIgnored private var trailerLoadGeneration: UInt64 = 0
+    @ObservationIgnored private var trailerLoadNeedsRetry = false
+    private var trailerPolicy: TrailerSourcePolicy {
+        trailerSettings?.settings.trailerSources ?? HeroBackgroundSettings.default.trailerSources
+    }
+
+    public func canPlayTrailer(_ trailer: MediaItem) -> Bool {
+        trailerPolicy.allows(trailer)
+    }
+
+    public func refreshTrailerPolicy() async {
+        guard let preparedTrailerPolicy,
+              preparedTrailerPolicy != trailerPolicy || trailerLoadNeedsRetry,
+              let item = state.value?.item else { return }
+        if isDiscoveryItem {
+            await loadDiscoveryTrailer(for: item, sourceGeneration: sourceGeneration)
+        } else if let activeProvider {
+            await loadTrailers(for: item, provider: activeProvider, sourceGeneration: sourceGeneration)
+        }
+    }
+
+    private func beginTrailerLoad() -> UInt64 {
+        trailerLoadGeneration &+= 1
+        preparedTrailerPolicy = trailerPolicy
+        trailerLoadNeedsRetry = false
+        trailers = []
+        return trailerLoadGeneration
+    }
+
+    private func isCurrentTrailerLoad(
+        _ generation: UInt64, policy: TrailerSourcePolicy,
+        item: MediaItem, sourceGeneration: UInt64
+    ) -> Bool {
+        !Task.isCancelled && trailerLoadGeneration == generation && trailerPolicy == policy
+            && isStillLoaded(item, sourceGeneration: sourceGeneration)
+    }
+
+    private func finishTrailerLoad(_ generation: UInt64) {
+        if trailerLoadGeneration == generation, Task.isCancelled {
+            trailerLoadNeedsRetry = true
+        }
+    }
 
     /// Local, playable extras for the active source. Loaded independently from
     /// the detail so missing or unavailable bonus material never blocks the page.
-    public private(set) var extrasState: LoadState<[MediaExtra]> = .idle
+    private var resolvedExtrasState: LoadState<[MediaExtra]> = .idle
+    public private(set) var extrasState: LoadState<[MediaExtra]> {
+        get {
+            guard case .loaded(let extras) = resolvedExtrasState else { return resolvedExtrasState }
+            let allowed = extras.filter { !$0.item.isTrailer || trailerPolicy.allows($0.item) }
+            return allowed.isEmpty ? .empty : .loaded(allowed)
+        }
+        set { resolvedExtrasState = newValue }
+    }
 
     /// Episodes for each season of a series, loaded lazily the first time a
     /// season is shown/focused and cached so re-focusing a tab is instant. Keyed
@@ -543,6 +600,7 @@ public final class ItemDetailViewModel {
         onlineTrailerResolver: @escaping OnlineTrailerResolving = ItemDetailViewModel.defaultOnlineTrailerResolver,
         playableVideoIDResolver: @escaping PlayableTrailerResolving = ItemDetailViewModel.defaultPlayableVideoIDResolver,
         trailerCache: TrailerResolutionCache = .shared,
+        trailerSettings: HeroBackgroundSettingsModel? = nil,
         initialSources: [MediaSourceRef] = [],
         alternateProviderResolver: @escaping (String) -> (any MediaProvider)? = { _ in nil },
         crossServerSourceResolver: (@Sendable (MediaItem) async -> CrossServerSourceResolution)? = nil,
@@ -575,6 +633,7 @@ public final class ItemDetailViewModel {
         self.onlineTrailerResolver = onlineTrailerResolver
         self.playableVideoIDResolver = playableVideoIDResolver
         self.trailerCache = trailerCache
+        self.trailerSettings = trailerSettings
         self.initialSources = initialSources
         self.rejectedSourceIDs = initialItem?.rejectedSourceIDs ?? []
         self.alternateProviderResolver = alternateProviderResolver
@@ -1056,6 +1115,14 @@ public final class ItemDetailViewModel {
         for item: MediaItem,
         sourceGeneration: UInt64
     ) async {
+        guard !Task.isCancelled, isStillLoaded(item, sourceGeneration: sourceGeneration) else { return }
+        let policy = trailerPolicy
+        let generation = beginTrailerLoad()
+        defer { finishTrailerLoad(generation) }
+        func isCurrent() -> Bool {
+            isCurrentTrailerLoad(generation, policy: policy, item: item, sourceGeneration: sourceGeneration)
+        }
+        guard policy.allowsYouTube, isCurrent() else { return }
         if let cached = trailerCache.outcome(for: item.id) {
             switch cached {
             case .working(let id): surfaceTrailer(videoID: id, for: item)
@@ -1068,17 +1135,14 @@ public final class ItemDetailViewModel {
                 nanoseconds: Self.trailerMetadataDwellNanos
             )
         }
-        guard isStillLoaded(item, sourceGeneration: sourceGeneration) else {
-            return
-        }
+        guard isCurrent() else { return }
         let candidates = orderedUnique(
             await onlineTrailerResolver(item)
                 .compactMap(\.youTubeTrailerVideoID)
         )
+        guard isCurrent() else { return }
         let workingID = await playableVideoIDResolver(candidates)
-        guard isStillLoaded(item, sourceGeneration: sourceGeneration) else {
-            return
-        }
+        guard isCurrent() else { return }
         if let workingID {
             surfaceTrailer(videoID: workingID, for: item)
             trailerCache.record(.working(workingID), for: item.id)
@@ -1523,9 +1587,16 @@ public final class ItemDetailViewModel {
         provider: any MediaProvider,
         sourceGeneration: UInt64
     ) async {
-        guard !Task.isCancelled, self.sourceGeneration == sourceGeneration else { return }
+        guard !Task.isCancelled, isStillLoaded(item, sourceGeneration: sourceGeneration) else { return }
+        let policy = trailerPolicy
+        let generation = beginTrailerLoad()
+        defer { finishTrailerLoad(generation) }
+        func isCurrent() -> Bool {
+            isCurrentTrailerLoad(generation, policy: policy, item: item, sourceGeneration: sourceGeneration)
+        }
+        guard policy.allowsServerTrailers, isCurrent() else { return }
         let provided = (try? await provider.trailers(for: item.id)) ?? []
-        guard !Task.isCancelled, self.sourceGeneration == sourceGeneration else { return }
+        guard isCurrent() else { return }
 
         let localCount = provided.filter { !$0.isYouTubeTrailer }.count
         let ytCount = provided.count - localCount
@@ -1546,14 +1617,16 @@ public final class ItemDetailViewModel {
         //     the owning server's account so playback routes back to it.
         if let (crossLocal, ownerAccountID) = await firstCrossServerLocalTrailer(
             excluding: activeSourceAccountID,
-            sourceGeneration: sourceGeneration
+            sourceGeneration: sourceGeneration,
+            isCurrent: isCurrent
         ) {
-            guard isStillLoaded(item, sourceGeneration: sourceGeneration) else { return }
+            guard isCurrent() else { return }
             Self.trailerDiag("loadTrailers item=\(item.id) -> CROSS-SERVER LOCAL trailer id=\(crossLocal.id) account=\(ownerAccountID)")
             trailers = [crossLocal.markingAsTrailer().taggingSource(ownerAccountID)]
             return
         }
 
+        guard isCurrent(), policy.allowsYouTube else { return }
         let serverIDs = orderedUnique(provided.compactMap(\.youTubeTrailerVideoID))
 
         // 2) A cached decision applies instantly — the main reason a revisited page
@@ -1576,22 +1649,22 @@ public final class ItemDetailViewModel {
 
         if serverIDs.isEmpty, Self.trailerMetadataDwellNanos > 0 {
             try? await Task.sleep(nanoseconds: Self.trailerMetadataDwellNanos)
-            guard !Task.isCancelled,
-                  isStillLoaded(item, sourceGeneration: sourceGeneration) else { return }
+            guard isCurrent() else { return }
         }
 
         // Validate link syntax only. Do not scrape, probe, or extract YouTube media.
         var workingID = await playableVideoIDResolver(serverIDs)
-        guard !Task.isCancelled else { return }
+        guard isCurrent() else { return }
         if workingID == nil {
             let searchIDs = orderedUnique(await onlineTrailerResolver(item).compactMap(\.youTubeTrailerVideoID))
+            guard isCurrent() else { return }
             let fresh = searchIDs.filter { !serverIDs.contains($0) }
             if !fresh.isEmpty {
                 workingID = await playableVideoIDResolver(fresh)
             }
         }
 
-        guard isStillLoaded(item, sourceGeneration: sourceGeneration) else { return }
+        guard isCurrent() else { return }
         if let workingID {
             surfaceTrailer(videoID: workingID, for: item)
             trailerCache.record(.working(workingID), for: item.id)
@@ -1626,7 +1699,8 @@ public final class ItemDetailViewModel {
     /// skipping the active source (already checked by the caller).
     private func firstCrossServerLocalTrailer(   // l10n:content — trailer search term
         excluding activeAccountID: String?,
-        sourceGeneration: UInt64
+        sourceGeneration: UInt64,
+        isCurrent: () -> Bool
     ) async -> (MediaItem, String)? {
         var seenAccounts = Set<String>()
         if let activeAccountID { seenAccounts.insert(activeAccountID) }
@@ -1634,7 +1708,7 @@ public final class ItemDetailViewModel {
         let candidates = initialSources + sources
         Self.trailerDiag("firstCrossServerLocalTrailer candidates=\(candidates.count) initial=\(initialSources.count) enriched=\(sources.count) activeAccount=\(activeAccountID ?? "nil")")
         for source in candidates {
-            guard self.sourceGeneration == sourceGeneration, !Task.isCancelled else { return nil }
+            guard self.sourceGeneration == sourceGeneration, isCurrent() else { return nil }
             guard !seenAccounts.contains(source.accountID) else { continue }
             seenAccounts.insert(source.accountID)
             guard let altProvider = alternateProviderResolver(source.accountID) else { continue }
@@ -1732,8 +1806,8 @@ public final class ItemDetailViewModel {
                 return updated
             }
         }
-        trailers = trailers.map { mutation.applied(to: $0) }
-        if case let .loaded(extras) = extrasState {
+        resolvedTrailers = resolvedTrailers.map { mutation.applied(to: $0) }
+        if case let .loaded(extras) = resolvedExtrasState {
             extrasState = .loaded(extras.map { extra in
                 var copy = extra
                 copy.item = mutation.applied(to: extra.item)

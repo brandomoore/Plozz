@@ -3132,6 +3132,216 @@ final class ItemDetailViewModelTests: XCTestCase {
         XCTAssertEqual(vm.episodes(for: "s1"), [])
     }
 
+    func testTrailerOffSkipsAllTrailerLookupsButKeepsOtherExtrasAndMetadata() async {
+        let item = MediaItem(id: "m1", title: "Movie", kind: .movie)
+        let trailer = MediaItem(id: "t1", title: "Trailer", kind: .video).markingAsTrailer()
+        let provider = FakeMediaProvider(allItems: [item])
+        provider.trailersByItem = [item.id: [trailer]]
+        provider.extrasByItem = [item.id: [
+            MediaExtra(item: trailer, kind: .trailer),
+            MediaExtra(item: MediaItem(id: "interview", title: "Interview", kind: .video), kind: .interview)
+        ]]
+        let metadataCalled = LockedFlag()
+        let cache = TrailerResolutionCache()
+        let settings = HeroBackgroundSettingsModel(store: InMemoryHeroBackgroundSettingsStore(
+            HeroBackgroundSettings(detailMode: .themeMusic, trailerSources: .off)
+        ))
+        let vm = ItemDetailViewModel(
+            provider: provider, itemID: item.id,
+            detailMetadataResolver: { _ in metadataCalled.set(); return MetadataEnrichment() },
+            onlineTrailerResolver: { _ in XCTFail("Disabled trailers must not query metadata"); return [] },
+            playableVideoIDResolver: { _ in XCTFail("Disabled trailers must not resolve links"); return nil },
+            trailerCache: cache, trailerSettings: settings
+        )
+        await vm.load()
+        XCTAssertTrue(provider.trailerCallCount.isEmpty)
+        XCTAssertTrue(vm.trailers.isEmpty)
+        XCTAssertEqual(vm.extrasState.value?.map(\.item.id), ["interview"])
+        XCTAssertFalse(vm.canPlayTrailer(trailer))
+        XCTAssertTrue(metadataCalled.value, "Ordinary metadata enrichment remains independent.")
+        XCTAssertTrue(settings.settings.themeMusicEnabled)
+        XCTAssertNil(cache.outcome(for: item.id), "A disabled lookup is not a negative result.")
+        settings.settings.trailerSources = .serverOnly
+        await vm.refreshTrailerPolicy()
+        XCTAssertEqual(vm.trailers.map(\.id), ["t1"])
+        XCTAssertEqual(provider.trailerCallCount[item.id], 1)
+        XCTAssertEqual(vm.extrasState.value?.count, 2)
+    }
+
+    func testServerOnlyRejectsServerAndCachedYouTubeWithoutSearching() async {
+        for cached in [false, true] {
+            let provider = FakeMediaProvider(allItems: [MediaItem(id: "m1", title: "Movie", kind: .movie)])
+            let youtube = MediaItem.youTubeTrailer(videoID: "serverID", title: "Trailer")
+            provider.trailersByItem = ["m1": [youtube]]
+            let cache = TrailerResolutionCache()
+            if cached { cache.record(.working("cachedID"), for: "m1") }
+            let settings = HeroBackgroundSettingsModel(store: InMemoryHeroBackgroundSettingsStore(
+                HeroBackgroundSettings(trailerSources: .serverOnly)
+            ))
+            let vm = ItemDetailViewModel(
+                provider: provider, itemID: "m1",
+                onlineTrailerResolver: { _ in XCTFail("Server only must not search"); return [] },
+                playableVideoIDResolver: { _ in XCTFail("Server only must not resolve YouTube"); return nil },
+                trailerCache: cache, trailerSettings: settings
+            )
+            await vm.load()
+            XCTAssertTrue(vm.trailers.isEmpty)
+            XCTAssertFalse(vm.canPlayTrailer(youtube))
+            XCTAssertEqual(provider.trailerCallCount["m1"], 1)
+            XCTAssertEqual(cache.outcome(for: "m1"), cached ? .working("cachedID") : nil)
+        }
+    }
+
+    func testTrailerPolicyChangesFenceInFlightServerAndMetadataResponses() async {
+        for blockMetadata in [false, true] {
+            let started = AsyncGate()
+            let release = AsyncGate()
+            let item = MediaItem(id: "m1", title: "Movie", kind: .movie)
+            let provider = FakeMediaProvider(allItems: [item])
+            let settings = HeroBackgroundSettingsModel(store: InMemoryHeroBackgroundSettingsStore())
+            let cache = TrailerResolutionCache()
+            provider.trailersHandler = { _ in
+                if !blockMetadata {
+                    started.open()
+                    await release.wait()
+                    return [MediaItem(id: "local", title: "Trailer", kind: .video)]
+                }
+                return []
+            }
+            let vm = ItemDetailViewModel(
+                provider: provider, itemID: item.id,
+                onlineTrailerResolver: { _ in
+                    XCTAssertTrue(blockMetadata)
+                    started.open()
+                    await release.wait()
+                    return [MediaItem.youTubeTrailer(videoID: "youtubeID", title: "Trailer")]
+                },
+                playableVideoIDResolver: { $0.first }, trailerCache: cache, trailerSettings: settings
+            )
+            let loading = Task { await vm.load() }
+            await started.wait()
+            settings.settings.trailerSources = .off
+            await vm.refreshTrailerPolicy()
+            release.open()
+            await loading.value
+            XCTAssertTrue(vm.trailers.isEmpty)
+            XCTAssertNil(cache.outcome(for: item.id))
+            XCTAssertEqual(provider.trailerCallCount[item.id], 1)
+        }
+    }
+
+    func testAllowedYouTubeRemainsPreparedWithoutAutoplayAndRespondsToPolicyChanges() async {
+        let item = MediaItem(id: "m1", title: "Movie", kind: .movie)
+        let provider = FakeMediaProvider(allItems: [item])
+        let settings = HeroBackgroundSettingsModel(store: InMemoryHeroBackgroundSettingsStore(
+            HeroBackgroundSettings(homeTrailerEnabled: false, detailMode: .themeMusic)
+        ))
+        let cache = TrailerResolutionCache()
+        let vm = ItemDetailViewModel(
+            provider: provider, itemID: item.id,
+            onlineTrailerResolver: { _ in [MediaItem.youTubeTrailer(videoID: "youtubeID", title: "Trailer")] },
+            playableVideoIDResolver: { $0.first }, trailerCache: cache, trailerSettings: settings
+        )
+        await vm.load()
+        XCTAssertEqual(vm.trailers.first?.youTubeTrailerVideoID, "youtubeID")
+        let staleAction = vm.trailers[0]
+        settings.settings.trailerSources = .serverOnly
+        XCTAssertTrue(vm.trailers.isEmpty, "Published buttons disappear before a refresh task runs.")
+        XCTAssertFalse(vm.canPlayTrailer(staleAction))
+        await vm.refreshTrailerPolicy()
+        settings.settings.trailerSources = .serverAndYouTube
+        await vm.refreshTrailerPolicy()
+        XCTAssertEqual(vm.trailers.first?.youTubeTrailerVideoID, "youtubeID")
+        XCTAssertTrue(settings.settings.themeMusicEnabled)
+        XCTAssertFalse(settings.settings.homeTrailerPlaybackEnabled)
+    }
+
+    func testDiscoveryTrailerPolicyOverridesCacheWithoutDisablingOrdinaryMetadata() async {
+        for policy in [TrailerSourcePolicy.off, .serverOnly] {
+            let item = MediaItem(id: "discovery", title: "Discovery", kind: .movie)
+            let cache = TrailerResolutionCache()
+            cache.record(.working("cachedID"), for: item.id)
+            let metadataCalled = LockedFlag()
+            let settings = HeroBackgroundSettingsModel(store: InMemoryHeroBackgroundSettingsStore(
+                HeroBackgroundSettings(trailerSources: policy)
+            ))
+            let vm = ItemDetailViewModel(
+                provider: nil, itemID: item.id, initialItem: item, isDiscoveryItem: true,
+                externalMetadataResolver: { _, region in
+                    metadataCalled.set()
+                    return ExternalTitleMetadata(
+                        enrichment: MetadataEnrichment(), availability: ExternalTitleAvailability(regionCode: region)
+                    )
+                },
+                onlineTrailerResolver: { _ in XCTFail("Discovery cannot use a disallowed source"); return [] },
+                playableVideoIDResolver: { _ in XCTFail("Discovery cannot resolve YouTube"); return nil },
+                trailerCache: cache, trailerSettings: settings
+            )
+            await vm.load()
+            XCTAssertTrue(vm.trailers.isEmpty)
+            XCTAssertTrue(metadataCalled.value)
+            XCTAssertEqual(cache.outcome(for: item.id), .working("cachedID"))
+            settings.settings.trailerSources = .serverAndYouTube
+            await vm.refreshTrailerPolicy()
+            XCTAssertEqual(vm.trailers.first?.youTubeTrailerVideoID, "cachedID")
+        }
+    }
+
+    func testCancelledTrailerPreferenceRefreshCanResumeOnReturn() async {
+        let item = MediaItem(id: "movie", title: "Movie", kind: .movie)
+        let provider = FakeMediaProvider(allItems: [item])
+        let settings = HeroBackgroundSettingsModel(store: InMemoryHeroBackgroundSettingsStore(
+            HeroBackgroundSettings(trailerSources: .off)
+        ))
+        let release = AsyncGate()
+        let started = expectation(description: "Trailer lookup started")
+        provider.trailersHandler = { _ in
+            started.fulfill()
+            await release.wait()
+            return [MediaItem(id: "local", title: "Trailer", kind: .video)]
+        }
+        let vm = ItemDetailViewModel(
+            provider: provider, itemID: item.id,
+            onlineTrailerResolver: { _ in [] }, trailerCache: TrailerResolutionCache(),
+            trailerSettings: settings
+        )
+        await vm.load()
+        settings.settings.trailerSources = .serverOnly
+        let refresh = Task { await vm.refreshTrailerPolicy() }
+        await fulfillment(of: [started], timeout: 2)
+        refresh.cancel()
+        release.open()
+        await refresh.value
+        XCTAssertTrue(vm.trailers.isEmpty)
+        provider.trailersHandler = nil
+        provider.trailersByItem = [item.id: [MediaItem(id: "local", title: "Trailer", kind: .video)]]
+        await vm.refreshTrailerPolicy()
+        XCTAssertEqual(vm.trailers.first?.id, "local")
+        XCTAssertEqual(provider.trailerCallCount[item.id], 2)
+    }
+
+    func testServerOnlyPreparesCrossServerLocalTrailerWithItsPlaybackOwner() async {
+        let movie = MediaItem(id: "movie", title: "Movie", kind: .movie)
+        let provider = FakeMediaProvider(allItems: [movie])
+        provider.trailersByItem = [movie.id: [MediaItem.youTubeTrailer(videoID: "youtubeID", title: "Trailer")]]
+        let alternate = FakeMediaProvider(allItems: [movie])
+        alternate.trailersByItem = ["alternate-movie": [MediaItem(id: "local", title: "Trailer", kind: .video)]]
+        let settings = HeroBackgroundSettingsModel(store: InMemoryHeroBackgroundSettingsStore(
+            HeroBackgroundSettings(trailerSources: .serverOnly)
+        ))
+        let vm = ItemDetailViewModel(
+            provider: provider, itemID: movie.id, sourceAccountID: "primary",
+            onlineTrailerResolver: { _ in XCTFail("Server only must not search"); return [] },
+            trailerCache: TrailerResolutionCache(), trailerSettings: settings,
+            initialSources: [MediaSourceRef(accountID: "alternate", itemID: "alternate-movie", kind: .movie)],
+            alternateProviderResolver: { $0 == "alternate" ? alternate : nil }
+        )
+        await vm.load()
+        XCTAssertEqual(vm.trailers.first?.id, "local")
+        XCTAssertEqual(vm.trailers.first?.sourceAccountID, "alternate")
+        XCTAssertEqual(alternate.trailerCallCount["alternate-movie"], 1)
+    }
+
     func testLoadFetchesTrailersTaggedWithSource() async {
         let provider = FakeMediaProvider(allItems: [MediaItem(id: "m1", title: "Dune", kind: .movie)])
         provider.trailersByItem = ["m1": [MediaItem(id: "t1", title: "Trailer", kind: .video)]]

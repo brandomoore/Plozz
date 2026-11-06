@@ -1066,7 +1066,7 @@ struct DetailHeroView: View, Equatable {
                     controller: heroTrailerController, itemID: backdrop.id, role: .detail,
                     title: item.title,
                     enabled: isVisible && allowsDeferredActivation
-                        && heroBackground.settings.detailMode == .trailer,
+                        && heroBackground.settings.detailTrailerEnabled,
                     buttonRequest: trailerFullscreenButtonRequest,
                     onUnavailable: { onPlayTrailer?() },
                     onPresent: { trailerReturnFocus = heroActionRowFocus ?? .play }
@@ -1209,7 +1209,7 @@ struct DetailHeroView: View, Equatable {
         // the foreground fades, keeping its focus targets and geometry stable.
         .overlay(alignment: .top) {
             TrailerPlaybackCue(isEligible:
-                isVisible && heroBackground.settings.detailMode == .trailer
+                isVisible && heroBackground.settings.detailTrailerEnabled
                     && heroTrailerController.isPlaying
                     && heroTrailerController.isClaimed(by: .detail, itemID: backdrop.id)
                     && (heroActionRowFocus != nil || playButtonHasFocus || playButtonFocus?.wrappedValue == true)
@@ -1416,7 +1416,7 @@ struct DetailHeroView: View, Equatable {
             scrimTone: scrimTone,
             recedeModel: seriesRecedeModel,
             trailerController: heroTrailerController,
-            showsTrailer: heroBackground.settings.detailMode == .trailer
+            showsTrailer: heroBackground.settings.detailTrailerEnabled
                 && heroTrailerController.isShowing((backdropItem ?? item).id)
                 && heroTrailerController.isPlaying
         )

@@ -110,7 +110,7 @@ public struct HeroPresentation: Sendable, Equatable {
             isAnime = hasAnimeGenre || animeIDCount >= 1
         }
         sourceMaterial = Self.sourceMaterial(from: item.tags)
-        isResumable = (item.resumePosition ?? 0) > 1
+        isResumable = item.hasVisiblePlaybackProgress && (item.resumePosition ?? 0) > 1
     }
 
     public static func normalizedTitle(for item: MediaItem) -> String {

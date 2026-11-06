@@ -28,6 +28,7 @@ public struct JellyfinClient: Sendable {
     private let playbackRequests: PlaybackInfoRequestCoordinator
     private let playbackServerKey: String
     private let inventoryScope = UUID()
+    let userViewRequests = JellyfinDiscoveryRequests<[BaseItemDto]>()
 
     public init(
         baseURL: URL,
@@ -330,7 +331,9 @@ public struct JellyfinClient: Sendable {
             queryItems: [URLQueryItem(name: "IncludeExternalContent", value: "false")],
             headers: authHeaders
         )
-        return try await http.decode(UserViewsResponse.self, from: endpoint, baseURL: baseURL).Items
+        return try await userViewRequests.run(key: userID) {
+            try await http.decode(UserViewsResponse.self, from: endpoint, baseURL: baseURL).Items
+        }
     }
 
     func resumeItems(userID: String, limit: Int, parentID: String? = nil) async throws -> [BaseItemDto] {
