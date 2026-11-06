@@ -12,7 +12,7 @@ final class DiscMenuTouchInteractionTests: XCTestCase {
         XCTAssertTrue(menu.waitForExistence(timeout: 10))
         XCTAssertEqual(app.buttons.count, 1)
         menu.tap()
-        let select = app.buttons["disc-menu-control-checkmark"]
+        let select = app.buttons["disc-menu-control-circle"]
         XCTAssertTrue(select.waitForExistence(timeout: 5))
         let events = app.staticTexts["disc-touch-events"]
         var taps = 0
@@ -36,10 +36,18 @@ final class DiscMenuTouchInteractionTests: XCTestCase {
             XCTAssertEqual(app.buttons.count, 6)
             XCTAssertGreaterThanOrEqual(select.frame.width, 44)
             XCTAssertGreaterThanOrEqual(select.frame.height, 44)
+            let up = app.buttons["disc-menu-control-arrow.up"]
+            XCTAssertEqual((up.frame.minX + select.frame.maxX) / 2, app.frame.midX, accuracy: 3)
+            XCTAssertGreaterThan(menu.frame.minX, select.frame.maxX)
             let screenshot = XCTAttachment(screenshot: app.screenshot())
             screenshot.name = "Disc glass controls \(orientation.rawValue)"
             screenshot.lifetime = .keepAlways
             add(screenshot)
         }
+        menu.tap()
+        XCTAssertTrue(select.exists, "A temporary clear must not remove the navigation controls")
+        XCTAssertFalse(select.isEnabled)
+        menu.tap()
+        XCTAssertTrue(select.isEnabled)
     }
 }

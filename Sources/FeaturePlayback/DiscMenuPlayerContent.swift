@@ -119,27 +119,50 @@ struct DiscMenuArtwork: View {
 struct DiscMenuTouchControls: View {
     let state: DiscMenuPlaybackState
     let showActions: () -> Void
+    @State private var hasPresentedNavigation = false
 
     var body: some View {
         VStack {
             Spacer()
-            HStack {
-                Spacer()
-                PlayerGlassControlGroup {
-                    HStack(spacing: 0) {
-                        DiscMenuTouchButton(title: "Disc menu", symbol: "opticaldisc", action: showActions)
-                        if state.isMenuVisible {
-                            DiscMenuTouchButton(title: "Up", symbol: "arrow.up") { state.sendKey(12) }
-                            DiscMenuTouchButton(title: "Down", symbol: "arrow.down") { state.sendKey(13) }
-                            DiscMenuTouchButton(title: "Left", symbol: "arrow.left") { state.sendKey(14) }
-                            DiscMenuTouchButton(title: "Right", symbol: "arrow.right") { state.sendKey(15) }
-                            DiscMenuTouchButton(title: "Select", symbol: "checkmark") { state.sendKey(16) }
-                        }
-                    }
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 12) {
+                    Color.clear.frame(width: 44, height: 44)
+                    Spacer(minLength: 0)
+                    navigation
+                    Spacer(minLength: 0)
+                    actions
+                }
+                VStack {
+                    navigation
+                    HStack { Spacer(); actions }
                 }
             }
         }
         .modifier(PlayerTouchChromePadding())
+        .onChange(of: state.isMenuVisible, initial: true) { _, visible in
+            if visible { hasPresentedNavigation = true }
+        }
+    }
+
+    @ViewBuilder private var navigation: some View {
+        if hasPresentedNavigation {
+            PlayerGlassControlGroup {
+                HStack(spacing: 0) {
+                    DiscMenuTouchButton(title: "Up", symbol: "arrow.up") { state.sendKey(12) }
+                    DiscMenuTouchButton(title: "Down", symbol: "arrow.down") { state.sendKey(13) }
+                    DiscMenuTouchButton(title: "Left", symbol: "arrow.left") { state.sendKey(14) }
+                    DiscMenuTouchButton(title: "Right", symbol: "arrow.right") { state.sendKey(15) }
+                    DiscMenuTouchButton(title: "Select", symbol: "circle") { state.sendKey(16) }
+                }
+            }
+            .disabled(!state.isMenuVisible)
+        }
+    }
+
+    private var actions: some View {
+        PlayerGlassControlGroup {
+            DiscMenuTouchButton(title: "Disc menu", symbol: "opticaldisc", action: showActions)
+        }
     }
 }
 

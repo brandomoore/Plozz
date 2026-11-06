@@ -101,7 +101,7 @@ struct PlozziOSPlayerView: View {
                 .id(playerIdentity)
                 if viewModel.phase == .ready, !viewModel.showBringUpSpinner,
                    (!viewModel.isDiscMenuPlayback ||
-                    viewModel.videoEngine.discMenu.map({ !$0.isOpening && !$0.isMenuVisible && $0.image == nil && $0.failure == nil }) ?? true) {
+                    viewModel.videoEngine.discMenu.map({ !$0.presentsMenu }) ?? true) {
                     PlozziOSPlayerControlsOverlay(
                         viewModel: viewModel,
                         keyboardActions: keyboardActions,

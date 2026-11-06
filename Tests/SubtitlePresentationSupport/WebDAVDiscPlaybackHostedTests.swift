@@ -71,6 +71,15 @@ final class WebDAVDiscPlaybackHostedTests: XCTestCase {
         try await checkBluRayPlayback(startPosition: 0, discMenus: true)
     }
 
+    func testNativeStartupTitleJumpOpensMenuInsteadOfAutoplayingFeature() async throws {
+        try await checkBluRayPlayback(startPosition: 0, discMenus: true, discStartupAutoplay: true)
+    }
+
+    func testNativeStartupMenuRequestHonorsAuthoredMenuRestriction() async throws {
+        try await checkBluRayPlayback(startPosition: 0, discMenus: true,
+                                      discStartupAutoplay: true, discStartupRestricted: true)
+    }
+
     func testNativeHDMVMissingOpeningRecoversToTopMenu() async throws {
         try await checkBluRayPlayback(startPosition: 0, discMenus: true, missingOpening: true)
     }
@@ -133,7 +142,7 @@ final class WebDAVDiscPlaybackHostedTests: XCTestCase {
         startPosition: Double, discMenus: Bool = false, missingOpening: Bool = false,
         discStillSeconds: UInt16? = nil, discAudioSelection: Bool = false, discIntermediateStill: Bool = false,
         discShortSecondItem: Bool = false, discJava: Bool = false, discJavaQuarantine: Bool = false,
-        inspectVideos: Bool = false
+        inspectVideos: Bool = false, discStartupAutoplay: Bool = false, discStartupRestricted: Bool = false
     ) async throws {
         let root = try XCTUnwrap(Bundle(for: Self.self).resourceURL)
             .appendingPathComponent("Fixtures/bluray-test-pattern")
@@ -169,6 +178,26 @@ final class WebDAVDiscPlaybackHostedTests: XCTestCase {
                 let playlist = metadata.appendingPathComponent("audio-selection.mpls")
                 files["BDMV/PLAYLIST/00001.mpls"] = playlist
                 sizes["BDMV/PLAYLIST/00001.mpls"] = try Data(contentsOf: playlist).count
+            }
+            if discStartupAutoplay {
+                let path = "BDMV/MovieObject.bdmv"
+                var objects = try Data(contentsOf: XCTUnwrap(files[path]))
+                var feature = Data(objects[50..<78])
+                if discStartupRestricted { feature[0] = 0x40 }
+                objects.append(feature)
+                objects[43] = UInt8(objects.count - 44)
+                objects[49] = 3
+                // First play jumps to title 1, whose object plays clip 1.
+                // The independent top-menu object plays clip 2.
+                objects.replaceSubrange(54..<66, with: [
+                    0x21, 0x81, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0
+                ])
+                overrides[path] = objects
+                sizes[path] = objects.count
+                let indexPath = "BDMV/index.bdmv"
+                var index = try Data(contentsOf: XCTUnwrap(files[indexPath]))
+                index[115] = 2
+                overrides[indexPath] = index
             }
             if missingOpening {
                 let clipInfo = "BDMV/CLIPINF/00001.clpi"
@@ -267,12 +296,14 @@ final class WebDAVDiscPlaybackHostedTests: XCTestCase {
         try await checkPlayback(
             base: base, path: "BDMV/index.bdmv", credential: .anonymous,
             seekPositions: discMenus ? [2] : [10, 2, 13], startPosition: startPosition,
-            discMenus: discMenus, expectedDiscPlaylist: missingOpening ? 2 : 1,
+            discMenus: discMenus,
+            expectedDiscPlaylist: missingOpening || (discStartupAutoplay && !discStartupRestricted) ? 2 : 1,
             discStillSeconds: discStillSeconds, discAudioSelection: discAudioSelection,
             discIntermediateStill: discIntermediateStill, discShortSecondItem: discShortSecondItem,
             discJava: discJava, discJavaQuarantine: discJavaQuarantine, inspectVideos: inspectVideos
         )
-        XCTAssertEqual(reads.contains("BDMV/STREAM/00001.m2ts"), !missingOpening && !discAudioSelection)
+        XCTAssertEqual(reads.contains("BDMV/STREAM/00001.m2ts"),
+                       !missingOpening && !discAudioSelection && (!discStartupAutoplay || discStartupRestricted))
         XCTAssertEqual(reads.contains("BDMV/STREAM/00004.m2ts"), discAudioSelection)
         XCTAssertTrue(reads.contains("BDMV/STREAM/00002.m2ts"))
         XCTAssertFalse(reads.contains("BDMV/STREAM/00003.m2ts"), "The largest clip is not the selected movie")
@@ -451,6 +482,7 @@ final class WebDAVDiscPlaybackHostedTests: XCTestCase {
             let discJavaInspection: Bool?
             let discJavaKeys: [UInt32]?
             let discJavaFeaturePlayback: Bool?
+            let discJavaStartupMenu: Int?
         }
         let data: Data
         if let json = environment["PLOZZ_WEBDAV_PLAYBACK_JSON"] {
@@ -485,7 +517,8 @@ final class WebDAVDiscPlaybackHostedTests: XCTestCase {
             discMenuInspection: input.discMenuInspection == true,
             discJavaInspection: input.discJavaInspection == true,
             discJavaKeys: input.discJavaKeys ?? [],
-            discJavaFeaturePlayback: input.discJavaFeaturePlayback == true
+            discJavaFeaturePlayback: input.discJavaFeaturePlayback == true,
+            discJavaStartupMenu: input.discJavaStartupMenu
         )
     }
 
@@ -497,7 +530,7 @@ final class WebDAVDiscPlaybackHostedTests: XCTestCase {
         discAudioSelection: Bool = false, discIntermediateStill: Bool = false, discShortSecondItem: Bool = false,
         discMenuInspection: Bool = false, discJava: Bool = false, discJavaInspection: Bool = false,
         discJavaKeys: [UInt32] = [], discJavaQuarantine: Bool = false,
-        discJavaFeaturePlayback: Bool = false, inspectVideos: Bool = false
+        discJavaFeaturePlayback: Bool = false, inspectVideos: Bool = false, discJavaStartupMenu: Int? = nil
     ) async throws {
         let environment = ProcessInfo.processInfo.environment
         let detailPlayDelay: Duration?
@@ -764,9 +797,27 @@ final class WebDAVDiscPlaybackHostedTests: XCTestCase {
                 let rendered = await engine.hasRenderedVideoFrame()
                 print("WEBDAV_DISC javaStep=\(index) playlist=\(menu.playlist ?? -1) position=\(engine.currentTime) rendered=\(rendered)")
             }
+            if let expected = discJavaStartupMenu {
+                try await wait(engine: engine, seconds: 60) {
+                    !menu.isMenuRequestPending && menu.playlist == expected && menu.isMenuVisible
+                }
+                let navigation: [UInt32?] = [nil, 15, 14]
+                for key in navigation {
+                    if let key { menu.sendKey(key) }
+                    for _ in 0..<20 {
+                        try await Task.sleep(for: .milliseconds(500))
+                        XCTAssertEqual(menu.playlist, expected, "Navigation or idling must not start the feature")
+                        XCTAssertNil(menu.failure)
+                    }
+                }
+                print("WEBDAV_DISC javaStartupMenuVerified playlist=\(expected)")
+                if discJavaFeaturePlayback { menu.sendKey(16) }
+            }
             if discJavaFeaturePlayback {
                 try await wait(engine: engine, seconds: 90) {
-                    guard engine.duration > 600, engine.currentTime > 2, menu.failure == nil else { return false }
+                    guard engine.duration > 600, engine.currentTime > 2, menu.failure == nil,
+                          !menu.isOpening, !menu.isMenuVisible,
+                          discJavaStartupMenu.map({ menu.playlist != $0 }) ?? true else { return false }
                     return await engine.hasRenderedVideoFrame()
                 }
                 let position = engine.currentTime
@@ -929,6 +980,7 @@ final class WebDAVDiscPlaybackHostedTests: XCTestCase {
             try await waitForPlayback(engine, after: 0.5, before: 5)
             XCTAssertNil(menu.failure)
             XCTAssertFalse(menu.isStill)
+            XCTAssertFalse(menu.isMenuRequestPending, "Top-menu entry must consume the opening request")
             engine.stop()
             await engine.drainTransport()
             return

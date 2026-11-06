@@ -164,6 +164,12 @@ final class DiscMenuSession {
                 self.state.isMenuVisible = visible
             }
         }
+        native.menuRequestPendingChanged = { [weak self] pending in
+            MainActor.assumeIsolated {
+                guard let self, !self.stopped else { return }
+                self.state.isMenuRequestPending = pending
+            }
+        }
         native.stillChanged = { [weak self] active, resumePlayback in
             MainActor.assumeIsolated {
                 guard let self, !self.stopped else { return }

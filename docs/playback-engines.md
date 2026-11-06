@@ -54,6 +54,11 @@ first play; other programs use the device-region fallback. Manual region retries
 affect only the current session, not the profile preference.
 
 Missing opening clips permit one top-menu attempt, respecting disc restrictions.
+Opening a menu retains that intent through first-play language/region setup.
+Once navigation exposes an interactive surface or leaves first play, it requests
+the top menu when authored menu-call restrictions permit, rather than following
+startup directly into a feature. Reaching the top menu consumes this request;
+subsequent explicit choices are not redirected.
 Startup and playlist transitions have bounded deadlines. Menu failures remain
 visible with Retry, Play video, region retry and Close actions; they never trigger
 automatic main-title playback, cross-source failover or server transcoding.
@@ -95,8 +100,13 @@ mobile, not in a separate floating action. It follows the row's focus and
 visibility lifecycle, so it cannot take the video surface's initial focus.
 The TV disc navigation surface uses a native Select button; directional input
 only sends the corresponding disc arrow key, not an activation.
-Mobile menu navigation reuses the player's glass control group and keeps the
-shell's single Close action. Taps inside the aspect-fitted menu image are mapped
+Mobile menu navigation centers its glass arrow/Select group separately from the
+disc action and keeps the shell's single Close action. Select uses a circle.
+Navigation controls retain their layout across temporary graphics clears and
+disable input until the menu is visible again. Pending menu requests keep normal
+transport chrome hidden, and disc transport does not reveal itself merely because
+its view was recreated during a scene change.
+Taps inside the aspect-fitted menu image are mapped
 to disc pixels and sent as native pointer selection/activation; taps in the
 letterbox area never activate a previously selected button. Arrow and Select
 controls remain available for discs that do not implement pointer input.

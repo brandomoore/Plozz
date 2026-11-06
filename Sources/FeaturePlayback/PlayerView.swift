@@ -290,7 +290,7 @@ public struct PlayerView: View {
     private var phaseContent: some View {
         #if canImport(UIKit)
         if viewModel.isDiscMenuPlayback, let state = viewModel.videoEngine.discMenu,
-           state.failure != nil || state.isOpening || state.isMenuVisible || state.image != nil {
+           state.presentsMenu {
             DiscMenuPlayerContent(
                 model: viewModel, state: state, dismiss: dismissPlayer,
                 showVideos: { showsDiscVideos = true }

@@ -8,6 +8,10 @@ public final class DiscMenuPlaybackState {
     public var image: UIImage?
     public var isOpening = true
     public var isMenuVisible = false
+    public var isMenuRequestPending = true
+    public var presentsMenu: Bool {
+        failure != nil || isMenuRequestPending || isOpening || isMenuVisible || image != nil
+    }
     public var isStill = false
     public var hasSubtitleSelection = false
     public var subtitleTrackID: Int?
@@ -55,6 +59,7 @@ public final class DiscMenuPlaybackState {
         image = nil
         isOpening = true
         isMenuVisible = false
+        isMenuRequestPending = true
         isStill = false
         hasSubtitleSelection = false
         subtitleTrackID = nil

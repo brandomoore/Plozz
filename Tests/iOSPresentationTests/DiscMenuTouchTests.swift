@@ -4,6 +4,22 @@ import XCTest
 
 @MainActor
 final class DiscMenuTouchTests: XCTestCase {
+    func testPendingMenuRequestKeepsTransportHiddenAcrossStartupSceneGaps() {
+        let state = DiscMenuPlaybackState()
+        state.isActive = true
+        state.isOpening = false
+        XCTAssertTrue(state.presentsMenu)
+        state.isMenuVisible = true
+        state.isMenuRequestPending = false
+        XCTAssertTrue(state.presentsMenu)
+        state.isMenuVisible = false
+        XCTAssertFalse(state.presentsMenu)
+        state.isMenuRequestPending = true
+        XCTAssertTrue(state.presentsMenu)
+        state.reset()
+        XCTAssertTrue(state.isMenuRequestPending)
+    }
+
     func testLandscapeAndPortraitTapsUsePixelsAndIgnoreLetterboxing() {
         let state = menu()
         var points: [CGPoint] = []

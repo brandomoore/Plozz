@@ -21,7 +21,7 @@ struct DiscTouchFixture: View {
                     UIColor.systemIndigo.setFill()
                     $0.fill(CGRect(x: 0, y: 0, width: 1280, height: 720))
                 }
-                state.isMenuVisible = true
+                state.isMenuVisible.toggle()
             }
             VStack {
                 Text(verbatim: "Disc touch fixture: \(pointers) taps, \(keys) keys")
