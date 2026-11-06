@@ -2247,14 +2247,24 @@ extension PlozzigenVideoEngine {
             engine.removeAudioTap()
             return nil
         }
-        return AsyncStream { continuation in
-            let task = Task {
-                for await chunk in tap {
-                    continuation.yield(SongTapChunk(buffer: chunk.buffer, sourceTime: chunk.sourceTime))
-                }
-                continuation.finish()
-            }
-            continuation.onTermination = { _ in task.cancel() }
+        let iterator = SongTapIterator(tap)
+        return AsyncStream(unfolding: { await iterator.next() })
+    }
+
+    /// One consumer pulls directly from Aether's bounded stream. No forwarding task,
+    /// second PCM queue, or main-actor hop is needed for each audio buffer.
+    private final class SongTapIterator: @unchecked Sendable {
+        private var iterator: AsyncStream<AudioTapBuffer>.Iterator
+
+        init(_ stream: AsyncStream<AudioTapBuffer>) {
+            iterator = stream.makeAsyncIterator()
+        }
+
+        func next() async -> SongTapChunk? {
+            guard let chunk = await iterator.next() else { return nil }
+            return SongTapChunk(
+                buffer: chunk.buffer, sourceTime: chunk.sourceTime, discontinuity: chunk.discontinuity
+            )
         }
     }
 

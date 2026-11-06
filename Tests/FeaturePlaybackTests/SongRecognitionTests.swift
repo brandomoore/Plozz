@@ -4,7 +4,7 @@ import XCTest
 
 /// Refs #351: what the background song watch is willing to show.
 final class SongRecognitionTests: XCTestCase {
-    private let start = Date(timeIntervalSinceReferenceDate: 1_000)
+    private let start: TimeInterval = 1_000
 
     func testSecondSightingThatTracksTheClockConfirms() {
         var confirmation = SongConfirmation()

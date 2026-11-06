@@ -37,6 +37,16 @@ HOME_HOST_FITTING_COUNTERS = [
     "hostFittingMaxNanoseconds", "hostFittingReentrantCalls",
 ]
 SCENARIOS = {
+    **{
+        f"song-recognition-{state}": {
+            "suite": "ui",
+            "test": f"SongRecognitionPerformanceTests/testPerformanceRecognition{state.title()}",
+            "file": "Tests/PerformancePresentationSupport/SongRecognitionPerformanceTests.swift",
+            "description": "Play the same 1080p30 video with synthetic audio; compare the production audio tap and matcher using a real local Shazam catalog, without network recognition.",
+            "counters": ["audioFrames", "matches", "windowMilliseconds", "playbackMilliseconds"],
+        }
+        for state in ("enabled", "disabled")
+    },
     "home-jellyfin-live": {
         "suite": "network", "target": "FeatureHomeCoreTests", "explicitOnly": True,
         "test": "JellyfinHomePerformanceTests/testPerformanceLiveHome",

@@ -1,6 +1,7 @@
 import AVFAudio
 import CoreModels
 import Foundation
+import Observation
 import ShazamKit
 
 /// Song identification in the player's Info card (#351).
@@ -12,9 +13,11 @@ import ShazamKit
 public struct SongTapChunk: @unchecked Sendable {
     public let buffer: AVAudioPCMBuffer
     public let sourceTime: Double
-    public init(buffer: AVAudioPCMBuffer, sourceTime: Double) {
+    public let discontinuity: Bool
+    public init(buffer: AVAudioPCMBuffer, sourceTime: Double, discontinuity: Bool = false) {
         self.buffer = buffer
         self.sourceTime = sourceTime
+        self.discontinuity = discontinuity
     }
 }
 
@@ -30,7 +33,17 @@ public enum SongIDState: Equatable, Sendable {
     case found(SongMatch)
 }
 
+@MainActor @Observable
+public final class SongRecognitionModel {
+    public var state: SongIDState = .idle
+    public var isAvailable = false
+}
+
 enum SongRecognizer {
+    enum StopReason: Equatable, Sendable {
+        case ended, failed, discontinuity
+    }
+
     /// A song stays on the card this long after Shazam last heard it.
     static let linger: TimeInterval = 25
 
@@ -40,20 +53,22 @@ enum SongRecognizer {
     /// watch from the player, so one watch only ever hears continuous audio.
     static func watch(
         _ stream: AsyncStream<SongTapChunk>,
+        makeSession: @Sendable () -> SHSession = { SHSession() },
+        didFeed: (@Sendable (Int) -> Void)? = nil,
+        didMatch: (@Sendable () -> Void)? = nil,
         report: @escaping @MainActor @Sendable (SongMatch?) -> Void
-    ) async {
-        let session = SHSession()
-        let signals = WatchSignals()
-        await withTaskGroup(of: Void.self) { group in
+    ) async -> StopReason {
+        let session = makeSession()
+        let reason = await withTaskGroup(of: StopReason.self) { group in
             group.addTask {
                 var current: SongMatch?
-                var lastHeard = Date.distantPast
+                var lastHeard = -TimeInterval.infinity
                 var confirmation = SongConfirmation()
-                var lastError: String?
                 for await result in session.results {
-                    if Task.isCancelled { return }
+                    if Task.isCancelled { return .ended }
                     switch result {
                     case let .match(match):
+                        didMatch?()
                         let first = match.mediaItems.first
                         guard let item = first, let title = item.title,
                               isSong(title: title, genres: item.genres) else { continue }
@@ -61,7 +76,8 @@ enum SongRecognizer {
                             title: title, artist: item.artist,
                             artworkURL: item.artworkURL, appleMusicURL: item.appleMusicURL
                         )
-                        let now = Date(), offset = item.predictedCurrentMatchOffset
+                        let now = ProcessInfo.processInfo.systemUptime
+                        let offset = item.predictedCurrentMatchOffset
                         let key = "\(title)|\(item.artist ?? "")"
                         if song == current {
                             lastHeard = now
@@ -69,53 +85,52 @@ enum SongRecognizer {
                         }
                         guard confirmation.confirms(key: key, offset: offset, at: now) else { continue }
                         lastHeard = now
-                        lastError = nil
                         current = song
                         HandoffDiagnostics.emit("songid SHOW")
                         await report(song)
                     case let .error(error, _):
-                        // Offline, Shazam unreachable, or the app not allowed to
-                        // use ShazamKit. Nothing to show the viewer: the card
-                        // simply has no song. Rest the matcher for a while
-                        // instead of sending every few seconds of audio.
                         let code = "\((error as NSError).domain)#\((error as NSError).code)"
-                        if code != lastError {
-                            lastError = code
-                            HandoffDiagnostics.emit("songid ERROR \(code)")
-                        }
-                        signals.rest(for: errorRest)
-                        fallthrough
+                        HandoffDiagnostics.emit("songid ERROR \(code)")
+                        await report(nil)
+                        return .failed
                     case .noMatch:
-                        if current != nil, Date().timeIntervalSince(lastHeard) > linger {
+                        if current != nil, ProcessInfo.processInfo.systemUptime - lastHeard > linger {
                             current = nil
                             await report(nil)
                         }
                     }
                 }
+                return .ended
             }
             group.addTask {
+                var expectedTime: Double?
                 for await chunk in stream {
                     if Task.isCancelled { break }
-                    if signals.isResting { continue }
+                    guard chunk.sourceTime.isFinite, chunk.buffer.format.sampleRate > 0 else {
+                        HandoffDiagnostics.emit("songid INVALID_AUDIO")
+                        return .failed
+                    }
+                    if let expectedTime,
+                       chunk.discontinuity || abs(chunk.sourceTime - expectedTime) > 0.25 {
+                        HandoffDiagnostics.emit("songid DISCONTINUITY")
+                        return .discontinuity
+                    }
+                    expectedTime = chunk.sourceTime
+                        + Double(chunk.buffer.frameLength) / chunk.buffer.format.sampleRate
                     session.matchStreamingBuffer(chunk.buffer, at: nil)
+                    didFeed?(Int(chunk.buffer.frameLength))
                 }
+                return .ended
             }
-            // The audio ending (reload, stop) ends the watch.
-            await group.next()
+            let reason = await group.next() ?? .ended
             group.cancelAll()
+            return reason
         }
+        return reason
     }
 
     /// How long the matcher rests after an error (offline, service refused).
     static let errorRest: TimeInterval = 30
-
-    /// Lets the results loop pause the audio loop after an error.
-    private final class WatchSignals: @unchecked Sendable {
-        private let lock = NSLock()
-        private var restUntil = Date.distantPast
-        var isResting: Bool { lock.withLock { Date() < restUntil } }
-        func rest(for seconds: TimeInterval) { lock.withLock { restUntil = Date().addingTimeInterval(seconds) } }
-    }
 
     /// Shazam also knows sound-effect and ambience albums, which match rain and
     /// room tone in quiet scenes, and untagged uploads (no genre) that sample a
@@ -140,14 +155,14 @@ struct SongConfirmation {
     /// How far the song's position may drift from the clock between sightings.
     static let tolerance: TimeInterval = 4
 
-    private var sightings: [String: (offset: TimeInterval, at: Date)] = [:]
+    private var sightings: [String: (offset: TimeInterval, at: TimeInterval)] = [:]
 
-    mutating func confirms(key: String, offset: TimeInterval, at now: Date) -> Bool {
+    mutating func confirms(key: String, offset: TimeInterval, at now: TimeInterval) -> Bool {
         let seen = sightings[key]
         sightings[key] = (offset, now)
-        sightings = sightings.filter { now.timeIntervalSince($0.value.at) < Self.window }
-        guard let seen, now.timeIntervalSince(seen.at) < Self.window,
-              abs((offset - seen.offset) - now.timeIntervalSince(seen.at)) < Self.tolerance else { return false }
+        sightings = sightings.filter { now - $0.value.at < Self.window }
+        guard let seen, now - seen.at < Self.window,
+              abs((offset - seen.offset) - (now - seen.at)) < Self.tolerance else { return false }
         sightings = [:]
         return true
     }

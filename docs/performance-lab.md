@@ -105,6 +105,69 @@ publish only sanitized aggregates.
 
 ## Baseline → attribution → candidate → regression
 
+### Song recognition
+
+`song-recognition-disabled` and `song-recognition-enabled` play the same
+35-second synthetic 1080p30 H.264/AAC file through the production Plozzigen
+adapter on either platform. The enabled case uses the production audio tap and
+ShazamKit streaming matcher against a real local custom catalog. Each three-second
+window must advance playback by at least 2.3 seconds; enabled windows must consume
+more than 48,000 fresh audio frames, and the run must produce a catalog match.
+There is one discarded warmup and five retained windows. The disabled case
+installs no tap. The catalog is prepared identically before both cases.
+
+```sh
+python3 tools/performance.py run --platform iOS --sim-id "$PLOZZ_IOS_SIM_ID" \
+  --scenario song-recognition-disabled song-recognition-enabled
+```
+
+The fixture uses the existing `glow-hd.mp4` video without re-encoding. Its
+original synthetic audio is generated and muxed as follows:
+
+```sh
+ffmpeg -f lavfi \
+  -i 'aevalsrc=0.15*sin(2*PI*(170*t+7*t*t))+0.12*sin(2*PI*(430*t+19*t*t))+0.10*sin(2*PI*(910*t+31*t*t)):s=48000:d=35' \
+  -c:a aac -b:a 192k song-performance.m4a
+ffmpeg -i glow-hd.mp4 -i song-performance.m4a \
+  -map 0:v:0 -map 1:a:0 -c copy -shortest song-performance.mkv
+```
+
+An initial simulator comparison before/after removing the unbounded forwarding
+queue and hardening recognition lifetime produced these app-process CPU medians
+(milliseconds per three-second window):
+
+| Simulator | Baseline off | Baseline on | Candidate off | Candidate on |
+| --- | ---: | ---: | ---: | ---: |
+| iPad Pro 13-inch M5, iOS 26.2 | 500 | 549 | 450 | 540 |
+| Apple TV 4K third generation, tvOS 26.2 | 585 | 585 | 491 | 525 |
+
+Candidate enabled median absolute deviations were 39 ms on iPad and 33 ms on TV.
+Both cases continued advancing by about three seconds per window; enabled
+windows processed 143,360–147,456 fresh frames and produced one to three matches.
+The lower disabled medians also show substantial between-run variability:
+these observations do **not** establish a CPU speedup or zero overhead.
+Candidate resident snapshots were 562/631 MiB off/on on iPad and 365/362 MiB
+on TV. Framework caching, allocation history and case order prevent treating
+these snapshots as isolated feature memory costs or a leak verdict.
+
+The performance test and media hashes were unchanged. The generic comparison
+command refused these runs because its fixture fingerprint also includes
+changed correctness/UI tests; no automated budget pass is claimed or guard
+bypassed. Raw evidence remains in local performance runs
+`4ba21f5cc10c4379ac03955c6a92300c` / `ffc796ba9202472f98832beda3da1a86`
+(iPad baseline/candidate) and
+`0ab247f7360343d9b7d624143e7f6389` / `b15df76bd03b4999a498aa339a08c406`
+(TV baseline/candidate).
+
+CPU totals cover the app process, not separate Shazam service processes.
+These runs exercise software video decoding and actual local fingerprint
+matching, not hardware decoding, the native cached-segment audio reader,
+Apple's network music catalog, real-song accuracy, device energy/thermals,
+long-session memory growth or presented-frame pacing. Separately, lifecycle
+tests cover tap removal during pause, errors and cancellation, bounded retries,
+discontinuities, and rejection of superseded-session results. Native player
+screenshots use seeded metadata and are not recognition-performance evidence.
+
 `skeletons-idle` observes 24 production `SkeletonCardView` placeholders over
 2.3-second idle windows on either platform. It verifies all placeholders mounted
 and captures changing visible pixels before timing, so removing the animation

@@ -12,8 +12,11 @@ import XCTest
 
 @MainActor
 final class PlayerSongLayoutPreviewTests: XCTestCase {
-    func testNormalPlaybackDoesNotSelectAnUnapprovedLayout() {
-        XCTAssertEqual(EnvironmentValues().playerSongLayoutPreview, .original)
+    func testSongCardUsesSharedArtworkHeight() {
+        XCTAssertEqual(PlayerSongCard.artworkSize(for: .tv), PlayerCardMetrics.tv.contentHeight)
+        XCTAssertEqual(PlayerSongCard.artworkSize(for: .horizontalWide), PlayerCardMetrics.horizontalWide.contentHeight)
+        XCTAssertEqual(PlayerSongCard.artworkSize(for: .verticalNarrow), 112)
+        XCTAssertFalse(PlayerControlsModel().songRecognition.isAvailable)
     }
 
     func testWidePlayerTypographyUsesTouchScaleWithoutChangingTV() {
@@ -40,7 +43,7 @@ final class PlayerSongLayoutPreviewTests: XCTestCase {
         #endif
     }
 
-    func testCaptureBothLayoutsOverNativePlayback() async throws {
+    func testCaptureSeparateCardOverNativePlayback() async throws {
         let path = ProcessInfo.processInfo.environment["PLOZZ_SONG_PREVIEW_DIRECTORY"]
         try XCTSkipIf(path == nil, "Opt-in visual comparison requires a local directory containing film.mp4, still.jpg and album.jpg.")
         let directory = URL(fileURLWithPath: try XCTUnwrap(path), isDirectory: true)
@@ -86,22 +89,21 @@ final class PlayerSongLayoutPreviewTests: XCTestCase {
             artworkURL: origin.appendingPathComponent("album.jpg"),
             appleMusicURL: URL(string: "https://music.apple.com/")
         )
-        for layout in [PlayerSongLayoutPreview.integrated, .separate] {
+        do {
             PlayerScreenshotHook.pendingPanel = .info
             let probe = SongArtworkProbe()
-            let host = UIHostingController(rootView:
+            let host = SongPreviewFocusHost(rootView:
                 SongPreviewPlayer(engine: engine, player: player)
-                    .environment(\.playerSongLayoutPreview, layout)
                     .environment(\.colorScheme, .dark)
                     .environment(\.locale, Locale(identifier: "en_US"))
                     .environment(\.themePalette, .dark)
-                    .onPreferenceChange(PlayerSongPreviewArtworkBounds.self) { probe.bounds = $0 }
+                    .onPreferenceChange(PlayerSongArtworkBounds.self) { probe.bounds = $0 }
             )
             window.rootViewController = host
             window.makeKeyAndVisible()
             window.frame = CGRect(origin: .zero, size: size)
             host.view.frame = window.bounds
-            if layout == .integrated {
+            do {
                 await player.load()
                 let videoDeadline = ContinuousClock.now + .seconds(20)
                 while !engine.hasPresentedVideoFrame, ContinuousClock.now < videoDeadline {
@@ -122,10 +124,11 @@ final class PlayerSongLayoutPreviewTests: XCTestCase {
             model.infoCard.releaseLabel = "2012"
             model.infoCard.artworkURLs = [origin.appendingPathComponent("still.jpg")]
             model.infoCard.artworkItem = nil
-            model.songID = .found(song)
+            model.songRecognition.state = .found(song)
+            model.songRecognition.isAvailable = true
             try await Task.sleep(for: .seconds(2))
             window.layoutIfNeeded()
-            if layout == .separate {
+            do {
                 let artwork = try XCTUnwrap(probe.bounds[.song])
                 XCTAssertEqual(artwork.width, artwork.height, accuracy: 1)
                 if let infoArtwork = probe.bounds[.info] {
@@ -150,17 +153,54 @@ final class PlayerSongLayoutPreviewTests: XCTestCase {
             XCTAssertTrue(text.contains("Raining Vengeance"), text)
             XCTAssertTrue(text.contains("Giacchino"), text)
             let attachment = XCTAttachment(image: image)
-            attachment.name = "\(layout.rawValue)-\(Int(size.width))x\(Int(size.height))"
+            attachment.name = "separate-\(Int(size.width))x\(Int(size.height))"
             attachment.lifetime = .keepAlways
             add(attachment)
+            let infoBounds = probe.bounds[.info]
+            #if os(tvOS)
+            let artwork = try XCTUnwrap(probe.bounds[.song])
+            let point = CGPoint(x: artwork.midX, y: artwork.midY)
+            func focusableViews(in view: UIView) -> [UIView] {
+                (view.canBecomeFocused ? [view] : []) + view.subviews.flatMap { focusableViews(in: $0) }
+            }
+            let card = try XCTUnwrap(focusableViews(in: window).first {
+                $0.convert($0.bounds, to: window).contains(point)
+            }, "The song link must expose a real native focus target.")
+            host.target = card
+            host.setNeedsFocusUpdate()
+            host.updateFocusIfNeeded()
+            let focusDeadline = ContinuousClock.now + .seconds(3)
+            while UIFocusSystem.focusSystem(for: window)?.focusedItem !== card,
+                  ContinuousClock.now < focusDeadline {
+                try await Task.sleep(for: .milliseconds(20))
+            }
+            XCTAssertTrue(UIFocusSystem.focusSystem(for: window)?.focusedItem === card)
+            host.target = nil
+            #endif
+            model.songRecognition.state = .idle
+            try await Task.sleep(for: .milliseconds(400))
+            window.layoutIfNeeded()
+            XCTAssertEqual(probe.bounds[.info], infoBounds, "Song expiry must not move Info artwork or actions.")
+            #if os(tvOS)
+            let focused = try XCTUnwrap(UIFocusSystem.focusSystem(for: window)?.focusedItem)
+            XCTAssertFalse(focused === card, "An expired song must release native focus.")
+            #endif
         }
         await player.stop()
     }
 }
 
 @MainActor
+private final class SongPreviewFocusHost<Content: View>: UIHostingController<Content> {
+    var target: (any UIFocusEnvironment)?
+    override var preferredFocusEnvironments: [any UIFocusEnvironment] {
+        target.map { [$0] } ?? super.preferredFocusEnvironments
+    }
+}
+
+@MainActor
 private final class SongArtworkProbe {
-    var bounds: [PlayerSongPreviewArtworkBounds.Role: CGRect] = [:]
+    var bounds: [PlayerSongArtworkBounds.Role: CGRect] = [:]
 }
 
 private struct SongPreviewPlayer: View {

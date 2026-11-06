@@ -1,0 +1,129 @@
+#if canImport(SwiftUI) && canImport(UIKit)
+import CoreUI
+import SwiftUI
+
+struct PlayerSongArtworkBounds: PreferenceKey {
+    enum Role: Hashable, Sendable {
+        case info, song
+    }
+
+    static let defaultValue: [Role: CGRect] = [:]
+
+    static func reduce(value: inout [Role: CGRect], nextValue: () -> [Role: CGRect]) {
+        value.merge(nextValue(), uniquingKeysWith: { _, latest in latest })
+    }
+}
+
+struct PlayerSongLayout<Content: View>: View {
+    let enabled: Bool
+    let state: SongIDState
+    @FocusState.Binding var focus: PlayerControls.FocusSlot?
+    @ViewBuilder var content: () -> Content
+    @Environment(\.playerCardMetrics) private var metrics
+
+    var body: some View {
+        Group {
+            if enabled {
+                let artSize = PlayerSongCard.artworkSize(for: metrics)
+                let layout = metrics.isVertical
+                    ? AnyLayout(VStackLayout(spacing: 12))
+                    : AnyLayout(HStackLayout(alignment: .top, spacing: 16))
+                layout {
+                    content()
+                    Group {
+                        if case let .found(song) = state {
+                            PlayerSongCard(song: song, focus: $focus)
+                        } else {
+                            // Reserve geometry without constructing hidden artwork or glass.
+                            Color.clear.accessibilityHidden(true)
+                        }
+                    }
+                    .frame(
+                        width: metrics.isVertical ? nil : artSize * 2 + metrics.columnSpacing + metrics.contentPadding * 2,
+                        height: artSize + metrics.contentPadding * 2
+                    )
+                    .frame(maxWidth: metrics.isVertical ? .infinity : nil)
+                }
+            } else {
+                content()
+            }
+        }
+        .onChange(of: state) { _, state in
+            if state == .idle, focus == .infoSong { focus = .infoStats }
+        }
+    }
+}
+
+struct PlayerSongCard: View {
+    let song: SongMatch
+    @FocusState.Binding var focus: PlayerControls.FocusSlot?
+    @Environment(\.playerCardMetrics) private var metrics
+    @Environment(\.playerControlForeground) private var foreground
+    @Environment(\.openURL) private var openURL
+
+    static func artworkSize(for metrics: PlayerCardMetrics) -> CGFloat {
+        metrics.isVertical ? 112 : metrics.contentHeight
+    }
+
+    var body: some View {
+        Group {
+            if let url = song.appleMusicURL {
+                Button { openURL(url) } label: { label }
+                    #if os(tvOS)
+                    .plozzNativeMediaButtonStyle()
+                    #else
+                    .buttonStyle(.plain)
+                    #endif
+                    .focused($focus, equals: .infoSong)
+            } else {
+                label
+            }
+        }
+        .modifier(PanelGlassBackground(cornerRadius: metrics.panelCornerRadius, mediaGlass: true))
+        .plozzFocusSection()
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel([song.title, song.artist].compactMap { $0 }.joined(separator: ", "))
+    }
+
+    private var label: some View {
+        let artSize = Self.artworkSize(for: metrics)
+        return HStack(spacing: metrics.columnSpacing) {
+            AsyncImage(url: song.artworkURL) { image in
+                image.resizable().scaledToFill()
+            } placeholder: {
+                Color.secondary.opacity(0.15)
+            }
+            .frame(width: artSize, height: artSize)
+            .background {
+                GeometryReader { geometry in
+                    Color.clear.preference(
+                        key: PlayerSongArtworkBounds.self,
+                        value: [.song: geometry.frame(in: .global)]
+                    )
+                }
+            }
+            .clipShape(RoundedRectangle(
+                cornerRadius: PlozzTheme.Metrics.mediumMediaCornerRadius, style: .continuous
+            ))
+            .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 5) {
+                Text(verbatim: song.title)
+                    .font(.system(size: metrics.bodySize, weight: .semibold))
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+                if let artist = song.artist {
+                    Text(verbatim: artist)
+                        .font(.system(size: metrics.captionSize))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .foregroundStyle(foreground)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(metrics.contentPadding)
+        .contentShape(RoundedRectangle(cornerRadius: metrics.panelCornerRadius, style: .continuous))
+    }
+}
+#endif

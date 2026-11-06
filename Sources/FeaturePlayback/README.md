@@ -60,22 +60,30 @@ bounded language-match/accessibility flags without track titles or URLs.
 - **Song identification** (#351) — `SongRecognizer` feeds the engine's
   decoded-audio tap (not the microphone) to ShazamKit's streaming matcher while
   a title plays, when the profile's **Identify songs** setting is on. A song is
-  shown in the Info card only after a second match that tracks the playback
-  clock; sound-effect albums and genre-less uploads are ignored. A skip clears
+  shown beside the Info card only after a second match whose offset advances
+  consistently with elapsed monotonic time; sound-effect albums and genre-less uploads are ignored. A skip clears
   the song. Errors (offline, service unavailable) show nothing and rest the
-  matcher for 30 seconds. Only engines with an audio tap (Plozzigen) take part;
-  others return no tap and the card simply shows no song.
-  The pending layout review uses `playerSongLayoutPreview` to compare an
-  integrated right-hand music area with a separate neighboring card (stacked on
-  phones). The separate card places a rounded square album cover beside the song
+  matcher for 30 seconds with the audio tap removed. Pausing also removes the tap
+  while retaining the displayed song; seeks clear it and restart analysis only
+  after the seek settles. Engine handoffs replace the recognition owner. A generation-scoped owner
+  rejects late results and teardown from superseded sessions. The adapter pulls
+  directly from the engine's bounded PCM stream without a second queue or a
+  per-buffer main-actor forwarding task. Audio discontinuities restart matching
+  rather than stitching unrelated samples. Only supported Plozzigen routes take
+  part; standalone native playback and remote-HLS/server-transcode bypass
+  return no tap. A no-match result clears a song unheard for 25 seconds; this
+  is not an independent expiry timer.
+  The separate neighboring card (stacked on phones) places a rounded square album cover beside the song
   details, matching the Info thumbnail's height and insets on wide layouts.
-  The integrated alternative groups the song in a subtly filled, outlined inset.
-  Normal playback still uses the original presentation; neither preview
-  changes recognition or adds a user setting. `PlayerSongLayoutPreviewTests`
+  Space is reserved only on supported, enabled playback and stays fixed between
+  matches; an empty slot creates no hidden artwork or glass. `PlayerSongLayoutPreviewTests`
   captures the production controls over native video with a seeded song match.
   Opt in with `TEST_RUNNER_PLOZZ_SONG_PREVIEW_DIRECTORY` pointing to an owned
   directory containing `film.mp4`, `still.jpg`, and `album.jpg`; these captures
   are layout evidence, not evidence of a live Shazam result.
+  The [performance lab](../../docs/performance-lab.md#song-recognition) exercises
+  real local-catalog recognition separately. Fingerprinting is not free, and
+  simulator measurements do not establish device energy or native-route cost.
 - **Subtitle rendering** — `SubtitleOverlayView` draws in-app captions from
   sidecars, Plozzigen decoders, and `NativeSubtitleCueOutput` for native legible
   tracks. `SubtitleStyleRules` remains the reduced AVPlayer styling adapter
