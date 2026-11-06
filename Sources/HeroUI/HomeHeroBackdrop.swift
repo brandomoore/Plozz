@@ -414,7 +414,8 @@ public enum HeroBackdropArtworkPolicy {
         guard !Task.isCancelled else { return nil }
         if allowsCachedLibraryArtwork, let reference = references.first {
             for variant in [ArtworkImageVariant.heroBackdrop, .landscapeCard, .heroPreview] {
-                if let image = cachedImage(reference, variant), isUsable(image) {
+                if let image = cachedImage(reference, variant), isUsable(image),
+                   image.size.width > image.size.height {
                     return FirstPaintArtwork(image: image, reference: reference, variant: variant)
                 }
             }
@@ -722,6 +723,7 @@ private struct WipeImageView: UIViewRepresentable {
                         references: references,
                         variant: .heroPreview,
                         maxAspectRatio: HeroBackdropArtworkPolicy.maxAspectRatio,
+                        prefersLandscape: true,
                         asyncOnlineURL: asyncFallbackURL,
                         prefersOnlineArtwork: prefersOnlineArtwork,
                         sharedKey: sharedResolutionIdentity

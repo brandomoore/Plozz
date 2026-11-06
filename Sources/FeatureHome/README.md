@@ -1508,6 +1508,12 @@ non-16:9 sources. Hero + Showcase transition overscan extends the image's top ed
 above that slot instead of enlarging and lifting the resting image. Standalone
 Showcase and Reduce Motion preserve the same uncropped framing; carousel artwork
 keeps its existing fill treatment.
+Landscape heroes check usable library and online backdrops before accepting a
+portrait or square fallback. Source preference still chooses between landscape
+images; a cached online miss and its poster fallback cannot hide a server backdrop.
+Poster-only titles retain artwork, and mobile's explicitly compact portrait heroes
+keep their existing selection policy. Preview, handoff, and resolved-image memo
+identities preserve that distinction.
 Crossfade is the only Showcase backdrop transition. The retired slide preference
 is ignored when reading older settings without resetting the remaining choices.
 Showcase's optional titles under cards follow Appearance > Cards;

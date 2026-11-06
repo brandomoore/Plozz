@@ -870,6 +870,11 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   reflections without changing the surrounding page's card policy.
   Shared hero/reflection first-paint results are qualified by source and provider
   policy so changing those settings cannot reuse a previous provider's winner.
+  Wide heroes opt into `prefersLandscape`: check both sources for a usable
+  landscape before accepting a portrait/square fallback, preserving source order
+  within each shape. Raw cached posters cannot bypass that check. Prepared images,
+  transition handoffs, and shared lookup identities include the shape preference;
+  ordinary cards and explicitly compact portrait heroes do not opt in.
   A pinned show identity keeps its current image visible during hydration, not
   permanently selected. New artwork references or source preferences resolve
   again before replacing it at full quality, so an early poster fallback cannot

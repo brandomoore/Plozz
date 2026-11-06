@@ -10,6 +10,130 @@ import UIKit
 @MainActor
 final class ArtworkPresentationPolicyTests: XCTestCase {
     #if canImport(UIKit)
+    func testLandscapeHeroesKeepSourcePreferenceBetweenUsableBackdrops() async {
+        let library = ArtworkReference.remote(URL(string: "https://example.test/library.jpg")!)
+        let online = URL(string: "https://example.test/online.jpg")!
+        let landscape = heroImage(width: 16, height: 9)
+        for prefersOnline in [true, false] {
+            let result = await ArtworkFirstPaintResolver.resolve(
+                references: [library], variant: .heroPreview, maxAspectRatio: 3,
+                prefersLandscape: true, asyncOnlineURL: { online },
+                prefersOnlineArtwork: prefersOnline,
+                imageLoader: { _ in landscape }
+            )
+            XCTAssertEqual(result?.reference, prefersOnline ? .remote(online) : library)
+        }
+    }
+
+    func testLandscapeHeroesDeferPostersUntilBothSourcesHaveBeenChecked() async {
+        let libraryPoster = ArtworkReference.remote(URL(string: "https://example.test/library-poster.jpg")!)
+        let libraryBackdrop = ArtworkReference.remote(URL(string: "https://example.test/library-backdrop.jpg")!)
+        let online = URL(string: "https://example.test/online.jpg")!
+        let portrait = heroImage(width: 2, height: 3)
+        let landscape = heroImage(width: 16, height: 9)
+        for prefersOnline in [true, false] {
+            for onlineIsLandscape in [true, false] {
+                let result = await ArtworkFirstPaintResolver.resolve(
+                    references: [libraryPoster, libraryBackdrop],
+                    variant: .heroPreview, maxAspectRatio: 3, prefersLandscape: true,
+                    asyncOnlineURL: { online }, prefersOnlineArtwork: prefersOnline,
+                    imageLoader: { reference in
+                        reference == libraryBackdrop || (reference == .remote(online) && onlineIsLandscape)
+                            ? landscape : portrait
+                    }
+                )
+                XCTAssertEqual(result?.reference,
+                               prefersOnline && onlineIsLandscape ? .remote(online) : libraryBackdrop)
+                XCTAssertEqual(result?.isLandscape, true)
+            }
+        }
+        let onlineOnlyBackdrop = await ArtworkFirstPaintResolver.resolve(
+            references: [libraryPoster], variant: .heroPreview,
+            prefersLandscape: true, asyncOnlineURL: { online }, prefersOnlineArtwork: false,
+            imageLoader: { $0 == libraryPoster ? portrait : landscape }
+        )
+        XCTAssertEqual(onlineOnlyBackdrop?.reference, .remote(online))
+    }
+
+    func testPosterOnlyHeroesRetainFallbacksWhenLibraryBackdropsFail() async {
+        let broken = ArtworkReference.remote(URL(string: "https://example.test/broken.jpg")!)
+        let library = ArtworkReference.remote(URL(string: "https://example.test/poster.jpg")!)
+        let online = URL(string: "https://example.test/online.jpg")!
+        let portrait = heroImage(width: 2, height: 3)
+        for prefersOnline in [true, false] {
+            for hasLibraryPoster in [true, false] {
+                let result = await ArtworkFirstPaintResolver.resolve(
+                    references: hasLibraryPoster ? [broken, library] : [broken],
+                    variant: .heroPreview, maxAspectRatio: 3, prefersLandscape: true,
+                    asyncOnlineURL: { online }, prefersOnlineArtwork: prefersOnline,
+                    imageLoader: { $0 == broken ? nil : portrait }
+                )
+                XCTAssertEqual(result?.reference,
+                               prefersOnline || !hasLibraryPoster ? .remote(online) : library)
+                XCTAssertEqual(result?.isLandscape, false)
+            }
+        }
+        let unavailable = await ArtworkFirstPaintResolver.resolve(
+            references: [broken], variant: .heroPreview, prefersLandscape: true,
+            asyncOnlineURL: { online }, imageLoader: { _ in nil }
+        )
+        XCTAssertNil(unavailable)
+    }
+
+    func testLandscapeHeroCancellationCannotPublishADeferredPoster() async {
+        let library = ArtworkReference.remote(URL(string: "https://example.test/library.jpg")!)
+        let online = URL(string: "https://example.test/online-poster.jpg")!
+        let portrait = heroImage(width: 2, height: 3)
+        let task = Task {
+            await ArtworkFirstPaintResolver.resolve(
+                references: [library], variant: .heroPreview, prefersLandscape: true,
+                asyncOnlineURL: { online },
+                imageLoader: { reference in
+                    if reference == library {
+                        withUnsafeCurrentTask { $0?.cancel() }
+                        return nil
+                    }
+                    return portrait
+                }
+            )
+        }
+        let result = await task.value
+        XCTAssertNil(result)
+    }
+
+    func testLandscapeHeroResolutionDoesNotReuseCompactPortraitFirstPaint() async {
+        let library = ArtworkReference.remote(URL(string: "https://example.test/library.jpg")!)
+        let online = URL(string: "https://example.test/online-poster.jpg")!
+        let portrait = heroImage(width: 2, height: 3)
+        let landscape = heroImage(width: 16, height: 9)
+        let sharedKey = UUID().uuidString
+        for prefersLandscape in [false, true] {
+            let result = await ArtworkFirstPaintResolver.resolve(
+                references: [library], variant: .heroPreview,
+                prefersLandscape: prefersLandscape, asyncOnlineURL: { online },
+                sharedKey: sharedKey,
+                imageLoader: { $0 == library ? landscape : portrait }
+            )
+            XCTAssertEqual(result?.reference, prefersLandscape ? library : .remote(online))
+        }
+        XCTAssertNotEqual(
+            ArtworkResolveKey.make(
+                references: [library], variant: .heroPreview, maxAspectRatio: 3, pinIdentity: "hero"
+            ),
+            ArtworkResolveKey.make(
+                references: [library], variant: .heroPreview, maxAspectRatio: 3, pinIdentity: "hero",
+                prefersLandscape: true
+            )
+        )
+    }
+
+    private func heroImage(width: CGFloat, height: CGFloat) -> UIImage {
+        UIGraphicsImageRenderer(size: CGSize(width: width, height: height)).image {
+            UIColor.blue.setFill()
+            $0.fill(CGRect(x: 0, y: 0, width: width, height: height))
+        }
+    }
+
     func testTextlessPrimaryWinsBeforeOrdinaryProviderArtwork() async throws {
         let clean = ArtworkReference.remote(URL(string: "https://example.test/clean.jpg")!)
         let library = ArtworkReference.remote(URL(string: "https://example.test/library.jpg")!)

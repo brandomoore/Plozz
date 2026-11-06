@@ -10,6 +10,8 @@ public struct FirstPaintArtwork: @unchecked Sendable {
     public let reference: ArtworkReference
     public let variant: ArtworkImageVariant
 
+    public var isLandscape: Bool { image.size.width > image.size.height }
+
     public init(
         image: UIImage,
         reference: ArtworkReference,
@@ -24,6 +26,8 @@ public struct FirstPaintArtwork: @unchecked Sendable {
 /// Resolves the preferred source before falling back, without publishing a
 /// provisional image. Queueing or downloading slowly is not a missing image;
 /// the underlying network and image-cache deadlines bound failed requests.
+/// Landscape heroes defer portrait/square results until both sources have been
+/// checked, while retaining the configured source order within each shape.
 public enum ArtworkFirstPaintResolver {
     /// Prepares the exact policy-qualified result FallbackAsyncImage can adopt
     /// synchronously, including an online winner absent from its library URLs.
@@ -33,6 +37,7 @@ public enum ArtworkFirstPaintResolver {
         prefersPrimaryReference: Bool = false,
         variant: ArtworkImageVariant,
         maxAspectRatio: CGFloat? = nil,
+        prefersLandscape: Bool = false,
         asyncOnlineURL: (@Sendable () async -> URL?)?,
         pinIdentity: String,
         policy: ArtworkPresentationPolicy = .init()
@@ -41,12 +46,14 @@ public enum ArtworkFirstPaintResolver {
             references: references, variant: variant, maxAspectRatio: maxAspectRatio,
             pinIdentity: pinIdentity,
             providerPolicyIdentity: policy.identity,
-            prefersPrimaryReference: prefersPrimaryReference
+            prefersPrimaryReference: prefersPrimaryReference,
+            prefersLandscape: prefersLandscape
         )
         if ArtworkSeedMemo.prepared(for: key, variant: variant) != nil { return }
         guard let artwork = await resolve(
             references: references, prefersPrimaryReference: prefersPrimaryReference, variant: variant,
             maxAspectRatio: maxAspectRatio,
+            prefersLandscape: prefersLandscape,
             asyncOnlineURL: asyncOnlineURL,
             prefersOnlineArtwork: policy.prefersOnlineArtwork, background: true
         ), !Task.isCancelled else { return }
@@ -58,6 +65,7 @@ public enum ArtworkFirstPaintResolver {
         prefersPrimaryReference: Bool = false,
         variant: ArtworkImageVariant,
         maxAspectRatio: CGFloat? = nil,
+        prefersLandscape: Bool = false,
         asyncOnlineURL: (@Sendable () async -> URL?)?,
         prefersOnlineArtwork: Bool = true,
         sharedKey: String? = nil,
@@ -65,14 +73,16 @@ public enum ArtworkFirstPaintResolver {
         imageLoader: (@Sendable (ArtworkReference) async -> UIImage?)? = nil
     ) async -> FirstPaintArtwork? {
         if let sharedKey {
-            let key = prefersPrimaryReference
+            let primaryKey = prefersPrimaryReference
                 ? "\(sharedKey)|primary:\(references.first?.privacySafeIdentity ?? "none")" : sharedKey
+            let key = prefersLandscape ? "\(primaryKey)|landscape-first" : primaryKey
             return await FirstPaintTaskMemo.shared.value(for: key) {
                 await resolve(
                     references: references,
                     prefersPrimaryReference: prefersPrimaryReference,
                     variant: variant,
                     maxAspectRatio: maxAspectRatio,
+                    prefersLandscape: prefersLandscape,
                     asyncOnlineURL: asyncOnlineURL,
                     prefersOnlineArtwork: prefersOnlineArtwork,
                     sharedKey: nil,
@@ -85,26 +95,31 @@ public enum ArtworkFirstPaintResolver {
            let artwork = await loadFirst(
                [primary], variant: variant, maxAspectRatio: maxAspectRatio,
                background: background, imageLoader: imageLoader
-           ) {
+           ), !prefersLandscape || artwork.isLandscape {
             return artwork
         }
         guard prefersOnlineArtwork, let asyncOnlineURL else {
-            if let local = await loadFirst(
+            let local = await loadFirst(
                 references,
                 variant: variant,
                 maxAspectRatio: maxAspectRatio,
+                prefersLandscape: prefersLandscape,
                 background: background,
                 imageLoader: imageLoader
-            ) {
+            )
+            if let local, !prefersLandscape || local.isLandscape {
                 return local
             }
-            return await loadOnline(
+            let online = await loadOnline(
                 asyncOnlineURL,
                 variant: variant,
                 maxAspectRatio: maxAspectRatio,
                 background: background,
                 imageLoader: imageLoader
             )
+            guard !Task.isCancelled else { return nil }
+            if prefersLandscape, let online, online.isLandscape { return online }
+            return local ?? online
         }
 
         let race = FirstPaintRace()
@@ -126,29 +141,37 @@ public enum ArtworkFirstPaintResolver {
             Task { await race.submit(.cancelled) }
         }
         guard !Task.isCancelled else { return nil }
+        let online: FirstPaintArtwork?
         switch outcome {
         case .resolved(let artwork):
-            if let artwork { return artwork }
+            if let artwork, !prefersLandscape || artwork.isLandscape { return artwork }
+            online = artwork
         case .cancelled:
             return nil
         }
 
-        return await loadFirst(
+        let local = await loadFirst(
             references,
             variant: variant,
             maxAspectRatio: maxAspectRatio,
+            prefersLandscape: prefersLandscape,
             background: background,
             imageLoader: imageLoader
         )
+        guard !Task.isCancelled else { return nil }
+        if prefersLandscape, let local, local.isLandscape { return local }
+        return online ?? local
     }
 
     private static func loadFirst(
         _ references: [ArtworkReference],
         variant: ArtworkImageVariant,
         maxAspectRatio: CGFloat?,
+        prefersLandscape: Bool = false,
         background: Bool,
         imageLoader: (@Sendable (ArtworkReference) async -> UIImage?)?
     ) async -> FirstPaintArtwork? {
+        var fallback: FirstPaintArtwork?
         for reference in references {
             guard !Task.isCancelled else { return nil }
             guard let image = await loadImage(
@@ -156,13 +179,15 @@ public enum ArtworkFirstPaintResolver {
             ), !Task.isCancelled, isUsable(image, maxAspectRatio: maxAspectRatio) else {
                 continue
             }
-            return FirstPaintArtwork(
+            let artwork = FirstPaintArtwork(
                 image: image,
                 reference: reference,
                 variant: variant
             )
+            if !prefersLandscape || artwork.isLandscape { return artwork }
+            if fallback == nil { fallback = artwork }
         }
-        return nil
+        return Task.isCancelled ? nil : fallback
     }
 
     private static func loadOnline(
