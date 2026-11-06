@@ -53,6 +53,10 @@ bounded language-match/accessibility flags without track titles or URLs.
     episodes remain server-managed. See ProviderPlex's extra resume contract.
   - `PlayerView` + `CustomPlayerContainer` host the engine's vended
     bare video surface and overlay the shared transport chrome.
+  - `PlayerCardMetrics` scales touch-player typography to a wide-tablet maximum
+    of 24-point titles, 17-point body text, and 14-point metadata. Card geometry,
+    weights, and controls retain their existing styling; TV keeps its separate
+    across-the-room type scale.
 - **Song identification** (#351) — `SongRecognizer` feeds the engine's
   decoded-audio tap (not the microphone) to ShazamKit's streaming matcher while
   a title plays, when the profile's **Identify songs** setting is on. A song is

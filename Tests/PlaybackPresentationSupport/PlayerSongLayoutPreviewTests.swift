@@ -16,6 +16,30 @@ final class PlayerSongLayoutPreviewTests: XCTestCase {
         XCTAssertEqual(EnvironmentValues().playerSongLayoutPreview, .original)
     }
 
+    func testWidePlayerTypographyUsesTouchScaleWithoutChangingTV() {
+        XCTAssertEqual(PlayerCardMetrics.tv.titleSize, 34)
+        XCTAssertEqual(PlayerCardMetrics.tv.bodySize, 25)
+        XCTAssertEqual(PlayerCardMetrics.tv.captionSize, 22)
+        #if os(iOS)
+        let wide = PlayerCardMetrics.resolved(forWidth: 1376, height: 1032)
+        XCTAssertEqual(wide.titleSize, 24)
+        XCTAssertEqual(wide.bodySize, 17)
+        XCTAssertEqual(wide.captionSize, 14)
+        XCTAssertEqual(wide.contentHeight, 208)
+        XCTAssertEqual(wide.contentPadding, 16)
+
+        let phone = PlayerCardMetrics.resolved(forWidth: 402, height: 874)
+        XCTAssertEqual(phone.titleSize, 17)
+        XCTAssertEqual(phone.bodySize, 13)
+        XCTAssertEqual(phone.captionSize, 11)
+
+        let middle = PlayerCardMetrics.resolved(forWidth: 900, height: 600)
+        XCTAssertEqual(middle.titleSize, 20)
+        XCTAssertEqual(middle.bodySize, 14)
+        XCTAssertEqual(middle.captionSize, 12)
+        #endif
+    }
+
     func testCaptureBothLayoutsOverNativePlayback() async throws {
         let path = ProcessInfo.processInfo.environment["PLOZZ_SONG_PREVIEW_DIRECTORY"]
         try XCTSkipIf(path == nil, "Opt-in visual comparison requires a local directory containing film.mp4, still.jpg and album.jpg.")
