@@ -409959,7 +409959,224 @@
       }
     },
     "Identify songs" : {
-
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "التعرف على الأغاني"
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Разпознаване на песни"
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Identificar cançons"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Rozpoznávat skladby"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Genkend sange"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Songs erkennen"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Αναγνώριση τραγουδιών"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Identificar canciones"
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "شناسایی آهنگ‌ها"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Tunnista kappaleita"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Identifier les chansons"
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "זיהוי שירים"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "गाने पहचानें"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Prepoznavanje pjesama"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Dalok felismerése"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Kenali lagu"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Identifica brani"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "曲を識別"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "노래 인식"
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Kenal pasti lagu"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Gjenkjenn sanger"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nummers herkennen"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Rozpoznawanie utworów"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Identificar músicas"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Identifică melodii"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Распознавать песни"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Rozpoznávať skladby"
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Prepoznavanje skladb"
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Prepoznavanje pesama"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Identifiera låtar"
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ระบุเพลง"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Şarkıları tanı"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Розпізнавати пісні"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nhận diện bài hát"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "识别歌曲"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "辨識歌曲"
+          }
+        }
+      }
     },
     "Idle" : {
       "comment" : "Status in metadata diagnostics when no enrichment jobs or backlogs are currently queued or running.",
@@ -773254,7 +773471,224 @@
       }
     },
     "Shows the song playing in a movie or show in the player’s Info, using Shazam. Needs an internet connection." : {
-
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "يعرض الأغنية التي تُشغَّل في فيلم أو مسلسل ضمن «معلومات» في المشغّل، باستخدام Shazam. يتطلب اتصالًا بالإنترنت."
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Показва песента, която звучи във филм или предаване, в раздел „Информация“ на плейъра чрез Shazam. Необходима е интернет връзка."
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Mostra la cançó que sona en una pel·lícula o sèrie a «Informació» del reproductor, amb Shazam. Cal connexió a internet."
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Pomocí služby Shazam zobrazuje skladbu, která hraje ve filmu nebo seriálu, v části „Informace“ přehrávače. Vyžaduje připojení k internetu."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Viser sangen, der spilles i en film eller serie, under Info i afspilleren ved hjælp af Shazam. Kræver en internetforbindelse."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zeigt mithilfe von Shazam den Song, der in einem Film oder einer Serie läuft, im Bereich „Info“ des Players an. Benötigt eine Internetverbindung."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Εμφανίζει το τραγούδι που ακούγεται σε μια ταινία ή σειρά στις «Πληροφορίες» του προγράμματος αναπαραγωγής, μέσω του Shazam. Απαιτεί σύνδεση στο διαδίκτυο."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Muestra la canción que suena en una película o serie en «Información» del reproductor, usando Shazam. Requiere conexión a internet."
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "با استفاده از Shazam، آهنگی را که در فیلم یا سریال پخش می‌شود در بخش «اطلاعات» پخش‌کننده نمایش می‌دهد. اتصال به اینترنت لازم است."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Näyttää elokuvassa tai sarjassa soivan kappaleen soittimen Tiedot-osiossa Shazam-palvelun avulla. Vaatii internetyhteyden."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Affiche la chanson diffusée dans un film ou une série dans la rubrique « Infos » du lecteur, à l’aide de Shazam. Nécessite une connexion internet."
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "מציג את השיר שמתנגן בסרט או בסדרה באזור \"מידע\" בנגן, באמצעות Shazam. נדרש חיבור לאינטרנט."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Shazam की मदद से फ़िल्म या शो में बज रहे गाने को प्लेयर के “जानकारी” सेक्शन में दिखाता है। इंटरनेट कनेक्शन ज़रूरी है।"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Prikazuje pjesmu koja svira u filmu ili seriji u odjeljku „Informacije” reproduktora pomoću usluge Shazam. Potrebna je internetska veza."
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "A Shazam segítségével megjeleníti a filmben vagy sorozatban szóló dalt a lejátszó „Infó” részében. Internetkapcsolat szükséges."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Menampilkan lagu yang diputar dalam film atau acara di bagian Info pemutar menggunakan Shazam. Memerlukan koneksi internet."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Mostra il brano in riproduzione in un film o una serie nella sezione Info del lettore, usando Shazam. Richiede una connessione internet."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Shazamを使って、映画や番組で流れている曲をプレーヤーの「情報」に表示します。インターネット接続が必要です。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Shazam을 사용해 영화나 프로그램에서 나오는 노래를 플레이어의 ‘정보’에 표시합니다. 인터넷 연결이 필요합니다."
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Memaparkan lagu yang dimainkan dalam filem atau rancangan di bahagian Maklumat pemain menggunakan Shazam. Memerlukan sambungan internet."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Viser sangen som spilles i en film eller serie, under Info i avspilleren ved hjelp av Shazam. Krever internettilkobling."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Toont met Shazam in het onderdeel Info van de speler welk nummer er in een film of serie wordt afgespeeld. Een internetverbinding is vereist."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Pokazuje utwór odtwarzany w filmie lub serialu w sekcji „Informacje” odtwarzacza za pomocą usługi Shazam. Wymaga połączenia z internetem."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Mostra a música que está tocando em um filme ou série na seção Informações do reprodutor, usando o Shazam. Requer conexão com a internet."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Afișează melodia redată într-un film sau serial în secțiunea „Informații” a playerului, folosind Shazam. Necesită o conexiune la internet."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Показывает песню, звучащую в фильме или сериале, в разделе «Информация» плеера с помощью Shazam. Требуется подключение к интернету."
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zobrazuje skladbu hrajúcu vo filme alebo seriáli v časti „Informácie“ prehrávača pomocou služby Shazam. Vyžaduje internetové pripojenie."
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "S pomočjo storitve Shazam prikaže skladbo, ki se predvaja v filmu ali seriji, v razdelku »Informacije« predvajalnika. Potrebna je internetna povezava."
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Pomoću usluge Shazam prikazuje pesmu koja se čuje u filmu ili seriji u odeljku „Informacije” plejera. Potrebna je internet veza."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Visar låten som spelas i en film eller serie under Info i spelaren med hjälp av Shazam. Kräver internetanslutning."
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ใช้ Shazam เพื่อแสดงเพลงที่กำลังเล่นในภาพยนตร์หรือรายการในส่วน “ข้อมูล” ของตัวเล่น ต้องเชื่อมต่ออินเทอร์เน็ต"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Shazam kullanarak film veya dizide çalan şarkıyı oynatıcının Bilgi bölümünde gösterir. İnternet bağlantısı gerekir."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Показує пісню, що звучить у фільмі чи серіалі, у розділі «Інформація» програвача за допомогою Shazam. Потрібне підключення до інтернету."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Hiển thị bài hát đang phát trong phim hoặc chương trình ở mục Thông tin của trình phát bằng Shazam. Cần kết nối internet."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "使用 Shazam 在播放器的“信息”中显示电影或节目里正在播放的歌曲。需要互联网连接。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "使用 Shazam 在播放器的「資訊」中顯示電影或節目中正在播放的歌曲。需要網際網路連線。"
+          }
+        }
+      }
     },
     "Shuffle" : {
       "comment" : "Button on music screens that starts shuffled playback of the current album, playlist, or other visible music list.",
@@ -1114348,7 +1114782,224 @@
       }
     },
     "shazam music song soundtrack what song is playing apple music" : {
-
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Shazam موسيقى أغنية موسيقى تصويرية ما الأغنية التي تُشغَّل Apple Music"
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Shazam музика песен саундтрак коя песен звучи Apple Music"
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Shazam música cançó banda sonora quina cançó sona Apple Music"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Shazam hudba skladba píseň soundtrack co právě hraje Apple Music"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Shazam musik sang soundtrack hvilken sang spilles Apple Music"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Shazam Musik Song Lied Soundtrack welches Lied läuft Apple Music"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Shazam μουσική τραγούδι σάουντρακ ποιο τραγούδι παίζει Apple Music"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Shazam música canción banda sonora qué canción está sonando Apple Music"
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Shazam موسیقی آهنگ موسیقی متن چه آهنگی پخش می‌شود Apple Music"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Shazam musiikki kappale soundtrack mikä kappale soi Apple Music"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Shazam musique chanson bande originale quelle chanson passe Apple Music"
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Shazam מוזיקה שיר פסקול איזה שיר מתנגן Apple Music"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Shazam संगीत गाना साउंडट्रैक कौन सा गाना बज रहा है Apple Music"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Shazam glazba pjesma filmska glazba koja pjesma svira Apple Music"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Shazam zene dal filmzene milyen dal szól Apple Music"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Shazam musik lagu soundtrack lagu apa yang sedang diputar Apple Music"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Shazam musica brano canzone colonna sonora che canzone si sente Apple Music"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Shazam 音楽 曲 サウンドトラック 今流れている曲 Apple Music"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Shazam 음악 노래 사운드트랙 지금 나오는 노래 Apple Music"
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Shazam muzik lagu runut bunyi lagu apa yang sedang dimainkan Apple Music"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Shazam musikk sang lydspor hvilken sang spilles Apple Music"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Shazam muziek nummer lied soundtrack welk nummer wordt afgespeeld Apple Music"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Shazam muzyka utwór piosenka ścieżka dźwiękowa co to za piosenka Apple Music"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Shazam música canção trilha sonora que música está tocando Apple Music"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Shazam muzică melodie cântec coloană sonoră ce melodie se aude Apple Music"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Shazam музыка песня саундтрек какая песня играет Apple Music"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Shazam hudba skladba pieseň soundtrack aká skladba hrá Apple Music"
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Shazam glasba skladba pesem filmska glasba katera pesem se predvaja Apple Music"
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Shazam muzika pesma filmska muzika koja pesma svira Apple Music"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Shazam musik låt sång soundtrack vilken låt spelas Apple Music"
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Shazam เพลง ดนตรี เพลงประกอบ เพลงอะไรที่กำลังเล่น Apple Music"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Shazam müzik şarkı film müziği hangi şarkı çalıyor Apple Music"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Shazam музика пісня саундтрек яка пісня грає Apple Music"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Shazam nhạc bài hát nhạc phim bài hát nào đang phát Apple Music"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Shazam 音乐 歌曲 原声带 正在播放什么歌 Apple Music"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Shazam 音樂 歌曲 原聲帶 現在播放什麼歌 Apple Music"
+          }
+        }
+      }
     },
     "show hide card titles names captions under posters show poster titles" : {
       "localizations" : {

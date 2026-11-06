@@ -22,7 +22,7 @@ public struct SongTapChunk: @unchecked Sendable {
 }
 
 public struct SongMatch: Equatable, Sendable {
-    public let title: String
+    public let title: String // l10n:content - Shazam-provided song title.
     public let artist: String?
     public let artworkURL: URL?
     public let appleMusicURL: URL?
@@ -224,7 +224,7 @@ enum SongRecognizer {
     /// Shazam also knows sound-effect and ambience albums, which match rain and
     /// room tone in quiet scenes, and untagged uploads (no genre) that sample a
     /// film's score. Neither is a song worth showing.
-    static func isSong(title: String, genres: [String]) -> Bool {
+    static func isSong(title: String, genres: [String]) -> Bool { // l10n:content - Shazam-provided metadata.
         guard !genres.isEmpty else { return false }
         if genres.contains(where: { $0.localizedCaseInsensitiveContains("sound effect") }) { return false }
         let title = title.lowercased()
