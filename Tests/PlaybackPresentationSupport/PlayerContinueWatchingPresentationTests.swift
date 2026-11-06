@@ -7,7 +7,7 @@ import XCTest
 
 @MainActor
 final class PlayerContinueWatchingPresentationTests: XCTestCase {
-    func testArtworkLayoutKeepsInfoInsetsAcrossShapesAndCaptions() async throws {
+    func testArtworkKeepsInfoInsetsAndCaptionsClearTheCorners() async throws {
         let deadline = ContinuousClock.now + .seconds(5)
         while !UIApplication.shared.connectedScenes.contains(where: { $0.activationState == .foregroundActive }),
               ContinuousClock.now < deadline {
@@ -29,6 +29,11 @@ final class PlayerContinueWatchingPresentationTests: XCTestCase {
         #endif
         for size in sizes {
             let metrics = PlayerCardMetrics.resolved(forWidth: size.width, height: size.height)
+            let borderless = PlayerMediaArtworkLayout(
+                height: metrics.cardHeight, inset: 0,
+                cornerRadius: PlozzTheme.Metrics.mediumMediaCornerRadius
+            )
+            XCTAssertEqual(borderless.captionBottomInset, 0)
             for ratio in [CGFloat(16.0 / 9.0), ContinueWatchingCardShape.aspectRatio, 2.0 / 3.0] {
                 for labels in [false, true] {
                     let probe = PlayerArtworkInsetsProbe()
@@ -66,8 +71,12 @@ final class PlayerContinueWatchingPresentationTests: XCTestCase {
                     XCTAssertEqual(probe.card.maxX - probe.artwork.maxX, metrics.contentPadding, accuracy: 0.5)
                     XCTAssertEqual(
                         probe.card.maxY - (labels ? probe.caption.maxY : probe.artwork.maxY),
-                        metrics.contentPadding, accuracy: 0.5
+                        labels ? metrics.panelCornerRadius : metrics.contentPadding, accuracy: 0.5
                     )
+                    if labels {
+                        XCTAssertEqual(probe.caption.minX, probe.artwork.minX, accuracy: 0.5)
+                        XCTAssertEqual(probe.caption.minY - probe.artwork.maxY, 8, accuracy: 0.5)
+                    }
                     XCTAssertEqual(probe.artwork.width / probe.artwork.height, ratio, accuracy: 0.005)
                 }
             }

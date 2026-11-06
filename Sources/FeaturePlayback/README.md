@@ -216,8 +216,10 @@ The player owns geometry: every horizontal card fills the same fixed-height
 stage as Chapters, fitting its artwork width to the measured caption and chosen
 aspect ratio. Hiding labels returns that space to the artwork. Framed cards use
 Chapters' surface and focus clearance, with the same `contentPadding` inset as
-Info; borderless cards omit the glass
-without changing stage height. Reduced-transparency fallbacks remain available.
+Info. Visible captions reserve separate bottom clearance from the outer corner
+radius; artwork gives up that space without changing stage height. Hidden labels
+keep the full artwork area. Borderless cards retain their own caption padding and
+omit the glass. Reduced-transparency fallbacks remain available.
 Phone portrait keeps the existing bounded, compact vertical-list layout, with
 the same row height and natural content sizing as Chapters. Playback details
 and progress-only bars sit beside the small artwork rather than shrinking Home's overlays.
@@ -244,7 +246,8 @@ retain aligned artwork slots. All horizontal artwork cards size their width from
 measured caption so thumbnails have equal top and side insets, using Info's
 `contentPadding` rather than a separate corner-based allowance; the thumbnail's
 continuous corner radius is the outer glass radius minus that inset.
-Artwork captions share one leading text edge with that same inner padding.
+Artwork captions share one leading text edge with that same inner padding,
+but their bottom inset clears the outer corner radius rather than following the image inset.
 Cards show titles (or numbered chapter labels),
 start times, available server thumbnails, and the current chapter. On portrait iOS,
 Cast and Chapters use the same tab-to-content gap as Info, with directional scroll
