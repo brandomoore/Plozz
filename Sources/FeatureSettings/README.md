@@ -574,8 +574,19 @@ watch history and planning-list behavior are documented in
   errors and Retry instead of claiming no rows are available. Creation starts with
   a library collection; the editor identifies that source as Content and its
   presentation as Layout (see [Home terminology](../../CONTEXT.md)). Choose a source collection first,
-  then edit its name and Posters, Landscape or Featured presentation with the layout control immediately above a real-title
-  preview. The preview uses the existing artwork preferences and spoiler protection.
+  then edit its name and Posters, Landscape or Featured presentation. A live
+  real-title preview leads the editor, with compact native **Layout** and **Logo**
+  menu rows underneath rather than controls inside the preview.
+  The preview uses the existing artwork preferences and spoiler protection.
+  Landscape exposes **Logo: On / Off** for movie/show cards on all platforms,
+  defaulting to Off. Older Automatic values migrate to Off; saved On/Off choices
+  remain intact. On uses the shared background/logo treatment and is never
+  suppressed by an artwork-type guess. It prefers clean backgrounds when allowed
+  by the artwork settings, but still overlays the available artwork when none is
+  found. Off adds no overlay; it cannot remove a logo embedded in the image.
+  The preference persists
+  with each row, survives layout changes and profile transfer, and previews
+  without saving until the user applies the edit. Episode stills are unchanged.
   Each navigation destination explicitly forwards the active profile's card settings,
   including Add row's nested creation destination; iOS navigation does not
   inherit dependencies injected only into the preceding page.

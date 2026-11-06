@@ -38,7 +38,10 @@ public struct ArtworkPresentationPolicy: Equatable, Sendable {
     }
 
     public var identity: String {
-        let language = placement == .logo ? "|logo-language:\(logoLanguage)" : ""
+        let language = placement == .logo ? "|logo-language:\(logoLanguage)"
+            : placement == .landscapeCard
+                ? "|landscape-language:\(logoLanguage)|landscape-preference:\(settings.preference(in: area).rawValue)"
+                : ""
         return metadataSettings.artworkPolicyIdentity + language
     }
 
@@ -67,7 +70,16 @@ private struct ArtworkProvidersKey: EnvironmentKey {
     static let defaultValue = MetadataProviderSettings.default
 }
 
+private struct LandscapeTitleLogoKey: EnvironmentKey {
+    static let defaultValue = LandscapeTitleLogo.off
+}
+
 public extension EnvironmentValues {
+    var plozzLandscapeTitleLogo: LandscapeTitleLogo {
+        get { self[LandscapeTitleLogoKey.self] }
+        set { self[LandscapeTitleLogoKey.self] = newValue }
+    }
+
     var plozzArtworkSettings: ArtworkSettings {
         get { self[ArtworkSettingsKey.self] }
         set { self[ArtworkSettingsKey.self] = newValue }

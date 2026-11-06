@@ -926,6 +926,13 @@ public struct MediaItem: Codable, Hashable, Identifiable, Sendable {
             }
         }
         references.append(contentsOf: legacy)
+        if placement == .landscapeCard {
+            references = references.filter {
+                guard case .networkFile(let file) = $0 else { return true }
+                guard let dimensions = file.dimensions else { return false }
+                return (4.0 / 3.0...3).contains(dimensions.aspectRatio)
+            }
+        }
         var seen = Set<ArtworkReference>()
         return references.filter { seen.insert($0).inserted }
     }

@@ -85,19 +85,32 @@ struct CollectionSectionSettingsView: View {
     var body: some View {
         HomeEditorPage(title: isNew ? Text("Create row") : Text("Edit row"), showsHeader: true) {
             VStack(alignment: .leading, spacing: 16) {
-                Picker("Layout", selection: $draft.cardStyle) {
-                    ForEach(CollectionSection.CardStyle.allCases, id: \.self) { style in
-                        Text(style.title).tag(style)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .accessibilityIdentifier("collection-section-card-style")
                 Text(verbatim: draft.title).font(.headline)
                 previewContent
             }
             .padding(16)
             .settingsGroupSurface(cornerRadius: 16)
             .accessibilityIdentifier("collection-section-preview")
+            SettingsSectionGroup {
+                SettingsMenuRow(title: "Layout", value: Text(draft.cardStyle.title)) {
+                    Picker("Layout", selection: $draft.cardStyle) {
+                        ForEach(CollectionSection.CardStyle.allCases, id: \.self) { style in
+                            Text(style.title).tag(style)
+                        }
+                    }
+                }
+                .accessibilityIdentifier("collection-section-card-style")
+                if draft.cardStyle == .landscape {
+                    SettingsMenuRow(title: "Logo", value: Text(draft.titleLogo.title)) {
+                        Picker("Logo", selection: $draft.titleLogo) {
+                            ForEach(LandscapeTitleLogo.allCases, id: \.self) { mode in
+                                Text(mode.title).tag(mode)
+                            }
+                        }
+                    }
+                    .accessibilityIdentifier("collection-section-title-logo")
+                }
+            }
             Button { choosingSource = true } label: {
                 let choice = HomeRowChoice(collectionSection: draft)
                 HomeEditorRowLabel(
@@ -152,6 +165,7 @@ struct CollectionSectionSettingsView: View {
         .environment(\.plozzCardCaptionView, .home)
         .environment(\.plozzCardCaptionSettings, cards.captions)
         .environment(\.plozzArtworkSettings, cards.artwork)
+        .environment(\.plozzLandscapeTitleLogo, draft.titleLogo)
     }
 
     private var currentCatalog: HomeSectionCatalog {

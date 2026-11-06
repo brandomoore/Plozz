@@ -685,6 +685,10 @@ public struct HomeView: View {
                                             )
                                         case let .library(row):
                                             libraryRowView(row, onBrowse: browseAction(for: presentation))
+                                                .environment(
+                                                    \.plozzLandscapeTitleLogo,
+                                                    presentation.choice.collectionSection?.titleLogo ?? .off
+                                                )
                                         case let .liveTV(channels):
                                             MediaRowView(
                                                 title: Text("Live TV"), items: [], style: .landscape,

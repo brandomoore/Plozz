@@ -846,7 +846,7 @@ private struct FilteredArtworkImage<Content: View, Placeholder: View>: View {
                     ArtworkSeedMemo.store(loaded, reference: .remote(url), for: key)
                     pinnedIdentity = pinIdentity
                     displayedReference = .remote(url)
-                    onResolveReference?(nil)
+                    onResolveReference?(.remote(url))
                     return
                 }
             }

@@ -811,14 +811,55 @@ final class JellyfinProviderMappingTests: XCTestCase {
         XCTAssertTrue(items[0].artworkSelections.isEmpty)
     }
 
-    private func backdropItems(tags: String) async throws -> [MediaItem] {
+    func testMovieAndSeriesThumbHasItsOwnLandscapePlacementOnJellyfinAndEmby() async throws {
+        for providerKind in [ProviderKind.jellyfin, .emby] {
+            for type in ["Movie", "Series"] {
+                for tags in ["[]", #"["tagA"]"#, #"["tagA","tagB"]"#] {
+                    let items = try await backdropItems(
+                        tags: tags, type: type, thumb: true, providerKind: providerKind
+                    )
+                    let item = try XCTUnwrap(items.first)
+                    guard case .remote(let thumb)? = item.artworkReferences(for: .landscapeCard).first else {
+                        return XCTFail("Expected advertised native Thumb for \(providerKind) \(type)")
+                    }
+                    XCTAssertEqual(thumb.path, "/Items/m1/Images/Thumb")
+                    XCTAssertTrue(thumb.absoluteString.contains("maxWidth=3840"))
+                    if tags.contains("tagB") {
+                        guard case .remote(let home)? = item.artworkReferences(for: .homeHero).first else {
+                            return XCTFail("Expected the existing first backdrop")
+                        }
+                        XCTAssertEqual(home.path, "/Items/m1/Images/Backdrop")
+                        XCTAssertTrue(home.absoluteString.contains("tag=tagA"))
+                        guard case .remote(let detail)? = item.artworkReferences(for: .detailBackdrop).first else {
+                            return XCTFail("Expected the existing second backdrop")
+                        }
+                        XCTAssertEqual(detail.path, "/Items/m1/Images/Backdrop/1")
+                    }
+                }
+            }
+        }
+    }
+
+    func testEpisodeThumbDoesNotBecomeSeriesLandscapeKeyArt() async throws {
+        let items = try await backdropItems(tags: "[]", type: "Episode", thumb: true)
+        XCTAssertTrue(items[0].artworkReferences(for: .landscapeCard).isEmpty)
+    }
+
+    private func backdropItems(
+        tags: String, type: String = "Movie", thumb: Bool = false, providerKind: ProviderKind = .jellyfin
+    ) async throws -> [MediaItem] {
         let stub = StubHTTPClient()
         stub.stub(pathSuffix: "/Users/u1/Items", json: """
         {"Items":[
-          {"Id":"m1","Name":"Alien","Type":"Movie","BackdropImageTags":\(tags)}
+          {"Id":"m1","Name":"Alien","Type":"\(type)","BackdropImageTags":\(tags),
+           "ImageTags":\(thumb ? #"{"Thumb":"thumb-tag"}"# : "{}")}
         ],"TotalRecordCount":1}
         """)
-        let provider = JellyfinProvider(session: makeSession(), http: stub)
+        let session = UserSession(
+            server: .init(id: "s", name: "Home", baseURL: URL(string: "http://host:8096")!, provider: providerKind),
+            userID: "u1", userName: "Alice", deviceID: "d1", accessToken: "TOKEN"
+        )
+        let provider = JellyfinProvider(session: session, http: stub)
         return try await provider.items(
             in: "lib1",
             kind: .movie,

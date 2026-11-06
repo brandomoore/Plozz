@@ -125,6 +125,12 @@ public actor ArtworkRouter {
         var seen = Set<ArtworkPlacement>()
         for placement in placements where seen.insert(placement).inserted {
             guard !Task.isCancelled, settingsStore.load().artworkPolicyIdentity == policy else { return nil }
+            if placement == .landscapeCard {
+                if let answer = await landscapeCardArtwork(for: item, language: Locale.current.identifier) {
+                    return answer
+                }
+                continue
+            }
             if placement == .episodeThumbnail && lookup.kind != .episode { continue }
             let subject = placement == .episodeThumbnail ? lookup : Self.seriesArtworkItem(for: lookup)
             let kind: ArtworkKind
@@ -212,6 +218,22 @@ public actor ArtworkRouter {
         return await artworkURL(for: item, placements: [.poster])
     }
 
+    public func landscapeCardArtworkURL(
+        for item: MediaItem, language: String = Locale.current.identifier
+    ) async -> URL? {
+        await landscapeCardArtwork(for: item, language: language)?.value
+    }
+
+    private func landscapeCardArtwork(for item: MediaItem, language: String) async -> SourcedValue<URL>? {
+        guard item.supportsExternalArtworkLookup,
+              item.kind == .movie || item.kind == .series else { return nil }
+        return await sourcedArtworkURL(
+            .hero, for: MetadataQuery(item).forArtworkLanguage(language),
+            catalogCandidates: item.metadataArtworkURLs(for: .landscapeCard),
+            prefersLandscapeCard: true
+        )
+    }
+
     public func sourcedArtworkURL(
         _ kind: ArtworkKind,
         for item: MediaItem,
@@ -242,7 +264,8 @@ public actor ArtworkRouter {
         _ kind: ArtworkKind,
         for query: MetadataQuery,
         catalogCandidates: [SourcedValue<URL>],
-        prefersPortraitHero: Bool = false
+        prefersPortraitHero: Bool = false,
+        prefersLandscapeCard: Bool = false
     ) async -> SourcedValue<URL>? {
         let providers = configuredProviders(for: query, kind: kind)
         guard !providers.isEmpty else { return nil }
@@ -259,7 +282,8 @@ public actor ArtworkRouter {
                         query: query,
                         kind: kind,
                         source: entry.source,
-                        prefersPortraitHero: prefersPortraitHero && (entry.source == .tmdb || entry.source == .tvdb)
+                        prefersPortraitHero: prefersPortraitHero && (entry.source == .tmdb || entry.source == .tvdb),
+                        prefersLandscapeCard: prefersLandscapeCard
                     )
                     if let hit = await cache.cached(key) {
                         return (
@@ -267,9 +291,14 @@ public actor ArtworkRouter {
                             hit.map { SourcedValue(value: $0, source: entry.source) } ?? saved
                         )
                     }
-                    let url = prefersPortraitHero
-                        ? await entry.provider.portraitHeroURL(for: query)
-                        : await entry.provider.artworkURL(kind, for: query)
+                    let url: URL?
+                    if prefersLandscapeCard {
+                        url = await entry.provider.landscapeCardURL(for: query)
+                    } else if prefersPortraitHero {
+                        url = await entry.provider.portraitHeroURL(for: query)
+                    } else {
+                        url = await entry.provider.artworkURL(kind, for: query)
+                    }
                     await cache.store(url, for: key)
                     return (
                         index,
@@ -465,9 +494,11 @@ public actor ArtworkRouter {
         query: MetadataQuery,
         kind: ArtworkKind,
         source: MetadataSource,
-        prefersPortraitHero: Bool = false
+        prefersPortraitHero: Bool = false,
+        prefersLandscapeCard: Bool = false
     ) -> String {
-        let variant = prefersPortraitHero ? "|portrait-hero-v1" : ""
+        let variant = prefersLandscapeCard ? "|landscape-card-v1:\(query.artworkLanguage)"
+            : prefersPortraitHero ? "|portrait-hero-v1" : ""
         return "\(query.cacheKey(for: kind))\(variant)|provider:\(source.rawValue)"
     }
 
