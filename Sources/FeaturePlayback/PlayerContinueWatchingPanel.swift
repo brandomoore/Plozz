@@ -73,7 +73,7 @@ struct PlayerContinueWatchingCard: View {
         }
     }
     private var inset: CGFloat {
-        cardStyle == .framed ? max(metrics.contentPadding, metrics.panelCornerRadius * 2 / 3) : 0
+        cardStyle == .framed ? metrics.contentPadding : 0
     }
     private var cornerRadius: CGFloat {
         if cardStyle == .borderless { return PlozzTheme.Metrics.mediumMediaCornerRadius }

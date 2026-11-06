@@ -285,11 +285,14 @@ final class PlayerChapterPresentationTests: XCTestCase {
                                            "No artwork must mean no placeholder or reserved thumbnail column.")
                         }
                     } else if title == "Opening" {
-                        let inset = max(metrics.contentPadding, metrics.panelCornerRadius / 2)
-                        XCTAssertGreaterThanOrEqual(timeBox.minX * size.width - probe.panelFrame.minX, inset - 2)
+                        let inset = hasArtwork
+                            ? metrics.contentPadding : max(metrics.contentPadding, metrics.panelCornerRadius / 2)
+                        XCTAssertGreaterThanOrEqual(
+                            (titleBox.minX * size.width - probe.panelFrame.minX).rounded(), inset - 2
+                        )
                         if hasArtwork {
                             XCTAssertGreaterThanOrEqual(
-                                probe.panelFrame.maxY - (1 - timeBox.minY) * size.height, inset - 2,
+                                (probe.panelFrame.maxY - (1 - timeBox.minY) * size.height).rounded(), inset - 2,
                                 "The timestamp must stay comfortably inside the rounded bottom corner."
                             )
                         } else {

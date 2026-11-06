@@ -215,7 +215,8 @@ reuse Home's artwork renderer, including spoiler protection and fallback rules.
 The player owns geometry: every horizontal card fills the same fixed-height
 stage as Chapters, fitting its artwork width to the measured caption and chosen
 aspect ratio. Hiding labels returns that space to the artwork. Framed cards use
-Chapters' surface, insets and focus clearance; borderless cards omit the glass
+Chapters' surface and focus clearance, with the same `contentPadding` inset as
+Info; borderless cards omit the glass
 without changing stage height. Reduced-transparency fallbacks remain available.
 Phone portrait keeps the existing bounded, compact vertical-list layout, with
 the same row height and natural content sizing as Chapters. Playback details
@@ -239,11 +240,12 @@ have thumbnails, portrait rows show left-aligned text without an artwork placeho
 and wide layouts vertically center that text in narrow, full-height glass cards.
 Text-only cards use Cast's width with a minimum text allowance on small screens;
 cards with thumbnails retain their wider artwork layout. Mixed-thumbnail lists
-retain aligned artwork slots. On tvOS, artwork cards size their width from the
-measured caption so thumbnails have equal top and side insets; the thumbnail's
+retain aligned artwork slots. All horizontal artwork cards size their width from the
+measured caption so thumbnails have equal top and side insets, using Info's
+`contentPadding` rather than a separate corner-based allowance; the thumbnail's
 continuous corner radius is the outer glass radius minus that inset.
-Chapter titles and start times share one leading text
-edge with corner-aware inner padding. They show titles (or numbered chapter labels),
+Artwork captions share one leading text edge with that same inner padding.
+Cards show titles (or numbered chapter labels),
 start times, available server thumbnails, and the current chapter. On portrait iOS,
 Cast and Chapters use the same tab-to-content gap as Info, with directional scroll
 fades only at edges where more content remains.

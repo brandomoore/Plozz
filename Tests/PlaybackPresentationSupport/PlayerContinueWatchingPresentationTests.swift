@@ -7,6 +7,73 @@ import XCTest
 
 @MainActor
 final class PlayerContinueWatchingPresentationTests: XCTestCase {
+    func testArtworkLayoutKeepsInfoInsetsAcrossShapesAndCaptions() async throws {
+        let deadline = ContinuousClock.now + .seconds(5)
+        while !UIApplication.shared.connectedScenes.contains(where: { $0.activationState == .foregroundActive }),
+              ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        #if os(tvOS)
+        let sizes = [CGSize(width: 1920, height: 1080)]
+        #else
+        let sizes = [CGSize(width: 1024, height: 768), .init(width: 844, height: 390), .init(width: 568, height: 320)]
+        #endif
+        for size in sizes {
+            let metrics = PlayerCardMetrics.resolved(forWidth: size.width, height: size.height)
+            for ratio in [CGFloat(16.0 / 9.0), ContinueWatchingCardShape.aspectRatio, 2.0 / 3.0] {
+                for labels in [false, true] {
+                    let probe = PlayerArtworkInsetsProbe()
+                    let layout = PlayerMediaArtworkLayout(
+                        height: metrics.cardHeight, inset: metrics.contentPadding,
+                        cornerRadius: metrics.panelCornerRadius, aspectRatio: ratio
+                    )
+                    let host = UIHostingController(rootView:
+                        layout {
+                            Color.cyan
+                                .onGeometryChange(for: CGRect.self, of: { $0.frame(in: .global) }) { probe.artwork = $0 }
+                            if labels {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(verbatim: "Northern Lights").font(metrics.castNameFont).lineLimit(1)
+                                    Text(verbatim: "S1 E3").font(metrics.captionFont).lineLimit(1)
+                                }
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .onGeometryChange(for: CGRect.self, of: { $0.frame(in: .global) }) { probe.caption = $0 }
+                            }
+                        }
+                        .onGeometryChange(for: CGRect.self, of: { $0.frame(in: .global) }) { probe.card = $0 }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    )
+                    host.safeAreaRegions = []
+                    window.frame = CGRect(origin: .zero, size: size)
+                    window.rootViewController = host
+                    window.makeKeyAndVisible()
+                    host.view.frame = window.bounds
+                    window.layoutIfNeeded()
+                    try await Task.sleep(for: .milliseconds(50))
+                    XCTAssertGreaterThan(probe.artwork.height, 0)
+                    XCTAssertEqual(probe.card.height, metrics.cardHeight, accuracy: 0.5)
+                    XCTAssertEqual(probe.artwork.minX - probe.card.minX, metrics.contentPadding, accuracy: 0.5)
+                    XCTAssertEqual(probe.artwork.minY - probe.card.minY, metrics.contentPadding, accuracy: 0.5)
+                    XCTAssertEqual(probe.card.maxX - probe.artwork.maxX, metrics.contentPadding, accuracy: 0.5)
+                    XCTAssertEqual(
+                        probe.card.maxY - (labels ? probe.caption.maxY : probe.artwork.maxY),
+                        metrics.contentPadding, accuracy: 0.5
+                    )
+                    XCTAssertEqual(probe.artwork.width / probe.artwork.height, ratio, accuracy: 0.005)
+                }
+            }
+        }
+    }
+
     func testHostedPresentationPreservesContinueWatchingPreferences() {
         var source = EnvironmentValues()
         source.plozzContinueWatchingPresentation.artworkStyle = .portraitPosters
@@ -71,6 +138,11 @@ final class PlayerContinueWatchingPresentationTests: XCTestCase {
             #endif
             let model = ContinueWatchingPreviewModel()
             let controls = PlayerControlsModel()
+            controls.infoCard.artworkItem = items[0]
+            controls.infoCard.headline = "Northern Lights"
+            controls.infoCard.overview = "A journey through the mountains beneath the northern sky."
+            controls.infoCard.runtimeLabel = "1h"
+            controls.infoCard.episodeTag = "S1 E3"
             controls.infoCard.chapters = [
                 MediaChapter(start: 0, title: "Opening", imageURL: items[0].backdropURL),
                 MediaChapter(start: 360, title: "The journey", imageURL: items[1].backdropURL),
@@ -97,6 +169,15 @@ final class PlayerContinueWatchingPresentationTests: XCTestCase {
             XCTAssertEqual(reference.height, expectedHeight, accuracy: 0.5)
             capture(window, name: "cw-\(Int(size.width))-chapters-reference")
 
+            if !metrics.isVertical {
+                model.showsInfo = true
+                model.label = "Info | shared image padding reference"
+                try await Task.sleep(for: .milliseconds(250))
+                XCTAssertEqual(model.stageFrame, reference)
+                XCTAssertEqual(model.transportFrame, transport)
+                capture(window, name: "cw-\(Int(size.width))-info-reference")
+                model.showsInfo = false
+            }
             model.chapters = false
             for style in ContinueWatchingArtworkStyle.allCases {
                 model.presentation.artworkStyle = style
@@ -251,6 +332,7 @@ private final class ContinueWatchingPreviewModel {
     var details = ContinueWatchingPlaybackDetails.detailed
     var cardStyle = CardStyle.framed
     var chapters = true
+    var showsInfo = false
     var reducedTransparency = false
     var label = "Chapters | shared player height reference"
     var stageFrame = CGRect.zero
@@ -287,7 +369,9 @@ private struct ContinueWatchingPreview: View {
             .font(metrics.castNameFont)
             .foregroundStyle(.white)
             Group {
-                if model.chapters {
+                if model.showsInfo {
+                    InfoPanelView(model: controls, actions: .init(), focus: $focus, onClose: {})
+                } else if model.chapters {
                     PlayerChapterPanel(model: controls, spoilerSettings: .default, focus: $focus) { _ in }
                 } else {
                     PlayerContinueWatchingPanel(items: items, spoilerSettings: .default, focus: $focus) { _ in }
@@ -307,7 +391,16 @@ private struct ContinueWatchingPreview: View {
         .environment(\.plozzContinueWatchingPresentation, model.presentation)
         .environment(\.plozzContinueWatchingPlaybackDetails, model.details)
         .environment(\.plozzReduceTransparency, model.reducedTransparency)
+        .onAppear { focus = .button(.continueWatching) }
         .onChange(of: model.target) { _, target in focus = target }
         .onChange(of: focus) { _, value in model.observedFocus = value }
     }
+
+}
+
+@MainActor
+private final class PlayerArtworkInsetsProbe {
+    var card = CGRect.zero
+    var artwork = CGRect.zero
+    var caption = CGRect.zero
 }

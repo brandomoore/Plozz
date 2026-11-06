@@ -23,7 +23,7 @@ final class PlayerChapterHostedTests: XCTestCase {
             previous?.makeKeyAndVisible()
         }
         let metrics = PlayerCardMetrics.tv
-        let inset = max(metrics.contentPadding, metrics.panelCornerRadius * 2 / 3)
+        let inset = InfoPanelView.contentPadding
         let layout = PlayerMediaArtworkLayout(
             height: metrics.cardHeight, inset: inset, cornerRadius: metrics.panelCornerRadius
         )

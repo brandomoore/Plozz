@@ -103,16 +103,11 @@ private struct PlayerChapterButton: View {
     }
 
     private var cardWidth: CGFloat {
-        if !showsArtwork {
-            return max(metrics.castCardWidth, contentInset * 2 + metrics.castNameSize * 6)
-        }
-        let imageHeight = max(44, metrics.cardHeight - metrics.castVerticalInset * 2
-            - metrics.castNameSize * 1.5 - metrics.captionSize * 1.5 - 16)
-        return imageHeight * 16 / 9 + 24
+        max(metrics.castCardWidth, contentInset * 2 + metrics.castNameSize * 6)
     }
 
     private var contentInset: CGFloat {
-        max(metrics.contentPadding, metrics.panelCornerRadius * 2 / 3)
+        showsArtwork ? metrics.contentPadding : max(metrics.contentPadding, metrics.panelCornerRadius * 2 / 3)
     }
 
     private var cornerRadius: CGFloat {
@@ -156,7 +151,6 @@ private struct PlayerChapterButton: View {
             .frame(height: metrics.castRowHeight)
             .frame(maxWidth: .infinity, alignment: .leading)
         } else if showsArtwork {
-            #if os(tvOS)
             let layout = PlayerMediaArtworkLayout(
                 height: metrics.cardHeight, inset: contentInset, cornerRadius: cornerRadius
             )
@@ -166,17 +160,6 @@ private struct PlayerChapterButton: View {
                     .clipShape(layout.thumbnailShape)
                 caption
             }
-            #else
-            VStack(alignment: .leading, spacing: 8) {
-                thumbnail
-                    .frame(width: cardWidth - contentInset * 2,
-                           height: (cardWidth - contentInset * 2) * 9 / 16)
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
-                caption
-            }
-            .padding(contentInset)
-            .frame(width: cardWidth, height: metrics.cardHeight, alignment: .bottom)
-            #endif
         } else {
             caption
                 .fixedSize(horizontal: false, vertical: true)
