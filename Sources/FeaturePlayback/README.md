@@ -63,7 +63,10 @@ bounded language-match/accessibility flags without track titles or URLs.
   others return no tap and the card simply shows no song.
   The pending layout review uses `playerSongLayoutPreview` to compare an
   integrated right-hand music area with a separate neighboring card (stacked on
-  phones). Normal playback still uses the original presentation; neither preview
+  phones). The separate card places a rounded square album cover beside the song
+  details, matching the Info thumbnail's height and insets on wide layouts.
+  The integrated alternative groups the song in a subtly filled, outlined inset.
+  Normal playback still uses the original presentation; neither preview
   changes recognition or adds a user setting. `PlayerSongLayoutPreviewTests`
   captures the production controls over native video with a seeded song match.
   Opt in with `TEST_RUNNER_PLOZZ_SONG_PREVIEW_DIRECTORY` pointing to an owned

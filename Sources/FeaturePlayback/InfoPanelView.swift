@@ -197,7 +197,7 @@ struct InfoPanelView: View {
             adaptiveMetaRow
 
             if songLayout == .integrated {
-                PlayerSongPreviewCard(state: model.songID, horizontal: true, focus: $focus)
+                PlayerSongPreviewCard(state: model.songID, focus: $focus)
                     .frame(height: metrics.isVertical ? 80 : max(68, metrics.contentHeight * 0.28 + 16))
             }
 
@@ -421,7 +421,7 @@ struct InfoPanelView: View {
                 .plozzFocusSection()
                 Spacer(minLength: 0)
                 if songLayout == .integrated {
-                    PlayerSongPreviewCard(state: model.songID, horizontal: true, focus: $focus)
+                    PlayerSongPreviewCard(state: model.songID, focus: $focus)
                     Spacer(minLength: 0)
                 }
                 // Subtle Playback Info (diagnostics) toggle, bottom-right —
@@ -598,6 +598,14 @@ private struct PlayerInfoArtwork: View {
         }
         Color.clear
             .frame(width: height * 16.0 / 9.0, height: height)
+            .background {
+                GeometryReader { geometry in
+                    Color.clear.preference(
+                        key: PlayerSongPreviewArtworkBounds.self,
+                        value: [.info: geometry.frame(in: .global)]
+                    )
+                }
+            }
             .overlay {
                 FallbackAsyncImage(
                     references: references,

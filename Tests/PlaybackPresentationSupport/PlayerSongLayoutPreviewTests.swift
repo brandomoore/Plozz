@@ -64,12 +64,14 @@ final class PlayerSongLayoutPreviewTests: XCTestCase {
         )
         for layout in [PlayerSongLayoutPreview.integrated, .separate] {
             PlayerScreenshotHook.pendingPanel = .info
+            let probe = SongArtworkProbe()
             let host = UIHostingController(rootView:
                 SongPreviewPlayer(engine: engine, player: player)
                     .environment(\.playerSongLayoutPreview, layout)
                     .environment(\.colorScheme, .dark)
                     .environment(\.locale, Locale(identifier: "en_US"))
                     .environment(\.themePalette, .dark)
+                    .onPreferenceChange(PlayerSongPreviewArtworkBounds.self) { probe.bounds = $0 }
             )
             window.rootViewController = host
             window.makeKeyAndVisible()
@@ -99,6 +101,17 @@ final class PlayerSongLayoutPreviewTests: XCTestCase {
             model.songID = .found(song)
             try await Task.sleep(for: .seconds(2))
             window.layoutIfNeeded()
+            if layout == .separate {
+                let artwork = try XCTUnwrap(probe.bounds[.song])
+                XCTAssertEqual(artwork.width, artwork.height, accuracy: 1)
+                if let infoArtwork = probe.bounds[.info] {
+                    XCTAssertEqual(artwork.height, infoArtwork.height, accuracy: 1)
+                    XCTAssertEqual(artwork.minY, infoArtwork.minY, accuracy: 1)
+                    XCTAssertEqual(artwork.maxY, infoArtwork.maxY, accuracy: 1)
+                } else {
+                    XCTAssertEqual(artwork.height, 112, accuracy: 1)
+                }
+            }
             let format = UIGraphicsImageRendererFormat()
             format.scale = 1
             let image = UIGraphicsImageRenderer(bounds: window.bounds, format: format).image { _ in
@@ -119,6 +132,11 @@ final class PlayerSongLayoutPreviewTests: XCTestCase {
         }
         await player.stop()
     }
+}
+
+@MainActor
+private final class SongArtworkProbe {
+    var bounds: [PlayerSongPreviewArtworkBounds.Role: CGRect] = [:]
 }
 
 private struct SongPreviewPlayer: View {
