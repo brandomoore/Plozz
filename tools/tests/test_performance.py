@@ -62,6 +62,41 @@ Binary Images:
 
 
 class EvidenceTests(unittest.TestCase):
+    def test_card_lifecycle_soak_requires_an_explicit_isolated_run(self):
+        name = "cards-lifecycle-soak"
+        self.assertEqual(performance.select(None, [name]), [name])
+        for suite in ("ui", "all"):
+            self.assertNotIn(name, performance.select(suite, None))
+        with self.assertRaises(performance.Failure):
+            performance.select(None, [name, "cards-lifecycle"])
+        self.assertEqual(performance.SCENARIOS[name]["counters"], ["cycles", "survivingHosts"])
+
+    def test_mobile_home_lifecycle_is_platform_scoped_and_checks_release(self):
+        name = "mobile-home-lifecycle"
+        self.assertEqual(performance.select(None, [name], "iOS"), [name])
+        with self.assertRaises(performance.Failure):
+            performance.select(None, [name], "tvOS")
+        self.assertEqual(performance.SCENARIOS[name]["counters"], ["replacements", "survivingModels"])
+        self.assertEqual(performance.SCENARIOS[name]["test"],
+                         "HomeModelLifetimeTests/testPerformanceRetiredHomeModels")
+
+    def test_process_memory_snapshots_are_optional_but_validated_when_present(self):
+        value = report()
+        spec = performance.SCENARIOS["sync-unchanged"]
+        performance.validate_report(value, spec)
+        value["samples"][0]["memory"] = dict.fromkeys(performance.MEMORY_METRICS, 100)
+        performance.validate_report(value, spec)
+        for bad in (None, {}, {"residentBytes": 100}):
+            invalid = copy.deepcopy(value)
+            invalid["samples"][0]["memory"] = bad
+            with self.assertRaises(performance.Failure):
+                performance.validate_report(invalid, spec)
+        for bad in (-1, True, float("nan"), 1.5):
+            invalid = copy.deepcopy(value)
+            invalid["samples"][0]["memory"]["physicalFootprintBytes"] = bad
+            with self.assertRaises(performance.Failure):
+                performance.validate_report(invalid, spec)
+
     def test_song_attribution_and_lifecycle_select_real_hosted_tests(self):
         for state, method in (
             ("disabled", "Disabled"), ("tap-only", "TapOnly"), ("tap-paced", "TapPaced"),

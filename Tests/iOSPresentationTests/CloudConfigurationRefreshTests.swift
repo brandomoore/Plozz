@@ -126,6 +126,7 @@ final class CloudConfigurationRefreshTests: XCTestCase {
                     "indexResets": indexResets, "downloadTransitions": downloadTransitions
                 ]
             }
+            try await PerformanceProbe.attachMemoryAfterOneSecond(self, scenario: "mobile-preference-sync")
         }
     }
 

@@ -367,6 +367,73 @@ account/provider-cache or background-sync leak audit. No production memory
 change was justified by these controls, and small residual allocations,
 uninterrupted movies and physical-device behavior remain separate questions.
 
+#### Broader simulator memory audit
+
+`cards-lifecycle-soak` runs 180 mount/unmount cycles of the production media-row
+fixture in a fresh test process: 30 discarded warmup cycles, then five windows
+of 30 cycles. Every hosting controller and backing view must release. It is
+explicit-only and cannot share a run with another scenario. The shorter
+`cards-lifecycle` still runs 18 cycles.
+
+`mobile-home-lifecycle` performs 120 profile switches through the mobile app
+model and production tab-shell Home factory, including 20 warmup switches.
+Every outgoing Home, settings, and download model must release within five
+seconds. Each window awaits tracker scoping and allows one second for queued
+work. The accounts are empty fixtures: this is profile-model retirement, not
+populated Home/detail navigation or a live-provider workload.
+
+The memory audit uses direct process snapshots alongside weak lifetimes, not
+RSS alone. First-to-last retained windows, in MiB:
+
+| Workload | Physical footprint | Reported live malloc bytes |
+| --- | ---: | ---: |
+| TV, 180 row-host cycles | 93.6 to 102.1 | 32.0 to 24.7 |
+| iPhone, 180 row-host cycles | 213.4 to 214.7 | 19.0 to 19.4 |
+| iPhone, 120 profile switches | 180.3 to 181.5 | 60.4 to 57.4 |
+| iPhone, local preference batches | 223.2 to 223.2 | 48.3 to 49.3 |
+| TV, unchanged 10,000-record ledger | 19.5 to 19.5 | 6.36 to 6.38 |
+
+No tracked navigation/profile owners survived. Row-host footprint approached
+a plateau: the final 30 cycles added about 0.03 MiB on TV and 0.05 MiB on phone.
+The tightly packed local-sync workload's reported live bytes fell to 47.9 MiB
+after a one-second run-loop drain, below its first retained sample. Its 144
+batches applied 288 preferences without account invalidations, index resets,
+or download-model replacements. These are bounded observations, not proof that
+all framework caches or every allocation are leak-free.
+
+Retained runs: `3440bb2924254b9bb0610ecc254bcc3a` (TV row soak),
+`ff69767cb22c46b6a2c850675cac4f89` (phone row soak),
+`b6f7c89f97e94aacb76acf46a8c06729` (profile ownership),
+`8d52b70621224b04a9d7878ba93c7ce4` (local sync/drain), and
+`b09efce6f91c4a7aade9e0964bf14767` (unchanged ledger).
+
+Focused cache/lifetime regressions also exercise:
+
+- 512 positive/negative metadata results across provider/credential namespaces,
+  enforcing a shared 64-entry test budget and clearing all credential entries;
+- 64 Plex-used playlist snapshots and 32 Jellyfin collection snapshots, checking
+  their eight-/four-key retention boundaries and reloading the evicted neighbor;
+- 64 distinct small decoded images, with no remaining flights/waiters and weak
+  release of the cache and all images, plus existing cancellation/deadline cases;
+- sync-status error debouncing and 128 cancellations without retaining its owner.
+
+The initial five-module run passed those cases, but was not wholly green:
+4,900 passed, ten opt-in cases skipped, and an unmodified
+`MetadataTextScalingTests` font-metric assertion reported 13.5 instead of 14.
+Final cache-boundary verification passed CoreModels (3,064, five opt-in skips)
+and ProviderJellyfin (484, three opt-in skips) separately. A multi-bundle Xcode
+package-graph assertion produced an incomplete result; it is not passing
+evidence. The iPad host-launch attempt also stalled in CoreSimulator before
+tests began and was cancelled; the completed mobile measurements are iPhone
+simulator results.
+
+No production memory-management change or forced reclamation was justified.
+Cache entry limits do not bound the bytes in very large library snapshots, and
+NSCache's configured decoded-image cost limit is not a measured hard ceiling.
+Live CloudKit delivery/cancellation, large real libraries, full detail-page
+navigation, long sessions, and physical-device memory pressure remain outside
+this audit.
+
 `skeletons-idle` observes 24 production `SkeletonCardView` placeholders over
 2.3-second idle windows on either platform. It verifies all placeholders mounted
 and captures changing visible pixels before timing, so removing the animation
@@ -852,6 +919,17 @@ Runs live in ignored `.build/performance/runs/<id>/`. `result.json` contains:
   timestamps and host-load samples;
 - each scenario's **one discarded warmup and five measured samples**, wall/CPU
   milliseconds, process resident bytes/delta, and actual workload counters.
+
+New samples also include a `memory` dictionary with physical footprint,
+resident/internal/external/compressed/reusable bytes, and reported malloc
+in-use/reserved bytes and block counts. Capture happens after the timed window;
+these process-wide diagnostics are not additional comparison-budget metrics.
+Older reports without the dictionary remain readable; a present dictionary
+must be complete and contain non-negative integers. Block totals are not live
+object counts. Selected lifecycle/sync cases also retain
+`plozz-memory-after-one-second-*.json` attachments after an untimed run-loop
+drain while the fixture remains owned; that is not full-app teardown or forced
+heap reclamation.
 
 Raw command logs, build/test `.xcresult` bundles, summaries, generated schemes
 and exported JSON attachments remain beside the result. A clean driver exit,

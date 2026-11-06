@@ -26,6 +26,25 @@ private final class CountingProvider: MetadataEnrichmentProvider, @unchecked Sen
 }
 
 final class ProviderResultCacheTests: XCTestCase {
+    func testDistinctPositiveAndNegativeResultsStayWithinSharedBudget() async {
+        let cache = ProviderResultCache(maxEntries: 64)
+        for index in 0..<512 {
+            await cache.store(
+                index.isMultiple(of: 2) ? sourced("result-\(index)", .tvdb) : nil,
+                source: index.isMultiple(of: 2) ? .tvdb : .tmdb,
+                version: 1, requestKey: "request-\(index)",
+                credential: "fixture-\(index % 4)"
+            )
+            let count = await cache.count
+            XCTAssertEqual(count, min(index + 1, 64))
+        }
+        for index in 0..<4 {
+            await cache.invalidate(credential: "fixture-\(index)")
+        }
+        let remaining = await cache.count
+        XCTAssertEqual(remaining, 0)
+    }
+
     private func query(title: String = "Item") -> MetadataQuery {
         MetadataQuery(
             contentType: .movie, kind: .movie, title: title, alternateTitle: nil, year: 2020,

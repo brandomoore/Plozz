@@ -31,6 +31,11 @@ FLAGS = [
     "ONLY_ACTIVE_ARCH=YES", "CODE_SIGNING_ALLOWED=NO",
 ]
 METRICS = ("wallMilliseconds", "cpuMilliseconds", "residentBytes", "residentDeltaBytes")
+MEMORY_METRICS = (
+    "residentBytes", "physicalFootprintBytes", "internalBytes", "externalBytes",
+    "compressedBytes", "reusableBytes", "mallocInUseBytes", "mallocAllocatedBytes",
+    "mallocBlocksInUse",
+)
 HOME_HOST_FITTING_COUNTERS = [
     "motionSizeThatFitsCalls", "rowHostFitCalls", "columnHostFitCalls", "maskSizeThatFitsCalls",
     "rowHostFittingNanoseconds", "columnHostFittingNanoseconds",
@@ -384,6 +389,13 @@ SCENARIOS = {
         "description": "Repeated mount/unmount; weak host and view checks must release.",
         "counters": ["cycles", "survivingHosts"],
     },
+    "cards-lifecycle-soak": {
+        "suite": "ui", "explicitOnly": True, "isolatedProcess": True,
+        "test": "CardPerformanceTests/testPerformanceLifecycleSoak",
+        "file": "Tests/PerformancePresentationSupport/CardPerformanceTests.swift",
+        "description": "180 production-row mount/unmount cycles in a fresh test process, including 30 discarded warmup cycles; weak hosts and views must release.",
+        "counters": ["cycles", "survivingHosts"],
+    },
     "home-artwork-layout": {
         "suite": "ui", "platforms": ["tvOS"],
         "test": "HomeLayoutInvalidationPerformanceTests/testPerformanceArtworkPublicationLayout",
@@ -476,6 +488,13 @@ SCENARIOS = {
         "file": "Tests/iOSPresentationTests/CloudConfigurationRefreshTests.swift",
         "description": "Apply 24 active/inactive preference batches through the mobile app model; count synchronous account, index and download invalidations.",
         "counters": ["batches", "appliedPreferences", "accountInvalidations", "indexResets", "downloadTransitions"],
+    },
+    "mobile-home-lifecycle": {
+        "suite": "ui", "platforms": ["iOS"],
+        "test": "HomeModelLifetimeTests/testPerformanceRetiredHomeModels",
+        "file": "Tests/iOSPresentationTests/HomeModelLifetimeTests.swift",
+        "description": "Perform twenty profile switches per window; require retired Home, settings, and download models to release, then allow one second for queued work. Empty fixture accounts, not populated Home navigation.",
+        "counters": ["replacements", "survivingModels"],
     },
     "mobile-profile-selection": {
         "suite": "ui", "platforms": ["iOS"],
@@ -602,6 +621,12 @@ def validate_report(report, spec):
             if key != "residentDeltaBytes" and value < 0:
                 raise Failure(f"Negative measurement: {key}.")
         counters = sample.get("counters")
+        if "memory" in sample:
+            memory = sample["memory"]
+            if not isinstance(memory, dict) or set(memory) != set(MEMORY_METRICS):
+                raise Failure("Incomplete process-memory snapshot.")
+            if any(type(value) is not int or value < 0 for value in memory.values()):
+                raise Failure("Process-memory snapshots must contain non-negative integers.")
         if not isinstance(counters, dict) or set(counters) != set(spec["counters"]):
             raise Failure("Missing or unexpected workload counters.")
         if any(type(value) is not int or value < 0 for value in counters.values()):

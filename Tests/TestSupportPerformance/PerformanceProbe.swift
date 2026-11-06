@@ -34,6 +34,7 @@ enum PerformanceProbe {
                 cpuMilliseconds: after.cpuMilliseconds - before.cpuMilliseconds,
                 residentBytes: after.residentBytes,
                 residentDeltaBytes: after.residentBytes - before.residentBytes,
+                memory: try memoryUsage(),
                 counters: counters
             ))
         }
@@ -50,6 +51,7 @@ enum PerformanceProbe {
         let cpuMilliseconds: Double
         let residentBytes: Int64
         let residentDeltaBytes: Int64
+        let memory: [String: Int64]
         let counters: [String: Int]
     }
 
@@ -58,6 +60,16 @@ enum PerformanceProbe {
         let scenario: String
         let warmups: Int
         let samples: [Sample]
+    }
+
+    // Let queued work and autoreleases drain outside timing; the caller still owns its fixture.
+    static func attachMemoryAfterOneSecond(_ test: XCTestCase, scenario: String) async throws {
+        try await Task.sleep(for: .seconds(1))
+        let data = try JSONEncoder().encode(memoryUsage())
+        let attachment = XCTAttachment(data: data, uniformTypeIdentifier: "public.json")
+        attachment.name = "plozz-memory-after-one-second-\(scenario).json"
+        attachment.lifetime = .keepAlways
+        test.add(attachment)
     }
 
     static func memoryUsage() throws -> [String: Int64] {
