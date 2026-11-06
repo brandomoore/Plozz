@@ -10,6 +10,48 @@ import XCTest
 
 @MainActor
 final class PlaybackSettingsHostedTests: XCTestCase {
+    func testPlayerTabsShareOneSettingsGroupWithoutAnInfoToggle() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let suite = "PlayerTabsTV-\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        let playback = PlaybackSettingsModel(store: PlaybackSettingsStore(defaults: defaults))
+        let page = PlaybackDetailView(
+            playback: playback,
+            subtitleBehavior: SubtitleBehaviorModel(store: SubtitleBehaviorStore(defaults: defaults)),
+            subtitleStyle: SubtitleStyleModel(store: SubtitleStyleStore(defaults: defaults)),
+            subtitlePolicy: SubtitlePolicyModel(store: SubtitlePolicyStore(defaults: defaults)),
+            audioPolicy: AudioPolicyModel(store: AudioPolicyStore(defaults: defaults))
+        )
+        XCTAssertEqual(page.playerTabRows.map(\.id), ["player-tabs"])
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
+        window.rootViewController = UIHostingController(rootView:
+            SettingsFormLayout(title: Text("Playback"), rows: page.playerTabRows)
+                .environment(\.themePalette, .dark)
+                .environment(\.locale, Locale(identifier: "en_US"))
+                .frame(width: SettingsFormMetrics.pageWidth)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(.black)
+        )
+        window.makeKeyAndVisible()
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+            defaults.removePersistentDomain(forName: suite)
+        }
+        try await Task.sleep(for: .milliseconds(400))
+        let text = try visibleText(in: window, attachment: "Player-tabs-settings-TV")
+        for label in ["Player tabs", "Chapters", "Cast", "Episodes", "Playlist", "Continue Watching"] {
+            XCTAssertTrue(text.contains(label), text)
+        }
+        XCTAssertFalse(text.contains("Info"), text)
+        XCTAssertEqual(profileFocusFrames(in: window).count, 5)
+        XCTAssertNotNil(UIFocusSystem.focusSystem(for: window)?.focusedItem)
+    }
+
     func testProfileSettingsKeepAutomaticSignInSeparateFromProfiles() async throws {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
             .first { $0.activationState == .foregroundActive })

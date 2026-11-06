@@ -229,7 +229,15 @@ fitting order as mobile Home: drop the play glyph, then the progress bar, before
 reducing text. The fixed-height player additionally prioritizes remaining time
 over an episode qualifier rather than stacking the decorations or wrapping text.
 
-The per-profile **Continue Watching in the player** setting controls the tab.
+Settings > Playback > **Player tabs** controls Chapters, Cast, Episodes, Playlist,
+and Continue Watching independently on TV, iPhone, and iPad. All five default on;
+existing Continue Watching choices are preserved. Info is always available.
+The profile-scoped preferences filter the shared tab list without changing its
+order or fixed panel height. Enabled tabs still require relevant content.
+Hiding Episodes or Playlist does not disable their playback contexts, autoplay,
+or the Up Next card. If an open tab loses its content, its panel closes and a
+later TV card entry falls back to Info when the remembered tab is unavailable.
+
 The current title and other episodes from its series are excluded within their
 source account, not by raw IDs across servers. Selection uses the normal version
 preparation and authorized playback handoff, saves the outgoing position, and

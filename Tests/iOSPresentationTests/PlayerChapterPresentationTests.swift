@@ -9,6 +9,54 @@ import XCTest
 
 @MainActor
 final class PlayerChapterPresentationTests: XCTestCase {
+    func testTouchTabsKeepInfoWhenEveryOptionalTabIsHidden() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        for enabled in [true, false] {
+            var settings = PlaybackSettings.default
+            for tab in PlayerOptionalTab.allCases {
+                settings[keyPath: tab.visibilityKeyPath] = enabled
+            }
+            let provider = ChapterPresentationProvider()
+            let episode = MediaItem(id: "episode", title: "Episode", kind: .episode, seriesID: "series")
+            let player = PlayerViewModel(
+                provider: provider, itemID: episode.id, episodeItem: episode, playbackSettings: settings,
+                playlistContext: .init(
+                    origin: .init(playlistID: "playlist", accountID: "account", index: 0, totalCount: 1, item: episode),
+                    provider: provider
+                )
+            )
+            let controls = PlayerControlsModel()
+            controls.infoCard.chapters = [.init(start: 0, title: "Chapter")]
+            controls.infoCard.cast = [.init(id: "person", name: "Person", role: "Character")]
+            player.continueWatchingSnapshot = { [MediaItem(id: "other", title: "Other", kind: .movie)] }
+            let size = CGSize(width: 1024, height: 768)
+            window.frame = CGRect(origin: .zero, size: size)
+            window.rootViewController = UIHostingController(rootView:
+                PlayerTouchCardStrip(
+                    model: controls, availableSize: size, isCardOpen: .constant(false), player: player,
+                    onRestart: {}, onNextEpisode: {}, onPreviousEpisode: {}
+                )
+                .environment(\.locale, Locale(identifier: "en_US"))
+                .environment(\.themePalette, .dark)
+            )
+            window.makeKeyAndVisible()
+            try await Task.sleep(for: .milliseconds(300))
+            XCTAssertNotNil(controls.subtitleLayout.frame(for: .tab("info")))
+            for name in ["chapters", "cast", "episodes", "playlist", "continueWatching"] {
+                XCTAssertEqual(controls.subtitleLayout.frame(for: .tab(name)) != nil, enabled, name)
+            }
+            await player.stop()
+        }
+    }
+
     func testOverflowingChaptersAlignWithTheTabsAndOpenAtTheCurrentChapter() async throws {
         let deadline = ContinuousClock.now + .seconds(5)
         while !UIApplication.shared.connectedScenes.contains(where: { $0.activationState == .foregroundActive }),

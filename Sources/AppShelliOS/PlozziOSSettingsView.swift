@@ -2630,8 +2630,6 @@ struct PlozziOSPlaybackSettingsView: View {
                         }
                     }.settingsSearchAnchor("up-next-lead")
                 }
-                Toggle("Continue Watching in the player", isOn: $model.settings.continueWatchingInPlayer)
-                    .settingsSearchAnchor("continue-watching-in-player")
                 Toggle(
                     "Sync watch state across servers",
                     isOn: $model.settings.syncWatchAcrossServers
@@ -2640,9 +2638,11 @@ struct PlozziOSPlaybackSettingsView: View {
             .settingsSearchGroup([
                 "ask-before-resuming", "version-selection", "remember-series-version", "background-audio",
                 "volume-brightness", "seek-without-pausing", "autoplay-next-episode",
-                "autoplay-next-playlist", "show-up-next-card", "up-next-lead", "continue-watching-in-player",
+                "autoplay-next-playlist", "show-up-next-card", "up-next-lead",
                 "cross-server-watch-sync"
             ])
+
+            PlayerTabSettingsControls(model: model)
 
             SettingsSectionGroup(LocalizedStringResource(
                 "settings.section.tracks",

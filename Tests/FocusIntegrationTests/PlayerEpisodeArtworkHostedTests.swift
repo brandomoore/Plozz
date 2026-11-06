@@ -35,6 +35,10 @@ final class PlayerEpisodeArtworkHostedTests: XCTestCase {
         }
     }
 
+    func testHiddenOptionalTabsLeaveInfoFocusable() async throws {
+        _ = try await exerciseContinueWatchingControls(enabled: false, infoOnly: true)
+    }
+
     func testContinueWatchingPendingArtworkDoesNotBlockNativeNavigation() async throws {
         let image = UIGraphicsImageRenderer(size: CGSize(width: 4, height: 6)).image { context in
             UIColor.blue.setFill()
@@ -53,7 +57,7 @@ final class PlayerEpisodeArtworkHostedTests: XCTestCase {
     }
 
     private func exerciseContinueWatchingControls(
-        enabled: Bool, artworkURL: URL? = nil, server: LibraryArtworkServer? = nil
+        enabled: Bool, artworkURL: URL? = nil, server: LibraryArtworkServer? = nil, infoOnly: Bool = false
     ) async throws -> [String: Int] {
         try await waitUntil {
             UIApplication.shared.connectedScenes.contains { $0.activationState == .foregroundActive }
@@ -63,6 +67,11 @@ final class PlayerEpisodeArtworkHostedTests: XCTestCase {
         let provider = EpisodeRowProvider()
         var settings = PlaybackSettings()
         settings.continueWatchingInPlayer = enabled
+        if infoOnly {
+            for tab in PlayerOptionalTab.allCases {
+                settings[keyPath: tab.visibilityKeyPath] = false
+            }
+        }
         let player = PlayerViewModel(provider: provider, itemID: "playing", playbackSettings: settings)
         let items = (0..<180).map { index in
             MediaItem(
@@ -131,21 +140,23 @@ final class PlayerEpisodeArtworkHostedTests: XCTestCase {
         let system = try XCTUnwrap(UIFocusSystem.focusSystem(for: window))
         let recorder = CardTabFocusRecorder(window: window, model: model)
         defer { NotificationCenter.default.removeObserver(recorder) }
-        let tabs = enabled ? ["continueWatching", "chapters", "continueWatching", "info"] : ["chapters", "info"]
+        let tabs = infoOnly ? ["info"]
+            : enabled ? ["continueWatching", "chapters", "continueWatching", "info"] : ["chapters", "info"]
+        if infoOnly {
+            for tab in ["chapters", "cast", "episodes", "playlist", "continueWatching"] {
+                XCTAssertNil(model.subtitleLayout.frame(for: .tab(tab)))
+            }
+        }
         var focusDuration = Duration.zero
         var navigationGap = Duration.zero
         for tab in tabs {
             window.layoutIfNeeded()
             let frame = try XCTUnwrap(
-                model.subtitleLayout.frame(for: .tab(tab == "continueWatching" ? "chapters" : tab)),
+                model.subtitleLayout.frame(for: .tab(tab)),
                 "Missing \(tab) anchor"
             )
             let target = try XCTUnwrap(cardTabFocusItems(in: window).first {
                 guard let bounds = cardTabFocusFrame($0, in: window) else { return false }
-                // This fixture has only Info, Chapters, and Continue Watching.
-                if tab == "continueWatching" {
-                    return bounds.midY >= frame.minY && bounds.midY <= frame.maxY && bounds.minX > frame.maxX
-                }
                 return frame.contains(CGPoint(x: bounds.midX, y: bounds.midY))
             }, "Missing native target for \(tab)")
             recorder.tabs = []

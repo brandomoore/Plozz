@@ -7,6 +7,10 @@ system green appearance instead of inheriting the page's monochrome navigation t
 
 The Settings screen and its detail pages. Profile-aware and integration-aware.
 
+Playback groups its five optional **Player tabs** in one shared control surface
+on TV and mobile. Labels match the player tabs, Info stays always available, and
+visibility preferences are independent of autoplay and Up Next behavior.
+
 On iPad, selecting a different sidebar category discards the previous category's
 entire pushed detail stack. The reset targets the native detail navigation
 controller, not the split view, preserving sidebar scroll position and search.

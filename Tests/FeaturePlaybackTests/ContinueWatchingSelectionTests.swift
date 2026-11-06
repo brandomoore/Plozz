@@ -5,6 +5,44 @@ import XCTest
 
 @MainActor
 final class ContinueWatchingSelectionTests: XCTestCase {
+    func testOptionalTabsRespectVisibilityAndAvailabilityWithoutDisablingSequencePlayback() async {
+        let provider = ContinueWatchingTestProvider()
+        let episode = MediaItem(id: "episode", title: "Episode", kind: .episode, seriesID: "series")
+        let context = VideoPlaylistPlaybackContext(
+            origin: .init(playlistID: "playlist", accountID: "account", index: 0, totalCount: 1, item: episode),
+            provider: provider
+        )
+        for mask in 0..<(1 << PlayerOptionalTab.allCases.count) {
+            var settings = PlaybackSettings.default
+            var expected: [PlayerControls.Category] = [.info]
+            for (index, tab) in PlayerOptionalTab.allCases.enumerated() {
+                let enabled = mask & (1 << index) != 0
+                settings[keyPath: tab.visibilityKeyPath] = enabled
+                if enabled { expected.append(.init(tab)) }
+            }
+            let player = PlayerViewModel(
+                provider: provider, itemID: episode.id, episodeItem: episode,
+                playbackSettings: settings, playlistContext: context
+            )
+            let controls = PlayerControlsModel()
+            controls.infoCard.chapters = [.init(start: 0, title: "Chapter")]
+            controls.infoCard.cast = [.init(id: "person", name: "Person", role: "Character")]
+            player.continueWatchingSnapshot = { [MediaItem(id: "other", title: "Other", kind: .movie)] }
+            XCTAssertEqual(PlayerControls.Category.visibleCardTabs(model: controls, player: player), expected)
+            XCTAssertNotNil(player.episodeBrowser, "Hiding Episodes must not disable its playback context.")
+            XCTAssertTrue(player.playlistContext === context)
+            controls.infoCard.chapters = []
+            controls.infoCard.cast = []
+            player.continueWatchingSnapshot = { [] }
+            XCTAssertEqual(
+                PlayerControls.Category.visibleCardTabs(model: controls, player: player),
+                expected.filter { [.info, .episodes, .playlist].contains($0) }
+            )
+            await player.stop()
+        }
+        XCTAssertEqual(PlayerControls.Category.visibleCardTabs(model: .init(), player: nil), [.info])
+    }
+
     func testSnapshotIsDerivedOnceAndObservesHomeUpdates() async throws {
         let home = ContinueWatchingHomeSnapshot()
         let first = MediaItem(id: "first", title: "First", kind: .movie)

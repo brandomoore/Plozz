@@ -170,8 +170,11 @@ public struct PlaybackSettings: Codable, Equatable, Sendable {
     /// counterpart to `rememberAudioTrackPerSeries`. ON by default.
     public var rememberSubtitleTrackPerSeries: Bool
 
-    /// Offer the Continue Watching tab in the player, to switch to another
-    /// started title in place (#388). Per profile, ON by default.
+    /// Optional player tabs, per profile. Availability still depends on content.
+    public var chaptersInPlayer: Bool
+    public var castInPlayer: Bool
+    public var episodesInPlayer: Bool
+    public var playlistInPlayer: Bool
     public var continueWatchingInPlayer: Bool
 
     /// Fade to black around the HDMI handshake the TV performs when the **dynamic
@@ -212,6 +215,10 @@ public struct PlaybackSettings: Codable, Equatable, Sendable {
         audioLanguagePreference: AudioLanguagePreference = .original,
         rememberAudioTrackPerSeries: Bool = true,
         rememberSubtitleTrackPerSeries: Bool = true,
+        chaptersInPlayer: Bool = true,
+        castInPlayer: Bool = true,
+        episodesInPlayer: Bool = true,
+        playlistInPlayer: Bool = true,
         continueWatchingInPlayer: Bool = true,
         fadeOnDynamicRangeChange: Bool = true,
         fadeOnFrameRateChange: Bool = true,
@@ -250,6 +257,10 @@ public struct PlaybackSettings: Codable, Equatable, Sendable {
         self.audioLanguagePreference = audioLanguagePreference
         self.rememberAudioTrackPerSeries = rememberAudioTrackPerSeries
         self.rememberSubtitleTrackPerSeries = rememberSubtitleTrackPerSeries
+        self.chaptersInPlayer = chaptersInPlayer
+        self.castInPlayer = castInPlayer
+        self.episodesInPlayer = episodesInPlayer
+        self.playlistInPlayer = playlistInPlayer
         self.continueWatchingInPlayer = continueWatchingInPlayer
         self.fadeOnDynamicRangeChange = fadeOnDynamicRangeChange
         self.fadeOnFrameRateChange = fadeOnFrameRateChange
@@ -428,6 +439,10 @@ public extension PlaybackSettings {
         case preferOriginalLanguageAudio
         case rememberAudioTrackPerSeries
         case rememberSubtitleTrackPerSeries
+        case chaptersInPlayer
+        case castInPlayer
+        case episodesInPlayer
+        case playlistInPlayer
         case continueWatchingInPlayer
         case fadeOnDynamicRangeChange
         case fadeOnFrameRateChange
@@ -559,6 +574,18 @@ public extension PlaybackSettings {
         self.rememberSubtitleTrackPerSeries =
             (try? container.decodeIfPresent(Bool.self, forKey: .rememberSubtitleTrackPerSeries))
             .flatMap { $0 } ?? defaults.rememberSubtitleTrackPerSeries
+        self.chaptersInPlayer =
+            (try? container.decodeIfPresent(Bool.self, forKey: .chaptersInPlayer))
+            .flatMap { $0 } ?? defaults.chaptersInPlayer
+        self.castInPlayer =
+            (try? container.decodeIfPresent(Bool.self, forKey: .castInPlayer))
+            .flatMap { $0 } ?? defaults.castInPlayer
+        self.episodesInPlayer =
+            (try? container.decodeIfPresent(Bool.self, forKey: .episodesInPlayer))
+            .flatMap { $0 } ?? defaults.episodesInPlayer
+        self.playlistInPlayer =
+            (try? container.decodeIfPresent(Bool.self, forKey: .playlistInPlayer))
+            .flatMap { $0 } ?? defaults.playlistInPlayer
         self.continueWatchingInPlayer =
             (try? container.decodeIfPresent(Bool.self, forKey: .continueWatchingInPlayer))
             .flatMap { $0 } ?? defaults.continueWatchingInPlayer
@@ -616,6 +643,10 @@ public extension PlaybackSettings {
         try container.encode(audioLanguagePreference, forKey: .audioLanguagePreference)
         try container.encode(rememberAudioTrackPerSeries, forKey: .rememberAudioTrackPerSeries)
         try container.encode(rememberSubtitleTrackPerSeries, forKey: .rememberSubtitleTrackPerSeries)
+        try container.encode(chaptersInPlayer, forKey: .chaptersInPlayer)
+        try container.encode(castInPlayer, forKey: .castInPlayer)
+        try container.encode(episodesInPlayer, forKey: .episodesInPlayer)
+        try container.encode(playlistInPlayer, forKey: .playlistInPlayer)
         try container.encode(continueWatchingInPlayer, forKey: .continueWatchingInPlayer)
         try container.encode(fadeOnDynamicRangeChange, forKey: .fadeOnDynamicRangeChange)
         try container.encode(fadeOnFrameRateChange, forKey: .fadeOnFrameRateChange)

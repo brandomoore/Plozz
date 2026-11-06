@@ -95,22 +95,42 @@ struct PlayerControls: View {
                     defaultValue: "Info",
                     comment: "Tab in the in-player options panel showing playback details."
                 )
-            case .cast:
-                return LocalizedStringResource(
-                    "player.category.cast",
-                    defaultValue: "Cast",
-                    comment: "Tab beneath the in-player scrub bar listing the cast of what is playing."
-                )
-            case .episodes: return "Episodes"
-            case .playlist: return "Playlist"
-            case .continueWatching:
-                return LocalizedStringResource(
-                    "player.category.continueWatching",
-                    defaultValue: "Continue Watching",
-                    comment: "Tab beneath the in-player scrub bar listing titles to switch to and resume."
-                )
-            case .chapters: return "Chapters"
+            case .cast: return PlayerOptionalTab.cast.title
+            case .episodes: return PlayerOptionalTab.episodes.title
+            case .playlist: return PlayerOptionalTab.playlist.title
+            case .continueWatching: return PlayerOptionalTab.continueWatching.title
+            case .chapters: return PlayerOptionalTab.chapters.title
             }
+        }
+
+        init(_ tab: PlayerOptionalTab) {
+            switch tab {
+            case .chapters: self = .chapters
+            case .cast: self = .cast
+            case .episodes: self = .episodes
+            case .playlist: self = .playlist
+            case .continueWatching: self = .continueWatching
+            }
+        }
+
+        var tabAccessibilityID: String {
+            self == .continueWatching ? "player-tab-continue-watching" : "player-tab-\(self)"
+        }
+
+        @MainActor static func visibleCardTabs(
+            model: PlayerControlsModel, player: PlayerViewModel?
+        ) -> [Self] {
+            [.info] + PlayerOptionalTab.allCases.filter { tab in
+                guard player?.isTabEnabled(tab)
+                    ?? PlaybackSettings.default[keyPath: tab.visibilityKeyPath] else { return false }
+                switch tab {
+                case .cast: return !model.infoCard.cast.isEmpty
+                case .chapters: return player != nil && !model.infoCard.chapters.isEmpty
+                case .episodes: return player?.episodeBrowser != nil
+                case .playlist: return player?.playlistContext != nil
+                case .continueWatching: return !(player?.continueWatchingItems.isEmpty ?? true)
+                }
+            }.map(Self.init)
         }
 
         var icon: String {
@@ -550,8 +570,10 @@ struct PlayerControls: View {
             // while the panel is still at ~0 opacity (mid fade-in), so it's imperceptible.
             restoreFocus(preferredPanelFocus)
         }
-        .onChange(of: model.infoCard.chapters.isEmpty) { _, empty in
-            if empty, openPanel == .chapters { closeInfoCard() }
+        .onChange(of: visibleCardTabs) { _, tabs in
+            if let panel = openPanel, Self.usesBottomCard(panel), !tabs.contains(panel) {
+                closeInfoCard()
+            }
         }
         .plozzRemoteCommands(
             onExit: handleExit,
@@ -1054,73 +1076,20 @@ struct PlayerControls: View {
             .accessibilityIdentifier("player-tab-info")
             .disabled(!tabFocusable(.info))
 
-            if isTabVisible(.chapters) {
-                Button { toggle(.chapters) } label: {
-                    Text(Category.chapters.title)
+            ForEach(visibleCardTabs.filter { $0 != .info }, id: \.self) { category in
+                Button { toggle(category) } label: {
+                    Text(category.title)
                 }
                 .buttonStyle(PlayerTabButtonStyle(
-                    focused: focus == .button(.chapters), selected: openPanel == .chapters
+                    focused: focus == .button(category), selected: openPanel == category
                 ))
                 .reportSubtitleControlsFrame(
-                    in: model.subtitleLayout, region: .tab("chapters"),
+                    in: model.subtitleLayout, region: .tab(String(describing: category)),
                     isVisible: model.controlsVisible && !model.isScrubbing && !chromeHidden
                 )
-                .focused($focus, equals: .button(.chapters))
-                .accessibilityIdentifier("player-tab-chapters")
-                .disabled(!tabFocusable(.chapters))
-            }
-
-            // Hidden entirely when what is playing has no cast: a tab that opens
-            // an empty card is worse than an absent one, and `.disabled` alone
-            // would leave it visible but dead.
-            if isTabVisible(.cast) {
-                Button {
-                    toggle(.cast)
-                } label: {
-                    Label(Category.cast.title, systemImage: Category.cast.icon)
-                        .labelStyle(.titleOnly)
-                }
-                .buttonStyle(PlayerTabButtonStyle(focused: focus == .button(.cast), selected: openPanel == .cast))
-                .reportSubtitleControlsFrame(
-                    in: model.subtitleLayout, region: .tab("cast"),
-                    isVisible: model.controlsVisible && !model.isScrubbing && !chromeHidden
-                )
-                .focused($focus, equals: .button(.cast))
-                .accessibilityIdentifier("player-tab-cast")
-                .disabled(!tabFocusable(.cast))
-            }
-            if isTabVisible(.episodes) {
-                Button { toggle(.episodes) } label: {
-                    Text(Category.episodes.title)
-                }
-                .buttonStyle(PlayerTabButtonStyle(
-                    focused: focus == .button(.episodes), selected: openPanel == .episodes
-                ))
-                .focused($focus, equals: .button(.episodes))
-                .accessibilityIdentifier("player-tab-episodes")
-                .disabled(!tabFocusable(.episodes))
-            }
-            if isTabVisible(.playlist) {
-                Button { toggle(.playlist) } label: {
-                    Text(Category.playlist.title)
-                }
-                .buttonStyle(PlayerTabButtonStyle(
-                    focused: focus == .button(.playlist), selected: openPanel == .playlist
-                ))
-                .focused($focus, equals: .button(.playlist))
-                .disabled(!tabFocusable(.playlist))
-            }
-            // Switch to another started title without leaving the player (#388).
-            if isTabVisible(.continueWatching) {
-                Button { toggle(.continueWatching) } label: {
-                    Text(Category.continueWatching.title)
-                }
-                .buttonStyle(PlayerTabButtonStyle(
-                    focused: focus == .button(.continueWatching), selected: openPanel == .continueWatching
-                ))
-                .focused($focus, equals: .button(.continueWatching))
-                .accessibilityIdentifier("player-tab-continue-watching")
-                .disabled(!tabFocusable(.continueWatching))
+                .focused($focus, equals: .button(category))
+                .accessibilityIdentifier(category.tabAccessibilityID)
+                .disabled(!tabFocusable(category))
             }
 
             Spacer(minLength: 20)
@@ -1219,17 +1188,12 @@ struct PlayerControls: View {
         return false
     }
 
-    /// Cast hides itself when what is playing has no cast to show — a tab that
-    /// opens an empty card is worse than an absent one.
+    private var visibleCardTabs: [Category] {
+        Category.visibleCardTabs(model: model, player: player)
+    }
+
     private func isTabVisible(_ tab: Category) -> Bool {
-        switch tab {
-        case .cast: !model.infoCard.cast.isEmpty
-        case .chapters: player != nil && !model.infoCard.chapters.isEmpty
-        case .episodes: player?.episodeBrowser != nil
-        case .playlist: player?.playlistContext != nil
-        case .continueWatching: !(player?.continueWatchingItems.isEmpty ?? true)
-        default: true
-        }
+        visibleCardTabs.contains(tab)
     }
 
     /// The floating options menu (Speed · Audio · Subtitles), including the Subtitle

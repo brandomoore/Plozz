@@ -281,6 +281,10 @@ public final class PlayerViewModel {
     /// community marker sources to consult.
     private let playbackSettings: PlaybackSettings
     public var volumeBrightnessGesturesEnabled: Bool { playbackSettings.volumeBrightnessGestures }
+
+    func isTabEnabled(_ tab: PlayerOptionalTab) -> Bool {
+        playbackSettings[keyPath: tab.visibilityKeyPath]
+    }
     private let streamingQuality = StreamingPlaybackState()
     public var streamingOptions: StreamingPlaybackOptions? { streamingQuality.options }
     public var streamingQualitySupport: StreamingQualitySupport {
