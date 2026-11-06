@@ -13,16 +13,9 @@ struct DiscTouchFixture: View {
             Color.black.ignoresSafeArea()
             DiscMenuArtwork(state: state)
             DiscMenuTouchControls(state: state) {
-                let format = UIGraphicsImageRendererFormat()
-                format.scale = 1
-                state.image = UIGraphicsImageRenderer(
-                    size: CGSize(width: 1280, height: 720), format: format
-                ).image {
-                    UIColor.systemIndigo.setFill()
-                    $0.fill(CGRect(x: 0, y: 0, width: 1280, height: 720))
-                }
                 state.isMenuVisible.toggle()
             }
+            if state.showsLoadingIndicator { ProgressView().accessibilityIdentifier("disc-fixture-loading") }
             VStack {
                 Text(verbatim: "Disc touch fixture: \(pointers) taps, \(keys) keys")
                     .accessibilityIdentifier("disc-touch-events")
@@ -33,8 +26,22 @@ struct DiscTouchFixture: View {
         }
         .onAppear {
             state.isActive = true
+            state.isOpening = false
             state.sendPointerClick = { _, _ in pointers += 1 }
             state.sendKey = { _ in keys += 1 }
+        }
+        .task {
+            guard !ProcessInfo.processInfo.arguments.contains("--disc-touch-loading") else { return }
+            let format = UIGraphicsImageRendererFormat()
+            format.scale = 1
+            state.image = UIGraphicsImageRenderer(
+                size: CGSize(width: 1280, height: 720), format: format
+            ).image {
+                UIColor.systemIndigo.setFill()
+                $0.fill(CGRect(x: 0, y: 0, width: 1280, height: 720))
+            }
+            state.isMenuVisible = true
+            state.isMenuRequestPending = false
         }
     }
 }

@@ -96,6 +96,7 @@ struct PlozziOSPlayerView: View {
                     viewModel: viewModel,
                     showDiagnostics: appModel.settings.diagnostics.settings.isEnabled,
                     showsSharedControls: false,
+                    showsLoadingOverlay: false,
                     onDismiss: orientation.close
                 )
                 .id(playerIdentity)
@@ -115,12 +116,10 @@ struct PlozziOSPlayerView: View {
                     closeButton
                 }
             } else {
-                ProgressView()
-                    .tint(.white)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 closeButton
             }
         }
+        .overlay { loadingOverlay }
         .statusBarHidden()
         .playerTouchLevelSession(isActive: viewModel?.externalPlaybackRouteName == nil)
         .overlay(alignment: .top) {
@@ -324,6 +323,17 @@ struct PlozziOSPlayerView: View {
             && !presentsStreamingQuality && !presentsVersions
             && versionChoice.prompt == nil && !versionChoiceFailed
             && viewModel?.controls.diagnosticsEnabled != true
+    }
+
+    @ViewBuilder private var loadingOverlay: some View {
+        if versionChoice.prompt == nil {
+            let item = activeItem ?? request.item
+            let behavior = item.effectiveDiscPlayback(default: appModel.settings.playback.settings.discPlayback)
+            PlayerLoadingOverlay(
+                viewModel: viewModel,
+                discMenuRequested: behavior == .openMenu
+            )
+        }
     }
 
     private var closeButton: some View {

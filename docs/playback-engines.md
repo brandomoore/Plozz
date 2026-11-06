@@ -102,7 +102,11 @@ The TV disc navigation surface uses a native Select button; directional input
 only sends the corresponding disc arrow key, not an activation.
 Mobile menu navigation centers its glass arrow/Select group separately from the
 disc action and keeps the shell's single Close action. Select uses a circle.
-Navigation controls retain their layout across temporary graphics clears and
+During loading, the disc action and navigation are hidden. One loading indicator
+stays mounted across mobile request resolution and native playlist transitions,
+without loading messages. A background video's first frame does not finish initial
+menu loading; visible menu graphics do, including an interactive language prompt.
+Outside loading, navigation controls retain their layout across temporary graphics clears and
 disable input until the menu is visible again. Pending menu requests keep normal
 transport chrome hidden, and disc transport does not reveal itself merely because
 its view was recreated during a scene change.

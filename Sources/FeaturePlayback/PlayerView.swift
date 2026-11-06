@@ -7,6 +7,40 @@ import AVKit
 import CoreModels
 import CoreUI
 
+/// A stable loading owner, including the mobile shell's pre-model resolution.
+public struct PlayerLoadingOverlay: View {
+    private let viewModel: PlayerViewModel?
+    private let discMenuRequested: Bool
+
+    public init(viewModel: PlayerViewModel?, discMenuRequested: Bool = false) {
+        self.viewModel = viewModel
+        self.discMenuRequested = discMenuRequested
+    }
+
+    public var body: some View {
+        if viewModel?.showBringUpSpinner ?? true {
+            if let viewModel, let options = viewModel.streamingOptions, options.quality != .original {
+                StreamingPlaybackLoadingView(
+                    options: options, provider: viewModel.streamingProviderName,
+                    phase: viewModel.streamingPreparation, transcoding: viewModel.streamingIsTranscoding,
+                    h264Fallback: viewModel.streamingUsedH264Fallback,
+                    hevcFallback: viewModel.streamingUsedHEVCFallback
+                )
+                .transition(.opacity)
+            } else {
+                LoadingMessagesView(
+                    spinnerTint: .white, messageColor: .white.opacity(0.85),
+                    showsMessages: !discMenuRequested && viewModel?.isDiscMenuPlayback != true
+                )
+                .accessibilityIdentifier("player-loading")
+                .ignoresSafeArea()
+                .allowsHitTesting(false)
+                .transition(.opacity)
+            }
+        }
+    }
+}
+
 /// Full-screen playback using Plozz's **custom** player: an `AVPlayer` rendered
 /// into an `AVPlayerLayer` with a hand-built transport overlay and Siri Remote
 /// handling (`CustomPlayerContainer`). Going custom is what lets us show
@@ -46,6 +80,7 @@ public struct PlayerView: View {
     private let showDiagnostics: Bool
     private let themePalette: ThemePalette
     private let showsSharedControls: Bool
+    private let showsLoadingOverlay: Bool
     private let onDismiss: (() -> Void)?
 
     public init(
@@ -53,12 +88,14 @@ public struct PlayerView: View {
         showDiagnostics: Bool = false,
         themePalette: ThemePalette = .dark,
         showsSharedControls: Bool = true,
+        showsLoadingOverlay: Bool = true,
         onDismiss: (() -> Void)? = nil
     ) {
         _viewModel = State(initialValue: viewModel)
         self.showDiagnostics = showDiagnostics
         self.themePalette = themePalette
         self.showsSharedControls = showsSharedControls
+        self.showsLoadingOverlay = showsLoadingOverlay
         self.onDismiss = onDismiss
     }
 
@@ -226,7 +263,9 @@ public struct PlayerView: View {
         // viewer sees one continuous indicator from tap → first frame (no black
         // gap, no second in-player spinner on an engine swap). Above the HDR veil
         // so it stays visible during an HDMI display-mode switch.
-        .overlay { bringUpSpinnerOverlay }
+        .overlay {
+            if showsLoadingOverlay { PlayerLoadingOverlay(viewModel: viewModel) }
+        }
         .animation(.easeInOut(duration: 0.2), value: viewModel.showBringUpSpinner)
         .overlay(alignment: .topLeading) { diagnosticsOverlay }
     }
@@ -239,27 +278,6 @@ public struct PlayerView: View {
             .ignoresSafeArea()
             .allowsHitTesting(hdrTransition.veilOpacity > 0.01)
             .animation(.easeInOut(duration: 0.35), value: hdrTransition.veilOpacity)
-    }
-
-    /// The single bring-up spinner overlay content, extracted from `body`.
-    /// Pure extraction — identical gating and transition.
-    @ViewBuilder
-    private var bringUpSpinnerOverlay: some View {
-        if viewModel.showBringUpSpinner && !discMenuHasPresentation {
-            if let options = viewModel.streamingOptions, options.quality != .original {
-                StreamingPlaybackLoadingView(
-                    options: options, provider: viewModel.streamingProviderName,
-                    phase: viewModel.streamingPreparation, transcoding: viewModel.streamingIsTranscoding,
-                    h264Fallback: viewModel.streamingUsedH264Fallback,
-                    hevcFallback: viewModel.streamingUsedHEVCFallback
-                )
-                .transition(.opacity)
-            } else {
-                LoadingMessagesView(spinnerTint: .white, messageColor: .white.opacity(0.85))
-                    .ignoresSafeArea()
-                    .transition(.opacity)
-            }
-        }
     }
 
     /// The diagnostics overlay content, extracted from `body`. Pure extraction —
@@ -307,14 +325,6 @@ public struct PlayerView: View {
         }
         #else
         ordinaryPhaseContent
-        #endif
-    }
-
-    private var discMenuHasPresentation: Bool {
-        #if canImport(UIKit)
-        viewModel.videoEngine.discMenu.map { $0.failure != nil || $0.image != nil } ?? false
-        #else
-        false
         #endif
     }
 

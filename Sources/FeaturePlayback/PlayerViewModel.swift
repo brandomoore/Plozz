@@ -125,6 +125,12 @@ public final class PlayerViewModel {
     /// Off once frames advance (or on failure). Lets the view keep a single
     /// spinner across the `.loading` → `.ready` boundary.
     public var showBringUpSpinner: Bool {
+        #if canImport(UIKit)
+        if isDiscMenuPlayback, let state = engine.discMenu {
+            if case .failed = phase { return false }
+            return state.showsLoadingIndicator
+        }
+        #endif
         switch phase {
         case .loading: return !engine.hasPresentedVideoFrame
         case .ready:

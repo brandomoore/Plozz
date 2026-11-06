@@ -62,12 +62,6 @@ struct DiscMenuPlayerContent: View {
                 #endif
             }
         }
-        .overlay {
-            if state.isOpening && state.failure == nil && (!model.showBringUpSpinner || state.image != nil) {
-                ProgressView()
-                    .allowsHitTesting(false)
-            }
-        }
         .overlay(alignment: .bottom) {
             if let notice = state.notice, state.failure == nil {
                 Text(verbatim: notice).padding().background(.regularMaterial)
@@ -123,18 +117,20 @@ struct DiscMenuTouchControls: View {
 
     var body: some View {
         VStack {
-            Spacer()
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: 12) {
-                    Color.clear.frame(width: 44, height: 44)
-                    Spacer(minLength: 0)
-                    navigation
-                    Spacer(minLength: 0)
-                    actions
-                }
-                VStack {
-                    navigation
-                    HStack { Spacer(); actions }
+            if !state.showsLoadingIndicator {
+                Spacer()
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 12) {
+                        Color.clear.frame(width: 44, height: 44)
+                        Spacer(minLength: 0)
+                        navigation
+                        Spacer(minLength: 0)
+                        actions
+                    }
+                    VStack {
+                        navigation
+                        HStack { Spacer(); actions }
+                    }
                 }
             }
         }

@@ -5,13 +5,17 @@ import XCTest
 final class DiscMenuTouchInteractionTests: XCTestCase {
     func testArtworkReceivesTapsWithoutToolbarDuplicatesInBothOrientations() {
         let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.PresentationHost")
-        app.launchArguments = ["--disc-touch-fixture"]
+        app.launchArguments = ["--disc-touch-fixture", "--disc-touch-loading"]
         app.launch()
         defer { app.terminate() }
+        XCTAssertTrue(app.activityIndicators["disc-fixture-loading"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.buttons.count, 0, "Loading must not expose the disc action or navigation")
+        app.terminate()
+        app.launchArguments = ["--disc-touch-fixture"]
+        app.launch()
         let menu = app.buttons["disc-menu-control-opticaldisc"]
         XCTAssertTrue(menu.waitForExistence(timeout: 10))
-        XCTAssertEqual(app.buttons.count, 1)
-        menu.tap()
+        XCTAssertFalse(app.activityIndicators["disc-fixture-loading"].exists)
         let select = app.buttons["disc-menu-control-circle"]
         XCTAssertTrue(select.waitForExistence(timeout: 5))
         let events = app.staticTexts["disc-touch-events"]

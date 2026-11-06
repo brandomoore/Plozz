@@ -7,10 +7,19 @@ public final class DiscMenuPlaybackState {
     public var isActive = false
     public var image: UIImage?
     public var isOpening = true
-    public var isMenuVisible = false
+    public var isMenuVisible = false {
+        didSet {
+            if isMenuVisible { hasPresentedMenu = true }
+            else if isMenuRequestPending { hasPresentedMenu = false }
+        }
+    }
+    public private(set) var hasPresentedMenu = false
+    public var showsLoadingIndicator: Bool {
+        failure == nil && !isMenuVisible && (!hasPresentedMenu || isMenuRequestPending || isOpening)
+    }
     public var isMenuRequestPending = true
     public var presentsMenu: Bool {
-        failure != nil || isMenuRequestPending || isOpening || isMenuVisible || image != nil
+        failure != nil || isMenuRequestPending || showsLoadingIndicator || isMenuVisible || image != nil
     }
     public var isStill = false
     public var hasSubtitleSelection = false
@@ -59,6 +68,7 @@ public final class DiscMenuPlaybackState {
         image = nil
         isOpening = true
         isMenuVisible = false
+        hasPresentedMenu = false
         isMenuRequestPending = true
         isStill = false
         hasSubtitleSelection = false
