@@ -215,16 +215,15 @@ struct PlayerMediaArtworkLayout: Layout {
         RoundedRectangle(cornerRadius: max(0, cornerRadius - inset), style: .continuous)
     }
 
-    var captionBottomInset: CGFloat {
-        // Edge-to-edge cards own their caption padding; framed text clears the bottom corners.
-        inset > 0 ? max(inset, cornerRadius) : 0
+    var captionHorizontalInset: CGFloat {
+        // Edge-to-edge cards already own their caption padding.
+        inset > 0 ? 4 : 0
     }
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout Void) -> CGSize {
         let hasCaption = subviews.count > 1
         let captionHeight = hasCaption ? subviews[1].sizeThatFits(.unspecified).height : 0
-        let bottomInset = hasCaption ? captionBottomInset : inset
-        let artworkHeight = max(0, height - inset - bottomInset - (hasCaption ? spacing : 0) - captionHeight)
+        let artworkHeight = max(0, height - inset * 2 - (hasCaption ? spacing : 0) - captionHeight)
         return CGSize(width: artworkHeight * aspectRatio + inset * 2, height: height)
     }
 
@@ -236,8 +235,9 @@ struct PlayerMediaArtworkLayout: Layout {
         )
         if subviews.count > 1 {
             subviews[1].place(
-                at: CGPoint(x: bounds.minX + inset, y: bounds.maxY - captionBottomInset), anchor: .bottomLeading,
-                proposal: ProposedViewSize(width: width, height: nil)
+                at: CGPoint(x: bounds.minX + inset + captionHorizontalInset, y: bounds.maxY - inset),
+                anchor: .bottomLeading,
+                proposal: ProposedViewSize(width: max(0, width - captionHorizontalInset * 2), height: nil)
             )
         }
     }

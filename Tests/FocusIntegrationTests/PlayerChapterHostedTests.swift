@@ -52,8 +52,9 @@ final class PlayerChapterHostedTests: XCTestCase {
         XCTAssertEqual(probe.artwork.minX - probe.card.minX, inset, accuracy: 0.5)
         XCTAssertEqual(probe.artwork.minY - probe.card.minY, inset, accuracy: 0.5)
         XCTAssertEqual(probe.card.maxX - probe.artwork.maxX, inset, accuracy: 0.5)
-        XCTAssertEqual(probe.card.maxY - probe.caption.maxY, metrics.panelCornerRadius, accuracy: 0.5)
-        XCTAssertEqual(probe.caption.minX, probe.artwork.minX, accuracy: 0.5)
+        XCTAssertEqual(probe.card.maxY - probe.caption.maxY, inset, accuracy: 0.5)
+        XCTAssertEqual(probe.caption.minX - probe.artwork.minX, 4, accuracy: 0.5)
+        XCTAssertEqual(probe.artwork.maxX - probe.caption.maxX, 4, accuracy: 0.5)
         XCTAssertEqual(probe.caption.minY - probe.artwork.maxY, 8, accuracy: 0.5)
         XCTAssertEqual(probe.artwork.width / probe.artwork.height, 16.0 / 9.0, accuracy: 0.005)
         let radius = layout.thumbnailShape.cornerSize.width
