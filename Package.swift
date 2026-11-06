@@ -249,7 +249,7 @@ let package = Package(
         // Resume preroll backfill no longer opens a false native-scrub landing watch.
         .package(
             url: "https://github.com/brandomoore/AetherEngine",
-            revision: "788bbc479acff647a025aa5800e214d80ffc67ca",
+            revision: "debf03170d23e0781ed5b667af6f974deac46449",
             traits: []
         ),
         // NOTE: FFmpegBuild (FFmpeg n8.1.x media libraries) and LibDovi (Dolby Vision

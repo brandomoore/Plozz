@@ -73,7 +73,11 @@ bypassing the authored hold. Infinite stills wait for navigation input.
 Playlists with stills between play items use individually opened clips and their
 authored source-time intervals. Native playback establishes the actual consumer
 timeline before seeking and starting, and AVPlayer's renderer-owned endpoint
-holds the frame without a sampled-clock pause. Repeated clips retain separate
+holds the frame without a sampled-clock pause. If timeline correction maps an
+endpoint at or beyond the finite native item duration, playback uses natural EOF
+instead of scheduling an invalid out-of-item endpoint. Earlier boundaries remain
+renderer-owned, with endpoints and seeks rounded to the nearest 90 kHz tick.
+Repeated clips retain separate
 play-item identities. Software-rendered formats cannot yet use these intervals;
 that limitation is reported instead of skipping the pause or playing outside it.
 Stopping a session cancels its transport and waits up to five seconds for its
