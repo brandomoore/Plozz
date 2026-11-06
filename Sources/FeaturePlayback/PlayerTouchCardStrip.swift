@@ -110,6 +110,12 @@ public struct PlayerTouchCardStrip: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .environment(\.playerCardMetrics, metrics)
         .environment(\.mediaBadgeScale, metrics.badgeScale)
+        .task {
+            if PlayerScreenshotHook.pendingPanel == .info {
+                PlayerScreenshotHook.pendingPanel = nil
+                openPanel = .info
+            }
+        }
         // Kept in step both ways: this view decides WHICH tab is open, the host
         // only ever needs to know THAT one is, and to be able to close it.
         .onChange(of: openPanel) { _, panel in

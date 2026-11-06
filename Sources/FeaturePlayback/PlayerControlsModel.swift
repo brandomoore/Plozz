@@ -555,6 +555,8 @@ public final class PlayerControlsModel {
     /// Whether the live playback-diagnostics overlay is shown. Toggleable from
     /// the in-player control bar; seeded from the caller's initial preference.
     public var diagnosticsEnabled: Bool = false
+    /// The song heard in the scene, shown in the Info card (#351).
+    public var songID: SongIDState = .idle
 
     // MARK: Up Next (closing-credits next-episode card)
     /// The closing-credits next-episode card's own state. A facet for the stored

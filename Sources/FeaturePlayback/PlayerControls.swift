@@ -131,6 +131,7 @@ struct PlayerControls: View {
         case infoPrev       // Info panel: Previous Episode
         case infoRestart    // Info panel: Restart
         case infoStats      // Info panel: Playback Info (diagnostics) toggle
+        case infoSong       // Info panel: the playing song (opens Apple Music)
         /// One face in the Cast card, by position in the row.
         case castMember(Int)
         case sequenceItem(Int)
@@ -336,6 +337,11 @@ struct PlayerControls: View {
             guard let panel = PlayerScreenshotHook.pendingPanel else { return }
             PlayerScreenshotHook.pendingPanel = nil
             switch panel {
+            case .info:
+                model.controlsVisible = true
+                model.controlBar.entry = .info
+                model.controlBarVisible = true
+                openPanel = .info
             case .playback:
                 try? await Task.sleep(for: .milliseconds(600))
                 model.controlsVisible = true
@@ -1331,7 +1337,7 @@ struct PlayerControls: View {
         switch focus {
         case .button(let tab):
             return Self.usesBottomCard(tab)
-        case .infoNext, .infoPrev, .infoRestart, .infoStats:
+        case .infoNext, .infoPrev, .infoRestart, .infoStats, .infoSong:
             return true
         default:
             return false

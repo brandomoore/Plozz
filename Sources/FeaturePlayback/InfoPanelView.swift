@@ -15,6 +15,9 @@ import MetadataKit
 /// owns none of the panel morph/focus-restore choreography — that stays in
 /// `PlayerControls` — so this is a pure content extraction.
 struct InfoPanelView: View {
+    @Environment(\.openURL) private var openURL
+    @Environment(\.playerSongLayoutPreview) private var songLayout
+
     /// The regular-size numbers, for the tvOS transport's parking offset.
     ///
     /// `PlayerControls` needs a card height before the first frame — measuring
@@ -116,30 +119,32 @@ struct InfoPanelView: View {
         let thumbRadius = PlozzTheme.Metrics.mediumMediaCornerRadius
         let contentPad = metrics.contentPadding
 
-        return Group {
-            if metrics.showsThumbnail {
-                regularBody(thumbRadius: thumbRadius, thumbHeight: metrics.contentHeight)
-                    .padding(contentPad)
-            } else {
-                compactBody
-                    .padding(contentPad)
-                    // Hugs its content rather than filling to the ceiling: a
-                    // three-line synopsis should not leave a well of empty glass
-                    // under it. The natural copy is the NON-scrolling column —
-                    // see the modifier.
-                    .playerCardNaturalHeight(cap: metrics.cardHeight) {
-                        compactNaturalBody.padding(contentPad)
-                    }
+        return PlayerSongPreviewLayout(state: model.songID, focus: $focus) {
+            Group {
+                if metrics.showsThumbnail {
+                    regularBody(thumbRadius: thumbRadius, thumbHeight: metrics.contentHeight)
+                        .padding(contentPad)
+                } else {
+                    compactBody
+                        .padding(contentPad)
+                        // Hugs its content rather than filling to the ceiling: a
+                        // three-line synopsis should not leave a well of empty glass
+                        // under it. The natural copy is the NON-scrolling column —
+                        // see the modifier.
+                        .playerCardNaturalHeight(cap: metrics.cardHeight) {
+                            compactNaturalBody.padding(contentPad)
+                        }
+                }
             }
+            // Pinned in the horizontal layout, where `cardHeight` is a promise the
+            // transport's parking offset depends on. The vertical card takes its
+            // content's height instead and stops at the ceiling: a column of text
+            // has no business holding a fixed height, and a short synopsis would
+            // leave a well of empty glass under it.
+            .modifier(PlayerCardHeight(metrics: metrics))
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .modifier(PanelGlassBackground(cornerRadius: metrics.panelCornerRadius, mediaGlass: true))
         }
-        // Pinned in the horizontal layout, where `cardHeight` is a promise the
-        // transport's parking offset depends on. The vertical card takes its
-        // content's height instead and stops at the ceiling: a column of text
-        // has no business holding a fixed height, and a short synopsis would
-        // leave a well of empty glass under it.
-        .modifier(PlayerCardHeight(metrics: metrics))
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .modifier(PanelGlassBackground(cornerRadius: metrics.panelCornerRadius, mediaGlass: true))
     }
 
     /// The phone card: no thumbnail, and the three columns folded into rows.
@@ -191,6 +196,11 @@ struct InfoPanelView: View {
             // badges — then the release date — when it does not.
             adaptiveMetaRow
 
+            if songLayout == .integrated {
+                PlayerSongPreviewCard(state: model.songID, horizontal: true, focus: $focus)
+                    .frame(height: metrics.isVertical ? 80 : max(68, metrics.contentHeight * 0.28 + 16))
+            }
+
             // Playback Info at the far left, apart from the three transport
             // actions: it is a diagnostics toggle rather than something reached
             // for while watching, and grouping it with them would invite it to
@@ -240,8 +250,10 @@ struct InfoPanelView: View {
                     .foregroundStyle(foreground.opacity(0.82))
                     .fixedSize(horizontal: false, vertical: true)
             }
+            if songLayout == .original { songRow }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .plozzFocusSection()  // the song row is reachable from the action row
     }
 
     @ViewBuilder
@@ -346,6 +358,9 @@ struct InfoPanelView: View {
                         .padding(.top, 1)
                         .layoutPriority(1)
                 }
+                if songLayout == .original {
+                    songRow.padding(.top, 4)
+                }
                 // Pins the meta/badge row to the card's bottom edge. `minLength: 0`
                 // is load-bearing, not laziness: this column has 210pt, and a
                 // one-line headline plus three lines of overview plus the meta row
@@ -369,6 +384,9 @@ struct InfoPanelView: View {
             .frame(maxWidth: metrics.textColumnMaxWidth, alignment: .leading)
             .frame(maxWidth: .infinity, alignment: .leading)
             .frame(height: thumbHeight, alignment: .topLeading)
+            // The whole column is a focus section, so Left from the
+            // action buttons lands on the song row whatever its height.
+            .plozzFocusSection()
 
             // NO Spacer here. A Spacer is flexible and so is the text column, so
             // the two split the width left over by the thumbnail and the action
@@ -382,7 +400,7 @@ struct InfoPanelView: View {
             // Info: a right-aligned single button wouldn't sit under Restart, so
             // the bottom row spans the column width (Spacer + button) and is its
             // own `.focusSection()`, bridging the horizontal offset.
-            VStack(alignment: .trailing, spacing: 12) {
+            VStack(alignment: .trailing, spacing: songLayout == .integrated ? 6 : 12) {
                 HStack(spacing: 12) {
                     // Order: Restart · Previous · Next Episode (primary, far right).
                     infoActionButton(title: "Restart", icon: "arrow.counterclockwise", prominent: false, slot: .infoRestart) {
@@ -402,6 +420,10 @@ struct InfoPanelView: View {
                 }
                 .plozzFocusSection()
                 Spacer(minLength: 0)
+                if songLayout == .integrated {
+                    PlayerSongPreviewCard(state: model.songID, horizontal: true, focus: $focus)
+                    Spacer(minLength: 0)
+                }
                 // Subtle Playback Info (diagnostics) toggle, bottom-right —
                 // balances the tech badges bottom-left. Keeps the Info panel open
                 // so the viewer can flip it and watch the top-left overlay appear.
@@ -418,6 +440,7 @@ struct InfoPanelView: View {
                 }
                 .plozzFocusSection()
             }
+            .frame(width: songLayout == .integrated ? metrics.contentHeight * 1.3 : nil)
             .frame(height: thumbHeight, alignment: .topTrailing)
             .fixedSize(horizontal: true, vertical: false)
         }
@@ -429,6 +452,84 @@ struct InfoPanelView: View {
             policy: model.artworkPolicy, cornerRadius: cornerRadius, height: height
         )
     }
+
+    // MARK: - Song identification (#351)
+
+    /// The song playing in the scene, found in the background by Shazam. A
+    /// button: it opens the song in Apple Music.
+    @ViewBuilder
+    private var songRow: some View {
+        if case let .found(song) = model.songID {
+            let isFocused = focus == .infoSong
+            let art = (metrics.actionSize * 1.45).rounded()
+            Button {
+                if let url = song.appleMusicURL { openURL(url) }
+            } label: {
+                HStack(spacing: metrics.actionSize * 0.45) {
+                    AsyncImage(url: song.artworkURL) { image in
+                        image.resizable().scaledToFill()
+                    } placeholder: {
+                        Image(systemName: "music.note")
+                            .font(.system(size: art * 0.5, weight: .semibold))
+                    }
+                    .frame(width: art, height: art)
+                    .clipShape(RoundedRectangle(cornerRadius: art * 0.18, style: .continuous))
+                    Image(systemName: "music.note")
+                        .opacity(0.65)
+                        .accessibilityHidden(true)
+                    Text(verbatim: song.title)
+                        .layoutPriority(1)
+                    if let artist = song.artist {
+                        Text(verbatim: artist).opacity(0.65)
+                    }
+                    if isFocused, song.appleMusicURL != nil {
+                        Image(systemName: "arrow.up.forward")
+                            .transition(.identity)
+                    }
+                }
+                .font(metrics.actionFont)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .animation(.easeOut(duration: 0.2), value: isFocused)
+            }
+            #if os(iOS)
+            // Not `.playerTouchPanelAction()` (it pins buttons to their full
+            // text width, so a long title pushed the card off the screen) and
+            // not `.bordered` (on iPad's wide card it squeezed the title to
+            // nothing). A plain button with its own capsule sizes like text.
+            .buttonStyle(SongRowTouchStyle(foreground: foreground))
+            #else
+            .buttonStyle(InfoActionButtonStyle(
+                focused: isFocused, prominent: false,
+                hPadding: metrics.actionVPadding, vPadding: metrics.actionVPadding * 0.5
+            ))
+            #endif
+            .accessibilityLabel(Text(verbatim: [song.title, song.artist].compactMap { $0 }.joined(separator: ", ")))
+            // No Apple Music link (not in the catalog here): shown, not a button.
+            .disabled(song.appleMusicURL == nil)
+            .focused($focus, equals: .infoSong)
+            .fixedSize(horizontal: false, vertical: true)
+            .layoutPriority(2)
+        }
+    }
+
+    #if os(iOS)
+    /// The song row's capsule on iPhone and iPad: as wide as its content, never
+    /// wider than the card, so a long title truncates.
+    private struct SongRowTouchStyle: ButtonStyle {
+        let foreground: Color
+
+        func makeBody(configuration: Configuration) -> some View {
+            configuration.label
+                .foregroundStyle(foreground)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .frame(minHeight: 44)
+                .background(Capsule().fill(foreground.opacity(configuration.isPressed ? 0.25 : 0.14)))
+                .contentShape(Capsule())
+        }
+    }
+    #endif
 
     /// An icon-only Info-card action. At rest it shows just its glyph; while
     /// focused it **expands** to reveal its label (the tvOS stand-in for a hover

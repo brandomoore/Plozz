@@ -21,6 +21,7 @@ import Foundation
 /// knows about the player, not the other way round.
 public enum PlayerScreenshotHook {
     public enum Panel: String, Sendable {
+        case info
         /// The Subtitles panel's Style editor, over live playback.
         case subtitleStyle
         case subtitleTracks
