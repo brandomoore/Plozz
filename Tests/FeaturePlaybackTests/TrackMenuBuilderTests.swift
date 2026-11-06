@@ -127,6 +127,47 @@ final class AudioMenuAvailabilityTests: XCTestCase {
 /// exclusion, engine-dual vs sidecar sourcing) that used to be buried in
 /// `PlayerViewModel.loadTrackOptions`.
 final class TrackMenuBuilderTests: XCTestCase {
+    func testSubtitleVersionsReachBothMenusWithNativeAndTVParity() {
+        let versions = ["VFF", "VFQ"]
+        let provider = versions.enumerated().map { index, version in
+            MediaTrack(id: index + 10, kind: .subtitle, displayTitle: "French (\(version))",
+                       language: "fr", codec: "subrip", isForced: true, isExternal: true)
+        }
+        let engine = provider.map {
+            MediaTrack(id: $0.id, kind: .subtitle, displayTitle: "French",
+                       language: "fr", codec: "subrip", isForced: true, isExternal: true)
+        }
+        for localeID in ["en", "fr", "es"] {
+            let locale = Locale(identifier: localeID)
+            let language = TrackLabeling.languageName(forCode: "fr", in: locale)!
+            let primary = TrackMenuBuilder.subtitleOptions(
+                tracks: zip(engine, provider).map { $0.enriched(withProvider: $1) },
+                selectedID: 11, preferred: ["fr-CA"], detectedLanguages: [:], locale: locale
+            )
+            let secondary = TrackMenuBuilder.secondaryOptions(
+                eligible: engine, providerTracks: provider, selectedID: 11,
+                preferred: ["fr-CA"], detectedLanguages: [:], locale: locale
+            )
+            let forced = String(localized: LocalizedStringResource("Forced", locale: locale))
+            for options in [primary, secondary] {
+                XCTAssertEqual(options.map(\.id), [-1, 10, 11])
+                XCTAssertEqual(options.filter(\.isSelected).map(\.id), [11])
+                XCTAssertEqual(options.dropFirst().map(\.nativeTitle), versions.map { "\(language) (\($0), \(forced))" })
+                for (option, version) in zip(options.dropFirst(), versions) {
+                    XCTAssertEqual(
+                        option.title,
+                        Text(verbatim: language) + Text(verbatim: " (")
+                            + (Text(verbatim: version) + Text(verbatim: ", ")
+                               + Text(LocalizedStringResource("Forced", locale: locale)))
+                            + Text(verbatim: ")")
+                    )
+                }
+            }
+            XCTAssertTrue(primary.dropFirst().allSatisfy(\.isExternal))
+            XCTAssertTrue(secondary.allSatisfy { !$0.isExternal })
+        }
+    }
+
     func testFrenchVersionsHaveMatchingNativeAndTVLabelsAndStableSelection() {
         let versions = ["VFQ", "VFF", "VFI"]
         let tracks = versions.enumerated().map { index, version in

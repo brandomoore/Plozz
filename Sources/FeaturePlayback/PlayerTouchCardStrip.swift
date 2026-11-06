@@ -144,31 +144,24 @@ public struct PlayerTouchCardStrip: View {
                 withAnimation(Self.cardCurve) { openPanel = nil }
             }
         }
-        .onChange(of: model.infoCard.chapters.isEmpty) { _, empty in
-            if empty, openPanel == .chapters {
+        .onChange(of: visibleTabs) { _, tabs in
+            if let panel = openPanel, !tabs.contains(panel) {
                 withAnimation(Self.cardCurve) { openPanel = nil }
             }
         }
+    }
+
+    private var visibleTabs: [PlayerControls.Category] {
+        PlayerControls.Category.visibleCardTabs(model: model, player: player)
     }
 
     private var tabRow: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
                 tab(.info, title: Text("Info"))
-                if player != nil, !model.infoCard.chapters.isEmpty {
-                    tab(.chapters, title: Text(PlayerControls.Category.chapters.title))
-                        .accessibilityIdentifier("player-tab-chapters")
-                }
-                // Hidden entirely when there is no cast: a tab that opens an empty
-                // card is worse than an absent one.
-                if !model.infoCard.cast.isEmpty {
-                    tab(.cast, title: Text(PlayerControls.Category.cast.title))
-                }
-                if player?.episodeBrowser != nil {
-                    tab(.episodes, title: Text(PlayerControls.Category.episodes.title))
-                }
-                if player?.playlistContext != nil {
-                    tab(.playlist, title: Text(PlayerControls.Category.playlist.title))
+                ForEach(visibleTabs.filter { $0 != .info }, id: \.self) { category in
+                    tab(category, title: Text(category.title))
+                        .accessibilityIdentifier(category.tabAccessibilityID)
                 }
                 Spacer(minLength: 20)
             }
@@ -226,6 +219,10 @@ public struct PlayerTouchCardStrip: View {
                         source: category == .playlist ? .playlist : .episodes,
                         focus: $focus
                     )
+                }
+            case .continueWatching:
+                if let player {
+                    PlayerSequencePanel(player: player, source: .continueWatching, focus: $focus)
                 }
             default:
                 InfoPanelView(

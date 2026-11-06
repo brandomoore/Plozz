@@ -1177,9 +1177,11 @@ stays outside the artwork layout slot. Poster caption travel reserves at least
 reflowing the row or changing animation timing. Native library grids use the
 same resting gap and focus travel; playback-panel and circular-tile captions
 retain their own geometry.
-Transparent server covers retain their alpha but use the same rounded native
-poster treatment as opaque covers, rather than alpha-shaped cutout focus.
-This changes the native image-view treatment, not the cached artwork bitmap.
+Native TV library covers use the same opaque rectangular artwork surface as media
+cards, including UIKit's moving edge highlight, enlargement, tilt, and small internal
+crop. Transparent server reflections fade onto the shared dark card backing rather
+than into the page. Cached source artwork retains its alpha for mobile and custom
+focus styles; only the native TV presentation is flattened.
 Transport marks stack the complete drive symbol above their label with balanced
 vertical padding.
 The decoded cache is capped at 16 MiB; the bounded disk derivative cache at 8 MiB.
@@ -1189,8 +1191,9 @@ first frame synchronously from decoded memory; disk reads, decoding and composit
 remain asynchronous and off the main thread.
 Keys include the Home profile scope, account, effective server user, library and
 credential revision. No authenticated artwork URLs are persisted by this cache.
-Focus changes do not reload or compose artwork. Native TV posters receive the
-same cached bitmap as mobile/custom cards; clipping and focus geometry stay unchanged.
+Focus changes do not reload or compose artwork. Native TV posters prepare their
+opaque presentation from the same cached source bitmap used by mobile/custom cards.
+Captions and provider marks remain outside the focused artwork.
 
 Home gives inventory, each global feed, and per-library rows independent queues
 of at most five operations each. Slow resume feeds cannot occupy the slots
@@ -1522,6 +1525,12 @@ non-16:9 sources. Hero + Showcase transition overscan extends the image's top ed
 above that slot instead of enlarging and lifting the resting image. Standalone
 Showcase and Reduce Motion preserve the same uncropped framing; carousel artwork
 keeps its existing fill treatment.
+Landscape heroes check usable library and online backdrops before accepting a
+portrait or square fallback. Source preference still chooses between landscape
+images; a cached online miss and its poster fallback cannot hide a server backdrop.
+Poster-only titles retain artwork, and mobile's explicitly compact portrait heroes
+keep their existing selection policy. Preview, handoff, and resolved-image memo
+identities preserve that distinction.
 Crossfade is the only Showcase backdrop transition. The retired slide preference
 is ignored when reading older settings without resetting the remaining choices.
 Showcase's optional titles under cards follow Appearance > Cards;

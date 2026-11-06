@@ -543797,6 +543797,226 @@
         }
       }
     },
+    "Nothing else to continue" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "لا توجد عناوين أخرى لمتابعة مشاهدتها"
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Няма други заглавия за доглеждане"
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "No hi ha més títols per continuar veient"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Žádné další rozkoukané tituly"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ingen andre titler at se videre på"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Keine weiteren Titel zum Weiterschauen"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Δεν υπάρχει κάτι άλλο για να συνεχίσετε"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "No hay nada más que seguir viendo"
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "مورد دیگری برای ادامهٔ تماشا نیست"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ei muuta jatkettavaa"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Rien d’autre à reprendre"
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "אין עוד תכנים להמשך צפייה"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "देखना जारी रखने के लिए और कुछ नहीं है"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nema više sadržaja za nastavak gledanja"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nincs több folytatható tartalom"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Tidak ada tontonan lain untuk dilanjutkan"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nient'altro da riprendere"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "続きから再生できる作品は他にありません"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "이어 볼 다른 콘텐츠가 없습니다"
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Tiada lagi tontonan untuk disambung"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ingen flere titler å se videre på"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Geen andere titels om verder te bekijken"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Brak innych tytułów do wznowienia"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nada mais para continuar assistindo"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nu mai sunt titluri de reluat"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Больше нет видео для продолжения просмотра"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Žiadne ďalšie rozpozerané tituly"
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ni več vsebin za nadaljevanje ogleda"
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nema više sadržaja za nastavak gledanja"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Inget mer att fortsätta titta på"
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ไม่มีรายการอื่นให้ดูต่อ"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "İzlemeye devam edilecek başka içerik yok"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Немає інших відео для продовження перегляду"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Không còn nội dung nào để xem tiếp"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "没有其他可继续观看的内容"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "沒有其他可繼續觀看的內容"
+          }
+        }
+      }
+    },
     "Nothing here yet." : {
       "localizations" : {
         "ar" : {
@@ -593451,6 +593671,226 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "播放器方向"
+          }
+        }
+      }
+    },
+    "Player tabs" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "علامات تبويب المشغّل"
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Раздели на плейъра"
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Pestanyes del reproductor"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Karty přehrávače"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Faner i afspilleren"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Player-Tabs"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Καρτέλες αναπαραγωγέα"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Pestañas del reproductor"
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "زبانه‌های پخش‌کننده"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Soittimen välilehdet"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Onglets du lecteur"
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "לשוניות הנגן"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "प्लेयर टैब"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Kartice reproduktora"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "A lejátszó lapjai"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Tab pemutar"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Schede del riproduttore"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "プレーヤーのタブ"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "플레이어 탭"
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Tab pemain media"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Avspillerfaner"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Tabbladen in de speler"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Karty odtwarzacza"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Abas do reprodutor"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Filele playerului"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Вкладки плеера"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Karty prehrávača"
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zavihki predvajalnika"
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Kartice plejera"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Flikar i spelaren"
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "แท็บเครื่องเล่น"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Oynatıcı sekmeleri"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Вкладки програвача"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Thẻ trình phát"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "播放器标签页"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "播放器分頁"
           }
         }
       }
@@ -1088070,6 +1088510,1106 @@
         }
       }
     },
+    "player tabs show hide cast actors people" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "مشغّل علامات تبويب إظهار إخفاء الممثلون طاقم تمثيل ممثلون أشخاص"
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "плейър раздели показване скриване актьорски състав актьори хора"
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "reproductor pestanyes mostra amaga repartiment actors persones"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "přehrávač karty zobrazit skrýt obsazení herci lidé"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "afspiller faner vis skjul medvirkende skuespillere personer"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "player tabs anzeigen einblenden ausblenden besetzung schauspieler personen"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "αναπαραγωγέας καρτέλες εμφάνιση απόκρυψη πρωταγωνιστές ηθοποιοί άτομα"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "reproductor pestañas mostrar ocultar reparto actores personas"
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "پخش‌کننده زبانه‌ها نمایش پنهان کردن بازیگران هنرپیشه‌ها افراد"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "soitin välilehdet näytä piilota näyttelijäkaarti näyttelijät henkilöt"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "lecteur onglets afficher masquer distribution acteurs personnes"
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "נגן לשוניות הצגה הסתרה צוות שחקנים אנשים"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "प्लेयर टैब दिखाएँ छिपाएँ कलाकार अभिनेता लोग"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "reproduktor kartice prikaži sakrij glumačka postava glumci osobe"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "lejátszó lapok fülek megjelenítés elrejtés szereplők színészek személyek"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "pemutar tab tampilkan sembunyikan pemeran aktor orang"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "riproduttore schede mostra nascondi cast attori persone"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "プレーヤー タブ 表示 非表示 キャスト 出演者 俳優 人物"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "플레이어 탭 표시 숨기기 출연진 배우 사람"
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "pemain media tab tunjuk sembunyikan pelakon orang"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "avspiller faner vis skjul medvirkende skuespillere personer"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "speler tabbladen tonen verbergen rolverdeling acteurs personen"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "odtwarzacz karty pokaż ukryj obsada aktorzy osoby"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "reprodutor abas mostrar ocultar elenco atores pessoas"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "player file afișare ascundere distribuție actori persoane"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "плеер вкладки показать скрыть в ролях актёры люди"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "prehrávač karty zobraziť skryť obsadenie herci ľudia"
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "predvajalnik zavihki prikaži skrij igralska zasedba igralci ljudje"
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "plejer kartice prikaži sakrij uloge glumci ljudi"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "spelare flikar visa dölj skådespelare rollista personer"
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "เครื่องเล่น แท็บ แสดง ซ่อน นักแสดง ผู้แสดง บุคคล"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "oynatıcı sekmeler göster gizle oyuncular aktörler kişiler"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "програвач вкладки показати приховати акторський склад актори люди"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "trình phát thẻ hiển thị ẩn dàn diễn viên diễn viên người"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "播放器 标签页 显示 隐藏 演员表 演员 人物"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "播放器 分頁 顯示 隱藏 演員 演員陣容 人物"
+          }
+        }
+      }
+    },
+    "player tabs show hide chapters scenes navigation" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "مشغّل علامات تبويب إظهار إخفاء الفصول فصول مشاهد تنقّل"
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "плейър раздели показване скриване глави сцени навигация"
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "reproductor pestanyes mostra amaga capítols escenes navegació"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "přehrávač karty zobrazit skrýt kapitoly scény navigace"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "afspiller faner vis skjul kapitler scener navigation"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "player tabs anzeigen einblenden ausblenden kapitel szenen navigation"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "αναπαραγωγέας καρτέλες εμφάνιση απόκρυψη κεφάλαια σκηνές πλοήγηση"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "reproductor pestañas mostrar ocultar capítulos escenas navegación"
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "پخش‌کننده زبانه‌ها نمایش پنهان کردن فصل‌ها صحنه‌ها پیمایش"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "soitin välilehdet näytä piilota luvut kohtaukset navigointi"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "lecteur onglets afficher masquer chapitres scènes navigation"
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "נגן לשוניות הצגה הסתרה פרקים סצנות ניווט"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "प्लेयर टैब दिखाएँ छिपाएँ अध्याय दृश्य नेविगेशन"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "reproduktor kartice prikaži sakrij poglavlja scene navigacija"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "lejátszó lapok fülek megjelenítés elrejtés fejezetek jelenetek navigáció"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "pemutar tab tampilkan sembunyikan bab adegan navigasi"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "riproduttore schede mostra nascondi capitoli scene navigazione"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "プレーヤー タブ 表示 非表示 チャプター シーン ナビゲーション"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "플레이어 탭 표시 숨기기 챕터 장면 탐색"
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "pemain media tab tunjuk sembunyikan bab adegan navigasi"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "avspiller faner vis skjul kapitler scener navigasjon"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "speler tabbladen tonen verbergen hoofdstukken scènes navigatie"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "odtwarzacz karty pokaż ukryj rozdziały sceny nawigacja"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "reprodutor abas mostrar ocultar capítulos cenas navegação"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "player file afișare ascundere capitole scene navigare"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "плеер вкладки показать скрыть главы сцены навигация"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "prehrávač karty zobraziť skryť kapitoly scény navigácia"
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "predvajalnik zavihki prikaži skrij poglavja prizori navigacija"
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "plejer kartice prikaži sakrij poglavlja scene navigacija"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "spelare flikar visa dölj kapitel scener navigering"
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "เครื่องเล่น แท็บ แสดง ซ่อน บท ฉาก การนำทาง"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "oynatıcı sekmeler göster gizle bölümler sahneler gezinme"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "програвач вкладки показати приховати розділи сцени навігація"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "trình phát thẻ hiển thị ẩn chương cảnh điều hướng"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "播放器 标签页 显示 隐藏 章节 场景 导航"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "播放器 分頁 顯示 隱藏 章節 場景 導覽"
+          }
+        }
+      }
+    },
+    "player tabs show hide continue watching switch title resume another movie show" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "مشغّل علامات تبويب إظهار إخفاء متابعة المشاهدة تبديل عنوان استئناف تشغيل فيلم آخر مسلسل آخر"
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "плейър раздели показване скриване продължи гледането смяна заглавие продължаване възпроизвеждане друг филм сериал"
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "reproductor pestanyes mostra amaga continua veient canviar títol reprendre reproducció altra pel·lícula sèrie"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "přehrávač karty zobrazit skrýt pokračovat ve sledování přepnout titul pokračovat v přehrávání jiný film seriál"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "afspiller faner vis skjul fortsæt med at se se videre skift titel genoptag afspilning anden film serie"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "player tabs anzeigen einblenden ausblenden weiterschauen titel wechseln wiedergabe fortsetzen anderer film serie"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "αναπαραγωγέας καρτέλες εμφάνιση απόκρυψη συνέχεια παρακολούθησης αλλαγή τίτλου συνέχιση αναπαραγωγής άλλη ταινία σειρά"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "reproductor pestañas mostrar ocultar seguir viendo cambiar de título reanudar reproducción otra película serie"
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "پخش‌کننده زبانه‌ها نمایش پنهان کردن ادامهٔ تماشا تعویض عنوان ازسرگیری پخش فیلم سریال دیگر"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "soitin välilehdet näytä piilota jatka katsomista vaihda nimikettä jatka toistoa toinen elokuva sarja"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "lecteur onglets afficher masquer continuer à regarder changer de titre reprendre la lecture autre film série"
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "נגן לשוניות הצגה הסתרה המשך צפייה החלפת כותר חידוש ניגון סרט סדרה אחרים"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "प्लेयर टैब दिखाएँ छिपाएँ देखना जारी रखें शीर्षक बदलें प्लेबैक फिर शुरू करें दूसरी फ़िल्म कार्यक्रम सीरीज़"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "reproduktor kartice prikaži sakrij nastavi gledati promijeni naslov nastavi reprodukciju drugi film serija"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "lejátszó lapok fülek megjelenítés elrejtés megtekintés folytatása címváltás lejátszás folytatása másik film sorozat"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "pemutar tab tampilkan sembunyikan lanjutkan menonton ganti judul lanjutkan pemutaran film lain acara serial"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "riproduttore schede mostra nascondi continua a guardare cambia titolo riprendi riproduzione altro film serie"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "プレーヤー タブ 表示 非表示 続きを見る タイトル 作品 切り替え 再生再開 別の映画 番組"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "플레이어 탭 표시 숨기기 시청 중인 콘텐츠 제목 전환 재생 재개 다른 영화 프로그램"
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "pemain media tab tunjuk sembunyikan teruskan menonton tukar tajuk sambung main filem rancangan lain"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "avspiller faner vis skjul se videre bytt tittel gjenoppta avspilling annen film serie"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "speler tabbladen tonen verbergen verder kijken titel wisselen afspelen hervatten andere film serie"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "odtwarzacz karty pokaż ukryj oglądaj dalej zmień tytuł wznów odtwarzanie inny film serial"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "reprodutor abas mostrar ocultar continuar assistindo trocar título retomar reprodução outro filme série"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "player file afișare ascundere continuă vizionarea trecere la alt titlu reluare redare film serial"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "плеер вкладки показать скрыть продолжить просмотр переключение на другое видео возобновить воспроизведение фильм сериал"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "prehrávač karty zobraziť skryť pokračovať v sledovaní prepnúť titul pokračovať v prehrávaní iný film seriál"
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "predvajalnik zavihki prikaži skrij nadaljuj z gledanjem preklop na drug naslov nadaljevanje predvajanja film serija"
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "plejer kartice prikaži sakrij nastavi gledanje prelazak na drugi naslov nastavak reprodukcije film serija"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "spelare flikar visa dölj fortsätt titta byt titel återuppta uppspelning annan film serie"
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "เครื่องเล่น แท็บ แสดง ซ่อน ดูต่อ เปลี่ยนเรื่อง เล่นต่อ ภาพยนตร์อื่น รายการอื่น"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "oynatıcı sekmeler göster gizle izlemeye devam et içerik değiştir oynatmaya devam et başka film dizi"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "програвач вкладки показати приховати продовжити перегляд перемкнути відео відновити відтворення інший фільм серіал"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "trình phát thẻ hiển thị ẩn xem tiếp chuyển nội dung tiếp tục phát phim khác chương trình khác"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "播放器 标签页 显示 隐藏 继续观看 切换内容 恢复播放 其他电影 剧集"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "播放器 分頁 顯示 隱藏 繼續觀看 切換內容 恢復播放 其他電影 節目 影集"
+          }
+        }
+      }
+    },
+    "player tabs show hide episodes season series navigation" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "مشغّل علامات تبويب إظهار إخفاء الحلقات حلقات موسم مسلسل تنقّل"
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "плейър раздели показване скриване епизоди сезон сериал навигация"
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "reproductor pestanyes mostra amaga episodis temporada sèrie navegació"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "přehrávač karty zobrazit skrýt díly epizody sezóna seriál navigace"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "afspiller faner vis skjul episoder sæson serie navigation"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "player tabs anzeigen einblenden ausblenden folgen episoden staffel serie navigation"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "αναπαραγωγέας καρτέλες εμφάνιση απόκρυψη επεισόδια σεζόν σειρές πλοήγηση"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "reproductor pestañas mostrar ocultar episodios temporada series navegación"
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "پخش‌کننده زبانه‌ها نمایش پنهان کردن قسمت‌ها فصل سریال پیمایش"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "soitin välilehdet näytä piilota jaksot kausi sarja navigointi"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "lecteur onglets afficher masquer épisodes saison série navigation"
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "נגן לשוניות הצגה הסתרה פרקים עונה סדרה ניווט"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "प्लेयर टैब दिखाएँ छिपाएँ एपिसोड सीज़न सीरीज़ नेविगेशन"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "reproduktor kartice prikaži sakrij epizode sezona serija navigacija"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "lejátszó lapok fülek megjelenítés elrejtés epizódok évad sorozat navigáció"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "pemutar tab tampilkan sembunyikan episode musim serial navigasi"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "riproduttore schede mostra nascondi episodi stagione serie navigazione"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "プレーヤー タブ 表示 非表示 エピソード シーズン シリーズ ナビゲーション"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "플레이어 탭 표시 숨기기 에피소드 시즌 시리즈 탐색"
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "pemain media tab tunjuk sembunyikan episod musim siri navigasi"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "avspiller faner vis skjul episoder sesong serie navigasjon"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "speler tabbladen tonen verbergen afleveringen seizoen serie navigatie"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "odtwarzacz karty pokaż ukryj odcinki sezon serial nawigacja"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "reprodutor abas mostrar ocultar episódios temporada série navegação"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "player file afișare ascundere episoade sezon serial navigare"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "плеер вкладки показать скрыть эпизоды сезон сериал навигация"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "prehrávač karty zobraziť skryť diely sezóna seriál navigácia"
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "predvajalnik zavihki prikaži skrij epizode sezona serija navigacija"
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "plejer kartice prikaži sakrij epizode sezona serija navigacija"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "spelare flikar visa dölj avsnitt säsong serie navigering"
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "เครื่องเล่น แท็บ แสดง ซ่อน ตอน ซีซัน ซีรีส์ การนำทาง"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "oynatıcı sekmeler göster gizle bölümler sezon dizi gezinme"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "програвач вкладки показати приховати епізоди сезон серіал навігація"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "trình phát thẻ hiển thị ẩn các tập mùa phim bộ điều hướng"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "播放器 标签页 显示 隐藏 单集 季 剧集 导航"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "播放器 分頁 顯示 隱藏 集數 季 影集 導覽"
+          }
+        }
+      }
+    },
+    "player tabs show hide playlist queue navigation" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "مشغّل علامات تبويب إظهار إخفاء قائمة التشغيل قائمة انتظار تنقّل"
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "плейър раздели показване скриване плейлист опашка навигация"
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "reproductor pestanyes mostra amaga llista de reproducció cua navegació"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "přehrávač karty zobrazit skrýt seznam přehrávání playlist fronta navigace"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "afspiller faner vis skjul afspilningsliste kø navigation"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "player tabs anzeigen einblenden ausblenden wiedergabeliste warteschlange navigation"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "αναπαραγωγέας καρτέλες εμφάνιση απόκρυψη λίστα αναπαραγωγής ουρά αναπαραγωγής πλοήγηση"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "reproductor pestañas mostrar ocultar lista de reproducción cola de reproducción navegación"
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "پخش‌کننده زبانه‌ها نمایش پنهان کردن فهرست پخش صف پخش پیمایش"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "soitin välilehdet näytä piilota soittolista toistojono navigointi"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "lecteur onglets afficher masquer liste de lecture file d’attente navigation"
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "נגן לשוניות הצגה הסתרה פלייליסט תור ניגון ניווט"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "प्लेयर टैब दिखाएँ छिपाएँ प्लेलिस्ट कतार नेविगेशन"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "reproduktor kartice prikaži sakrij popis za reprodukciju red čekanja navigacija"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "lejátszó lapok fülek megjelenítés elrejtés lejátszási lista várólista navigáció"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "pemutar tab tampilkan sembunyikan daftar putar antrean navigasi"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "riproduttore schede mostra nascondi playlist coda navigazione"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "プレーヤー タブ 表示 非表示 プレイリスト キュー 再生待ち ナビゲーション"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "플레이어 탭 표시 숨기기 재생 목록 대기열 탐색"
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "pemain media tab tunjuk sembunyikan senarai main baris gilir navigasi"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "avspiller faner vis skjul spilleliste kø navigasjon"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "speler tabbladen tonen verbergen afspeellijst wachtrij navigatie"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "odtwarzacz karty pokaż ukryj lista odtwarzania kolejka nawigacja"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "reprodutor abas mostrar ocultar lista de reprodução fila navegação"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "player file afișare ascundere listă de redare coadă de redare navigare"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "плеер вкладки показать скрыть плейлист очередь навигация"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "prehrávač karty zobraziť skryť zoznam prehrávania front poradie navigácia"
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "predvajalnik zavihki prikaži skrij seznam predvajanja čakalna vrsta navigacija"
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "plejer kartice prikaži sakrij lista za reprodukciju red za reprodukciju navigacija"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "spelare flikar visa dölj spellista kö navigering"
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "เครื่องเล่น แท็บ แสดง ซ่อน เพลย์ลิสต์ คิว การนำทาง"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "oynatıcı sekmeler göster gizle oynatma listesi kuyruk gezinme"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "програвач вкладки показати приховати список відтворення черга навігація"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "trình phát thẻ hiển thị ẩn danh sách phát hàng đợi điều hướng"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "播放器 标签页 显示 隐藏 播放列表 队列 导航"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "播放器 分頁 顯示 隱藏 播放清單 佇列 導覽"
+          }
+        }
+      }
+    },
     "player.cast.noDetails" : {
       "comment" : "Shown in the in-player cast card when no source has a biography or other titles for this person.",
       "extractionState" : "extracted_with_value",
@@ -1088977,6 +1090517,234 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "演員"
+          }
+        }
+      }
+    },
+    "player.category.continueWatching" : {
+      "comment" : "Tab beneath the in-player scrub bar listing titles to switch to and resume.",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Continue Watching"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "متابعة المشاهدة"
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Продължи гледането"
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Continua veient"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Pokračovat ve sledování"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Fortsæt med at se"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Weiterschauen"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Συνέχεια παρακολούθησης"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Seguir viendo"
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ادامهٔ تماشا"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Jatka katsomista"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Reprendre la lecture"
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "המשך צפייה"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "देखना जारी रखें"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nastavi gledati"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Megtekintés folytatása"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Lanjutkan Menonton"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Continua a guardare"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "続きを見る"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "시청 중인 콘텐츠"
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Teruskan Menonton"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Se videre"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Verder kijken"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Oglądaj dalej"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Continuar assistindo"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Continuă vizionarea"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Продолжить просмотр"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Pokračovať v sledovaní"
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nadaljuj z gledanjem"
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nastavi gledanje"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Fortsätt titta"
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ดูต่อ"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "İzlemeye devam et"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Продовжити перегляд"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Xem tiếp"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "继续观看"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "繼續觀看"
           }
         }
       }

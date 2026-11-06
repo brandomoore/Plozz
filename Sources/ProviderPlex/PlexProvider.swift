@@ -2726,7 +2726,7 @@ public struct PlexProvider: MediaProvider, AuthenticatedHTTPOriginProviding, Ser
         return MediaTrack(
             id: dto.index ?? dto.id ?? 0,
             kind: isSubtitle ? .subtitle : .audio,
-            displayTitle: isSubtitle ? title : TrackLabeling.audioDisplayTitle(
+            displayTitle: TrackLabeling.trackDisplayTitle(
                 title, sourceTitles: [dto.title, dto.displayTitle]
             ),
             language: language,

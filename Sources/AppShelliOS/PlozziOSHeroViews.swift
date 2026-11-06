@@ -1137,6 +1137,7 @@ private struct PlozziOSHeroBackdrop: View {
     private func stillArtwork() -> some View {
         FallbackAsyncImage(
             references: presentation.artworkReferences(settings: artworkPolicy.settings, in: artworkPolicy.area),
+            prefersLandscape: style != .compactPortrait,
             maxAspectRatio: 3,
             variant: .heroBackdrop,
             // Put a real picture up while the 2000px pass decodes, rather

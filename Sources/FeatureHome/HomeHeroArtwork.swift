@@ -48,12 +48,8 @@ enum HomeHeroArtwork {
         case .folder, .collection, .unknown: return nil
         default: break
         }
-        // art → TMDb hero → the item's own poster. Some titles (e.g. a Plex movie
-        // with a poster but no fanart/`art`) have no landscape backdrop anywhere;
-        // rather than leave the hero blank, fall back to the poster so the user
-        // still sees the artwork the server does have. Only reached when the
-        // primary backdrop URLs fail, so a title with real backdrop art is
-        // unaffected.
+        // The resolver keeps an online poster as a last resort, after checking
+        // library backdrops even when online artwork is preferred.
         return {
             await ArtworkRouter.shared.heroArtworkURL(
                 for: item,
@@ -89,6 +85,7 @@ enum HomeHeroArtwork {
         )
         _ = await ArtworkFirstPaintResolver.resolve(
             references: references, variant: .heroPreview, maxAspectRatio: HeroBackdropArtworkPolicy.maxAspectRatio,
+            prefersLandscape: true,
             asyncOnlineURL: backdropLookup.map { lookup in
                 { await ArtworkSession.resolveArtwork(background: true, lookup) }
             },

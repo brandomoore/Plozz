@@ -52,12 +52,14 @@ struct DetailBackdropArtworkSource {
         key = ArtworkResolveKey.make(
             references: references, variant: .heroBackdrop, maxAspectRatio: 3,
             pinIdentity: pinIdentity,
-            providerPolicyIdentity: ArtworkResolveKey.policyIdentity(settings)
+            providerPolicyIdentity: ArtworkResolveKey.policyIdentity(settings),
+            prefersLandscape: true
         )
         previewKey = ArtworkResolveKey.make(
             references: references, variant: .heroPreview, maxAspectRatio: 3,
             pinIdentity: pinIdentity,
-            providerPolicyIdentity: ArtworkResolveKey.policyIdentity(settings)
+            providerPolicyIdentity: ArtworkResolveKey.policyIdentity(settings),
+            prefersLandscape: true
         )
     }
 }
@@ -78,6 +80,7 @@ final class DetailBackdropArtworkRequest {
         task = Task {
             await ArtworkFirstPaintResolver.resolve(
                 references: source.references, variant: .heroPreview, maxAspectRatio: 3,
+                prefersLandscape: true,
                 asyncOnlineURL: fallback,
                 prefersOnlineArtwork: source.settings.preferOnlineArtwork
             )
@@ -129,6 +132,7 @@ fileprivate final class DetailBackdropWarmup {
         task = Task(priority: .utility) {
             await ArtworkFirstPaintResolver.resolve(
                 references: source.references, variant: .heroPreview, maxAspectRatio: 3,
+                prefersLandscape: true,
                 asyncOnlineURL: fallback,
                 prefersOnlineArtwork: source.settings.preferOnlineArtwork,
                 background: true
@@ -333,6 +337,7 @@ public struct HeroBackdropLayer<Video: View>: View {
     public var body: some View {
         FallbackAsyncImage(
             references: references,
+            prefersLandscape: true,
             maxAspectRatio: 3.0,
             variant: .heroBackdrop,
             // Put a real image up while the 2000px pass decodes. Home's hero has

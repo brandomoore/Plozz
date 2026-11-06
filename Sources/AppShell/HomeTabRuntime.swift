@@ -23,6 +23,11 @@ struct HomeTabRuntime {
     let homeViewModel: LazyViewState<HomeViewModel>
     /// Identity of the account/profile scope the view model belongs to.
     let scopeKey: String
+    /// Home's Continue Watching row as shown, for the player (#388).
+    @MainActor var continueWatchingRow: [MediaItem] {
+        homeViewModel.existingValue(forKey: scopeKey)?.state.value?.continueWatching ?? []
+    }
+
     @MainActor var continueWatchingForDetail: [MediaItem] {
         homeViewModel.existingValue(forKey: scopeKey)?.continueWatchingForDetail ?? []
     }

@@ -2783,7 +2783,7 @@ public struct JellyfinProvider: MediaProvider, ServerRatingsProviding, SeriesRes
         return MediaTrack(
             id: dto.Index,
             kind: isSubtitle ? .subtitle : .audio,
-            displayTitle: isSubtitle ? title : TrackLabeling.audioDisplayTitle(title, sourceTitles: [dto.Title]),
+            displayTitle: TrackLabeling.trackDisplayTitle(title, sourceTitles: [dto.Title]),
             language: dto.Language,
             codec: dto.Codec,
             profile: isSubtitle ? nil : MediaSourceMetadata.audioProfile(
@@ -2821,7 +2821,9 @@ public struct JellyfinProvider: MediaProvider, ServerRatingsProviding, SeriesRes
         return MediaTrack(
             id: dto.Index,
             kind: .subtitle,
-            displayTitle: dto.DisplayTitle ?? dto.Language ?? dto.Codec ?? "Track \(dto.Index)",
+            displayTitle: TrackLabeling.trackDisplayTitle(
+                dto.DisplayTitle ?? dto.Language ?? dto.Codec ?? "Track \(dto.Index)", sourceTitles: [dto.Title]
+            ),
             language: dto.Language,
             codec: dto.Codec,
             isDefault: dto.IsDefault ?? false,

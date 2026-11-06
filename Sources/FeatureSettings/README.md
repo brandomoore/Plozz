@@ -7,6 +7,10 @@ system green appearance instead of inheriting the page's monochrome navigation t
 
 The Settings screen and its detail pages. Profile-aware and integration-aware.
 
+Playback groups its five optional **Player tabs** in one shared control surface
+on TV and mobile. Labels match the player tabs, Info stays always available, and
+visibility preferences are independent of autoplay and Up Next behavior.
+
 Movie & show details → Trailers & music is the shared destination for trailer
 availability, independent Home autoplay and detail background playback. Home →
 Hero links to the same controls. Off suppresses trailer lookups, manual actions,

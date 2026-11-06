@@ -869,6 +869,13 @@ public struct RootView: View {
         .environment(\.plozzCardStyle, appState.profileSettings.cardStyleModel.style)
         .environment(\.plozzCardCaptionSettings, appState.profileSettings.cardStyleModel.captions)
         .environment(
+            \.plozzContinueWatchingPresentation,
+            ContinueWatchingPresentation(
+                visibility: appState.profileSettings.homeLibraryVisibilityModel.visibility,
+                isShowcase: appState.profileSettings.heroSettingsModel.settings.immersiveRows
+            )
+        )
+        .environment(
             \.plozzContinueWatchingPlaybackDetails,
             appState.profileSettings.homeLibraryVisibilityModel.continueWatchingPlaybackDetails
         )

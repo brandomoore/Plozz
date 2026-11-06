@@ -456,6 +456,7 @@ final class NativeFocusRequestHostedTests: XCTestCase {
                         XCTAssertEqual(controls.filter(\.isEnabled).count, 1, label)
                         if cardStyle == .borderless {
                             let poster = try XCTUnwrap(control as? NativePosterButton, label)
+                            XCTAssertFalse(poster.artworkView.masksFocusEffectToContents, label)
                             let aspect: CGFloat = style == .poster ? 2 / 3
                                 : seriesArtwork ? ContinueWatchingCardShape.aspectRatio : 16 / 9
                             XCTAssertEqual(poster.artworkView.bounds.width / poster.artworkView.bounds.height,
@@ -540,18 +541,24 @@ final class NativeFocusRequestHostedTests: XCTestCase {
 
     private final class BitmapProbe {
         var createdImages: [UIImage?] = []
+        var createdIdentities: [String?] = []
+        var updates: [(image: UIImage?, identity: String?)] = []
     }
 
     private struct BitmapCreationProbe: UIViewRepresentable {
         let image: UIImage?
+        let identity: String?
         let probe: BitmapProbe
 
         func makeUIView(context: Context) -> UIView {
             probe.createdImages.append(image)
+            probe.createdIdentities.append(identity)
             return UIView()
         }
 
-        func updateUIView(_ view: UIView, context: Context) {}
+        func updateUIView(_ view: UIView, context: Context) {
+            probe.updates.append((image, identity))
+        }
     }
 
     private final class LogoHostProbe {
@@ -651,9 +658,9 @@ final class NativeFocusRequestHostedTests: XCTestCase {
                 pinIdentity: "native-bitmap-fixture",
                 content: { _ in EmptyView() }, placeholder: { EmptyView() }
             )
-            .resolvedBitmap { image in
+            .resolvedBitmap { image, identity in
                 NativeTVPoster(
-                    image: image, treatment: .original, aspectRatio: 2.0 / 3,
+                    image: image, artworkIdentity: identity, treatment: .original, aspectRatio: 2.0 / 3,
                     fallbackWidth: 280, title: .content("Native artwork"), subtitle: nil,
                     overlay: EmptyView(), focus: $focused, action: {}
                 )
@@ -756,12 +763,13 @@ final class NativeFocusRequestHostedTests: XCTestCase {
         let host = UIHostingController(rootView: FallbackAsyncImage(
             references: [reference], variant: .posterCard, artworkPolicy: policy, pinIdentity: identity,
             content: { _ in EmptyView() }, placeholder: { EmptyView() }
-        ).resolvedBitmap { value in
-            BitmapCreationProbe(image: value, probe: probe)
+        ).resolvedBitmap { value, identity in
+            BitmapCreationProbe(image: value, identity: identity, probe: probe)
         })
         _ = host.sizeThatFits(in: CGSize(width: 280, height: 420))
         XCTAssertEqual(probe.createdImages.count, 1)
         XCTAssertTrue(probe.createdImages.first.flatMap { $0 } === image)
+        XCTAssertEqual(probe.createdIdentities.first.flatMap { $0 }, key)
     }
 
     func testBitmapArrivalPreservesTheNativeFocusOwner() async throws {
@@ -796,6 +804,46 @@ final class NativeFocusRequestHostedTests: XCTestCase {
         XCTAssertTrue(original.isFocused)
         XCTAssertNil(outerResolution.image, "Native cards must not publish into an ancestor artwork bridge.")
         XCTAssertFalse(outerResolution.isResolved)
+    }
+
+    func testProgressiveBitmapKeepsTheDisplayedResolverIdentity() async throws {
+        let fixture = try await makeFixture()
+        defer { fixture.close() }
+        let preview = UIGraphicsImageRenderer(size: CGSize(width: 100, height: 150)).image {
+            UIColor.blue.setFill()
+            $0.fill(CGRect(x: 0, y: 0, width: 100, height: 150))
+        }
+        let server = try LibraryArtworkServer(images: ["art": XCTUnwrap(preview.pngData())])
+        defer { server.stop() }
+        let port = try await server.start()
+        let url = try XCTUnwrap(URL(string: "http://127.0.0.1:\(port)/art/\(UUID())"))
+        let reference = ArtworkReference.remote(url)
+        let pin = UUID().uuidString
+        let policy = ArtworkPresentationPolicy()
+        func key(_ variant: ArtworkImageVariant) -> String {
+            ArtworkResolveKey.make(
+                references: [reference], variant: variant, maxAspectRatio: nil,
+                pinIdentity: pin, providerPolicyIdentity: policy.identity
+            )
+        }
+        ArtworkSeedMemo.store(preview, reference: reference, for: key(.posterPreview))
+        let probe = BitmapProbe()
+        let host = UIHostingController(rootView: FallbackAsyncImage(
+            references: [reference], variant: .posterCard, previewVariant: .posterPreview,
+            artworkPolicy: policy, pinIdentity: pin,
+            content: { _ in EmptyView() }, placeholder: { EmptyView() }
+        ).resolvedBitmap { image, identity in
+            BitmapCreationProbe(image: image, identity: identity, probe: probe)
+        }.frame(width: 280, height: 420))
+        fixture.window.rootViewController = host
+        fixture.window.layoutIfNeeded()
+        XCTAssertTrue(probe.createdImages.first.flatMap { $0 } === preview)
+        XCTAssertEqual(probe.createdIdentities.first.flatMap { $0 }, key(.posterCard))
+        try await waitUntil {
+            probe.updates.contains { $0.image != nil && $0.image !== preview }
+        }
+        XCTAssertTrue(probe.updates.allSatisfy { $0.image != nil && $0.identity == key(.posterCard) },
+                      "Preview and full decode must share the displayed source/policy identity without an empty update.")
     }
 
     private func hasBlueArtwork(_ image: UIImage?) -> Bool {

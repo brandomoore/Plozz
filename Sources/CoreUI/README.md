@@ -40,6 +40,18 @@ Framed landscape cards, like portrait and borderless cards, fit their proposed
 slot width while retaining the artwork aspect ratio. Rails supply their normal
 fixed slots; narrower grid cells must not inherit a rail-sized minimum width.
 
+`PosterCardView.artworkOnly` renders the same artwork, spoiler protection, logo
+fallback and playback indicators inside a caller-owned button. It does not add
+Home's sizing, captions, focus target, context menu, or detail transition.
+The player uses this mode with readable, single-line playback text fitted to its
+artwork slot, rather than scaling an entire Home card. Shared fitting removes the
+play glyph and then the progress bar before reducing text. The player's final
+fallback keeps remaining time ahead of the episode qualifier; mobile Home keeps
+its existing accessibility wrapping behavior. `ContinueWatchingPresentation`
+carries the active profile's artwork choice and Home Showcase caption context
+through hosted presentation boundaries; it does not persist player-specific
+styling settings.
+
 Mobile full-width page actions use `plozzPageActionLabel()` inside a native
 `plozzPageActionButton`. The label owns body typography, multiline expansion, and a
 24-point minimum height; primary and secondary actions differ in prominence,
@@ -886,6 +898,11 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   reflections without changing the surrounding page's card policy.
   Shared hero/reflection first-paint results are qualified by source and provider
   policy so changing those settings cannot reuse a previous provider's winner.
+  Wide heroes opt into `prefersLandscape`: check both sources for a usable
+  landscape before accepting a portrait/square fallback, preserving source order
+  within each shape. Raw cached posters cannot bypass that check. Prepared images,
+  transition handoffs, and shared lookup identities include the shape preference;
+  ordinary cards and explicitly compact portrait heroes do not opt in.
   A pinned show identity keeps its current image visible during hydration, not
   permanently selected. New artwork references or source preferences resolve
   again before replacing it at full quality, so an early poster fallback cannot
@@ -1168,29 +1185,29 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
 - **Native poster focus** — the shared `NativeTVPoster` uses a
   `NativePosterButton`, not `TVPosterView` or a `TVCardView` ancestor. Its
   `UIImageView` retains native enlargement, remote motion and the moving
-  specular highlight. Portrait rows and native Browse cells share
+  specular highlight. Portrait, landscape, square, Continue Watching and native Browse cards share
   `NativePosterImageView` and UIKit's rectangular focus mask:
   the small native internal crop (about 1-2% in hosted measurements) is an
   intentional tradeoff for retaining that native surface.
   The alpha-derived highlight mask produced an offset crescent at extreme tilt.
-  Continue Watching, landscape/square artwork, transparent landscape library
-  covers keep their no-internal-zoom alpha-masked path.
+  Home library covers use that same rectangular surface. Transparent server
+  reflections fade onto its opaque backing rather than into the page; the source
+  artwork and the separate caption remain unchanged.
   Images arm native enlargement only on actual focus and release it after the
   current native defocus animation completes. This applies to opaque portraits
   too: arming them before focus can mount untouched lazy-row cards already lifted.
   A resting-only rounded clip preserves their corners while native effects are
   disarmed. It is removed before focus, so it never trims enlargement or tilt;
   stale animation completions cannot restore it during a newer transition.
-  Portrait artwork and placeholders are opaque rectangles. Pre-rounded alpha
+  Ordinary native poster artwork and placeholders are opaque rectangles. Pre-rounded alpha
   pixels beneath the focused native mask create
   a second corner silhouette that can separate from the highlight. Transparent
-  portrait sources receive the same dark backing as missing artwork.
-  Alpha-masked landscape/square artwork remains rounded in the bitmap.
+  sources receive the same dark backing as missing artwork.
   Native loading cards bake their neutral fill into that same artwork plane.
   Only the spinner belongs on the nearer overlay plane; a full rounded fill
   there scales independently and exposes the underlying image as an extra rim.
   Corner flags, count-tile backgrounds and legibility washes are composited into
-  the artwork itself. Portrait count digits and floating status/library marks
+  the artwork itself. Count digits and floating status/library marks at every aspect
   use a cached foreground on `overlayContentView`. That surface receives a nearer
   native depth projection; its badge alone is aligned to the public artwork
   viewport so it does not drift outside the image.
@@ -1215,8 +1232,8 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   Its adaptive logo dimming and the shared bottom scrim
   are drawn into the artwork; projecting those backgrounds with the live overlay
   creates a dark rim outside the focused image. Captions stay outside it. Transparent
-  landscape artwork retains its alpha, and protected/extended artwork is prepared before
-  normalization. Portrait count tiles stay flush. Their digits center inside the
+  artwork receives an opaque backing, and protected/extended artwork is prepared before
+  normalization. Count tiles stay flush. Their digits center inside the
   visible tile using the native crop allowance (2pt horizontally, aspect-scaled
   vertically). Badge destination geometry updates in UIKit's focus coordinator
   at the focus event, not in a completion callback. The poster and foreground
@@ -1227,8 +1244,7 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   playback progress or download state. Different posters with identical badges
   reuse the same concrete pixels; status/count, environment, size and scale
   changes still invalidate them. Background and combined layers retain all
-  progress, download and scrim inputs. Mobile and
-  landscape cards keep their combined indicator rendering.
+  progress, download and scrim inputs. Mobile keeps its combined indicator rendering.
   The button keeps the existing artwork slot and committed-bounds bitmap
   preparation, preserving row pitch and captions.
   SwiftUI measurement is side-effect-free: candidate widths never resize the
@@ -1240,8 +1256,12 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   Browse, never synchronously inside native poster layout. The existing native
   image view receives the finished pixels without replacing its focus owner.
   Identical pending requests coalesce; replacement, detachment and dismantling
-  cancel work, and generation checks reject stale completions. A replacement
-  shows a safe placeholder rather than the previous title or unprotected artwork.
+  cancel work, and generation checks reject stale completions. Same-artwork
+  chrome changes and progressive preview upgrades retain the last completed
+  pixels while composing. Background and badge foreground publish together.
+  Progressive retention uses the resolver's displayed source/policy key, which
+  includes the account-qualified artwork identity. A different subject, treatment,
+  size or scale shows a safe placeholder rather than stale or unprotected artwork.
   SwiftUI indicator and protected/extended treatment preparation still requires
   the main actor. Final Home and Browse bitmaps share one memory-budgeted cache;
   warm returning artwork paints immediately, and a memory warning prevents

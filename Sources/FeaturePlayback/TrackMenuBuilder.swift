@@ -100,6 +100,7 @@ enum TrackMenuBuilder {
     /// always renders through Plozz's overlay.
     static func secondaryOptions(
         eligible: [MediaTrack],
+        providerTracks: [MediaTrack] = [],
         selectedID: Int?,
         preferred: [String?],
         detectedLanguages: [Int: String],
@@ -108,6 +109,7 @@ enum TrackMenuBuilder {
         guard !eligible.isEmpty else { return [] }
         var options = [subtitleOffOption(isSelected: selectedID == nil, locale: locale)]
         options.append(contentsOf: eligible.sortedByPreferredLanguage(preferred).map { track in
+            let track = track.enriched(withProvider: providerTracks.first { $0.id == track.id })
             let label = subtitlePresentation(track, detectedLanguages: detectedLanguages, locale: locale)
             return PlayerTrackOption(
                 id: track.id,
@@ -241,7 +243,7 @@ enum TrackMenuBuilder {
             resource = .init("Commentary", comment: "Audio/subtitle track qualifier for a commentary track.")
         case .autoDetected:
             resource = .init("auto", comment: "Subtitle track qualifier appended when the shown language was guessed from the file's content rather than tagged by the provider.")
-        case .format(let value), .audioVersion(let value):
+        case .format(let value), .version(let value):
             return .init(content: value)
         case .channelCount(let channels):
             resource = .init(

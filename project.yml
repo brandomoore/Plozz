@@ -568,6 +568,9 @@ targets:
     sources:
       - path: Tests/iOSPresentationTests
       - path: Tests/PlaybackPresentationSupport/PlayerSongLayoutPreviewTests.swift
+      - path: Tests/PlaybackPresentationSupport/PlayerContinueWatchingPresentationTests.swift
+      - path: Tests/CoreModelsTests/ContinueWatchingInPlayerSettingsTests.swift
+      - path: Tests/FeaturePlaybackTests/ContinueWatchingSelectionTests.swift
       - path: Tests/CoreUITests/DetailInformationPreviewTests.swift
       - path: Tests/EnginePlozzigenTests/SpatialAudioLayoutPreferenceTests.swift
       - path: Tests/FeaturePlaybackTests/NativePlaybackLifecycleTests.swift
@@ -648,6 +651,9 @@ targets:
     sources:
       - path: Tests/FocusIntegrationTests
       - path: Tests/PlaybackPresentationSupport/PlayerSongLayoutPreviewTests.swift
+      - path: Tests/PlaybackPresentationSupport/PlayerContinueWatchingPresentationTests.swift
+      - path: Tests/CoreModelsTests/ContinueWatchingInPlayerSettingsTests.swift
+      - path: Tests/FeaturePlaybackTests/ContinueWatchingSelectionTests.swift
       - path: Tests/CoreUITests/DetailInformationPreviewTests.swift
       - path: Tests/EnginePlozzigenTests/SpatialAudioLayoutPreferenceTests.swift
       - path: Tests/HomePresentationSupport

@@ -248,6 +248,52 @@ watchdog, periodic reload or engine-phase inference is added. See
 
 ## Player appearance
 
+**Continue Watching** uses Home's visible row and profile-scoped artwork, label,
+and playback-detail preferences. Artwork + logo, thumbnails and portrait posters
+reuse Home's artwork renderer, including spoiler protection and fallback rules.
+The player owns geometry: every horizontal card fills the same fixed-height
+stage as Chapters, fitting its artwork width to the measured caption and chosen
+aspect ratio. Hiding labels returns that space to the artwork. Framed cards use
+Chapters' surface and focus clearance, with the same `contentPadding` inset as
+Info. Captions add only a four-point horizontal inset; top and bottom padding stay
+equal, with no extra footer or reduction in artwork size. Hidden labels keep the
+full artwork area. Borderless cards retain their own caption padding and omit the
+glass. Reduced-transparency fallbacks remain available.
+Phone portrait keeps the existing bounded, compact vertical-list layout, with
+the same row height and natural content sizing as Chapters. Playback details
+and progress-only bars sit beside the small artwork rather than shrinking Home's overlays.
+Home's Showcase background and absolute card sizing are not copied into playback.
+Narrow artwork keeps detailed playback indicators on one line. It uses the same
+fitting order as mobile Home: drop the play glyph, then the progress bar, before
+reducing text. The fixed-height player additionally prioritizes remaining time
+over an episode qualifier rather than stacking the decorations or wrapping text.
+
+Settings > Playback > **Player tabs** controls Chapters, Cast, Episodes, Playlist,
+and Continue Watching independently on TV, iPhone, and iPad. All five default on;
+existing Continue Watching choices are preserved. Info is always available.
+The profile-scoped preferences filter the shared tab list without changing its
+order or fixed panel height. Enabled tabs still require relevant content.
+Hiding Episodes or Playlist does not disable their playback contexts, autoplay,
+or the Up Next card. If an open tab loses its content, its panel closes and a
+later TV card entry falls back to Info when the remembered tab is unavailable.
+
+The current title and other episodes from its series are excluded within their
+source account, not by raw IDs across servers. Selection uses the normal version
+preparation and authorized playback handoff, saves the outgoing position, and
+resumes the chosen title on its own provider. Missing/failed preparation is
+reported without swapping the outgoing provider. The tab remains part of the
+existing fixed-height horizontal player stage and follows the other media tabs' idle fade.
+Current-title filtering retains the playback origin account when a provider's
+fresh playback metadata has no app-owned account tag; matching IDs on other
+accounts remain available.
+`PlayerContinueWatchingModel` observes the shell's cached Home snapshot and
+playback identity, deriving the filtered row only when those inputs change.
+Controls reveal, playback-clock updates and native focus moves read the cached
+array; they do not reaggregate Home or request provider data. Replacing the source
+invalidates pending observations, and stopping releases the source and clears the
+row. Disabled playback settings never read Home. Artwork remains asynchronous
+and is mounted only with the selected, lazy Continue Watching panel.
+
 On tvOS, iPhone, and iPad, **Chapters** joins the bottom player tabs only when the
 server metadata or the playing file supplies usable chapter positions. Individual
 chapter cards use Cast's shared over-video glass, focus treatment, and reduced-effects
@@ -257,11 +303,13 @@ have thumbnails, portrait rows show left-aligned text without an artwork placeho
 and wide layouts vertically center that text in narrow, full-height glass cards.
 Text-only cards use Cast's width with a minimum text allowance on small screens;
 cards with thumbnails retain their wider artwork layout. Mixed-thumbnail lists
-retain aligned artwork slots. On tvOS, artwork cards size their width from the
-measured caption so thumbnails have equal top and side insets; the thumbnail's
+retain aligned artwork slots. All horizontal artwork cards size their width from the
+measured caption so thumbnails have equal top and side insets, using Info's
+`contentPadding` rather than a separate corner-based allowance; the thumbnail's
 continuous corner radius is the outer glass radius minus that inset.
-Chapter titles and start times share one leading text
-edge with corner-aware inner padding. They show titles (or numbered chapter labels),
+Artwork captions share one leading text edge, inset four points from the artwork.
+Their bottom inset matches the artwork's top inset.
+Cards show titles (or numbered chapter labels),
 start times, available server thumbnails, and the current chapter. On portrait iOS,
 Cast and Chapters use the same tab-to-content gap as Info, with directional scroll
 fades only at edges where more content remains.
@@ -367,7 +415,7 @@ Native and tvOS track menus share `TrackLabeling` and `TrackMenuBuilder`.
 Bare language titles no longer suppress known codec/channel facts, for example
 `English (Opus 5.1)`. Custom names and commentary are retained, existing format
 facts are not duplicated, and unknown formats are not invented.
-Explicit French audio-version tags (`VFQ`, `VFF`, `VFI`, `VFB`, `VQ`, `VOF`,
+Explicit French audio/subtitle version tags (`VFQ`, `VFF`, `VFI`, `VFB`, `VQ`, `VOF`,
 `VOQ`) survive generated server titles, matching-track provider enrichment, and
 app-locale changes. These are source-authored community conventions, rendered
 verbatim, not codec names or proof of a particular dub inferred from `fr`.
@@ -376,16 +424,23 @@ For example, `fr` plus `VFQ` and DTS six-channel metadata becomes
 conflicting provider hints. Release-wide counts such as `VF2`, subtitle labels
 such as `VOSTFR`, and encoder-name substrings do not identify an audio version.
 
-Audio display preserves explicit BCP 47 details, including Brazilian/European
+Audio and subtitle display preserve explicit BCP 47 details, including Brazilian/European
 Portuguese (`pt-BR`/`pt-PT`), Latin American/Spain Spanish (`es-419`/`es-ES`),
 Canadian/France French (`fr-CA`/`fr-FR`), and Cantonese (`yue`/`zh-yue`).
 If the OS collapses an explicit tag such as Mandarin `cmn` to a macrolanguage
 name, the supplied tag remains visible. Script subtags describe writing, not
 proof of an audio dialect; generic `zh`, `fr`, `es`, or `pt` never acquires an
 inferred regional version. Language matching, preferred ordering, selection IDs,
-and subtitle formatting are unchanged. Locale extensions such as calendar
-preferences are not audio-language details. This preserves metadata actually
+and automatic track selection are unchanged. Locale extensions such as calendar
+preferences are not track-language details. This preserves metadata actually
 supplied by the provider/engine, not distinctions missing from that metadata.
+Primary and secondary subtitle menus retain these distinctions together with
+localized Forced, SDH, Commentary, and auto-detection qualifiers and bitmap format
+hints. For example, two forced French tracks titled `French (VFF)` and
+`French (VFQ)` remain distinct as `French (VFF, Forced)` and `French (VFQ, Forced)`.
+Plex and Jellyfin/Emby preserve version tags from raw titles when their generated
+display titles omit them; matching provider tags also fill engine-label gaps.
+The secondary menu enriches only its presentation, without changing eligibility.
 
 Conventions: [French version tags](https://github.com/TRaSH-Guides/Guides/blob/master/includes/cf-descriptions/french-vfq.md),
 [BCP 47 language tags](https://www.w3.org/International/articles/language-tags/),

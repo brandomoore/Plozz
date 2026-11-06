@@ -2625,8 +2625,11 @@ struct PlozziOSPlaybackSettingsView: View {
             .settingsSearchGroup([
                 "ask-before-resuming", "version-selection", "remember-series-version", "background-audio",
                 "volume-brightness", "seek-without-pausing", "autoplay-next-episode",
-                "autoplay-next-playlist", "show-up-next-card", "up-next-lead", "cross-server-watch-sync"
+                "autoplay-next-playlist", "show-up-next-card", "up-next-lead",
+                "cross-server-watch-sync"
             ])
+
+            PlayerTabSettingsControls(model: model)
 
             SettingsSectionGroup(LocalizedStringResource(
                 "settings.section.tracks",

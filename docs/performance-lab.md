@@ -604,6 +604,26 @@ first visit per playback hierarchy, not repeated cold app launches or proof of
 second-generation Apple TV performance. Prefer this workload over repeated tab
 round trips when assessing first-use responsiveness.
 
+`player-continue-watching-controls` mounts fresh production controls with a
+cached, metadata-rich 180-item Home snapshot spanning twelve synthetic account
+identities. It reveals transport controls and makes four native focus visits
+(Continue Watching, Chapters, Continue Watching, Info), requiring populated,
+focusable card content and stable native focus. `player-continue-watching-disabled`
+uses the same snapshot with the preference disabled and visits Chapters and Info.
+Compare their transport-reveal counters, not total CPU as though they performed
+the same number of tab visits.
+
+Controls-frame readiness is polled every 20 ms; this is not input-to-presented-frame
+latency. A 2 ms main-actor heartbeat records the largest reveal/navigation gap.
+The report also counts Home snapshot reads, provider child requests, native
+focus-update duration, process CPU and resident memory. There is no video decoder,
+real server, remote artwork or full Home aggregation in this workload. One discarded
+warmup precedes five measured fresh hierarchies. Framework caches stay warm.
+The separate `testContinueWatchingPendingArtworkDoesNotBlockNativeNavigation`
+uses actual artwork requests to an owned loopback server delayed for ten seconds,
+verifying that no artwork starts just to reveal transport and that native tab
+navigation completes while the images remain pending.
+
 `native-poster-indicators` exercises the actual native-poster coordinator's
 foreground path: 72 completed overlays across 24 posters, three visible episode
 badges, and changing playback progress. Each sample uses cold geometry. The

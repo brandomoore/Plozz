@@ -651,7 +651,7 @@ struct PlaybackDetailView: View {
                         ForEach(upNextRows) { $0.detail() }
                     }
                 }.groupedContent()
-            ] + versionSelectionRows + readAheadRows + skipIntroRows + [
+            ] + playerTabRows + versionSelectionRows + readAheadRows + skipIntroRows + [
                 SettingsSplitRow(id: "seeking", title: "Seeking") {
                     SettingsControlRows {
                         ForEach(skipIntervalRows) { $0.detail() }
@@ -679,7 +679,14 @@ struct PlaybackDetailView: View {
             + scrubbingRows
             + displayFadeRows
             + upNextRows
+            + playerTabRows
             + advancedRows
+    }
+
+    var playerTabRows: [SettingsSplitRow] {
+        [SettingsSplitRow(id: "player-tabs", title: "Player tabs") {
+            PlayerTabSettingsControls(model: playback)
+        }]
     }
 
     private var advancedRows: [SettingsSplitRow] {
