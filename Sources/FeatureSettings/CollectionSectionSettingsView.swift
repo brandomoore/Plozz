@@ -93,13 +93,18 @@ struct CollectionSectionSettingsView: View {
                 .pickerStyle(.segmented)
                 .accessibilityIdentifier("collection-section-card-style")
                 if draft.cardStyle == .landscape {
-                    Picker("Title logo", selection: $draft.titleLogo) {
-                        ForEach(LandscapeTitleLogo.allCases, id: \.self) { mode in
-                            Text(mode.title).tag(mode)
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Title logo")
+                            .font(.subheadline)
+                            .plozzForeground(.secondary)
+                        Picker("Title logo", selection: $draft.titleLogo) {
+                            ForEach(LandscapeTitleLogo.allCases, id: \.self) { mode in
+                                Text(mode.title).tag(mode)
+                            }
                         }
+                        .pickerStyle(.segmented)
+                        .accessibilityIdentifier("collection-section-title-logo")
                     }
-                    .pickerStyle(.segmented)
-                    .accessibilityIdentifier("collection-section-title-logo")
                 }
                 Text(verbatim: draft.title).font(.headline)
                 previewContent

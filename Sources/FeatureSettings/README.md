@@ -567,7 +567,8 @@ watch history and planning-list behavior are documented in
   presentation as Layout (see [Home terminology](../../CONTEXT.md)). Choose a source collection first,
   then edit its name and Posters, Landscape or Featured presentation with the layout control immediately above a real-title
   preview. The preview uses the existing artwork preferences and spoiler protection.
-  Landscape adds **Title logo: Auto / On / Off** for movie/show cards. Auto is
+  Landscape adds a visible **Title logo** label above **Auto / On / Off**
+  for movie/show cards on all platforms. Auto is
   the default for new and existing collection rows: retain native title artwork
   when available, otherwise compose a background with the title logo. On uses the
   shared background/logo treatment; Off keeps artwork only. Known titled images

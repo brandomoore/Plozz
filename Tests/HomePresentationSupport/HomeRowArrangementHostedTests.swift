@@ -1462,6 +1462,11 @@ final class HomeRowArrangementHostedTests: XCTestCase {
                     for label in ["Auto", "On", "Off"] {
                         XCTAssertTrue(text.contains(label), "Landscape title-logo choice missing: \(text)")
                     }
+                    let logoLabelY = try self.y("Title logo", in: lines)
+                    XCTAssertGreaterThan(try self.y("Posters", in: lines), logoLabelY)
+                    XCTAssertGreaterThan(logoLabelY, try self.y("Auto", in: lines))
+                } else {
+                    XCTAssertFalse(text.contains("Title logo"), text)
                 }
                 XCTAssertGreaterThan(try self.y("Posters", in: lines), try self.y("Orbit", in: lines))
                 XCTAssertTrue(visibility.visibility.collectionSections.isEmpty, "Previewing does not save a section.")
