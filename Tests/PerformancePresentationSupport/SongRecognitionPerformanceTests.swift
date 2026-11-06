@@ -20,12 +20,53 @@ final class SongRecognitionPerformanceTests: XCTestCase {
         try await measureRecognition(mode: "tap-only")
     }
 
+    func testPerformanceRecognitionTapPaced() async throws {
+        try await measureRecognition(mode: "tap-paced")
+    }
+
     func testPerformanceRecognitionLifecycle() async throws {
         try await measureRecognition(mode: "lifecycle")
     }
 
-    private func measureRecognition(mode: String) async throws {
+    func testPerformanceRecognitionSoakDisabled() async throws {
+        try await measureRecognition(mode: "disabled", soak: true)
+    }
+
+    func testPerformanceRecognitionSoakTapOnly() async throws {
+        try await measureRecognition(mode: "tap-only", soak: true)
+    }
+
+    func testPerformanceRecognitionSoakEnabled() async throws {
+        try await measureRecognition(mode: "enabled", soak: true)
+    }
+
+    private func measureRecognition(mode: String, soak: Bool = false) async throws {
         try PerformanceProbe.requireEnabled()
+        let stats = SongPerformanceCounters()
+        let before = try PerformanceProbe.usage().residentBytes
+        try await runRecognition(mode: mode, soak: soak, stats: stats)
+        guard soak else { return }
+        let stopped = try PerformanceProbe.usage().residentBytes
+        try await Task.sleep(for: .seconds(30))
+        XCTAssertEqual(stats.liveSessions, 0)
+        XCTAssertEqual(stats.liveEngines, 0, "Leaving playback must release the adapter, not only its tap.")
+        let data = try JSONSerialization.data(withJSONObject: [
+            "mode": mode,
+            "processID": Int(ProcessInfo.processInfo.processIdentifier),
+            "beforePlaybackResidentBytes": before,
+            "afterStopResidentBytes": stopped,
+            "afterThirtySecondsResidentBytes": try PerformanceProbe.usage().residentBytes,
+            "liveSessions": stats.liveSessions,
+            "liveWorkers": stats.liveWorkers,
+            "liveEngines": stats.liveEngines,
+        ], options: [.sortedKeys])
+        let attachment = XCTAttachment(data: data, uniformTypeIdentifier: "public.json")
+        attachment.name = "plozz-song-memory-\(mode).json"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
+    private func runRecognition(mode: String, soak: Bool, stats: SongPerformanceCounters) async throws {
         let folder = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "Fixtures", withExtension: nil))
         let audio = try AVAudioFile(forReading: folder.appendingPathComponent("song-performance.m4a"))
         let buffer = try XCTUnwrap(AVAudioPCMBuffer(
@@ -46,6 +87,7 @@ final class SongRecognitionPerformanceTests: XCTestCase {
         window.rootViewController = host
         window.makeKeyAndVisible()
         let engine = try PlozzigenVideoEngine()
+        stats.track(engine)
         engine.configureLiveOutput(.init(isAudible: false, sharesAudioSession: true, suppressesDisplayMatching: true))
         let surface = engine.makeVideoOutputView()
         surface.frame = window.bounds
@@ -67,12 +109,13 @@ final class SongRecognitionPerformanceTests: XCTestCase {
             try await Task.sleep(for: .milliseconds(50))
         }
         XCTAssertTrue(engine.hasPresentedVideoFrame)
-        let stats = SongPerformanceCounters()
         let display = SongDisplayProbe()
         display.start()
         defer { display.stop() }
         let presentation = SongRecognitionModel()
-        let lifecycle = mode == "lifecycle"
+        let lifecycle = mode == "lifecycle" || soak
+        let cycles = soak ? 4 : 1
+        let recognizes = mode == "enabled" || mode == "lifecycle"
         let controller = SongRecognitionController(
             install: {
                 stats.install()
@@ -87,8 +130,24 @@ final class SongRecognitionPerformanceTests: XCTestCase {
             },
             watch: { stream, report in
                 stats.beginStream()
-                if mode == "tap-only" {
-                    for await chunk in stream { stats.feed(chunk, playhead: nil) }
+                defer { stats.finishStream() }
+                if mode == "tap-only" || mode == "tap-paced" {
+                    var pacer = SongAudioPacer()
+                    for await chunk in stream {
+                        if Task.isCancelled { break }
+                        if mode == "tap-paced" {
+                            let end = chunk.sourceTime + Double(chunk.buffer.frameLength) / chunk.buffer.format.sampleRate
+                            do {
+                                guard try await pacer.wait(until: end, playbackTime: { engine.audioTapPresentationTime })
+                                else { return .failed }
+                            } catch is CancellationError { return .ended }
+                            catch {
+                                XCTFail("Paced control failed: \(error)")
+                                return .failed
+                            }
+                        }
+                        stats.feed(chunk, playhead: mode == "tap-paced" ? pacer.playhead : nil)
+                    }
                     return .ended
                 }
                 return await SongRecognizer.watch(stream, makeSession: {
@@ -108,52 +167,72 @@ final class SongRecognitionPerformanceTests: XCTestCase {
             try await Task.sleep(for: .milliseconds(50))
         }
         XCTAssertGreaterThanOrEqual(engine.currentTime, 8)
-        try await PerformanceProbe.measure(self, scenario: "song-recognition-\(mode)") {
-            if lifecycle {
-                controller.stop()
-                try await waitForSessionRelease(stats)
-                await engine.seek(to: 0)
-                controller.start()
-                engine.play()
-            }
-            let start = engine.currentTime
+        let scenario = "song-recognition-\(soak ? "soak-" : "")\(mode)"
+        try await PerformanceProbe.measure(self, scenario: scenario) {
             let before = stats.snapshot
-            let dropsBefore = engine.liveTelemetry?.droppedFrameCount
-            display.reset()
-            if lifecycle {
-                try await Task.sleep(for: .seconds(12))
-                engine.pause()
-                controller.stop()
-                presentation.pauseExpiry()
-                try await waitForSessionRelease(stats)
-                let pausedFrames = stats.snapshot.frames
-                try await Task.sleep(for: .seconds(1))
-                XCTAssertEqual(stats.snapshot.frames, pausedFrames, "Pause must do no further recognition work.")
-                presentation.resumeExpiry()
-                controller.start()
-                engine.play()
-                try await Task.sleep(for: .seconds(12))
-            } else {
-                try await Task.sleep(for: .seconds(3))
+            var playbackMilliseconds = 0
+            var droppedFrames = 0
+            var hasDropTelemetry = true
+            var displayCallbacks = 0
+            var maxDisplayGap = 0
+            for _ in 0..<cycles {
+                if lifecycle {
+                    controller.stop()
+                    try await waitForSessionRelease(stats)
+                    await engine.seek(to: 0)
+                    if mode != "disabled" { controller.start() }
+                    engine.play()
+                }
+                let start = engine.currentTime
+                let cycleBefore = stats.snapshot
+                let dropsBefore = engine.liveTelemetry?.droppedFrameCount
+                display.reset()
+                if lifecycle {
+                    try await Task.sleep(for: .seconds(12))
+                    engine.pause()
+                    controller.stop()
+                    presentation.pauseExpiry()
+                    try await waitForSessionRelease(stats)
+                    let pausedFrames = stats.snapshot.frames
+                    try await Task.sleep(for: .seconds(1))
+                    XCTAssertEqual(stats.snapshot.frames, pausedFrames, "Pause must do no further recognition work.")
+                    presentation.resumeExpiry()
+                    if mode != "disabled" { controller.start() }
+                    engine.play()
+                    try await Task.sleep(for: .seconds(12))
+                } else {
+                    try await Task.sleep(for: .seconds(3))
+                }
+                let after = stats.snapshot
+                if let first = dropsBefore, let last = engine.liveTelemetry?.droppedFrameCount {
+                    droppedFrames += Int(max(0, last - first))
+                } else {
+                    hasDropTelemetry = false
+                }
+                let progress = engine.currentTime - start
+                XCTAssertGreaterThan(progress, lifecycle ? 22 : 2.3, "Recognition must not stall video playback.")
+                playbackMilliseconds += Int(progress * 1000)
+                displayCallbacks += display.callbacks
+                maxDisplayGap = max(maxDisplayGap, display.maxGapMilliseconds)
+                if mode != "disabled" {
+                    XCTAssertGreaterThan(after.frames - cycleBefore.frames, lifecycle ? 600_000 : 120_000, "Must process substantially continuous audio, not sparse samples.")
+                    XCTAssertLessThanOrEqual(after.maxGapMilliseconds, 250, "No unaccounted source-timeline holes.")
+                    if recognizes || mode == "tap-paced" {
+                        XCTAssertLessThanOrEqual(after.maxLeadMilliseconds, 51, "Never feed decoded-ahead audio.")
+                    }
+                } else {
+                    XCTAssertEqual(after.frames, 0)
+                    XCTAssertEqual(stats.installs, 0)
+                }
+                if lifecycle {
+                    if recognizes {
+                        XCTAssertGreaterThan(after.confirmed, cycleBefore.confirmed, "Every cycle must confirm a displayable song.")
+                    }
+                    controller.stop()
+                    try await waitForSessionRelease(stats)
+                }
             }
             let after = stats.snapshot
-            let dropsAfter = engine.liveTelemetry?.droppedFrameCount
-            let drops = dropsBefore.flatMap { before in dropsAfter.map { max(0, $0 - before) } }
-            XCTAssertGreaterThan(engine.currentTime - start, lifecycle ? 22 : 2.3, "Recognition must not stall video playback.")
-            if mode != "disabled" {
-                XCTAssertGreaterThan(after.frames - before.frames, lifecycle ? 600_000 : 120_000, "Must process substantially continuous audio, not sparse samples.")
-                XCTAssertLessThanOrEqual(after.maxGapMilliseconds, 250, "No unaccounted source-timeline holes.")
-                if mode != "tap-only" {
-                    XCTAssertLessThanOrEqual(after.maxLeadMilliseconds, 51, "Never feed decoded-ahead audio.")
-                }
-            } else {
-                XCTAssertEqual(after.frames, 0)
-            }
-            if lifecycle {
-                XCTAssertGreaterThan(after.confirmed, before.confirmed, "Every cycle must confirm a displayable song.")
-                controller.stop()
-                try await waitForSessionRelease(stats)
-            }
             return [
                 "audioFrames": after.frames - before.frames,
                 "matches": after.matches - before.matches,
@@ -161,15 +240,15 @@ final class SongRecognitionPerformanceTests: XCTestCase {
                 "maxSourceGapMilliseconds": after.maxGapMilliseconds,
                 "maxFeedLeadMilliseconds": after.maxLeadMilliseconds,
                 "liveSessions": stats.liveSessions,
-                "displayCallbacks": display.callbacks,
-                "maxDisplayGapMilliseconds": display.maxGapMilliseconds,
-                "hasDropTelemetry": drops == nil ? 0 : 1,
-                "droppedFrames": drops.map { Int($0) } ?? 0,
-                "windowMilliseconds": lifecycle ? 25_000 : 3000,
-                "playbackMilliseconds": Int((engine.currentTime - start) * 1000)
+                "displayCallbacks": displayCallbacks,
+                "maxDisplayGapMilliseconds": maxDisplayGap,
+                "hasDropTelemetry": hasDropTelemetry ? 1 : 0,
+                "droppedFrames": droppedFrames,
+                "windowMilliseconds": lifecycle ? 25_000 * cycles : 3000,
+                "playbackMilliseconds": playbackMilliseconds
             ]
         }
-        if mode == "enabled" || lifecycle {
+        if recognizes {
             XCTAssertGreaterThan(stats.snapshot.matches, 0, "The local catalog must actually recognize the synthetic cue.")
             XCTAssertGreaterThan(stats.snapshot.confirmed, 0, "A raw match must also pass production confirmation.")
             XCTAssertLessThan(stats.firstConfirmation ?? .infinity, 20, "Local recognition must produce a bounded-latency result.")
@@ -202,10 +281,11 @@ final class SongRecognitionPerformanceTests: XCTestCase {
 
     private func waitForSessionRelease(_ stats: SongPerformanceCounters) async throws {
         let deadline = ContinuousClock.now + .seconds(5)
-        while stats.liveSessions > 0, ContinuousClock.now < deadline {
+        while stats.liveSessions > 0 || stats.liveWorkers > 0, ContinuousClock.now < deadline {
             try await Task.sleep(for: .milliseconds(10))
         }
         XCTAssertEqual(stats.liveSessions, 0, "Stopped recognition must release its SHSession.")
+        XCTAssertEqual(stats.liveWorkers, 0, "Cancellation must settle before measuring paused work.")
     }
 }
 
@@ -223,7 +303,12 @@ private final class SongPerformanceCounters: @unchecked Sendable {
     private var maxLeadMilliseconds = 0
     private var sessions: [SessionReference] = []
     private var installationCount = 0
+    private var workers = 0
+    var liveWorkers: Int { lock.withLock { workers } }
     private var confirmationTime: Double?
+    private weak var engine: PlozzigenVideoEngine?
+    var liveEngines: Int { lock.withLock { engine == nil ? 0 : 1 } }
+    func track(_ engine: PlozzigenVideoEngine) { lock.withLock { self.engine = engine } }
     var installs: Int { lock.withLock { installationCount } }
     var firstConfirmation: Double? { lock.withLock { confirmationTime } }
     var liveSessions: Int { lock.withLock { sessions.filter { $0.value != nil }.count } }
@@ -231,7 +316,8 @@ private final class SongPerformanceCounters: @unchecked Sendable {
         lock.withLock { (frames, matches, confirmed, maxGapMilliseconds, maxLeadMilliseconds) }
     }
     func install() { lock.withLock { installationCount += 1 } }
-    func beginStream() { lock.withLock { end = nil } }
+    func beginStream() { lock.withLock { end = nil; workers += 1 } }
+    func finishStream() { lock.withLock { workers -= 1 } }
     func track(_ session: SHSession) {
         lock.withLock {
             sessions.removeAll { $0.value == nil }

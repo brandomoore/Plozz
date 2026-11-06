@@ -38,21 +38,36 @@ HOME_HOST_FITTING_COUNTERS = [
 ]
 SCENARIOS = {
     **{
+        f"song-card-{state}": {
+            "suite": "ui",
+            "test": f"PlayerSongLayoutPreviewTests/testPerformanceSongCard{state.title()}",
+            "file": "Tests/PlaybackPresentationSupport/PlayerSongLayoutPreviewTests.swift",
+            "description": "Complete player controls over advancing native video, with seeded repeated song reports and decoded local artwork; no fingerprint matching.",
+            "counters": ["playbackMilliseconds", "acceptedReports", "songVisible"],
+        }
+        for state in ("hidden", "visible")
+    },
+    **{
         f"song-recognition-{state}": {
             "suite": "ui",
+            "explicitOnly": state.startswith("soak-"),
+            "isolatedProcess": state.startswith("soak-"),
             "test": f"SongRecognitionPerformanceTests/testPerformanceRecognition{state.title().replace('-', '')}",
             "file": "Tests/PerformancePresentationSupport/SongRecognitionPerformanceTests.swift",
             "description": (
                 "Repeat six 25-second playback/pause/resume cycles with real local recognition; verify paused feed stops and stopped Shazam sessions are released."
                 if state == "lifecycle" else
-                "Play the same 1080p30 synthetic video with recognition off, tap-only, or source-paced local Shazam matching; verify continuous feed and displayable matches."
+                "Ten-minute off/tap/full lifecycle control in a fresh host process, with post-stop memory and weak ownership checks."
+                if state.startswith("soak-") else
+                "Play the same 1080p30 synthetic video with recognition off, unpaced/paced tap controls, or source-paced local Shazam matching; verify continuous feed and displayable matches."
             ),
             "counters": ["audioFrames", "matches", "confirmedSongs", "maxSourceGapMilliseconds",
                          "maxFeedLeadMilliseconds", "liveSessions", "displayCallbacks",
                          "maxDisplayGapMilliseconds", "hasDropTelemetry", "droppedFrames",
                          "windowMilliseconds", "playbackMilliseconds"],
         }
-        for state in ("enabled", "disabled", "tap-only", "lifecycle")
+        for state in ("enabled", "disabled", "tap-only", "tap-paced", "lifecycle",
+                      "soak-enabled", "soak-disabled", "soak-tap-only")
     },
     "home-jellyfin-live": {
         "suite": "network", "target": "FeatureHomeCoreTests", "explicitOnly": True,
@@ -552,6 +567,8 @@ def select(suite, names, platform=None):
             raise Failure("Choose --suite or --scenario, not both.")
         if len(names) != len(set(names)) or not set(names) <= SCENARIOS.keys():
             raise Failure("Unknown or duplicate scenario. Run 'list' for supported names.")
+        if len(names) != 1 and any(SCENARIOS[name].get("isolatedProcess") for name in names):
+            raise Failure("Isolated-process scenarios require one --scenario per run.")
         unsupported = [name for name in names
                        if platform and platform not in SCENARIOS[name].get("platforms", ("tvOS", "iOS"))]
         if unsupported:

@@ -60,7 +60,7 @@ enum PerformanceProbe {
         let samples: [Sample]
     }
 
-    private static func usage() throws -> (cpuMilliseconds: Double, residentBytes: Int64) {
+    static func usage() throws -> (cpuMilliseconds: Double, residentBytes: Int64) {
         var resources = rusage()
         guard getrusage(RUSAGE_SELF, &resources) == 0 else {
             throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno))

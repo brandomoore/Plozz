@@ -1,4 +1,5 @@
 import AVFoundation
+import CoreImage
 import CoreModels
 import CoreUI
 @testable import FeaturePlayback
@@ -12,6 +13,127 @@ import XCTest
 
 @MainActor
 final class PlayerSongLayoutPreviewTests: XCTestCase {
+    func testPerformanceSongCardHidden() async throws {
+        try await measureSongCard(visible: false)
+    }
+
+    func testPerformanceSongCardVisible() async throws {
+        try await measureSongCard(visible: true)
+    }
+
+    private func measureSongCard(visible: Bool) async throws {
+        try PerformanceProbe.requireEnabled()
+        let fixtures = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "Fixtures", withExtension: nil))
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
+        defer {
+            do { try FileManager.default.removeItem(at: directory) }
+            catch { XCTFail("Could not remove song-card fixture directory: \(error)") }
+        }
+        try FileManager.default.copyItem(
+            at: fixtures.appendingPathComponent("glow-hd.mp4"), to: directory.appendingPathComponent("film.mp4")
+        )
+        let artwork = UIGraphicsImageRenderer(size: CGSize(width: 512, height: 512)).image { context in
+            UIColor(red: 0.1, green: 0.8, blue: 0.9, alpha: 1).setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 512, height: 512))
+        }
+        let data = try XCTUnwrap(artwork.jpegData(compressionQuality: 0.9))
+        try data.write(to: directory.appendingPathComponent("album.jpg"))
+        try data.write(to: directory.appendingPathComponent("still.jpg"))
+        let server = try SubtitleFixtureServer(directory: directory)
+        defer { server.stop() }
+        let port = try await server.start()
+        let origin = try XCTUnwrap(URL(string: "http://127.0.0.1:\(port)"))
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        let engine = NativeVideoEngine()
+        var settings = PlaybackSettings.default
+        settings.identifySongs = false
+        let player = PlayerViewModel(
+            provider: SongPreviewProvider(origin: origin), itemID: "song-performance",
+            playbackSettings: settings, engineFactory: EngineFactory(makeNative: { _ in engine })
+        )
+        let model = player.controls
+        let probe = SongArtworkProbe()
+        let song = SongMatch(title: "Synthetic cue", artist: "Performance fixture",
+                             artworkURL: origin.appendingPathComponent("album.jpg"), appleMusicURL: nil)
+        PlayerScreenshotHook.pendingPanel = .info
+        window.rootViewController = UIHostingController(rootView:
+            SongPreviewPlayer(engine: engine, player: player)
+                .environment(\.colorScheme, .dark)
+                .environment(\.themePalette, .dark)
+                .onPreferenceChange(PlayerSongArtworkBounds.self) { probe.bounds = $0 }
+        )
+        window.makeKeyAndVisible()
+        defer {
+            engine.stop()
+            model.songRecognition.heard(nil)
+            PlayerScreenshotHook.pendingPanel = nil
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        do {
+            await player.load()
+            let deadline = ContinuousClock.now + .seconds(20)
+            while !engine.hasPresentedVideoFrame, ContinuousClock.now < deadline {
+                try await Task.sleep(for: .milliseconds(50))
+            }
+            XCTAssertTrue(engine.hasPresentedVideoFrame)
+            model.controlsVisible = true
+            model.infoCard.headline = "Synthetic playback"
+            model.infoCard.overview = "A stable description for the complete player controls workload."
+            model.infoCard.artworkURLs = [origin.appendingPathComponent("still.jpg")]
+            model.infoCard.artworkItem = nil
+            model.songRecognition.isAvailable = true
+            model.songRecognition.heard(visible ? song : nil)
+            if visible {
+                let artworkDeadline = ContinuousClock.now + .seconds(10)
+                while !songArtworkLoaded(in: window, bounds: probe.bounds[.song]),
+                      ContinuousClock.now < artworkDeadline {
+                    try await Task.sleep(for: .milliseconds(100))
+                }
+                XCTAssertTrue(songArtworkLoaded(in: window, bounds: probe.bounds[.song]),
+                              "Measure decoded artwork, not a placeholder.")
+            }
+            let scenario = "song-card-\(visible ? "visible" : "hidden")"
+            try await PerformanceProbe.measure(self, scenario: scenario) {
+                let start = engine.currentTime
+                for _ in 0..<12 {
+                    model.songRecognition.heard(visible ? song : nil)
+                    try await Task.sleep(for: .milliseconds(250))
+                }
+                XCTAssertGreaterThan(engine.currentTime - start, 2.3)
+                XCTAssertEqual(probe.bounds[.song] != nil, visible)
+                return ["playbackMilliseconds": max(0, Int((engine.currentTime - start) * 1000)),
+                        "acceptedReports": 12, "songVisible": visible ? 1 : 0]
+            }
+            await player.stop()
+        } catch {
+            await player.stop()
+            throw error
+        }
+    }
+
+    private func songArtworkLoaded(in window: UIWindow, bounds: CGRect?) -> Bool {
+        guard let bounds else { return false }
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 1, height: 1), format: format).image { _ in
+            window.drawHierarchy(in: window.bounds.offsetBy(dx: -bounds.midX, dy: -bounds.midY),
+                                 afterScreenUpdates: true)
+        }
+        guard let image = image.cgImage else { return false }
+        var pixel = [UInt8](repeating: 0, count: 4)
+        pixel.withUnsafeMutableBytes { bytes in
+            CIContext().render(CIImage(cgImage: image), toBitmap: bytes.baseAddress!, rowBytes: 4,
+                               bounds: CGRect(x: 0, y: 0, width: 1, height: 1),
+                               format: .RGBA8, colorSpace: CGColorSpaceCreateDeviceRGB())
+        }
+        return pixel[0] < 80 && pixel[1] > 150 && pixel[2] > 170
+    }
+
     func testSongCardUsesSharedArtworkHeight() {
         XCTAssertEqual(PlayerSongCard.artworkSize(for: .tv), PlayerCardMetrics.tv.contentHeight)
         XCTAssertEqual(PlayerSongCard.artworkSize(for: .horizontalWide), PlayerCardMetrics.horizontalWide.contentHeight)

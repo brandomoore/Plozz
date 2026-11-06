@@ -122,6 +122,10 @@ continuity requirement but is deliberately unpaced. Enabled recognition must
 pass production's two-sighting confirmation before source time 20 seconds,
 not merely produce a raw match. There is one discarded warmup and five retained
 windows; steady cases must keep exactly one tap installation, or zero when off.
+`song-recognition-tap-paced` drains through the production source-clock pacer
+without ShazamKit matching, with the same frame, continuity and lead requirements
+as enabled recognition. Prefer this over eager tap-only for matched-timing CPU
+attribution: eager draining consumes decoded-ahead audio, especially after seeks.
 
 `song-recognition-lifecycle` uses one discarded and five retained 25-second
 cycles. Each seeks to the start, plays for 12 seconds, pauses for one second,
@@ -223,14 +227,92 @@ historical numbers above come from their original retained samples, not a
 forced comparison pass.
 
 CPU totals cover the app process, not separate Shazam service processes.
-These runs exercise software video decoding and actual local fingerprint
+These recognition runs exercise software video decoding and actual local fingerprint
 matching, not hardware decoding, the native cached-segment audio reader,
 Apple's network music catalog, real-song accuracy, device energy/thermals,
-long-session memory growth or presented-frame pacing. Separately, lifecycle
+full-movie memory growth or presented-frame pacing. Separately, lifecycle
 tests cover tap removal during pause, errors and cancellation, bounded retries,
 discontinuities, pause-aware expiry without matcher output, source-clock pacing,
 and rejection of superseded-session results. Native player
 screenshots use seeded metadata and are not recognition-performance evidence.
+
+#### Isolated ten-minute controls and complete-player cost
+
+The explicit-only `song-recognition-soak-disabled`, `-soak-tap-only` and
+`-soak-enabled` cases each require a separate runner invocation and fresh test
+host. They are excluded from suite selection. Each measurement window contains
+four 25-second lifecycle cycles; one warmup plus five retained windows exercise
+24 seek/pause/resume cycles over roughly ten minutes. Cancellation waits for both
+workers and weakly tracked sessions before checking paused work, including the
+tap-only worker that has no `SHSession`. After the playback scope ends, the
+`plozz-song-memory-<mode>.json` attachment records RSS immediately and 30 seconds
+later, plus weak engine/session counts and active workers.
+
+```sh
+for state in disabled tap-only enabled; do
+  python3 tools/performance.py run --platform iOS --sim-id "$PLOZZ_IOS_SIM_ID" \
+    --scenario "song-recognition-soak-$state" || break
+done
+```
+
+Six isolated controls on the same iPad/TV simulators passed. Values below are
+MiB of resident memory, not physical footprint or isolated feature allocations.
+The retained range shows first-to-last samples, not a min/max range.
+
+| Simulator | Mode | Retained RSS, first to last | RSS 30 s after teardown | Local run |
+| --- | --- | ---: | ---: | --- |
+| TV | Off | 476.6 to 493.6 | 463.4 | `9a5e2e4ee83248a0b837b5ff56362b31` |
+| TV | Tap-only | 449.8 to 475.2 | 444.9 | `c0b80fc939f6431c901fada6a3df5da3` |
+| TV | Full | 475.4 to 517.6 | 484.1 | `a038012d5e3f439d85551fc761778597` |
+| iPad | Off | 650.9 to 681.7 | 645.5 | `f89023aaf961483588fb6a751c22a869` |
+| iPad | Tap-only | 642.8 to 666.3 | 630.0 | `9a95f1ef1a2344d4b8efd44a89378948` |
+| iPad | Full | 677.9 to 718.9 | 682.5 | `bfec37e7e0614eb780b68a5f43a4335b` |
+
+All six ended with zero tracked engines, sessions and workers. Growth also
+exists with recognition disabled; its cause is not established by RSS.
+Slowing growth and released wrappers do not prove a plateau or exclude retained
+framework/native allocations. These repeated lifecycle controls are not
+uninterrupted movie playback.
+
+`song-card-hidden` and `song-card-visible` mount the complete production controls
+over advancing native video with Info open and the song slot available.
+Recognition is disabled; each three-second window submits 12 repeated seeded
+reports. Visible artwork must decode from the local fixture server and pass a
+pixel check before timing. These measure settled presentation, not cold artwork
+loading or fingerprint matching. CPU median/MAD was 519/8 ms hidden versus
+493/8 ms visible on TV (`e09d33e9c5e243d8bd0d72d3d0af247d`) and 449/48 versus
+464/59 ms on iPad (`fa8455aedba64ee487e3b2d1385f069f`). Neither establishes a
+steady-state card penalty or a speedup.
+
+The later uninstrumented iPad off/paced-tap/full run
+`95506d6a7b274035a651d9b3c180feba` measured 623/33, 740/66 and 727/16 ms
+CPU median/MAD per three-second window. This supports retaining pacing as the
+control, not claiming matching is free or cheaper than draining.
+
+A bounded TV Time Profiler capture of run `fbb4be3a0a2f443594094cfcf59e344b`
+exported 26,301 running samples from `time-profile`. The raw `time-sample`
+table additionally contains 19 blocked stackshot rows; those are not CPU work.
+Leaf binaries were dominated by video decoding. Within the approximately
+26.65-second full-recognition test interval, 6,763 ms of sampled CPU included
+3,589 ms with `AetherLibavcodec` leaves, 111 ms in stacks containing
+`matchStreamingBuffer`, 73 ms containing `AudioTapPCMConverter.convert`,
+and 5 ms containing `SongAudioPacer`. These inclusive sampled stack weights
+are not exclusive timers or a complete recognition-cost account; async work,
+framework symbols and external services limit attribution. They do not identify
+a recognition bottleneck warranting batching, resampling or weaker matching.
+Do not compare profiler-instrumented timing against uninstrumented budgets.
+
+The trace retained a warning about one table without a known input source;
+the running CPU table and relevant symbols were available. Correlate phase
+boundaries with timestamped host logs: this Xcode export's test-detail
+`startTime` corresponded to completion, not the observed start. The capture
+only partially covered the first card case. Trace and parsed attribution are
+retained locally under `.build/song-layout-preview/cpu-attribution-2/`.
+
+The native cached-segment audio-tap path remains unmeasured: the simulator
+reported VideoToolbox rejecting the fixture and selected software decoding.
+Direct native video in the card workload does not exercise that separate tap.
+No unsupported route was forced and no physical-device result is claimed.
 
 `skeletons-idle` observes 24 production `SkeletonCardView` placeholders over
 2.3-second idle windows on either platform. It verifies all placeholders mounted

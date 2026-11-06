@@ -64,7 +64,7 @@ Binary Images:
 class EvidenceTests(unittest.TestCase):
     def test_song_attribution_and_lifecycle_select_real_hosted_tests(self):
         for state, method in (
-            ("disabled", "Disabled"), ("tap-only", "TapOnly"),
+            ("disabled", "Disabled"), ("tap-only", "TapOnly"), ("tap-paced", "TapPaced"),
             ("enabled", "Enabled"), ("lifecycle", "Lifecycle"),
         ):
             name = f"song-recognition-{state}"
@@ -77,6 +77,30 @@ class EvidenceTests(unittest.TestCase):
                 "maxFeedLeadMilliseconds", "liveSessions", "hasDropTelemetry",
                 "droppedFrames", "displayCallbacks", "maxDisplayGapMilliseconds",
             }.issubset(scenario["counters"]))
+
+    def test_song_soaks_require_separate_process_runs_and_explicit_selection(self):
+        names = [f"song-recognition-soak-{state}" for state in ("disabled", "tap-only", "enabled")]
+        for name in names:
+            self.assertEqual(performance.select(None, [name]), [name])
+            self.assertNotIn(name, performance.select("all", None))
+            self.assertNotIn(name, performance.select("ui", None))
+            with self.assertRaises(performance.Failure):
+                performance.select(None, [name, "song-recognition-disabled"])
+        with self.assertRaises(performance.Failure):
+            performance.select(None, names)
+
+    def test_song_card_controls_select_complete_player_tests(self):
+        for state in ("hidden", "visible"):
+            name = f"song-card-{state}"
+            self.assertEqual(performance.select(None, [name]), [name])
+            self.assertEqual(
+                performance.SCENARIOS[name]["test"],
+                f"PlayerSongLayoutPreviewTests/testPerformanceSongCard{state.title()}",
+            )
+            self.assertEqual(
+                performance.SCENARIOS[name]["counters"],
+                ["playbackMilliseconds", "acceptedReports", "songVisible"],
+            )
 
     def test_live_home_is_never_selected_by_a_suite(self):
         self.assertEqual(performance.select(None, ["home-jellyfin-live"]), ["home-jellyfin-live"])
