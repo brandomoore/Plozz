@@ -131,7 +131,7 @@ final class JellyfinProviderMappingTests: XCTestCase {
                 TrackLabeling.audioLabel(displayTitle: track.displayTitle, language: track.language,
                                         codec: track.codec, channels: track.channels, trackID: track.id,
                                         locale: Locale(identifier: "fr")),
-                TrackLabel(base: .content("Français"), qualifiers: [.audioVersion("VFQ"), .format("DTS 5.1")])
+                TrackLabel(base: .content("Français"), qualifiers: [.version("VFQ"), .format("DTS 5.1")])
             )
         }
     }
@@ -151,6 +151,37 @@ final class JellyfinProviderMappingTests: XCTestCase {
         let plain = try JSONDecoder.plozz.decode(MediaStreamDto.self, from: Data(
             #"{"Index":1,"Type":"Subtitle","Codec":"subrip","Language":"hin","Title":"Hindi"}"#.utf8))
         XCTAssertFalse(provider.map(stream: plain).isHearingImpaired)
+    }
+
+    func testSubtitleVersionsSurviveBothJellyfinAndEmbyMappingPaths() throws {
+        for kind in [ProviderKind.jellyfin, .emby] {
+            var session = makeSession()
+            session.server.provider = kind
+            let provider = JellyfinProvider(session: session, http: StubHTTPClient())
+            for version in ["VFF", "VFQ"] {
+                let json = """
+                {"Index":3,"Type":"Subtitle","Codec":"subrip","Language":"fr","DisplayTitle":"French (Forced)",
+                 "Title":"French (\(version))","IsForced":true,"IsExternal":true}
+                """
+                let dto = try JSONDecoder.plozz.decode(MediaStreamDto.self, from: Data(json.utf8))
+                let sidecar = try provider.map(subtitleStream: dto, itemID: "movie", sourceID: "file")
+                XCTAssertNotNil(sidecar.deliverySource)
+                XCTAssertTrue(sidecar.isExternal)
+                for track in [provider.map(stream: dto), sidecar] {
+                    XCTAssertEqual(track.id, 3)
+                    XCTAssertEqual(track.language, "fr")
+                    XCTAssertTrue(track.isForced)
+                    XCTAssertEqual(
+                        TrackLabeling.subtitleLabel(
+                            displayTitle: track.displayTitle, language: track.language, codec: track.codec,
+                            isForced: track.isForced, isImageBased: track.isImageBasedSubtitle,
+                            trackID: track.id, locale: Locale(identifier: "en")
+                        ),
+                        TrackLabel(base: .content("French"), qualifiers: [.version(version), .forced])
+                    )
+                }
+            }
+        }
     }
 
     func testEpisodeCountsUseUnplayedCountNotSeriesChildCount() async throws {

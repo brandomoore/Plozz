@@ -289,6 +289,7 @@ final class SubtitleTrackController {
         }
         host.trackControls.secondarySubtitleOptions = TrackMenuBuilder.secondaryOptions(
             eligible: secondaryEligible,
+            providerTracks: providerSubs,
             selectedID: selectedSecondarySubtitleTrackID,
             preferred: preferredSubtitle,
             detectedLanguages: detectedSubtitleLanguages,

@@ -328,7 +328,7 @@ Native and tvOS track menus share `TrackLabeling` and `TrackMenuBuilder`.
 Bare language titles no longer suppress known codec/channel facts, for example
 `English (Opus 5.1)`. Custom names and commentary are retained, existing format
 facts are not duplicated, and unknown formats are not invented.
-Explicit French audio-version tags (`VFQ`, `VFF`, `VFI`, `VFB`, `VQ`, `VOF`,
+Explicit French audio/subtitle version tags (`VFQ`, `VFF`, `VFI`, `VFB`, `VQ`, `VOF`,
 `VOQ`) survive generated server titles, matching-track provider enrichment, and
 app-locale changes. These are source-authored community conventions, rendered
 verbatim, not codec names or proof of a particular dub inferred from `fr`.
@@ -337,16 +337,23 @@ For example, `fr` plus `VFQ` and DTS six-channel metadata becomes
 conflicting provider hints. Release-wide counts such as `VF2`, subtitle labels
 such as `VOSTFR`, and encoder-name substrings do not identify an audio version.
 
-Audio display preserves explicit BCP 47 details, including Brazilian/European
+Audio and subtitle display preserve explicit BCP 47 details, including Brazilian/European
 Portuguese (`pt-BR`/`pt-PT`), Latin American/Spain Spanish (`es-419`/`es-ES`),
 Canadian/France French (`fr-CA`/`fr-FR`), and Cantonese (`yue`/`zh-yue`).
 If the OS collapses an explicit tag such as Mandarin `cmn` to a macrolanguage
 name, the supplied tag remains visible. Script subtags describe writing, not
 proof of an audio dialect; generic `zh`, `fr`, `es`, or `pt` never acquires an
 inferred regional version. Language matching, preferred ordering, selection IDs,
-and subtitle formatting are unchanged. Locale extensions such as calendar
-preferences are not audio-language details. This preserves metadata actually
+and automatic track selection are unchanged. Locale extensions such as calendar
+preferences are not track-language details. This preserves metadata actually
 supplied by the provider/engine, not distinctions missing from that metadata.
+Primary and secondary subtitle menus retain these distinctions together with
+localized Forced, SDH, Commentary, and auto-detection qualifiers and bitmap format
+hints. For example, two forced French tracks titled `French (VFF)` and
+`French (VFQ)` remain distinct as `French (VFF, Forced)` and `French (VFQ, Forced)`.
+Plex and Jellyfin/Emby preserve version tags from raw titles when their generated
+display titles omit them; matching provider tags also fill engine-label gaps.
+The secondary menu enriches only its presentation, without changing eligibility.
 
 Conventions: [French version tags](https://github.com/TRaSH-Guides/Guides/blob/master/includes/cf-descriptions/french-vfq.md),
 [BCP 47 language tags](https://www.w3.org/International/articles/language-tags/),

@@ -516,8 +516,34 @@ final class PlexProviderMappingTests: XCTestCase {
             TrackLabeling.audioLabel(displayTitle: track.displayTitle, language: track.language,
                                     codec: track.codec, channels: track.channels, trackID: track.id,
                                     locale: Locale(identifier: "fr")),
-            TrackLabel(base: .content("Français"), qualifiers: [.audioVersion("VFQ"), .format("DTS 5.1")])
+            TrackLabel(base: .content("Français"), qualifiers: [.version("VFQ"), .format("DTS 5.1")])
         )
+    }
+
+    func testSubtitleMappingPreservesRawVersionsAlongsideForcedAndRegionalMetadata() throws {
+        let provider = PlexProvider(session: makeSession(), http: StubHTTPClient())
+        for (metadata, version) in [
+            (#""extendedDisplayTitle":"French (Forced)","title":"French (VFF)""#, "VFF"),
+            (#""extendedDisplayTitle":"French (Forced)","title":"French (VFQ)""#, "VFQ"),
+            (#""extendedDisplayTitle":"French (Forced)","displayTitle":"French (VFQ)""#, "VFQ"),
+            (#""extendedDisplayTitle":"French (VFF)","title":"French (VFQ)""#, "VFF")
+        ] {
+            let json = #"{"index":3,"streamType":3,"codec":"srt","languageTag":"fr-CA","forced":true,"# + metadata + "}"
+            let dto = try JSONDecoder.plozz.decode(PlexStream.self, from: Data(json.utf8))
+            let track = try provider.map(stream: dto, itemID: "movie", mediaSourceID: "file")
+            XCTAssertEqual(track.id, 3)
+            XCTAssertEqual(track.language, "fr-CA")
+            XCTAssertTrue(track.isForced)
+            XCTAssertNil(track.channels)
+            XCTAssertEqual(
+                TrackLabeling.subtitleLabel(
+                    displayTitle: track.displayTitle, language: track.language, codec: track.codec,
+                    isForced: track.isForced, isImageBased: track.isImageBasedSubtitle,
+                    trackID: track.id, locale: Locale(identifier: "en")
+                ),
+                TrackLabel(base: .content("French (Canada)"), qualifiers: [.version(version), .forced])
+            )
+        }
     }
 
     private func makeSession() -> UserSession {
