@@ -224,6 +224,10 @@ Phone portrait keeps the existing bounded, compact vertical-list layout, with
 the same row height and natural content sizing as Chapters. Playback details
 and progress-only bars sit beside the small artwork rather than shrinking Home's overlays.
 Home's Showcase background and absolute card sizing are not copied into playback.
+Narrow artwork keeps detailed playback indicators on one line. It uses the same
+fitting order as mobile Home: drop the play glyph, then the progress bar, before
+reducing text. The fixed-height player additionally prioritizes remaining time
+over an episode qualifier rather than stacking the decorations or wrapping text.
 
 The per-profile **Continue Watching in the player** setting controls the tab.
 The current title and other episodes from its series are excluded within their
@@ -235,6 +239,13 @@ existing fixed-height horizontal player stage and follows the other media tabs' 
 Current-title filtering retains the playback origin account when a provider's
 fresh playback metadata has no app-owned account tag; matching IDs on other
 accounts remain available.
+`PlayerContinueWatchingModel` observes the shell's cached Home snapshot and
+playback identity, deriving the filtered row only when those inputs change.
+Controls reveal, playback-clock updates and native focus moves read the cached
+array; they do not reaggregate Home or request provider data. Replacing the source
+invalidates pending observations, and stopping releases the source and clears the
+row. Disabled playback settings never read Home. Artwork remains asynchronous
+and is mounted only with the selected, lazy Continue Watching panel.
 
 On tvOS, iPhone, and iPad, **Chapters** joins the bottom player tabs only when the
 server metadata or the playing file supplies usable chapter positions. Individual

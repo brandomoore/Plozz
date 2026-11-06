@@ -26,7 +26,7 @@ public struct EpisodeWatchStatePill: View {
     private let showsPlayGlyphWhenIdle: Bool
     private let spacing: CGFloat
     private var fittingFontSize: CGFloat?
-    private var stacksFittingDecorations = false
+    private var keepsFittingTextOnOneLine = false
 
     @Environment(\.plozzChromeIsFocused) private var isFocused
     @Environment(\.plozzShowsProgressBars) private var showsProgressBars
@@ -62,10 +62,10 @@ public struct EpisodeWatchStatePill: View {
         self.spacing = spacing
     }
 
-    fileprivate func fittingText(size: CGFloat?, stacksDecorations: Bool = false) -> Self {
+    fileprivate func fittingText(size: CGFloat?, singleLine: Bool = false) -> Self {
         var result = self
         result.fittingFontSize = size
-        result.stacksFittingDecorations = stacksDecorations
+        result.keepsFittingTextOnOneLine = singleLine
         return result
     }
 
@@ -122,7 +122,7 @@ public struct EpisodeWatchStatePill: View {
                 .fontWeight(.bold)
                 .accessibilityLabel("Watched")
         case let .inProgress(fraction, remaining):
-            playbackContent(fraction: fraction, text: joined(remaining), showsPlay: true)
+            playbackContent(fraction: fraction, text: joined(remaining), showsPlay: true, duration: remaining)
             .accessibilityLabel(
                 remaining.map { Text("\($0) left") }
                     ?? Text(
@@ -139,31 +139,29 @@ public struct EpisodeWatchStatePill: View {
             // the bar rather than drawing an empty one keeps the chip honest — an
             // unstarted episode showing a 0% bar reads as a stalled download.
             if let label = joined(text) {
-                playbackContent(fraction: nil, text: label, showsPlay: showsPlayGlyphWhenIdle)
+                playbackContent(fraction: nil, text: label, showsPlay: showsPlayGlyphWhenIdle, duration: text)
             }
         }
     }
 
     @ViewBuilder
-    private func playbackContent(fraction: Double?, text: String?, showsPlay: Bool) -> some View {
+    private func playbackContent(fraction: Double?, text: String?, showsPlay: Bool, duration: String?) -> some View {
         if let fittingFontSize, let text {
             ViewThatFits(in: .horizontal) {
                 playbackRow(fraction: fraction, text: text, showsPlay: showsPlay)
                     .fixedSize(horizontal: true, vertical: true)
-                if stacksFittingDecorations {
-                    VStack(alignment: .leading, spacing: 4) {
-                        playbackRow(fraction: fraction, text: nil, showsPlay: showsPlay)
-                        Text(verbatim: text)
-                            .lineLimit(nil)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                } else {
-                    if showsPlay {
-                        playbackRow(fraction: fraction, text: text, showsPlay: false)
-                            .fixedSize(horizontal: true, vertical: true)
-                    }
-                    Text(verbatim: text)
+                if showsPlay {
+                    playbackRow(fraction: fraction, text: text, showsPlay: false)
                         .fixedSize(horizontal: true, vertical: true)
+                }
+                Text(verbatim: text)
+                    .fixedSize(horizontal: true, vertical: true)
+                if keepsFittingTextOnOneLine {
+                    // The player's fixed-height posters prioritize time over the episode qualifier.
+                    Text(verbatim: duration ?? text)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.6)
+                } else {
                     // Decorations yield before text wraps or becomes smaller.
                     Text(verbatim: text)
                         .font(.system(size: fittingFontSize * 0.85, weight: .semibold))
@@ -352,7 +350,7 @@ public struct ResumeChipOverlay: View {
                             )
                             .fittingText(
                                 size: prioritizesText ? textSize : nil,
-                                stacksDecorations: playbackTextSize != nil
+                                singleLine: playbackTextSize != nil
                             )
                             .font(.system(size: textSize, weight: .semibold))
                             // The card grows with Dynamic Type to keep this label

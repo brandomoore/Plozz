@@ -1,9 +1,76 @@
 import CoreModels
+import Observation
 import XCTest
 @testable import FeaturePlayback
 
 @MainActor
 final class ContinueWatchingSelectionTests: XCTestCase {
+    func testSnapshotIsDerivedOnceAndObservesHomeUpdates() async throws {
+        let home = ContinueWatchingHomeSnapshot()
+        let first = MediaItem(id: "first", title: "First", kind: .movie)
+        home.items = [first, first]
+        var reads = 0
+        let model = PlayerViewModel(provider: ContinueWatchingTestProvider(), itemID: "current")
+        model.continueWatchingSnapshot = { reads += 1; return home.items }
+        for _ in 0..<100 {
+            XCTAssertEqual(model.continueWatchingItems, [first])
+        }
+        XCTAssertEqual(reads, 1, "Focus and clock updates must not re-filter Home.")
+        let next = MediaItem(id: "next", title: "Next", kind: .movie, resumePosition: 300)
+        home.items = [next, first]
+        let deadline = ContinuousClock.now + .seconds(1)
+        while model.continueWatchingItems != [next, first], ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        XCTAssertEqual(model.continueWatchingItems, [next, first])
+        XCTAssertEqual(reads, 2)
+        home.items = []
+        while !model.continueWatchingItems.isEmpty, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        XCTAssertTrue(model.continueWatchingItems.isEmpty)
+        XCTAssertEqual(reads, 3)
+        await model.stop()
+    }
+
+    func testReplacedAndStoppedSnapshotsCannotRearmOldObservations() async throws {
+        let oldHome = ContinueWatchingHomeSnapshot()
+        let currentHome = ContinueWatchingHomeSnapshot()
+        let item = MediaItem(id: "new", title: "New", kind: .movie)
+        currentHome.items = [item]
+        var oldReads = 0
+        var currentReads = 0
+        var model: PlayerViewModel? = PlayerViewModel(provider: ContinueWatchingTestProvider(), itemID: "current")
+        model?.continueWatchingSnapshot = { oldReads += 1; return oldHome.items }
+        oldHome.items = [item]
+        model?.continueWatchingSnapshot = { currentReads += 1; return currentHome.items }
+        try await Task.sleep(for: .milliseconds(20))
+        XCTAssertEqual(model?.continueWatchingItems, [item])
+        XCTAssertEqual(oldReads, 1)
+        XCTAssertEqual(currentReads, 1)
+        await model?.stop()
+        currentHome.items = []
+        try await Task.sleep(for: .milliseconds(20))
+        XCTAssertEqual(model?.continueWatchingItems, [])
+        XCTAssertEqual(currentReads, 1)
+        weak var released = model
+        model = nil
+        XCTAssertNil(released, "Home observation must not retain an outgoing player.")
+    }
+
+    func testDisabledContinueWatchingDoesNotReadHome() async {
+        var settings = PlaybackSettings()
+        settings.continueWatchingInPlayer = false
+        let model = PlayerViewModel(
+            provider: ContinueWatchingTestProvider(), itemID: "current", playbackSettings: settings
+        )
+        var reads = 0
+        model.continueWatchingSnapshot = { reads += 1; return [] }
+        for _ in 0..<100 { XCTAssertTrue(model.continueWatchingItems.isEmpty) }
+        XCTAssertEqual(reads, 0)
+        await model.stop()
+    }
+
     func testSelectionCanRetryButCannotRaceAnotherHandoffOrOutliveStop() async {
         let model = PlayerViewModel(provider: ContinueWatchingTestProvider(), itemID: "current")
         let first = MediaItem(id: "first", title: "First", kind: .movie)
@@ -20,6 +87,11 @@ final class ContinueWatchingSelectionTests: XCTestCase {
         model.cancelContinueWatchingSelection()
         model.playFromContinueWatching(first)
         XCTAssertNil(model.pendingContinueWatching)
+    }
+
+    @MainActor @Observable
+    fileprivate final class ContinueWatchingHomeSnapshot {
+        var items: [MediaItem] = []
     }
 
     func testExcludesCurrentTitleAndSeriesOnlyOnTheSameAccount() {

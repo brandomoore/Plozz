@@ -543,16 +543,23 @@ public final class PlayerViewModel {
     // MARK: Continue Watching tab (#388)
 
     /// Home's Continue Watching row, supplied by the shell that presents the player.
-    @ObservationIgnored public var continueWatchingSnapshot: @MainActor () -> [MediaItem] = { [] }
+    @ObservationIgnored public var continueWatchingSnapshot: @MainActor () -> [MediaItem] = { [] } {
+        didSet { observeContinueWatching() }
+    }
+    private let continueWatching = PlayerContinueWatchingModel()
 
     /// The row as the player shows it: without what is playing now, nor other
     /// episodes of the same show (Apple's TV app leaves those out too).
-    public var continueWatchingItems: [MediaItem] {
-        guard playbackSettings.continueWatchingInPlayer else { return [] }
-        return Self.continueWatchingItems(
-            in: continueWatchingSnapshot(), excluding: request?.item,
-            accountFallbackID: playbackSourceAccountID
-        )
+    public var continueWatchingItems: [MediaItem] { continueWatching.items }
+
+    private func observeContinueWatching() {
+        continueWatching.observe { [weak self] in
+            guard let self, !self.didStop, self.playbackSettings.continueWatchingInPlayer else { return [] }
+            return Self.continueWatchingItems(
+                in: self.continueWatchingSnapshot(), excluding: self.request?.item,
+                accountFallbackID: self.playbackSourceAccountID
+            )
+        }
     }
 
     static func continueWatchingItems(
@@ -2482,6 +2489,7 @@ public final class PlayerViewModel {
         // shows happening on iOS.
         PlaybackTrace.note("stop() teardown curr=\(String(format: "%.2f", engine.currentTime)) shouldDismiss=\(shouldDismiss) pendingNext=\(pendingNextEpisode != nil) isSeeking=\(controls.isSeeking)")
         didStop = true
+        continueWatchingSnapshot = { [] }
         controls.infoCard.chapters = []
         let maintenance = streamingSessionMaintenance.cancel()
         episodeBrowser?.stop()

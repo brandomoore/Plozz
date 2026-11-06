@@ -23,6 +23,172 @@ final class PlayerEpisodeArtworkHostedTests: XCTestCase {
         }
     }
 
+    func testPerformanceContinueWatchingControls() async throws {
+        try await PerformanceProbe.measure(self, scenario: "player-continue-watching-controls") {
+            try await self.exerciseContinueWatchingControls(enabled: true)
+        }
+    }
+
+    func testPerformanceContinueWatchingDisabled() async throws {
+        try await PerformanceProbe.measure(self, scenario: "player-continue-watching-disabled") {
+            try await self.exerciseContinueWatchingControls(enabled: false)
+        }
+    }
+
+    func testContinueWatchingPendingArtworkDoesNotBlockNativeNavigation() async throws {
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 4, height: 6)).image { context in
+            UIColor.blue.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 4, height: 6))
+        }
+        let server = try LibraryArtworkServer(
+            images: ["poster": XCTUnwrap(image.pngData())], delays: ["poster": 10]
+        )
+        let port = try await server.start()
+        defer { server.stop() }
+        let url = try XCTUnwrap(URL(string: "http://127.0.0.1:\(port)/poster"))
+        let counters = try await exerciseContinueWatchingControls(enabled: true, artworkURL: url, server: server)
+        XCTAssertGreaterThan(server.requestCount(for: "/poster"), 0, "The real artwork lane must have started.")
+        XCTAssertLessThan(counters["revealMicroseconds"] ?? .max, 500_000)
+        XCTAssertLessThan(counters["navigationMaxMainActorGapMicroseconds"] ?? .max, 500_000)
+    }
+
+    private func exerciseContinueWatchingControls(
+        enabled: Bool, artworkURL: URL? = nil, server: LibraryArtworkServer? = nil
+    ) async throws -> [String: Int] {
+        try await waitUntil {
+            UIApplication.shared.connectedScenes.contains { $0.activationState == .foregroundActive }
+        }
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let provider = EpisodeRowProvider()
+        var settings = PlaybackSettings()
+        settings.continueWatchingInPlayer = enabled
+        let player = PlayerViewModel(provider: provider, itemID: "playing", playbackSettings: settings)
+        let items = (0..<180).map { index in
+            MediaItem(
+                id: "resume-\(index)", title: "Continue watching \(index)", kind: .episode,
+                overview: String(repeating: "A metadata-rich Home episode. ", count: 40),
+                seasonNumber: 1, episodeNumber: index + 1, seriesID: "series-\(index)",
+                runtime: 3600, resumePosition: 900, posterURL: artworkURL,
+                seriesPosterURL: artworkURL, backdropURL: artworkURL, fallbackArtworkURL: artworkURL,
+                sourceAccountID: "account-\(index % 12)"
+            )
+        }
+        var snapshotReads = 0
+        player.continueWatchingSnapshot = {
+            snapshotReads += 1
+            return items
+        }
+        let model = PlayerControlsModel()
+        model.title = "Continue Watching responsiveness"
+        model.duration = 3600
+        model.currentSeconds = 600
+        model.infoCard.chapters = (0..<20).map { .init(start: Double($0) * 120, title: "Chapter \($0)") }
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
+        var largestGap = Duration.zero
+        let heartbeat = Task {
+            var last = ContinuousClock.now
+            while !Task.isCancelled {
+                try await Task.sleep(for: .milliseconds(2))
+                let now = ContinuousClock.now
+                largestGap = max(largestGap, last.duration(to: now))
+                last = now
+            }
+        }
+        defer {
+            heartbeat.cancel()
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        let host = CardTabFocusHost(rootView:
+            PlayerControls(model: model, player: player, palette: .dark, actions: .init(), onExitToSurface: {})
+                .environment(\.locale, Locale(identifier: "en_US"))
+                .environment(\.scenePhase, .active)
+                .background(.black)
+        )
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        try await Task.sleep(for: .milliseconds(300))
+        largestGap = .zero
+        let revealStart = ContinuousClock.now
+        model.controlsVisible = true
+        try await waitUntil { model.subtitleLayout.frame(for: .timeline) != nil }
+        let reveal = revealStart.duration(to: .now)
+        try await Task.sleep(for: .milliseconds(450))
+        let revealGap = largestGap
+        let revealReads = snapshotReads
+        if let server { XCTAssertEqual(server.requestCount(for: "/poster"), 0) }
+        model.controlBar.entry = .info
+        model.controlBar.settled = false
+        model.controlBarVisible = true
+        try await waitUntil { model.controlBar.focusArmed }
+        try await Task.sleep(for: .milliseconds(600))
+        model.controlBar.settled = true
+        if server != nil { try await Task.sleep(for: .milliseconds(50)) }
+        let system = try XCTUnwrap(UIFocusSystem.focusSystem(for: window))
+        let recorder = CardTabFocusRecorder(window: window, model: model)
+        defer { NotificationCenter.default.removeObserver(recorder) }
+        let tabs = enabled ? ["continueWatching", "chapters", "continueWatching", "info"] : ["chapters", "info"]
+        var focusDuration = Duration.zero
+        var navigationGap = Duration.zero
+        for tab in tabs {
+            window.layoutIfNeeded()
+            let frame = try XCTUnwrap(
+                model.subtitleLayout.frame(for: .tab(tab == "continueWatching" ? "chapters" : tab)),
+                "Missing \(tab) anchor"
+            )
+            let target = try XCTUnwrap(cardTabFocusItems(in: window).first {
+                guard let bounds = cardTabFocusFrame($0, in: window) else { return false }
+                // This fixture has only Info, Chapters, and Continue Watching.
+                if tab == "continueWatching" {
+                    return bounds.midY >= frame.minY && bounds.midY <= frame.maxY && bounds.minX > frame.maxX
+                }
+                return frame.contains(CGPoint(x: bounds.midX, y: bounds.midY))
+            }, "Missing native target for \(tab)")
+            recorder.tabs = []
+            await Task.yield()
+            largestGap = .zero
+            let start = ContinuousClock.now
+            host.target = target
+            system.requestFocusUpdate(to: host)
+            system.updateFocusIfNeeded()
+            host.target = nil
+            focusDuration = max(focusDuration, start.duration(to: .now))
+            try await Task.sleep(for: .milliseconds(250))
+            navigationGap = max(navigationGap, largestGap)
+            XCTAssertTrue(system.focusedItem === target)
+            XCTAssertTrue(recorder.tabs.allSatisfy { $0 == tab })
+            let card = try XCTUnwrap(model.subtitleLayout.frame(for: .card))
+            XCTAssertTrue(cardTabFocusItems(in: window).contains {
+                guard let bounds = cardTabFocusFrame($0, in: window) else { return false }
+                return card.contains(CGPoint(x: bounds.midX, y: bounds.midY))
+            }, "A populated, focusable card must finish mounting.")
+            if tab == "continueWatching", let server {
+                try await waitUntil { server.requestCount(for: "/poster") > 0 }
+            }
+        }
+        heartbeat.cancel()
+        _ = await heartbeat.result
+        let requests = await provider.requests
+        XCTAssertTrue(requests.isEmpty, "Opening controls must not fetch provider metadata.")
+        XCTAssertEqual(player.continueWatchingItems.count, enabled ? 180 : 0)
+        func microseconds(_ duration: Duration) -> Int {
+            let parts = duration.components
+            return Int(parts.seconds * 1_000_000 + parts.attoseconds / 1_000_000_000_000)
+        }
+        return [
+            "items": items.count, "tabVisits": tabs.count, "providerRequests": requests.count,
+            "snapshotReads": snapshotReads, "revealSnapshotReads": revealReads,
+            "revealMicroseconds": microseconds(reveal),
+            "revealMaxMainActorGapMicroseconds": microseconds(revealGap),
+            "focusUpdateMicroseconds": microseconds(focusDuration),
+            "navigationMaxMainActorGapMicroseconds": microseconds(navigationGap)
+        ]
+    }
+
     func testProductionCardContentAndNativeEntryOnFirstVisits() async throws {
         _ = try await exerciseCardTabs(measuring: false, checkingContent: true)
     }

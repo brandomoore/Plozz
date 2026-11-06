@@ -253,6 +253,19 @@ SCENARIOS = {
                      "castFocusUpdateMicroseconds", "castMaxMainActorGapMicroseconds"],
         "timing": ["cpuMilliseconds"],
     },
+    **{
+        f"player-continue-watching-{mode}": {
+            "suite": "ui", "platforms": ["tvOS"],
+            "test": f"PlayerEpisodeArtworkHostedTests/testPerformanceContinueWatching{method}",
+            "file": "Tests/FocusIntegrationTests/PlayerEpisodeArtworkHostedTests.swift",
+            "description": "Fresh production controls, 180 Home items across twelve accounts, transport reveal and native tab round trips; no decoding or remote artwork.",
+            "counters": ["items", "tabVisits", "providerRequests", "snapshotReads", "revealSnapshotReads",
+                         "revealMicroseconds", "revealMaxMainActorGapMicroseconds",
+                         "focusUpdateMicroseconds", "navigationMaxMainActorGapMicroseconds"],
+            "timing": ["cpuMilliseconds"],
+        }
+        for mode, method in (("controls", "Controls"), ("disabled", "Disabled"))
+    },
     "player-controls-cold-reveal": {
         "suite": "ui", "platforms": ["tvOS"],
         "test": "PlayerControlsRevealPerformanceTests/testPerformanceColdControlsReveal",

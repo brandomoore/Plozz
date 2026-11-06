@@ -43,8 +43,11 @@ fixed slots; narrower grid cells must not inherit a rail-sized minimum width.
 `PosterCardView.artworkOnly` renders the same artwork, spoiler protection, logo
 fallback and playback indicators inside a caller-owned button. It does not add
 Home's sizing, captions, focus target, context menu, or detail transition.
-The player uses this mode with readable playback text fitted to its artwork
-slot, rather than scaling an entire Home card. `ContinueWatchingPresentation`
+The player uses this mode with readable, single-line playback text fitted to its
+artwork slot, rather than scaling an entire Home card. Shared fitting removes the
+play glyph and then the progress bar before reducing text. The player's final
+fallback keeps remaining time ahead of the episode qualifier; mobile Home keeps
+its existing accessibility wrapping behavior. `ContinueWatchingPresentation`
 carries the active profile's artwork choice and Home Showcase caption context
 through hosted presentation boundaries; it does not persist player-specific
 styling settings.

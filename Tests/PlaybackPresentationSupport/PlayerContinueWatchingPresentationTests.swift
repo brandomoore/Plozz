@@ -3,10 +3,89 @@ import CoreModels
 @testable import FeaturePlayback
 import SwiftUI
 import UIKit
+import Vision
 import XCTest
 
 @MainActor
 final class PlayerContinueWatchingPresentationTests: XCTestCase {
+    func testNarrowPlayerPlaybackDetailsStayOnOneLineAndKeepRemainingTime() throws {
+        let item = MediaItem(
+            id: "narrow", title: "Episode", kind: .episode,
+            seasonNumber: 12, episodeNumber: 123, runtime: 7200, resumePosition: 300
+        )
+        for fontSize: CGFloat in [14, 20, 22] {
+            for width: CGFloat in [86, 100, 130, 180, 300] {
+                for detail in [nil, item.seasonEpisodeLabel] {
+                    let renderer = ImageRenderer(content:
+                        ResumeChipOverlay(
+                            item: item, detailText: detail, showsPlayGlyphWhenIdle: true,
+                            compactHorizontalLayout: true
+                        )
+                        .fittingPlaybackText(size: fontSize, inset: 6)
+                        .withoutScrim
+                        .environment(\.locale, Locale(identifier: "en_US"))
+                        .frame(width: width, height: 100)
+                        .background(.black)
+                    )
+                    renderer.scale = 3
+                    let image = try XCTUnwrap(renderer.cgImage)
+                    let context = try XCTUnwrap(CGContext(
+                        data: nil, width: image.width, height: image.height, bitsPerComponent: 8,
+                        bytesPerRow: image.width * 4, space: CGColorSpaceCreateDeviceRGB(),
+                        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue
+                    ))
+                    context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+                    let pixels = try XCTUnwrap(context.data).assumingMemoryBound(to: UInt8.self)
+                    let rows = (0..<image.height).filter { y in
+                        (0..<image.width).contains { x in
+                            let offset = (y * image.width + x) * 4
+                            return max(pixels[offset], pixels[offset + 1], pixels[offset + 2]) > 80
+                        }
+                    }
+                    let height = CGFloat(try XCTUnwrap(rows.last) - XCTUnwrap(rows.first) + 1) / 3
+                    XCTAssertLessThanOrEqual(
+                        height, ceil(UIFont.systemFont(ofSize: fontSize, weight: .semibold).lineHeight),
+                        "Player details must be one line: width \(width), font \(fontSize), detail \(detail ?? "none")"
+                    )
+                    let recognition = VNRecognizeTextRequest()
+                    recognition.recognitionLevel = .accurate
+                    recognition.recognitionLanguages = ["en-US"]
+                    let durationRenderer = ImageRenderer(content:
+                        Text(verbatim: try XCTUnwrap(item.resumeRemainingText))
+                            .font(.system(size: fontSize, weight: .semibold)).fixedSize()
+                    )
+                    durationRenderer.scale = 3
+                    let durationWidth = try XCTUnwrap(durationRenderer.cgImage).width
+                    let lastColumn = try XCTUnwrap((0..<image.width).last { x in
+                        rows.contains { y in
+                            let offset = (y * image.width + x) * 4
+                            return max(pixels[offset], pixels[offset + 1], pixels[offset + 2]) > 80
+                        }
+                    })
+                    // Isolate the trailing duration: the adjacent bar confuses OCR's leading "1".
+                    let left = max(0, lastColumn - durationWidth - 6)
+                    let durationImage = try XCTUnwrap(image.cropping(to: CGRect(
+                        x: left, y: 0, width: lastColumn - left + 4, height: image.height
+                    )))
+                    try VNImageRequestHandler(cgImage: durationImage).perform([recognition])
+                    let text = (recognition.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined()
+                        .replacingOccurrences(of: " ", with: "")
+                    if !text.contains("1h") || !text.contains("55m") {
+                        let attachment = XCTAttachment(image: UIImage(cgImage: image))
+                        attachment.name = "Narrow playback \(width) \(fontSize) \(detail ?? "none")"
+                        attachment.lifetime = .keepAlways
+                        add(attachment)
+                    }
+                    XCTAssertTrue(
+                        text.contains("1h") && text.contains("55m"),
+                        "Missing remaining time at width \(width), font \(fontSize), detail \(detail ?? "none"): \(text)"
+                    )
+                    XCTAssertFalse(text.contains("…"), "Remaining time must not truncate.")
+                }
+            }
+        }
+    }
+
     func testCaptionSideInsetsPreserveArtworkAndEvenVerticalPadding() async throws {
         let deadline = ContinuousClock.now + .seconds(5)
         while !UIApplication.shared.connectedScenes.contains(where: { $0.activationState == .foregroundActive }),
