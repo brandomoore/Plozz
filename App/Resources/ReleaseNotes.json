@@ -2,6 +2,50 @@
   "schemaVersion": 1,
   "releases": [
     {
+      "id": "release/071",
+      "version": "2026.11.6",
+      "marketingVersion": "2026.11.6",
+      "build": 71,
+      "releasedAt": "2026-11-06",
+      "sections": [
+        {
+          "category": "New",
+          "items": [
+            {
+              "text": "Offline Mode for downloads, with known limitations in library filters, series details and Watchlist.",
+              "platforms": ["iOS"]
+            },
+            "Offline sign-in for previously authenticated Plex profiles.",
+            "Song identification during supported playback.",
+            "Continue Watching and customizable tabs in the player.",
+            {
+              "text": "Full-screen playback controls for hero trailers.",
+              "platforms": ["tvOS"]
+            }
+          ]
+        },
+        {
+          "category": "Updated",
+          "items": [
+            "Redesigned title details, ratings, cast and crew.",
+            "Trailers continue between Home and title details.",
+            "More control over trailers and background music.",
+            "Improved landscape artwork and optional title logos in Home rows.",
+            "Dolby Vision Profile 7 videos now use their HDR10 base."
+          ]
+        },
+        {
+          "category": "Fixed",
+          "items": [
+            "Subtitle labels losing regional and version names.",
+            "Home trailers preventing screen savers and sleep.",
+            "Resume positions and brief-play indicators on title details.",
+            "Playback failures after system media-service interruptions."
+          ]
+        }
+      ]
+    },
+    {
       "id": "release/070.1",
       "version": "2026.11.4",
       "marketingVersion": "2026.11.4",
