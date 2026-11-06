@@ -354,6 +354,7 @@ final class WebDAVDiscPlaybackHostedTests: XCTestCase {
             seekPositions: discMenus ? [2] : [10, 2, 13], startPosition: startPosition,
             discMenus: discMenus,
             expectedDiscPlaylist: missingOpening ? 2 : 1,
+            discStartupAutoplay: discStartupAutoplay,
             discStillSeconds: discStillSeconds, discAudioSelection: discAudioSelection,
             discIntermediateStill: discIntermediateStill, discShortSecondItem: discShortSecondItem,
             discJava: discJava, discJavaQuarantine: discJavaQuarantine, inspectVideos: inspectVideos
@@ -582,7 +583,8 @@ final class WebDAVDiscPlaybackHostedTests: XCTestCase {
         base: URL, path: String, credential: WebDAVCredential, seekPositions: [Double],
         startPosition: Double = 0, sustainedPlaybackSeconds: Int = 0,
         requiresNativeHLS: Bool = false, recordIO: (@Sendable (String) async -> Void)? = nil,
-        discMenus: Bool = false, expectedDiscPlaylist: Int = 1, discStillSeconds: UInt16? = nil,
+        discMenus: Bool = false, expectedDiscPlaylist: Int = 1, discStartupAutoplay: Bool = false,
+        discStillSeconds: UInt16? = nil,
         discAudioSelection: Bool = false, discIntermediateStill: Bool = false, discShortSecondItem: Bool = false,
         discMenuInspection: Bool = false, discJava: Bool = false, discJavaInspection: Bool = false,
         discJavaKeys: [UInt32] = [], discJavaQuarantine: Bool = false,
@@ -879,6 +881,9 @@ final class WebDAVDiscPlaybackHostedTests: XCTestCase {
                 let position = engine.currentTime
                 try await Task.sleep(for: .seconds(10))
                 XCTAssertGreaterThan(engine.currentTime, position + 8)
+                XCTAssertFalse(menu.showsLoadingIndicator, "Authored movie playback must clear startup loading")
+                XCTAssertFalse(menu.presentsMenu, "The movie must use normal player controls")
+                XCTAssertFalse(menu.audioSelectionUnavailable, "The active authored audio is available")
                 engine.pause()
                 let paused = engine.currentTime
                 try await Task.sleep(for: .seconds(1))
@@ -914,6 +919,9 @@ final class WebDAVDiscPlaybackHostedTests: XCTestCase {
                 let selectedPosition = engine.currentTime
                 try await waitForPlayback(engine, after: selectedPosition + 2, before: selectedPosition + 10)
                 print("WEBDAV_DISC javaTopMenuPlayVerified playlist=\(menu.playlist ?? -1) position=\(engine.currentTime)")
+                XCTAssertFalse(menu.showsLoadingIndicator)
+                XCTAssertFalse(menu.presentsMenu)
+                XCTAssertFalse(menu.audioSelectionUnavailable)
             }
             engine.stop()
             await engine.drainTransport()
@@ -976,6 +984,12 @@ final class WebDAVDiscPlaybackHostedTests: XCTestCase {
             let menu = try XCTUnwrap(engine.discMenu)
             XCTAssertEqual(menu.playlist, expectedDiscPlaylist, "Native navigation must select the authored playlist")
             XCTAssertNil(menu.failure)
+            if discStartupAutoplay {
+                try await wait(engine: engine, seconds: 5) { menu.hasPresentedVideoFrame }
+                XCTAssertFalse(menu.isFirstPlay)
+                XCTAssertFalse(menu.showsLoadingIndicator)
+                XCTAssertFalse(menu.presentsMenu, "Autoplay without a menu must expose ordinary movie controls")
+            }
             if discAudioSelection {
                 try await wait(engine: engine, seconds: 10) { engine.currentAudioTrackID == 2 }
                 XCTAssertEqual(menu.playlist, 1)

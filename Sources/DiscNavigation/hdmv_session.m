@@ -672,6 +672,10 @@ static unsigned component(double value) {
                 event.event, event.param, (long)_playlist, _clip, (long)_generation, _synchronizing]];
         }
         if (event.event == BD_EVENT_TITLE) {
+            BOOL firstPlay = event.param == BLURAY_TITLE_FIRST_PLAY;
+            dispatch_async(dispatch_get_main_queue(), ^{
+                if (!self.stopped && self.firstPlayChanged) self.firstPlayChanged(firstPlay);
+            });
             if (event.param == BLURAY_TITLE_TOP_MENU) {
                 [self publishMenuRequestPending:NO];
             }

@@ -1,4 +1,5 @@
 import CoreModels
+import AetherEngine
 @testable import EnginePlozzigen
 import FeaturePlayback
 import MediaTransportCore
@@ -6,6 +7,50 @@ import XCTest
 
 @MainActor
 final class DiscMenuSelectionHostedTests: XCTestCase {
+    func testAudioWarningRequiresReadyTracksWithKnownMissingIdentity() {
+        let trueHD = TrackInfo(id: 1, name: "Fixture", codec: "truehd", language: "eng",
+                               isDefault: true, mpegTSPID: 0x1100)
+        let companion = TrackInfo(id: 2, name: "Fixture", codec: "ac3", language: "eng",
+                                  isDefault: false, mpegTSPID: 0x1100)
+        let other = TrackInfo(id: 3, name: "Fixture", codec: "ac3", language: "fra",
+                              isDefault: false, mpegTSPID: 0x1101)
+        let unknown = TrackInfo(id: 4, name: "Fixture", codec: "ac3", language: nil, isDefault: false)
+        func result(_ tracks: [TrackInfo], active: Int?, ready: Bool = true, pid: Int = 0x1100)
+            -> DiscAudioSelectionResult {
+            PlozzigenVideoEngine.discAudioSelectionResult(
+                pid: pid, tracks: tracks, activeTrackID: active, hasPresentedFrame: ready
+            )
+        }
+        XCTAssertEqual(result([], active: nil), .pending)
+        XCTAssertEqual(result([other], active: 3, ready: false), .pending)
+        XCTAssertEqual(result([trueHD, companion], active: nil), .pending)
+        XCTAssertEqual(result([trueHD, companion, other], active: 3), .pending)
+        XCTAssertEqual(result([unknown, other], active: 3), .pending)
+        XCTAssertEqual(result([other], active: 3, pid: -1), .pending)
+        XCTAssertEqual(result([trueHD, companion], active: 1), .selected)
+        XCTAssertEqual(result([trueHD, companion], active: 2), .selected)
+        XCTAssertEqual(result([other], active: 3), .unavailable)
+    }
+
+    func testPendingAudioIsRetriedAndOnlyConfirmedFailureShowsNotice() async throws {
+        var result = DiscAudioSelectionResult.pending
+        let session = try makeSession(selectAudio: { _ in result }) { _, _, _ in false }
+        session.select(800, position: 0, generation: 1)
+        session.selectAudio(pid: 0x1100, generation: 1)
+        await session.drain()
+        XCTAssertNil(session.state.notice)
+        result = .unavailable
+        session.tracksReady()
+        XCTAssertTrue(session.state.audioSelectionUnavailable)
+        result = .selected
+        session.tracksReady()
+        XCTAssertNil(session.state.notice)
+        result = .unavailable
+        session.selectAudio(pid: 0x1101, generation: 0)
+        session.tracksReady()
+        XCTAssertNil(session.state.notice, "An old generation cannot restore a warning")
+    }
+
     private struct UnusedResolver: MediaTransportNetworkFileResolving {
         func resolve(_ locator: NetworkFileLocator) async throws -> MediaTransportResolvedSource {
             XCTFail("Selection scheduling must not open the fixture's transport")
@@ -14,6 +59,7 @@ final class DiscMenuSelectionHostedTests: XCTestCase {
     }
 
     private func makeSession(
+        selectAudio: @escaping (Int) -> DiscAudioSelectionResult = { _ in .selected },
         load: @escaping (TransportDiscDirectoryReader, TimeInterval, DiscMenuClip?) async throws -> Bool
     ) throws -> DiscMenuSession {
         let index = try NetworkFileLocator(
@@ -29,7 +75,7 @@ final class DiscMenuSelectionHostedTests: XCTestCase {
         let session = try DiscMenuSession(
             reader: reader, region: 1, state: DiscMenuPlaybackState(),
             load: load, pause: {}, resume: {}, isPaused: { false },
-            selectAudio: { _ in true }, selectSubtitle: { _, _ in true }
+            selectAudio: selectAudio, selectSubtitle: { _, _ in true }
         )
         addTeardownBlock { @MainActor in
             session.stop()
@@ -87,6 +133,19 @@ final class DiscMenuSelectionHostedTests: XCTestCase {
 
     func testChangedPlaylistCancelsAndReplacesThePendingLoad() async throws {
         try await checkReplacement(firstClip: nil, nextClip: nil, nextPosition: 0, nextPlaylist: 20)
+    }
+
+    func testStoppedPlaylistWaitsForANewPresentedFrame() async throws {
+        let session = try makeSession { _, _, _ in false }
+        session.state.isFirstPlay = false
+        session.select(800, position: 0, generation: 1)
+        await session.drain()
+        session.updateTime(1, sourceSeconds: 1, hasPresentedFrame: true)
+        XCTAssertFalse(session.state.showsLoadingIndicator)
+        session.select(-1, position: 0, generation: 2)
+        session.updateTime(2, sourceSeconds: 2, hasPresentedFrame: true)
+        XCTAssertFalse(session.state.hasPresentedVideoFrame, "A retired player's clock cannot finish the transition")
+        XCTAssertTrue(session.state.showsLoadingIndicator)
     }
 
     func testSharedLoadFailureRemainsVisible() async throws {

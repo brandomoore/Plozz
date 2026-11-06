@@ -9,6 +9,11 @@ Original HDMV and BD-J disc navigation share the existing player through
 The profile default and transient entry intent keep direct playback separate
 from menu navigation. Menu failures require an explicit retry or direct-play
 choice, and menu clocks never reach ordinary watch reporting.
+Startup loading follows first-play setup, not an implicit top-menu request:
+authored movie playback returns to normal controls after its first presented frame.
+Nonfatal disc notices use the shared transient status toast across menu and movie
+surfaces. Audio warnings require ready playback and a known missing transport PID;
+pending track discovery or a representation switch is not an unavailable track.
 See [disc navigation](../../docs/playback-engines.md#original-disc-navigation)
 for the initial compatibility and track-selection limits.
 

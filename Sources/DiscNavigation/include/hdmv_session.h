@@ -23,6 +23,7 @@ NS_ASSUME_NONNULL_BEGIN
 @property(nonatomic, copy, nullable) void (^diagnosticEvent)(NSString *event);
 @property(nonatomic, copy) void (^menuVisibilityChanged)(BOOL visible);
 @property(nonatomic, copy, nullable) void (^menuRequestPendingChanged)(BOOL pending);
+@property(nonatomic, copy, nullable) void (^firstPlayChanged)(BOOL firstPlay);
 @property(nonatomic, copy) void (^stillChanged)(BOOL active, BOOL resumePlayback);
 @property(nonatomic, copy) void (^audioPIDChanged)(NSInteger pid, NSInteger generation);
 @property(nonatomic, copy) void (^subtitlePIDChanged)(NSInteger pid, BOOL enabled, NSInteger generation);

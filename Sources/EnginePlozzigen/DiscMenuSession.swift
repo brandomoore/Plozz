@@ -13,6 +13,10 @@ struct DiscMenuClip: Equatable, Sendable {
     let playlistStart: Double
 }
 
+enum DiscAudioSelectionResult: Equatable {
+    case pending, selected, unavailable
+}
+
 private final class DiscMenuSource: @unchecked Sendable {
     let reader: TransportDiscDirectoryReader
     init(_ reader: TransportDiscDirectoryReader) { self.reader = reader }
@@ -115,7 +119,7 @@ final class DiscMenuSession {
     private let pause: () -> Void
     private let resume: () -> Void
     private let isPaused: () -> Bool
-    private let selectAudio: (Int) -> Bool
+    private let selectAudio: (Int) -> DiscAudioSelectionResult
     private let selectSubtitle: (Int, Bool) -> Bool
     private var pendingAudioPID: Int?
     private var pendingSubtitle: (pid: Int, enabled: Bool)?
@@ -127,7 +131,7 @@ final class DiscMenuSession {
         pause: @escaping () -> Void,
         resume: @escaping () -> Void,
         isPaused: @escaping () -> Bool,
-        selectAudio: @escaping (Int) -> Bool,
+        selectAudio: @escaping (Int) -> DiscAudioSelectionResult,
         selectSubtitle: @escaping (Int, Bool) -> Bool
     ) throws {
         guard let independent = reader.makeIndependentReader() as? TransportDiscDirectoryReader else {
@@ -180,6 +184,12 @@ final class DiscMenuSession {
                 self.state.isMenuRequestPending = pending
             }
         }
+        native.firstPlayChanged = { [weak self] firstPlay in
+            MainActor.assumeIsolated {
+                guard let self, !self.stopped else { return }
+                self.state.isFirstPlay = firstPlay
+            }
+        }
         native.stillChanged = { [weak self] active, resumePlayback in
             MainActor.assumeIsolated {
                 guard let self, !self.stopped else { return }
@@ -205,9 +215,7 @@ final class DiscMenuSession {
         }
         native.audioPIDChanged = { [weak self] pid, generation in
             MainActor.assumeIsolated {
-                guard let self, !self.stopped, self.generation == generation else { return }
-                self.pendingAudioPID = pid
-                self.tracksReady()
+                self?.selectAudio(pid: pid, generation: generation)
             }
         }
         native.subtitlePIDChanged = { [weak self] pid, enabled, generation in
@@ -274,10 +282,11 @@ final class DiscMenuSession {
         let previous = selectionTask
         previous?.cancel()
         loadingSelection = nil
-        if playlist < 0 { pause(); return }
-        loadingSelection = selection
+        state.hasPresentedVideoFrame = false
         state.isOpening = true
         armDeadline()
+        if playlist < 0 { pause(); return }
+        loadingSelection = selection
         selectionTask = Task { [weak self] in
             await previous?.value
             guard let self, !self.stopped, !Task.isCancelled else { return }
@@ -331,6 +340,8 @@ final class DiscMenuSession {
         guard !stopped, let loadedGeneration, hasPresentedFrame,
               Date().timeIntervalSince(lastClockUpdate) >= 0.1 else { return }
         deadline?.cancel()
+        state.hasPresentedVideoFrame = true
+        tracksReady()
         lastClockUpdate = Date()
         let playlistTime: Double
         if let clip = playbackClip {
@@ -352,14 +363,26 @@ final class DiscMenuSession {
 
     func setPaused(_ paused: Bool) { native?.playbackPaused = paused }
 
+    func selectAudio(pid: Int, generation: Int) {
+        guard !stopped, self.generation == generation else { return }
+        pendingAudioPID = pid
+        tracksReady()
+    }
+
     func tracksReady() {
         guard !stopped, loadedGeneration == generation else { return }
         if let pid = pendingAudioPID {
-            pendingAudioPID = nil
-            let available = selectAudio(pid)
-            state.audioSelectionUnavailable = !available
-            if !available {
-                pendingAudioPID = pid
+            switch selectAudio(pid) {
+            case .pending:
+                state.audioSelectionUnavailable = false
+            case .selected:
+                pendingAudioPID = nil
+                state.audioSelectionUnavailable = false
+            case .unavailable:
+                if !state.audioSelectionUnavailable {
+                    PlozzLog.playback.error("Disc audio PID \(pid) is absent from the ready player's identified tracks")
+                }
+                state.audioSelectionUnavailable = true
             }
         }
         if let selection = pendingSubtitle {

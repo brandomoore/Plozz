@@ -14,10 +14,13 @@ public final class DiscMenuPlaybackState {
         }
     }
     public private(set) var hasPresentedMenu = false
+    public var isFirstPlay = true
+    public var hasPresentedVideoFrame = false
     public var showsLoadingIndicator: Bool {
-        failure == nil && !isMenuVisible && (!hasPresentedMenu || isMenuRequestPending || isOpening)
+        failure == nil && !isMenuVisible &&
+            (isMenuRequestPending || isOpening || !hasPresentedVideoFrame || (isFirstPlay && !hasPresentedMenu))
     }
-    public var isMenuRequestPending = true
+    public var isMenuRequestPending = false
     public var presentsMenu: Bool {
         failure != nil || isMenuRequestPending || showsLoadingIndicator || isMenuVisible || image != nil
     }
@@ -69,7 +72,9 @@ public final class DiscMenuPlaybackState {
         isOpening = true
         isMenuVisible = false
         hasPresentedMenu = false
-        isMenuRequestPending = true
+        isFirstPlay = true
+        hasPresentedVideoFrame = false
+        isMenuRequestPending = false
         isStill = false
         hasSubtitleSelection = false
         subtitleTrackID = nil

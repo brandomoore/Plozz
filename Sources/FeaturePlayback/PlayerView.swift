@@ -52,6 +52,7 @@ public struct PlayerView: View {
     @State private var viewModel: PlayerViewModel
     @State private var diagnosticsSampler = PlaybackDiagnosticsSampler()
     @State private var showsDiscVideos = false
+    @State private var discStatus = TransientStatusPresenter(displayDuration: .seconds(5))
     /// Suspends Liquid Glass while demanding video is on screen.
     ///
     /// Optional so a player hosted outside the app root — previews, tests —
@@ -103,6 +104,14 @@ public struct PlayerView: View {
     public var body: some View {
         configuredPlayerStack
         #if canImport(UIKit)
+        .transientStatusOverlay(presenter: discStatus, palette: themePalette)
+        .onChange(of: discNotice, initial: true) { _, notice in
+            if let notice {
+                discStatus.present(icon: "exclamationmark.triangle", text: "\(notice)")
+            } else {
+                discStatus.dismiss()
+            }
+        }
         .sheet(isPresented: $showsDiscVideos) {
             DiscVideoPicker(model: viewModel)
         }
@@ -147,6 +156,7 @@ public struct PlayerView: View {
             }
         }
         .onDisappear {
+            discStatus.dismiss()
             diagnosticsSampler.stop()
             releaseGlassSuspension()
             Task { await viewModel.stop() }
@@ -315,18 +325,19 @@ public struct PlayerView: View {
             )
         } else {
             ordinaryPhaseContent
-                .overlay(alignment: .bottom) {
-                    if viewModel.isDiscMenuPlayback,
-                       let notice = viewModel.videoEngine.discMenu?.notice {
-                        Text(verbatim: notice).padding().background(.regularMaterial)
-                            .allowsHitTesting(false)
-                    }
-                }
         }
         #else
         ordinaryPhaseContent
         #endif
     }
+
+    #if canImport(UIKit)
+    private var discNotice: String? {
+        guard viewModel.isDiscMenuPlayback, let state = viewModel.videoEngine.discMenu,
+              state.failure == nil else { return nil }
+        return state.notice
+    }
+    #endif
 
     @ViewBuilder
     private var ordinaryPhaseContent: some View {

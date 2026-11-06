@@ -62,12 +62,6 @@ struct DiscMenuPlayerContent: View {
                 #endif
             }
         }
-        .overlay(alignment: .bottom) {
-            if let notice = state.notice, state.failure == nil {
-                Text(verbatim: notice).padding().background(.regularMaterial)
-                    .allowsHitTesting(false)
-            }
-        }
         .confirmationDialog("Disc menu", isPresented: $showsActions, titleVisibility: .visible) {
             Button("Open disc menu") { state.openMenu() }
             Button("Play video") { model.playVideoWithoutMenus() }

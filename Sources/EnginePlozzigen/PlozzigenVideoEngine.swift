@@ -705,15 +705,18 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
                         resume: { [weak self] in self?.engine.play() },
                         isPaused: { [weak self] in self?.intendsPause ?? true },
                         selectAudio: { [weak self] pid in
-                            guard let self else { return false }
-                            guard let trackID = Self.discAudioTrackID(
+                            guard let self else { return .pending }
+                            if let trackID = Self.discAudioTrackID(
                                 pid: pid, tracks: self.engine.audioTracks,
                                 activeTrackID: self.engine.activeAudioTrackIndex
-                            ) else { return false }
-                            if self.engine.activeAudioTrackIndex != trackID {
+                            ), self.engine.activeAudioTrackIndex != trackID {
                                 self.engine.selectAudioTrack(index: trackID)
                             }
-                            return true
+                            return Self.discAudioSelectionResult(
+                                pid: pid, tracks: self.engine.audioTracks,
+                                activeTrackID: self.engine.activeAudioTrackIndex,
+                                hasPresentedFrame: self.engine.hasFirstFrameReadyForDisplay
+                            )
                         },
                         selectSubtitle: { [weak self] pid, enabled in
                             guard let self else { return false }
@@ -2246,6 +2249,9 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
                             + " delivery=\(self.engine.audioDelivery.rawValue)"
                     )
                 }
+                #if canImport(DiscNavigation) && canImport(UIKit)
+                self.discSession?.tracksReady()
+                #endif
                 self.onTracksChanged?()
             }
             .store(in: &cancellables)
@@ -2420,6 +2426,21 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
         }
         return matches.count == 1 ? matches.first?.id : nil
     }
+
+    #if canImport(DiscNavigation) && canImport(UIKit)
+    static func discAudioSelectionResult(
+        pid: Int, tracks: [TrackInfo], activeTrackID: Int?, hasPresentedFrame: Bool
+    ) -> DiscAudioSelectionResult {
+        guard hasPresentedFrame, (0x20..<0x1fff).contains(pid),
+              let activeTrackID, tracks.contains(where: { $0.id == activeTrackID }) else { return .pending }
+        if tracks.contains(where: { $0.id == activeTrackID && $0.mpegTSPID == pid }) { return .selected }
+        // Missing identity and an unfinished representation switch are not proof
+        // that the disc's requested audio is unavailable.
+        guard tracks.allSatisfy({ $0.mpegTSPID != nil }),
+              !tracks.contains(where: { $0.mpegTSPID == pid }) else { return .pending }
+        return .unavailable
+    }
+    #endif
 
     private func syncTracks() {
         audioTracks = serverRenditionAudio?.tracks

@@ -62,6 +62,7 @@ final class DiscMenuTouchTests: XCTestCase {
         let state = DiscMenuPlaybackState()
         XCTAssertTrue(state.showsLoadingIndicator)
         state.isOpening = false
+        state.hasPresentedVideoFrame = true
         XCTAssertTrue(state.showsLoadingIndicator)
         state.isMenuVisible = true
         XCTAssertFalse(state.showsLoadingIndicator)
@@ -69,9 +70,11 @@ final class DiscMenuTouchTests: XCTestCase {
         XCTAssertFalse(state.showsLoadingIndicator, "Keep a usable language prompt interactive")
         state.isMenuVisible = false
         XCTAssertTrue(state.showsLoadingIndicator)
-        state.isMenuRequestPending = false
+        state.isMenuRequestPending = true
         state.isOpening = false
-        XCTAssertTrue(state.showsLoadingIndicator, "A title change alone does not finish menu presentation")
+        XCTAssertTrue(state.showsLoadingIndicator, "An explicit menu request waits for the menu")
+        state.isMenuRequestPending = false
+        XCTAssertFalse(state.showsLoadingIndicator, "Ordinary playback is not an implicit top-menu request")
         state.isMenuVisible = true
         state.isMenuVisible = false
         state.isOpening = false
@@ -91,11 +94,27 @@ final class DiscMenuTouchTests: XCTestCase {
         state.isMenuRequestPending = false
         XCTAssertTrue(state.presentsMenu)
         state.isMenuVisible = false
+        state.hasPresentedVideoFrame = true
         XCTAssertFalse(state.presentsMenu)
         state.isMenuRequestPending = true
         XCTAssertTrue(state.presentsMenu)
         state.reset()
-        XCTAssertTrue(state.isMenuRequestPending)
+        XCTAssertFalse(state.isMenuRequestPending)
+    }
+
+    func testAuthoredAutoplayWithoutAnyMenuEndsLoadingOnlyAfterItsFrame() {
+        let state = DiscMenuPlaybackState()
+        state.isOpening = false
+        state.hasPresentedVideoFrame = true
+        XCTAssertTrue(state.showsLoadingIndicator, "First-play background video is still startup")
+        state.hasPresentedVideoFrame = false
+        state.isFirstPlay = false
+        XCTAssertTrue(state.showsLoadingIndicator, "A title event is not a displayed movie frame")
+        state.hasPresentedVideoFrame = true
+        XCTAssertFalse(state.showsLoadingIndicator)
+        XCTAssertFalse(state.presentsMenu)
+        state.isMenuRequestPending = true
+        XCTAssertTrue(state.showsLoadingIndicator, "An explicit menu request still waits")
     }
 
     @MainActor @Observable
