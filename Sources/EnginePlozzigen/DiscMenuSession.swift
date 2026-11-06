@@ -305,8 +305,9 @@ final class DiscMenuSession {
     }
 
     func updateTime(_ seconds: Double, sourceSeconds: Double, hasPresentedFrame: Bool) {
-        guard !stopped, let loadedGeneration, Date().timeIntervalSince(lastClockUpdate) >= 0.1 else { return }
-        if hasPresentedFrame { deadline?.cancel() }
+        guard !stopped, let loadedGeneration, hasPresentedFrame,
+              Date().timeIntervalSince(lastClockUpdate) >= 0.1 else { return }
+        deadline?.cancel()
         lastClockUpdate = Date()
         let playlistTime: Double
         if let clip = playbackClip {

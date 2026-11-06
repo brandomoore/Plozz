@@ -1,5 +1,6 @@
 import CoreModels
 import Darwin
+@preconcurrency import DiscNavigation
 import EnginePlozzigen
 import FeatureHomeCore
 import Foundation
@@ -138,11 +139,56 @@ final class WebDAVDiscPlaybackHostedTests: XCTestCase {
                                       discIntermediateStill: true, discShortSecondItem: true)
     }
 
+    func testNativeItemClockStaysInsideItsFractionalInterval() async throws {
+        try await checkBluRayPlayback(startPosition: 0, discMenus: true,
+                                      discIntermediateStill: true, discShortSecondItem: true,
+                                      nativeClockOnly: true)
+    }
+
+    private func checkNativeItemClock(_ files: [String: Data]) async throws {
+        let native = try XCTUnwrap(HDMVSession(
+            files: files.mapValues { NSNumber(value: $0.count) }, region: 1,
+            readRange: { path, offset, length in
+                guard let data = files[path], offset >= 0, length > 0,
+                      offset <= data.count, length <= Int64(data.count) - offset else { return nil }
+                return data.subdata(in: Int(offset)..<Int(offset + length))
+            }
+        ))
+        defer { native.stop() }
+        let completed = expectation(description: "The second item owns the clock and completion")
+        var secondGeneration: Int?
+        native.playItemChanged = { [weak native] _, item, _, _, _, start, _, generation in
+            MainActor.assumeIsolated {
+                if item == 1 {
+                    secondGeneration = generation
+                    XCTAssertEqual(start, 2.002, accuracy: 1 / 90_000.0)
+                    native?.updateTime(start, generation: generation)
+                    native?.updateTime(start - 1 / 90_000.0, generation: generation)
+                }
+                native?.ended(generation)
+            }
+        }
+        native.diagnosticEvent = { event in
+            MainActor.assumeIsolated {
+                XCTAssertFalse(event.contains("disc CLOCK_SYNC"),
+                               "A rendered item's clock must not seek into its neighbor: \(event)")
+                if let generation = secondGeneration, event.hasPrefix("disc NATIVE_END "),
+                   event.contains("generation=\(generation) ") {
+                    XCTAssertTrue(event.contains("clip=1 "), event)
+                    completed.fulfill()
+                }
+            }
+        }
+        native.start()
+        await fulfillment(of: [completed], timeout: 10)
+    }
+
     private func checkBluRayPlayback(
         startPosition: Double, discMenus: Bool = false, missingOpening: Bool = false,
         discStillSeconds: UInt16? = nil, discAudioSelection: Bool = false, discIntermediateStill: Bool = false,
         discShortSecondItem: Bool = false, discJava: Bool = false, discJavaQuarantine: Bool = false,
-        inspectVideos: Bool = false, discStartupAutoplay: Bool = false, discStartupRestricted: Bool = false
+        inspectVideos: Bool = false, discStartupAutoplay: Bool = false, discStartupRestricted: Bool = false,
+        nativeClockOnly: Bool = false
     ) async throws {
         let root = try XCTUnwrap(Bundle(for: Self.self).resourceURL)
             .appendingPathComponent("Fixtures/bluray-test-pattern")
@@ -230,12 +276,14 @@ final class WebDAVDiscPlaybackHostedTests: XCTestCase {
                         bytes[index + offset] = UInt8(truncatingIfNeeded: value >> (24 - offset * 8))
                     }
                 }
-                write32(4 * 45_000, into: &first, at: 16)
+                // 2.002 seconds loses a tick when converted through Double and truncated.
+                let boundary: UInt32 = discShortSecondItem ? 90_090 : 4 * 45_000
+                write32(boundary, into: &first, at: 16)
                 first[29] = 1
                 first[30] = 0
                 first[31] = 2
-                write32(4 * 45_000, into: &second, at: 12)
-                if discShortSecondItem { write32(4 * 45_000 + 1_890, into: &second, at: 16) }
+                write32(boundary, into: &second, at: 12)
+                if discShortSecondItem { write32(boundary + 1_890, into: &second, at: 16) }
                 second[29] = 2
                 var combined = Data(data[..<(list + 12)])
                 combined[list + 7] = 2
@@ -248,6 +296,14 @@ final class WebDAVDiscPlaybackHostedTests: XCTestCase {
                 overrides[path] = combined
                 sizes[path] = combined.count
             }
+        }
+        if nativeClockOnly {
+            var contents: [String: Data] = [:]
+            for (path, file) in files where path.hasPrefix("BDMV/") {
+                contents[path] = try overrides[path] ?? Data(contentsOf: file)
+            }
+            try await checkNativeItemClock(contents)
+            return
         }
         let fixtureFiles = files
         let fixtureSizes = sizes
@@ -931,7 +987,7 @@ final class WebDAVDiscPlaybackHostedTests: XCTestCase {
             }
             if discIntermediateStill {
                 try await wait(engine: engine, seconds: 20) { menu.isStill && menu.failure == nil }
-                XCTAssertEqual(engine.currentTime, 4, accuracy: 0.15,
+                XCTAssertEqual(engine.currentTime, discShortSecondItem ? 2.002 : 4, accuracy: 0.15,
                                "The renderer must stop at the first item's out-time, not the clip EOF")
                 engine.pause()
                 try await Task.sleep(for: .seconds(3))
@@ -948,7 +1004,7 @@ final class WebDAVDiscPlaybackHostedTests: XCTestCase {
                     menu.isStill && menu.playItem == 1 && menu.failure == nil
                 }
                 XCTAssertEqual(menu.playlist, 1, "The next item is in the same authored playlist")
-                XCTAssertEqual(engine.currentTime, discShortSecondItem ? 4.042 : 8, accuracy: 0.15)
+                XCTAssertEqual(engine.currentTime, discShortSecondItem ? 2.044 : 8, accuracy: 0.15)
                 let finalFrame = await engine.hasRenderedVideoFrame()
                 XCTAssertTrue(finalFrame)
                 menu.openMenu()

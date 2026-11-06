@@ -207,7 +207,11 @@ Companion hosted regressions cover a missing opening stream with backup CLPI
 metadata, finite-still pause/resume, infinite-still menu transitions, and
 two-way audio selection with deliberately reversed playlist track ordering.
 Repeated-clip regressions cover an intermediate finite still, a final infinite
-still, and a 42-millisecond second item. An explicitly configured private-disc
+still, and a 42-millisecond second item beginning at the fractional 2.002-second boundary.
+The navigation clock starts only after video presentation and rounds to 90 kHz
+ticks; independently rendered items keep that clock inside their own interval
+rather than seeking the disc VM into an adjacent item.
+An explicitly configured private-disc
 inspection also exercises original menu graphics and a held video frame through
 the production transport and playback adapter; it is opt-in, not part of CI.
 The multi-audio source is an original generated color/sine clip from

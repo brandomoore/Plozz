@@ -984,9 +984,17 @@ static unsigned component(double value) {
     if (!isfinite(seconds) || seconds < 0) return;
     dispatch_async(self.queue, ^{
         if (self.stopped || self->_failed || generation != self->_generation || !self->_title) return;
-        uint64_t time = (uint64_t)(seconds * 90000);
-        unsigned clip = 0;
-        while (clip + 1 < self->_title->clip_count && self->_title->clips[clip + 1].start_time <= time) clip++;
+        uint64_t time = (uint64_t)llround(seconds * 90000);
+        unsigned clip = self->_perItem ? self->_clip : 0;
+        if (self->_perItem) {
+            BLURAY_CLIP_INFO *item = &self->_title->clips[clip];
+            uint64_t end = item->start_time + item->out_time - item->in_time;
+            // A separately rendered item cannot move the VM into its neighbor.
+            time = MIN(MAX(time, item->start_time), end - 1);
+        } else {
+            while (clip + 1 < self->_title->clip_count &&
+                   self->_title->clips[clip + 1].start_time <= time) clip++;
+        }
         if (clip != self->_clip) {
             [self publishDiagnostic:[NSString stringWithFormat:
                 @"disc CLOCK_SYNC playlist=%ld from=%u to=%u time=%llu generation=%ld",
