@@ -24,7 +24,7 @@ final class PlayerChapterHostedTests: XCTestCase {
         }
         let metrics = PlayerCardMetrics.tv
         let inset = max(metrics.contentPadding, metrics.panelCornerRadius * 2 / 3)
-        let layout = PlayerChapterArtworkLayout(
+        let layout = PlayerMediaArtworkLayout(
             height: metrics.cardHeight, inset: inset, cornerRadius: metrics.panelCornerRadius
         )
         let probe = ChapterArtworkProbe()

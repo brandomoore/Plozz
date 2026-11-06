@@ -538,6 +538,47 @@ public final class PlayerViewModel {
     }
     public let playlistContext: VideoPlaylistPlaybackContext?
     public let episodeBrowser: PlayerEpisodeBrowser?
+
+    // MARK: Continue Watching tab (#388)
+
+    /// Home's Continue Watching row, supplied by the shell that presents the player.
+    @ObservationIgnored public var continueWatchingSnapshot: @MainActor () -> [MediaItem] = { [] }
+
+    /// The row as the player shows it: without what is playing now, nor other
+    /// episodes of the same show (Apple's TV app leaves those out too).
+    public var continueWatchingItems: [MediaItem] {
+        guard playbackSettings.continueWatchingInPlayer else { return [] }
+        return Self.continueWatchingItems(in: continueWatchingSnapshot(), excluding: request?.item)
+    }
+
+    static func continueWatchingItems(in items: [MediaItem], excluding current: MediaItem?) -> [MediaItem] {
+        var seen = Set<String>()
+        return items.filter { item in
+            guard seen.insert(item.stablePresentationID).inserted else { return false }
+            guard let current, item.sourceAccountID == current.sourceAccountID else { return true }
+            if item.id == current.id { return false }
+            if let series = item.seriesID, series == current.seriesID { return false }
+            return true
+        }
+    }
+
+    /// A title picked in the Continue Watching tab. ``PlayerPresentation``
+    /// observes it and swaps the player in place, at that title's resume point.
+    public private(set) var pendingContinueWatching: MediaItem? {
+        willSet {
+            if newValue != nil { endTemporarySpeedBoost() }
+        }
+    }
+
+    public func playFromContinueWatching(_ item: MediaItem) {
+        guard !didStop, pendingNextEpisode == nil, pendingContinueWatching == nil,
+              pendingPlaylistSelection == nil else { return }
+        pendingContinueWatching = item
+    }
+
+    public func cancelContinueWatchingSelection() {
+        pendingContinueWatching = nil
+    }
     /// The member requested for an in-place playlist handoff. Index, not ID,
     /// distinguishes repeated entries in a saved playlist.
     public struct PlaylistSelection: Equatable {
@@ -955,7 +996,7 @@ public final class PlayerViewModel {
         didReachNaturalEnd = true
         endTemporarySpeedBoost()
         nowPlaying?.end()
-        guard pendingNextEpisode == nil else { return }
+        guard pendingNextEpisode == nil, pendingContinueWatching == nil else { return }
         if let playlistContext {
             guard playbackSettings.autoPlayNextPlaylistItem,
                   playlistContext.currentIndex + 1 < playlistContext.totalCount else {
@@ -982,7 +1023,7 @@ public final class PlayerViewModel {
                 if didReachNaturalEnd { shouldDismiss = true }
                 return
             }
-            guard !didStop, pendingPlaylistSelection == nil else { return }
+            guard !didStop, pendingPlaylistSelection == nil, pendingContinueWatching == nil else { return }
             pendingPlaylistSelection = PlaylistSelection(index: index, item: item)
         } catch is CancellationError {
             return
@@ -996,7 +1037,7 @@ public final class PlayerViewModel {
     /// ``PlayerPresentation`` observes ``pendingNextEpisode`` and handles the
     /// actual VM swap so the full-screen cover stays up.
     public func playEpisode(_ episode: MediaItem) {
-        guard !didStop, pendingNextEpisode == nil else { return }
+        guard !didStop, pendingNextEpisode == nil, pendingContinueWatching == nil else { return }
         pendingNextEpisode = episode
     }
 
@@ -2247,7 +2288,7 @@ public final class PlayerViewModel {
         guard phase == .ready, intendsPlayback, !didStop, !didReachNaturalEnd,
               readySpeedBoostLoadGeneration == dynamicRangeLoadGeneration,
               !isInBackground, !isRecoveringAfterForeground,
-              pendingNextEpisode == nil, pendingPlaylistSelection == nil,
+              pendingNextEpisode == nil, pendingPlaylistSelection == nil, pendingContinueWatching == nil,
               !controls.isSeeking, !controls.isScrubbing,
               engine.status == .ready, !engine.isPaused, engine.preventsDisplaySleep,
               engine.capabilities.contains(.playbackSpeed) else { return nil }

@@ -40,6 +40,15 @@ Framed landscape cards, like portrait and borderless cards, fit their proposed
 slot width while retaining the artwork aspect ratio. Rails supply their normal
 fixed slots; narrower grid cells must not inherit a rail-sized minimum width.
 
+`PosterCardView.artworkOnly` renders the same artwork, spoiler protection, logo
+fallback and playback indicators inside a caller-owned button. It does not add
+Home's sizing, captions, focus target, context menu, or detail transition.
+The player uses this mode with readable playback text fitted to its artwork
+slot, rather than scaling an entire Home card. `ContinueWatchingPresentation`
+carries the active profile's artwork choice and Home Showcase caption context
+through hosted presentation boundaries; it does not persist player-specific
+styling settings.
+
 Mobile full-width page actions use `plozzPageActionLabel()` inside a native
 `plozzPageActionButton`. The label owns body typography, multiline expansion, and a
 24-point minimum height; primary and secondary actions differ in prominence,

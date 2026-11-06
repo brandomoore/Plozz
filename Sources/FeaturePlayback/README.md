@@ -209,6 +209,27 @@ watchdog, periodic reload or engine-phase inference is added. See
 
 ## Player appearance
 
+**Continue Watching** uses Home's visible row and profile-scoped artwork, label,
+and playback-detail preferences. Artwork + logo, thumbnails and portrait posters
+reuse Home's artwork renderer, including spoiler protection and fallback rules.
+The player owns geometry: every horizontal card fills the same fixed-height
+stage as Chapters, fitting its artwork width to the measured caption and chosen
+aspect ratio. Hiding labels returns that space to the artwork. Framed cards use
+Chapters' surface, insets and focus clearance; borderless cards omit the glass
+without changing stage height. Reduced-transparency fallbacks remain available.
+Phone portrait keeps the existing bounded, compact vertical-list layout, with
+the same row height and natural content sizing as Chapters. Playback details
+and progress-only bars sit beside the small artwork rather than shrinking Home's overlays.
+Home's Showcase background and absolute card sizing are not copied into playback.
+
+The per-profile **Continue Watching in the player** setting controls the tab.
+The current title and other episodes from its series are excluded within their
+source account, not by raw IDs across servers. Selection uses the normal version
+preparation and authorized playback handoff, saves the outgoing position, and
+resumes the chosen title on its own provider. Missing/failed preparation is
+reported without swapping the outgoing provider. The tab remains part of the
+existing fixed-height horizontal player stage and follows the other media tabs' idle fade.
+
 On tvOS, iPhone, and iPad, **Chapters** joins the bottom player tabs only when the
 server metadata or the playing file supplies usable chapter positions. Individual
 chapter cards use Cast's shared over-video glass, focus treatment, and reduced-effects

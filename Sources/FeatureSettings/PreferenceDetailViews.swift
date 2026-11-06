@@ -1035,6 +1035,16 @@ struct PlaybackDetailView: View {
                 }
             },
             SettingsSplitRow(
+                id: "continue-watching-in-player",
+                title: "Continue Watching in the player",
+                description: "Switch to another title you've started without leaving the player.",
+            ) {
+                SettingsControlRows {
+                    Toggle("Continue Watching in the player", isOn: $playback.settings.continueWatchingInPlayer)
+                        .settingsSearchAnchor("continue-watching-in-player")
+                }
+            },
+            SettingsSplitRow(
                 id: "show-up-next-card",
                 title: "Show Up Next card",
                 description: "Jump straight to the next episode.",

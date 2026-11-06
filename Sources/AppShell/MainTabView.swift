@@ -1929,7 +1929,8 @@ struct MainTabView: View {
             // navigation stacks live inside the tabs, so this is the only place
             // that can see both.
             onOpenPerson: openPersonFromPlayer,
-            onOpenTitle: openTitleFromPlayer
+            onOpenTitle: openTitleFromPlayer,
+            continueWatching: { [homeRuntime] in homeRuntime.continueWatchingRow }
         )
     }
 

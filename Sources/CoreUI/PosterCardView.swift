@@ -52,6 +52,15 @@ public struct PosterCardView: View {
     private let focusRequest: UUID?
     private let onFocusRequestHandled: (() -> Void)?
     private let action: () -> Void
+    private var artworkOnlyConfiguration: ArtworkOnlyConfiguration?
+    @State private var artworkOnlyPlaybackHeight: CGFloat = 0
+
+    private struct ArtworkOnlyConfiguration {
+        let cornerRadius: CGFloat
+        let playbackTextSize: CGFloat
+        let playbackInset: CGFloat
+        let showsPlaybackIndicators: Bool
+    }
 
     @PlozzCardFocus private var isFocused: Bool
     #if os(tvOS)
@@ -85,6 +94,10 @@ public struct PosterCardView: View {
 
     private var usesProgressOnlyPortrait: Bool {
         showsSeriesArtwork && style == .poster && usesProgressOnly
+    }
+
+    private var needsPortraitReflection: Bool {
+        !usesProgressOnlyPortrait && artworkOnlyConfiguration?.showsPlaybackIndicators != false
     }
 
     private var presentationArtworkPolicy: ArtworkPresentationPolicy {
@@ -201,7 +214,40 @@ public struct PosterCardView: View {
         metrics.artworkSize(for: style, showsSeriesArtwork: showsSeriesArtwork, playbackDetails: playbackDetails)
     }
 
+    /// Reuses Home's artwork and playback chrome inside a caller-owned button,
+    /// without installing a second focus target, context menu, or detail transition.
+    public func artworkOnly(
+        cornerRadius: CGFloat, playbackTextSize: CGFloat, playbackInset: CGFloat,
+        showsPlaybackIndicators: Bool = true
+    ) -> Self {
+        var result = self
+        result.artworkOnlyConfiguration = ArtworkOnlyConfiguration(
+            cornerRadius: cornerRadius, playbackTextSize: playbackTextSize,
+            playbackInset: playbackInset, showsPlaybackIndicators: showsPlaybackIndicators
+        )
+        return result
+    }
+
     public var body: some View {
+        if let configuration = artworkOnlyConfiguration {
+            artworkSurface(
+                cornerRadius: configuration.cornerRadius,
+                badgeInset: configuration.playbackInset,
+                progressInset: configuration.playbackInset,
+                showsIndicators: configuration.showsPlaybackIndicators
+            )
+            .fittingPortraitPlaybackReflection(
+                configuration.showsPlaybackIndicators && showsSeriesArtwork && style == .poster && showsResumeChip
+            )
+            .environment(\.plozzArtworkArea, presentationArtworkPolicy.area)
+            .onPreferenceChange(PortraitPlaybackHeightKey.self) { artworkOnlyPlaybackHeight = $0 }
+            .allowsHitTesting(false)
+        } else {
+            interactiveCard
+        }
+    }
+
+    private var interactiveCard: some View {
         cardBody
             .fittingPortraitPlaybackReflection(showsSeriesArtwork && style == .poster && showsResumeChip)
             .environment(\.plozzArtworkArea, presentationArtworkPolicy.area)
@@ -394,33 +440,42 @@ public struct PosterCardView: View {
 
     // MARK: Poster
 
+    private func artworkSurface(
+        cornerRadius: CGFloat, badgeInset: CGFloat, progressInset: CGFloat,
+        showsIndicators: Bool = true
+    ) -> some View {
+        Color.clear
+            .overlay { artwork }
+            .overlay(alignment: .topLeading) { statusCue(inset: badgeInset) }
+            .overlay {
+                if showsIndicators {
+                    MediaCardPlaybackIndicators(
+                        item: item, hidesStatus: hidesPlaybackStatus,
+                        showsProgressBar: !showsResumeChip && showsProgressBars,
+                        badgeInset: badgeInset, progressHeight: metrics.progressBarHeight,
+                        progressHorizontalInset: progressInset, progressBottomInset: progressInset,
+                        downloadState: showsResumeChip ? nil : downloadState,
+                        artworkCornerRadius: cornerRadius
+                    )
+                }
+            }
+            .overlay { if showsIndicators { resumeChip } }
+            .overlay { pendingRemovalOverlay }
+            .plozzCardArtworkClip(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+            .plozzMediaEdge(
+                cornerRadius: cornerRadius,
+                isEnabled: MediaArtworkPlaceholder.Symbol(for: item) == .playback
+            )
+    }
+
     private var posterCard: some View {
         VStack(alignment: .leading, spacing: metrics.posterCaptionTopSpacing) {
             Color.clear
                 .aspectRatio(borderlessAspectRatio, contentMode: .fit)
                 .frame(maxWidth: .infinity)
-                .overlay { artwork }
-                .overlay(alignment: .topLeading) { statusCue(inset: 8) }
                 .overlay {
-                    MediaCardPlaybackIndicators(
-                        item: item,
-                        hidesStatus: hidesPlaybackStatus,
-                        showsProgressBar: !showsResumeChip && showsProgressBars,
-                        badgeInset: 8,
-                        progressHeight: metrics.progressBarHeight,
-                        progressHorizontalInset: 16,
-                        progressBottomInset: 16,
-                        downloadState: showsResumeChip ? nil : downloadState,
-                        artworkCornerRadius: metrics.posterArtworkCornerRadius
-                    )
+                    artworkSurface(cornerRadius: metrics.posterArtworkCornerRadius, badgeInset: 8, progressInset: 16)
                 }
-                .overlay { resumeChip }
-                .overlay { pendingRemovalOverlay }
-                .plozzCardArtworkClip(RoundedRectangle(cornerRadius: metrics.posterArtworkCornerRadius, style: .continuous))
-                .plozzMediaEdge(
-                    cornerRadius: metrics.posterArtworkCornerRadius,
-                    isEnabled: MediaArtworkPlaceholder.Symbol(for: item) == .playback
-                )
                 #if os(tvOS)
                 .recordDetailTransitionArtwork(detailTransitionSource)
                 #elseif os(iOS)
@@ -490,28 +545,9 @@ public struct PosterCardView: View {
             Color.clear
                 .aspectRatio(borderlessAspectRatio, contentMode: .fit)
                 .frame(maxWidth: .infinity)
-                .overlay { artwork }
-                .overlay(alignment: .topLeading) { statusCue(inset: 8) }
                 .overlay {
-                    MediaCardPlaybackIndicators(
-                        item: item,
-                        hidesStatus: hidesPlaybackStatus,
-                        showsProgressBar: !showsResumeChip && showsProgressBars,
-                        badgeInset: 8,
-                        progressHeight: metrics.progressBarHeight,
-                        progressHorizontalInset: 16,
-                        progressBottomInset: 16,
-                        downloadState: showsResumeChip ? nil : downloadState,
-                        artworkCornerRadius: metrics.landscapeArtworkCornerRadius
-                    )
+                    artworkSurface(cornerRadius: metrics.landscapeArtworkCornerRadius, badgeInset: 8, progressInset: 16)
                 }
-                .overlay { resumeChip }
-                .overlay { pendingRemovalOverlay }
-                .plozzCardArtworkClip(RoundedRectangle(cornerRadius: metrics.landscapeArtworkCornerRadius, style: .continuous))
-                .plozzMediaEdge(
-                    cornerRadius: metrics.landscapeArtworkCornerRadius,
-                    isEnabled: MediaArtworkPlaceholder.Symbol(for: item) == .playback
-                )
                 #if os(tvOS)
                 .recordDetailTransitionArtwork(detailTransitionSource)
                 #elseif os(iOS)
@@ -781,11 +817,7 @@ public struct PosterCardView: View {
     /// (content) media titles rendered verbatim — mixing them into one `String`
     /// first would hide the copy from the catalog.
     private var primaryText: Text {
-        if item.kind == .episode, let series = item.parentTitle, !series.isEmpty {
-            return Text(verbatim: series)
-        }
-        if hideText { return Text(spoilerSettings.maskedTitle(for: item)) }
-        return Text(verbatim: item.title)
+        item.posterCaptionText(spoilerSettings: spoilerSettings)
     }
 
     /// Secondary line — subtitle facts plus card runtime/remaining when available.
@@ -874,6 +906,10 @@ public struct PosterCardView: View {
             bottomScrimStart: showsSeriesArtwork ? ContinueWatchingCardShape.scrimStart : nil,
             bottomScrimDepth: showsSeriesArtwork ? ContinueWatchingCardShape.scrimDepth : nil,
             compactHorizontalLayout: showsSeriesArtwork && style == .poster
+        )
+        .fittingPlaybackText(
+            size: artworkOnlyConfiguration?.playbackTextSize,
+            inset: artworkOnlyConfiguration?.playbackInset
         )
     }
 
@@ -1207,9 +1243,9 @@ public struct PosterCardView: View {
                 if style == .poster {
                     ExtendedArtworkFill(
                         image: image, artworkAspectRatio: 2.0 / 3.0, sideCrop: 0,
-                        minimumReflectionShare: usesProgressOnlyPortrait
-                            ? 0 : PlozzTheme.Metrics.continueWatchingPortraitReflectionShare,
-                        progressivelyBlursReflection: !reduceTransparency && !usesProgressOnlyPortrait
+                        minimumReflectionShare: needsPortraitReflection
+                            ? PlozzTheme.Metrics.continueWatchingPortraitReflectionShare : 0,
+                        progressivelyBlursReflection: !reduceTransparency && needsPortraitReflection
                     )
                 } else {
                     ExtendedArtworkFill(image: image)
@@ -1271,7 +1307,9 @@ public struct PosterCardView: View {
             logoReferences: seriesSource.logoReferences,
             artworkReferences: seriesArtworkReferences,
             artworkVariant: artworkVariant,
-            asyncFallbackURL: seriesLogoFallback
+            asyncFallbackURL: seriesLogoFallback,
+            bottomContentInset: artworkOnlyConfiguration?.showsPlaybackIndicators == true && showsResumeChip
+                ? artworkOnlyPlaybackHeight : 0
         )
     }
 
@@ -1329,6 +1367,7 @@ struct ContinueWatchingSeriesLogo: View {
     let artworkReferences: [ArtworkReference]
     let artworkVariant: ArtworkImageVariant
     let asyncFallbackURL: HeroLogoFallback?
+    var bottomContentInset: CGFloat = 0
     var onArtworkDimming: ((CGFloat) -> Void)?
 
     @Environment(\.plozzMetrics) private var metrics
@@ -1339,7 +1378,8 @@ struct ContinueWatchingSeriesLogo: View {
         GeometryReader { geometry in
             let width = geometry.size.width
             let height = geometry.size.height
-            let stage = height * ContinueWatchingCardShape.mirrorLine
+            let logoStageHeight = max(0, height - bottomContentInset)
+            let stage = logoStageHeight * ContinueWatchingCardShape.mirrorLine
             let box = ContinueWatchingCardShape.logoBox(
                 cardWidth: width, stage: stage, edgeInset: metrics.resumeChipInset
             )
@@ -1372,7 +1412,7 @@ struct ContinueWatchingSeriesLogo: View {
                 // The card's artwork is darkened independently of the page theme.
                 .environment(\.colorScheme, .dark)
                 .frame(width: width, height: box.height)
-                .offset(y: height * ContinueWatchingCardShape.logoCenter - box.height / 2)
+                .offset(y: logoStageHeight * ContinueWatchingCardShape.logoCenter - box.height / 2)
             }
             .frame(width: width, height: height, alignment: .top)
         }
@@ -1684,6 +1724,16 @@ private struct CardAccessibilityMetadata: ViewModifier {
 #endif
 
 public extension MediaItem {
+    func posterCaptionText(spoilerSettings: SpoilerSettings) -> Text {
+        if kind == .episode, let parentTitle, !parentTitle.isEmpty {
+            return Text(verbatim: parentTitle)
+        }
+        if spoilerSettings.shouldHideText(for: self) {
+            return Text(spoilerSettings.maskedTitle(for: self))
+        }
+        return Text(verbatim: title)
+    }
+
     /// Shared provider metadata for SwiftUI cards and native library cells.
     func posterCaptionSubtitle(showsSubtitle: Bool = true, showsRuntime: Bool = true) -> String? { // l10n:content
         var parts: [String] = []

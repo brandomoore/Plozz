@@ -157,7 +157,7 @@ private struct PlayerChapterButton: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         } else if showsArtwork {
             #if os(tvOS)
-            let layout = PlayerChapterArtworkLayout(
+            let layout = PlayerMediaArtworkLayout(
                 height: metrics.cardHeight, inset: contentInset, cornerRadius: cornerRadius
             )
             layout {
@@ -220,12 +220,12 @@ private struct PlayerChapterButton: View {
     }
 }
 
-#if os(tvOS)
 /// Fits the artwork to the measured caption, rather than leaving an estimated top gutter.
-struct PlayerChapterArtworkLayout: Layout {
+struct PlayerMediaArtworkLayout: Layout {
     let height: CGFloat
     let inset: CGFloat
     let cornerRadius: CGFloat
+    var aspectRatio: CGFloat = 16 / 9
     private let spacing: CGFloat = 8
 
     var thumbnailShape: RoundedRectangle {
@@ -233,22 +233,23 @@ struct PlayerChapterArtworkLayout: Layout {
     }
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout Void) -> CGSize {
-        let captionHeight = subviews[1].sizeThatFits(.unspecified).height
-        let artworkHeight = max(0, height - inset * 2 - spacing - captionHeight)
-        return CGSize(width: artworkHeight * 16 / 9 + inset * 2, height: height)
+        let captionHeight = subviews.count > 1 ? subviews[1].sizeThatFits(.unspecified).height : 0
+        let artworkHeight = max(0, height - inset * 2 - (subviews.count > 1 ? spacing : 0) - captionHeight)
+        return CGSize(width: artworkHeight * aspectRatio + inset * 2, height: height)
     }
 
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout Void) {
         let width = bounds.width - inset * 2
         subviews[0].place(
             at: CGPoint(x: bounds.minX + inset, y: bounds.minY + inset), anchor: .topLeading,
-            proposal: ProposedViewSize(width: width, height: width * 9 / 16)
+            proposal: ProposedViewSize(width: width, height: width / aspectRatio)
         )
-        subviews[1].place(
-            at: CGPoint(x: bounds.minX + inset, y: bounds.maxY - inset), anchor: .bottomLeading,
-            proposal: ProposedViewSize(width: width, height: nil)
-        )
+        if subviews.count > 1 {
+            subviews[1].place(
+                at: CGPoint(x: bounds.minX + inset, y: bounds.maxY - inset), anchor: .bottomLeading,
+                proposal: ProposedViewSize(width: width, height: nil)
+            )
+        }
     }
 }
-#endif
 #endif

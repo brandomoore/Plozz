@@ -26,6 +26,7 @@ public struct EpisodeWatchStatePill: View {
     private let showsPlayGlyphWhenIdle: Bool
     private let spacing: CGFloat
     private var fittingFontSize: CGFloat?
+    private var stacksFittingDecorations = false
 
     @Environment(\.plozzChromeIsFocused) private var isFocused
     @Environment(\.plozzShowsProgressBars) private var showsProgressBars
@@ -61,9 +62,10 @@ public struct EpisodeWatchStatePill: View {
         self.spacing = spacing
     }
 
-    fileprivate func fittingText(size: CGFloat?) -> Self {
+    fileprivate func fittingText(size: CGFloat?, stacksDecorations: Bool = false) -> Self {
         var result = self
         result.fittingFontSize = size
+        result.stacksFittingDecorations = stacksDecorations
         return result
     }
 
@@ -148,18 +150,26 @@ public struct EpisodeWatchStatePill: View {
             ViewThatFits(in: .horizontal) {
                 playbackRow(fraction: fraction, text: text, showsPlay: showsPlay)
                     .fixedSize(horizontal: true, vertical: true)
-                if showsPlay {
-                    playbackRow(fraction: fraction, text: text, showsPlay: false)
+                if stacksFittingDecorations {
+                    VStack(alignment: .leading, spacing: 4) {
+                        playbackRow(fraction: fraction, text: nil, showsPlay: showsPlay)
+                        Text(verbatim: text)
+                            .lineLimit(nil)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                } else {
+                    if showsPlay {
+                        playbackRow(fraction: fraction, text: text, showsPlay: false)
+                            .fixedSize(horizontal: true, vertical: true)
+                    }
+                    Text(verbatim: text)
                         .fixedSize(horizontal: true, vertical: true)
+                    // Decorations yield before text wraps or becomes smaller.
+                    Text(verbatim: text)
+                        .font(.system(size: fittingFontSize * 0.85, weight: .semibold))
+                        .lineLimit(nil)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-                Text(verbatim: text)
-                    .fixedSize(horizontal: true, vertical: true)
-                // Only after both decorations yield may the label get smaller.
-                // Extreme widths wrap rather than ellipsize or shrink indefinitely.
-                Text(verbatim: text)
-                    .font(.system(size: fittingFontSize * 0.85, weight: .semibold))
-                    .lineLimit(nil)
-                    .fixedSize(horizontal: false, vertical: true)
             }
             .minimumScaleFactor(1)
         } else {
@@ -238,9 +248,20 @@ public struct ResumeChipOverlay: View {
     private let bottomScrimDepth: CGFloat?
     private let compactHorizontalLayout: Bool
     private var rendersScrim = true
+    private var playbackTextSize: CGFloat?
+    private var playbackInset: CGFloat?
 
     @Environment(\.plozzMetrics) private var metrics
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    private var textSize: CGFloat { playbackTextSize ?? metrics.resumeChipFontSize }
+    private var contentInset: CGFloat { playbackInset ?? metrics.resumeChipInset }
+
+    func fittingPlaybackText(size: CGFloat?, inset: CGFloat?) -> Self {
+        var result = self
+        result.playbackTextSize = size
+        result.playbackInset = inset
+        return result
+    }
 
     /// - Parameters:
     ///   - downloadState: optional trailing download affordance. `nil` renders the
@@ -305,7 +326,7 @@ public struct ResumeChipOverlay: View {
                 // across a wide tvOS card.
                 GeometryReader { geometry in
                     let spacingInset = compactHorizontalLayout
-                        ? min(metrics.resumeChipInset, geometry.size.width * 0.05) : metrics.resumeChipInset
+                        ? min(contentInset, geometry.size.width * 0.05) : contentInset
                     let barWidth = min(
                         metrics.resumeChipBarWidth,
                         max(20, geometry.size.width * 0.42)
@@ -329,8 +350,11 @@ public struct ResumeChipOverlay: View {
                                 showsPlayGlyphWhenIdle: showsPlayGlyphWhenIdle,
                                 spacing: compactHorizontalLayout ? spacingInset * 0.5 : 8
                             )
-                            .fittingText(size: prioritizesText ? metrics.resumeChipFontSize : nil)
-                            .font(.system(size: metrics.resumeChipFontSize, weight: .semibold))
+                            .fittingText(
+                                size: prioritizesText ? textSize : nil,
+                                stacksDecorations: playbackTextSize != nil
+                            )
+                            .font(.system(size: textSize, weight: .semibold))
                             // The card grows with Dynamic Type to keep this label
                             // whole (see `PlozzMetrics.continueWatchingWidth`),
                             // but that growth is capped so a card can't outgrow a
@@ -358,12 +382,12 @@ public struct ResumeChipOverlay: View {
                             GeometryReader { contentGeometry in
                                 Color.clear.preference(
                                     key: PortraitPlaybackHeightKey.self,
-                                    value: ceil(contentGeometry.size.height) + metrics.resumeChipInset + 4
+                                    value: ceil(contentGeometry.size.height) + contentInset + 4
                                 )
                             }
                         }
                     }
-                    .padding(metrics.resumeChipInset)
+                    .padding(contentInset)
                     .frame(
                         width: geometry.size.width,
                         height: geometry.size.height,
@@ -382,10 +406,11 @@ public struct ResumeChipOverlay: View {
     }
 
     private var prioritizesText: Bool {
+        if playbackTextSize != nil { return true }
         #if os(iOS)
-        compactHorizontalLayout
+        return compactHorizontalLayout
         #else
-        false
+        return false
         #endif
     }
 
