@@ -322,6 +322,9 @@ public struct ItemDetailView: View {
         .task(id: seasonRequestRefreshKey) {
             await refreshVisibleSeasonRequests()
         }
+        .task(id: heroBackground.settings.trailerSources) {
+            await viewModel.refreshTrailerPolicy()
+        }
         .task(id: heroTrailerTaskID) {
             guard let item = viewModel.state.value?.item else { return }
             guard isTrailerOwner else {
@@ -331,7 +334,7 @@ public struct ItemDetailView: View {
                 heroTrailerController.clearEndHandler(ownerID: trailerHandlerOwnerID)
                 return
             }
-            guard heroBackground.settings.detailMode == .trailer else {
+            guard heroBackground.settings.detailTrailerEnabled else {
                 heroTrailerController.stop(ifShowing: item.id)
                 heroTrailerController.clearEndHandler(ownerID: trailerHandlerOwnerID)
                 return
@@ -361,7 +364,7 @@ public struct ItemDetailView: View {
             guard let source = await heroTrailerResolver(item),
                   !Task.isCancelled,
                   isTrailerOwner,
-                  heroBackground.settings.detailMode == .trailer,
+                  heroBackground.settings.detailTrailerEnabled,
                   viewModel.state.value?.item.id == item.id else { return }
             heroTrailerController.play(
                 itemID: item.id,
@@ -437,7 +440,7 @@ public struct ItemDetailView: View {
 
     private var heroTrailerTaskID: String {
         let itemID = viewModel.state.value?.item.id ?? "-"
-        return "\(itemID)|\(heroBackground.settings.detailMode.rawValue)|\(isTrailerOwner)"
+        return "\(itemID)|\(heroBackground.settings.detailTrailerEnabled)|\(isTrailerOwner)"
     }
 
     private var isTrailerOwner: Bool {
@@ -719,7 +722,9 @@ public struct ItemDetailView: View {
                         playProgress: canPlay ? selectedPlayItem.resumeProgressFraction : nil,
                         playRemainingText: canPlay ? selectedPlayItem.resumeRemainingText : nil,
                         playSeasonEpisodeText: canPlay && !selectedPlayItem.opensExternalSource ? HeroForegroundModelBuilder.seasonEpisodeButtonText(for: detail.item) : nil,
-                        onPlayTrailer: viewModel.trailers.first.map { trailer in { onPlay(trailer) } },
+                        onPlayTrailer: viewModel.trailers.first.map { trailer in {
+                            if viewModel.canPlayTrailer(trailer) { onPlay(trailer) }
+                        } },
                         trailerItem: viewModel.trailers.first,
                         versions: usesExternalDetail ? [] : effectiveVersions,
                         selectedVersionID: effectiveVersionID,

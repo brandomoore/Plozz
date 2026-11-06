@@ -1422,7 +1422,7 @@ final class HomeRowArrangementHostedTests: XCTestCase {
     }
     #endif
 
-    func testCollectionEditorPreviewsActualTitlesBesidePresentationChoices() async throws {
+    func testCollectionEditorPreviewsActualTitlesAboveSettingsMenus() async throws {
         for style in CollectionSection.CardStyle.allCases {
             let requested = expectation(description: "Collection preview requested")
             let provider = HomeSettingsLibraryProvider(
@@ -1458,7 +1458,18 @@ final class HomeRowArrangementHostedTests: XCTestCase {
                 let text = lines.map(\.0).joined(separator: " ")
                 XCTAssertTrue(text.contains("Weekend picks"), text)
                 XCTAssertTrue(text.contains("Orbit"), "Preview must display the provider's title: \(text)")
-                XCTAssertGreaterThan(try self.y("Posters", in: lines), try self.y("Orbit", in: lines))
+                XCTAssertTrue(text.contains(String(localized: style.title)), text)
+                let layoutY = try self.y("Layout", in: lines)
+                XCTAssertGreaterThan(try self.y("Orbit", in: lines), layoutY)
+                if style == .landscape {
+                    XCTAssertTrue(text.contains("Off"), text)
+                    XCTAssertFalse(text.contains("Automatic"), text)
+                    let logoY = try self.y("Logo", in: lines)
+                    XCTAssertGreaterThan(layoutY, logoY)
+                    XCTAssertGreaterThan(logoY, try self.y("Content", in: lines))
+                } else {
+                    XCTAssertFalse(text.contains("Logo"), text)
+                }
                 XCTAssertTrue(visibility.visibility.collectionSections.isEmpty, "Previewing does not save a section.")
             }
         }

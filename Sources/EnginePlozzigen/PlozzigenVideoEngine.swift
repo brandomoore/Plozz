@@ -901,6 +901,7 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
         )
         options.objectAudioRendering = .off
         options.preferDualLayerDolbyVision = false
+        options.dolbyVisionHandling = .profile7BaseLayer
         // Aether uses approximately four-second segments and clamps the maximum
         // to 2,700, retaining its free-space budget and producer backpressure.
         switch readAhead {
@@ -941,7 +942,7 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
         // Aether 6.66 gives nativeRemoteHLS its AVPlayer-backed live window
         // without a host-selected DVR duration. Keep nil so an ingest reroute
         // does not silently opt the app into an arbitrary disk timeshift policy.
-        return LoadOptions(
+        var options = LoadOptions(
             httpHeaders: httpHeaders,
             audioBridgeMode: losslessAudioEnabled ? .lossless : .surroundCompat,
             isLive: true,
@@ -953,6 +954,8 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
             nativeRemoteHLS: format == .hls,
             nativeRemoteHLSIngestFallback: true
         )
+        options.dolbyVisionHandling = .profile7BaseLayer
+        return options
     }
 
     nonisolated static func applyLiveOutputPolicy(_ policy: LiveChannelOutputPolicy, to options: inout LoadOptions) {

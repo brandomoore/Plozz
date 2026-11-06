@@ -80,7 +80,7 @@ public enum SettingsSearchPage: String, CaseIterable, Sendable {
         case .hero: ["Screens & Navigation", "Home", "Hero"]
         case .heroContent: ["Screens & Navigation", "Home", "Hero", "Hero content sources"]
         case .heroRatings: ["Screens & Navigation", "Home", "Hero", "Ratings"]
-        case .heroTrailers: ["Screens & Navigation", "Home", "Hero", "Trailers"]
+        case .heroTrailers: ["Screens & Navigation", "Movie & show details", "Trailers & music"]
         case .heroDiscovery: ["Screens & Navigation", "Home", "Hero", "Discovery providers"]
         case .heroLibraries: ["Screens & Navigation", "Home", "Hero", "Random libraries"]
         case .heroCollections: ["Screens & Navigation", "Home", "Hero", "Collections"]
@@ -384,7 +384,7 @@ public enum SettingsSearchCatalog {
 
     public static var carouselHeroTargets: [String] {
         entries.filter {
-            [.hero, .heroContent, .heroRatings, .heroTrailers, .heroDiscovery,
+            [.hero, .heroContent, .heroRatings, .heroDiscovery,
              .heroLibraries, .heroCollections].contains($0.page)
                 && !$0.id.hasPrefix("showcase-") && $0.id != "home-layout"
         }.map(\.id)
@@ -503,7 +503,7 @@ public enum SettingsSearchCatalog {
         .init("hero-enabled", page: .hero, title: "Show hero",
               keywords: "home hero carousel spotlight banner featured showcase enable disable turn on off hide",
               preferredQueries: ["hero", "home banner", "spotlight"]),
-        .init("detail-background", page: .detail, title: "Background",
+        .init("detail-background", page: .heroTrailers, title: "Detail background",
               keywords: "movie show details hero trailer theme music behind artwork"),
         .init("detail-size", page: .detail, title: "Logo & text size",
               keywords: "movie show details title logo synopsis description bigger larger smaller"),
@@ -606,7 +606,9 @@ public enum SettingsSearchCatalog {
               keywords: "hero family guidance children recommended age"),
         .init("hero-rating-count", page: .heroRatings, title: "Maximum ratings shown",
               keywords: "hero review scores number limit"),
-        .init("hero-trailers", page: .heroTrailers, title: "Play trailer behind the hero",
+        .init("trailer-sources", page: .heroTrailers, title: "Trailers",
+              keywords: "trailers music youtube server only off disable manual button sources"),
+        .init("hero-trailers", page: .heroTrailers, title: "Home autoplay",
               keywords: "hero background video preview motion autoplay"),
         .init("hero-trailers-muted", page: .heroTrailers, title: "Start muted",
               keywords: "hero trailer sound audio silent background"),

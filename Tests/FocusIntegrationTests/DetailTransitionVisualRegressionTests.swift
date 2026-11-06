@@ -967,6 +967,22 @@ final class DetailTransitionVisualRegressionTests: XCTestCase {
         }
     }
 
+    func testProductionDetailStopsAndRestoresTrailerWhenSourcePolicyChanges() async throws {
+        try await withTrailerFixture { model, video in
+            model.background.settings.detailMode = .trailer
+            model.resolveTrailer = { item in
+                HeroTrailerSource(ownerItemID: item.id, trailerItemID: "clip", url: video, duration: 120)
+            }
+            model.path.append(1)
+            try await waitUntil { model.trailer.isPlaying && model.trailer.player.rate == 1 }
+            model.background.settings.trailerSources = .off
+            try await waitUntil { model.trailer.player.currentItem == nil }
+            XCTAssertEqual(model.background.settings.detailMode, .trailer)
+            model.background.settings.trailerSources = .serverOnly
+            try await waitUntil { model.trailer.isPlaying && model.trailer.player.rate == 1 }
+        }
+    }
+
     func testProductionDetailPreservesSamePlayerOnlyForMatchingHomeReturn() async throws {
         try await withTrailerFixture { model, video in
             model.background.settings.detailMode = .trailer

@@ -10,6 +10,35 @@ import XCTest
 /// fetches every backdrop a title has in one response, ranks textless ones first,
 /// and all but the best were discarded a layer above.
 final class ArtworkCandidateTests: XCTestCase {
+    func testLandscapeCardCacheSeparatesHeroAndLanguageAndHonorsProviderDisablement() async {
+        let settings = CatalogArtworkSettings(.init(orderMode: .custom, enabledOrder: ["tmdb"]))
+        let cache = MetadataDiskCache(directory: nil)
+        let router = catalogRouter(settings: settings, cache: cache)
+        let item = MediaItem(id: "card", title: "Movie", kind: .movie, providerIDs: ["Tmdb": "42"])
+        await cache.store(url("plain"), for: ArtworkRouter.providerCacheKey(
+            query: MetadataQuery(item), kind: .hero, source: .tmdb
+        ))
+        for language in ["en", "fr"] {
+            await cache.store(url(language), for: ArtworkRouter.providerCacheKey(
+                query: MetadataQuery(item).forArtworkLanguage(language), kind: .hero, source: .tmdb,
+                prefersLandscapeCard: true
+            ))
+        }
+        let english = await router.landscapeCardArtworkURL(for: item, language: "en")
+        let french = await router.landscapeCardArtworkURL(for: item, language: "fr-CA")
+        let plain = await router.artworkURL(.hero, for: item)
+        XCTAssertEqual(english, url("en"))
+        XCTAssertEqual(french, url("fr"))
+        XCTAssertEqual(plain, url("plain"))
+        settings.save(.init(orderMode: .custom, disabledOrder: ["tmdb", "tvdb"]))
+        let disabled = await router.landscapeCardArtworkURL(for: item, language: "en")
+        XCTAssertNil(disabled)
+        let episode = await router.landscapeCardArtworkURL(
+            for: MediaItem(id: "episode", title: "Episode", kind: .episode), language: "en"
+        )
+        XCTAssertNil(episode)
+    }
+
     func testPortraitHeroCacheIsSeparateAndFollowsLiveProviderPolicy() async {
         let settings = CatalogArtworkSettings(.init(orderMode: .custom, enabledOrder: ["tmdb", "tvdb"]))
         let cache = MetadataDiskCache(directory: nil)

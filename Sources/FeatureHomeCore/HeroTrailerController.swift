@@ -34,6 +34,18 @@ public struct HeroTrailerSource: Sendable, Equatable {
 
 public typealias HeroTrailerResolving = @Sendable (MediaItem) async -> HeroTrailerSource?
 
+/// Core Image initializes only for an actual frame, away from Home's main actor.
+actor HeroTrailerFrameRenderer {
+    private var context: CIContext?
+    var contextIdentity: ObjectIdentifier? { context.map(ObjectIdentifier.init) }
+
+    func render(_ image: CIImage) -> CGImage? {
+        let context = context ?? CIContext(options: nil)
+        self.context = context
+        return context.createCGImage(image, from: image.extent)
+    }
+}
+
 public enum HeroTrailerSurfaceRole: Sendable, Equatable {
     case home
     case detail
@@ -72,7 +84,11 @@ public final class HeroTrailerController {
     /// default, so muting/unmuting a playing trailer doesn't change the setting.
     public private(set) var isMuted = true
     public private(set) var pauseStartedAt: Date?
-    public private(set) var activeSurfaceRole: HeroTrailerSurfaceRole?
+    public private(set) var activeSurfaceRole: HeroTrailerSurfaceRole? {
+        // An ambient trailer must not hold off the screen saver or sleep; one
+        // the viewer opened full screen is watched like any other video.
+        didSet { player.preventsDisplaySleepDuringVideoPlayback = activeSurfaceRole == .fullScreen }
+    }
     public private(set) var featuredOwnerID: UUID?
     public var isFeaturedReserved: Bool { featuredOwnerID != nil }
     public var isFullScreen: Bool { activeSurfaceRole == .fullScreen }
@@ -111,13 +127,16 @@ public final class HeroTrailerController {
     public var isPlaybackSuppressed: Bool { !playbackOwners.isEmpty }
     private var captionSelectionTask: Task<Void, Never>?
     @ObservationIgnored private var videoOutput: AVPlayerItemVideoOutput?
-    @ObservationIgnored private let imageContext = CIContext(options: nil)
+    @ObservationIgnored let handoffRenderer = HeroTrailerFrameRenderer()
+    @ObservationIgnored private var imageContext: CIContext?
 
     public init() {
         // Never let the trailer claim the Now-Playing transport or interrupt
         // music; it's ambient. Muting is applied per play() call.
         player.actionAtItemEnd = .pause
         player.appliesMediaSelectionCriteriaAutomatically = false
+        // Looping hero and detail trailers are ambient: let the display sleep.
+        player.preventsDisplaySleepDuringVideoPlayback = false
         #if canImport(UIKit)
         surfaceView.playerLayer.player = player
         observeAppLifecycle()
@@ -319,9 +338,18 @@ public final class HeroTrailerController {
     public func captureHandoffFrame() async {
         let capturedItem = player.currentItem
         let itemTime = player.currentTime()
-        if let image = decodedFrame() {
-            handoffImage = image
-            return
+        // Fast path: use the live decoded pixel buffer when available.
+        if let videoOutput,
+           let pixelBuffer = videoOutput.copyPixelBuffer(
+               forItemTime: itemTime,
+               itemTimeForDisplay: nil
+           ) {
+            let image = CIImage(cvPixelBuffer: pixelBuffer)
+            if let cgImage = await handoffRenderer.render(image) {
+                guard player.currentItem === capturedItem else { return }
+                handoffImage = UIImage(cgImage: cgImage)
+                return
+            }
         }
 
         // Decode concurrently with navigation; ignore a frame from a player item
@@ -357,7 +385,10 @@ public final class HeroTrailerController {
                 forItemTime: player.currentTime(), itemTimeForDisplay: nil
               ) else { return nil }
         let image = CIImage(cvPixelBuffer: buffer)
-        return imageContext.createCGImage(image, from: image.extent).map { UIImage(cgImage: $0) }
+        // Surface moves need a synchronous frame, but idle Home must not initialize Metal.
+        let context = imageContext ?? CIContext(options: nil)
+        imageContext = context
+        return context.createCGImage(image, from: image.extent).map { UIImage(cgImage: $0) }
     }
 
     /// Freezes/resumes the ambient trailer in lockstep with the hero's

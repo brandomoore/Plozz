@@ -718,7 +718,7 @@ struct HomeHeroView: View {
         // lead-in overlap. The same single player persists into detail navigation.
         .task(id: trailerTaskKey) {
             guard !trailerController.isFullScreen else { return }
-            guard isFrontmost, !showcaseSuspended, !trailerController.isFeaturedReserved, backgroundSettings.homeTrailerEnabled,
+            guard isFrontmost, !showcaseSuspended, !trailerController.isFeaturedReserved, backgroundSettings.homeTrailerPlaybackEnabled,
                   let item = current else {
                 // When detail is pushed over Home, relinquish control without
                 // stopping the shared player — the detail hero owns it now.
@@ -932,22 +932,22 @@ struct HomeHeroView: View {
     private var currentDwellDuration: TimeInterval {
         HeroTrailerTimeline.duration(
             autoAdvanceSeconds: settings.autoAdvanceSeconds,
-            mode: backgroundSettings.homeTrailerEnabled ? .trailer : .off,
+            mode: backgroundSettings.homeTrailerPlaybackEnabled ? .trailer : .off,
             trailerDuration: activeTrailerDuration
         )
     }
 
     private var trailerReturnItemID: String? {
-        backgroundSettings.homeTrailerEnabled && !pausedForRows && heroVisible ? current?.id : nil
+        backgroundSettings.homeTrailerPlaybackEnabled && !pausedForRows && heroVisible ? current?.id : nil
     }
 
     private var showsTrailer: Bool {
-        backgroundSettings.homeTrailerEnabled && trailerController.isPlaying
+        backgroundSettings.homeTrailerPlaybackEnabled && trailerController.isPlaying
             && current.map { trailerController.isShowing($0.id) } == true
     }
 
     private var trailerTaskKey: String {
-        "\(current?.id ?? "-")|\(backgroundSettings.homeTrailerEnabled)|\(isFrontmost)|\(trailerController.isFeaturedReserved)|\(showcaseSuspended)|\(trailerController.isFullScreen)"
+        "\(current?.id ?? "-")|\(backgroundSettings.homeTrailerPlaybackEnabled)|\(isFrontmost)|\(trailerController.isFeaturedReserved)|\(showcaseSuspended)|\(trailerController.isFullScreen)"
     }
 
     // MARK: - Content column

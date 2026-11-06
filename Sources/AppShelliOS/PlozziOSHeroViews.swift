@@ -615,7 +615,7 @@ struct PlozziOSHeroStage<Foreground: View>: View {
     /// itself lives on the shared controller).
     private var surfaceTrailerEnabled: Bool {
         surfaceRole == .home
-            ? backgroundSettings.settings.homeTrailerEnabled
+            ? backgroundSettings.settings.homeTrailerPlaybackEnabled
             : backgroundSettings.settings.detailTrailerEnabled
     }
     private var surfaceMuteDefault: Bool {

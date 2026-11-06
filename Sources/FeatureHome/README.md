@@ -1,5 +1,16 @@
 # FeatureHome
 
+Trailer discovery and playback honor the active profile's `trailerSources`
+policy in `HeroBackgroundSettings`. Off skips trailer-specific provider and
+metadata lookups; Server only also excludes server-supplied and cached YouTube
+links. Ordinary metadata and non-trailer extras remain independent. Allowed
+manual trailers are prepared during detail loading, not on button press.
+Policy changes filter visible actions immediately, fence pending results, and
+refresh allowed sources without caching disabled lookups as missing trailers.
+Home and detail autoplay use the effective settings rather than the stored
+surface choices, so turning trailers off preserves those choices and does not
+disable detail theme music.
+
 Home history completion records returned, curated and visible item counts plus
 failed-account counts in the existing bounded recent-activity log. This separates
 an empty provider feed from local curation without recording media or account IDs.
@@ -1067,6 +1078,12 @@ records on both platforms; error dialogs, playback routing and timeouts are unch
   hero showing the same title with trailers enabled. Library, Watchlist, pushed
   grids, and covered detail pages cannot retain background audio. A cancelled
   or no-longer-frontmost detail resolver cannot start a trailer after departure.
+  The shared handoff renderer initializes Core Image only when a decoded trailer
+  frame needs a snapshot, on its own actor rather than Home's main thread.
+  Idle Home does not initialize Metal for unused handoff snapshots; subsequent
+  frames reuse the context. A completed snapshot cannot replace a newer trailer.
+  Immediate live-surface moves retain a separate synchronous renderer, also
+  initialized only after a decoded frame is available.
   Home transfers the matching trailer to detail before navigation starts (when
   detail trailers are enabled). Home disappearance and late scroll/recede
   callbacks cannot stop or pause that player; its item, position and live mute

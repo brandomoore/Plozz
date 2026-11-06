@@ -331,10 +331,7 @@ struct SpoilerRowsBuilder {
         #endif
     }
 }
-/// Detail-page customization (a sibling to Customize Home): what plays behind the
-/// hero on a movie/show detail page — static art, the trailer, or the title's
-/// theme music. Kept separate from the Home hero (which lives in Customize Home)
-/// and from Playback (which is video-playback behaviour).
+/// Detail-page presentation and the shared trailer/music preferences.
 struct DetailPageDetailView: View {
     let cards: CardStyleSettingsModel
     @Bindable var themeMusic: ThemeMusicSettingsModel
@@ -349,29 +346,16 @@ struct DetailPageDetailView: View {
         var rows = [
             SettingsSplitRow(
                 id: "detail-page-hero-mode",
-                title: "Background",
+                title: "Trailers & music",
                 sectionStart: detailHeaderSettings == nil ? .heading(Text("Hero")) : nil
             ) {
-                SettingsControlRows(nonTVSpacing: SettingsMetrics.sectionSpacing) {
-                    DescribedSegmentedPicker(
-                        options: HeroBackgroundMode.allCases,
-                        selection: $heroBackground.settings.detailMode,
-                        title: { $0.displayName },
-                        detail: { $0.detail }
-                    )
-                    .settingsSearchAnchor(
-                        "detail-background",
-                        fallbackFor: (heroBackground.settings.detailMode == .trailer ? [] : ["detail-trailer-muted"])
-                            + (heroBackground.settings.detailMode == .themeMusic ? [] : ["theme-music-volume"])
-                    )
-                    if heroBackground.settings.detailMode == .trailer {
-                        Toggle("Start muted", isOn: $heroBackground.settings.detailTrailerMuted).settingsSearchAnchor("detail-trailer-muted")
-                    }
-                    if heroBackground.settings.detailMode == .themeMusic {
-                        ThemeMusicVolumeControl(model: themeMusic)
-                    }
+                SettingsPageLink {
+                    TrailersAndMusicSettingsView(background: heroBackground, themeMusic: themeMusic)
+                } label: {
+                    SettingsDisclosureLabel { Text("Trailers & music") }
                 }
-            }
+                .accessibilityIdentifier("detail-trailers-music")
+            }.labeledControl()
         ]
         if let detailHeaderSettings {
             rows.insert(SettingsSplitRow(

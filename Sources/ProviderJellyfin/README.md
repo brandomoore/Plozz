@@ -68,6 +68,20 @@ supported capability remains at parity.
 
 ## Home browsing
 
+Movie and series `Thumb` images populate the shared `landscapeCard` artwork
+placement, independently of Home/detail backdrop ordering. The same mapping
+applies to Emby. Only advertised images are used; episode thumbnails keep their
+existing placement. Shared row presentation decides whether to use that key art
+or a clean backdrop with a logo; it does not branch on the server brand.
+
+Simultaneous library discovery from navigation and Home shares in-flight Views
+and collection-availability work. Sharing is confined to the authenticated
+client/provider and requested server user; replacing credentials creates a new
+scope. Cancelling one reader does not interrupt other readers, but the last
+reader cancels the underlying work. Completed responses and failures are not
+retained: a subsequent refresh still asks the server. This is request
+coalescing, not the optional persistent metadata/artwork cache.
+
 Home browse feeds and collection membership request `DateCreated` so client-side
 Date added sorting uses library dates on both Jellyfin and Emby, without changing
 the server-authored feed membership or default order.
@@ -391,7 +405,7 @@ native-only remux path, and required conversions.
 This ownership was cross-checked against
 [Sodalite's stream selection](https://github.com/superuser404notfound/Sodalite/blob/31799bde53e2d93384216b3f9b2523600896ef2b/Sodalite/Player/PlaybackStreamSelection.swift),
 [Swiftfin's playback builder](https://github.com/jellyfin/Swiftfin/blob/b0cb3127b1cef57b6508581be1cfe9addd5539a2/Shared/Objects/MediaPlayerManager/MediaPlayerItem/MediaPlayerItem%2BBuild.swift),
-and the [linked engine's pipeline contract](https://github.com/brandomoore/AetherEngine/blob/5873655f4c5669843ac8c9bfc8574733759ea6f5/docs/architecture.md).
+and the [linked engine's pipeline contract](https://github.com/brandomoore/AetherEngine/blob/8c7f919a4cff9f0d27d27f464657578ec08fc221/docs/architecture.md).
 These are protocol/design references, not copied implementations. Client
 differences do not establish the cause of an individual playback failure.
 

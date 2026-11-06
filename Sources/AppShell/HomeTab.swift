@@ -208,7 +208,7 @@ struct HomeTab: View {
     private func preservesHeroTrailerOnReturn(itemID: String) -> Bool {
         guard case .home = root else { return false }
         return isActiveTab && path.isEmpty && playRequest == nil && resumePrompt == nil
-            && heroBackground.settings.homeTrailerEnabled
+            && heroBackground.settings.homeTrailerPlaybackEnabled
             && heroRuntime.trailerReturnItemID.map {
                 $0 == itemID || (
                     heroTrailerController.isShowing($0)
@@ -1221,6 +1221,7 @@ struct HomeTab: View {
             ratingsProvider: ratingsProvider,
             detailMetadataResolver: { await DetailMetadataResolver.household.resolve($0) },
             onlineTrailerResolver: { await DetailMetadataResolver.household.trailers(for: $0) },
+            trailerSettings: heroBackground,
             discoveryStatusRefresh: { await seer.requestAvailability(for: $0) },
             loadSeasonEpisodeRoster: { await seer.seasonEpisodeRoster(for: $0, seasonNumber: $1) },
             makeRelatedTitlesLoader: {
@@ -1336,6 +1337,10 @@ struct HomeTab: View {
     private func requestPlay(
         _ item: MediaItem, playlistOrigin: VideoPlaylistPlaybackOrigin? = nil
     ) {
+        guard !item.isTrailer || heroBackground.settings.trailerSources.allows(item) else {
+            PlozzLog.app.info("Trailer action suppressed by profile settings")
+            return
+        }
         if item.isYouTubeTrailer {
             Task { await trailerOpening.open(item) }
             return

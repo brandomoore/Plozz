@@ -2,6 +2,63 @@ import XCTest
 @testable import CoreModels
 
 final class HeroBackgroundSettingsTests: XCTestCase {
+    func testTrailerPolicyPreservesIndependentSurfacePreferences() throws {
+        for policy in TrailerSourcePolicy.allCases {
+            for mode in HeroBackgroundMode.allCases {
+                for homeEnabled in [false, true] {
+                    let settings = HeroBackgroundSettings(
+                        homeTrailerEnabled: homeEnabled, detailMode: mode, trailerSources: policy
+                    )
+                    XCTAssertEqual(settings.homeTrailerPlaybackEnabled, homeEnabled && policy != .off)
+                    XCTAssertEqual(settings.detailTrailerEnabled, mode == .trailer && policy != .off)
+                    XCTAssertEqual(settings.themeMusicEnabled, mode == .themeMusic)
+                    XCTAssertEqual(settings.effectiveDetailMode, mode == .trailer && policy == .off ? .off : mode)
+                    XCTAssertTrue(settings.availableDetailModes.contains(settings.effectiveDetailMode))
+                    XCTAssertEqual(try JSONDecoder().decode(
+                        HeroBackgroundSettings.self, from: JSONEncoder().encode(settings)
+                    ), settings)
+                }
+            }
+        }
+        var settings = HeroBackgroundSettings()
+        settings.trailerSources = .off
+        XCTAssertTrue(settings.homeTrailerEnabled)
+        XCTAssertEqual(settings.detailMode, .trailer)
+        settings.trailerSources = .serverOnly
+        XCTAssertTrue(settings.homeTrailerPlaybackEnabled)
+        XCTAssertTrue(settings.detailTrailerEnabled)
+    }
+
+    func testTrailerPolicyMigrationRetainsPreviouslyAvailableSources() throws {
+        for json in [
+            #"{}"#, #"{"homeTrailerEnabled":false,"detailMode":"themeMusic"}"#,
+            #"{"trailerSources":"future-value"}"#, #"{"trailerSources":42}"#
+        ] {
+            let settings = try JSONDecoder().decode(HeroBackgroundSettings.self, from: Data(json.utf8))
+            XCTAssertEqual(settings.trailerSources, .serverAndYouTube)
+        }
+    }
+
+    func testTrailerSourcesAreProfileScoped() throws {
+        let suite = "TrailerPolicy.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let first = HeroBackgroundSettingsStore(defaults: defaults)
+        let second = HeroBackgroundSettingsStore(defaults: defaults, namespace: "second")
+        first.save(HeroBackgroundSettings(trailerSources: .off))
+        second.save(HeroBackgroundSettings(trailerSources: .serverOnly))
+        XCTAssertEqual(first.load().trailerSources, .off)
+        XCTAssertEqual(second.load().trailerSources, .serverOnly)
+    }
+
+    func testTrailerSearchUsesSharedDestinationOutsideHomePrerequisites() {
+        for id in ["trailer-sources", "hero-trailers", "hero-trailers-muted",
+                   "detail-background", "detail-trailer-muted", "theme-music-volume"] {
+            XCTAssertEqual(SettingsSearchCatalog.entries.first { $0.id == id }?.page, .heroTrailers)
+            XCTAssertFalse(SettingsSearchCatalog.carouselHeroTargets.contains(id))
+        }
+    }
+
     func testDefaultsAreMutedTrailerOnBothSurfaces() {
         let d = HeroBackgroundSettings.default
         XCTAssertTrue(d.homeTrailerEnabled)

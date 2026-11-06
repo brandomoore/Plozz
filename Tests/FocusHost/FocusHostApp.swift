@@ -23,6 +23,8 @@ struct FocusHostApp: App {
                 HomeSectionWarningFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--home-section-editor-fixture") {
                 HomeSectionsEditorFixture()
+            } else if ProcessInfo.processInfo.arguments.contains("--collection-row-editor-fixture") {
+                CollectionRowEditorFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--playback-failure-fixture") {
                 PlaybackFailureFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--setup-picker-fixture") {
@@ -91,6 +93,8 @@ struct FocusHostApp: App {
                 LibraryChannelActionsFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--navigation-fixture") {
                 NavigationRailFixture { Color.clear }
+            } else if ProcessInfo.processInfo.arguments.contains("--live-jellyfin-home") {
+                LiveJellyfinHomeFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--production-home-fixture") {
                 ProductionHomeFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--native-artwork-focus-comparison") {
@@ -108,6 +112,103 @@ struct FocusHostApp: App {
             }
         }
     }
+}
+
+private struct CollectionRowEditorFixture: View {
+    @State private var visibility = HomeLibraryVisibilityModel(
+        store: HomeLibraryVisibilityStore(namespace: "collection-row-editor-fixture")
+    )
+    @State private var navigation = SettingsPageNavigation<String>()
+    @State private var provider: CollectionRowEditorProvider?
+
+    var body: some View {
+        SettingsPageStack(navigation: navigation, pageWidth: SettingsFormMetrics.pageWidth, onRootBack: {}) {
+            if let provider {
+                let account = ResolvedAccount(account: Account(from: provider.session), provider: provider)
+                CollectionSectionSettingsView(
+                    section: CollectionSection(
+                        source: .init(
+                            accountID: account.account.id, collectionID: "weekend", title: "Weekend picks",
+                            serverUserID: provider.session.userID
+                        ),
+                        cardStyle: .landscape,
+                        titleLogo: ProcessInfo.processInfo.arguments.contains("--collection-row-logo-on") ? .on : .default
+                    ),
+                    isNew: true, inventory: HomeSectionCatalogModel(), visibility: visibility,
+                    libraries: [], accounts: [account]
+                )
+            } else {
+                ProgressView()
+            }
+        } destination: { _ in EmptyView() }
+        .environment(CardStyleSettingsModel())
+        .environment(\.settingsInWorkspace, true)
+        .environment(\.themePalette, .dark)
+        .environment(\.colorScheme, .dark)
+        .background { SettingsPageBackground() }
+        .task {
+            guard provider == nil else { return }
+            let backgroundURL = URL(string: "https://collection-fixture.invalid/\(UUID())-background.png")!
+            let logoURL = URL(string: "https://collection-fixture.invalid/\(UUID())-logo.png")!
+            let background = UIGraphicsImageRenderer(size: CGSize(width: 640, height: 360)).image {
+                UIColor(red: 0.12, green: 0.24, blue: 0.36, alpha: 1).setFill()
+                $0.fill(CGRect(x: 0, y: 0, width: 640, height: 360))
+            }
+            let logo = UIGraphicsImageRenderer(size: CGSize(width: 300, height: 90)).image { _ in
+                ("LOGO" as NSString).draw(at: CGPoint(x: 8, y: 2), withAttributes: [
+                    .font: UIFont.boldSystemFont(ofSize: 72), .foregroundColor: UIColor.white
+                ])
+            }
+            guard let cache = ArtworkSession.shared.configuration.urlCache else {
+                preconditionFailure("Collection fixture requires an artwork cache")
+            }
+            for (url, image) in [(backgroundURL, background), (logoURL, logo)] {
+                guard let data = image.pngData() else { preconditionFailure("Fixture PNG encoding failed") }
+                let response = HTTPURLResponse(
+                    url: url, statusCode: 200, httpVersion: nil,
+                    headerFields: ["Content-Type": "image/png", "Cache-Control": "max-age=3600"]
+                )!
+                cache.storeCachedResponse(
+                    CachedURLResponse(response: response, data: data), for: URLRequest(url: url)
+                )
+            }
+            provider = CollectionRowEditorProvider(background: backgroundURL, logo: logoURL)
+        }
+    }
+}
+
+private struct CollectionRowEditorProvider: MediaProvider {
+    let background: URL
+    let logo: URL
+    let kind: ProviderKind = .jellyfin
+    let session = UserSession(
+        server: MediaServer(
+            id: "fixture", name: "Sample library", baseURL: URL(string: "https://fixture.invalid")!,
+            provider: .jellyfin
+        ),
+        userID: "viewer", userName: "Viewer", deviceID: "fixture", accessToken: "fixture"
+    )
+
+    func libraries() async throws -> [MediaLibrary] { [] }
+    func continueWatching(limit: Int) async throws -> [MediaItem] { [] }
+    func latest(limit: Int) async throws -> [MediaItem] { [] }
+    func items(in containerID: String, kind: MediaItemKind, page: PageRequest) async throws -> MediaPage {
+        MediaPage(items: [], startIndex: page.startIndex, totalCount: 0)
+    }
+    func item(id: String) async throws -> MediaItem { throw AppError.notFound }
+    func children(of itemID: String) async throws -> [MediaItem] {
+        [("orbit", "Orbit"), ("crossing", "The Crossing")].map { id, title in
+            MediaItem(
+                id: id, title: title, kind: .movie, backdropURL: background, logoURL: logo,
+                allowsTitleBasedMetadataMatching: false,
+                artworkSelections: [.init(placement: .landscapeCard, references: [.remote(background)])]
+            )
+        }
+    }
+    func search(query: String, limit: Int) async throws -> [MediaItem] { [] }
+    func playbackInfo(for itemID: String) async throws -> PlaybackRequest { throw AppError.notFound }
+    func reportPlayback(_ progress: PlaybackProgress, event: PlaybackEvent) async throws {}
+    func imageURL(itemID: String, kind: ImageKind, maxWidth: Int?) -> URL? { nil }
 }
 
 private struct SkipSettingsFixture: View {

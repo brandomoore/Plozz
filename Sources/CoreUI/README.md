@@ -876,8 +876,24 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   on-disk + in-memory image cache shared with `MetadataKit`'s URL cache,
   with profile-scoped source choices in Appearance > Artwork. Recommended uses
   metadata providers first for Home and library Showcase heroes, movie/show detail
-  backgrounds and logos, and textless Continue Watching artwork. Ordinary rows,
-  related-title posters, and episode thumbnails remain library-first. Detail hero
+  backgrounds and logos, and textless Continue Watching artwork. Ordinary posters,
+  related-title posters, and episode thumbnails remain library-first. Landscape
+  movie/show cards have a separate `landscapeCard` key-art placement: advertised
+  Jellyfin/Emby Thumb images and validated share landscape/thumb sidecars do not
+  depend on the hero's backdrop ordering. Artwork-only cards can fill a missing
+  native slot from enabled metadata providers; explicit Library stays native-first.
+  Custom collection rows persist Logo as On or Off (default); retired Automatic
+  values decode as Off. On prefers clean backgrounds and reuses Continue
+  Watching's logo composition, but artwork-type and textless-availability guesses
+  cannot suppress the explicitly requested overlay. It waits for the current
+  background to resolve, including a native thumbnail or poster fallback.
+  Off draws artwork only, preserving any logo embedded in that image.
+  Continue Watching keeps its separate duplicate-title protection.
+  Logo-free sources retain the shared text-title
+  fallback. These choices do not change episode stills, extras, portrait cards,
+  Continue Watching preferences, captions, card geometry or focus. Preview, tvOS
+  and mobile rows use the same profile-scoped setting.
+  Detail hero
   placement is carried through resolution, cache identity, prewarming, and mobile
   reflections without changing the surrounding page's card policy.
   Shared hero/reflection first-paint results are qualified by source and provider
