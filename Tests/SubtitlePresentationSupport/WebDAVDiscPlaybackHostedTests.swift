@@ -540,6 +540,7 @@ final class WebDAVDiscPlaybackHostedTests: XCTestCase {
             let discJavaKeys: [UInt32]?
             let discJavaFeaturePlayback: Bool?
             let discJavaStartupMenu: Int?
+            let discJavaOpeningMenus: Bool?
         }
         let data: Data
         if let json = environment["PLOZZ_WEBDAV_PLAYBACK_JSON"] {
@@ -575,7 +576,8 @@ final class WebDAVDiscPlaybackHostedTests: XCTestCase {
             discJavaInspection: input.discJavaInspection == true,
             discJavaKeys: input.discJavaKeys ?? [],
             discJavaFeaturePlayback: input.discJavaFeaturePlayback == true,
-            discJavaStartupMenu: input.discJavaStartupMenu
+            discJavaStartupMenu: input.discJavaStartupMenu,
+            discJavaOpeningMenus: input.discJavaOpeningMenus == true
         )
     }
 
@@ -588,7 +590,8 @@ final class WebDAVDiscPlaybackHostedTests: XCTestCase {
         discAudioSelection: Bool = false, discIntermediateStill: Bool = false, discShortSecondItem: Bool = false,
         discMenuInspection: Bool = false, discJava: Bool = false, discJavaInspection: Bool = false,
         discJavaKeys: [UInt32] = [], discJavaQuarantine: Bool = false,
-        discJavaFeaturePlayback: Bool = false, inspectVideos: Bool = false, discJavaStartupMenu: Int? = nil
+        discJavaFeaturePlayback: Bool = false, inspectVideos: Bool = false, discJavaStartupMenu: Int? = nil,
+        discJavaOpeningMenus: Bool = false
     ) async throws {
         let environment = ProcessInfo.processInfo.environment
         let detailPlayDelay: Duration?
@@ -844,6 +847,24 @@ final class WebDAVDiscPlaybackHostedTests: XCTestCase {
             let directory = try XCTUnwrap(FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first)
             try XCTUnwrap(image.pngData()).write(to: directory.appendingPathComponent("disc-java-inspection.png"))
             print("WEBDAV_DISC javaMenuReadySeconds=\(started.duration(to: .now)) playlist=\(menu.playlist ?? -1)")
+            if discJavaOpeningMenus {
+                let languageImage = try XCTUnwrap(menu.image?.pngData())
+                menu.sendKey(16)
+                try await wait(engine: engine, seconds: 15) {
+                    menu.playlist == 2 && menu.playItem == 3 && menu.isMenuVisible &&
+                        menu.image != nil && menu.image?.pngData() != languageImage
+                }
+                menu.sendKey(13)
+                try await Task.sleep(for: .milliseconds(500))
+                menu.sendKey(16)
+                try await wait(engine: engine, seconds: 45) { menu.playlist == 20 && !menu.isOpening }
+                try await wait(engine: engine, seconds: 100) {
+                    menu.playlist == 20 && menu.isMenuVisible && menu.image != nil
+                }
+                XCTAssertNil(menu.failure)
+                print("WEBDAV_DISC javaOpeningMenusVerified position=\(engine.currentTime)")
+                menu.sendKey(16)
+            }
             for (index, key) in discJavaKeys.enumerated() {
                 menu.sendKey(key)
                 try await Task.sleep(for: .seconds(30))
@@ -874,6 +895,7 @@ final class WebDAVDiscPlaybackHostedTests: XCTestCase {
             if discJavaFeaturePlayback {
                 try await wait(engine: engine, seconds: 90) {
                     guard engine.duration > 600, engine.currentTime > 2, menu.failure == nil,
+                          !discJavaOpeningMenus || menu.playlist == 800,
                           !menu.isOpening, !menu.isMenuVisible,
                           discJavaStartupMenu.map({ menu.playlist != $0 }) ?? true else { return false }
                     return await engine.hasRenderedVideoFrame()

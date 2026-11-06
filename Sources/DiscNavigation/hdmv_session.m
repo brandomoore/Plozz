@@ -666,7 +666,8 @@ static unsigned component(double value) {
         }
         printf("HDMV event=%u parameter=%u\n", event.event, event.param);
         if (event.event == BD_EVENT_PLAYITEM || event.event == BD_EVENT_SEEK ||
-            event.event == BD_EVENT_STILL_TIME || event.event == BD_EVENT_TITLE) {
+            event.event == BD_EVENT_STILL_TIME || event.event == BD_EVENT_TITLE ||
+            event.event == BD_EVENT_PLAYMARK) {
             [self publishDiagnostic:[NSString stringWithFormat:
                 @"disc NATIVE_EVENT event=%u parameter=%u playlist=%ld clip=%u generation=%ld synchronizing=%d",
                 event.event, event.param, (long)_playlist, _clip, (long)_generation, _synchronizing]];
@@ -957,6 +958,10 @@ static unsigned component(double value) {
     });
 }
 - (void)updateTime:(double)seconds generation:(NSInteger)generation {
+    [self updateTime:seconds generation:generation seeking:NO];
+}
+
+- (void)updateTime:(double)seconds generation:(NSInteger)generation seeking:(BOOL)seeking {
     if (!isfinite(seconds) || seconds < 0) return;
     dispatch_async(self.queue, ^{
         if (self.stopped || self->_failed || generation != self->_generation || !self->_title) return;
@@ -971,7 +976,11 @@ static unsigned component(double value) {
             while (clip + 1 < self->_title->clip_count &&
                    self->_title->clips[clip + 1].start_time <= time) clip++;
         }
-        if (clip != self->_clip) {
+        if (clip != self->_clip || seeking) {
+            if (!seeking && clip > self->_clip) {
+                // Deliver boundary cues before the byte-position seek resets mark tracking.
+                bd_set_scr(self->_disc, self->_title->clips[self->_clip].out_time);
+            }
             [self publishDiagnostic:[NSString stringWithFormat:
                 @"disc CLOCK_SYNC playlist=%ld from=%u to=%u time=%llu generation=%ld",
                 (long)self->_playlist, self->_clip, clip, (unsigned long long)time, (long)generation]];

@@ -7,6 +7,22 @@ import XCTest
 
 @MainActor
 final class DiscMenuSelectionHostedTests: XCTestCase {
+    func testPresentationClockWaitsForOutstandingSeeks() async throws {
+        let session = try makeSession { _, _, _ in false }
+        session.select(1, position: 0, generation: 1)
+        await session.drain()
+        let first = session.beginSeek()
+        let second = session.beginSeek()
+        session.updateTime(3, sourceSeconds: 3, hasPresentedFrame: true)
+        XCTAssertFalse(session.state.hasPresentedVideoFrame)
+        session.endSeek(generation: first)
+        session.updateTime(3, sourceSeconds: 3, hasPresentedFrame: true)
+        XCTAssertFalse(session.state.hasPresentedVideoFrame)
+        session.endSeek(generation: second)
+        session.updateTime(3, sourceSeconds: 3, hasPresentedFrame: true)
+        XCTAssertTrue(session.state.hasPresentedVideoFrame)
+    }
+
     func testAudioWarningRequiresReadyTracksWithKnownMissingIdentity() {
         let trueHD = TrackInfo(id: 1, name: "Fixture", codec: "truehd", language: "eng",
                                isDefault: true, mpegTSPID: 0x1100)

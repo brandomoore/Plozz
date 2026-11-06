@@ -1411,13 +1411,19 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
 
     public func seek(to seconds: TimeInterval) async {
         resetASSFrameForSeek()
+        #if canImport(DiscNavigation) && canImport(UIKit)
+        let seekingDisc = discSession
+        let seekGeneration = seekingDisc?.beginSeek()
+        defer {
+            if let seekGeneration { seekingDisc?.endSeek(generation: seekGeneration) }
+        }
+        #endif
         await engine.seek(to: seconds)
     }
 
     public func seek(to seconds: TimeInterval, kind: VideoSeekKind) async {
-        resetASSFrameForSeek()
         PlaybackTrace.note("engine.seek BEGIN target=\(String(format: "%.2f", seconds)) kind=\(kind) state=\(engine.state) curr=\(String(format: "%.2f", currentTime)) dur=\(String(format: "%.2f", duration))")
-        await engine.seek(to: seconds)
+        await seek(to: seconds)
         PlaybackTrace.note("engine.seek END   target=\(String(format: "%.2f", seconds)) state=\(engine.state) curr=\(String(format: "%.2f", currentTime))")
     }
 

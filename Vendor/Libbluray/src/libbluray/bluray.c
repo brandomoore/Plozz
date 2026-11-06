@@ -1647,22 +1647,55 @@ void bd_close(BLURAY *bd)
  * PlayMark tracking
  */
 
-static void _find_next_playmark(BLURAY *bd)
+static void _find_next_playmark_at_time(BLURAY *bd, uint64_t time)
 {
     unsigned ii;
-
     bd->next_mark = -1;
     bd->next_mark_pos = (uint64_t)-1;
     for (ii = 0; ii < bd->title->mark_list.count; ii++) {
-        uint64_t pos = (uint64_t)bd->title->mark_list.mark[ii].title_pkt * 192L;
-        if (pos > bd->s_pos) {
+        if (bd->title->mark_list.mark[ii].title_time > time) {
             bd->next_mark = ii;
-            bd->next_mark_pos = pos;
+            bd->next_mark_pos = (uint64_t)bd->title->mark_list.mark[ii].title_pkt * 192L;
             break;
+        }
+    }
+}
+
+static void _find_next_playmark(BLURAY *bd)
+{
+    unsigned ii;
+    if (bd->app_scr && bd->st0.clip) {
+        const NAV_CLIP *clip = bd->st0.clip;
+        uint64_t time = bd_psr_read(bd->regs, PSR_TIME);
+        _find_next_playmark_at_time(bd, clip->title_time +
+                                   (time > clip->in_time ? time - clip->in_time : 0));
+    } else {
+        bd->next_mark = -1;
+        bd->next_mark_pos = (uint64_t)-1;
+        for (ii = 0; ii < bd->title->mark_list.count; ii++) {
+            uint64_t pos = (uint64_t)bd->title->mark_list.mark[ii].title_pkt * 192L;
+            if (pos > bd->s_pos) {
+                bd->next_mark = ii;
+                bd->next_mark_pos = pos;
+                break;
+            }
         }
     }
 
     _update_chapter_psr(bd);
+}
+
+static void _emit_playmark(BLURAY *bd)
+{
+    _queue_event(bd, BD_EVENT_PLAYMARK, bd->next_mark);
+    _bdj_event(bd, BDJ_EVENT_MARK, bd->next_mark);
+    bd->next_mark++;
+    if ((unsigned)bd->next_mark < bd->title->mark_list.count) {
+        bd->next_mark_pos = (uint64_t)bd->title->mark_list.mark[bd->next_mark].title_pkt * 192L;
+    } else {
+        bd->next_mark = -1;
+        bd->next_mark_pos = (uint64_t)-1;
+    }
 }
 
 static void _playmark_reached(BLURAY *bd)
@@ -1671,18 +1704,7 @@ static void _playmark_reached(BLURAY *bd)
 
         BD_DEBUG(DBG_BLURAY, "PlayMark %d reached (%" PRIu64 ")\n", bd->next_mark, bd->next_mark_pos);
 
-        _queue_event(bd, BD_EVENT_PLAYMARK, bd->next_mark);
-        _bdj_event(bd, BDJ_EVENT_MARK, bd->next_mark);
-
-        /* update next mark */
-        bd->next_mark++;
-        if ((unsigned)bd->next_mark < bd->title->mark_list.count) {
-            bd->next_mark_pos = (uint64_t)bd->title->mark_list.mark[bd->next_mark].title_pkt * 192L;
-        } else {
-            /* no marks left */
-            bd->next_mark = -1;
-            bd->next_mark_pos = (uint64_t)-1;
-        }
+        _emit_playmark(bd);
     };
 
     /* chapter tracking */
@@ -1776,7 +1798,10 @@ static int64_t _seek_time(BLURAY *bd, uint64_t tick, uint8_t is_uo_mask_checked)
         // Find the closest access unit to the requested position
         clip = nav_time_search(bd->title, (uint32_t)tick, &clip_pkt, &out_pkt);
 
-        _seek_internal(bd, clip, out_pkt, clip_pkt);
+        if (_seek_internal(bd, clip, out_pkt, clip_pkt) >= 0 && bd->app_scr) {
+            /* A keyframe can precede both the requested time and a skipped mark. */
+            _find_next_playmark_at_time(bd, tick);
+        }
 
     } else {
         BD_DEBUG(DBG_BLURAY | DBG_CRIT, "bd_seek_time(%" PRIu64 ") failed\n", tick);
@@ -3961,6 +3986,18 @@ void bd_set_scr(BLURAY *bd, int64_t pts)
     bd_mutex_lock(&bd->mutex);
     bd->app_scr = 1;
     _set_scr(bd, pts);
+    /* External renderers advance presentation without reading this stream. */
+    if (pts >= 0 && bd->title && bd->st0.clip) {
+        const NAV_CLIP *clip = bd->st0.clip;
+        uint64_t tick = (uint64_t)pts >> 1;
+        if (tick >= clip->in_time && tick <= clip->out_time) {
+            uint64_t title_time = tick - clip->in_time + clip->title_time;
+            while (bd->next_mark >= 0 &&
+                   bd->title->mark_list.mark[bd->next_mark].title_time <= title_time) {
+                _emit_playmark(bd);
+            }
+        }
+    }
     bd_mutex_unlock(&bd->mutex);
 }
 

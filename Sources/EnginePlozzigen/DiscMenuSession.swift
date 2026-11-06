@@ -113,6 +113,8 @@ final class DiscMenuSession {
     private var noticeTask: Task<Void, Never>?
     private var firstLoad: CheckedContinuation<Void, Error>?
     private var lastClockUpdate = Date.distantPast
+    private var activeSeeks = 0
+    private var synchronizeNextClock = false
     private let load: (TransportDiscDirectoryReader, TimeInterval, DiscMenuClip?) async throws -> Bool
     private var playbackReader: TransportDiscDirectoryReader?
     private var playbackClip: DiscMenuClip?
@@ -268,6 +270,7 @@ final class DiscMenuSession {
             "disc SELECTION playlist=\(playlist) position=\(position) generation=\(generation) previous=\(self.generation)"
         )
         self.generation = generation
+        synchronizeNextClock = false
         loadedGeneration = nil
         pendingAudioPID = nil
         pendingSubtitle = nil
@@ -336,8 +339,18 @@ final class DiscMenuSession {
         }
     }
 
+    func beginSeek() -> Int {
+        activeSeeks += 1
+        return generation
+    }
+
+    func endSeek(generation: Int) {
+        activeSeeks -= 1
+        if self.generation == generation { synchronizeNextClock = true }
+    }
+
     func updateTime(_ seconds: Double, sourceSeconds: Double, hasPresentedFrame: Bool) {
-        guard !stopped, let loadedGeneration, hasPresentedFrame,
+        guard !stopped, let loadedGeneration, hasPresentedFrame, activeSeeks == 0,
               Date().timeIntervalSince(lastClockUpdate) >= 0.1 else { return }
         deadline?.cancel()
         state.hasPresentedVideoFrame = true
@@ -351,7 +364,8 @@ final class DiscMenuSession {
         } else {
             playlistTime = seconds
         }
-        native?.updateTime(playlistTime, generation: loadedGeneration)
+        native?.updateTime(playlistTime, generation: loadedGeneration, seeking: synchronizeNextClock)
+        synchronizeNextClock = false
     }
 
     func ended() {

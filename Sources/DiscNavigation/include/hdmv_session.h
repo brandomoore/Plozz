@@ -41,6 +41,7 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)clickAtX:(uint16_t)x y:(uint16_t)y NS_SWIFT_NAME(click(x:y:));
 - (void)menu;
 - (void)updateTime:(double)seconds generation:(NSInteger)generation;
+- (void)updateTime:(double)seconds generation:(NSInteger)generation seeking:(BOOL)seeking;
 - (void)ended:(NSInteger)generation;
 - (void)selectTrackPID:(NSInteger)pid subtitle:(BOOL)subtitle generation:(NSInteger)generation
            completion:(void (^)(BOOL accepted))completion;

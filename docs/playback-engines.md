@@ -218,9 +218,18 @@ still, and a 42-millisecond second item beginning at the fractional 2.002-second
 The navigation clock starts only after video presentation and rounds to 90 kHz
 ticks; independently rendered items keep that clock inside their own interval
 rather than seeking the disc VM into an adjacent item.
+External playback delivers authored play marks from that presentation clock,
+including menu-reveal cues whose timestamps share an earlier indexed keyframe.
+Byte reads and presentation updates share one mark cursor to avoid duplicates.
+Explicit seeks skip passed cues and rearm later cues for replay; natural clip
+transitions deliver the outgoing boundary before synchronizing the next clip.
+Native regressions cover exact cue times, duplicate ticks, invalid clocks,
+end-boundary cues, forward seeks, and backward replay without rereading video.
 An explicitly configured private-disc
 inspection also exercises original menu graphics and a held video frame through
-the production transport and playback adapter; it is opt-in, not part of CI.
+the production transport and playback adapter; its opening-Menus mode verifies
+the initial menu reveal before movie playback and menu return. It is opt-in,
+not part of CI.
 The multi-audio source is an original generated color/sine clip from
 `tools/generate-bdmv-test-fixture.py`; `fixture.create_hdmv_metadata` produces
 its alternate playlist and clip information when that clip is present.

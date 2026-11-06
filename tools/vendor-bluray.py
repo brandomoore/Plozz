@@ -178,6 +178,7 @@ def main():
         raise SystemExit("Unexpected navigation polling layout")
     # Event-only polls must still deliver Java's deferred end-of-playlist event.
     text = text.replace(poll, "").replace(read, poll + read)
+    text = adapt_presentation_marks(text)
     navigation.write_text(text)
     (destination / "UPSTREAM.json").write_text(json.dumps(pin, indent=2) + "\n")
     notices = (
@@ -197,6 +198,104 @@ def main():
         + (destination / "contrib/libudfread/COPYING").read_text()
     )
     (root / "App/Resources/LibblurayNotices.txt").write_text(notices)
+
+
+def adapt_presentation_marks(text):
+    """Keep authored cues on the external renderer's clock, not its byte reader."""
+    start = text.index("static void _find_next_playmark(BLURAY *bd)")
+    end = text.index("\n/*\n * seeking and current position", start)
+    text = text[:start] + """static void _find_next_playmark_at_time(BLURAY *bd, uint64_t time)
+{
+    unsigned ii;
+    bd->next_mark = -1;
+    bd->next_mark_pos = (uint64_t)-1;
+    for (ii = 0; ii < bd->title->mark_list.count; ii++) {
+        if (bd->title->mark_list.mark[ii].title_time > time) {
+            bd->next_mark = ii;
+            bd->next_mark_pos = (uint64_t)bd->title->mark_list.mark[ii].title_pkt * 192L;
+            break;
+        }
+    }
+}
+
+static void _find_next_playmark(BLURAY *bd)
+{
+    unsigned ii;
+    if (bd->app_scr && bd->st0.clip) {
+        const NAV_CLIP *clip = bd->st0.clip;
+        uint64_t time = bd_psr_read(bd->regs, PSR_TIME);
+        _find_next_playmark_at_time(bd, clip->title_time +
+                                   (time > clip->in_time ? time - clip->in_time : 0));
+    } else {
+        bd->next_mark = -1;
+        bd->next_mark_pos = (uint64_t)-1;
+        for (ii = 0; ii < bd->title->mark_list.count; ii++) {
+            uint64_t pos = (uint64_t)bd->title->mark_list.mark[ii].title_pkt * 192L;
+            if (pos > bd->s_pos) {
+                bd->next_mark = ii;
+                bd->next_mark_pos = pos;
+                break;
+            }
+        }
+    }
+
+    _update_chapter_psr(bd);
+}
+
+static void _emit_playmark(BLURAY *bd)
+{
+    _queue_event(bd, BD_EVENT_PLAYMARK, bd->next_mark);
+    _bdj_event(bd, BDJ_EVENT_MARK, bd->next_mark);
+    bd->next_mark++;
+    if ((unsigned)bd->next_mark < bd->title->mark_list.count) {
+        bd->next_mark_pos = (uint64_t)bd->title->mark_list.mark[bd->next_mark].title_pkt * 192L;
+    } else {
+        bd->next_mark = -1;
+        bd->next_mark_pos = (uint64_t)-1;
+    }
+}
+
+static void _playmark_reached(BLURAY *bd)
+{
+    while (bd->next_mark >= 0 && bd->s_pos > bd->next_mark_pos) {
+
+        BD_DEBUG(DBG_BLURAY, "PlayMark %d reached (%" PRIu64 ")\\n", bd->next_mark, bd->next_mark_pos);
+
+        _emit_playmark(bd);
+    };
+
+    /* chapter tracking */
+    _update_chapter_psr(bd);
+}
+""" + text[end:]
+    before = """        clip = nav_time_search(bd->title, (uint32_t)tick, &clip_pkt, &out_pkt);
+
+        _seek_internal(bd, clip, out_pkt, clip_pkt);"""
+    if text.count(before) != 1:
+        raise SystemExit("Unexpected presentation time seek layout")
+    text = text.replace(before, """        clip = nav_time_search(bd->title, (uint32_t)tick, &clip_pkt, &out_pkt);
+
+        if (_seek_internal(bd, clip, out_pkt, clip_pkt) >= 0 && bd->app_scr) {
+            /* A keyframe can precede both the requested time and a skipped mark. */
+            _find_next_playmark_at_time(bd, tick);
+        }""")
+    before = """    bd->app_scr = 1;
+    _set_scr(bd, pts);"""
+    if text.count(before) != 1:
+        raise SystemExit("Unexpected external presentation clock layout")
+    return text.replace(before, before + """
+    /* External renderers advance presentation without reading this stream. */
+    if (pts >= 0 && bd->title && bd->st0.clip) {
+        const NAV_CLIP *clip = bd->st0.clip;
+        uint64_t tick = (uint64_t)pts >> 1;
+        if (tick >= clip->in_time && tick <= clip->out_time) {
+            uint64_t title_time = tick - clip->in_time + clip->title_time;
+            while (bd->next_mark >= 0 &&
+                   bd->title->mark_list.mark[bd->next_mark].title_time <= title_time) {
+                _emit_playmark(bd);
+            }
+        }
+    }""")
 
 
 if __name__ == "__main__":

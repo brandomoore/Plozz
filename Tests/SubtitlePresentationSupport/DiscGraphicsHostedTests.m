@@ -1,6 +1,7 @@
 #import <XCTest/XCTest.h>
 #import "../../Sources/DiscNavigation/include/hdmv_session.h"
 #include "../../Vendor/Libbluray/src/libbluray/decoders/overlay.h"
+#include "../../Vendor/Libbluray/src/libbluray/bluray.h"
 #include <mach/mach.h>
 
 @interface HDMVSession (GraphicsTests)
@@ -18,6 +19,97 @@ static uint64_t discTestFootprint(void) {
 @end
 
 @implementation DiscGraphicsHostedTests
+- (BLURAY *)presentationMarkDisc {
+    NSFileManager *manager = NSFileManager.defaultManager;
+    NSURL *fixtures = [[NSBundle bundleForClass:self.class].resourceURL URLByAppendingPathComponent:@"Fixtures"];
+    NSURL *root = [manager.temporaryDirectory URLByAppendingPathComponent:NSUUID.UUID.UUIDString];
+    NSError *error = nil;
+    XCTAssertTrue([manager copyItemAtURL:[fixtures URLByAppendingPathComponent:@"bluray-test-pattern"]
+                                  toURL:root error:&error], @"%@", error);
+    [self addTeardownBlock:^{
+        NSError *cleanupError = nil;
+        XCTAssertTrue([manager removeItemAtURL:root error:&cleanupError], @"%@", cleanupError);
+    }];
+    NSMutableData *playlist = [[NSData dataWithContentsOfURL:
+        [fixtures URLByAppendingPathComponent:@"bdj-navigation/BDMV/PLAYLIST/00001.mpls"]] mutableCopy];
+    XCTAssertNotNil(playlist);
+    if (!playlist) return NULL;
+    uint32_t offset;
+    memcpy(&offset, (const uint8_t *)playlist.bytes + 12, 4);
+    offset = CFSwapInt32BigToHost(offset);
+    [playlist setLength:offset];
+    uint32_t length = CFSwapInt32HostToBig(2 + 4 * 14);
+    uint16_t count = CFSwapInt16HostToBig(4);
+    [playlist appendBytes:&length length:4];
+    [playlist appendBytes:&count length:2];
+    const uint32_t seconds[] = {0, 3, 6, 8};
+    for (unsigned i = 0; i < 4; i++) {
+        uint8_t mark[14] = {0, 1, 0, 0};
+        uint32_t time = CFSwapInt32HostToBig(seconds[i] * 45000);
+        memcpy(mark + 4, &time, 4);
+        mark[8] = mark[9] = 0xff;
+        [playlist appendBytes:mark length:sizeof(mark)];
+    }
+    XCTAssertTrue([playlist writeToURL:[root URLByAppendingPathComponent:@"BDMV/PLAYLIST/00001.mpls"]
+                               options:NSDataWritingAtomic error:&error], @"%@", error);
+    NSData *clip = [NSData dataWithContentsOfURL:
+        [fixtures URLByAppendingPathComponent:@"bdj-navigation/BDMV/CLIPINF/00001.clpi"]];
+    XCTAssertTrue([clip writeToURL:[root URLByAppendingPathComponent:@"BDMV/CLIPINF/00001.clpi"]
+                           options:NSDataWritingAtomic error:&error], @"%@", error);
+    BLURAY *disc = bd_open(root.fileSystemRepresentation, NULL);
+    XCTAssertTrue(disc != NULL);
+    if (!disc) return NULL;
+    [self addTeardownBlock:^{ bd_close(disc); }];
+    bd_get_event(disc, NULL);
+    bd_set_scr(disc, 0);
+    XCTAssertEqual(bd_select_playlist(disc, 1), 1);
+    return disc;
+}
+
+- (NSArray<NSNumber *> *)marksFromDisc:(BLURAY *)disc {
+    NSMutableArray *marks = [NSMutableArray new];
+    BD_EVENT event;
+    while (bd_get_event(disc, &event)) {
+        if (event.event == BD_EVENT_PLAYMARK) [marks addObject:@(event.param)];
+    }
+    return marks;
+}
+
+- (void)testPresentationClockDeliversMarksOnceWithoutReadingVideo {
+    BLURAY *disc = [self presentationMarkDisc];
+    if (!disc) return;
+    XCTAssertEqualObjects([self marksFromDisc:disc], @[]);
+    bd_set_scr(disc, 3 * 90000 - 1);
+    XCTAssertEqualObjects([self marksFromDisc:disc], @[]);
+    bd_set_scr(disc, 3 * 90000);
+    XCTAssertEqualObjects([self marksFromDisc:disc], @[@1]);
+    bd_set_scr(disc, 3 * 90000);
+    XCTAssertEqualObjects([self marksFromDisc:disc], @[]);
+    bd_set_scr(disc, -1);
+    bd_set_scr(disc, 9 * 90000);
+    XCTAssertEqualObjects([self marksFromDisc:disc], @[]);
+    bd_set_scr(disc, 8 * 90000);
+    XCTAssertEqualObjects([self marksFromDisc:disc], (@[@2, @3]));
+    bd_set_scr(disc, 8 * 90000);
+    XCTAssertEqualObjects([self marksFromDisc:disc], @[]);
+}
+
+- (void)testPresentationSeekSkipsPassedMarksAndRearmsOnReplay {
+    BLURAY *disc = [self presentationMarkDisc];
+    if (!disc) return;
+    XCTAssertGreaterThanOrEqual(bd_seek_time(disc, 5 * 90000), 0);
+    bd_set_scr(disc, 5 * 90000);
+    XCTAssertEqualObjects([self marksFromDisc:disc], @[]);
+    bd_set_scr(disc, 6 * 90000);
+    XCTAssertEqualObjects([self marksFromDisc:disc], @[@2]);
+    XCTAssertGreaterThanOrEqual(bd_seek_time(disc, 1 * 90000), 0);
+    bd_set_scr(disc, 3 * 90000);
+    XCTAssertEqualObjects([self marksFromDisc:disc], @[@1]);
+    XCTAssertGreaterThanOrEqual(bd_seek_time(disc, 6 * 90000), 0);
+    bd_set_scr(disc, 6 * 90000);
+    XCTAssertEqualObjects([self marksFromDisc:disc], @[]);
+}
+
 - (void)testJavaCallbackReleasesTemporaryFramesOnALongLivedThread {
     XCTestExpectation *finished = [self expectationWithDescription:@"Java graphics worker"];
     [NSThread detachNewThreadWithBlock:^{
