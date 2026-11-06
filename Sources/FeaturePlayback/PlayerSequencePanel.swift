@@ -52,7 +52,7 @@ struct PlayerSequenceLayout {
 /// Episode cards live inside one player panel; playlist cards stand alone.
 /// Only visible entries are built; playlist pages are still requested on demand.
 struct PlayerSequencePanel: View {
-    enum Source: Equatable { case episodes, playlist }
+    enum Source: Equatable { case episodes, playlist, continueWatching }
 
     @Environment(\.playerCardMetrics) private var metrics
     @Environment(\.plozzMetrics) private var cardMetrics
@@ -117,8 +117,47 @@ struct PlayerSequencePanel: View {
                 if let error = playlist.loadError {
                     errorRow(error) { playlist.retry() }
                 }
+            } else if source == .continueWatching {
+                let items = player.continueWatchingItems
+                if items.isEmpty {
+                    emptyRow("Nothing else to continue")
+                } else {
+                    continueWatchingRow(items)
+                }
             }
         }
+    }
+
+    /// Home's Continue Watching row. Picking a card saves
+    /// what is playing and resumes the picked title in place.
+    private func continueWatchingRow(_ items: [MediaItem]) -> some View {
+        sequenceScroll {
+            ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+                card(
+                    item, focusSlot: .sequenceItem(index), selected: false,
+                    episodeBadge: Self.continueWatchingCaption(item)
+                ) {
+                    player.playFromContinueWatching(item)
+                }
+            }
+        }
+    }
+
+    /// "S1, E2 · 51m left" for an episode, "1h 12m left" for a film.
+    static func continueWatchingCaption(_ item: MediaItem) -> String? {
+        var parts: [String] = []
+        if item.kind == .episode, let season = item.seasonNumber, let episode = item.episodeNumber {
+            parts.append("S\(season), E\(episode)")
+        }
+        if let runtime = item.runtime, runtime > 0 {
+            let left = max(0, runtime - (item.resumePosition ?? 0))
+            let minutes = Int((left / 60).rounded())
+            let text = minutes >= 60
+                ? (minutes % 60 == 0 ? "\(minutes / 60)h" : "\(minutes / 60)h \(minutes % 60)m")
+                : "\(max(1, minutes))m"
+            parts.append(item.resumePosition ?? 0 > 0 ? "\(text) left" : text)
+        }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 
     @ViewBuilder
@@ -444,6 +483,8 @@ struct PlayerSequencePanel: View {
                             .overlay(alignment: .bottomLeading) {
                                 if source == .episodes, let episodeBadge {
                                     PlayerEpisodeArtworkOverlay(badge: episodeBadge, layout: layout)
+                                } else if source == .continueWatching {
+                                    ContinueWatchingArtworkOverlay(item: item, caption: episodeBadge)
                                 }
                             }
                         Group {
@@ -484,6 +525,9 @@ struct PlayerSequencePanel: View {
     }
 
     private func title(_ item: MediaItem) -> Text {
+        if source == .continueWatching, item.kind == .episode, let show = item.parentTitle, !show.isEmpty {
+            return Text(verbatim: show)
+        }
         if player.spoilerSettings.shouldHideText(for: item) {
             return Text(player.spoilerSettings.maskedTitle(for: item))
         }
@@ -524,6 +568,47 @@ struct PlayerSequencePanel: View {
         Image(systemName: "play.rectangle")
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(.white.opacity(0.12))
+    }
+}
+
+/// Apple-style foot of a Continue Watching card: a play
+/// glyph, how far in, and "S1, E2 · 51m left".
+struct ContinueWatchingArtworkOverlay: View {
+    let item: MediaItem
+    let caption: String?
+
+    private var progress: Double? {
+        if let played = item.playedPercentage, played > 0 { return min(1, played / 100) }
+        if let position = item.resumePosition, let runtime = item.runtime, runtime > 0, position > 0 {
+            return min(1, position / runtime)
+        }
+        return nil
+    }
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "play.fill")
+            if let progress {
+                Capsule().fill(.white.opacity(0.35))
+                    .frame(width: 44, height: 5)
+                    .overlay(alignment: .leading) {
+                        Capsule().fill(.white).frame(width: 44 * progress, height: 5)
+                    }
+            }
+            if let caption {
+                Text(verbatim: caption).lineLimit(1)
+            }
+        }
+        .font(.caption.weight(.semibold))
+        .foregroundStyle(.white)
+        .shadow(color: .black.opacity(0.6), radius: 4)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            LinearGradient(colors: [.clear, .black.opacity(0.65)], startPoint: .top, endPoint: .bottom)
+        )
+        .allowsHitTesting(false)
     }
 }
 

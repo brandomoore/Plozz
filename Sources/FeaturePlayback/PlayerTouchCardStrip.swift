@@ -164,6 +164,10 @@ public struct PlayerTouchCardStrip: View {
                 if player?.playlistContext != nil {
                     tab(.playlist, title: Text(PlayerControls.Category.playlist.title))
                 }
+                // Switch to another started title (#388).
+                if !(player?.continueWatchingItems.isEmpty ?? true) {
+                    tab(.continueWatching, title: Text(PlayerControls.Category.continueWatching.title))
+                }
                 Spacer(minLength: 20)
             }
         }
@@ -220,6 +224,10 @@ public struct PlayerTouchCardStrip: View {
                         source: category == .playlist ? .playlist : .episodes,
                         focus: $focus
                     )
+                }
+            case .continueWatching:
+                if let player {
+                    PlayerSequencePanel(player: player, source: .continueWatching, focus: $focus)
                 }
             default:
                 InfoPanelView(
