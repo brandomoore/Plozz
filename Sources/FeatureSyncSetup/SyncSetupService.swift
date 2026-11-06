@@ -110,7 +110,7 @@ public final class SyncSetupService {
     /// Publish a NON-SECRET beacon reflecting the current config, so a fresh
     /// device on the same Apple ID can offer "bring your setup here".
     public func publishPresence() {
-        guard isEnabled else { return }
+        guard isEnabled, !OfflineMode.shared.isEnabled else { return }
         let cfg: LocalConfig
         do {
             cfg = try configProvider()

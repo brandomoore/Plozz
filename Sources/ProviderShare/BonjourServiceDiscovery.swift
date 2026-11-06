@@ -101,6 +101,11 @@ public final class BonjourServiceDiscovery: @unchecked Sendable {
     /// after `timeout` seconds (or when the consumer stops iterating).
     public func discover(timeout: TimeInterval = 6) -> AsyncStream<DiscoveredNetworkService> {
         AsyncStream { continuation in
+            guard !OfflineMode.shared.isEnabled else {
+                PlozzLog.networking.info("Share discovery deferred in Offline Mode")
+                continuation.finish()
+                return
+            }
             let box = ResolveBox(continuation: continuation)
             let queue = DispatchQueue(label: "com.plozz.bonjour.discovery")
 

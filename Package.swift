@@ -600,7 +600,7 @@ let package = Package(
         // stricter bar from day one.
         .target(
             name: "MediaTransportHTTP",
-            dependencies: ["CoreModels", "MediaTransportCore"],
+            dependencies: ["CoreModels", "CoreNetworking", "MediaTransportCore"],
             swiftSettings: [.unsafeFlags(["-strict-concurrency=complete"])]
         ),
 
@@ -626,6 +626,7 @@ let package = Package(
             name: "MediaTransportWebDAV",
             dependencies: [
                 "CoreModels",
+                "CoreNetworking",
                 "MediaTransportCore",
                 "MediaTransportHTTP",
             ],

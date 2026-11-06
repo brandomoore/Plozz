@@ -74,7 +74,7 @@ final class LiveHLSScrubThumbnails {
         configuration.timeoutIntervalForRequest = 8
         configuration.timeoutIntervalForResource = 12
         configuration.httpMaximumConnectionsPerHost = 2
-        session = URLSession(configuration: configuration)
+        session = OfflineNetworkSession.make(configuration: configuration)
     }
 
     deinit { session.invalidateAndCancel() }

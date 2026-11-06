@@ -990,6 +990,7 @@ public final class AppState {
     public private(set) lazy var plexHomeUsers: PlexHomeUsersModel = PlexHomeUsersModel(
         accountsProviders: accountsProviders,
         profilesModel: profilesModel,
+        runtimeFeatureFlags: runtimeFeatureFlags,
         switchProfile: { [weak self] id in self?.profileFlow.switchProfile(to: id) },
         // Watching as someone else changes whose library, watch state and
         // watchlist this is — but neither the profile nor the account set moves,

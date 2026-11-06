@@ -49,7 +49,7 @@ public struct ProviderIconLoader: Sendable {
         configuration.timeoutIntervalForResource = 6
         configuration.httpMaximumConnectionsPerHost = 2
         configuration.urlCache = URLCache(memoryCapacity: 4 * 1_024 * 1_024, diskCapacity: 0)
-        return URLSession(configuration: configuration)
+        return OfflineNetworkSession.make(configuration: configuration)
     }()
 }
 

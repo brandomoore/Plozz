@@ -45,6 +45,57 @@ final class PlozziOSDownloadsModel {
         }
     }
     var library: PlozziOSDownloadLibrary { recordIndex.library }
+    var offlineLibrary: PlozziOSDownloadLibrary {
+        .make(from: playableRecords)
+    }
+
+    var playableRecords: [DownloadedMediaRecord] {
+        guard let storage, let registry else { return [] }
+        let resolver = RegistryOfflinePlaybackResolver(registry: registry, storage: storage)
+        return records.filter {
+            recordIsAuthorized($0) && $0.status == .completed && resolver.localPlaybackURL(for: $0) != nil
+        }
+    }
+
+    func offlineWatchlistItem(_ item: MediaItem) -> MediaItem? {
+        guard let record = playableRecords.first(where: { record in
+            let account = record.snapshot.sourceAccountID
+                ?? record.managedHTTPSource?.accountID ?? record.directShareSource?.accountID
+            return account == item.sourceAccountID
+                && (record.snapshot.sourceItemID == item.id
+                    || (item.kind == .series && record.snapshot.seriesID == item.id))
+        }), var local = playbackItem(for: record) else { return nil }
+        if item.kind == .series {
+            local = MediaItem(
+                id: item.id, title: record.snapshot.seriesTitle ?? item.title, kind: .series,
+                sourceAccountID: local.sourceAccountID, libraryID: record.snapshot.libraryID
+            )
+        }
+        local.posterURL = artworkURL(for: record)
+        local.isFavorite = true
+        local.allowsTitleBasedMetadataMatching = false
+        return local
+    }
+
+    func offlineProvider(
+        account: Account, libraries: [MediaLibrary], authorize: @escaping @Sendable () async throws -> Void
+    ) -> (any MediaProvider)? {
+        guard let registry, let storage else { return nil }
+        return OfflineMediaProvider(
+            account: account, registry: registry, storage: storage,
+            sourceUserID: sourceUserID?(account.id), libraries: libraries, authorize: authorize
+        )
+    }
+
+    func suspendForOfflineMode() async {
+        cancelArtworkTasks()
+        downloadActivity?.retire()
+        await queue?.suspendScheduling()
+        for record in await registry?.all() ?? [] where record.status.isActive {
+            await queue?.pause(identityKey: record.identityKey, reason: .inactiveProfile)
+        }
+        await reload()
+    }
     private var artworkFiles: [String: PlozziOSDownloadArtworkIndex.Entry] = [:]
     @ObservationIgnored
     private let artworkIndex = PlozziOSDownloadArtworkIndex()
@@ -159,6 +210,7 @@ final class PlozziOSDownloadsModel {
     private var applicationIsActive: Bool
     private var acceptsNewWork = true
     private let providerKind: @MainActor (String) -> ProviderKind?
+    private let sourceUserID: (@MainActor @Sendable (String) -> String?)?
     private let preferredAudioLanguages: @MainActor (MediaItem) -> [String]
     private let resolveArtworkItem: @MainActor (DownloadedMediaRecord) async throws -> MediaItem?
     private let loadArtwork: @Sendable (MediaItem, ArtworkPresentationPolicy) async throws -> Data
@@ -192,6 +244,7 @@ final class PlozziOSDownloadsModel {
         networkObserver: any DownloadNetworkObserving = NWPathDownloadNetworkObserver(),
         networkFileResolver: any MediaTransportNetworkFileResolving,
         providerKind: @escaping @MainActor (String) -> ProviderKind?,
+        sourceUserID: (@MainActor @Sendable (String) -> String?)? = nil,
         preferredAudioLanguages:
             @escaping @MainActor (MediaItem) -> [String],
         artworkSettings: @escaping @MainActor () -> ArtworkSettings = { .default },
@@ -240,7 +293,16 @@ final class PlozziOSDownloadsModel {
         self.storage = storage
         self.offlineResolver = RegistryOfflinePlaybackResolver(
             registry: registry,
-            storage: storage
+            storage: storage,
+            authorizesRecord: { record in
+                await MainActor.run {
+                    guard let sourceUserID else { return true }
+                    guard let accountID = record.snapshot.sourceAccountID
+                        ?? record.managedHTTPSource?.accountID ?? record.directShareSource?.accountID,
+                          let userID = sourceUserID(accountID) else { return false }
+                    return record.snapshot.sourceUserID == userID
+                }
+            }
         )
         self.defaults = .standard
         self.policyKey = policyKey
@@ -252,6 +314,7 @@ final class PlozziOSDownloadsModel {
         self.uncappedBackgroundPolicyKey = uncappedBackgroundPolicyKey
         self.policy = policy
         self.providerKind = providerKind
+        self.sourceUserID = sourceUserID
         self.preferredAudioLanguages = preferredAudioLanguages
         self.artworkSettings = artworkSettings
         self.resolveArtworkItem = resolveArtworkItem
@@ -287,7 +350,7 @@ final class PlozziOSDownloadsModel {
             downloadActivity = PlozziOSDownloadActivity(
                 scheduler: activityScheduler,
                 beginExecution: { [weak self] lease in
-                    guard let self, self.acceptsNewWork, lease.isValid else { return false }
+                    guard let self, self.acceptsNewWork, !OfflineMode.shared.isEnabled, lease.isValid else { return false }
                     await queue.setBackgroundExecutionLease(lease)
                     guard self.acceptsNewWork, lease.isValid else { return false }
                     await self.setApplicationActive(
@@ -357,6 +420,7 @@ final class PlozziOSDownloadsModel {
         self.policy = .default
         self.applicationIsActive = true
         self.providerKind = { _ in nil }
+        self.sourceUserID = nil
         self.preferredAudioLanguages = { _ in [] }
         self.resolveArtworkItem = { _ in nil }
         self.loadArtwork = { try await PlozziOSDownloadArtwork.load(for: $0, policy: $1) }
@@ -683,14 +747,36 @@ final class PlozziOSDownloadsModel {
             ?? record.managedHTTPSource?.itemID
             ?? accountScopedItemID(from: record.identity)
         guard let accountID, let itemID else { return nil }
-        return MediaItem(
+        var item = MediaItem(
             id: itemID,
             title: record.snapshot.title,
             kind: record.snapshot.kind,
+            overview: record.snapshot.overview,
+            parentTitle: record.snapshot.seriesTitle,
+            seasonNumber: record.snapshot.seasonNumber,
+            episodeNumber: record.snapshot.episodeNumber,
             productionYear: record.snapshot.year,
+            officialRating: record.snapshot.officialRating,
+            genres: record.snapshot.genres ?? [],
+            seriesID: record.snapshot.seriesID,
+            seasonID: record.snapshot.seasonID,
             runtime: record.snapshot.runtime,
-            sourceAccountID: accountID
+            resumePosition: record.snapshot.resumePosition,
+            isPlayed: record.snapshot.isPlayed ?? false,
+            posterURL: artworkURL(for: record),
+            providerIDs: record.snapshot.providerIDs,
+            allowsTitleBasedMetadataMatching: !OfflineMode.shared.isEnabled,
+            sourceAccountID: accountID,
+            libraryID: record.snapshot.libraryID
         )
+        if let versionID = record.versionID {
+            item.versions = [.init(
+                id: versionID, name: record.versionLabel,
+                sourceItemID: itemID, sourceAccountID: accountID, providerMediaSourceID: versionID
+            )]
+            item.selectedVersionID = versionID
+        }
+        return item
     }
 
     /// A playback-ready item reconstructed from a downloaded record, enriched
@@ -711,7 +797,8 @@ final class PlozziOSDownloadsModel {
     /// Finds the downloaded record that a live/reconstructed item refers to,
     /// matching on the portable source id + account captured in the snapshot.
     func downloadedRecord(matching item: MediaItem) -> DownloadedMediaRecord? {
-        records.first { record in
+        let candidates = OfflineMode.shared.isEnabled ? playableRecords : records
+        return candidates.first { record in
             guard let sourceItemID = record.snapshot.sourceItemID,
                   sourceItemID == item.id else {
                 return false
@@ -754,12 +841,13 @@ final class PlozziOSDownloadsModel {
     private func orderedSeriesEpisodes(
         containing record: DownloadedMediaRecord
     ) -> [DownloadedMediaRecord] {
-        guard let show = library.shows.first(where: { show in
+        let visibleLibrary = OfflineMode.shared.isEnabled ? offlineLibrary : library
+        guard let show = visibleLibrary.shows.first(where: { show in
             show.records.contains { $0.identityKey == record.identityKey }
         }) else {
             return []
         }
-        return show.records.filter { $0.status == .completed }
+        return show.records.filter { $0.status == .completed && recordIsAuthorized($0) }
     }
 
     private func makeRequest(
@@ -805,7 +893,7 @@ final class PlozziOSDownloadsModel {
                     quality: quality, includesAllAudioTracks: policy.includesAllAudioTracks,
                     includesTextSubtitleTracks: policy.includesTextSubtitleTracks,
                     preferredAudioLanguages: preferredAudioLanguages(item)),
-                snapshot: PinnedMediaSnapshot(item: detail),
+                snapshot: snapshot(for: detail.taggingSource(item.sourceAccountID ?? silo.accountID)),
                 versionID: selected.id, versionLabel: selected.displayLabel,
                 groupID: groupID, batchID: batchID, batchKind: batchKind,
                 batchTitle: batchTitle, batchExpectedCount: batchExpectedCount,
@@ -836,7 +924,7 @@ final class PlozziOSDownloadsModel {
             request = DownloadRequest.directShare(
                 identity: identity,
                 locator: locator,
-                snapshot: PinnedMediaSnapshot(item: item),
+                snapshot: snapshot(for: item),
                 versionID: versionID,
                 versionLabel: versionLabel,
                 groupID: groupID,
@@ -892,7 +980,7 @@ final class PlozziOSDownloadsModel {
             request = DownloadRequest.managedHTTP(
                 identity: identity,
                 source: source,
-                snapshot: PinnedMediaSnapshot(item: item),
+                snapshot: snapshot(for: item),
                 versionID: versionID,
                 versionLabel: versionLabel,
                 groupID: groupID,
@@ -1036,11 +1124,15 @@ final class PlozziOSDownloadsModel {
         for item: MediaItem? = nil,
         record: DownloadedMediaRecord
     ) {
-        guard acceptsNewWork, applicationIsActive,
-              artworkNetworkConditions.map(policy.allows) == true,
+        let needsMetadataRepair = sourceUserID != nil && record.snapshot.sourceUserID == nil
+        guard acceptsNewWork, applicationIsActive, !OfflineMode.shared.isEnabled,
+              artworkNetworkConditions?.isSatisfied == true,
               artworkTasks[record.identityKey] == nil,
               artworkRetryAfter[record.identityKey, default: .distantPast] <= Date(),
-              !verifiedArtwork.contains(record.identityKey) || artworkURL(for: record) == nil else {
+              needsMetadataRepair || (
+                artworkNetworkConditions.map(policy.allows) == true
+                    && (!verifiedArtwork.contains(record.identityKey) || artworkURL(for: record) == nil)
+              ) else {
             return
         }
         let artworkPolicy = ArtworkPresentationPolicy(
@@ -1071,12 +1163,28 @@ final class PlozziOSDownloadsModel {
         var unattachedFile: URL?
         do {
             try Task.checkCancellation()
+            if record.snapshot.sourceUserID == nil,
+               let accountID = record.snapshot.sourceAccountID
+                    ?? record.managedHTTPSource?.accountID ?? record.directShareSource?.accountID,
+               let userID = sourceUserID?(accountID),
+               let refreshed = try await resolveArtworkItem(record) {
+                try Task.checkCancellation()
+                guard acceptsNewWork, !OfflineMode.shared.isEnabled, sourceUserID?(accountID) == userID else {
+                    throw CancellationError()
+                }
+                var snapshot = PinnedMediaSnapshot(item: refreshed, sourceUserID: userID)
+                snapshot.sourceAccountID = accountID
+                try await registry.enrichSnapshot(
+                    identityKey: identityKey, expectedCreatedAt: record.createdAt, snapshot: snapshot
+                )
+            }
             if let localURL = artworkURL(for: record),
                await PlozziOSDownloadArtwork.isValidFile(at: localURL) {
                 try Task.checkCancellation()
                 verifiedArtwork.insert(identityKey)
                 return
             }
+            guard artworkNetworkConditions.map(policy.allows) == true else { return }
             let data: Data
             if let initialItem {
                 do {
@@ -1132,6 +1240,39 @@ final class PlozziOSDownloadsModel {
         tasks.forEach { $0.cancel() }
     }
 
+    private func recordIsAuthorized(_ record: DownloadedMediaRecord) -> Bool {
+        guard let sourceUserID else { return true }
+        guard let accountID = record.snapshot.sourceAccountID
+                ?? record.managedHTTPSource?.accountID ?? record.directShareSource?.accountID,
+              let userID = sourceUserID(accountID) else { return false }
+        return record.snapshot.sourceUserID == userID
+    }
+
+    private func snapshot(for item: MediaItem) -> PinnedMediaSnapshot {
+        PinnedMediaSnapshot(item: item, sourceUserID: item.sourceAccountID.flatMap { sourceUserID?($0) })
+    }
+
+    func applyWatchMutation(_ mutation: WatchMutation) async {
+        guard let registry else { return }
+        guard let scope = mutation.serverScope, scope.profileID == profileID else {
+            PlozzLog.app.info("Downloaded progress ignored for an incompatible profile")
+            return
+        }
+        do {
+            for target in mutation.optimisticTargets {
+                guard let viewer = scope.accounts.first(where: { $0.accountID == target.accountID })?.downloadUserID
+                else { continue }
+                try await registry.updatePlayback(
+                    accountID: target.accountID, itemID: target.itemID,
+                    resumePosition: mutation.resumePosition, played: mutation.played,
+                    clearResume: mutation.clearResume, sourceUserID: viewer
+                )
+            }
+        } catch {
+            PlozzLog.app.error("Could not save downloaded playback progress")
+        }
+    }
+
     private func artworkTaskFinished(
         identityKey: String,
         taskID: UUID
@@ -1161,6 +1302,7 @@ final class PlozziOSDownloadsModel {
     }
 
     private func resumeWithoutReload(_ record: DownloadedMediaRecord) async {
+        guard !OfflineMode.shared.isEnabled else { return }
         await downloadActivity?.waitForExpiration()
         guard acceptsNewWork, applicationIsActive else { return }
         downloadActivity?.allowRetry()
@@ -1436,6 +1578,10 @@ final class PlozziOSDownloadsModel {
         _ isActive: Bool,
         revision: UInt64
     ) async {
+        if OfflineMode.shared.isEnabled {
+            await suspendForOfflineMode()
+            return
+        }
         guard revision > applicationActivityRevision
                 || (revision == applicationActivityRevision
                     && isActive == applicationIsActive) else {
@@ -1596,7 +1742,7 @@ final class PlozziOSDownloadsModel {
         if !policy.allows(conditions) {
             cancelArtworkTasks()
         }
-        guard acceptsNewWork, applicationIsActive, let queue else { return }
+        guard acceptsNewWork, applicationIsActive, !OfflineMode.shared.isEnabled, let queue else { return }
         let generation = applicationActivityGeneration
         await enforceSpeedLimitPausePolicy()
         guard applicationTransitionIsCurrent(generation),
@@ -1646,6 +1792,7 @@ final class PlozziOSDownloadsModel {
     }
 
     private func beginEnqueue() throws {
+        try OfflineMode.shared.requireNetworkAccess()
         guard acceptsNewWork else {
             throw PlozziOSDownloadError.unavailable(
                 "The active profile changed. Try the download again."
@@ -1659,6 +1806,7 @@ final class PlozziOSDownloadsModel {
     }
 
     private func ensureEnqueueMayPersist() throws {
+        try OfflineMode.shared.requireNetworkAccess()
         guard acceptsNewWork else {
             throw PlozziOSDownloadError.unavailable(
                 "The active profile changed. Try the download again."
@@ -1795,7 +1943,7 @@ final class PlozziOSDownloadsModel {
         guard generation == reloadGeneration else { return }
         if !applyingActivityPolicy {
             downloadActivity?.update(records: refreshed, bytesPerSecond: aggregateBytesPerSecond)
-            if acceptsNewWork, applicationIsActive {
+            if acceptsNewWork, applicationIsActive, !OfflineMode.shared.isEnabled {
                 await downloadActivity?.start(records: refreshed)
             }
         }
@@ -1805,7 +1953,7 @@ final class PlozziOSDownloadsModel {
         for record in refreshed {
             pinArtworkIfAvailable(record: record)
         }
-        if acceptsNewWork, !drainingManagedRemovals, let registry, let managedRemoval,
+        if acceptsNewWork, !OfflineMode.shared.isEnabled, !drainingManagedRemovals, let registry, let managedRemoval,
            Date().timeIntervalSince(lastManagedRemovalAttempt) >= 60 {
             let pending = await registry.pendingManagedRemovals()
             let completions = await registry.pendingManagedCompletions()

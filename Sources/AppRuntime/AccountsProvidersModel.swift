@@ -44,6 +44,8 @@ public final class AccountsProvidersModel {
     /// An explicit selection has no locally available accounts, including when
     /// its selected accounts were removed. Never substitute an excluded account.
     public private(set) var watchesNothingByChoice = false
+    /// Non-nil replaces, never supplements, online providers while browsing downloads.
+    public var localProviders: [String: any MediaProvider]?
 
     /// The persisted multi-account store (token per account in the Keychain).
     @ObservationIgnored
@@ -102,6 +104,14 @@ public final class AccountsProvidersModel {
     /// This device's stable client identifier.
     public var deviceID: String { accountStore.deviceID() }
 
+    public func downloadUserID(for accountID: String, profileID: String) -> String? {
+        guard profilesModel.activeProfileID == profileID, activeAccountIDs.contains(accountID),
+              let account = accounts.first(where: { $0.id == accountID }) else { return nil }
+        return WatchMutationServerScope.AccountIdentity(
+            account: account, profile: profilesModel.activeProfile
+        ).downloadUserID
+    }
+
     public func makeAccountReauthentication(
         account: Account, isAuthorized: @escaping () -> Bool, onComplete: @escaping () -> Void
     ) -> AccountReauthenticationModel {
@@ -154,7 +164,8 @@ public final class AccountsProvidersModel {
     public var liveTVAuthorizationID: String {
         let identities = accounts.filter { activeAccountIDs.contains($0.id) }
             .map(liveTVAuthorizationID(for:)).sorted()
-        return profilesModel.activeProfileID + "|" + identities.joined(separator: "|")
+        return profilesModel.activeProfileID + (localProviders == nil ? "|online|" : "|offline|")
+            + identities.joined(separator: "|")
     }
 
     /// Stable watch-state ownership. Unlike the live authorization fingerprint,
@@ -260,6 +271,9 @@ public final class AccountsProvidersModel {
     /// The provider for the primary active account — the single-provider Home in
     /// this branch. `nil` when not signed in.
     public var primaryProvider: (any MediaProvider)? {
+        if let localProviders {
+            return primaryActiveAccount.flatMap { localProviders[$0.id] }
+        }
         guard let account = primaryActiveAccount,
               let token = tokenResolver(account.id) else { return nil }
         return resolveProvider(for: providerResolutionContext(for: account, token: token))
@@ -280,6 +294,12 @@ public final class AccountsProvidersModel {
     /// stored on the value.
     public var resolvedActiveAccounts: [ResolvedAccount] {
         guard !accountSelectionIsUnavailable else { return [] }
+        if let localProviders {
+            return accounts.compactMap { account in
+                guard activeAccountIDs.contains(account.id), let provider = localProviders[account.id] else { return nil }
+                return resolvedAccount(account, provider: provider)
+            }
+        }
         return accounts.compactMap { account in
             guard activeAccountIDs.contains(account.id),
                   let token = tokenResolver(account.id),
@@ -295,7 +315,14 @@ public final class AccountsProvidersModel {
     /// "choose your libraries" step (which fans a library-listing call out over
     /// the just-added accounts). Tokens are resolved on demand.
     public func resolvedAccounts(withIDs ids: [String]) -> [ResolvedAccount] {
-        ids.compactMap { id in
+        if let localProviders {
+            return accounts.compactMap { account in
+                guard ids.contains(account.id), activeAccountIDs.contains(account.id),
+                      let provider = localProviders[account.id] else { return nil }
+                return resolvedAccount(account, provider: provider)
+            }
+        }
+        return ids.compactMap { id in
             guard let account = accounts.first(where: { $0.id == id }),
                   let token = tokenResolver(account.id),
                   let provider = resolveProvider(
@@ -316,6 +343,7 @@ public final class AccountsProvidersModel {
     /// fed the household's first server.
     public var homeAccounts: [ResolvedAccount] {
         let active = resolvedActiveAccounts
+        if localProviders != nil { return active }
         if !active.isEmpty { return active }
         if watchesNothingByChoice { return [] }
         guard let account = primaryActiveAccount,
@@ -349,6 +377,10 @@ public final class AccountsProvidersModel {
     /// library/item from the merged Home back to its owning provider. Tokens are
     /// resolved on demand and never stored on the value.
     public func provider(forAccountID id: String) -> (any MediaProvider)? {
+        if let localProviders {
+            guard activeAccountIDs.contains(id), !accountSelectionIsUnavailable else { return nil }
+            return localProviders[id]
+        }
         guard let account = accounts.first(where: { $0.id == id }),
               let token = tokenResolver(account.id)
         else { return nil }
@@ -578,6 +610,7 @@ public final class AccountsProvidersModel {
     /// propagates address changes to retained providers and library/Home tasks.
     /// Offline servers are skipped; account and credential identities are retained.
     public func refreshServerNames() {
+        guard !OfflineMode.shared.isEnabled else { return }
         let store = accountStore
         Task { @MainActor [weak self] in
             let updated = await ServerNameRefresher(accountStore: store).refresh()

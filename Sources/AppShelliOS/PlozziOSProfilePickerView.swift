@@ -80,7 +80,12 @@ struct PlozziOSProfileSelectionView: View {
                 identityNamespace: profileIdentity,
                 selectedProfileID: selectedProfileID,
                 isCovered: presentsAuthorization,
-                showsPINLock: appModel.accountsProviders.profileShowsPINLock
+                showsPINLock: appModel.accountsProviders.profileShowsPINLock,
+                offlineMode: appModel.isOfflineModeAvailable ? Binding(
+                    get: { appModel.isOfflineMode },
+                    set: { enabled in Task { await appModel.setOfflineMode(enabled) } }
+                ) : nil,
+                isChangingOfflineMode: appModel.isChangingOfflineMode
             )
             .allowsHitTesting(!presentsAuthorization && selectedProfileID == nil)
             .accessibilityHidden(presentsAuthorization)
@@ -97,6 +102,7 @@ struct PlozziOSProfileSelectionView: View {
                 .zIndex(1)
             }
         }
+        .offlineStatusOverlay(appModel: appModel, palette: palette, isEnabled: !presentsAuthorization)
         .background { AppBackground(palette: palette).ignoresSafeArea() }
         .animation(reduceMotion ? nil : .smooth(duration: 0.48), value: presentsAuthorization)
         .onChange(of: presentsAuthorization) { _, presented in
@@ -138,6 +144,8 @@ struct PlozziOSProfilePickerView: View {
     var selectedProfileID: String?
     var isCovered = false
     var showsPINLock: (Profile) -> Bool = { $0.showsPINLock }
+    var offlineMode: Binding<Bool>?
+    var isChangingOfflineMode = false
 
     @State private var isEditing = false
     @State private var route: Route?
@@ -210,7 +218,7 @@ struct PlozziOSProfilePickerView: View {
                 .scrollBounceBehavior(.basedOnSize)
             }
             .background { AppBackground(palette: palette) }
-            .toolbar(manager != nil || onCancel != nil ? .visible : .automatic, for: .navigationBar)
+            .toolbar(manager != nil || offlineMode != nil || onCancel != nil ? .visible : .automatic, for: .navigationBar)
             .toolbarBackground(.hidden, for: .navigationBar)
             .toolbar {
                 if let onCancel, !isEditing, !isCovered {
@@ -220,21 +228,35 @@ struct PlozziOSProfilePickerView: View {
                             .accessibilityIdentifier("profile-picker-close")
                     }
                 }
-                if manager != nil, !isCovered {
+                if (manager != nil || offlineMode != nil), !isCovered {
                     ToolbarItem(placement: .topBarTrailing) {
-                        Button {
-                            withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) {
-                                isEditing.toggle()
+                        if isEditing {
+                            Button("Done") {
+                                withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) {
+                                    isEditing = false
+                                }
                             }
-                        } label: {
-                            if isEditing {
-                                Text("Done")
-                            } else {
-                                Label("Edit Profiles", systemImage: "pencil")
-                                    .labelStyle(.iconOnly)
+                            .accessibilityIdentifier("profile-picker-edit")
+                        } else {
+                            Menu {
+                                if manager != nil {
+                                    Button("Edit Profiles", systemImage: "pencil") {
+                                        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) {
+                                            isEditing = true
+                                        }
+                                    }
+                                    .accessibilityIdentifier("profile-picker-edit")
+                                }
+                                if let offlineMode {
+                                    Toggle("Offline Mode", systemImage: "wifi.slash", isOn: offlineMode)
+                                        .disabled(isChangingOfflineMode)
+                                        .accessibilityIdentifier("profile-picker-offline-mode")
+                                }
+                            } label: {
+                                Label("More", systemImage: "ellipsis").labelStyle(.iconOnly)
                             }
+                            .accessibilityIdentifier("profile-picker-options")
                         }
-                        .accessibilityIdentifier("profile-picker-edit")
                     }
                 }
             }

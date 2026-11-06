@@ -1,5 +1,6 @@
 import CoreModels
 import Foundation
+import CoreNetworking
 #if canImport(FoundationNetworking)
 import FoundationNetworking
 #endif
@@ -308,7 +309,7 @@ public actor TransportSessionRegistry {
             origin: origin,
             isAnonymousMediaSession: isAnonymousMediaSession
         )
-        let urlSession = URLSession(configuration: configuration, delegate: delegate, delegateQueue: nil)
+        let urlSession = OfflineNetworkSession.make(configuration: configuration, delegate: delegate, delegateQueue: nil)
         return TransportSession(
             key: key,
             session: urlSession,

@@ -59,6 +59,7 @@ final class AutomaticSignInTests: XCTestCase {
             accountsProviders: hub, profilesModel: profiles,
             plexHomeUserTokenCache: cache,
             automaticSignInStore: startup ?? household.startup,
+            offlineSignInStore: .init(secureStore: InMemorySecureStore()),
             switchProfile: { _ in }
         )
         plex.plexHomeUsersFetch = { _, _ in throw URLError(.notConnectedToInternet) }

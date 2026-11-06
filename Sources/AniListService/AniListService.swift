@@ -119,7 +119,7 @@ public final class AniListService {
                 redeemString += "&session=\(session)"
             }
             let redeemURL = URL(string: redeemString)!
-            let (data, _) = try await URLSession.shared.data(from: redeemURL)
+            let (data, _) = try await OfflineNetworkSession.shared.data(from: redeemURL)
             guard generation == profileGeneration else { return }
             let result = try JSONDecoder().decode(RelayRedeemResponse.self, from: data)
 

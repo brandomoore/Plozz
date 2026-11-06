@@ -1,4 +1,5 @@
 #if os(iOS)
+import AppRuntime
 import CoreModels
 import CoreUI
 import FeatureHomeCore
@@ -14,6 +15,73 @@ import XCTest
 
 @MainActor
 final class DownloadPresentationTests: XCTestCase {
+    func testDelayedWatchMutationKeepsItsCapturedServerUser() async throws {
+        let account = Account(
+            id: "emby",
+            server: .init(id: "server", name: "Server", baseURL: URL(string: "https://fixture.invalid")!, provider: .plex),
+            userID: "owner", userName: "Owner", deviceID: "fixture"
+        )
+        let profile = Profile(name: "Downloads")
+        let viewerA = profile.settingHomeUserBinding(.init(homeUserID: "a", name: "A"), forPlexAccount: account.id)
+        let viewerB = profile.settingHomeUserBinding(.init(homeUserID: "b", name: "B"), forPlexAccount: account.id)
+        let scopeA = WatchMutationServerScope(profile: viewerA, accounts: [account])
+        let scopeB = WatchMutationServerScope(profile: viewerB, accounts: [account])
+        var a = record(versionID: "a")
+        a.snapshot.sourceUserID = scopeA.accounts[0].downloadUserID
+        var b = record(versionID: "b")
+        b.snapshot.sourceUserID = scopeB.accounts[0].downloadUserID
+        let registry = DownloadedMediaRegistry(store: InMemoryDownloadedMediaStore(.init(
+            records: [a.identityKey: a, b.identityKey: b]
+        )))
+        let model = makeModel(
+            registry: registry, storage: try temporaryStorage(), probe: ArtworkProbe(data: imageData()),
+            startsActive: false, profileID: profile.id,
+            sourceUserID: { _ in scopeB.accounts[0].downloadUserID }
+        )
+        defer { model.beginProfileTransition() }
+        let item = try XCTUnwrap(model.playbackItem(for: a))
+        let mutation = try XCTUnwrap(WatchMutationFactory.playbackStop(
+            item: item, position: 42, watchedPercent: 20, primaryAccountID: account.id,
+            additionalSources: [], crossServerSync: false
+        )).bindingServerScope(scopeA)
+        await model.applyWatchMutation(mutation)
+        let updatedA = await registry.record(forKey: a.identityKey)
+        let unchangedB = await registry.record(forKey: b.identityKey)
+        XCTAssertEqual(updatedA?.snapshot.resumePosition, 42)
+        XCTAssertNil(unchangedB?.snapshot.resumePosition)
+    }
+
+    func testOfflineEpisodeNeighborsExcludeMissingAndUnfinishedFiles() async throws {
+        let previous = OfflineMode.shared.isEnabled
+        OfflineMode.shared.setEnabled(true)
+        defer { OfflineMode.shared.setEnabled(previous) }
+        var completed = record(id: "complete")
+        completed.snapshot.episodeNumber = 1
+        var unfinished = record(id: "unfinished")
+        unfinished.snapshot.episodeNumber = 2
+        unfinished.status = .paused
+        var missing = record(id: "missing")
+        missing.snapshot.episodeNumber = 3
+        let values = [completed, unfinished, missing]
+        let registry = DownloadedMediaRegistry(store: InMemoryDownloadedMediaStore(.init(
+            records: Dictionary(uniqueKeysWithValues: values.map { ($0.identityKey, $0) })
+        )))
+        let storage = try temporaryStorage()
+        let file = try storage.pinnedFileURL(for: completed)
+        try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("fixture".utf8).write(to: file)
+        let model = makeModel(
+            registry: registry, storage: storage, probe: ArtworkProbe(data: imageData()), startsActive: false
+        )
+        defer { model.beginProfileTransition() }
+        try await waitUntil { model.records.count == values.count }
+        XCTAssertEqual(model.offlineLibrary.shows.first?.records.map(\.identityKey), [completed.identityKey])
+        let neighbors = model.offlineNeighborItems(for: try XCTUnwrap(model.playbackItem(for: completed)))
+        XCTAssertNil(neighbors?.previous)
+        XCTAssertNil(neighbors?.next)
+        XCTAssertNil(model.downloadedRecord(matching: try XCTUnwrap(model.playbackItem(for: missing))))
+    }
+
     func testDownloadHeadingCentersAndMovesWithinTheSameRowWhenStatusAppears() throws {
         do {
             var titlePositions: [CGFloat] = []
@@ -724,7 +792,7 @@ final class DownloadPresentationTests: XCTestCase {
         )
         defer { model.beginProfileTransition() }
         try await waitUntil { model.records.count == 1 }
-        let settings = PlozziOSDownloadSettingsView(model: model)
+        let settings = PlozziOSDownloadSettingsView(model: model, appModel: PlozziOSAppModel())
         let observer = DownloadObservationProbe { _ = settings.body }
         defer { observer.stop() }
 
@@ -1130,6 +1198,36 @@ final class DownloadPresentationTests: XCTestCase {
         XCTAssertEqual(reopenedCalls, calls, "Pinned artwork must survive a fresh registry/model without contacting a server.")
     }
 
+    func testLegacyDownloadIdentityRepairsOnCellularWithoutDownloadingArtwork() async throws {
+        let storage = try temporaryStorage()
+        var download = record()
+        download.snapshot.artworkFileName = "artwork.png"
+        download.snapshot.resumePosition = 37
+        let media = try storage.pinnedFileURL(for: download)
+        try FileManager.default.createDirectory(at: media.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("fixture".utf8).write(to: media)
+        try imageData().write(to: media.deletingLastPathComponent().appendingPathComponent("artwork.png"))
+        let registry = DownloadedMediaRegistry(store: InMemoryDownloadedMediaStore(.init(
+            records: [download.identityKey: download]
+        )))
+        let probe = ArtworkProbe(data: imageData())
+        let observer = StaticDownloadNetworkObserver(.init(isSatisfied: true, isExpensive: true, isConstrained: false))
+        let model = makeModel(
+            registry: registry, storage: storage, probe: probe, observer: observer,
+            sourceUserID: { _ in "authenticated-viewer" }
+        )
+        defer { model.beginProfileTransition() }
+        try await waitUntil { model.records.first?.snapshot.sourceUserID == "authenticated-viewer" }
+        let repaired = try XCTUnwrap(model.records.first)
+        XCTAssertFalse(model.allowsCellular)
+        XCTAssertEqual(repaired.snapshot.artworkFileName, "artwork.png")
+        XCTAssertEqual(repaired.snapshot.resumePosition, 37)
+        XCTAssertEqual(repaired.status, .completed)
+        XCTAssertEqual(model.playableRecords.map(\.identityKey), [download.identityKey])
+        let imageRequests = await probe.calls
+        XCTAssertEqual(imageRequests, 0)
+    }
+
     func testArtworkIndexResolvesOffMainAndCachesUntilRefreshOrReplacement() async throws {
         let backing = try temporaryStorage()
         var download = record()
@@ -1398,12 +1496,14 @@ final class DownloadPresentationTests: XCTestCase {
     private func makeModel(
         registry: DownloadedMediaRegistry, storage: any DownloadStorageLocating,
         probe: ArtworkProbe, startsActive: Bool = true,
-        observer: any DownloadNetworkObserving = StaticDownloadNetworkObserver()
+        observer: any DownloadNetworkObserving = StaticDownloadNetworkObserver(),
+        profileID: String? = nil,
+        sourceUserID: (@MainActor @Sendable (String) -> String?)? = nil
     ) -> PlozziOSDownloadsModel {
         PlozziOSDownloadsModel(
-            profileID: "download-test-\(UUID())", registry: registry, storage: storage,
+            profileID: profileID ?? "download-test-\(UUID())", registry: registry, storage: storage,
             networkObserver: observer, networkFileResolver: UnusedNetworkResolver(),
-            providerKind: { _ in .emby }, preferredAudioLanguages: { _ in [] },
+            providerKind: { _ in .emby }, sourceUserID: sourceUserID, preferredAudioLanguages: { _ in [] },
             startsActive: startsActive,
             activityScheduler: nil,
             notificationClient: DownloadNotificationClientStub(authorization: .denied),
@@ -1415,9 +1515,10 @@ final class DownloadPresentationTests: XCTestCase {
         )
     }
 
-    private func record(id: String = "episode") -> DownloadedMediaRecord {
+    private func record(id: String = "episode", versionID: String? = nil) -> DownloadedMediaRecord {
         DownloadedMediaRecord(
             identity: .external(source: "plozz-account:emby", value: id),
+            versionID: versionID,
             sourceKind: .managedHTTP, status: .completed, localFileName: "media.mkv",
             bytesDownloaded: 100, totalBytes: 100,
             snapshot: .init(

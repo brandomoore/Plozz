@@ -396,6 +396,7 @@ struct PlozziOSPlayerView: View {
     private func openExternalPlayer(
         item: MediaItem, streamingOptions: StreamingPlaybackOptions? = nil
     ) async -> Bool {
+        guard !appModel.isOfflineMode else { return false }
         let deviceSettings = ExternalPlayerSettingsModel.shared
         deviceSettings.migrateIfNeeded(from: appModel.settings.playback.settings.externalPlayer)
         guard deviceSettings.settings.player != .builtIn else { return false }

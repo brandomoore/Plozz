@@ -2285,7 +2285,7 @@ public final class PlayerViewModel {
     @ObservationIgnored private var songWatch: SongRecognitionController?
 
     private func startSongWatch() {
-        guard playbackSettings.identifySongs, intendsPlayback, phase == .ready,
+        guard !OfflineMode.shared.isEnabled, playbackSettings.identifySongs, intendsPlayback, phase == .ready,
               !didStop, !controls.isSeeking else { return }
         guard songWatch == nil else { return }
         controls.songRecognition.resumeExpiry()

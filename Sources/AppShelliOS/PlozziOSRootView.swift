@@ -24,7 +24,7 @@ public struct PlozziOSRootView: View {
     @Environment(\.plozziOSIsRunningOnMac) private var isRunningOnMac
     @Environment(\.accessibilityReduceTransparency)
     private var systemReduceTransparency
-    @State private var appModel = PlozziOSProcessComposition.appModel
+    @State private var appModel: PlozziOSAppModel
     @State private var homeViewModelBox = LazyViewState<HomeViewModel>()
     @State private var heroTrailerController = HeroTrailerController()
     @State private var themeMusicController = ThemeMusicController()
@@ -67,7 +67,13 @@ public struct PlozziOSRootView: View {
     @State private var settingsShellIdentity: (profileID: String, value: String)?
     private var releaseNotes: ReleaseNotesModel { .shared }
 
-    public init() {}
+    public init() {
+        _appModel = State(initialValue: PlozziOSProcessComposition.appModel)
+    }
+
+    init(appModel: PlozziOSAppModel) {
+        _appModel = State(initialValue: appModel)
+    }
 
     public var body: some View {
         AppLanguageScope(model: appModel.appLanguage) {
@@ -145,6 +151,10 @@ public struct PlozziOSRootView: View {
                     systemColorScheme: systemColorScheme
                 )
             }
+        }
+        .onChange(of: appModel.isOfflineMode) { _, _ in
+            heroTrailerController.stop()
+            themeMusicController.stop()
         }
         .scrollContentBackground(.hidden)
         .environment(\.managedProviderSetupRouter, providerSetupRouter)
@@ -363,6 +373,7 @@ public struct PlozziOSRootView: View {
             model: appModel.guidePreparation, presenter: appModel.transientStatusPresenter,
             palette: resolvedPalette
         )
+        .offlineStatusOverlay(appModel: appModel, palette: resolvedPalette, isEnabled: !showsLaunchProfilePicker)
         .environment(appModel)
         .environment(appModel.settings.navigation)
         .environment(appModel.guidePreparation)
@@ -552,7 +563,7 @@ public struct PlozziOSRootView: View {
             return "profile-picker"
         }
         let profile = appModel.profiles.activeProfile
-        return "\(profile.id)#"
+        return "\(profile.id)#\(appModel.offlineModeGeneration)#"
             + profile.plexPlaybackIdentityKey(
                 for: appModel.accountsProviders.homeAccounts.map(\.account)
             )
@@ -730,6 +741,10 @@ public struct PlozziOSRootView: View {
     }
 
     private func showAddServer() {
+        guard !appModel.isOfflineMode else {
+            appModel.transientStatusPresenter.present(icon: "wifi.slash", text: "Unavailable in Offline Mode.")
+            return
+        }
         appModel.beginManagedServerPresentation()
         showingAddServer = true
     }
@@ -1146,6 +1161,9 @@ struct PlozziOSTabShell: View {
     private func destinationContent(
         for destination: PlozziOSDestination, keepsNavigationBar: Bool = false
     ) -> some View {
+        if appModel.isOfflineMode && (destination == .discover || destination == .liveTV) {
+            PlozziOSOfflineUnavailableView()
+        } else {
         switch destination {
         case .home:
             PlozziOSDestinationView(
@@ -1280,6 +1298,7 @@ struct PlozziOSTabShell: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background { AppBackground(palette: palette) }
         }
+        }
     }
 
     private func destinationTitle(_ destination: PlozziOSDestination) -> Text {
@@ -1304,9 +1323,9 @@ struct PlozziOSTabShell: View {
         HomeViewModel(
             accounts: appModel.accountsProviders.homeAccounts,
             profileNamespace: appModel.profiles.activeNamespace,
-            contentStore: HomeContentStore(
-                namespace: appModel.profiles.activeNamespace
-            ),
+            contentStore: appModel.isOfflineMode
+                ? NoOpHomeContentStore()
+                : HomeContentStore(namespace: appModel.profiles.activeNamespace),
             identitySources: appModel.identityIndex.identitySourcesProvider,
             currentVisibility: { [weak appModel] in
                 appModel?.settings.homeVisibility.visibility ?? .default
@@ -2224,7 +2243,7 @@ private struct PlozziOSHomeLandingView: View {
         if appModel.accounts.isEmpty {
             PlozziOSHomeEmptyState(
                 hasAccounts: false, onAddSource: onAddServer,
-                onReceiveSetup: { showingReceive = true }
+                onReceiveSetup: { showingReceive = true }, isOfflineMode: appModel.isOfflineMode
             )
             .navigationTitle("Home")
             .toolbarTitleDisplayMode(isOverflowDestination ? .inline : .large)
@@ -2342,6 +2361,7 @@ struct PlozziOSProfileAccessGateView: View {
             }
         }
         .disabled(Self.pendingStep(appModel) == nil)
+        .offlineStatusOverlay(appModel: appModel, palette: palette)
         .onChange(of: displayedStep, initial: true) { _, step in
             if let step { retainedStep = step }
         }

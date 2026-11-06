@@ -46,6 +46,13 @@ public final class MediaShareWorkScopeController {
         observe()
     }
 
+    public func synchronize() async {
+        let scope = snapshot()
+        previous = scope
+        revision &+= 1
+        await apply(scope, revision)
+    }
+
     private func observe() {
         let scope = withObservationTracking {
             snapshot()

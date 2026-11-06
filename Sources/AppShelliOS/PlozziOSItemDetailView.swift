@@ -302,13 +302,17 @@ private struct PlozziOSCanonicalItemDetailView: View {
                 isDiscoveryItem: isDiscoveryItem,
                 discoveryStatusRefresh: discoveryStatusRefresh,
                 loadSeasonEpisodeRoster: { [seer = appModel.seerService] item, number in
-                    await seer.seasonEpisodeRoster(for: item, seasonNumber: number)
+                    guard !OfflineMode.shared.isEnabled else { return .unavailable }
+                    return await seer.seasonEpisodeRoster(for: item, seasonNumber: number)
                 },
                 ratingsProvider: RatingsServiceFactory.make(),
                 detailMetadataResolver: { await DetailMetadataResolver.household.resolve($0) },
                 sourceAccountID: selectedSource?.accountID ?? item.sourceAccountID,
                 originSourceAccountID: originSourceAccountID,
-                onlineTrailerResolver: { await DetailMetadataResolver.household.trailers(for: $0) },
+                onlineTrailerResolver: {
+                    guard !OfflineMode.shared.isEnabled else { return [] }
+                    return await DetailMetadataResolver.household.trailers(for: $0)
+                },
                 trailerSettings: appModel.settings.heroBackground,
                 initialSources: initialSources,
                 alternateProviderResolver: { accountID in
@@ -320,7 +324,7 @@ private struct PlozziOSCanonicalItemDetailView: View {
                 ),
                 identitySources: identitySources,
                 relatedTitlesLoader:
-                    relatedTitleLibrarySearch(in: accounts).map { search in
+                    appModel.isOfflineMode ? nil : relatedTitleLibrarySearch(in: accounts).map { search in
                         RelatedTitlesLoader(
                             resolver: .production(traktClientID: TraktConfig.resolved().clientID),
                             search: search,
@@ -1006,6 +1010,7 @@ private struct PlozziOSCanonicalItemDetailView: View {
     }
 
     private func play(_ item: MediaItem, fromBeginning: Bool = false) {
+        guard !appModel.isOfflineMode || !item.isTrailer else { return }
         guard !item.isTrailer || appModel.settings.heroBackground.settings.trailerSources.allows(item) else {
             PlozzLog.app.info("Trailer action suppressed by profile settings")
             return

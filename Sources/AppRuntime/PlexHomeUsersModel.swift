@@ -215,6 +215,9 @@ public final class PlexHomeUsersModel {
     @ObservationIgnored
     private let plexHomeUserTokenCache: PlexHomeUserTokenCache
     @ObservationIgnored private let automaticSignInStore: AutomaticSignInStore
+    @ObservationIgnored private let offlineSignInStore: OfflinePlexSignInStore
+    @ObservationIgnored private let offlineSignInEnabled: Bool
+    @ObservationIgnored private var cachedIdentityAccounts: Set<String> = []
     @ObservationIgnored private var didAttemptAutomaticSignIn = false
     @ObservationIgnored private var startupProfileAccess: AutomaticSignInStore.Session.ProfileAccess?
     @ObservationIgnored private var authenticatedProfileAccess: AutomaticSignInStore.Session.ProfileAccess?
@@ -273,6 +276,8 @@ public final class PlexHomeUsersModel {
         profilesModel: ProfilesModel,
         plexHomeUserTokenCache: PlexHomeUserTokenCache = .makeDefault(),
         automaticSignInStore: AutomaticSignInStore = .makeDefault(),
+        offlineSignInStore: OfflinePlexSignInStore = .makeDefault(),
+        runtimeFeatureFlags: RuntimeFeatureFlags = .buildDefault,
         switchProfile: @escaping @MainActor (String) -> Void,
         onIdentityChanged: @escaping @MainActor () -> Void = {}
     ) {
@@ -280,6 +285,8 @@ public final class PlexHomeUsersModel {
         self.profilesModel = profilesModel
         self.plexHomeUserTokenCache = plexHomeUserTokenCache
         self.automaticSignInStore = automaticSignInStore
+        self.offlineSignInStore = offlineSignInStore
+        self.offlineSignInEnabled = runtimeFeatureFlags.isEnabled(.offlineMode)
         self.automaticallySignIn = automaticSignInStore.isEnabled
         self.switchProfile = switchProfile
         self.onIdentityChanged = onIdentityChanged
@@ -467,7 +474,7 @@ public final class PlexHomeUsersModel {
     }
 
     private func rememberAutomaticSignInIfReady() {
-        guard automaticallySignIn else { return }
+        guard automaticallySignIn, cachedIdentityAccounts.isEmpty else { return }
         do {
             if let session = automaticSignInSession() {
                 try automaticSignInStore.save(session)
@@ -921,6 +928,12 @@ public final class PlexHomeUsersModel {
                 bumpIdentityGeneration(for: account.id, site: "ensure.replacedCredential")
             }
             if let binding = profile.homeUserBinding(forPlexAccount: account.id) {
+                if cachedIdentityAccounts.contains(account.id),
+                   !foregroundReauthenticationAccounts.contains(account.id),
+                   hasCurrentCredentialSource(for: account.id),
+                   plexResolvedHomeUser[account.id] == binding.homeUserID {
+                    continue
+                }
                 let needsForegroundProof = foregroundReauthenticationAccounts.contains(account.id)
                 let hasUnprotectedSession = !needsForegroundProof && binding.requiresPIN == false
                     && binding.pinRequirementVerified == true
@@ -1144,6 +1157,13 @@ public final class PlexHomeUsersModel {
             return
         }
         guard isCurrentPINRequirementCheck(context, adminToken: adminToken) else { return }
+        if OfflineMode.shared.isEnabled {
+            if !(await restoreCachedIdentity(context, pin: suppliedPIN, adminToken: adminToken)) {
+                plexPINError = "Sign in online once on this device to use this profile offline."
+                plexPINEntryAvailability = .unavailable
+            }
+            return
+        }
         if suppliedPIN == nil, context.selectionID == nil,
            let account = accountsProviders.accounts.first(where: { $0.id == request.accountID }),
            sharedHomeAuthorization(for: account, homeUserID: request.homeUserID) != nil {
@@ -1168,6 +1188,10 @@ public final class PlexHomeUsersModel {
             guard case let .failure(error) = result,
                   isCurrentPINRequirementCheck(context, adminToken: adminToken) else { return }
             guard error as? AppError == .unauthorized else {
+                if OfflinePlexSignInStore.permitsFallback(after: error),
+                   await restoreCachedIdentity(context, pin: suppliedPIN, adminToken: adminToken) {
+                    return
+                }
                 if plexPINEntryAvailability != .available {
                     plexPINEntryAvailability = .unavailable
                 }
@@ -1179,12 +1203,15 @@ public final class PlexHomeUsersModel {
             guard isCurrentPINRequirementCheck(context, adminToken: adminToken) else { return }
             guard let user = users.first(where: { $0.id == request.homeUserID }),
                   user.pinRequirementVerified == true else {
+                invalidateCachedIdentity(for: request.accountID)
                 PlozzLog.auth.error("Plex PIN status refresh missing selected user's protection metadata acct=\(request.accountID)")
                 if plexPINError == nil { plexPINError = ProfileLockCopy.plexSwitchFailed }
                 plexPINEntryAvailability = .unavailable
                 return
             }
             guard !user.requiresPIN else {
+                // A fresh PIN requirement may supersede an older unprotected proof.
+                if context.binding.requiresPIN != true { invalidateCachedIdentity(for: request.accountID) }
                 if context.selectionID == nil,
                    context.binding.requiresPIN != true || context.binding.pinRequirementVerified != true {
                     var binding = context.binding
@@ -1208,6 +1235,10 @@ public final class PlexHomeUsersModel {
             )
             if case let .failure(error) = result,
                isCurrentPINRequirementCheck(context, adminToken: adminToken) {
+                if OfflinePlexSignInStore.permitsFallback(after: error),
+                   await restoreCachedIdentity(context, pin: nil, adminToken: adminToken) {
+                    return
+                }
                 plexPINEntryAvailability = .unavailable
                 plexPINError = (error as? AppError)?.userMessage ?? ProfileLockCopy.plexSwitchFailed
             }
@@ -1215,9 +1246,68 @@ public final class PlexHomeUsersModel {
             return
         } catch {
             guard isCurrentPINRequirementCheck(context, adminToken: adminToken) else { return }
+            if OfflinePlexSignInStore.permitsFallback(after: error),
+               await restoreCachedIdentity(context, pin: suppliedPIN, adminToken: adminToken) {
+                return
+            }
+            if CredentialRejection.discardsStoredCredential(error) {
+                invalidateCachedIdentity(for: request.accountID)
+            }
             PlozzLog.auth.error("Plex PIN status refresh failed acct=\(request.accountID): \(error)")
             plexPINError = (error as? AppError)?.userMessage ?? ProfileLockCopy.plexSwitchFailed
             plexPINEntryAvailability = .unavailable
+        }
+    }
+
+    private func restoreCachedIdentity(
+        _ context: PINRequirementContext, pin: String?, adminToken: String
+    ) async -> Bool {
+        guard offlineSignInEnabled, context.selectionID == nil,
+              isCurrentPINRequirementCheck(context, adminToken: adminToken),
+              let account = accountsProviders.accounts.first(where: { $0.id == context.request.accountID })
+        else { return false }
+        do {
+            guard let entry = try offlineSignInStore.load(profile: profilesModel.activeProfile, account: account)
+            else { return false }
+            if let verifier = entry.pinVerifier {
+                guard let pin, !pin.isEmpty else {
+                    plexPINError = nil
+                    plexPINEntryAvailability = .available
+                    return true
+                }
+                let matches = await verifier.matchesOffMainActor(pin: pin)
+                guard isCurrentPINRequirementCheck(context, adminToken: adminToken) else { return true }
+                guard matches else {
+                    plexPINError = ProfileLockCopy.incorrectPIN
+                    plexPINEntryAvailability = .available
+                    return true
+                }
+            }
+            guard isCurrentPINRequirementCheck(context, adminToken: adminToken) else { return true }
+            setPlexTokenOverride(entry.serverToken, for: account.id)
+            plexResolvedHomeUser[account.id] = context.request.homeUserID
+            plexPINVerifiedHomeUser[account.id] = entry.pinVerifier == nil ? nil : context.request.homeUserID
+            plexCredentialSources[account.id] = CredentialSource(account)
+            cachedIdentityAccounts.insert(account.id)
+            foregroundReauthenticationAccounts.remove(account.id)
+            pendingPlexPINRequest = nil
+            plexPINError = nil
+            accountsProviders.registry.invalidate(accountID: account.id)
+            bumpIdentityGeneration(for: account.id, site: "offlineSignIn")
+            ensurePlexIdentityForActiveProfile()
+            return true
+        } catch {
+            PlozzLog.auth.error("Could not read device-local offline sign-in proof")
+            return false
+        }
+    }
+
+    private func invalidateCachedIdentity(for accountID: String) {
+        guard let account = accountsProviders.accounts.first(where: { $0.id == accountID }) else { return }
+        do {
+            try offlineSignInStore.remove(profile: profilesModel.activeProfile, account: account)
+        } catch {
+            PlozzLog.auth.error("Could not invalidate device-local offline sign-in proof")
         }
     }
 
@@ -1332,6 +1422,8 @@ public final class PlexHomeUsersModel {
     /// session or using an owner credential for cloud requests.
     public func resolveDiscoverToken(for accountID: String) async throws -> String? {
         try Task.checkCancellation()
+        try OfflineMode.shared.requireNetworkAccess()
+        guard !cachedIdentityAccounts.contains(accountID) else { throw AppError.serverUnreachable }
         guard hasCurrentCredentialSource(for: accountID) else {
             PlozzLog.auth.info("Plex cloud recovery requires reconciliation of replaced account credentials")
             throw AppError.unauthorized
@@ -1376,6 +1468,7 @@ public final class PlexHomeUsersModel {
 
     /// Drops all Plex token overrides, falling back to stored (admin) tokens.
     private func clearPlexOverrides() {
+        cachedIdentityAccounts.removeAll()
         foregroundReauthenticationAccounts.removeAll()
         cancelPlexReauthentication()
         cancelPINRequirementCheck()
@@ -1467,6 +1560,7 @@ public final class PlexHomeUsersModel {
         }
         do {
             try Task.checkCancellation()
+            try OfflineMode.shared.requireNetworkAccess()
             let token: String
             if let sharedAuthorization {
                 token = sharedAuthorization.token
@@ -1517,6 +1611,25 @@ public final class PlexHomeUsersModel {
                 liveBinding.requiresPIN = true
                 liveBinding.pinRequirementVerified = true
             }
+            let verifier: ProfileLock?
+            if !offlineSignInEnabled {
+                verifier = nil
+            } else if let pin, !pin.isEmpty {
+                verifier = await Task.detached { ProfileLock.make(pin: pin) }.value
+            } else {
+                do {
+                    let source = sharedAuthorization.flatMap { authorization in
+                        accountsProviders.accounts.first { $0.id == authorization.accountID }
+                    } ?? account
+                    verifier = try offlineSignInStore.load(
+                        profile: profilesModel.activeProfile, account: source
+                    )?.pinVerifier
+                } catch {
+                    PlozzLog.auth.error("Could not read device-local offline sign-in proof")
+                    verifier = nil
+                }
+            }
+            guard isCurrentSwitch() else { return .failure(CancellationError()) }
             if refreshServerCredential {
                 setPlexTokenOverride(resolvedToken, for: accountID)
                 if changedUser, previousToken == resolvedToken {
@@ -1539,6 +1652,17 @@ public final class PlexHomeUsersModel {
                 ))
             }
             if change != nil { pendingBindingChange = nil }
+            cachedIdentityAccounts.remove(accountID)
+            if offlineSignInEnabled && refreshServerCredential && (liveBinding.requiresPIN != true || verifier != nil) {
+                do {
+                    try offlineSignInStore.save(
+                        profile: profilesModel.activeProfile, account: account, pinVerifier: verifier,
+                        serverToken: resolvedToken
+                    )
+                } catch {
+                    PlozzLog.auth.error("Could not save device-local offline sign-in proof")
+                }
+            }
             HandoffDiagnostics.emit("plex-home SWITCH cloudReady=true serverRefresh=\(refreshServerCredential)")
             plexHomeUserTokenCache.remove(account: accountID, homeUser: homeUserID)
             if refreshServerCredential {
@@ -1570,6 +1694,7 @@ public final class PlexHomeUsersModel {
             guard isCurrentSwitch() else {
                 return .failure(CancellationError())
             }
+            invalidateCachedIdentity(for: accountID)
             PlozzLog.auth.info("Plex Home-user switch unauthorized")
             HandoffDiagnostics.emit("plex-home SWITCH failed=unauthorized")
             if refreshServerCredential, !checksWithoutPIN,

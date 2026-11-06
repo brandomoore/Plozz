@@ -106,6 +106,7 @@ struct PlozziOSSettingsView: View {
             model: appModel.guidePreparation, presenter: appModel.transientStatusPresenter,
             palette: palette
         )
+        .offlineStatusOverlay(appModel: appModel, palette: palette)
         .environment(appModel.guidePreparation)
         .environment(\.themePalette, palette)
         .environment(\.colorScheme, palette.isLight ? .light : .dark)
@@ -157,6 +158,10 @@ struct PlozziOSSettingsView: View {
     }
 
     private func showAddServer() {
+        guard !appModel.isOfflineMode else {
+            appModel.transientStatusPresenter.present(icon: "wifi.slash", text: "Unavailable in Offline Mode.")
+            return
+        }
         appModel.beginManagedServerPresentation()
         showingAddServer = true
     }
@@ -866,7 +871,7 @@ private struct PlozziOSSettingsSplitView: View {
                 isPresented: selection == .profile(category)
             )
         case .downloads:
-            PlozziOSDownloadSettingsView(model: appModel.downloads)
+            PlozziOSDownloadSettingsView(model: appModel.downloads, appModel: appModel)
         case .syncSetup:
             PlozziOSSyncSetupSettingsView(appModel: appModel)
         case .metadata:
@@ -1250,7 +1255,7 @@ private struct PlozziOSSettingsCompactMenu: View {
                         }
                         .settingsActionRow()
                         SettingsPageLink {
-                            PlozziOSDownloadSettingsView(model: appModel.downloads)
+                            PlozziOSDownloadSettingsView(model: appModel.downloads, appModel: appModel)
                         } label: {
                             Label("Downloads", systemImage: "arrow.down.circle")
                         }
@@ -1407,7 +1412,8 @@ private struct PlozziOSSettingsSearch: ViewModifier {
                     SettingsSearchResults(
                         query: query,
                         platform: UIDevice.current.userInterfaceIdiom == .phone ? .phone : .tablet,
-                        isKids: appModel.profiles.activeProfile.isKids
+                        isKids: appModel.profiles.activeProfile.isKids,
+                        featureFlags: appModel.runtimeFeatureFlags
                     ) { entry, _ in
                         isFocused = false
                         onSelect(entry)
@@ -1605,7 +1611,7 @@ private struct PlozziOSSettingsSearchDestination: View {
         case .liveTV, .liveTVSources, .liveTVGuide, .liveTVVisibility: profilePage(.liveTV)
         case .language: profilePage(.language)
         case .trackers: profilePage(.trackers)
-        case .downloads: PlozziOSDownloadSettingsView(model: appModel.downloads)
+        case .downloads: PlozziOSDownloadSettingsView(model: appModel.downloads, appModel: appModel)
         case .profiles:
             List {
                 SettingsSectionGroup {

@@ -134,11 +134,12 @@ struct PlozziOSDownloadedShowView: View {
     }
 
     private var currentShow: PlozziOSDownloadedShow? {
-        model.library.shows.first { $0.id == showID }
+        let library = appModel.isOfflineMode ? model.offlineLibrary : model.library
+        return library.shows.first { $0.id == showID }
     }
 
     private var showStillExists: Bool {
-        model.library.shows.contains { $0.id == showID }
+        currentShow != nil
     }
 
 }

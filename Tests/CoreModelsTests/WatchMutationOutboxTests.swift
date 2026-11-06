@@ -661,6 +661,27 @@ final class WatchOutboxColdStartTests: XCTestCase {
         XCTAssertEqual(confirmations.value, 1)
     }
 
+    func testFinalPlaybackAcknowledgesDurableIntentWithoutClaimingDelivery() async {
+        let confirmations = PersistenceFailureCounter()
+        let applier = FakeWatchApplier()
+        applier.failingAccounts = ["plex"]
+        let reconciler = WatchStateReconciler(store: InMemoryWatchMutationStore(), applier: applier)
+        let mutation = playedMutation(capturedAt: Date(), targets: [target("plex", "p1")])
+        await reconciler.beginLiveSession(accountID: "plex", itemID: "p1")
+        await reconciler.finishLiveSession(accountID: "plex", itemID: "p1", mutation: mutation) {
+            confirmations.increment()
+        }
+        XCTAssertEqual(confirmations.value, 1)
+        let pending = await reconciler.pendingCount
+        XCTAssertEqual(pending, 1)
+        XCTAssertTrue(applier.playedWrites.isEmpty)
+        let failedStore = WatchStateReconciler(store: FailingWatchMutationStore(), applier: applier)
+        await failedStore.finishLiveSession(accountID: "plex", itemID: "p1", mutation: mutation) {
+            confirmations.increment()
+        }
+        XCTAssertEqual(confirmations.value, 1, "A failed save cannot update a local download as acknowledged.")
+    }
+
     /// A new user's very first watch must enqueue and converge end-to-end.
     func testFirstEverWatchEnqueuesAndConverges() async throws {
         let store = InMemoryWatchMutationStore()

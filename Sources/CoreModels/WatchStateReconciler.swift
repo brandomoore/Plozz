@@ -220,9 +220,11 @@ public actor WatchStateReconciler {
     /// Replace queued progress with the final stop before lifting the live guard.
     /// Draining first would write the old checkpoint back over a finished episode.
     public func finishLiveSession(
-        accountID: String?, itemID: String, mutation: WatchMutation?, serverScope: WatchMutationServerScope? = nil
+        accountID: String?, itemID: String, mutation: WatchMutation?,
+        serverScope: WatchMutationServerScope? = nil,
+        onPersisted: @Sendable () -> Void = {}
     ) async {
-        if let mutation { await enqueue(mutation) }
+        if let mutation { await enqueue(mutation, onPersisted: onPersisted) }
         if let accountID {
             let session = LiveSession(
                 target: WatchMutationTarget(accountID: accountID, itemID: itemID),

@@ -1,10 +1,26 @@
 import XCTest
+import CoreModels
 
 @testable import FeaturePlayback
 
 /// Refs #351: what the background song watch is willing to show.
 final class SongRecognitionTests: XCTestCase {
     private let start: TimeInterval = 1_000
+
+    func testOfflineModeDoesNotStartARecognitionSession() async {
+        let previous = OfflineMode.shared.isEnabled
+        OfflineMode.shared.setEnabled(true)
+        defer { OfflineMode.shared.setEnabled(previous) }
+        let reason = await SongRecognizer.watch(
+            AsyncStream { $0.finish() },
+            makeSession: {
+                XCTFail("Offline playback must not contact song recognition.")
+                return .init()
+            },
+            report: { _ in XCTFail("Offline recognition must not publish matches.") }
+        )
+        XCTAssertEqual(reason, .ended)
+    }
 
     func testSecondSightingThatTracksTheClockConfirms() {
         var confirmation = SongConfirmation()

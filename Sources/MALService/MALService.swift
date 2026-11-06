@@ -133,7 +133,7 @@ public final class MALService {
                     redeemString += "&session=\(session)"
                 }
                 let redeemURL = URL(string: redeemString)!
-                let (data, _) = try await URLSession.shared.data(from: redeemURL)
+                let (data, _) = try await OfflineNetworkSession.shared.data(from: redeemURL)
                 guard generation == self.profileGeneration.current else { return }
                 let result = try JSONDecoder().decode(RelayRedeemResponse.self, from: data)
 

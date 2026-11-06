@@ -209,10 +209,25 @@ public enum TransientStatusLayout {
     }
 }
 
+public enum TransientStatusSurfaceStyle {
+    case standard
+    case compact
+
+    fileprivate var insets: EdgeInsets {
+        switch self {
+        case .standard:
+            EdgeInsets(top: 16, leading: 24, bottom: 16, trailing: 24)
+        case .compact:
+            EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 4)
+        }
+    }
+}
+
 public extension View {
-    func transientStatusSurface(palette: ThemePalette) -> some View {
-        padding(.horizontal, 24)
-            .padding(.vertical, 16)
+    func transientStatusSurface(
+        palette: ThemePalette, style: TransientStatusSurfaceStyle = .standard
+    ) -> some View {
+        padding(style.insets)
             .background(palette.toast.fill, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
             .overlay {
                 if let border = palette.toast.border {

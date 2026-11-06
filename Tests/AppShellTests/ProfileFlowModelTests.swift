@@ -31,6 +31,7 @@ final class ProfileFlowModelTests: XCTestCase {
         let plex = PlexHomeUsersModel(
             accountsProviders: hub,
             profilesModel: profiles,
+            offlineSignInStore: .init(secureStore: InMemorySecureStore()),
             switchProfile: { _ in }
         )
         let settings = ProfileSettingsModel(namespace: profiles.activeNamespace)
@@ -349,6 +350,7 @@ final class ProfileFlowModelTests: XCTestCase {
         let plex = PlexHomeUsersModel(
             accountsProviders: hub,
             profilesModel: profiles,
+            offlineSignInStore: .init(secureStore: InMemorySecureStore()),
             switchProfile: { _ in }
         )
         var removedAliasProfileID: String?
@@ -451,6 +453,7 @@ final class ProfileFlowModelTests: XCTestCase {
         let plex = PlexHomeUsersModel(
             accountsProviders: hub,
             profilesModel: profiles,
+            offlineSignInStore: .init(secureStore: InMemorySecureStore()),
             switchProfile: { _ in }
         )
         let settings = ProfileSettingsModel(namespace: profiles.activeNamespace)

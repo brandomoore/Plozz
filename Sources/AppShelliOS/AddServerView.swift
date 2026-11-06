@@ -86,6 +86,7 @@ struct AddServerView: View {
             model: appModel.guidePreparation, presenter: appModel.transientStatusPresenter,
             palette: palette
         )
+        .offlineStatusOverlay(appModel: appModel, palette: palette)
     }
 
     @ViewBuilder

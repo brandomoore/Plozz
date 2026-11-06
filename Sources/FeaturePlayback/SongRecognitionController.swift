@@ -51,7 +51,7 @@ final class SongRecognitionController {
                 }
             }
             var misses = 0
-            while !Task.isCancelled, lifetime.generation == generation {
+            while !Task.isCancelled, !OfflineMode.shared.isEnabled, lifetime.generation == generation {
                 guard let stream = install() else {
                     misses += 1
                     guard misses < 3 else {

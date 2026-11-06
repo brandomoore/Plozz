@@ -208,6 +208,7 @@ public struct URLSessionHTTPClient: HTTPClient {
     /// `(data, response)` for **every** HTTP status (only transport failures
     /// throw), so callers that need the error body/status can inspect them.
     public func sendRaw(_ endpoint: Endpoint, baseURL: URL) async throws -> (Data, HTTPURLResponse) {
+        try OfflineMode.shared.requireNetworkAccess()
         var request = try Self.makeRequest(endpoint, baseURL: baseURL)
         let started = HTTPResponseDiagnostics.isCapturing ? ProcessInfo.processInfo.systemUptime : nil
         var capturedStatus: Int?
@@ -262,12 +263,12 @@ public struct URLSessionHTTPClient: HTTPClient {
             }
             if endpoint.reportsServerTrustFailures {
                 switch urlError.code {
-                case .serverCertificateHasBadDate, .serverCertificateUntrusted,
+                case .secureConnectionFailed, .serverCertificateHasBadDate, .serverCertificateUntrusted,
                      .serverCertificateHasUnknownRoot, .serverCertificateNotYetValid,
                      .clientCertificateRejected, .clientCertificateRequired:
                     throw HTTPServerTrustFailure()
                 default:
-                    break
+                    throw urlError
                 }
             }
             throw Self.map(urlError)
@@ -276,6 +277,7 @@ public struct URLSessionHTTPClient: HTTPClient {
             throw AppError.cancelled
         } catch {
             diagnostic?.finish(.failed)
+            if endpoint.reportsServerTrustFailures { throw error }
             throw AppError.serverUnreachable
         }
 
@@ -380,7 +382,7 @@ public extension URLSession {
         // keeps the pool from becoming the bottleneck on a fast LAN.
         config.httpMaximumConnectionsPerHost = 8
         config.requestCachePolicy = .reloadIgnoringLocalCacheData
-        return URLSession(configuration: config)
+        return OfflineNetworkSession.make(configuration: config)
     }
 
     /// Dedicated lane for FOREGROUND, user-blocking fetches — specifically opening
@@ -400,7 +402,7 @@ public extension URLSession {
         config.httpMaximumConnectionsPerHost = 6
         config.requestCachePolicy = .reloadIgnoringLocalCacheData
         config.waitsForConnectivity = false
-        return URLSession(configuration: config)
+        return OfflineNetworkSession.make(configuration: config)
     }
 
     /// Session for probing discovery candidates: very short timeouts so we can
@@ -413,7 +415,7 @@ public extension URLSession {
         config.requestCachePolicy = .reloadIgnoringLocalCacheData
         config.waitsForConnectivity = false
         config.allowsConstrainedNetworkAccess = true
-        return URLSession(configuration: config)
+        return OfflineNetworkSession.make(configuration: config)
     }
 }
 

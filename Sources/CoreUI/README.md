@@ -843,6 +843,11 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   Ordinary feedback and guide-progress toasts share `transientStatusSurface`:
   an 18-point rounded rectangle, 24-point horizontal / 16-point vertical insets,
   and the lighter `ThemePalette.toast` surface rather than modal overlay colors.
+  The opt-in `.compact` surface is for short dismissible notices: content-sized
+  width, a 16-point leading inset, and 4-point top/bottom/trailing insets around
+  a centered 44-by-44 dismissal target. A normal one-line notice is 52 points
+  tall; longer or accessibility-sized text can wrap without shrinking the target.
+  Standard feedback and multi-line guide progress retain their existing spacing.
   Guide progress uses a leading spinner centered beside a left-aligned title and
   detail column, with dismissal centered at the trailing edge. Determinate
   progress stays in the text column so stage changes preserve horizontal alignment.

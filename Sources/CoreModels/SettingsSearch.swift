@@ -221,9 +221,10 @@ public struct SettingsSearchEntry: Identifiable, Hashable, Sendable {
 
     public func isAvailable(
         on platform: Platform, osVersion: Int = ProcessInfo.processInfo.operatingSystemVersion.majorVersion,
-        isKids: Bool = false
+        isKids: Bool = false, featureFlags: RuntimeFeatureFlags = .buildDefault
     ) -> Bool {
         osVersion >= minimumOSVersion && !(isKids && requiresAdultProfile)
+            && (id != "offline-mode" || featureFlags.isEnabled(.offlineMode))
             && (self.platform == nil || self.platform == platform
                 || (self.platform == .mobile && platform != .television))
     }
@@ -679,8 +680,9 @@ public enum SettingsSearchCatalog {
 
     public static func entries(
         on platform: SettingsSearchEntry.Platform,
-        osVersion: Int = ProcessInfo.processInfo.operatingSystemVersion.majorVersion, isKids: Bool = false
+        osVersion: Int = ProcessInfo.processInfo.operatingSystemVersion.majorVersion, isKids: Bool = false,
+        featureFlags: RuntimeFeatureFlags = .buildDefault
     ) -> [SettingsSearchEntry] {
-        entries.filter { $0.isAvailable(on: platform, osVersion: osVersion, isKids: isKids) }
+        entries.filter { $0.isAvailable(on: platform, osVersion: osVersion, isKids: isKids, featureFlags: featureFlags) }
     }
 }

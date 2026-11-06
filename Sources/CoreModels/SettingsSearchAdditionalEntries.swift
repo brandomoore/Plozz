@@ -150,6 +150,8 @@ extension SettingsSearchCatalog {
               keywords: "subtitles captions appearance customize style", subtitlePage: .dual),
         .init("dual-gap", page: .subtitleStyle, title: "Gap",
               keywords: "subtitles captions appearance customize style", subtitlePage: .dual),
+        .init("offline-mode", page: .downloads, title: "Offline Mode",
+              keywords: "downloaded only local network airplane connection", platform: .mobile),
         .init("downloads-cellular", page: .downloads, title: "Allow Cellular Downloads",
               keywords: "download offline save storage quality network", platform: .mobile),
         .init("downloads-low-data", page: .downloads, title: "Pause in Low Data Mode",

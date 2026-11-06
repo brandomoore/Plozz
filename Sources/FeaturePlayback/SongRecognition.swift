@@ -102,7 +102,7 @@ struct SongAudioPacer {
     ) async throws -> Bool {
         guard end.isFinite else { return false }
         while end > playhead + 0.05 {
-            try Task.checkCancellation()
+            try OfflineMode.shared.requireNetworkAccess()
             playhead = await playbackTime()
             guard playhead.isFinite else { return false }
             if end > playhead + 0.05 { try await Task.sleep(for: .milliseconds(100)) }
@@ -132,6 +132,7 @@ enum SongRecognizer {
         didMatch: (@Sendable () -> Void)? = nil,
         report: @escaping @MainActor @Sendable (SongMatch?) -> Void
     ) async -> StopReason {
+        guard !OfflineMode.shared.isEnabled else { return .ended }
         let session = makeSession()
         let reason = await withTaskGroup(of: StopReason.self) { group in
             group.addTask {
@@ -139,7 +140,7 @@ enum SongRecognizer {
                 var lastHeard = -TimeInterval.infinity
                 var confirmation = SongConfirmation()
                 for await result in session.results {
-                    if Task.isCancelled { return .ended }
+                    if Task.isCancelled || OfflineMode.shared.isEnabled { return .ended }
                     switch result {
                     case let .match(match):
                         didMatch?()
@@ -206,6 +207,7 @@ enum SongRecognizer {
                             return .failed
                         }
                     }
+                    guard !OfflineMode.shared.isEnabled else { return .ended }
                     session.matchStreamingBuffer(chunk.buffer, at: nil)
                     didFeed?(chunk, playbackTime == nil ? nil : pacer.playhead)
                 }

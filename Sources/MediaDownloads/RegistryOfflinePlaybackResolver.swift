@@ -11,15 +11,18 @@ public struct RegistryOfflinePlaybackResolver:
     private let registry: DownloadedMediaRegistry
     private let storage: any DownloadStorageLocating
     private let fileManager: FileManager
+    private let authorizesRecord: @Sendable (DownloadedMediaRecord) async -> Bool
 
     public init(
         registry: DownloadedMediaRegistry,
         storage: any DownloadStorageLocating,
-        fileManager: FileManager = .default
+        fileManager: FileManager = .default,
+        authorizesRecord: @escaping @Sendable (DownloadedMediaRecord) async -> Bool = { _ in true }
     ) {
         self.registry = registry
         self.storage = storage
         self.fileManager = fileManager
+        self.authorizesRecord = authorizesRecord
     }
 
     public func localSubtitleTracks(for item: MediaItem, versionID: String?) async -> [MediaTrack] {
@@ -27,7 +30,7 @@ public struct RegistryOfflinePlaybackResolver:
         return subtitleTracks(at: mediaURL)
     }
 
-    private func subtitleTracks(at mediaURL: URL) -> [MediaTrack] {
+    func subtitleTracks(at mediaURL: URL) -> [MediaTrack] {
         let indexURL = mediaURL.appendingPathExtension("subtitles.json")
         guard fileManager.fileExists(atPath: indexURL.path) else { return [] }
         guard let data = try? Data(contentsOf: indexURL), data.count <= 1_048_576,
@@ -49,7 +52,7 @@ public struct RegistryOfflinePlaybackResolver:
         return metadata(at: url)
     }
 
-    private func metadata(at url: URL) -> MediaSourceMetadata? {
+    func metadata(at url: URL) -> MediaSourceMetadata? {
         guard let data = try? Data(contentsOf: url.appendingPathExtension("metadata.json")),
               data.count <= 1_048_576 else { return nil }
         return try? JSONDecoder().decode(MediaSourceMetadata.self, from: data)
@@ -64,6 +67,9 @@ public struct RegistryOfflinePlaybackResolver:
 
     public func localPlaybackURL(for item: MediaItem, versionID: String?) async -> URL? {
         for record in await registry.playbackRecords(for: item, preferring: versionID) {
+            if OfflineMode.shared.isEnabled, let versionID, !versionID.isEmpty,
+               record.versionID != versionID { continue }
+            guard await authorizesRecord(record), !Task.isCancelled else { continue }
             if let url = localPlaybackURL(for: record) {
                 return url
             }
@@ -71,7 +77,7 @@ public struct RegistryOfflinePlaybackResolver:
         return nil
     }
 
-    private func localPlaybackURL(for record: DownloadedMediaRecord) -> URL? {
+    public func localPlaybackURL(for record: DownloadedMediaRecord) -> URL? {
         if record.status == .completed,
            let url = try? storage.pinnedFileURL(for: record),
            fileManager.fileExists(atPath: url.path) {
@@ -86,6 +92,8 @@ public struct RegistryOfflinePlaybackResolver:
                   from: data
               ),
               backupRecord.identityKey == record.identityKey,
+              backupRecord.snapshot.sourceUserID == record.snapshot.sourceUserID,
+              backupRecord.snapshot.sourceAccountID == record.snapshot.sourceAccountID,
               backupRecord.status == .completed,
               let backupFolder = try? storage.replacementBackupFolderURL(
                   forKey: record.identityKey

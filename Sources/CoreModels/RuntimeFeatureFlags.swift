@@ -3,10 +3,11 @@ import Foundation
 public enum RuntimeFeatureFlag: String, CaseIterable, Codable, Hashable, Sendable {
     case universalWatchlist
     case wetrakr
+    case offlineMode
 }
 
 /// Typed runtime rollout values shared by both application shells. The flag
-/// controls exposure and integration only; durable watchlist stores never read
+/// controls exposure and integration only; durable content stores never read
 /// it, so disabling the feature cannot erase local state.
 public struct RuntimeFeatureFlags: Codable, Hashable, Sendable {
     private var enabled: Set<RuntimeFeatureFlag>
@@ -28,7 +29,7 @@ public struct RuntimeFeatureFlags: Codable, Hashable, Sendable {
     }
 
     public static let productionDefault = RuntimeFeatureFlags(
-        enabled: [.universalWatchlist, .wetrakr]
+        enabled: [.universalWatchlist, .wetrakr, .offlineMode]
     )
 
     public static let buildDefault = productionDefault

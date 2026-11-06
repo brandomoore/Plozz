@@ -70,13 +70,16 @@ struct PlozziOSHomeEmptyState: View {
     let hasAccounts: Bool
     let onAddSource: () -> Void
     var onReceiveSetup: (() -> Void)?
+    var isOfflineMode = false
 
     private var title: LocalizedStringResource {
-        hasAccounts ? "Nothing to watch yet" : "Build your library"
+        if isOfflineMode { return "No Downloads" }
+        return hasAccounts ? "Nothing to watch yet" : "Build your library"
     }
 
     private var explanation: LocalizedStringResource {
-        hasAccounts
+        if isOfflineMode { return "Downloaded movies and episodes appear here." }
+        return hasAccounts
             ? "Add media to a source, or connect another."
             : "Connect a media server, network share, or IPTV provider."
     }
@@ -105,26 +108,28 @@ struct PlozziOSHomeEmptyState: View {
                         .multilineTextAlignment(.center)
                         .fixedSize(horizontal: false, vertical: true)
                     }
-                    VStack(spacing: 12) {
-                        Button(action: onAddSource) {
-                            Label {
-                                Text(SettingsCopy.addSource)
-                            } icon: {
-                                Image(systemName: "plus")
+                    if !isOfflineMode {
+                        VStack(spacing: 12) {
+                            Button(action: onAddSource) {
+                                Label {
+                                    Text(SettingsCopy.addSource)
+                                } icon: {
+                                    Image(systemName: "plus")
+                                }
+                                .plozzPageActionLabel()
                             }
-                            .plozzPageActionLabel()
-                        }
-                        .plozzPageActionButton()
-                        .accessibilityIdentifier("home-add-source")
-                        if let onReceiveSetup {
-                            Button(action: onReceiveSetup) {
-                                Text("Set Up from Another Device")
-                                    .plozzPageActionLabel()
+                            .plozzPageActionButton()
+                            .accessibilityIdentifier("home-add-source")
+                            if let onReceiveSetup {
+                                Button(action: onReceiveSetup) {
+                                    Text("Set Up from Another Device")
+                                        .plozzPageActionLabel()
+                                }
+                                .plozzPageActionButton(role: .secondary)
                             }
-                            .plozzPageActionButton(role: .secondary)
                         }
+                        .frame(maxWidth: 320)
                     }
-                    .frame(maxWidth: 320)
                 }
                 .frame(maxWidth: 360)
                 .frame(maxWidth: .infinity)
@@ -291,7 +296,9 @@ struct PlozziOSHomeView: View {
                     )
                 )
             case .empty:
-                PlozziOSHomeEmptyState(hasAccounts: true, onAddSource: onAddServer)
+                PlozziOSHomeEmptyState(
+                    hasAccounts: true, onAddSource: onAddServer, isOfflineMode: appModel.isOfflineMode
+                )
             case let .failed(error):
                 ContentUnavailableView {
                     Label(
@@ -1226,6 +1233,7 @@ struct PlozziOSHomeView: View {
 
     private func loadHero(from content: HomeViewModel.Content) async {
         let settings = appModel.settings.hero.effectiveSettings
+        let offline = appModel.isOfflineMode
         let disabledLibraryKeys = appModel.settings.homeVisibility.visibility.disabledKeys
         guard settings.isActive else {
             heroItems = []
@@ -1319,6 +1327,7 @@ struct PlozziOSHomeView: View {
             freshness: viewModel.heroFreshnessSnapshot(),
             sourceEligibility: initialEligibility,
             featuredProvider: { limit in
+                guard !offline else { return [] }
                 let fresh = await discovery.candidates(
                     HeroDiscoveryRequest(
                         limit: limit, language: discoveryLanguage, region: discoveryRegion,

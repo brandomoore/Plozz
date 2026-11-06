@@ -30,7 +30,7 @@ public struct SiloServerDiscovery: ServerDiscovering {
         #if !os(Linux)
         configuration.waitsForConnectivity = false
         #endif
-        validator = ServerValidator(provider: .silo, http: URLSessionHTTPClient(session: URLSession(configuration: configuration)))
+        validator = ServerValidator(provider: .silo, http: URLSessionHTTPClient(session: OfflineNetworkSession.make(configuration: configuration)))
     }
 
     init(candidates: @escaping @Sendable () -> [URL], validator: ServerValidator) {

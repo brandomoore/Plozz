@@ -20,7 +20,7 @@ struct PlozziOSDownloadsView: View {
     @State private var detailNav: PlozziOSDownloadDetailNav?
 
     var body: some View {
-        let library = model.library
+        let library = appModel.isOfflineMode ? model.offlineLibrary : model.library
         Group {
             if let error = model.initializationError {
                 ContentUnavailableView(
@@ -80,7 +80,7 @@ struct PlozziOSDownloadsView: View {
             }
             ToolbarItem(id: "download-settings", placement: .topBarTrailing) {
                 NavigationLink {
-                    PlozziOSDownloadSettingsView(model: model)
+                    PlozziOSDownloadSettingsView(model: model, appModel: appModel)
                 } label: {
                     Label("Download Settings", systemImage: "gearshape")
                 }
@@ -127,7 +127,8 @@ struct PlozziOSDownloadsView: View {
                 showID: id, model: model, appModel: appModel, initialSeasonID: seasonID
             )
         case let .item(identityKey, createdAt):
-            if let record = model.records.first(where: {
+            let records = appModel.isOfflineMode ? model.playableRecords : model.records
+            if let record = records.first(where: {
                 $0.identityKey == identityKey && $0.createdAt == createdAt && $0.status == .completed
             }), let item = model.playbackItem(for: record) {
                 if let provider = appModel.provider(for: item) {
@@ -163,7 +164,7 @@ struct PlozziOSDownloadsView: View {
     private func libraryList(_ library: PlozziOSDownloadLibrary) -> some View {
         GeometryReader { proxy in
             List {
-                if model.hasActiveTransfers {
+                if model.hasActiveTransfers && !appModel.isOfflineMode {
                     activeTransfersHeader
                         .labelStyle(.titleAndIcon)
                         .listRowSeparator(.hidden)
@@ -748,10 +749,17 @@ private struct PlozziOSDownloadManagementSettings: View {
 
 struct PlozziOSDownloadSettingsView: View {
     @Bindable var model: PlozziOSDownloadsModel
+    let appModel: PlozziOSAppModel
     @State private var pendingBulkDeletion: PlozziOSDownloadsBulkDeletion?
 
     var body: some View {
         List {
+            if appModel.isOfflineModeAvailable {
+                SettingsSectionGroup {
+                    PlozziOSOfflineModeToggle(appModel: appModel)
+                        .settingsSearchAnchor("offline-mode")
+                }
+            }
             SettingsSectionGroup("Network") {
                 Toggle("Allow Cellular Downloads", isOn: $model.allowsCellular).settingsSearchAnchor("downloads-cellular")
                 Toggle(
