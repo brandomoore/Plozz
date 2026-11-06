@@ -667,6 +667,12 @@ static unsigned component(double value) {
             drained = YES; break;
         }
         printf("HDMV event=%u parameter=%u\n", event.event, event.param);
+        if (event.event == BD_EVENT_PLAYITEM || event.event == BD_EVENT_SEEK ||
+            event.event == BD_EVENT_STILL_TIME || event.event == BD_EVENT_TITLE) {
+            [self publishDiagnostic:[NSString stringWithFormat:
+                @"disc NATIVE_EVENT event=%u parameter=%u playlist=%ld clip=%u generation=%ld synchronizing=%d",
+                event.event, event.param, (long)_playlist, _clip, (long)_generation, _synchronizing]];
+        }
         if (event.event == BD_EVENT_TITLE) {
             if (event.param == BLURAY_TITLE_TOP_MENU) {
                 _openingMenuPending = NO;
@@ -756,6 +762,7 @@ static unsigned component(double value) {
         !_openingMenuSubmitted && !_menuCallBlocked) {
         int result = bd_menu_call(_disc, -1);
         NSLog(@"Disc navigation startup menu request accepted=%d", result > 0);
+        [self publishDiagnostic:[NSString stringWithFormat:@"disc STARTUP_MENU accepted=%d", result > 0]];
         if (result > 0) {
             _openingMenuSubmitted = YES;
             _selectionPending = NO;
@@ -940,6 +947,11 @@ static unsigned component(double value) {
         if (!self.stopped && self.menuRequestPendingChanged) self.menuRequestPendingChanged(pending);
     });
 }
+- (void)publishDiagnostic:(NSString *)event {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (self.diagnosticEvent) self.diagnosticEvent(event);
+    });
+}
 - (void)ended:(NSInteger)generation {
     dispatch_async(self.queue, ^{
         if (self.stopped || self->_failed || generation != self->_generation || !self->_title ||
@@ -949,6 +961,11 @@ static unsigned component(double value) {
         self->_synchronizing = YES;
         BLURAY_CLIP_INFO *item = &self->_title->clips[self->_clip];
         uint64_t itemEnd = item->start_time + item->out_time - item->in_time;
+        [self publishDiagnostic:[NSString stringWithFormat:
+            @"disc NATIVE_END playlist=%ld clip=%u generation=%ld perItem=%d start=%llu in=%llu out=%llu end=%llu",
+            (long)self->_playlist, self->_clip, (long)generation, self->_perItem,
+            (unsigned long long)item->start_time, (unsigned long long)item->in_time,
+            (unsigned long long)item->out_time, (unsigned long long)itemEnd]];
         int64_t position = self->_perItem
             ? bd_seek_time(self->_disc, itemEnd - 1)
             : bd_seek(self->_disc, size - 192);
@@ -971,6 +988,9 @@ static unsigned component(double value) {
         unsigned clip = 0;
         while (clip + 1 < self->_title->clip_count && self->_title->clips[clip + 1].start_time <= time) clip++;
         if (clip != self->_clip) {
+            [self publishDiagnostic:[NSString stringWithFormat:
+                @"disc CLOCK_SYNC playlist=%ld from=%u to=%u time=%llu generation=%ld",
+                (long)self->_playlist, self->_clip, clip, (unsigned long long)time, (long)generation]];
             self->_synchronizing = YES;
             if (bd_seek_time(self->_disc, time) < 0) [self fail:@"Disc timeline synchronization failed"];
             [self pump];

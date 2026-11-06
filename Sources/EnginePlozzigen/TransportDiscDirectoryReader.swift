@@ -33,9 +33,17 @@ final class TransportDiscDirectoryReader: DiscDirectoryReader, @unchecked Sendab
     deinit { close() }
 
     func openDiscFile(_ path: String) -> IOReader? {
-        guard !closed.withLock({ $0 }),
-              let file = locator.files.first(where: { $0.path.caseInsensitiveCompare(path) == .orderedSame })
-        else { return nil }
+        guard !closed.withLock({ $0 }) else {
+            HandoffDiagnostics.emit("disc OPEN_REJECTED reason=readerClosed playlist=\(preferredPlaylist ?? "navigation")")
+            return nil
+        }
+        guard let file = locator.files.first(where: { $0.path.caseInsensitiveCompare(path) == .orderedSame }) else {
+            HandoffDiagnostics.emit(
+                "disc OPEN_REJECTED reason=unlistedFile playlist=\(preferredPlaylist ?? "navigation")"
+                    + " file=\(HandoffDiagnostics.correlationID(path))"
+            )
+            return nil
+        }
         return scope.open(file.locator, owner: owner)
     }
 
@@ -139,6 +147,11 @@ private final class DiscTransportScope: @unchecked Sendable {
                         pending.finish(nil)
                     }
                 } catch {
+                    HandoffDiagnostics.emit(
+                        "disc TRANSPORT_OPEN_FAILED owner=\(owner) cancelled=\(Task.isCancelled)"
+                            + " type=\(String(reflecting: type(of: error)))"
+                            + " reason=\((error as? MediaTransportError)?.description ?? "unclassified")"
+                    )
                     if !(error is CancellationError), (error as? MediaTransportError) != .cancelled {
                         PlozzLog.playback.error("Disc file transport open failed")
                     }
@@ -148,6 +161,9 @@ private final class DiscTransportScope: @unchecked Sendable {
             }
             pending.attach(task)
             return true
+        }
+        if !admitted {
+            HandoffDiagnostics.emit("disc OPEN_REJECTED reason=closedScopeOrOwner owner=\(owner)")
         }
         return admitted ? pending.wait() : nil
     }

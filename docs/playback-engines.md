@@ -59,6 +59,10 @@ Once navigation exposes an interactive surface or leaves first play, it requests
 the top menu when authored menu-call restrictions permit, rather than following
 startup directly into a feature. Reaching the top menu consumes this request;
 subsequent explicit choices are not redirected.
+Transition diagnostics correlate directional/activation keys, playlist generations,
+native navigation events and reader owners. Transport-open failures record the
+error type and case without associated credential or path details, distinguishing
+superseded-load cancellation from failure in the current selection.
 Startup and playlist transitions have bounded deadlines. Menu failures remain
 visible with Retry, Play video, region retry and Close actions; they never trigger
 automatic main-title playback, cross-source failover or server transcoding.

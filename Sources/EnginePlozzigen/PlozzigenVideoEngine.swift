@@ -485,6 +485,7 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
                 || (line.contains("[HLSLocalServer]") && line.contains("GET "))
             if handoff,
                line.contains("[TTFF]")
+                || line.contains("[disc]")
                 || line.contains("[DisplayCriteria]")
                 || isStallDiag
                 || isFailureDetail {

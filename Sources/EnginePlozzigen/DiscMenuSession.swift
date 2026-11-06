@@ -161,6 +161,9 @@ final class DiscMenuSession {
         native.menuVisibilityChanged = { [weak self] visible in
             MainActor.assumeIsolated {
                 guard let self, !self.stopped else { return }
+                if self.state.isMenuVisible != visible {
+                    HandoffDiagnostics.emit("disc MENU visible=\(visible) generation=\(self.generation)")
+                }
                 self.state.isMenuVisible = visible
             }
         }
@@ -224,7 +227,11 @@ final class DiscMenuSession {
                 }
             }
         }
-        state.sendKey = { [weak self] in self?.native?.key($0) }
+        state.sendKey = { [weak self] key in
+            guard let self else { return }
+            HandoffDiagnostics.emit("disc INPUT key=\(key) generation=\(self.generation)")
+            self.native?.key(key)
+        }
         state.sendPointerClick = { [weak self] x, y in self?.native?.click(x: x, y: y) }
         state.openMenu = { [weak self] in self?.native?.menu() }
     }
@@ -240,6 +247,9 @@ final class DiscMenuSession {
 
     private func select(_ playlist: Int, position: Double, generation: Int, clip: DiscMenuClip? = nil) {
         guard !stopped, generation > self.generation else { return }
+        HandoffDiagnostics.emit(
+            "disc SELECTION playlist=\(playlist) position=\(position) generation=\(generation) previous=\(self.generation)"
+        )
         self.generation = generation
         loadedGeneration = nil
         pendingAudioPID = nil
@@ -265,6 +275,7 @@ final class DiscMenuSession {
                 previousReader?.close()
                 guard !self.stopped, !Task.isCancelled, self.generation == generation else { return }
                 self.loadedGeneration = generation
+                HandoffDiagnostics.emit("disc READY playlist=\(playlist) generation=\(generation) ended=\(reachedEnd)")
                 self.state.playlist = playlist
                 self.state.playItem = clip?.index
                 self.state.isOpening = false
@@ -272,9 +283,14 @@ final class DiscMenuSession {
                 self.firstLoad?.resume()
                 self.firstLoad = nil
             } catch is CancellationError {
+                HandoffDiagnostics.emit("disc CANCELLED playlist=\(playlist) generation=\(generation)")
                 reader.close()
                 previousReader?.close()
             } catch {
+                HandoffDiagnostics.emit(
+                    "disc LOAD_FAILED playlist=\(playlist) generation=\(generation) current=\(self.generation)"
+                        + " cancelled=\(Task.isCancelled) detail=\(HandoffDiagnostics.redactedDetail(String(describing: error)))"
+                )
                 reader.close()
                 previousReader?.close()
                 guard self.generation == generation, !self.stopped else { return }
