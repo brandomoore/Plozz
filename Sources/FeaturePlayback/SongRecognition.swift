@@ -37,6 +37,79 @@ public enum SongIDState: Equatable, Sendable {
 public final class SongRecognitionModel {
     public var state: SongIDState = .idle
     public var isAvailable = false
+
+    @ObservationIgnored private let now: @MainActor () -> TimeInterval
+    @ObservationIgnored private let sleep: @Sendable (Duration) async throws -> Void
+    @ObservationIgnored private var expiry: Task<Void, Never>?
+    @ObservationIgnored private var remaining: TimeInterval = 0
+    @ObservationIgnored private var startedAt: TimeInterval?
+    @ObservationIgnored private var generation = 0
+
+    init(
+        now: @escaping @MainActor () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
+        sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
+    ) {
+        self.now = now
+        self.sleep = sleep
+    }
+
+    deinit { expiry?.cancel() }
+
+    func heard(_ song: SongMatch?) {
+        pauseExpiry()
+        let next = song.map(SongIDState.found) ?? .idle
+        if state != next { state = next }
+        remaining = song == nil ? 0 : SongRecognizer.linger
+        resumeExpiry()
+    }
+
+    func pauseExpiry() {
+        if let startedAt { remaining = max(0, remaining - (now() - startedAt)) }
+        startedAt = nil
+        generation += 1
+        expiry?.cancel()
+        expiry = nil
+    }
+
+    func resumeExpiry() {
+        guard expiry == nil, case .found = state else { return }
+        guard remaining > 0 else { state = .idle; return }
+        startedAt = now()
+        let generation = generation, delay = remaining, sleep = sleep
+        expiry = Task { [weak self] in
+            do { try await sleep(.seconds(delay)) }
+            catch is CancellationError { return }
+            catch {
+                HandoffDiagnostics.emit("songid EXPIRY_WAIT_FAILED")
+            }
+            guard !Task.isCancelled, self?.generation == generation else { return }
+            self?.state = .idle
+            self?.remaining = 0
+            self?.startedAt = nil
+            self?.expiry = nil
+        }
+    }
+}
+
+/// Pulls continuous audio within 50 ms of the rendered source clock.
+/// The upstream queue stays bounded; cancellation never stalls the player.
+struct SongAudioPacer {
+    private(set) var playhead = -Double.infinity
+
+    mutating func wait(
+        until end: TimeInterval,
+        playbackTime: @MainActor @Sendable () -> TimeInterval
+    ) async throws -> Bool {
+        guard end.isFinite else { return false }
+        while end > playhead + 0.05 {
+            try Task.checkCancellation()
+            playhead = await playbackTime()
+            guard playhead.isFinite else { return false }
+            if end > playhead + 0.05 { try await Task.sleep(for: .milliseconds(100)) }
+        }
+        try Task.checkCancellation()
+        return true
+    }
 }
 
 enum SongRecognizer {
@@ -48,13 +121,14 @@ enum SongRecognizer {
     static let linger: TimeInterval = 25
 
     /// Listens to everything the tap delivers until the stream ends (reload,
-    /// stop) or the task is cancelled, reporting each song as it is heard and
-    /// `nil` once nothing has matched for `linger` seconds. A seek restarts the
-    /// watch from the player, so one watch only ever hears continuous audio.
+    /// stop) or the task is cancelled, reporting confirmed and renewed matches.
+    /// Presentation owns expiry across matcher restarts.
+    /// A seek restarts the watch, so one watch only hears continuous audio.
     static func watch(
         _ stream: AsyncStream<SongTapChunk>,
         makeSession: @Sendable () -> SHSession = { SHSession() },
-        didFeed: (@Sendable (Int) -> Void)? = nil,
+        playbackTime: (@MainActor @Sendable () -> TimeInterval)? = nil,
+        didFeed: (@Sendable (SongTapChunk, TimeInterval?) -> Void)? = nil,
         didMatch: (@Sendable () -> Void)? = nil,
         report: @escaping @MainActor @Sendable (SongMatch?) -> Void
     ) async -> StopReason {
@@ -79,11 +153,14 @@ enum SongRecognizer {
                         let now = ProcessInfo.processInfo.systemUptime
                         let offset = item.predictedCurrentMatchOffset
                         let key = "\(title)|\(item.artist ?? "")"
+                        if now - lastHeard > linger { current = nil }
                         if song == current {
                             lastHeard = now
+                            await report(song)
                             continue
                         }
-                        guard confirmation.confirms(key: key, offset: offset, at: now) else { continue }
+                        let sourceTime = await playbackTime?() ?? now
+                        guard confirmation.confirms(key: key, offset: offset, at: sourceTime) else { continue }
                         lastHeard = now
                         current = song
                         HandoffDiagnostics.emit("songid SHOW")
@@ -96,7 +173,6 @@ enum SongRecognizer {
                     case .noMatch:
                         if current != nil, ProcessInfo.processInfo.systemUptime - lastHeard > linger {
                             current = nil
-                            await report(nil)
                         }
                     }
                 }
@@ -104,6 +180,7 @@ enum SongRecognizer {
             }
             group.addTask {
                 var expectedTime: Double?
+                var pacer = SongAudioPacer()
                 for await chunk in stream {
                     if Task.isCancelled { break }
                     guard chunk.sourceTime.isFinite, chunk.buffer.format.sampleRate > 0 else {
@@ -117,8 +194,20 @@ enum SongRecognizer {
                     }
                     expectedTime = chunk.sourceTime
                         + Double(chunk.buffer.frameLength) / chunk.buffer.format.sampleRate
+                    if let playbackTime, let end = expectedTime {
+                        do {
+                            guard try await pacer.wait(until: end, playbackTime: playbackTime) else {
+                                HandoffDiagnostics.emit("songid INVALID_PLAYHEAD")
+                                return .failed
+                            }
+                        } catch is CancellationError { return .ended }
+                        catch {
+                            HandoffDiagnostics.emit("songid PACING_FAILED")
+                            return .failed
+                        }
+                    }
                     session.matchStreamingBuffer(chunk.buffer, at: nil)
-                    didFeed?(Int(chunk.buffer.frameLength))
+                    didFeed?(chunk, playbackTime == nil ? nil : pacer.playhead)
                 }
                 return .ended
             }

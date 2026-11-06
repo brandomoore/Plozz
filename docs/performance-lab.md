@@ -107,18 +107,40 @@ publish only sanitized aggregates.
 
 ### Song recognition
 
-`song-recognition-disabled` and `song-recognition-enabled` play the same
+`song-recognition-disabled`, `song-recognition-tap-only`, and
+`song-recognition-enabled` play the same
 35-second synthetic 1080p30 H.264/AAC file through the production Plozzigen
-adapter on either platform. The enabled case uses the production audio tap and
-ShazamKit streaming matcher against a real local custom catalog. Each three-second
+adapter on either platform. The disabled case installs no tap; tap-only drains
+the production tap without matching; enabled uses the production controller,
+source-clock pacer, presentation expiry, and ShazamKit streaming matcher against
+a real local custom catalog. Catalog preparation is identical for all cases.
+Playback reaches eight seconds before sampling. Each three-second
 window must advance playback by at least 2.3 seconds; enabled windows must consume
-more than 48,000 fresh audio frames, and the run must produce a catalog match.
-There is one discarded warmup and five retained windows. The disabled case
-installs no tap. The catalog is prepared identically before both cases.
+more than 120,000 fresh audio frames, with no source gap above 250 ms and no
+feed lead above 51 ms (the production tolerance is 50 ms). Tap-only has the same
+continuity requirement but is deliberately unpaced. Enabled recognition must
+pass production's two-sighting confirmation before source time 20 seconds,
+not merely produce a raw match. There is one discarded warmup and five retained
+windows; steady cases must keep exactly one tap installation, or zero when off.
+
+`song-recognition-lifecycle` uses one discarded and five retained 25-second
+cycles. Each seeks to the start, plays for 12 seconds, pauses for one second,
+then resumes with a fresh recognizer for 12 seconds. It requires fresh confirmed
+reports every cycle, more than 600,000 audio frames and 22 seconds of video
+progress, no feed work during pause, and zero weakly tracked `SHSession`
+instances after each stop. The roughly 150-second exercise includes decoder
+lead after each tap installation; it is not a full-movie soak or an allocation
+trace. `confirmedSongs` counts accepted/renewed reports, not distinct titles.
+
+All cases record display-link callback count/gaps and engine drop telemetry.
+`hasDropTelemetry` distinguishes an unavailable counter from a measured zero.
+Display-link delivery is not presented video FPS; these cases mount video,
+not the complete player controls or song artwork.
 
 ```sh
 python3 tools/performance.py run --platform iOS --sim-id "$PLOZZ_IOS_SIM_ID" \
-  --scenario song-recognition-disabled song-recognition-enabled
+  --scenario song-recognition-disabled song-recognition-tap-only \
+             song-recognition-enabled song-recognition-lifecycle
 ```
 
 The fixture uses the existing `glow-hd.mp4` video without re-encoding. Its
@@ -132,7 +154,7 @@ ffmpeg -i glow-hd.mp4 -i song-performance.m4a \
   -map 0:v:0 -map 1:a:0 -c copy -shortest song-performance.mkv
 ```
 
-An initial simulator comparison before/after removing the unbounded forwarding
+An initial, weaker on/off experiment before/after removing the unbounded forwarding
 queue and hardening recognition lifetime produced these app-process CPU medians
 (milliseconds per three-second window):
 
@@ -159,13 +181,55 @@ bypassed. Raw evidence remains in local performance runs
 `0ab247f7360343d9b7d624143e7f6389` / `b15df76bd03b4999a498aa339a08c406`
 (TV baseline/candidate).
 
+The subsequent three-way attribution baseline, before source pacing, measured
+off/tap-only/full CPU medians of 564/560/592 ms on iPad and 548/549/597 ms on TV.
+After timing and expiry changes, the stricter workload above produced:
+
+| Simulator | Off CPU / MAD | Tap-only CPU / MAD | Full CPU / MAD |
+| --- | ---: | ---: | ---: |
+| iPad Pro 13-inch M5, iOS 26.2 | 479 / 74 | 584 / 8 | 428 / 109 |
+| Apple TV 4K third generation, tvOS 26.2 | 540 / 11 | 624 / 50 | 552 / 61 |
+
+Values are milliseconds per three-second window; MAD is median absolute
+deviation. Full recognition being cheaper than tap-only in this sample is a
+warning about order/history and variability, not evidence that matching saves
+CPU. Warmup, pacing, lifecycle coverage and instrumentation changed between
+these experiments, so they are not a controlled speedup comparison. They do
+not identify a converter/dispatch bottleneck or justify speculative resampling,
+batching or duty cycling.
+
+Both platforms processed 143,360–144,384 frames per full-recognition window,
+reported a maximum feed lead of 49 ms and no source gaps, and confirmed the
+synthetic cue. Steady full-recognition display callbacks had maximum gaps of
+17 ms on iPad and 18 ms on TV. Engine drop telemetry was available and reported
+zero drops in all retained cases. Lifecycle windows advanced video by
+23.33–23.49 seconds and consumed 914,432–929,792 frames, with zero paused feed
+and zero live tracked sessions after each stop. Maximum lifecycle callback
+gaps reached 64 ms on iPad and 49 ms on TV; these must not be described as
+perfect frame pacing.
+
+Resident memory still rose across the five retained lifecycle samples:
+591–623 MiB on iPad and 508–534 MiB on TV. Released `SHSession` wrappers do not
+prove that framework caches, engine allocations or service-process resources
+are bounded. The short run does not establish a leak or a leak-free plateau,
+and cross-case resident deltas are not isolated feature allocations.
+Retained three-way baselines are
+`0f0c0f15e6c7456bb3043cb9e30c0427` (iPad) and
+`c846d4c56c9f47799caaef139c32c46a` (TV); current four-case evidence is
+`d62c3086d2c44e859dd0a36b32a515e6` (iPad) and
+`0e5e6103950d48ecb9ef00dfcb56d746` (TV).
+Older counter schemas are incompatible with the current report validator;
+historical numbers above come from their original retained samples, not a
+forced comparison pass.
+
 CPU totals cover the app process, not separate Shazam service processes.
 These runs exercise software video decoding and actual local fingerprint
 matching, not hardware decoding, the native cached-segment audio reader,
 Apple's network music catalog, real-song accuracy, device energy/thermals,
 long-session memory growth or presented-frame pacing. Separately, lifecycle
 tests cover tap removal during pause, errors and cancellation, bounded retries,
-discontinuities, and rejection of superseded-session results. Native player
+discontinuities, pause-aware expiry without matcher output, source-clock pacing,
+and rejection of superseded-session results. Native player
 screenshots use seeded metadata and are not recognition-performance evidence.
 
 `skeletons-idle` observes 24 production `SkeletonCardView` placeholders over

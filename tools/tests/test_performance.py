@@ -62,6 +62,22 @@ Binary Images:
 
 
 class EvidenceTests(unittest.TestCase):
+    def test_song_attribution_and_lifecycle_select_real_hosted_tests(self):
+        for state, method in (
+            ("disabled", "Disabled"), ("tap-only", "TapOnly"),
+            ("enabled", "Enabled"), ("lifecycle", "Lifecycle"),
+        ):
+            name = f"song-recognition-{state}"
+            self.assertEqual(performance.select(None, [name]), [name])
+            scenario = performance.SCENARIOS[name]
+            self.assertEqual(scenario["test"],
+                             f"SongRecognitionPerformanceTests/testPerformanceRecognition{method}")
+            self.assertTrue({
+                "audioFrames", "confirmedSongs", "maxSourceGapMilliseconds",
+                "maxFeedLeadMilliseconds", "liveSessions", "hasDropTelemetry",
+                "droppedFrames", "displayCallbacks", "maxDisplayGapMilliseconds",
+            }.issubset(scenario["counters"]))
+
     def test_live_home_is_never_selected_by_a_suite(self):
         self.assertEqual(performance.select(None, ["home-jellyfin-live"]), ["home-jellyfin-live"])
         for suite in ("core", "network", "all"):

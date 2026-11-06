@@ -22,13 +22,16 @@ final class SongRecognitionController {
         install: @escaping @MainActor () -> AsyncStream<SongTapChunk>?,
         remove: @escaping @MainActor () -> Void,
         report: @escaping Report,
-        watch: @escaping Watch = { stream, report in await SongRecognizer.watch(stream, report: report) },
+        playbackTime: (@MainActor @Sendable () -> TimeInterval)? = nil,
+        watch: Watch? = nil,
         sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
     ) {
         self.install = install
         self.remove = remove
         self.report = report
-        self.watch = watch
+        self.watch = watch ?? { stream, report in
+            await SongRecognizer.watch(stream, playbackTime: playbackTime, report: report)
+        }
         self.sleep = sleep
     }
 

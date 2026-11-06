@@ -86,6 +86,7 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
     private var liveSourceResetCancellable: AnyCancellable?
 
     public var currentTime: TimeInterval { engine.currentTime }
+    public var audioTapPresentationTime: TimeInterval { engine.sourceTime }
     public var subtitlePresentationTime: TimeInterval {
         if usesNativeSubtitleCues, let time = engine.currentAVPlayer?.currentTime().seconds, time.isFinite {
             return time

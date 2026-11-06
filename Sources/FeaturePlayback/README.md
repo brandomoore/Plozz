@@ -61,18 +61,26 @@ bounded language-match/accessibility flags without track titles or URLs.
   decoded-audio tap (not the microphone) to ShazamKit's streaming matcher while
   a title plays, when the profile's **Identify songs** setting is on. A song is
   shown beside the Info card only after a second match whose offset advances
-  consistently with elapsed monotonic time; sound-effect albums and genre-less uploads are ignored. A skip clears
+  consistently with rendered source-time progress; sound-effect albums and genre-less uploads are ignored. A skip clears
   the song. Errors (offline, service unavailable) show nothing and rest the
   matcher for 30 seconds with the audio tap removed. Pausing also removes the tap
   while retaining the displayed song; seeks clear it and restart analysis only
   after the seek settles. Engine handoffs replace the recognition owner. A generation-scoped owner
   rejects late results and teardown from superseded sessions. The adapter pulls
   directly from the engine's bounded PCM stream without a second queue or a
-  per-buffer main-actor forwarding task. Audio discontinuities restart matching
+  per-buffer main-actor forwarding task. A cancellable pacer holds decoded-ahead
+  audio until its end is within 50 ms of `audioTapPresentationTime` (the engine's
+  rendered source PTS, not a normalized scrub position). Pending chunks wait in
+  cancellable 100 ms intervals; chunks covered by the sampled clock reuse it.
+  No additional PCM queue is introduced. Upstream overflow remains bounded and
+  marks a discontinuity instead of blocking playback. Audio discontinuities restart matching
   rather than stitching unrelated samples. Only supported Plozzigen routes take
   part; standalone native playback and remote-HLS/server-transcode bypass
-  return no tap. A no-match result clears a song unheard for 25 seconds; this
-  is not an independent expiry timer.
+  return no tap. `SongRecognitionModel` independently expires the card after
+  25 seconds without an accepted match. Pausing preserves the remaining lifetime;
+  resuming restarts it even if the new matcher never returns a result. Repeated
+  accepted sightings renew expiry without changing equal observable state, and
+  cancelled timers cannot clear a newer song.
   The separate neighboring card (stacked on phones) places a rounded square album cover beside the song
   details, matching the Info thumbnail's height and insets on wide layouts.
   Space is reserved only on supported, enabled playback and stays fixed between

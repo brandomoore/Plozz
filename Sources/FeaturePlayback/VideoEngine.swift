@@ -230,6 +230,8 @@ public protocol VideoEngine: AnyObject {
 
     /// Current playback position in seconds (`0` when unknown).
     var currentTime: TimeInterval { get }
+    /// Rendered position on the source-PTS axis used by decoded audio taps.
+    var audioTapPresentationTime: TimeInterval { get }
     /// Clock on the emitted subtitle cues' axis, following the presented picture
     /// rather than a transport position advanced to a pending seek target.
     var subtitlePresentationTime: TimeInterval { get }
@@ -387,6 +389,7 @@ public extension VideoEngine {
     func sampleActivePicture() async -> VideoActivePictureState { .unsupported }
     func stopActivePictureAnalysis() {}
     var subtitlePresentationTime: TimeInterval { currentTime }
+    var audioTapPresentationTime: TimeInterval { currentTime }
     func renderSubtitles(at time: TimeInterval, style: SubtitleStyle) {}
     func supportsSubtitleTimingAdjustments(for track: MediaTrack) -> Bool { true }
     var streamingFailure: StreamingPlaybackFailure? { nil }

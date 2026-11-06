@@ -2227,6 +2227,7 @@ public final class PlayerViewModel {
         guard playbackSettings.identifySongs, intendsPlayback, phase == .ready,
               !didStop, !controls.isSeeking else { return }
         guard songWatch == nil else { return }
+        controls.songRecognition.resumeExpiry()
         let engine = engine
         let controls = controls
         let watch = SongRecognitionController(
@@ -2240,11 +2241,9 @@ public final class PlayerViewModel {
             },
             remove: { engine.removeSongTap() },
             report: { [weak self] song in
-                let value = song.map(SongIDState.found) ?? .idle
-                if self?.controls.songRecognition.state != value {
-                    self?.controls.songRecognition.state = value
-                }
-            }
+                self?.controls.songRecognition.heard(song)
+            },
+            playbackTime: { engine.audioTapPresentationTime }
         )
         songWatch = watch
         watch.start()
@@ -2254,8 +2253,10 @@ public final class PlayerViewModel {
         songWatch?.stop()
         songWatch = nil
         if clear {
-            controls.songRecognition.state = .idle
+            controls.songRecognition.heard(nil)
             if !preserveAvailability { controls.songRecognition.isAvailable = false }
+        } else {
+            controls.songRecognition.pauseExpiry()
         }
     }
 

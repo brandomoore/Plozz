@@ -40,12 +40,19 @@ SCENARIOS = {
     **{
         f"song-recognition-{state}": {
             "suite": "ui",
-            "test": f"SongRecognitionPerformanceTests/testPerformanceRecognition{state.title()}",
+            "test": f"SongRecognitionPerformanceTests/testPerformanceRecognition{state.title().replace('-', '')}",
             "file": "Tests/PerformancePresentationSupport/SongRecognitionPerformanceTests.swift",
-            "description": "Play the same 1080p30 video with synthetic audio; compare the production audio tap and matcher using a real local Shazam catalog, without network recognition.",
-            "counters": ["audioFrames", "matches", "windowMilliseconds", "playbackMilliseconds"],
+            "description": (
+                "Repeat six 25-second playback/pause/resume cycles with real local recognition; verify paused feed stops and stopped Shazam sessions are released."
+                if state == "lifecycle" else
+                "Play the same 1080p30 synthetic video with recognition off, tap-only, or source-paced local Shazam matching; verify continuous feed and displayable matches."
+            ),
+            "counters": ["audioFrames", "matches", "confirmedSongs", "maxSourceGapMilliseconds",
+                         "maxFeedLeadMilliseconds", "liveSessions", "displayCallbacks",
+                         "maxDisplayGapMilliseconds", "hasDropTelemetry", "droppedFrames",
+                         "windowMilliseconds", "playbackMilliseconds"],
         }
-        for state in ("enabled", "disabled")
+        for state in ("enabled", "disabled", "tap-only", "lifecycle")
     },
     "home-jellyfin-live": {
         "suite": "network", "target": "FeatureHomeCoreTests", "explicitOnly": True,

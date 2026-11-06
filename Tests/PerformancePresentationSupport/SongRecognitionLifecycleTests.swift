@@ -5,6 +5,89 @@ import XCTest
 
 @MainActor
 final class SongRecognitionLifecycleTests: XCTestCase {
+    func testPauseResumePreservesRemainingExpiryWithoutNeedingAMatchResult() async throws {
+        let sleeps = ExpirySleeps()
+        defer { Task { await sleeps.finishAll() } }
+        var now = 100.0
+        let model = SongRecognitionModel(now: { now }, sleep: { await sleeps.wait($0) })
+        let song = SongMatch(title: "Current", artist: nil, artworkURL: nil, appleMusicURL: nil)
+        model.heard(song)
+        await sleeps.waitForCount(1)
+        now = 110
+        model.pauseExpiry()
+        now = 1010
+        XCTAssertEqual(model.state, .found(song))
+        model.resumeExpiry()
+        await sleeps.waitForCount(2)
+        let durations = await sleeps.durations
+        XCTAssertEqual(durations, [.seconds(25), .seconds(15)])
+        await sleeps.finishFirst()
+        try await Task.sleep(for: .milliseconds(20))
+        XCTAssertEqual(model.state, .found(song), "The cancelled pre-pause timer cannot erase the resumed card.")
+        await sleeps.finishFirst()
+        try await waitUntil { model.state == .idle }
+    }
+
+    func testRepeatedHearingRenewsExpiryAndOldTimerCannotClearIt() async throws {
+        let sleeps = ExpirySleeps()
+        defer { Task { await sleeps.finishAll() } }
+        var now = 100.0
+        let model = SongRecognitionModel(now: { now }, sleep: { await sleeps.wait($0) })
+        let song = SongMatch(title: "Current", artist: nil, artworkURL: nil, appleMusicURL: nil)
+        model.heard(song)
+        await sleeps.waitForCount(1)
+        now += 20
+        model.heard(song)
+        await sleeps.waitForCount(2)
+        let durations = await sleeps.durations
+        XCTAssertEqual(durations, [.seconds(25), .seconds(25)])
+        await sleeps.finishFirst()
+        try await Task.sleep(for: .milliseconds(20))
+        XCTAssertEqual(model.state, .found(song))
+        model.heard(nil)
+        await sleeps.finishFirst()
+        XCTAssertEqual(model.state, .idle)
+    }
+
+    func testAudioPacerWaitsForSourcePlayheadNotElapsedWallTime() async throws {
+        var playhead = 0.0
+        var finished = false
+        let task = Task {
+            var pacer = SongAudioPacer()
+            let result = try await pacer.wait(until: 10, playbackTime: { playhead })
+            finished = true
+            return result
+        }
+        defer { task.cancel() }
+        try await Task.sleep(for: .milliseconds(150))
+        XCTAssertFalse(finished, "A stationary clock must not admit decoded-ahead audio.")
+        playhead = 9.8
+        try await Task.sleep(for: .milliseconds(150))
+        XCTAssertFalse(finished)
+        playhead = 10
+        let result = try await task.value
+        XCTAssertTrue(result, "Any playback rate is governed by actual source progress, not a guessed delay.")
+    }
+
+    func testAudioPacerCancellationDoesNotWaitForPlayback() async throws {
+        let task = Task {
+            var pacer = SongAudioPacer()
+            return try await pacer.wait(until: 100, playbackTime: { 0 })
+        }
+        try await Task.sleep(for: .milliseconds(20))
+        task.cancel()
+        do {
+            _ = try await task.value
+            XCTFail("Pacing must propagate cancellation.")
+        } catch is CancellationError {}
+    }
+
+    func testAudioPacerRejectsInvalidClock() async throws {
+        var pacer = SongAudioPacer()
+        let result = try await pacer.wait(until: 1, playbackTime: { .nan })
+        XCTAssertFalse(result)
+    }
+
     func testStopReleasesTapBeforeCancelledWorkerFinishes() async throws {
         let probe = TapProbe()
         let gate = WatchGate()
@@ -29,6 +112,26 @@ final class SongRecognitionLifecycleTests: XCTestCase {
         XCTAssertTrue(probe.values.isEmpty, "Late old-session matches must not enter the new playback.")
         controller.stop()
         await gate.finishFirst(with: nil)
+    }
+
+    private actor ExpirySleeps {
+        var durations: [Duration] = []
+        private var continuations: [CheckedContinuation<Void, Never>] = []
+        func wait(_ duration: Duration) async {
+            durations.append(duration)
+            await withCheckedContinuation { continuations.append($0) }
+        }
+        func waitForCount(_ count: Int) async {
+            let deadline = ContinuousClock.now + .seconds(2)
+            while durations.count < count, ContinuousClock.now < deadline { await Task.yield() }
+        }
+        func finishFirst() {
+            guard !continuations.isEmpty else { return }
+            continuations.removeFirst().resume()
+        }
+        func finishAll() {
+            while !continuations.isEmpty { finishFirst() }
+        }
     }
 
     func testErrorCooldownRemovesTapAndCanBeCancelled() async throws {
