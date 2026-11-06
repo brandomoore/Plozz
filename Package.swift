@@ -248,9 +248,10 @@ let package = Package(
         // Audio shaping and low-resolution upscaling remain opt-in and disabled.
         // Resume preroll backfill no longer opens a false native-scrub landing watch.
         // Native media-selection IPC uses bounded off-main readers during media-service stalls.
+        // Profile 7-only HDR10 fallback preserves other Dolby Vision routes.
         .package(
             url: "https://github.com/brandomoore/AetherEngine",
-            revision: "5873655f4c5669843ac8c9bfc8574733759ea6f5",
+            revision: "8c7f919a4cff9f0d27d27f464657578ec08fc221",
             traits: []
         ),
         // NOTE: FFmpegBuild (FFmpeg n8.1.x media libraries) and LibDovi (Dolby Vision
