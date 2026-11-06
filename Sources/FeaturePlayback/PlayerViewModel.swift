@@ -242,6 +242,7 @@ public final class PlayerViewModel {
     /// asset. `nil` (the default) makes offline resolution a strict no-op.
     private let offlinePlaybackResolver: (any OfflinePlaybackResolving)?
     private let itemID: String
+    private let playbackSourceAccountID: String?
     /// The item already selected by the UI. When it has a completed local copy,
     /// playback can start without first contacting the provider.
     private let offlineItem: MediaItem?
@@ -548,14 +549,20 @@ public final class PlayerViewModel {
     /// episodes of the same show (Apple's TV app leaves those out too).
     public var continueWatchingItems: [MediaItem] {
         guard playbackSettings.continueWatchingInPlayer else { return [] }
-        return Self.continueWatchingItems(in: continueWatchingSnapshot(), excluding: request?.item)
+        return Self.continueWatchingItems(
+            in: continueWatchingSnapshot(), excluding: request?.item,
+            accountFallbackID: playbackSourceAccountID
+        )
     }
 
-    static func continueWatchingItems(in items: [MediaItem], excluding current: MediaItem?) -> [MediaItem] {
+    static func continueWatchingItems(
+        in items: [MediaItem], excluding current: MediaItem?, accountFallbackID: String? = nil
+    ) -> [MediaItem] {
+        let currentAccountID = current?.sourceAccountID ?? accountFallbackID
         var seen = Set<String>()
         return items.filter { item in
             guard seen.insert(item.stablePresentationID).inserted else { return false }
-            guard let current, item.sourceAccountID == current.sourceAccountID else { return true }
+            guard let current, item.sourceAccountID == currentAccountID else { return true }
             if item.id == current.id { return false }
             if let series = item.seriesID, series == current.seriesID { return false }
             return true
@@ -697,6 +704,8 @@ public final class PlayerViewModel {
         self.diagnosticFacts = .init(provider: provider.kind)
         self.offlinePlaybackResolver = offlinePlaybackResolver
         self.itemID = itemID
+        self.playbackSourceAccountID =
+            episodeItem?.sourceAccountID ?? offlineItem?.sourceAccountID ?? seriesAccountFallbackID
         self.offlineItem = offlineItem
         self.mediaSourceID = mediaSourceID
         self.behavior = behavior

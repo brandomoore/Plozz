@@ -232,6 +232,9 @@ preparation and authorized playback handoff, saves the outgoing position, and
 resumes the chosen title on its own provider. Missing/failed preparation is
 reported without swapping the outgoing provider. The tab remains part of the
 existing fixed-height horizontal player stage and follows the other media tabs' idle fade.
+Current-title filtering retains the playback origin account when a provider's
+fresh playback metadata has no app-owned account tag; matching IDs on other
+accounts remain available.
 
 On tvOS, iPhone, and iPad, **Chapters** joins the bottom player tabs only when the
 server metadata or the playing file supplies usable chapter positions. Individual

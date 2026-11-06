@@ -39,6 +39,43 @@ final class ContinueWatchingSelectionTests: XCTestCase {
         XCTAssertEqual(actual.map(\.stablePresentationID), [otherAccount, otherShow].map(\.stablePresentationID))
     }
 
+    func testProviderMetadataWithoutAccountUsesPlaybackOrigin() {
+        var current = MediaItem(id: "1", title: "Current", kind: .episode)
+        current.seriesID = "show"
+        var homeCurrent = current
+        homeCurrent.sourceAccountID = "first"
+        var sibling = homeCurrent
+        sibling.id = "2"
+        var otherAccount = homeCurrent
+        otherAccount.sourceAccountID = "second"
+        let actual = PlayerViewModel.continueWatchingItems(
+            in: [homeCurrent, sibling, otherAccount], excluding: current, accountFallbackID: "first"
+        )
+        XCTAssertEqual(actual.map(\.stablePresentationID), [otherAccount.stablePresentationID])
+
+        current.kind = .movie
+        current.seriesID = nil
+        homeCurrent.kind = .movie
+        homeCurrent.seriesID = nil
+        otherAccount.kind = .movie
+        otherAccount.seriesID = nil
+        let movies = PlayerViewModel.continueWatchingItems(
+            in: [homeCurrent, otherAccount], excluding: current, accountFallbackID: "first"
+        )
+        XCTAssertEqual(movies.map(\.stablePresentationID), [otherAccount.stablePresentationID])
+    }
+
+    func testExplicitPlaybackAccountTakesPrecedenceOverFallback() {
+        var current = MediaItem(id: "1", title: "Current", kind: .movie)
+        current.sourceAccountID = "second"
+        var otherAccount = current
+        otherAccount.sourceAccountID = "first"
+        let actual = PlayerViewModel.continueWatchingItems(
+            in: [current, otherAccount], excluding: current, accountFallbackID: "first"
+        )
+        XCTAssertEqual(actual.map(\.stablePresentationID), [otherAccount.stablePresentationID])
+    }
+
     private struct ContinueWatchingTestProvider: MediaProvider {
         let kind = ProviderKind.jellyfin
         let session = UserSession(

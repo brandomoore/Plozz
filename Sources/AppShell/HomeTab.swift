@@ -877,8 +877,11 @@ struct HomeTab: View {
         private func perform() async {
             guard isActive else { return }
             guard let request = director.request else { return }
+            // Clearing the task's identity before awaiting cancels network-backed lookups.
+            let outcome = await reach(request)
+            guard !Task.isCancelled, director.request == request else { return }
+            director.finish(outcome)
             director.request = nil
-            director.finish(await reach(request))
         }
 
         /// Reaches the requested screen and answers with what the capture script
