@@ -1422,7 +1422,7 @@ final class HomeRowArrangementHostedTests: XCTestCase {
     }
     #endif
 
-    func testCollectionEditorPreviewsActualTitlesBesidePresentationChoices() async throws {
+    func testCollectionEditorPreviewsActualTitlesAboveSettingsMenus() async throws {
         for style in CollectionSection.CardStyle.allCases {
             let requested = expectation(description: "Collection preview requested")
             let provider = HomeSettingsLibraryProvider(
@@ -1458,17 +1458,17 @@ final class HomeRowArrangementHostedTests: XCTestCase {
                 let text = lines.map(\.0).joined(separator: " ")
                 XCTAssertTrue(text.contains("Weekend picks"), text)
                 XCTAssertTrue(text.contains("Orbit"), "Preview must display the provider's title: \(text)")
+                XCTAssertTrue(text.contains(String(localized: style.title)), text)
+                let layoutY = try self.y("Layout", in: lines)
+                XCTAssertGreaterThan(try self.y("Orbit", in: lines), layoutY)
                 if style == .landscape {
-                    for label in ["Auto", "On", "Off"] {
-                        XCTAssertTrue(text.contains(label), "Landscape title-logo choice missing: \(text)")
-                    }
-                    let logoLabelY = try self.y("Title logo", in: lines)
-                    XCTAssertGreaterThan(try self.y("Posters", in: lines), logoLabelY)
-                    XCTAssertGreaterThan(logoLabelY, try self.y("Auto", in: lines))
+                    XCTAssertTrue(text.contains("Automatic"), text)
+                    let logoY = try self.y("Logo", in: lines)
+                    XCTAssertGreaterThan(layoutY, logoY)
+                    XCTAssertGreaterThan(logoY, try self.y("Content", in: lines))
                 } else {
-                    XCTAssertFalse(text.contains("Title logo"), text)
+                    XCTAssertFalse(text.contains("Logo"), text)
                 }
-                XCTAssertGreaterThan(try self.y("Posters", in: lines), try self.y("Orbit", in: lines))
                 XCTAssertTrue(visibility.visibility.collectionSections.isEmpty, "Previewing does not save a section.")
             }
         }

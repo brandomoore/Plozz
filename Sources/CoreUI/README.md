@@ -865,7 +865,7 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   Jellyfin/Emby Thumb images and validated share landscape/thumb sidecars do not
   depend on the hero's backdrop ordering. Artwork-only cards can fill a missing
   native slot from enabled metadata providers; explicit Library stays native-first.
-  Custom collection rows persist Title logo as Auto (default), On or Off. Auto
+  Custom collection rows persist Logo as Automatic (default), On or Off. Automatic
   keeps native key art without a duplicate logo, otherwise reuses Continue
   Watching's clean-background/logo composition. On prefers clean backgrounds;
   Off draws artwork only. The resolved reference, not the server brand, suppresses

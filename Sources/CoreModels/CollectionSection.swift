@@ -7,7 +7,7 @@ public enum LandscapeTitleLogo: String, Codable, CaseIterable, Sendable {
 
     public var title: LocalizedStringResource {
         switch self {
-        case .automatic: "Auto"
+        case .automatic: "Automatic"
         case .on: "On"
         case .off: "Off"
         }

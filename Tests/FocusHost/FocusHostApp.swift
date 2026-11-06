@@ -23,6 +23,8 @@ struct FocusHostApp: App {
                 HomeSectionWarningFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--home-section-editor-fixture") {
                 HomeSectionsEditorFixture()
+            } else if ProcessInfo.processInfo.arguments.contains("--collection-row-editor-fixture") {
+                CollectionRowEditorFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--playback-failure-fixture") {
                 PlaybackFailureFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--setup-picker-fixture") {
@@ -108,6 +110,65 @@ struct FocusHostApp: App {
             }
         }
     }
+}
+
+private struct CollectionRowEditorFixture: View {
+    @State private var visibility = HomeLibraryVisibilityModel(
+        store: HomeLibraryVisibilityStore(namespace: "collection-row-editor-fixture")
+    )
+    @State private var navigation = SettingsPageNavigation<String>()
+
+    var body: some View {
+        let provider = CollectionRowEditorProvider()
+        let account = ResolvedAccount(account: Account(from: provider.session), provider: provider)
+        SettingsPageStack(navigation: navigation, pageWidth: SettingsFormMetrics.pageWidth, onRootBack: {}) {
+            CollectionSectionSettingsView(
+                section: CollectionSection(
+                    source: .init(
+                        accountID: account.account.id, collectionID: "weekend", title: "Weekend picks",
+                        serverUserID: provider.session.userID
+                    ),
+                    cardStyle: .landscape
+                ),
+                isNew: true, inventory: HomeSectionCatalogModel(), visibility: visibility,
+                libraries: [], accounts: [account]
+            )
+        } destination: { _ in EmptyView() }
+        .environment(CardStyleSettingsModel())
+        .environment(\.settingsInWorkspace, true)
+        .environment(\.themePalette, .dark)
+        .environment(\.colorScheme, .dark)
+        .background { SettingsPageBackground() }
+    }
+}
+
+private struct CollectionRowEditorProvider: MediaProvider {
+    let kind: ProviderKind = .jellyfin
+    let session = UserSession(
+        server: MediaServer(
+            id: "fixture", name: "Sample library", baseURL: URL(string: "https://fixture.invalid")!,
+            provider: .jellyfin
+        ),
+        userID: "viewer", userName: "Viewer", deviceID: "fixture", accessToken: "fixture"
+    )
+
+    func libraries() async throws -> [MediaLibrary] { [] }
+    func continueWatching(limit: Int) async throws -> [MediaItem] { [] }
+    func latest(limit: Int) async throws -> [MediaItem] { [] }
+    func items(in containerID: String, kind: MediaItemKind, page: PageRequest) async throws -> MediaPage {
+        MediaPage(items: [], startIndex: page.startIndex, totalCount: 0)
+    }
+    func item(id: String) async throws -> MediaItem { throw AppError.notFound }
+    func children(of itemID: String) async throws -> [MediaItem] {
+        [
+            MediaItem(id: "orbit", title: "Orbit", kind: .movie, allowsTitleBasedMetadataMatching: false),
+            MediaItem(id: "crossing", title: "The Crossing", kind: .movie, allowsTitleBasedMetadataMatching: false)
+        ]
+    }
+    func search(query: String, limit: Int) async throws -> [MediaItem] { [] }
+    func playbackInfo(for itemID: String) async throws -> PlaybackRequest { throw AppError.notFound }
+    func reportPlayback(_ progress: PlaybackProgress, event: PlaybackEvent) async throws {}
+    func imageURL(itemID: String, kind: ImageKind, maxWidth: Int?) -> URL? { nil }
 }
 
 private struct SkipSettingsFixture: View {

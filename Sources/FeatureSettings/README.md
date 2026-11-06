@@ -565,10 +565,11 @@ watch history and planning-list behavior are documented in
   errors and Retry instead of claiming no rows are available. Creation starts with
   a library collection; the editor identifies that source as Content and its
   presentation as Layout (see [Home terminology](../../CONTEXT.md)). Choose a source collection first,
-  then edit its name and Posters, Landscape or Featured presentation with the layout control immediately above a real-title
-  preview. The preview uses the existing artwork preferences and spoiler protection.
-  Landscape adds a visible **Title logo** label above **Auto / On / Off**
-  for movie/show cards on all platforms. Auto is
+  then edit its name and Posters, Landscape or Featured presentation. A live
+  real-title preview leads the editor, with compact native **Layout** and **Logo**
+  menu rows underneath rather than controls inside the preview.
+  The preview uses the existing artwork preferences and spoiler protection.
+  Landscape exposes **Logo: Automatic / On / Off** for movie/show cards on all platforms. Automatic is
   the default for new and existing collection rows: retain native title artwork
   when available, otherwise compose a background with the title logo. On uses the
   shared background/logo treatment; Off keeps artwork only. Known titled images
