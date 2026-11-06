@@ -65,14 +65,19 @@ struct PlozziOSPlayerView: View {
     /// See the bisect note in `body`.
 
     let request: PlozziOSPlaybackRequest
-    let provider: any MediaProvider
+    let initialProvider: any MediaProvider
+    /// A title from the Continue Watching tab can live on
+    /// another server, so the player follows it there.
+    @State private var switchedProvider: (any MediaProvider)?
+    @Environment(HomeViewModel.self) private var homeViewModel: HomeViewModel?
+    private var provider: any MediaProvider { switchedProvider ?? initialProvider }
 
     init(
         request: PlozziOSPlaybackRequest, provider: any MediaProvider,
         orientation: PlozziOSPlayerOrientation
     ) {
         self.request = request
-        self.provider = provider
+        self.initialProvider = provider
         self.orientation = orientation
         _activePlaylist = State(initialValue: request.playlist)
     }
@@ -272,6 +277,51 @@ struct PlozziOSPlayerView: View {
                     startPosition: 0,
                     adoptedResolved: prefetched
                 )
+                guard !Task.isCancelled, isPresented else {
+                    await incoming.stop()
+                    return
+                }
+                viewModel = incoming
+                activeItem = next
+                playerIdentity = UUID()
+                handoffTask = nil
+            }
+        }
+        // A title picked in the player's Continue Watching tab.
+        // Stopping the current title saves its position; the picked one starts
+        // at its own resume point, on its own server.
+        .onChange(of: viewModel?.pendingContinueWatching?.id) { _, nextID in
+            guard nextID != nil,
+                  let outgoing = viewModel,
+                  let candidate = outgoing.pendingContinueWatching,
+                  handoffTask == nil,
+                  let nextProvider = appModel.provider(for: candidate) else { return }
+            let previousProvider = switchedProvider
+            handoffTask = Task { @MainActor in
+                switchedProvider = nextProvider
+                let next: MediaItem
+                do {
+                    guard let session = playbackSession else { throw CancellationError() }
+                    next = try await prepareVersion(candidate, session: session)
+                } catch is CancellationError {
+                    switchedProvider = previousProvider
+                    handoffTask = nil
+                    if isPresented { dismiss() }
+                    return
+                } catch {
+                    switchedProvider = previousProvider
+                    handoffTask = nil
+                    showVersionChoiceFailure(error)
+                    return
+                }
+                await outgoing.stop()
+                guard !Task.isCancelled, isPresented, viewModel === outgoing,
+                      isCurrentPlaybackSession else {
+                    handoffTask = nil
+                    return
+                }
+                activePlaylist = nil
+                let incoming = makeViewModel(item: next, startPosition: next.resumePosition ?? 0)
                 guard !Task.isCancelled, isPresented else {
                     await incoming.stop()
                     return
@@ -578,6 +628,9 @@ struct PlozziOSPlayerView: View {
                 // item's server, so that is whose person ids it holds.
                 navigateToPerson(person, item.sourceAccountID)
             }
+        }
+        viewModel.continueWatchingSnapshot = { [homeViewModel] in
+            homeViewModel?.state.value?.continueWatching ?? []
         }
         return viewModel
     }

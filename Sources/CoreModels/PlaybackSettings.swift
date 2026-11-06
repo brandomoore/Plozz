@@ -170,6 +170,10 @@ public struct PlaybackSettings: Codable, Equatable, Sendable {
     /// counterpart to `rememberAudioTrackPerSeries`. ON by default.
     public var rememberSubtitleTrackPerSeries: Bool
 
+    /// Offer the Continue Watching tab in the player, to switch to another
+    /// started title in place (#388). Per profile, ON by default.
+    public var continueWatchingInPlayer: Bool
+
     /// Fade to black around the HDMI handshake the TV performs when the **dynamic
     /// range** changes (SDR ⇄ HDR10 / HLG / Dolby Vision) — i.e. what tvOS calls
     /// *Match Dynamic Range*. ON by default: entering and leaving an HDR/DV title
@@ -208,6 +212,7 @@ public struct PlaybackSettings: Codable, Equatable, Sendable {
         audioLanguagePreference: AudioLanguagePreference = .original,
         rememberAudioTrackPerSeries: Bool = true,
         rememberSubtitleTrackPerSeries: Bool = true,
+        continueWatchingInPlayer: Bool = true,
         fadeOnDynamicRangeChange: Bool = true,
         fadeOnFrameRateChange: Bool = true,
         backgroundAudio: Bool = false,
@@ -245,6 +250,7 @@ public struct PlaybackSettings: Codable, Equatable, Sendable {
         self.audioLanguagePreference = audioLanguagePreference
         self.rememberAudioTrackPerSeries = rememberAudioTrackPerSeries
         self.rememberSubtitleTrackPerSeries = rememberSubtitleTrackPerSeries
+        self.continueWatchingInPlayer = continueWatchingInPlayer
         self.fadeOnDynamicRangeChange = fadeOnDynamicRangeChange
         self.fadeOnFrameRateChange = fadeOnFrameRateChange
         self.backgroundAudio = backgroundAudio
@@ -422,6 +428,7 @@ public extension PlaybackSettings {
         case preferOriginalLanguageAudio
         case rememberAudioTrackPerSeries
         case rememberSubtitleTrackPerSeries
+        case continueWatchingInPlayer
         case fadeOnDynamicRangeChange
         case fadeOnFrameRateChange
     }
@@ -552,6 +559,9 @@ public extension PlaybackSettings {
         self.rememberSubtitleTrackPerSeries =
             (try? container.decodeIfPresent(Bool.self, forKey: .rememberSubtitleTrackPerSeries))
             .flatMap { $0 } ?? defaults.rememberSubtitleTrackPerSeries
+        self.continueWatchingInPlayer =
+            (try? container.decodeIfPresent(Bool.self, forKey: .continueWatchingInPlayer))
+            .flatMap { $0 } ?? defaults.continueWatchingInPlayer
         // Both fades default to `true` when absent so installs that predate the
         // toggles keep (dynamic range) / gain (frame rate) the smooth transition.
         self.fadeOnDynamicRangeChange =
@@ -606,6 +616,7 @@ public extension PlaybackSettings {
         try container.encode(audioLanguagePreference, forKey: .audioLanguagePreference)
         try container.encode(rememberAudioTrackPerSeries, forKey: .rememberAudioTrackPerSeries)
         try container.encode(rememberSubtitleTrackPerSeries, forKey: .rememberSubtitleTrackPerSeries)
+        try container.encode(continueWatchingInPlayer, forKey: .continueWatchingInPlayer)
         try container.encode(fadeOnDynamicRangeChange, forKey: .fadeOnDynamicRangeChange)
         try container.encode(fadeOnFrameRateChange, forKey: .fadeOnFrameRateChange)
     }

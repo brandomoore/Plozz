@@ -411,6 +411,8 @@ public enum SettingsSearchCatalog {
               keywords: "automatically start play next episode binge stop after each episode continuous playback"),
         .init("autoplay-next-playlist", page: .playback, title: "Autoplay next playlist item",
               keywords: "automatically start play next video playlist continuous playback"),
+        .init("continue-watching-in-player", page: .playback, title: "Continue Watching in the player",
+              keywords: "switch title resume another movie show tab player"),
         .init("show-up-next-card", page: .playback, title: "Show Up Next card",
               keywords: "next episode popup countdown end credits"),
         .init("audio-language", page: .playback, title: "Preferred audio language",

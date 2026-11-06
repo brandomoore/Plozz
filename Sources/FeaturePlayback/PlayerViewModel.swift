@@ -538,6 +538,37 @@ public final class PlayerViewModel {
     }
     public let playlistContext: VideoPlaylistPlaybackContext?
     public let episodeBrowser: PlayerEpisodeBrowser?
+
+    // MARK: Continue Watching tab (#388)
+
+    /// Home's Continue Watching row, supplied by the shell that presents the player.
+    @ObservationIgnored public var continueWatchingSnapshot: @MainActor () -> [MediaItem] = { [] }
+
+    /// The row as the player shows it: without what is playing now, nor other
+    /// episodes of the same show (Apple's TV app leaves those out too).
+    public var continueWatchingItems: [MediaItem] {
+        guard playbackSettings.continueWatchingInPlayer else { return [] }
+        let current = request?.item
+        return continueWatchingSnapshot().filter { item in
+            guard let current else { return true }
+            if item.id == current.id { return false }
+            if let series = item.seriesID, series == current.seriesID { return false }
+            return true
+        }
+    }
+
+    /// A title picked in the Continue Watching tab. ``PlayerPresentation``
+    /// observes it and swaps the player in place, at that title's resume point.
+    public private(set) var pendingContinueWatching: MediaItem? {
+        willSet {
+            if newValue != nil { endTemporarySpeedBoost() }
+        }
+    }
+
+    public func playFromContinueWatching(_ item: MediaItem) {
+        guard !didStop, pendingNextEpisode == nil, pendingContinueWatching == nil else { return }
+        pendingContinueWatching = item
+    }
     /// The member requested for an in-place playlist handoff. Index, not ID,
     /// distinguishes repeated entries in a saved playlist.
     public struct PlaylistSelection: Equatable {

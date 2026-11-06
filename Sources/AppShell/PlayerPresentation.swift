@@ -189,6 +189,17 @@ struct PlayerPresentation: View {
                 preparesEpisodeHandoff: true
             )
         }
+        // A title picked in the player's Continue Watching tab.
+        // Leaving the current title saves its position like any other stop.
+        .onChange(of: viewModel?.pendingContinueWatching?.id) { _, nextID in
+            guard handoffTask == nil, nextID != nil,
+                  let next = viewModel?.pendingContinueWatching else { return }
+            triedAccountIDs = []
+            replacePlayback(with: PlayRequest(
+                item: next, startPosition: next.resumePosition ?? 0,
+                versionPreferences: versionPreferences
+            ))
+        }
         .onChange(of: viewModel?.pendingPlaylistSelection?.index) { _, index in
             guard handoffTask == nil, let index,
                   let outgoing = viewModel,

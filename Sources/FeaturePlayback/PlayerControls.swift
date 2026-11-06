@@ -64,6 +64,7 @@ struct PlayerControls: View {
 
     enum Category: Hashable {
         case subtitles, audio, playback, sync, info, cast, chapters, episodes, playlist, version
+        case continueWatching
 
         var title: LocalizedStringResource {
             switch self {
@@ -102,6 +103,12 @@ struct PlayerControls: View {
                 )
             case .episodes: return "Episodes"
             case .playlist: return "Playlist"
+            case .continueWatching:
+                return LocalizedStringResource(
+                    "player.category.continueWatching",
+                    defaultValue: "Continue Watching",
+                    comment: "Tab beneath the in-player scrub bar listing titles to switch to and resume."
+                )
             case .chapters: return "Chapters"
             }
         }
@@ -117,6 +124,7 @@ struct PlayerControls: View {
             case .cast: return "person.2"
             case .episodes: return "rectangle.stack"
             case .playlist: return "text.line.first.and.arrowtriangle.forward"
+            case .continueWatching: return "play.rectangle.on.rectangle"
             case .chapters: return "list.number"
             }
         }
@@ -475,7 +483,7 @@ struct PlayerControls: View {
             // the transport up forever after every Down entry. The card behaves like
             // the old control bar instead: idle for the timeout and it hides.
             model.isPanelOpen = panel != nil && panel != .info
-                && panel != .episodes && panel != .playlist
+                && panel != .episodes && panel != .playlist && panel != .continueWatching
             model.controlBar.episodeBrowserOpen = panel == .episodes
             // ANY card tab, not just Info.
             //
@@ -940,7 +948,7 @@ struct PlayerControls: View {
     /// mounts a second card, which would reflow the stage and break that.
     static func usesBottomCard(_ category: Category?) -> Bool {
         category == .info || category == .cast || category == .chapters
-            || category == .episodes || category == .playlist
+            || category == .episodes || category == .playlist || category == .continueWatching
     }
 
     /// `openPanel` with Info masked out, so the options panels' own animation can be
@@ -1101,6 +1109,18 @@ struct PlayerControls: View {
                 .focused($focus, equals: .button(.playlist))
                 .disabled(!tabFocusable(.playlist))
             }
+            // Switch to another started title without leaving the player (#388).
+            if isTabVisible(.continueWatching) {
+                Button { toggle(.continueWatching) } label: {
+                    Text(Category.continueWatching.title)
+                }
+                .buttonStyle(PlayerTabButtonStyle(
+                    focused: focus == .button(.continueWatching), selected: openPanel == .continueWatching
+                ))
+                .focused($focus, equals: .button(.continueWatching))
+                .accessibilityIdentifier("player-tab-continue-watching")
+                .disabled(!tabFocusable(.continueWatching))
+            }
 
             Spacer(minLength: 20)
         }
@@ -1206,6 +1226,7 @@ struct PlayerControls: View {
         case .chapters: player != nil && !model.infoCard.chapters.isEmpty
         case .episodes: player?.episodeBrowser != nil
         case .playlist: player?.playlistContext != nil
+        case .continueWatching: !(player?.continueWatchingItems.isEmpty ?? true)
         default: true
         }
     }
@@ -1363,6 +1384,8 @@ struct PlayerControls: View {
                 source: parkedCardTab == .playlist ? .playlist : .episodes,
                 focus: $focus
             )
+        } else if parkedCardTab == .continueWatching, let player {
+            PlayerSequencePanel(player: player, source: .continueWatching, focus: $focus)
         } else if parkedCardTab == .cast {
             // Deliberately NOT clipped, unlike Info. The cast row is a set of
             // separate cards that GROW on focus, and clipping to the stage sliced

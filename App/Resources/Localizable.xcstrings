@@ -253818,6 +253818,9 @@
         }
       }
     },
+    "Continue Watching in the player" : {
+
+    },
     "Continue Watching is shared with Home." : {
       "localizations" : {
         "ar" : {
@@ -543357,6 +543360,9 @@
         }
       }
     },
+    "Nothing else to continue" : {
+
+    },
     "Nothing here yet." : {
       "localizations" : {
         "ar" : {
@@ -825823,6 +825829,9 @@
         }
       }
     },
+    "Switch to another title you've started without leaving the player." : {
+
+    },
     "Switches to this profile" : {
       "localizations" : {
         "ar" : {
@@ -1088321,6 +1088330,18 @@
         }
       }
     },
+    "player.category.continueWatching" : {
+      "comment" : "Tab beneath the in-player scrub bar listing titles to switch to and resume.",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Continue Watching"
+          }
+        }
+      }
+    },
     "player.category.info" : {
       "comment" : "Tab in the in-player options panel showing playback details.",
       "localizations" : {
@@ -1132150,6 +1132171,9 @@
           }
         }
       }
+    },
+    "switch title resume another movie show tab player" : {
+
     },
     "theme.appearance.dark" : {
       "comment" : "Appearance/theme option shown in the Settings theme picker.",
