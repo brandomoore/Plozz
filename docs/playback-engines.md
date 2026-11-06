@@ -54,15 +54,18 @@ first play; other programs use the device-region fallback. Manual region retries
 affect only the current session, not the profile preference.
 
 Missing opening clips permit one top-menu attempt, respecting disc restrictions.
-Opening a menu retains that intent through first-play language/region setup.
-Once navigation exposes an interactive surface or leaves first play, it requests
-the top menu when authored menu-call restrictions permit, rather than following
-startup directly into a feature. Reaching the top menu consumes this request;
-subsequent explicit choices are not redirected.
+Opening disc navigation follows the disc's authored first-play program, including
+language/region setup, timed menu transitions and automatic feature playback.
+Plozz does not freeze authored timers or redirect startup into the top menu.
+The player's explicit menu action requests the top menu when the disc permits it;
+reaching that title completes the request.
 Transition diagnostics correlate directional/activation keys, playlist generations,
 native navigation events and reader owners. Transport-open failures record the
 error type and case without associated credential or path details, distinguishing
 superseded-load cancellation from failure in the current selection.
+Identical playlist, position and play-item requests share an in-flight load rather
+than cancelling and reopening it. The newest native generation owns the result;
+different selections and replays after completion still start a fresh load.
 Startup and playlist transitions have bounded deadlines. Menu failures remain
 visible with Retry, Play video, region retry and Close actions; they never trigger
 automatic main-title playback, cross-source failover or server transcoding.

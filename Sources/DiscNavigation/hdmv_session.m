@@ -149,7 +149,6 @@ static NSURL *javaCacheRoot(void) {
     BOOL _timedStill, _vmStill, _perItem;
     NSTimeInterval _stillRemaining, _lastStillTick;
     BOOL _openingRecoveryAttempted, _userSelected, _pgEnabled;
-    BOOL _openingMenuPending, _openingLeftFirstPlay, _openingMenuSubmitted, _menuCallBlocked;
     unsigned _audioStream, _subtitleStream;
     NSUInteger _finishBytes;
     BOOL _javaSession, _javaLease, _lastPlaybackPaused, _javaFramePending;
@@ -607,7 +606,6 @@ static unsigned component(double value) {
             [self fail:@"Could not configure the selected player region"]; return;
         }
         bd_register_overlay_proc(self->_disc, (__bridge void *)self, overlay);
-        self->_openingMenuPending = YES;
         if (bd_play(self->_disc) <= 0 && bd_menu_call(self->_disc, -1) <= 0) {
             [self fail:@"Disc startup failed"]; return;
         }
@@ -675,13 +673,8 @@ static unsigned component(double value) {
         }
         if (event.event == BD_EVENT_TITLE) {
             if (event.param == BLURAY_TITLE_TOP_MENU) {
-                _openingMenuPending = NO;
                 [self publishMenuRequestPending:NO];
-            } else if (event.param != BLURAY_TITLE_FIRST_PLAY) {
-                _openingLeftFirstPlay = YES;
             }
-        } else if (event.event == BD_EVENT_UO_MASK_CHANGED) {
-            _menuCallBlocked = (event.param & BLURAY_UO_MENU_CALL) != 0;
         }
         if (event.event == BD_EVENT_STILL_TIME) {
             if (event.param > 300) { [self fail:@"Invalid disc still duration"]; return; }
@@ -753,25 +746,6 @@ static unsigned component(double value) {
         }
     }
     if (!drained) { [self fail:@"Disc event budget exceeded"]; return; }
-    // First play may finish its language/region setup by jumping straight to a
-    // feature. Honor the original menu request once authored restrictions allow it.
-    // BD-J can unmask Menu Call while it is still changing titles. Wait for
-    // that title's playlist rather than racing its asynchronous title loader.
-    BOOL openingNavigationReady = _openingLeftFirstPlay ? _selectionPending : _menuOpen;
-    if (_openingMenuPending && openingNavigationReady &&
-        !_openingMenuSubmitted && !_menuCallBlocked) {
-        int result = bd_menu_call(_disc, -1);
-        NSLog(@"Disc navigation startup menu request accepted=%d", result > 0);
-        [self publishDiagnostic:[NSString stringWithFormat:@"disc STARTUP_MENU accepted=%d", result > 0]];
-        if (result > 0) {
-            _openingMenuSubmitted = YES;
-            _selectionPending = NO;
-            _stopPending = YES;
-            [self pump];
-            return;
-        }
-        _menuCallBlocked = YES;
-    }
     if (_stopPending && !_selectionPending) {
         _stopPending = NO; _playlist = -1;
         NSInteger generation = ++_generation;
@@ -931,13 +905,11 @@ static unsigned component(double value) {
         if (self.stopped || self->_failed || !self->_disc) return;
         [self publishMenuRequestPending:YES];
         if (bd_menu_call(self->_disc, -1) <= 0) {
-            [self publishMenuRequestPending:self->_openingMenuPending];
+            [self publishMenuRequestPending:NO];
             NSLog(@"Disc Menu Lab: top-menu call is unavailable at the current disc location");
             dispatch_async(dispatch_get_main_queue(), ^{
                 if (!self.stopped && self.noticeChanged) self.noticeChanged(@"The disc menu is not available yet.");
             });
-        } else if (self->_openingMenuPending) {
-            self->_openingMenuSubmitted = YES;
         }
         [self pump];
     });

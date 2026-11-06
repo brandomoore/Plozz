@@ -72,11 +72,11 @@ final class WebDAVDiscPlaybackHostedTests: XCTestCase {
         try await checkBluRayPlayback(startPosition: 0, discMenus: true)
     }
 
-    func testNativeStartupTitleJumpOpensMenuInsteadOfAutoplayingFeature() async throws {
+    func testNativeStartupTitleJumpPreservesAuthoredAutoplay() async throws {
         try await checkBluRayPlayback(startPosition: 0, discMenus: true, discStartupAutoplay: true)
     }
 
-    func testNativeStartupMenuRequestHonorsAuthoredMenuRestriction() async throws {
+    func testNativeStartupPreservesAuthoredMenuRestriction() async throws {
         try await checkBluRayPlayback(startPosition: 0, discMenus: true,
                                       discStartupAutoplay: true, discStartupRestricted: true)
     }
@@ -353,13 +353,13 @@ final class WebDAVDiscPlaybackHostedTests: XCTestCase {
             base: base, path: "BDMV/index.bdmv", credential: .anonymous,
             seekPositions: discMenus ? [2] : [10, 2, 13], startPosition: startPosition,
             discMenus: discMenus,
-            expectedDiscPlaylist: missingOpening || (discStartupAutoplay && !discStartupRestricted) ? 2 : 1,
+            expectedDiscPlaylist: missingOpening ? 2 : 1,
             discStillSeconds: discStillSeconds, discAudioSelection: discAudioSelection,
             discIntermediateStill: discIntermediateStill, discShortSecondItem: discShortSecondItem,
             discJava: discJava, discJavaQuarantine: discJavaQuarantine, inspectVideos: inspectVideos
         )
         XCTAssertEqual(reads.contains("BDMV/STREAM/00001.m2ts"),
-                       !missingOpening && !discAudioSelection && (!discStartupAutoplay || discStartupRestricted))
+                       !missingOpening && !discAudioSelection)
         XCTAssertEqual(reads.contains("BDMV/STREAM/00004.m2ts"), discAudioSelection)
         XCTAssertTrue(reads.contains("BDMV/STREAM/00002.m2ts"))
         XCTAssertFalse(reads.contains("BDMV/STREAM/00003.m2ts"), "The largest clip is not the selected movie")
@@ -1036,7 +1036,7 @@ final class WebDAVDiscPlaybackHostedTests: XCTestCase {
             try await waitForPlayback(engine, after: 0.5, before: 5)
             XCTAssertNil(menu.failure)
             XCTAssertFalse(menu.isStill)
-            XCTAssertFalse(menu.isMenuRequestPending, "Top-menu entry must consume the opening request")
+            XCTAssertFalse(menu.isMenuRequestPending, "Top-menu entry must complete the explicit menu request")
             engine.stop()
             await engine.drainTransport()
             return

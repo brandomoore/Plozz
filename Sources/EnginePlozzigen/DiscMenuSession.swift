@@ -6,7 +6,7 @@ import CoreNetworking
 @preconcurrency import AetherEngine
 @preconcurrency import DiscNavigation
 
-struct DiscMenuClip: Sendable {
+struct DiscMenuClip: Equatable, Sendable {
     let index: Int
     let path: String
     let sourceRange: Range<Double>
@@ -64,6 +64,12 @@ private final class DiscVideoInspection: @unchecked Sendable {
 
 @MainActor
 final class DiscMenuSession {
+    private struct Selection: Equatable {
+        let playlist: Int
+        let position: Double
+        let clip: DiscMenuClip?
+    }
+
     static func videos(reader: TransportDiscDirectoryReader) async throws -> [DiscVideo] {
         let inspection = try DiscVideoInspection(reader: reader)
         defer { inspection.stop() }
@@ -98,6 +104,7 @@ final class DiscMenuSession {
     private var loadedGeneration: Int?
     private var stopped = false
     private var selectionTask: Task<Void, Never>?
+    private var loadingSelection: Selection?
     private var deadline: Task<Void, Never>?
     private var noticeTask: Task<Void, Never>?
     private var firstLoad: CheckedContinuation<Void, Error>?
@@ -245,8 +252,10 @@ final class DiscMenuSession {
         }
     }
 
-    private func select(_ playlist: Int, position: Double, generation: Int, clip: DiscMenuClip? = nil) {
+    func select(_ playlist: Int, position: Double, generation: Int, clip: DiscMenuClip? = nil) {
         guard !stopped, generation > self.generation else { return }
+        let selection = Selection(playlist: playlist, position: position, clip: clip)
+        let reusesLoad = loadingSelection == selection && selectionTask?.isCancelled == false
         HandoffDiagnostics.emit(
             "disc SELECTION playlist=\(playlist) position=\(position) generation=\(generation) previous=\(self.generation)"
         )
@@ -258,14 +267,26 @@ final class DiscMenuSession {
         state.subtitleSelectionUnavailable = false
         state.hasSubtitleSelection = false
         state.region = native?.selectedRegion ?? state.region
+        if reusesLoad {
+            HandoffDiagnostics.emit("disc COALESCED playlist=\(playlist) generation=\(generation)")
+            return
+        }
         let previous = selectionTask
         previous?.cancel()
+        loadingSelection = nil
         if playlist < 0 { pause(); return }
+        loadingSelection = selection
         state.isOpening = true
         armDeadline()
         selectionTask = Task { [weak self] in
             await previous?.value
-            guard let self, !self.stopped, !Task.isCancelled, self.generation == generation else { return }
+            guard let self, !self.stopped, !Task.isCancelled else { return }
+            defer {
+                if !Task.isCancelled {
+                    self.loadingSelection = nil
+                    self.selectionTask = nil
+                }
+            }
             let reader = self.source.reader.selectingPlaylist(playlist)
             let previousReader = self.playbackReader
             self.playbackReader = reader
@@ -273,9 +294,11 @@ final class DiscMenuSession {
             do {
                 let reachedEnd = try await self.load(reader, position, clip)
                 previousReader?.close()
-                guard !self.stopped, !Task.isCancelled, self.generation == generation else { return }
-                self.loadedGeneration = generation
-                HandoffDiagnostics.emit("disc READY playlist=\(playlist) generation=\(generation) ended=\(reachedEnd)")
+                guard !self.stopped, !Task.isCancelled else { return }
+                // Identical in-flight requests share the load, but the latest native
+                // generation must own subsequent clocks, track selection and EOF.
+                self.loadedGeneration = self.generation
+                HandoffDiagnostics.emit("disc READY playlist=\(playlist) generation=\(self.generation) ended=\(reachedEnd)")
                 self.state.playlist = playlist
                 self.state.playItem = clip?.index
                 self.state.isOpening = false
@@ -293,7 +316,7 @@ final class DiscMenuSession {
                 )
                 reader.close()
                 previousReader?.close()
-                guard self.generation == generation, !self.stopped else { return }
+                guard !Task.isCancelled, !self.stopped else { return }
                 if let engineError = error as? AetherEngineError,
                    case .authoredPlaybackIntervalUnsupported = engineError {
                     self.failPlayback(unsupportedInterval: true)
@@ -406,6 +429,7 @@ final class DiscMenuSession {
         guard !stopped else { return }
         stopped = true
         selectionTask?.cancel()
+        loadingSelection = nil
         deadline?.cancel()
         noticeTask?.cancel()
         native?.stop()
