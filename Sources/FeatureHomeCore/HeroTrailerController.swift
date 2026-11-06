@@ -84,7 +84,11 @@ public final class HeroTrailerController {
     /// default, so muting/unmuting a playing trailer doesn't change the setting.
     public private(set) var isMuted = true
     public private(set) var pauseStartedAt: Date?
-    public private(set) var activeSurfaceRole: HeroTrailerSurfaceRole?
+    public private(set) var activeSurfaceRole: HeroTrailerSurfaceRole? {
+        // An ambient trailer must not hold off the screen saver or sleep; one
+        // the viewer opened full screen is watched like any other video.
+        didSet { player.preventsDisplaySleepDuringVideoPlayback = activeSurfaceRole == .fullScreen }
+    }
     public private(set) var featuredOwnerID: UUID?
     public var isFeaturedReserved: Bool { featuredOwnerID != nil }
     public var isFullScreen: Bool { activeSurfaceRole == .fullScreen }
@@ -131,6 +135,8 @@ public final class HeroTrailerController {
         // music; it's ambient. Muting is applied per play() call.
         player.actionAtItemEnd = .pause
         player.appliesMediaSelectionCriteriaAutomatically = false
+        // Looping hero and detail trailers are ambient: let the display sleep.
+        player.preventsDisplaySleepDuringVideoPlayback = false
         #if canImport(UIKit)
         surfaceView.playerLayer.player = player
         observeAppLifecycle()
