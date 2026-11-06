@@ -314,6 +314,59 @@ reported VideoToolbox rejecting the fixture and selected software decoding.
 Direct native video in the card workload does not exercise that separate tap.
 No unsupported route was forced and no physical-device result is claimed.
 
+#### Following resident growth outside recognition
+
+The soak attachment now includes `memorySnapshots` before playback, after
+warmup, after each measurement window, immediately after teardown and 30 seconds
+later. Direct `TASK_VM_INFO` readings separate resident size, physical footprint,
+internal/external memory, compressed memory and reusable pages.
+`malloc_zone_statistics` additionally reports allocation bytes, reserved capacity
+and block totals. These are process-wide diagnostics, not per-feature accounting.
+The engine's existing `rssMB` log is **resident size**, not physical footprint.
+
+Recognition-disabled controls on both platforms showed the distinction:
+
+| Simulator | RSS | Physical footprint | Reusable pages | Allocator-reported live bytes |
+| --- | ---: | ---: | ---: | ---: |
+| TV | 408 to 463 | 177 to 151 | 47 to 127 | 278 to 279 |
+| iPad | 530 to 548 | 301 to 295 | 95 to 120 | 154 to 154 |
+
+Values are MiB, first to last retained measurement. RSS rose while footprint and
+reported live bytes did not grow with it. Compression and reusable pages changed
+substantially; RSS alone would incorrectly suggest equivalent growth in memory
+charged to the process. After teardown, reported live bytes fell to 14.8 MiB
+on TV and 23.4 MiB on iPad, with zero weakly tracked engines/sessions/workers.
+
+Only after those measurements and the 30-second wait, the isolated soak invokes
+`malloc_zone_pressure_relief(nil, 0)` once and records `afterHeapPressureRelief`.
+This is a test-only attribution experiment, **not production cleanup or a proposed
+leak fix**. Footprint changed from 79.6 to 36.0 MiB on TV and 213.8 to 172.7 MiB
+on iPad while reported live allocation bytes stayed unchanged and reusable pages
+increased. Resident size barely changed. This identifies reclaimable allocator
+pages as a substantial part of the retained memory, rather than retained playback
+objects. The API's returned byte count is preserved separately; it is not the
+observed footprint delta.
+
+Retained controls: `be70a32815974b118cb7787c984ea0be` (TV) and
+`b6cf1759b8d34a8b9629d8c12b93523f` (iPad). An earlier TV run without reclamation,
+`5846a0df272b49c9b2df45f08081ba4c`, also showed roughly flat reported live bytes
+through playback and a sharp drop after stop. Temporary verbose zone dumps were
+removed after attribution. Their block counts/layout readings were internally
+inconsistent on these simulator runtimes, including unsigned underflow after
+reclamation; neither aggregate block totals nor those dumps establish an object
+leak. External `vmmap`/`heap` failed to read DYLD information, and an Allocations
+recording failed to finalize; no allocation-stack or retaining-owner claim is
+based on those failed captures.
+
+The complete-player hidden/visible cases also weakly track `PlayerViewModel` and
+`NativeVideoEngine`, then require both to release within five seconds after the
+player scope and window are torn down. Both sequential cases passed on both
+platforms. This covers actual controls/artwork and native-player ownership in
+addition to the isolated engine workload; it is not a full-app navigation,
+account/provider-cache or background-sync leak audit. No production memory
+change was justified by these controls, and small residual allocations,
+uninterrupted movies and physical-device behavior remain separate questions.
+
 `skeletons-idle` observes 24 production `SkeletonCardView` placeholders over
 2.3-second idle windows on either platform. It verifies all placeholders mounted
 and captures changing visible pixels before timing, so removing the animation

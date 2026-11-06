@@ -60,6 +60,37 @@ enum PerformanceProbe {
         let samples: [Sample]
     }
 
+    static func memoryUsage() throws -> [String: Int64] {
+        var statistics = malloc_statistics_t()
+        malloc_zone_statistics(nil, &statistics)
+        var info = task_vm_info_data_t()
+        var count = mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<integer_t>.size)
+        let status = withUnsafeMutablePointer(to: &info) {
+            $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
+                task_info(mach_task_self_, task_flavor_t(TASK_VM_INFO), $0, &count)
+            }
+        }
+        guard status == KERN_SUCCESS else {
+            throw NSError(domain: NSMachErrorDomain, code: Int(status))
+        }
+        return [
+            "residentBytes": Int64(info.resident_size),
+            "physicalFootprintBytes": Int64(info.phys_footprint),
+            "internalBytes": Int64(info.internal),
+            "externalBytes": Int64(info.external),
+            "compressedBytes": Int64(info.compressed),
+            "reusableBytes": Int64(info.reusable),
+            "mallocInUseBytes": Int64(statistics.size_in_use),
+            "mallocAllocatedBytes": Int64(statistics.size_allocated),
+            "mallocBlocksInUse": Int64(statistics.blocks_in_use),
+        ]
+    }
+
+    // Test-only attribution after teardown; never a production memory-management strategy.
+    static func releaseUnusedHeapForDiagnosis() -> Int64 {
+        Int64(malloc_zone_pressure_relief(nil, 0))
+    }
+
     static func usage() throws -> (cpuMilliseconds: Double, residentBytes: Int64) {
         var resources = rusage()
         guard getrusage(RUSAGE_SELF, &resources) == 0 else {

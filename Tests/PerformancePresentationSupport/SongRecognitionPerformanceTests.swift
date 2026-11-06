@@ -44,21 +44,32 @@ final class SongRecognitionPerformanceTests: XCTestCase {
         try PerformanceProbe.requireEnabled()
         let stats = SongPerformanceCounters()
         let before = try PerformanceProbe.usage().residentBytes
-        try await runRecognition(mode: mode, soak: soak, stats: stats)
+        var memorySnapshots: [String: [String: Int64]] = [:]
+        if soak { memorySnapshots["beforePlayback"] = try PerformanceProbe.memoryUsage() }
+        try await runRecognition(mode: mode, soak: soak, stats: stats) { stage in
+            if soak { memorySnapshots[stage] = try PerformanceProbe.memoryUsage() }
+        }
         guard soak else { return }
         let stopped = try PerformanceProbe.usage().residentBytes
+        memorySnapshots["afterStop"] = try PerformanceProbe.memoryUsage()
         try await Task.sleep(for: .seconds(30))
+        memorySnapshots["afterThirtySeconds"] = try PerformanceProbe.memoryUsage()
+        let afterThirtySeconds = try PerformanceProbe.usage().residentBytes
         XCTAssertEqual(stats.liveSessions, 0)
         XCTAssertEqual(stats.liveEngines, 0, "Leaving playback must release the adapter, not only its tap.")
+        let releasedUnusedHeapBytes = PerformanceProbe.releaseUnusedHeapForDiagnosis()
+        memorySnapshots["afterHeapPressureRelief"] = try PerformanceProbe.memoryUsage()
         let data = try JSONSerialization.data(withJSONObject: [
             "mode": mode,
             "processID": Int(ProcessInfo.processInfo.processIdentifier),
             "beforePlaybackResidentBytes": before,
             "afterStopResidentBytes": stopped,
-            "afterThirtySecondsResidentBytes": try PerformanceProbe.usage().residentBytes,
+            "afterThirtySecondsResidentBytes": afterThirtySeconds,
             "liveSessions": stats.liveSessions,
             "liveWorkers": stats.liveWorkers,
             "liveEngines": stats.liveEngines,
+            "memorySnapshots": memorySnapshots,
+            "releasedUnusedHeapBytes": releasedUnusedHeapBytes,
         ], options: [.sortedKeys])
         let attachment = XCTAttachment(data: data, uniformTypeIdentifier: "public.json")
         attachment.name = "plozz-song-memory-\(mode).json"
@@ -66,7 +77,10 @@ final class SongRecognitionPerformanceTests: XCTestCase {
         add(attachment)
     }
 
-    private func runRecognition(mode: String, soak: Bool, stats: SongPerformanceCounters) async throws {
+    private func runRecognition(
+        mode: String, soak: Bool, stats: SongPerformanceCounters,
+        recordMemory: (String) throws -> Void
+    ) async throws {
         let folder = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "Fixtures", withExtension: nil))
         let audio = try AVAudioFile(forReading: folder.appendingPathComponent("song-performance.m4a"))
         let buffer = try XCTUnwrap(AVAudioPCMBuffer(
@@ -167,7 +181,9 @@ final class SongRecognitionPerformanceTests: XCTestCase {
             try await Task.sleep(for: .milliseconds(50))
         }
         XCTAssertGreaterThanOrEqual(engine.currentTime, 8)
+        try recordMemory("afterPlaybackWarmup")
         let scenario = "song-recognition-\(soak ? "soak-" : "")\(mode)"
+        var memoryWindow = 0
         try await PerformanceProbe.measure(self, scenario: scenario) {
             let before = stats.snapshot
             var playbackMilliseconds = 0
@@ -233,6 +249,8 @@ final class SongRecognitionPerformanceTests: XCTestCase {
                 }
             }
             let after = stats.snapshot
+            try recordMemory("window\(memoryWindow)")
+            memoryWindow += 1
             return [
                 "audioFrames": after.frames - before.frames,
                 "matches": after.matches - before.matches,

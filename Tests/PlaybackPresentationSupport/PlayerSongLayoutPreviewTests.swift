@@ -23,6 +23,23 @@ final class PlayerSongLayoutPreviewTests: XCTestCase {
 
     private func measureSongCard(visible: Bool) async throws {
         try PerformanceProbe.requireEnabled()
+        weak var observedPlayer: PlayerViewModel?
+        weak var observedEngine: NativeVideoEngine?
+        try await runSongCard(visible: visible) { player, engine in
+            observedPlayer = player
+            observedEngine = engine
+        }
+        let deadline = ContinuousClock.now + .seconds(5)
+        while observedPlayer != nil || observedEngine != nil, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        XCTAssertNil(observedPlayer, "Unmounting the complete player must release its view model.")
+        XCTAssertNil(observedEngine, "Unmounting the complete player must release its native engine.")
+    }
+
+    private func runSongCard(
+        visible: Bool, trackLifetime: (PlayerViewModel, NativeVideoEngine) -> Void
+    ) async throws {
         let fixtures = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "Fixtures", withExtension: nil))
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
@@ -54,6 +71,7 @@ final class PlayerSongLayoutPreviewTests: XCTestCase {
             provider: SongPreviewProvider(origin: origin), itemID: "song-performance",
             playbackSettings: settings, engineFactory: EngineFactory(makeNative: { _ in engine })
         )
+        trackLifetime(player, engine)
         let model = player.controls
         let probe = SongArtworkProbe()
         let song = SongMatch(title: "Synthetic cue", artist: "Performance fixture",
