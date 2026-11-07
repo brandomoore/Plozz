@@ -21,35 +21,29 @@ struct PlayerSongLayout<Content: View>: View {
     @ViewBuilder var content: () -> Content
     @Environment(\.playerCardMetrics) private var metrics
 
+    private var song: SongMatch? {
+        guard enabled, case let .found(song) = state else { return nil }
+        return song
+    }
+
     var body: some View {
-        Group {
-            if enabled {
-                let artSize = PlayerSongCard.artworkSize(for: metrics)
-                let layout = metrics.isVertical
-                    ? AnyLayout(VStackLayout(spacing: 12))
-                    : AnyLayout(HStackLayout(alignment: .top, spacing: 16))
-                layout {
-                    content()
-                    Group {
-                        if case let .found(song) = state {
-                            PlayerSongCard(song: song, focus: $focus)
-                        } else {
-                            // Reserve geometry without constructing hidden artwork or glass.
-                            Color.clear.accessibilityHidden(true)
-                        }
-                    }
+        let artSize = PlayerSongCard.artworkSize(for: metrics)
+        let layout = metrics.isVertical
+            ? AnyLayout(VStackLayout(spacing: 12))
+            : AnyLayout(HStackLayout(alignment: .top, spacing: 16))
+        layout {
+            content()
+            if let song {
+                PlayerSongCard(song: song, focus: $focus)
                     .frame(
                         width: metrics.isVertical ? nil : artSize * 2 + metrics.columnSpacing + metrics.contentPadding * 2,
                         height: artSize + metrics.contentPadding * 2
                     )
                     .frame(maxWidth: metrics.isVertical ? .infinity : nil)
-                }
-            } else {
-                content()
             }
         }
-        .onChange(of: state) { _, state in
-            if state == .idle, focus == .infoSong { focus = .infoStats }
+        .onChange(of: song != nil) { _, isVisible in
+            if !isVisible, focus == .infoSong { focus = .infoStats }
         }
     }
 }

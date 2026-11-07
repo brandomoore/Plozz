@@ -83,8 +83,10 @@ bounded language-match/accessibility flags without track titles or URLs.
   cancelled timers cannot clear a newer song.
   The separate neighboring card (stacked on phones) places a rounded square album cover beside the song
   details, matching the Info thumbnail's height and insets on wide layouts.
-  Space is reserved only on supported, enabled playback and stays fixed between
-  matches; an empty slot creates no hidden artwork or glass. `PlayerSongLayoutPreviewTests`
+  Space is used only while a recognized song card is visible. Without a match,
+  Info keeps its full width and phone layouts have no empty row or gap. Song
+  appearance, expiry and availability changes preserve the Info view's identity;
+  disappearing song focus returns to Playback Info. `PlayerSongLayoutPreviewTests`
   captures the production controls over native video with a seeded song match.
   Opt in with `TEST_RUNNER_PLOZZ_SONG_PREVIEW_DIRECTORY` pointing to an owned
   directory containing `film.mp4`, `still.jpg`, and `album.jpg`; these captures

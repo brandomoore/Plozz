@@ -13,6 +13,68 @@ import XCTest
 
 @MainActor
 final class PlayerSongLayoutPreviewTests: XCTestCase {
+    func testInfoUsesAllSpaceUnlessSongCardIsVisible() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let song = SongMatch(title: "Synthetic cue", artist: nil, artworkURL: nil, appleMusicURL: nil)
+
+        for (metrics, width) in [
+            (PlayerCardMetrics.tv, CGFloat(1800)),
+            (.horizontalWide, 1200),
+            (.verticalNarrow, 360)
+        ] {
+            let probe = SongLayoutProbe()
+            let window = UIWindow(windowScene: scene)
+            let host = UIHostingController(rootView: SongLayoutHarness(probe: probe, metrics: metrics, width: width))
+            window.rootViewController = host
+            window.makeKeyAndVisible()
+            window.frame = CGRect(x: 0, y: 0, width: width, height: 800)
+            host.view.frame = window.bounds
+            defer {
+                window.isHidden = true
+                window.rootViewController = nil
+                previous?.makeKeyAndVisible()
+            }
+
+            func waitForLayout(_ condition: () -> Bool) async throws {
+                let deadline = ContinuousClock.now + .seconds(3)
+                while !condition(), ContinuousClock.now < deadline {
+                    window.layoutIfNeeded()
+                    try await Task.sleep(for: .milliseconds(20))
+                }
+                XCTAssertTrue(condition(), "Info: \(probe.infoBounds), layout: \(probe.layoutBounds)")
+            }
+            func isFullSize() -> Bool {
+                abs(probe.infoBounds.width - width) < 1 && abs(probe.layoutBounds.height - 100) < 1
+            }
+            func isShowingSong() -> Bool {
+                metrics.isVertical
+                    ? probe.layoutBounds.height > 200 && abs(probe.infoBounds.width - width) < 1
+                    : probe.infoBounds.width > 0 && probe.infoBounds.width < width - 100
+            }
+
+            try await waitForLayout(isFullSize)
+            XCTAssertEqual(probe.appearances, 1)
+
+            probe.state = .found(song)
+            try await waitForLayout(isShowingSong)
+            probe.state = .idle
+            try await waitForLayout(isFullSize)
+
+            probe.state = .found(song)
+            try await waitForLayout(isShowingSong)
+            probe.enabled = false
+            try await waitForLayout(isFullSize)
+            probe.enabled = true
+            try await waitForLayout(isShowingSong)
+            probe.state = .idle
+            try await waitForLayout(isFullSize)
+
+            XCTAssertEqual(probe.appearances, 1, "Song transitions must not remount the Info card.")
+            XCTAssertEqual(probe.disappearances, 0)
+        }
+    }
+
     func testPerformanceSongCardHidden() async throws {
         try await measureSongCard(visible: false)
     }
@@ -341,6 +403,39 @@ private final class SongPreviewFocusHost<Content: View>: UIHostingController<Con
 @MainActor
 private final class SongArtworkProbe {
     var bounds: [PlayerSongArtworkBounds.Role: CGRect] = [:]
+}
+
+@MainActor @Observable
+private final class SongLayoutProbe {
+    var enabled = true
+    var state: SongIDState = .idle
+    var infoBounds = CGRect.zero
+    var layoutBounds = CGRect.zero
+    var appearances = 0
+    var disappearances = 0
+}
+
+private struct SongLayoutHarness: View {
+    let probe: SongLayoutProbe
+    let metrics: PlayerCardMetrics
+    let width: CGFloat
+    @FocusState private var focus: PlayerControls.FocusSlot?
+
+    var body: some View {
+        PlayerSongLayout(enabled: probe.enabled, state: probe.state, focus: $focus) {
+            Color.gray
+                .frame(height: 100)
+                .frame(maxWidth: .infinity)
+                .onGeometryChange(for: CGRect.self, of: { $0.frame(in: .global) }) { probe.infoBounds = $0 }
+                .onAppear { probe.appearances += 1 }
+                .onDisappear { probe.disappearances += 1 }
+        }
+        .environment(\.playerCardMetrics, metrics)
+        .frame(width: width)
+        .fixedSize(horizontal: false, vertical: true)
+        .onGeometryChange(for: CGRect.self, of: { $0.frame(in: .global) }) { probe.layoutBounds = $0 }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
 }
 
 private struct SongPreviewPlayer: View {
