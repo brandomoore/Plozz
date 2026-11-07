@@ -834,6 +834,51 @@ final class DownloadPresentationTests: XCTestCase {
         try await waitUntil { observer.changes > 0 }
     }
 
+    func testNewDownloadsIgnoreRetiredGlobalTrackSwitchesWithoutChangingQuality() async throws {
+        for kind: ProviderKind in [.plex, .jellyfin, .emby] {
+            let profileID = "automatic-download-tracks-\(UUID())"
+            let key = "downloads.policy.\(profileID)"
+            var oldPolicy = try XCTUnwrap(
+                JSONSerialization.jsonObject(with: JSONEncoder().encode(
+                    DownloadNetworkPolicy(quality: .hd720)
+                )) as? [String: Any]
+            )
+            oldPolicy["includesAllAudioTracks"] = true
+            oldPolicy["includesTextSubtitleTracks"] = false
+            UserDefaults.standard.set(try JSONSerialization.data(withJSONObject: oldPolicy), forKey: key)
+            addTeardownBlock {
+                for prefix in ["downloads.policy.", "downloads.preferences.", "downloads.rendition-capabilities.",
+                               "downloads.uncapped-background-policy."] {
+                    UserDefaults.standard.removeObject(forKey: prefix + profileID)
+                }
+            }
+            let registry = DownloadedMediaRegistry(store: InMemoryDownloadedMediaStore())
+            let model = makeModel(
+                registry: registry, storage: try temporaryStorage(), probe: ArtworkProbe(data: imageData()),
+                observer: StaticDownloadNetworkObserver(.unsatisfied), profileID: profileID,
+                providerKind: kind, preferredAudioLanguages: ["fr"]
+            )
+            defer { model.beginProfileTransition() }
+            XCTAssertEqual(model.downloadQuality, .hd720)
+            for quality: DownloadQuality in [.original, .hd720] {
+                let item = MediaItem(
+                    id: quality == .original ? "original" : "reduced", title: "Movie", kind: .movie,
+                    sourceAccountID: "account"
+                )
+                let record = try await model.enqueue(
+                    item: item, provider: DownloadTrackProvider(kind: kind), quality: quality
+                )
+                let source = try XCTUnwrap(record.managedHTTPSource)
+                XCTAssertEqual(record.quality, quality)
+                XCTAssertEqual(source.quality, quality)
+                XCTAssertEqual(source.provider, kind)
+                XCTAssertEqual(source.preferredAudioLanguages, ["fr"])
+                XCTAssertFalse(source.includesAllAudioTracks)
+                XCTAssertTrue(source.includesTextSubtitleTracks)
+            }
+        }
+    }
+
     func testActiveDownloadSummaryKeepsMetricsAndActionStableAsValuesChange() throws {
         for width in [280.0, 350.0, 728.0] {
             var heights: [Int] = []
@@ -1704,13 +1749,16 @@ final class DownloadPresentationTests: XCTestCase {
         observer: any DownloadNetworkObserving = StaticDownloadNetworkObserver(),
         profileID: String? = nil,
         sourceUserID: (@MainActor @Sendable (String) -> String?)? = nil,
-        posterProbe: ArtworkProbe? = nil
+        posterProbe: ArtworkProbe? = nil,
+        providerKind: ProviderKind = .emby,
+        preferredAudioLanguages: [String] = []
     ) -> PlozziOSDownloadsModel {
         let poster = posterData()
         return PlozziOSDownloadsModel(
             profileID: profileID ?? "download-test-\(UUID())", registry: registry, storage: storage,
             networkObserver: observer, networkFileResolver: UnusedNetworkResolver(),
-            providerKind: { _ in .emby }, sourceUserID: sourceUserID, preferredAudioLanguages: { _ in [] },
+            providerKind: { _ in providerKind }, sourceUserID: sourceUserID,
+            preferredAudioLanguages: { _ in preferredAudioLanguages },
             startsActive: startsActive,
             activityScheduler: nil,
             notificationClient: DownloadNotificationClientStub(authorization: .denied),
@@ -1775,6 +1823,42 @@ final class DownloadPresentationTests: XCTestCase {
         let satisfied = await predicate()
         XCTAssertTrue(satisfied)
     }
+}
+
+private struct DownloadTrackProvider: MediaProvider {
+    let kind: ProviderKind
+    var session: UserSession {
+        .init(
+            server: .init(id: "fixture", name: "Fixture", baseURL: URL(string: "https://fixture.invalid")!, provider: kind),
+            userID: "viewer", userName: "Viewer", deviceID: "fixture", accessToken: "fixture"
+        )
+    }
+    func libraries() async throws -> [MediaLibrary] { [] }
+    func continueWatching(limit: Int) async throws -> [MediaItem] { [] }
+    func latest(limit: Int) async throws -> [MediaItem] { [] }
+    func item(id: String) async throws -> MediaItem { throw AppError.notFound }
+    func children(of itemID: String) async throws -> [MediaItem] { [] }
+    func items(in containerID: String, kind: MediaItemKind, page: PageRequest) async throws -> MediaPage {
+        throw AppError.notFound
+    }
+    func search(query: String, limit: Int) async throws -> [MediaItem] { [] }
+    func playbackInfo(for itemID: String) async throws -> PlaybackRequest {
+        try await playbackInfo(for: itemID, forceTranscode: false)
+    }
+    func playbackInfo(for itemID: String, forceTranscode: Bool) async throws -> PlaybackRequest {
+        let locator = try AuthenticatedHTTPPlaybackLocator(
+            provider: kind, accountID: "account", credentialRevision: .init(), itemID: itemID,
+            deliveryMode: .directFile,
+            resource: .init(pathBase: .configuredBaseURL, path: "media/movie.mkv")
+        )
+        return PlaybackRequest(
+            item: MediaItem(id: itemID, title: "Movie", kind: .movie, sourceAccountID: "account"),
+            playbackSource: .authenticatedHTTP(locator), isTranscoding: forceTranscode,
+            sourceFileName: "movie.mkv"
+        )
+    }
+    func reportPlayback(_ progress: PlaybackProgress, event: PlaybackEvent) async throws {}
+    func imageURL(itemID: String, kind: ImageKind, maxWidth: Int?) -> URL? { nil }
 }
 
 @MainActor

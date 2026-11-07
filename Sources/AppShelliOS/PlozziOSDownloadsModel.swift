@@ -139,18 +139,6 @@ final class PlozziOSDownloadsModel {
             persistPolicy()
         }
     }
-    var includesAllAudioTracks: Bool {
-        didSet {
-            policy.includesAllAudioTracks = includesAllAudioTracks
-            persistPolicy()
-        }
-    }
-    var includesTextSubtitleTracks: Bool {
-        didSet {
-            policy.includesTextSubtitleTracks = includesTextSubtitleTracks
-            persistPolicy()
-        }
-    }
     /// Aggregate offline-download cap expressed in megabits/sec for settings UI.
     /// `nil` means unlimited.
     var maximumDownloadMegabitsPerSecond: Int? {
@@ -338,8 +326,6 @@ final class PlozziOSDownloadsModel {
         self.allowsCellular = policy.allowsExpensiveNetwork
         self.pausesOnLowDataMode = policy.pausesOnConstrainedNetwork
         self.downloadQuality = policy.quality
-        self.includesAllAudioTracks = policy.includesAllAudioTracks
-        self.includesTextSubtitleTracks = policy.includesTextSubtitleTracks
         self.maximumDownloadMegabitsPerSecond =
             policy.maximumBytesPerSecond.map {
                 max(1, Int(($0 * 8) / 1_000_000))
@@ -441,8 +427,6 @@ final class PlozziOSDownloadsModel {
         self.allowsCellular = false
         self.pausesOnLowDataMode = true
         self.downloadQuality = .original
-        self.includesAllAudioTracks = false
-        self.includesTextSubtitleTracks = true
         self.maximumDownloadMegabitsPerSecond = nil
         self.cappedBackgroundBehavior = .pause
         self.asksBeforeDownloading = true
@@ -904,15 +888,11 @@ final class PlozziOSDownloadsModel {
             guard let selected, item.selectedVersionID == nil || selected.id == item.selectedVersionID else {
                 throw AppError.notFound
             }
-            if quality != .original, policy.includesAllAudioTracks {
-                throw PlozziOSDownloadError.nativeServer("Silo reduced-quality downloads keep one audio track. Choose Original to keep every embedded track.")
-            }
             return DownloadRequest.managedHTTP(
                 identity: identity,
                 source: ManagedHTTPDownloadSource(
                     provider: .silo, accountID: silo.accountID, itemID: item.id, mediaSourceID: selected.id,
-                    quality: quality, includesAllAudioTracks: policy.includesAllAudioTracks,
-                    includesTextSubtitleTracks: policy.includesTextSubtitleTracks,
+                    quality: quality,
                     preferredAudioLanguages: preferredAudioLanguages(item)),
                 snapshot: snapshot(for: detail.taggingSource(item.sourceAccountID ?? silo.accountID)),
                 versionID: selected.id, versionLabel: selected.displayLabel,
@@ -978,21 +958,12 @@ final class PlozziOSDownloadsModel {
                     "Reduced-quality Jellyfin and Emby downloads cannot be speed-limited. Choose Original or set Download Speed to Full Speed."
                 )
             }
-            if quality != .original,
-               policy.includesAllAudioTracks,
-               kind == .plex {
-                throw PlozziOSDownloadError.unavailable(
-                    "Plex reduced-quality downloads support one audio track. Turn off Include All Audio Tracks or choose Original quality."
-                )
-            }
             let source = ManagedHTTPDownloadSource(
                 provider: kind,
                 accountID: accountID,
                 itemID: item.id,
                 mediaSourceID: locator.mediaSourceID ?? item.selectedVersionID,
                 quality: quality,
-                includesAllAudioTracks: policy.includesAllAudioTracks,
-                includesTextSubtitleTracks: policy.includesTextSubtitleTracks,
                 preferredAudioLanguages: preferredAudioLanguages(item)
             )
             let fileExtension = playback.sourceFileName.map {
@@ -1394,9 +1365,7 @@ final class PlozziOSDownloadsModel {
                 accountID: accountID,
                 itemID: itemID,
                 mediaSourceID: record.versionID,
-                quality: record.quality,
-                includesAllAudioTracks: policy.includesAllAudioTracks,
-                includesTextSubtitleTracks: policy.includesTextSubtitleTracks
+                quality: record.quality
             )
         }
         if record.quality != .original,
@@ -1408,9 +1377,8 @@ final class PlozziOSDownloadsModel {
                 itemID: source.itemID,
                 mediaSourceID: source.mediaSourceID,
                 quality: source.quality,
-                includesAllAudioTracks: policy.includesAllAudioTracks,
-                includesTextSubtitleTracks:
-                    policy.includesTextSubtitleTracks,
+                includesAllAudioTracks: source.includesAllAudioTracks,
+                includesTextSubtitleTracks: source.includesTextSubtitleTracks,
                 preferredAudioLanguages:
                     source.preferredAudioLanguages
             )

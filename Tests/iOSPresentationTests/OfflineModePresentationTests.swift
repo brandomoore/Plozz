@@ -251,6 +251,9 @@ final class OfflineModePresentationTests: XCTestCase {
             let top = try recognizedText(in: window)
             XCTAssertTrue(top.contains("Use Cellular"), top)
             XCTAssertTrue(top.contains("Ask Each Time"), top)
+            XCTAssertTrue(top.contains("Keeps embedded audio and subtitles"), top)
+            XCTAssertFalse(top.contains("All Audio Tracks"), top)
+            XCTAssertFalse(top.contains("Text Subtitles"), top)
             XCTAssertFalse(top.contains("Live Activities"), top)
             XCTAssertFalse(top.contains("without transcoding"), top)
             capture(window, name: "download-settings-simplified-\(name)")
@@ -281,7 +284,7 @@ final class OfflineModePresentationTests: XCTestCase {
             await settle(window)
             let expanded = try recognizedText(in: window)
             XCTAssertTrue(expanded.contains("server CPU"), expanded)
-            XCTAssertTrue(expanded.contains("External subtitle sidecars"), expanded)
+            XCTAssertTrue(expanded.contains("External subtitle files"), expanded)
             capture(window, name: "download-settings-help-expanded-\(name)")
         }
     }

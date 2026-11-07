@@ -79,3 +79,22 @@ it never disables the mode.
 Download settings use short control labels. Background-speed and converted-quality
 limitations remain beside the relevant choices; the collapsed **About Downloads**
 section retains provider, audio/subtitle, Live Activity, and batch-notification help.
+
+## Download quality and tracks
+
+Track inclusion is automatic, not a universal pair of settings. Original saves
+the existing file unchanged, retaining its embedded audio and subtitle tracks.
+Reduced copies use the existing server download/conversion paths: Plex keeps one
+audio track and at most one text subtitle; Jellyfin/Emby keep the primary audio
+and text subtitles exposed in the downloadable HLS presentation; Silo follows its
+native download artifact and subtitle manifest. Preferred audio languages are
+requested where supported. Network shares remain Original-only. Separate subtitle
+files are not generally saved outside Silo's native download path.
+
+New requests use `ManagedHTTPDownloadSource`'s defaults (one preferred audio
+rendition, available text subtitles). The retired global track flags are ignored
+when decoding `DownloadNetworkPolicy`; they cannot invisibly block new Plex/Silo
+downloads or disable subtitles. Existing per-download flags remain decodable and
+are preserved when retrying, including explicit unsupported-track errors. Saved
+files are not rewritten. There is no full-original fallback for reduced quality,
+client-side repackaging, custom server requirement, or dependency upgrade.

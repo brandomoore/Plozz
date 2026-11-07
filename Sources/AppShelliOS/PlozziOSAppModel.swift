@@ -2508,7 +2508,7 @@ final class PlozziOSAppModel {
                         case .plex:
                             guard !source.includesAllAudioTracks else {
                                 throw MediaTransportError.unsupportedCapability(
-                                    "Plex reduced-quality downloads support one audio track. Turn off Include All Audio Tracks or choose Original quality."
+                                    "Plex reduced-quality downloads support one audio track. Choose Original quality to keep every embedded track."
                                 )
                             }
                             let audioStreamID = playback.audioTracks.first {

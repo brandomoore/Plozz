@@ -861,14 +861,6 @@ struct PlozziOSDownloadSettingsView: View {
                     "Ask Each Time",
                     isOn: $model.asksBeforeDownloading
                 ).settingsSearchAnchor("downloads-confirm")
-                Toggle(
-                    "All Audio Tracks",
-                    isOn: $model.includesAllAudioTracks
-                ).settingsSearchAnchor("downloads-audio")
-                Toggle(
-                    "Text Subtitles",
-                    isOn: $model.includesTextSubtitleTracks
-                ).settingsSearchAnchor("downloads-subtitles")
                 if case .constrained(let constraint) = model.downloadQuality {
                     Stepper(
                         "Maximum Resolution: \(constraint.maximumHeight)p",
@@ -884,12 +876,14 @@ struct PlozziOSDownloadSettingsView: View {
                     ).settingsSearchAnchor("downloads-bitrate")
                 }
             } footer: {
-                if model.downloadQuality != .original {
-                    Text("Requires server conversion. Audio and subtitle support varies.")
+                if model.downloadQuality == .original {
+                    Text("Keeps embedded audio and subtitles.")
+                } else {
+                    Text("Requires server conversion. May include fewer audio and subtitle tracks.")
                 }
             }
             .settingsSearchGroup([
-                "downloads-quality", "downloads-confirm", "downloads-audio", "downloads-subtitles",
+                "downloads-quality", "downloads-confirm",
                 "downloads-resolution", "downloads-bitrate"
             ])
 
@@ -921,7 +915,7 @@ struct PlozziOSDownloadSettingsView: View {
                         }
                         Text("Original downloads the server’s existing file without transcoding.")
                         Text(
-                            "Reduced quality asks Plex, Jellyfin, or Emby to transcode a separate offline copy using your profile’s preferred audio language. Plex keeps one audio track and at most one text subtitle; choose Original to keep every embedded track. External subtitle sidecars remain on the server. Preparation can take time and use significant server CPU. Network shares support Original only."
+                            "Smaller copies request your preferred audio language where supported. Available tracks depend on the source. External subtitle files may be unavailable offline. Preparation can take time and use server CPU. Network shares support Original only."
                         )
                         Text("Batch notifications summarize a season or show instead of notifying for every episode.")
                     }
