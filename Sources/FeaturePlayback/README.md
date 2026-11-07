@@ -82,9 +82,11 @@ bounded language-match/accessibility flags without track titles or URLs.
   accepted sightings renew expiry without changing equal observable state, and
   cancelled timers cannot clear a newer song.
   The separate neighboring card (stacked on phones) places a rounded square album cover beside the song
-  details, matching the Info thumbnail's height and vertical insets on wide layouts.
+  details, matching the Info thumbnail's height and content insets on wide layouts.
   Song links use the native TV glass button with Info's panel corner radius,
-  not an opaque media-card wrapper or a second glass underlay. Reduced-effects
+  not an opaque media-card wrapper or a second glass underlay. The label uses
+  the full card bounds so the button's text margins do not add a second inset.
+  Song titles and artists wrap rather than truncating to fixed line counts. Reduced-effects
   and older-system fallbacks use a native card button around the shared frosted
   panel. Mobile and non-link cards retain the shared Info panel surface.
   Space is used only while a recognized song card is visible. Without a match,

@@ -109,6 +109,16 @@ final class PlayerSongLayoutPreviewTests: XCTestCase {
             attachment.lifetime = .keepAlways
             add(attachment)
 
+            for name in ["reference", "linked"] {
+                let frame = try XCTUnwrap(probe.frames[name])
+                let artwork = try XCTUnwrap(probe.artworkFrames[name])
+                XCTAssertEqual(artwork.minX - frame.minX, PlayerCardMetrics.tv.contentPadding, accuracy: 1,
+                               "The native button must not add another horizontal inset; \(name), \(appearance).")
+                XCTAssertEqual(artwork.minY - frame.minY, PlayerCardMetrics.tv.contentPadding, accuracy: 1)
+                XCTAssertEqual(frame.maxY - artwork.maxY, PlayerCardMetrics.tv.contentPadding, accuracy: 1)
+                try assertCompleteSongText(in: image, frame: frame)
+            }
+
             let source = CIImage(cgImage: try XCTUnwrap(image.cgImage))
             let context = CIContext()
             func pixel(_ source: CIImage, _ frame: CGRect, _ point: CGPoint) -> [UInt8] {
@@ -155,6 +165,67 @@ final class PlayerSongLayoutPreviewTests: XCTestCase {
             XCTAssertGreaterThan(focusDifference, 24, "Native focus must be visible, not just assigned.")
             try await focus(parked)
             #endif
+        }
+    }
+
+    func testSongTextWrapsAtMobileCardWidths() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        let host = UIHostingController(rootView: AnyView(EmptyView()))
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        window.frame = CGRect(x: 0, y: 0, width: 1400, height: 800)
+        host.view.frame = window.bounds
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+
+        for metrics in [PlayerCardMetrics.horizontalWide, .verticalNarrow] {
+            let probe = SongSurfaceProbe()
+            host.rootView = AnyView(SongSurfaceHarness(probe: probe, metrics: metrics)
+                .environment(\.colorScheme, .dark)
+                .environment(\.themePalette, .dark))
+            window.layoutIfNeeded()
+            let deadline = ContinuousClock.now + .seconds(3)
+            while probe.frames.count < 3, ContinuousClock.now < deadline {
+                try await Task.sleep(for: .milliseconds(20))
+            }
+            try await Task.sleep(for: .milliseconds(600))
+            let format = UIGraphicsImageRendererFormat()
+            format.scale = 1
+            let image = UIGraphicsImageRenderer(bounds: window.bounds, format: format).image { _ in
+                XCTAssertTrue(window.drawHierarchy(in: window.bounds, afterScreenUpdates: true))
+            }
+            let attachment = XCTAttachment(image: image)
+            attachment.name = "song-wrapping-\(metrics.isVertical ? "phone" : "tablet")"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+            for name in ["reference", "linked"] {
+                try assertCompleteSongText(in: image, frame: XCTUnwrap(probe.frames[name]))
+            }
+        }
+    }
+
+    private func assertCompleteSongText(in image: UIImage, frame: CGRect) throws {
+        let card = try XCTUnwrap(image.cgImage?.cropping(to: frame))
+        let recognition = VNRecognizeTextRequest()
+        recognition.recognitionLevel = .accurate
+        recognition.recognitionLanguages = ["en-US"]
+        try VNImageRequestHandler(cgImage: card).perform([recognition])
+        let text = (recognition.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ")
+        XCTAssertTrue(text.contains("Wembley Stadium"), text)
+        XCTAssertTrue(text.contains("Festival Orchestra"), text)
+        XCTAssertTrue(text.contains("Electric Light Orchestra and friends"), text)
+        XCTAssertFalse(text.contains("…") || text.contains("..."), text)
+        let lineStarts = (recognition.results ?? []).map { $0.boundingBox.minX * frame.width }
+        if let leading = lineStarts.min() {
+            for start in lineStarts {
+                // Vision estimates ink bounds, which vary with glyphs and font weight.
+                XCTAssertEqual(start, leading, accuracy: 6, "Wrapped lines must stay leading-aligned: \(text)")
+            }
         }
     }
 
@@ -553,10 +624,12 @@ private final class SongArtworkProbe {
 @MainActor
 private final class SongSurfaceProbe {
     var frames: [String: CGRect] = [:]
+    var artworkFrames: [String: CGRect] = [:]
 }
 
 private struct SongSurfaceHarness: View {
     let probe: SongSurfaceProbe
+    var metrics: PlayerCardMetrics = .tv
     @FocusState private var focus: PlayerControls.FocusSlot?
 
     var body: some View {
@@ -574,17 +647,26 @@ private struct SongSurfaceHarness: View {
                     }
             }
         }
+        .environment(\.playerCardMetrics, metrics)
     }
 
     private func card(linked: Bool) -> some View {
-        PlayerSongCard(
-            song: SongMatch(title: "Song", artist: "Artist", artworkURL: nil,
-                            appleMusicURL: linked ? URL(string: "https://music.apple.com/") : nil),
+        let artSize = PlayerSongCard.artworkSize(for: metrics)
+        let width = metrics.isVertical ? 360 : artSize * 2 + metrics.columnSpacing + metrics.contentPadding * 2
+        return PlayerSongCard(
+            song: SongMatch(
+                title: "Mr. Blue Sky (Live at Wembley Stadium with the Festival Orchestra)",
+                artist: "Electric Light Orchestra and friends", artworkURL: nil,
+                appleMusicURL: linked ? URL(string: "https://music.apple.com/") : nil
+            ),
             focus: $focus
         )
-        .frame(width: 576, height: 298)
+        .frame(width: width, height: artSize + metrics.contentPadding * 2)
         .onGeometryChange(for: CGRect.self, of: { $0.frame(in: .global) }) {
             probe.frames[linked ? "linked" : "reference"] = $0
+        }
+        .onPreferenceChange(PlayerSongArtworkBounds.self) {
+            probe.artworkFrames[linked ? "linked" : "reference"] = $0[.song]
         }
     }
 }

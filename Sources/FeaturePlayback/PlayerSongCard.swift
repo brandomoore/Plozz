@@ -66,8 +66,16 @@ struct PlayerSongCard: View {
                 #if os(tvOS)
                 Group {
                     if #available(tvOS 26.0, *), usesNativeGlass {
-                        Button { openURL(url) } label: { label }
+                        GeometryReader { geometry in
+                            Button { openURL(url) } label: {
+                                Color.clear.overlay {
+                                    // The card owns its insets, not the native button's text margins.
+                                    label.frame(width: geometry.size.width, height: geometry.size.height)
+                                }
+                            }
                             .buttonStyle(.glass)
+                            .frame(width: geometry.size.width, height: geometry.size.height)
+                        }
                     } else {
                         Button { openURL(url) } label: { panelLabel }
                             .buttonStyle(.card)
@@ -117,17 +125,18 @@ struct PlayerSongCard: View {
             VStack(alignment: .leading, spacing: 5) {
                 Text(verbatim: song.title)
                     .font(.system(size: metrics.bodySize, weight: .semibold))
-                    .lineLimit(2)
+                    .lineLimit(nil)
                     .fixedSize(horizontal: false, vertical: true)
                 if let artist = song.artist {
                     Text(verbatim: artist)
                         .font(.system(size: metrics.captionSize))
                         .foregroundStyle(.secondary)
-                        .lineLimit(1)
+                        .lineLimit(nil)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
             .foregroundStyle(foreground)
+            .multilineTextAlignment(.leading)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(metrics.contentPadding)
