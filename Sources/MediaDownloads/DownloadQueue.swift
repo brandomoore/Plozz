@@ -1,5 +1,6 @@
 import CoreModels
 import Foundation
+import MediaTransportCore
 
 /// The transport-agnostic download orchestrator: turns ``DownloadRequest``s into
 /// durable, resumable downloads, draining them with bounded concurrency while
@@ -10,9 +11,14 @@ import Foundation
 /// owns paths, and ``DownloadNetworkObserving`` + ``DownloadNetworkPolicy`` gate
 /// progress. Groups (seasons) are just many requests sharing a `groupID`.
 public actor DownloadQueue {
+    public typealias SubtitleSaver = @Sendable (
+        DownloadedMediaRecord, URL, DownloadNetworkPolicy
+    ) async throws -> DownloadSubtitleStatus
+
     private let registry: DownloadedMediaRegistry
     private let storage: any DownloadStorageLocating
     private let engine: any MediaDownloadEngine
+    private let saveSubtitles: SubtitleSaver?
     private let observer: any DownloadNetworkObserving
     private let fileManager: FileManager
     private let storageCapacity: DownloadStorageCapacity
@@ -26,6 +32,8 @@ public actor DownloadQueue {
     private var running: [String: Task<Void, Never>] = [:]
     private var attemptPermits: [String: DownloadMutationPermit] = [:]
     private var pendingPauses: [String: Set<UUID>] = [:]
+    private var changingFiles: Set<String> = []
+    private var subtitleRefreshes: Set<String> = []
     private let lifetimePermit = DownloadMutationPermit()
     private var activityPermit = DownloadMutationPermit()
     private var schedulingEnabled = true
@@ -37,6 +45,7 @@ public actor DownloadQueue {
         registry: DownloadedMediaRegistry,
         storage: any DownloadStorageLocating,
         engine: any MediaDownloadEngine,
+        saveSubtitles: SubtitleSaver? = nil,
         observer: any DownloadNetworkObserving = StaticDownloadNetworkObserver(),
         policy: DownloadNetworkPolicy = .default,
         applicationIsActive: Bool = true,
@@ -51,6 +60,7 @@ public actor DownloadQueue {
         self.registry = registry
         self.storage = storage
         self.engine = engine
+        self.saveSubtitles = saveSubtitles
         self.observer = observer
         self.policy = policy
         self.applicationIsActive = applicationIsActive
@@ -89,6 +99,12 @@ public actor DownloadQueue {
             applicationActivityRevision = revision
         }
         applicationIsActive = isActive
+        if !isActive {
+            for key in subtitleRefreshes {
+                attemptPermits[key]?.invalidate()
+                running[key]?.cancel()
+            }
+        }
     }
 
     public func setBackgroundExecutionLease(_ lease: DownloadBackgroundExecutionLease) {
@@ -357,6 +373,8 @@ public actor DownloadQueue {
     }
 
     public func cancelAndRemove(identityKey: String) async throws {
+        guard changingFiles.insert(identityKey).inserted else { throw CancellationError() }
+        defer { changingFiles.remove(identityKey) }
         if let persistentEngine = engine as? any DownloadPersistentWorkCancelling {
             await persistentEngine.discardPersistentWork(identityKey: identityKey)
         }
@@ -393,6 +411,83 @@ public actor DownloadQueue {
     }
 
     // MARK: - Draining
+
+    /// Refreshes sidecars without changing the completed video or fetching it again.
+    public func retrySubtitles(identityKey: String) async throws {
+        try lifetimePermit.check()
+        guard saveSubtitles != nil, running[identityKey] == nil, !changingFiles.contains(identityKey),
+              let record = await registry.record(forKey: identityKey),
+              record.status == .completed else { throw MediaDownloadError.unsupportedSource }
+        let conditions = await observer.currentConditions()
+        try lifetimePermit.check()
+        // Actor reentrancy must not admit a second refresh or overwrite a deletion.
+        let current = await registry.record(forKey: identityKey)
+        guard applicationIsActive, policy.allows(conditions) else {
+            throw OfflineModeError.networkUnavailable
+        }
+        guard running[identityKey] == nil, !changingFiles.contains(identityKey), pendingPauses[identityKey] == nil,
+              current?.status == .completed, current?.createdAt == record.createdAt,
+              current?.snapshot.sourceUserID == record.snapshot.sourceUserID,
+              current?.managedHTTPSource == record.managedHTTPSource,
+              current?.directShareSource == record.directShareSource else { throw CancellationError() }
+        try lifetimePermit.check()
+        let destination = try storage.pinnedFileURL(for: record)
+        let permit = DownloadMutationPermit()
+        attemptPermits[identityKey] = permit
+        subtitleRefreshes.insert(identityKey)
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
+                let task = Task {
+                    let outcome: Result<Void, any Error>
+                    do {
+                        try await self.limiter.runUnlessCancelled {
+                            try permit.check()
+                            let result = try await self.subtitleResult(for: record, destination: destination)
+                            try Task.checkCancellation()
+                            try await self.registry.withMutationPermit(permit) {
+                                if let result { try $0.setSubtitleStatus(identityKey: identityKey, result) }
+                            }
+                        }
+                        outcome = .success(())
+                    } catch {
+                        outcome = .failure(error)
+                    }
+                    permit.invalidate()
+                    self.attemptPermits[identityKey] = nil
+                    self.running[identityKey] = nil
+                    self.subtitleRefreshes.remove(identityKey)
+                    continuation.resume(with: outcome)
+                }
+                running[identityKey] = task
+            }
+        } onCancel: {
+            permit.invalidate()
+            Task { await self.cancelSubtitleRefresh(identityKey: identityKey, permit: permit) }
+        }
+        try lifetimePermit.check()
+        try Task.checkCancellation()
+    }
+
+    private func cancelSubtitleRefresh(identityKey: String, permit: DownloadMutationPermit) {
+        guard attemptPermits[identityKey] === permit else { return }
+        running[identityKey]?.cancel()
+    }
+
+    private func subtitleResult(
+        for record: DownloadedMediaRecord, destination: URL
+    ) async throws -> DownloadSubtitleStatus? {
+        guard let saveSubtitles else { return nil }
+        do {
+            return try await saveSubtitles(record, destination, policy)
+        } catch where error is CancellationError || (error as? AppError) == .cancelled
+            || (error as? MediaTransportError) == .cancelled || (error as? URLError)?.code == .cancelled {
+            throw CancellationError()
+        } catch {
+            try Task.checkCancellation()
+            NSLog("External subtitles could not be saved for an offline download")
+            return .unavailable
+        }
+    }
 
     private func schedule(_ identityKey: String) {
         guard schedulingEnabled,
@@ -533,8 +628,11 @@ public actor DownloadQueue {
                     }
                 }
                 guard !Task.isCancelled else { return }
+                let finalRecord = await registry.record(forKey: identityKey) ?? currentRecord
+                let subtitleStatus = try await subtitleResult(for: finalRecord, destination: destination)
+                try Task.checkCancellation()
                 try await registry.withMutationPermit(permit) {
-                    try $0.markCompleted(identityKey: identityKey, totalBytes: total)
+                    try $0.markCompleted(identityKey: identityKey, totalBytes: total, subtitleStatus: subtitleStatus)
                 }
                 if let backup = try? storage.replacementBackupFolderURL(
                     forKey: identityKey
@@ -593,6 +691,8 @@ public actor DownloadQueue {
         existing: DownloadedMediaRecord,
         replacement: DownloadedMediaRecord
     ) async throws {
+        guard changingFiles.insert(existing.identityKey).inserted else { throw CancellationError() }
+        defer { changingFiles.remove(existing.identityKey) }
         var replacement = replacement
         if replacement.snapshot.sourceUserID == existing.snapshot.sourceUserID,
            replacement.snapshot.sourceAccountID == existing.snapshot.sourceAccountID {

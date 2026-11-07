@@ -78,8 +78,8 @@ it never disables the mode.
 
 Download settings use short control labels. Background-speed and converted-quality
 limitations remain beside the relevant choices, without an About Downloads section.
-Download selection shows the quality-specific track guidance and external-subtitle
-limitation before confirmation; Original-only sources identify that restriction there,
+Download selection shows quality-specific track guidance and automatic text-subtitle
+saving before confirmation; Original-only sources identify that restriction there,
 not in global settings. Automatic downloads still honor Ask Each Time being off.
 The notification toggle is labeled **Season or Show Complete**. Active system download
 Live Activities include **Cancel to pause** beside their progress, since the system's
@@ -93,8 +93,30 @@ Reduced copies use the existing server download/conversion paths: Plex keeps one
 audio track and at most one text subtitle; Jellyfin/Emby keep the primary audio
 and text subtitles exposed in the downloadable HLS presentation; Silo follows its
 native download artifact and subtitle manifest. Preferred audio languages are
-requested where supported. Network shares remain Original-only. Separate subtitle
-files are not generally saved outside Silo's native download path.
+requested where supported. Network shares remain Original-only.
+
+External text subtitles are saved beside new downloads, for both Original and reduced
+quality. Plex and Jellyfin/Emby discovery uses the exact downloaded media source, not
+the first version of the title, and never starts another playback/transcode session.
+Network shares save exact-stem sidecars from the video's folder or its Subs/Subtitles
+folder. Silo retains its native download manifest, permissions, and asset endpoint.
+SRT, WebVTT, ASS, and SSA delivery is supported; image subtitles and unavailable or
+unreadable files are not advertised as saved. Jellyfin/Emby retain their existing
+subtitle delivery format (SRT for SubRip, WebVTT for other text formats).
+
+A subtitle failure does not invalidate a successfully downloaded video. The existing
+in-app toast reports the limitation; **Retry Subtitles** in the movie/episode download
+menu retries only sidecars. **Update Subtitles** also allows older downloads to acquire
+sidecars without downloading the video again. There is no automatic legacy backfill.
+These operations respect profile/server-user authorization, Offline Mode and download
+network policy. The shared loader saves successful tracks even if another file fails.
+Provider discovery or native Silo asset-batch failures retain the previous saved set,
+as do incomplete refreshes. Language, title, forced and hearing-impaired
+metadata persist with the local files, never token-bearing URLs. Removal and quality
+replacement use the video's existing folder lifecycle. Downloads cap each subtitle at
+16 MiB and the saved set (including retained files) at 64 MiB/64 tracks, and validate
+playable text before publishing. Retrying repairs malformed indexes; cancelled or
+backgrounded subtitle updates leave the completed video and its previous status intact.
 
 New requests use `ManagedHTTPDownloadSource`'s defaults (one preferred audio
 rendition, available text subtitles). The retired global track flags are ignored

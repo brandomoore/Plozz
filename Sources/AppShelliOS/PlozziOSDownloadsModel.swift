@@ -11,6 +11,13 @@ import CoreNetworking
 
 @MainActor
 @Observable
+final class PlozziOSDownloadSubtitleState {
+    var refreshing: Set<String> = []
+    @ObservationIgnored var awaitingCompletion: Set<String> = []
+}
+
+@MainActor
+@Observable
 final class PlozziOSDownloadsModel {
     struct TransferMetrics: Equatable {
         let bytesPerSecond: Int64
@@ -203,6 +210,9 @@ final class PlozziOSDownloadsModel {
     private var applicationActivityRevision: UInt64 = 0
     private var applicationActivityGeneration = 0
     private var applicationIsActive: Bool
+    @ObservationIgnored
+    var statusPresenter: TransientStatusPresenter?
+    let subtitleState = PlozziOSDownloadSubtitleState()
     private var acceptsNewWork = true
     private let providerKind: @MainActor (String) -> ProviderKind?
     private let sourceUserID: (@MainActor @Sendable (String) -> String?)?
@@ -252,6 +262,7 @@ final class PlozziOSDownloadsModel {
         loadPosterArtwork: (@Sendable (MediaItem) async throws -> Data)? = nil,
         managedURLResolver:
             @escaping PlozziOSBackgroundHTTPDownloadEngine.URLResolver,
+        saveSubtitles: DownloadQueue.SubtitleSaver? = nil,
         managedRemoval: (@Sendable (ManagedHTTPDownloadSource) async throws -> Void)? = nil,
         managedCompletion: (@Sendable (ManagedHTTPDownloadSource, Date) async throws -> Void)? = nil
     ) {
@@ -277,6 +288,7 @@ final class PlozziOSDownloadsModel {
             registry: registry,
             storage: storage,
             engine: engine,
+            saveSubtitles: saveSubtitles,
             observer: networkObserver,
             policy: policy,
             applicationIsActive: startsActive
@@ -1313,6 +1325,40 @@ final class PlozziOSDownloadsModel {
         await reload()
     }
 
+    func refreshSubtitles(_ record: DownloadedMediaRecord) async {
+        guard acceptsNewWork, applicationIsActive, recordIsAuthorized(record),
+              record.status == .completed, let queue,
+              subtitleState.refreshing.insert(record.identityKey).inserted else { return }
+        defer { subtitleState.refreshing.remove(record.identityKey) }
+        do {
+            guard !OfflineMode.shared.isEnabled else { throw OfflineModeError.networkUnavailable }
+            try await queue.retrySubtitles(identityKey: record.identityKey)
+            let updated = await registry?.record(forKey: record.identityKey)
+            await reload()
+            guard acceptsNewWork, applicationIsActive, recordIsAuthorized(record), !Task.isCancelled,
+                  let updated,
+                  updated.createdAt == record.createdAt else { return }
+            if updated.subtitleStatus == .unavailable {
+                presentSubtitleWarning(record)
+            } else {
+                statusPresenter?.present(icon: "captions.bubble", text: "Subtitles updated.")
+            }
+        } catch is CancellationError {
+            return
+        } catch {
+            guard acceptsNewWork, applicationIsActive, recordIsAuthorized(record) else { return }
+            statusPresenter?.present(icon: "exclamationmark.triangle", text: "Subtitles couldn't be updated. Check your connection and download settings.")
+        }
+    }
+
+    private func presentSubtitleWarning(_ record: DownloadedMediaRecord) {
+        guard acceptsNewWork, applicationIsActive, recordIsAuthorized(record) else { return }
+        statusPresenter?.present(
+            icon: "exclamationmark.triangle",
+            text: "\(record.snapshot.title): Some subtitles couldn't be saved. You can retry from Downloads."
+        )
+    }
+
     private func resumeWithoutReload(_ record: DownloadedMediaRecord) async {
         guard !OfflineMode.shared.isEnabled else { return }
         await downloadActivity?.waitForExpiration()
@@ -1879,6 +1925,14 @@ final class PlozziOSDownloadsModel {
     private func receive(_ event: DownloadProgressEvent) async {
         switch event {
         case .item(let record):
+            if record.status.isActive {
+                subtitleState.awaitingCompletion.insert(record.identityKey)
+            } else if record.status == .completed {
+                let wasActive = subtitleState.awaitingCompletion.remove(record.identityKey) != nil
+                if wasActive, record.subtitleStatus == .unavailable {
+                    presentSubtitleWarning(record)
+                }
+            }
             if let previous = recordsByKey[record.identityKey],
                previous.createdAt == record.createdAt,
                previous.status == record.status,
@@ -1899,7 +1953,8 @@ final class PlozziOSDownloadsModel {
             } else {
                 await reload()
             }
-        case .removed:
+        case .removed(let identityKey):
+            subtitleState.awaitingCompletion.remove(identityKey)
             await reload()
         case .group, .global:
             break

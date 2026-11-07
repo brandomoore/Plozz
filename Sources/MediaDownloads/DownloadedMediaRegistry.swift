@@ -439,15 +439,25 @@ public actor DownloadedMediaRegistry {
     }
 
     /// Marks a download complete with its final byte total.
-    public func markCompleted(identityKey: String, totalBytes: Int64) throws {
+    public func markCompleted(
+        identityKey: String, totalBytes: Int64, subtitleStatus: DownloadSubtitleStatus? = nil
+    ) throws {
         guard var record = state.records[identityKey] else { return }
         record.status = .completed
         record.bytesDownloaded = totalBytes
         record.totalBytes = totalBytes
         record.failureReason = nil
         record.pauseReason = nil
+        record.subtitleStatus = subtitleStatus
         record.updatedAt = Date()
         lastProgressPersistence[identityKey] = nil
+        try persist(record)
+    }
+
+    public func setSubtitleStatus(identityKey: String, _ status: DownloadSubtitleStatus) throws {
+        guard var record = state.records[identityKey], record.status == .completed else { return }
+        record.subtitleStatus = status
+        record.updatedAt = Date()
         try persist(record)
     }
 

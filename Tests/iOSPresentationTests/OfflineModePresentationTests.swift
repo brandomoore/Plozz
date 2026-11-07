@@ -332,7 +332,7 @@ final class OfflineModePresentationTests: XCTestCase {
                     in: window
                 )
                 let text = try recognizedText(in: window)
-                XCTAssertTrue(text.contains("External subtitle files may be unavailable offline"), text)
+                XCTAssertTrue(text.contains("Available external text subtitles are saved too"), text)
                 XCTAssertEqual(text.contains("Only Original is available for this source"), !supportsReduced, text)
                 XCTAssertEqual(text.contains("Keeps embedded audio and subtitles"), quality == .original, text)
                 XCTAssertEqual(text.contains("Requires server conversion"), quality != .original, text)

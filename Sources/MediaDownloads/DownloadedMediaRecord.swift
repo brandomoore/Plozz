@@ -50,6 +50,7 @@ public struct DownloadedMediaRecord: Codable, Sendable, Hashable, Identifiable {
     /// Human-readable reason for a `.failed`/`.paused` state (never secret).
     public var failureReason: String?
     public var pauseReason: DownloadPauseReason?
+    public var subtitleStatus: DownloadSubtitleStatus?
 
     /// Pinned, offline-renderable metadata (title/kind/year/artwork filename).
     public var snapshot: PinnedMediaSnapshot
@@ -80,6 +81,7 @@ public struct DownloadedMediaRecord: Codable, Sendable, Hashable, Identifiable {
         contentType: String? = nil,
         failureReason: String? = nil,
         pauseReason: DownloadPauseReason? = nil,
+        subtitleStatus: DownloadSubtitleStatus? = nil,
         snapshot: PinnedMediaSnapshot,
         createdAt: Date = Date(),
         updatedAt: Date = Date()
@@ -105,6 +107,7 @@ public struct DownloadedMediaRecord: Codable, Sendable, Hashable, Identifiable {
         self.contentType = contentType
         self.failureReason = failureReason
         self.pauseReason = pauseReason
+        self.subtitleStatus = subtitleStatus
         self.snapshot = snapshot
         self.createdAt = createdAt
         self.updatedAt = updatedAt

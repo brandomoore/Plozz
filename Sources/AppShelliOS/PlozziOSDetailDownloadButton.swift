@@ -184,7 +184,7 @@ struct PlozziOSDetailDownloadButton: View {
         } else {
             quality = Text("Only Original is available for this source.")
         }
-        let subtitles = Text("External subtitle files may be unavailable offline.")
+        let subtitles = Text("Available external text subtitles are saved too.")
         return Text("\(source) • \(size)\n\(quality)\n\(subtitles)")
     }
 

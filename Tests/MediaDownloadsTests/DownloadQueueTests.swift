@@ -1,4 +1,5 @@
 import CoreModels
+import MediaTransportCore
 import XCTest
 @testable import MediaDownloads
 
@@ -173,7 +174,148 @@ private struct BlockedDiscardEngine: MediaDownloadEngine, DownloadPersistentWork
     ) async throws -> Int64 { 64 }
 }
 
+private actor SubtitleAttemptCounter {
+    private var count = 0
+    func increment() -> Int { count += 1; return count }
+}
+
 final class DownloadQueueTests: XCTestCase {
+    func testSubtitleFailureKeepsVideoCompletedAndRetryDoesNotDownloadVideo() async throws {
+        let store = InMemoryDownloadedMediaStore()
+        let registry = DownloadedMediaRegistry(store: store)
+        let directory = DownloadTestFactory.tempDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let engine = CountingDownloadEngine()
+        let attempts = SubtitleAttemptCounter()
+        let queue = DownloadQueue(
+            registry: registry, storage: FixedDownloadStorageLocator(root: directory), engine: engine,
+            saveSubtitles: { _, _, _ in
+                if await attempts.increment() == 1 { throw URLError(.timedOut) }
+                return .saved
+            }
+        )
+        let record = try await queue.enqueue(DownloadTestFactory.request())
+        await queue.drainForTesting()
+        let failed = await registry.record(forKey: record.identityKey)
+        XCTAssertEqual(failed?.status, .completed)
+        XCTAssertEqual(failed?.subtitleStatus, .unavailable)
+        let reopened = DownloadedMediaRegistry(store: store)
+        let persisted = await reopened.record(forKey: record.identityKey)
+        XCTAssertEqual(persisted?.subtitleStatus, .unavailable)
+        try await queue.retrySubtitles(identityKey: record.identityKey)
+        let updated = await registry.record(forKey: record.identityKey)
+        let videoCalls = await engine.callCount()
+        XCTAssertEqual(updated?.status, .completed)
+        XCTAssertEqual(updated?.subtitleStatus, .saved)
+        XCTAssertEqual(videoCalls, 1)
+    }
+
+    func testSubtitleRetryHonorsNetworkPolicyAndCancellationWithoutChangingVideo() async throws {
+        let registry = DownloadedMediaRegistry(store: InMemoryDownloadedMediaStore())
+        let directory = DownloadTestFactory.tempDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let record = try await registry.beginDownload(DownloadTestFactory.record())
+        try await registry.markCompleted(identityKey: record.identityKey, totalBytes: 10, subtitleStatus: .unavailable)
+        let offline = DownloadQueue(
+            registry: registry, storage: FixedDownloadStorageLocator(root: directory),
+            engine: FakeDownloadEngine.completing(at: 10),
+            saveSubtitles: { _, _, _ in XCTFail("Must not fetch on disallowed network"); return .saved },
+            observer: StaticDownloadNetworkObserver(.unsatisfied)
+        )
+        do {
+            try await offline.retrySubtitles(identityKey: record.identityKey)
+            XCTFail("Offline retry must fail explicitly")
+        } catch { XCTAssertTrue(error is OfflineModeError) }
+        for error: any Error in [CancellationError(), AppError.cancelled, MediaTransportError.cancelled, URLError(.cancelled)] {
+            let queue = DownloadQueue(
+                registry: registry, storage: FixedDownloadStorageLocator(root: directory),
+                engine: FakeDownloadEngine.completing(at: 10),
+                saveSubtitles: { _, _, _ in throw error }
+            )
+            do {
+                try await queue.retrySubtitles(identityKey: record.identityKey)
+                XCTFail("Cancellation cannot become subtitle success")
+            } catch { XCTAssertTrue(error is CancellationError) }
+        }
+        let unchanged = await registry.record(forKey: record.identityKey)
+        XCTAssertEqual(unchanged?.status, .completed)
+        XCTAssertEqual(unchanged?.subtitleStatus, .unavailable)
+    }
+
+    func testRemovalWaitsForSubtitleRefreshAndDeletesItsFiles() async throws {
+        let registry = DownloadedMediaRegistry(store: InMemoryDownloadedMediaStore())
+        let directory = DownloadTestFactory.tempDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let storage = FixedDownloadStorageLocator(root: directory)
+        let record = try await registry.beginDownload(DownloadTestFactory.record())
+        try await registry.markCompleted(identityKey: record.identityKey, totalBytes: 10)
+        let gate = SuspensionTestGate()
+        let queue = DownloadQueue(
+            registry: registry, storage: storage, engine: FakeDownloadEngine.completing(at: 10),
+            saveSubtitles: { _, destination, _ in
+                await gate.wait()
+                try FileManager.default.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try Data("late subtitle".utf8).write(to: destination.appendingPathExtension("srt"))
+                return .saved
+            }
+        )
+        let refresh = Task { try await queue.retrySubtitles(identityKey: record.identityKey) }
+        await gate.waitUntilEntered()
+        let removal = Task { try await queue.cancelAndRemove(identityKey: record.identityKey) }
+        await gate.open()
+        try await removal.value
+        _ = await refresh.result
+        let removed = await registry.record(forKey: record.identityKey)
+        XCTAssertNil(removed)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: try storage.pinnedFolderURL(forKey: record.identityKey).path))
+    }
+
+    func testSubtitleRetryCannotEnterWhileRemovalIsSuspended() async throws {
+        let registry = DownloadedMediaRegistry(store: InMemoryDownloadedMediaStore())
+        let directory = DownloadTestFactory.tempDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let record = try await registry.beginDownload(DownloadTestFactory.record())
+        try await registry.markCompleted(identityKey: record.identityKey, totalBytes: 10)
+        let gate = SuspensionTestGate()
+        let queue = DownloadQueue(
+            registry: registry, storage: FixedDownloadStorageLocator(root: directory),
+            engine: BlockedDiscardEngine(gate: gate),
+            saveSubtitles: { _, _, _ in XCTFail("Removal must fence new sidecar work"); return .saved }
+        )
+        let removal = Task { try await queue.cancelAndRemove(identityKey: record.identityKey) }
+        await gate.waitUntilEntered()
+        do {
+            try await queue.retrySubtitles(identityKey: record.identityKey)
+            XCTFail("Removal owns this folder")
+        } catch { XCTAssertTrue(error is MediaDownloadError) }
+        await gate.open()
+        try await removal.value
+    }
+
+    func testBackgroundingCancelsSubtitleRefreshWithoutChangingCompletedVideo() async throws {
+        let registry = DownloadedMediaRegistry(store: InMemoryDownloadedMediaStore())
+        let directory = DownloadTestFactory.tempDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let record = try await registry.beginDownload(DownloadTestFactory.record())
+        try await registry.markCompleted(identityKey: record.identityKey, totalBytes: 10, subtitleStatus: .unavailable)
+        let gate = SuspensionTestGate()
+        let queue = DownloadQueue(
+            registry: registry, storage: FixedDownloadStorageLocator(root: directory),
+            engine: FakeDownloadEngine.completing(at: 10),
+            saveSubtitles: { _, _, _ in await gate.wait(); return .saved }
+        )
+        let refresh = Task { try await queue.retrySubtitles(identityKey: record.identityKey) }
+        await gate.waitUntilEntered()
+        await queue.setApplicationActive(false, revision: 1)
+        await gate.open()
+        do {
+            try await refresh.value
+            XCTFail("Backgrounding must cancel subtitle refresh")
+        } catch { XCTAssertTrue(error is CancellationError) }
+        let current = await registry.record(forKey: record.identityKey)
+        XCTAssertEqual(current?.status, .completed)
+        XCTAssertEqual(current?.subtitleStatus, .unavailable)
+    }
 
     func testCancelledQueuedAttemptCannotRestartBeforePauseCommits() async throws {
         let registry = DownloadedMediaRegistry(store: InMemoryDownloadedMediaStore())
@@ -193,6 +335,7 @@ final class DownloadQueueTests: XCTestCase {
                 entered.fulfill()
                 release.wait()
             }
+
         }
         await fulfillment(of: [entered], timeout: 2)
         let pause = Task { await queue.pause(identityKey: record.identityKey) }

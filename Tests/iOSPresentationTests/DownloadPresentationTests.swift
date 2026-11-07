@@ -15,6 +15,128 @@ import XCTest
 
 @MainActor
 final class DownloadPresentationTests: XCTestCase {
+    func testExternalDownloadSubtitlesStayPlayableAfterTemporarySourcesDisappear() async throws {
+        let storage = try temporaryStorage()
+        var saved = record(versionID: "selected")
+        saved.managedHTTPSource = .init(provider: .plex, accountID: "emby", itemID: "episode", mediaSourceID: "selected")
+        let folder = try storage.pinnedFolderURL(forKey: saved.identityKey)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let destination = try storage.pinnedFileURL(for: saved)
+        try Data([1]).write(to: destination)
+        var tracks: [MediaTrack] = []
+        let samples = [
+            ("srt", "1\n00:00:01,000 --> 00:00:02,000\nHello\n\n"),
+            ("vtt", "WEBVTT\n\n00:00:01.000 --> 00:00:02.000\nBonjour\n\n"),
+            ("ass", "[Script Info]\nScriptType: v4.00+\n[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\nDialogue: 0,0:00:01.00,0:00:02.00,Default,,0,0,0,,Hola\n")
+        ]
+        var temporaryFiles: [URL] = []
+        for (index, sample) in samples.enumerated() {
+            let file = storage.root.appendingPathComponent("source-\(index).\(sample.0)")
+            try Data(sample.1.utf8).write(to: file)
+            temporaryFiles.append(file)
+            tracks.append(.init(id: index, kind: .subtitle, displayTitle: "Caption \(index)", language: "en",
+                                codec: sample.0, isForced: true, isHearingImpaired: true,
+                                deliverySource: .localFile(file), isExternal: true))
+        }
+        tracks.append(.init(id: 50, kind: .subtitle, displayTitle: "Embedded", codec: "srt"))
+        tracks.append(.init(id: 51, kind: .subtitle, displayTitle: "Unavailable", codec: "pgs",
+                            isImageBasedSubtitle: true, isExternal: true))
+        let result = try await PlozziOSOfflineSubtitles.save(
+            record: saved, destination: destination, policy: .default,
+            provider: DownloadTrackProvider(kind: .plex, sidecars: tracks), authorize: {},
+            resolve: { _ in XCTFail("Local files need no HTTP"); throw AppError.invalidResponse }
+        )
+        XCTAssertEqual(result, .unavailable, "Only the inaccessible external track should produce a warning")
+        for file in temporaryFiles { try FileManager.default.removeItem(at: file) }
+        OfflineMode.shared.setEnabled(true)
+        let registry = DownloadedMediaRegistry(store: InMemoryDownloadedMediaStore(.init(records: [saved.identityKey: saved])))
+        let resolver = RegistryOfflinePlaybackResolver(registry: registry, storage: storage)
+        let item = try XCTUnwrap(PlozziOSDownloadsModel(
+            initializationError: "fixture"
+        ).detailItem(for: saved))
+        let resolvedAsset = await resolver.localPlaybackAsset(for: item, versionID: "selected")
+        let asset = try XCTUnwrap(resolvedAsset)
+        XCTAssertEqual(asset.subtitleTracks.count, 3)
+        for track in asset.subtitleTracks {
+            XCTAssertTrue(track.isForced)
+            XCTAssertTrue(track.isHearingImpaired)
+            guard case .localFile(let url)? = track.deliverySource else { return XCTFail("Must be durable/local") }
+            let text = try XCTUnwrap(SubtitleCueParser.decodeText(Data(contentsOf: url)))
+            XCTAssertFalse(SubtitleCueParser.parseCues(text).isEmpty)
+        }
+    }
+
+    func testSubtitleSaveRechecksAuthorizationBeforePublishingFiles() async throws {
+        let storage = try temporaryStorage()
+        var saved = record()
+        saved.managedHTTPSource = .init(provider: .jellyfin, accountID: "emby", itemID: "episode", mediaSourceID: "selected")
+        let file = storage.root.appendingPathComponent("source.srt")
+        try Data("1\n00:00:01,000 --> 00:00:02,000\nHello\n".utf8).write(to: file)
+        let track = MediaTrack(id: 1, kind: .subtitle, displayTitle: "English", codec: "srt",
+                               deliverySource: .localFile(file), isExternal: true)
+        let authorization = SubtitleAuthorizationCounter()
+        let destination = try storage.pinnedFileURL(for: saved)
+        do {
+            _ = try await PlozziOSOfflineSubtitles.save(
+                record: saved, destination: destination, policy: .default,
+                provider: DownloadTrackProvider(kind: .jellyfin, sidecars: [track]),
+                authorize: {
+                    if await authorization.increment() >= 4 { throw CancellationError() }
+                },
+                resolve: { _ in throw AppError.invalidResponse }
+            )
+            XCTFail("A changed profile/server user cannot publish subtitle assets")
+        } catch { XCTAssertTrue(error is CancellationError) }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: destination.appendingPathExtension("subtitles.json").path))
+    }
+
+    func testSubtitleOnlyRetryUsesExistingToastAndLeavesVideoComplete() async throws {
+        let storage = try temporaryStorage()
+        let saved = record()
+        let registry = DownloadedMediaRegistry(store: InMemoryDownloadedMediaStore(.init(records: [saved.identityKey: saved])))
+        let attempts = SubtitleAuthorizationCounter()
+        let model = makeModel(
+            registry: registry, storage: storage, probe: ArtworkProbe(data: imageData()),
+            saveSubtitles: { _, _, _ in
+                if await attempts.increment() == 1 { throw URLError(.timedOut) }
+                return .saved
+            }
+        )
+        let presenter = TransientStatusPresenter()
+        model.statusPresenter = presenter
+        await model.refreshSubtitles(saved)
+        XCTAssertTrue(String(localized: try XCTUnwrap(presenter.message?.text)).contains("Some subtitles couldn't be saved"))
+        XCTAssertEqual(model.records.first?.status, .completed)
+        XCTAssertEqual(model.records.first?.subtitleStatus, .unavailable)
+        await model.refreshSubtitles(saved)
+        XCTAssertEqual(String(localized: try XCTUnwrap(presenter.message?.text)), "Subtitles updated.")
+        XCTAssertEqual(model.records.first?.subtitleStatus, .saved)
+        XCTAssertTrue(model.subtitleState.refreshing.isEmpty)
+        model.beginProfileTransition()
+        await model.quiesceForProfileSwitch()
+    }
+
+    func testSubtitleCompletionWarningSurvivesCoalescedRecordReloads() async throws {
+        let saved = record()
+        let registry = DownloadedMediaRegistry(store: InMemoryDownloadedMediaStore(.init(records: [saved.identityKey: saved])))
+        let model = makeModel(
+            registry: registry, storage: try temporaryStorage(), probe: ArtworkProbe(data: imageData())
+        )
+        defer { model.beginProfileTransition() }
+        let presenter = TransientStatusPresenter()
+        model.statusPresenter = presenter
+        try await waitUntil { model.records.count == 1 }
+        try await registry.setStatus(identityKey: saved.identityKey, .downloading)
+        try await registry.markCompleted(identityKey: saved.identityKey, totalBytes: 10, subtitleStatus: .unavailable)
+        try await waitUntil { presenter.message != nil }
+        XCTAssertTrue(String(localized: try XCTUnwrap(presenter.message?.text)).contains("Some subtitles couldn't be saved"))
+        try await waitUntil { model.records.first?.status == .completed }
+        presenter.dismiss()
+        try await registry.setRuntime(identityKey: saved.identityKey, runtime: 123)
+        try await waitUntil { model.records.first?.snapshot.runtime == 123 }
+        XCTAssertNil(presenter.message, "Unrelated updates must not repeat a subtitle warning")
+    }
+
     override func setUp() async throws {
         try await super.setUp()
         let preference = UserDefaults.standard.object(forKey: OfflineMode.preferenceKey)
@@ -1751,7 +1873,8 @@ final class DownloadPresentationTests: XCTestCase {
         sourceUserID: (@MainActor @Sendable (String) -> String?)? = nil,
         posterProbe: ArtworkProbe? = nil,
         providerKind: ProviderKind = .emby,
-        preferredAudioLanguages: [String] = []
+        preferredAudioLanguages: [String] = [],
+        saveSubtitles: DownloadQueue.SubtitleSaver? = nil
     ) -> PlozziOSDownloadsModel {
         let poster = posterData()
         return PlozziOSDownloadsModel(
@@ -1770,7 +1893,8 @@ final class DownloadPresentationTests: XCTestCase {
                 if let posterProbe { return try await posterProbe.load(item) }
                 return poster
             },
-            managedURLResolver: { _, _, _ in throw CancellationError() }
+            managedURLResolver: { _, _, _ in throw CancellationError() },
+            saveSubtitles: saveSubtitles
         )
     }
 
@@ -1827,6 +1951,7 @@ final class DownloadPresentationTests: XCTestCase {
 
 private struct DownloadTrackProvider: MediaProvider {
     let kind: ProviderKind
+    var sidecars: [MediaTrack] = []
     var session: UserSession {
         .init(
             server: .init(id: "fixture", name: "Fixture", baseURL: URL(string: "https://fixture.invalid")!, provider: kind),
@@ -1834,6 +1959,10 @@ private struct DownloadTrackProvider: MediaProvider {
         )
     }
     func libraries() async throws -> [MediaLibrary] { [] }
+    func subtitleTracks(context: RemoteSubtitleContext) async throws -> [MediaTrack] {
+        XCTAssertEqual(context.mediaSourceID, "selected")
+        return sidecars
+    }
     func continueWatching(limit: Int) async throws -> [MediaItem] { [] }
     func latest(limit: Int) async throws -> [MediaItem] { [] }
     func item(id: String) async throws -> MediaItem { throw AppError.notFound }
@@ -1859,6 +1988,11 @@ private struct DownloadTrackProvider: MediaProvider {
     }
     func reportPlayback(_ progress: PlaybackProgress, event: PlaybackEvent) async throws {}
     func imageURL(itemID: String, kind: ImageKind, maxWidth: Int?) -> URL? { nil }
+}
+
+private actor SubtitleAuthorizationCounter {
+    private var count = 0
+    func increment() -> Int { count += 1; return count }
 }
 
 @MainActor

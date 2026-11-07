@@ -294,7 +294,27 @@ struct PlozziOSDownloadsView: View {
                 Task { await model.resume(record) }
             }
         case .completed:
-            EmptyView()
+            PlozziOSDownloadSubtitleAction(record: record, model: model)
+        }
+    }
+}
+
+struct PlozziOSDownloadSubtitleAction: View {
+    let record: DownloadedMediaRecord
+    let model: PlozziOSDownloadsModel
+
+    var body: some View {
+        if record.status == .completed, record.managedHTTPSource?.includesTextSubtitleTracks != false {
+            Button {
+                Task { await model.refreshSubtitles(record) }
+            } label: {
+                if record.subtitleStatus == .unavailable {
+                    Label("Retry Subtitles", systemImage: "captions.bubble")
+                } else {
+                    Label("Update Subtitles", systemImage: "captions.bubble")
+                }
+            }
+            .disabled(model.subtitleState.refreshing.contains(record.identityKey))
         }
     }
 }

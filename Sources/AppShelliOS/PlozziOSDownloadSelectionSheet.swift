@@ -351,7 +351,7 @@ struct PlozziOSDownloadSelectionContent: View {
                         PlozziOSDownloadQualityDescription(
                             quality: supportsReducedQuality ? quality : .original
                         )
-                        Text("External subtitle files may be unavailable offline.")
+                        Text("Available external text subtitles are saved too.")
                         if isBulk, selection.episodes.contains(where: { $0.item.kind == .episode && $0.options.count > 1 }) {
                             Text("Open an episode to change its selected versions.")
                         }

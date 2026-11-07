@@ -1652,6 +1652,31 @@ final class JellyfinQuickConnectClientTests: XCTestCase {
 }
 
 final class JellyfinRemoteSubtitleTests: XCTestCase {
+    func testSubtitleDiscoveryUsesExactSourceForBothProvidersWithoutPlaybackInfo() async throws {
+        for kind in [ProviderKind.jellyfin, .emby] {
+            let stub = StubHTTPClient()
+            stub.stub(pathSuffix: "/Users/u1/Items/i1", json: """
+            {"Id":"i1","Type":"Movie","MediaSources":[
+              {"Id":"first","MediaStreams":[{"Index":3,"Type":"Subtitle","Codec":"srt","IsExternal":true}]},
+              {"Id":"selected","MediaStreams":[{"Index":8,"Type":"Subtitle","Codec":"subrip","Language":"fr","IsExternal":true,"IsForced":true,"IsHearingImpaired":true}]}
+            ]}
+            """)
+            let provider = JellyfinProvider(session: makeSession(provider: kind), http: stub)
+            let tracks = try await provider.subtitleTracks(context: .init(itemID: "i1", mediaSourceID: "selected"))
+            XCTAssertEqual(tracks.map(\.id), [8])
+            XCTAssertTrue(tracks[0].isForced)
+            XCTAssertTrue(tracks[0].isHearingImpaired)
+            guard case .authenticatedHTTP(let source)? = tracks[0].deliverySource else { return XCTFail("Missing delivery") }
+            XCTAssertEqual(source.mediaSourceID, "selected")
+            XCTAssertEqual(source.formatHint.container, "srt")
+            do {
+                _ = try await provider.subtitleTracks(context: .init(itemID: "i1", mediaSourceID: "missing"))
+                XCTFail("Never fall back to another source")
+            } catch { XCTAssertEqual(error as? AppError, .notFound) }
+            XCTAssertTrue(stub.sentPaths.allSatisfy { $0.hasSuffix("/Users/u1/Items/i1") })
+        }
+    }
+
     private func makeSession(provider: ProviderKind = .jellyfin) -> UserSession {
         UserSession(
             server: MediaServer(id: "s", name: "Home", baseURL: URL(string: "http://host:8096")!, provider: provider),

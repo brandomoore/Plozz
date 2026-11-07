@@ -1989,13 +1989,25 @@ public struct PlexProvider: MediaProvider, AuthenticatedHTTPOriginProviding, Ser
     /// from a single `metadata` fetch — no transcode session. Used to observe a
     /// just-downloaded subtitle so it can be hot-loaded into the running player.
     public func subtitleTracks(forItemID itemID: String) async throws -> [MediaTrack] {
-        let detail = try await client.metadata(ratingKey: itemID)
-        let media = detail.Media?.first
+        try await subtitleTracks(context: .init(itemID: itemID))
+    }
+
+    public func subtitleTracks(context: RemoteSubtitleContext) async throws -> [MediaTrack] {
+        let detail = try await client.metadata(ratingKey: context.itemID)
+        let media: PlexMedia?
+        if let sourceID = context.mediaSourceID {
+            guard let selected = detail.Media?.first(where: { $0.id.map(String.init) == sourceID }) else {
+                throw AppError.notFound
+            }
+            media = selected
+        } else {
+            media = detail.Media?.first
+        }
         let streams = media?.Part?.first?.Stream ?? []
         return try streams.filter { $0.streamType == 3 }.map {
             try map(
                 stream: $0,
-                itemID: itemID,
+                itemID: context.itemID,
                 mediaSourceID: media?.id.map(String.init)
             )
         }
