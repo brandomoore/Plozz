@@ -625,6 +625,75 @@ final class HomeLoadingLayoutTests: XCTestCase {
         XCTAssertEqual(scroll.contentOffset.y, offset, accuracy: 1)
     }
 
+    func testLibraryRowUpdatesIncludeContentFailuresAndHomeScope() throws {
+        let fixture = try Fixture()
+        defer { fixture.close() }
+        let model = HomeViewModel(accounts: [], profileNamespace: fixture.profileID)
+        let replacement = HomeViewModel(accounts: [], profileNamespace: "replacement")
+        defer { model.invalidate(); replacement.invalidate() }
+        let coordinator = FeaturedTrailerCoordinator()
+        let controller = HeroTrailerController()
+        let choice = try XCTUnwrap(HomeRowChoice.shared.first)
+        let section = LibrarySection(id: "shelf", title: "Shelf", items: fixture.items)
+        let row = HomeLibrarySectionGroup.Row(section: section, isLoading: false, failure: nil)
+        func view(
+            _ row: HomeLibrarySectionGroup.Row, modelOverride: HomeViewModel? = nil, isActive: Bool = false
+        ) -> PlozziOSHomeLibraryPresentationRow {
+            PlozziOSHomeLibraryPresentationRow(
+                presentation: HomePresentationRow(choice: choice, source: .library(row)), row: row,
+                appModel: fixture.app, viewModel: modelOverride ?? model,
+                coordinator: coordinator, controller: controller, isActive: isActive,
+                rowBrowser: .constant(nil), showingHomeCustomization: .constant(false)
+            )
+        }
+        XCTAssertEqual(view(row), view(row))
+        XCTAssertNotEqual(view(row), view(.init(section: section, isLoading: true, failure: nil)))
+        XCTAssertNotEqual(view(row), view(.init(section: section, isLoading: false, failure: .serverUnreachable)))
+        var changedSection = section
+        changedSection.items[0].title = "Updated movie"
+        XCTAssertNotEqual(view(row), view(.init(section: changedSection, isLoading: false, failure: nil)))
+        var browsable = row
+        browsable.browseItem = MediaItem(id: "collection", title: "Collection", kind: .collection)
+        XCTAssertNotEqual(view(row), view(browsable))
+        XCTAssertNotEqual(view(row), view(row, modelOverride: replacement))
+        XCTAssertNotEqual(view(row), view(row, isActive: true))
+    }
+
+    func testUnchangedLibraryRowsStillRespondToCaptionSettings() async throws {
+        let fixture = try Fixture()
+        defer { fixture.close() }
+        let model = HomeViewModel(accounts: [], profileNamespace: fixture.profileID)
+        defer { model.invalidate() }
+        let choice = try XCTUnwrap(HomeRowChoice.shared.first)
+        for loading in [true, false] {
+            let heights = Heights()
+            let row = HomeLibrarySectionGroup.Row(
+                section: LibrarySection(id: "shelf", title: "Shelf", items: loading ? [] : fixture.items),
+                isLoading: loading, failure: nil
+            )
+            fixture.mount(
+                ScrollView {
+                    PlozziOSHomeLibraryPresentationRow(
+                        presentation: HomePresentationRow(choice: choice, source: .library(row)), row: row,
+                        appModel: fixture.app, viewModel: model,
+                        coordinator: FeaturedTrailerCoordinator(), controller: HeroTrailerController(),
+                        isActive: false, rowBrowser: .constant(nil), showingHomeCustomization: .constant(false)
+                    )
+                    .equatable()
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { heights.loaded = $0 }
+                }
+            )
+            try await fixture.settle()
+            let withCaptions = heights.loaded
+            fixture.app.settings.cardStyle.captions = CardCaptionSettings(showsLabels: false)
+            try await fixture.settle()
+            XCTAssertLessThan(heights.loaded, withCaptions - 10, "loading=\(loading)")
+            fixture.app.settings.cardStyle.captions = CardCaptionSettings(showsLabels: true)
+            try await fixture.settle()
+            XCTAssertEqual(heights.loaded, withCaptions, accuracy: 1)
+        }
+    }
+
     func testRowChangesPreserveTheViewportWithAContentInset() async throws {
         let fixture = try Fixture()
         defer { fixture.close() }

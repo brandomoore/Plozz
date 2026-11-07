@@ -504,6 +504,23 @@ SCENARIOS = {
         "counters": ["servers", "loadedRows", "items", "providerRequests", "scrollTargets",
                      "maxMainActorGapMicroseconds"],
     },
+    "mobile-home-multi-server-startup-scroll": {
+        "suite": "ui", "platforms": ["iOS"],
+        "test": "HomeMultiServerLoadingTests/testPerformanceScrollingWhileTwentyServersLoad",
+        "file": "Tests/iOSPresentationTests/HomeMultiServerLoadingTests.swift",
+        "description": "Traverse the whole Home page while twenty staggered providers progressively fill forty rows; require completed content after scrolling.",
+        "counters": ["servers", "loadedRows", "items", "providerRequests", "scrollTargets",
+                     "loadingScrollTargets", "finishedRowsWhileScrolling", "maxMainActorGapMicroseconds",
+                     "scrollCPUTimeMicroseconds", "scrollWallMicroseconds"],
+    },
+    "mobile-home-multi-server-scroll": {
+        "suite": "ui", "platforms": ["iOS"],
+        "test": "HomeMultiServerLoadingTests/testPerformanceScrollingAcrossTwentyServers",
+        "file": "Tests/iOSPresentationTests/HomeMultiServerLoadingTests.swift",
+        "description": "Load forty Home rows with cached artwork then traverse the complete page in both directions.",
+        "counters": ["servers", "loadedRows", "items", "providerRequests", "scrollTargets",
+                     "scrollCPUTimeMicroseconds", "scrollWallMicroseconds", "maxMainActorGapMicroseconds"],
+    },
     "mobile-home-loading-scroll": {
         "suite": "ui", "platforms": ["iOS"],
         "test": "HomeLoadingLayoutTests/testPerformanceLoadingWhileScrolling",

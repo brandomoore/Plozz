@@ -284,7 +284,8 @@ class EvidenceTests(unittest.TestCase):
                 performance.verify_summary(dict(summary(), **change), 1)
 
     def test_mobile_loading_scroll_requires_complete_layout_work(self):
-        for name in ("mobile-home-loading-scroll", "mobile-home-multi-server-loading"):
+        for name in ("mobile-home-loading-scroll", "mobile-home-multi-server-loading",
+                     "mobile-home-multi-server-scroll", "mobile-home-multi-server-startup-scroll"):
             with self.subTest(scenario=name):
                 self.assertEqual(performance.select(None, [name], "iOS"), [name])
                 with self.assertRaisesRegex(performance.Failure, "not supported on tvOS"):

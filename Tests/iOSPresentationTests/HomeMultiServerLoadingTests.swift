@@ -1,5 +1,6 @@
 #if os(iOS)
 import CoreModels
+import CoreNetworking
 import CoreUI
 import FeatureAuth
 import FeatureHomeCore
@@ -22,7 +23,27 @@ final class HomeMultiServerLoadingTests: XCTestCase {
         _ = try await exercise()
     }
 
-    private func exercise() async throws -> [String: Int] {
+    func testPerformanceScrollingAcrossTwentyServers() async throws {
+        try PerformanceProbe.requireEnabled()
+        try await PerformanceProbe.measure(self, scenario: "mobile-home-multi-server-scroll") {
+            try await self.exercise(scrollsLoadedContent: true)
+        }
+    }
+
+    func testPerformanceScrollingWhileTwentyServersLoad() async throws {
+        try PerformanceProbe.requireEnabled()
+        try await PerformanceProbe.measure(self, scenario: "mobile-home-multi-server-startup-scroll") {
+            try await self.exercise(scrollsWhileLoading: true)
+        }
+    }
+
+    func testHomeFinishesEveryServerRowDuringStartupScrolling() async throws {
+        _ = try await exercise(scrollsWhileLoading: true)
+    }
+
+    private func exercise(
+        scrollsLoadedContent: Bool = false, scrollsWhileLoading: Bool = false
+    ) async throws -> [String: Int] {
         let suite = "HomeMultiServer.\(UUID())"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         let store = AccountStore(secureStore: InMemorySecureStore())
@@ -46,6 +67,7 @@ final class HomeMultiServerLoadingTests: XCTestCase {
                 UserDefaults.standard.removeObject(forKey: key)
             }
         }
+        let artwork = scrollsLoadedContent || scrollsWhileLoading ? try await cachedArtwork() : nil
         let requests = MultiServerHomeRequests()
         for index in 0..<20 {
             let id = "server-\(index)"
@@ -58,7 +80,10 @@ final class HomeMultiServerLoadingTests: XCTestCase {
         }
         app.profiles.setActiveAccountIDs((0..<20).map { "server-\($0)" }, for: profile.id)
         app.accountsProviders.registry.register(.jellyfin) { context in
-            MultiServerHomeProvider(session: context.session, requests: requests)
+            MultiServerHomeProvider(
+                session: context.session, requests: requests, artwork: artwork,
+                slowLoading: scrollsWhileLoading
+            )
         }
         app.accountsProviders.tokenResolver = { _ in "fixture" }
         app.accountsProviders.reloadAccounts()
@@ -75,13 +100,18 @@ final class HomeMultiServerLoadingTests: XCTestCase {
         window.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
         window.overrideUserInterfaceStyle = .dark
         var maximumGap = Duration.zero
+        var lastHeartbeat = ContinuousClock.now
+        var scrollingStarted: ContinuousClock.Instant?
         let heartbeat = Task { @MainActor in
-            var last = ContinuousClock.now
             while !Task.isCancelled {
                 do { try await Task.sleep(for: .milliseconds(2)) } catch { return }
                 let now = ContinuousClock.now
-                maximumGap = max(maximumGap, last.duration(to: now))
-                last = now
+                let gap = lastHeartbeat.duration(to: now)
+                maximumGap = max(maximumGap, gap)
+                if scrollsWhileLoading, let scrollingStarted, gap > .milliseconds(50) {
+                    print("HomeStartupScrollGap elapsed=\(scrollingStarted.duration(to: now)) gap=\(gap)")
+                }
+                lastHeartbeat = now
             }
         }
         defer {
@@ -104,7 +134,7 @@ final class HomeMultiServerLoadingTests: XCTestCase {
         func scrollViews(_ view: UIView) -> [UIScrollView] {
             ((view as? UIScrollView).map { [$0] } ?? []) + view.subviews.flatMap(scrollViews)
         }
-        let deadline = ContinuousClock.now + .seconds(20)
+        let deadline = ContinuousClock.now + .seconds(40)
         while model.state.value?.serverRows.count != 40, ContinuousClock.now < deadline {
             try await Task.sleep(for: .milliseconds(10))
         }
@@ -115,9 +145,39 @@ final class HomeMultiServerLoadingTests: XCTestCase {
             if mountedScroll == nil { try await Task.sleep(for: .milliseconds(10)) }
         }
         let scroll = try XCTUnwrap(mountedScroll)
-        for index in 1...8 {
-            scroll.setContentOffset(CGPoint(x: 0, y: CGFloat(index * 180)), animated: true)
-            try await Task.sleep(for: .milliseconds(80))
+        var loadingScrollTargets = 0
+        var finishedRowsWhileScrolling = 0
+        var scrollingGap = Duration.zero
+        var scrollingWall = Duration.zero
+        var scrollingCPU = 0
+        if scrollsWhileLoading {
+            let before = try PerformanceProbe.usage()
+            maximumGap = .zero
+            lastHeartbeat = .now
+            let started = ContinuousClock.now
+            scrollingStarted = started
+            print("HomeStartupScrollTrace start rows=40")
+            for step in (1...12).map({ $0 }) + (0..<12).reversed() {
+                if model.isRefreshing { loadingScrollTargets += 1 }
+                let bottom = scroll.contentSize.height - scroll.bounds.height + scroll.adjustedContentInset.bottom
+                scroll.setContentOffset(CGPoint(x: 0, y: bottom * CGFloat(step) / 12), animated: true)
+                try await Task.sleep(for: .milliseconds(400))
+                finishedRowsWhileScrolling = max(
+                    finishedRowsWhileScrolling,
+                    model.state.value?.serverRows.filter { !$0.isLoading }.count ?? 0
+                )
+            }
+            scrollingGap = maximumGap
+            scrollingWall = started.duration(to: .now)
+            scrollingCPU = Int(((try PerformanceProbe.usage()).cpuMilliseconds - before.cpuMilliseconds) * 1_000)
+            scrollingStarted = nil
+            XCTAssertGreaterThanOrEqual(loadingScrollTargets, 8)
+            XCTAssertGreaterThan(finishedRowsWhileScrolling, 0)
+        } else {
+            for index in 1...8 {
+                scroll.setContentOffset(CGPoint(x: 0, y: CGFloat(index * 180)), animated: true)
+                try await Task.sleep(for: .milliseconds(80))
+            }
         }
         while model.isRefreshing, ContinuousClock.now < deadline {
             try await Task.sleep(for: .milliseconds(10))
@@ -126,11 +186,12 @@ final class HomeMultiServerLoadingTests: XCTestCase {
         let content = try XCTUnwrap(model.state.value)
         XCTAssertEqual(content.serverRows.count, 40)
         XCTAssertTrue(content.serverRows.allSatisfy { !$0.isLoading && $0.failure == nil })
+        XCTAssertEqual(requests.value.withLock { $0 }, 100)
         let items = content.serverRows.reduce(0) { $0 + $1.items.count }
         XCTAssertEqual(items, 800)
         // Empty global rows can disappear during loading; preservation follows
         // their visible successor rather than retaining an absolute offset.
-        XCTAssertGreaterThan(scroll.contentOffset.y, 0)
+        if !scrollsWhileLoading { XCTAssertGreaterThan(scroll.contentOffset.y, 0) }
         window.layoutIfNeeded()
         try await Task.sleep(for: .milliseconds(150))
         scroll.setContentOffset(CGPoint(x: 0, y: 1440), animated: true)
@@ -141,12 +202,69 @@ final class HomeMultiServerLoadingTests: XCTestCase {
         window.layoutIfNeeded()
         XCTAssertEqual(scroll.contentOffset.y, 1440, accuracy: 1)
         XCTAssertGreaterThan(scroll.contentSize.height, 8_000)
-        let gap = maximumGap.components
-        return [
+        if scrollsLoadedContent {
+            maximumGap = .zero
+            lastHeartbeat = .now
+            let before = try PerformanceProbe.usage()
+            let started = ContinuousClock.now
+            let height = scroll.contentSize.height
+            let bottom = height - scroll.bounds.height + scroll.adjustedContentInset.bottom
+            print("HomeScrollTrace start rows=40 items=800")
+            for step in (1...12).map({ $0 }) + (0..<12).reversed() {
+                let target = bottom * CGFloat(step) / 12
+                scroll.setContentOffset(CGPoint(x: 0, y: target), animated: true)
+                try await Task.sleep(for: .milliseconds(400))
+                XCTAssertEqual(scroll.contentOffset.y, target, accuracy: 1)
+            }
+            XCTAssertEqual(scroll.contentSize.height, height, accuracy: 1)
+            XCTAssertEqual(model.state.value?.serverRows.reduce(0) { $0 + $1.items.count }, 800)
+            let usage = try PerformanceProbe.usage()
+            let elapsed = started.duration(to: .now).components
+            let gap = maximumGap.components
+            return [
+                "servers": 20, "loadedRows": 40, "items": 800, "scrollTargets": 24,
+                "providerRequests": requests.value.withLock { $0 },
+                "scrollCPUTimeMicroseconds": Int((usage.cpuMilliseconds - before.cpuMilliseconds) * 1_000),
+                "scrollWallMicroseconds": Int(elapsed.seconds) * 1_000_000 + Int(elapsed.attoseconds / 1_000_000_000_000),
+                "maxMainActorGapMicroseconds": Int(gap.seconds) * 1_000_000 + Int(gap.attoseconds / 1_000_000_000_000)
+            ]
+        }
+        let gap = (scrollsWhileLoading ? scrollingGap : maximumGap).components
+        let elapsed = scrollingWall.components
+        var counters = [
             "servers": 20, "loadedRows": content.serverRows.count, "items": items,
-            "providerRequests": requests.value.withLock { $0 }, "scrollTargets": 9,
+            "providerRequests": requests.value.withLock { $0 }, "scrollTargets": scrollsWhileLoading ? 25 : 9,
             "maxMainActorGapMicroseconds": Int(gap.seconds) * 1_000_000 + Int(gap.attoseconds / 1_000_000_000_000)
         ]
+        if scrollsWhileLoading {
+            counters["loadingScrollTargets"] = loadingScrollTargets
+            counters["finishedRowsWhileScrolling"] = finishedRowsWhileScrolling
+            counters["scrollCPUTimeMicroseconds"] = scrollingCPU
+            counters["scrollWallMicroseconds"] =
+                Int(elapsed.seconds) * 1_000_000 + Int(elapsed.attoseconds / 1_000_000_000_000)
+        }
+        return counters
+    }
+
+    private func cachedArtwork() async throws -> URL {
+        let url = try XCTUnwrap(URL(string: "https://example.invalid/home-scroll-fixture.png"))
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 200, height: 300)).image { context in
+            UIColor.systemBlue.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 200, height: 300))
+        }
+        let data = try XCTUnwrap(image.pngData())
+        let cache = try XCTUnwrap(ArtworkSession.shared.configuration.urlCache)
+        for variant in ArtworkImageVariant.allCases {
+            let requestURL = variant.requestURL(for: url)
+            let response = try XCTUnwrap(HTTPURLResponse(
+                url: requestURL, statusCode: 200, httpVersion: nil,
+                headerFields: ["Content-Type": "image/png", "Cache-Control": "max-age=3600"]
+            ))
+            cache.storeCachedResponse(CachedURLResponse(response: response, data: data), for: URLRequest(url: requestURL))
+            let decoded = await ArtworkImageCache.shared.image(for: url, variant: variant)
+            _ = try XCTUnwrap(decoded)
+        }
+        return url
     }
 }
 
@@ -157,6 +275,8 @@ private final class MultiServerHomeRequests: Sendable {
 private struct MultiServerHomeProvider: MediaProvider {
     let session: UserSession
     let requests: MultiServerHomeRequests
+    let artwork: URL?
+    let slowLoading: Bool
     var kind: ProviderKind { .jellyfin }
 
     func libraries() async throws -> [MediaLibrary] {
@@ -186,7 +306,7 @@ private struct MultiServerHomeProvider: MediaProvider {
     private func delay() async throws {
         requests.value.withLock { $0 += 1 }
         let index = Int(session.server.id.split(separator: "-").last ?? "") ?? 0
-        try await Task.sleep(for: .milliseconds(50 + index * 10))
+        try await Task.sleep(for: .milliseconds(slowLoading ? 150 + index * 100 : 50 + index * 10))
     }
     private func media(_ section: String, limit: Int) -> [MediaItem] {
         (0..<limit).map { index in
@@ -197,6 +317,8 @@ private struct MultiServerHomeProvider: MediaProvider {
                 allowsTitleBasedMetadataMatching: false
             )
             item.libraryID = "movies"
+            item.posterURL = artwork
+            item.backdropURL = artwork
             return item
         }
     }

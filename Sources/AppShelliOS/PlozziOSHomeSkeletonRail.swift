@@ -39,10 +39,9 @@ struct PlozziOSHomeSkeletonRail: View {
     private func rail(metrics: PlozzMetrics) -> some View {
         PlozziOSMediaSection(title: title, artworkInset: !isLibraryRow && cardStyle == .framed ? metrics.cardInset : 0) {
             ScrollView(.horizontal) {
-                // Deliberately NOT lazy: the placeholders are cheap, and a lazy
-                // stack would only materialise the ones already on screen — the
-                // opposite of what a "never show a blank row" placeholder is for.
-                HStack(
+                // Match loaded rails: retain eager vertical sizing, but don't
+                // construct cards clipped beyond each horizontal viewport.
+                LazyHStack(
                     alignment: .top,
                     spacing: isLibraryRow ? PlozziOSMediaRailLayout.visibleGap(metrics: metrics) : PlozziOSMediaRailLayout.stackSpacing(
                         metrics: metrics,

@@ -558,6 +558,31 @@ included in timing comparisons. Later animation/Reduce Motion correctness tests
 are separate from this matched fixture pair. Physical-device behavior and real
 share/background workloads remain outside this scenario.
 
+`mobile-home-multi-server-startup-scroll` keeps the same twenty-provider,
+forty-row workload loading throughout 24 animated full-page scroll targets.
+Responses are staggered, artwork uses a warmed synthetic local cache, and all
+800 items and 100 requests must finish before the sample succeeds. Separate
+scroll-window CPU, wall time and heartbeat gaps exclude mounting and final
+scroll verification. `mobile-home-multi-server-scroll` is the negative control:
+it traverses the same page only after content finishes loading. Neither mounts
+the complete root shell or reproduces real share scans, network image decoding,
+slow-provider failures, or physical-device presented-frame timing.
+
+Matched startup-scroll runs `4019d336b4b041708f291bb8c258f96c` and
+`b6cd29350be84d0e9de813b972c764fc` retained the same completed work and 24
+scroll targets during loading. Lazy horizontal placeholders and a stable
+library-row rendering boundary reduced median total CPU from 6103.226 to
+5220.285 ms; scroll-window CPU fell from 5317.490 to 4527.785 ms. The median of
+per-sample maximum main-actor gaps fell from 267.068 to 97.887 ms, not to zero.
+An intermediate plain row extraction increased CPU and was discarded; the
+retained boundary compares complete row inputs rather than changing data
+loading or ignoring provider results. Geometry/settings regressions are
+separate correctness runs, not additional timing samples.
+Final-source confirmation `bb474979c865483a8f77da9e32ee2aab` completed all three
+twenty-server scenarios. Startup-scroll maximum gaps ranged from 93.202 to
+192.052 ms, versus 11.573 to 15.915 ms for settled scrolling; this remains a
+startup improvement, not evidence that every loading hitch has been eliminated.
+
 `mobile-home-rail-prefetch` updates the real mobile Continue Watching rail 24
 times with the same 180 metadata-rich episodes across twelve synthetic account
 identities. Artwork is preloaded into the test cache and online providers are
