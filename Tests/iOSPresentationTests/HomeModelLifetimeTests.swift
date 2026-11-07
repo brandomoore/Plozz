@@ -10,6 +10,19 @@ import XCTest
 
 @MainActor
 final class HomeModelLifetimeTests: XCTestCase {
+    func testHomeStateBoxRetiresOnlyDiscardedScopes() {
+        let box = LazyViewState<String>()
+        var retired: [String] = []
+        XCTAssertEqual(box.value(forKey: "a", onDiscard: { retired.append($0) }) { "first" }, "first")
+        XCTAssertEqual(box.value(forKey: "a", onDiscard: { retired.append($0) }) { "unused" }, "first")
+        XCTAssertTrue(retired.isEmpty)
+        XCTAssertEqual(box.value(forKey: "b", onDiscard: { retired.append($0) }) { "second" }, "second")
+        XCTAssertEqual(retired, ["first"])
+        box.discard { retired.append($0) }
+        XCTAssertEqual(retired, ["first", "second"])
+        XCTAssertNil(box.existingValue(forKey: "b"))
+    }
+
     func testPerformanceRetiredHomeModels() async throws {
         try PerformanceProbe.requireEnabled()
         let suite = "HomeModelLifetime.\(UUID())"

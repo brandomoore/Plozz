@@ -1288,6 +1288,17 @@ must not wait for another trip away from Home and back. Cancellation without a
 replacement does not start background loading; an already-running aggregation
 still completes without a duplicate fetch.
 
+Explicit owner suspension is different from view-task cancellation. Mobile Home
+and Watchlist defer Home aggregation while Settings is presented, profile setup
+is unfinished, or the active profile is unauthorized. A suspended load cancels
+aggregation and its collection-refresh/reenrichment work; resumption uses the
+final library choices. If the loaded content is still fresh, queued collection
+previews and identity enrichment resume without refetching all Home feeds.
+Replacing an account/profile-scoped Home model on either
+platform permanently invalidates it before creating the next one. Late results
+and queued reloads from that retired model cannot publish or restart work; do
+not rely on `deinit` while an outstanding load retains its model.
+
 Showcase keeps its first-row anchor while that row loads; a lower row finishing
 does not choose focus or scroll the page. Its leading loading card has a visible
 progress indicator and can hold focus without making the other skeletons

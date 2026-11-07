@@ -965,7 +965,7 @@ struct PlozziOSTabShell: View {
     @State private var hasChosenNavigationDestination = false
     let homeViewModelBox: LazyViewState<HomeViewModel>
     var sharedHomeViewModel: HomeViewModel {
-        homeViewModelBox.value(forKey: homeContentIdentity) {
+        homeViewModelBox.value(forKey: homeContentIdentity, onDiscard: { $0.invalidate() }) {
             Self.makeHomeViewModel(appModel: appModel)
         }
     }
@@ -1344,6 +1344,9 @@ struct PlozziOSTabShell: View {
                     accounts: appModel.accountsProviders.homeAccounts
                 )
             },
+            isLoadingAllowed: { [weak appModel] in
+                appModel?.allowsHomeContentLoading == true
+            },
             sectionDiagnostics: appModel.settings.homeVisibility.sectionDiagnostics,
             pendingWatchMutations: { [weak appModel] in
                 await appModel?.pendingWatchMutations() ?? []
@@ -1407,6 +1410,9 @@ struct PlozziOSTabShell: View {
             .frame(width: 0, height: 0)
         }
         .environment(sharedHomeViewModel)
+        .onChange(of: appModel.allowsHomeContentLoading, initial: true) { _, allowed in
+            if !allowed { sharedHomeViewModel.cancelPendingLoad() }
+        }
         .environment(\.hasVisibleSettingsNavigationEntry, hasVisibleSettingsNavigationEntry)
         .onAppear { refreshWatchlistNavigation() }
         .onReceive(NotificationCenter.default.publisher(for: .universalWatchlistDidChange)) { _ in
@@ -1446,7 +1452,18 @@ struct PlozziOSTabShell: View {
     }
 
     var body: some View {
-        contentAwareTabs
+        Group {
+            // Setup owns an opaque cover. Rebuilding the hidden tab catalogue
+            // for every library edit competes with the controls in that cover.
+            if appModel.profiles.activeProfile.needsSetup {
+                Color.clear
+            } else {
+                contentAwareTabs
+            }
+        }
+        .onChange(of: appModel.profiles.activeProfile.needsSetup, initial: true) { _, needsSetup in
+            if needsSetup { homeViewModelBox.discard { $0.invalidate() } }
+        }
         .homeLiveTVScope(
             profileID: appModel.profiles.activeProfileID,
             namespace: appModel.profiles.activeNamespace,
@@ -2137,9 +2154,14 @@ struct PlozziOSWatchlistLandingView: View {
         .task(
             id: PlozziOSHomeLoadID(
                 visibility: appModel.settings.homeVisibility.visibility,
-                viewModel: viewModel
+                viewModel: viewModel,
+                isLoadingAllowed: appModel.allowsHomeContentLoading
             )
         ) {
+            guard appModel.allowsHomeContentLoading else {
+                viewModel.cancelPendingLoad()
+                return
+            }
             await viewModel.loadIfNeeded(
                 for: appModel.settings.homeVisibility.visibility
             )

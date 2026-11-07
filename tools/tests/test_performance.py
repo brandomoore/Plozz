@@ -62,6 +62,15 @@ Binary Images:
 
 
 class EvidenceTests(unittest.TestCase):
+    def test_profile_library_shell_measures_covered_home_requests(self):
+        name = "mobile-profile-library-shell"
+        self.assertEqual(performance.select(None, [name], "iOS"), [name])
+        with self.assertRaises(performance.Failure):
+            performance.select(None, [name], "tvOS")
+        self.assertEqual(performance.SCENARIOS[name]["test"],
+                         "ProfileSelectionPerformanceTests/testPerformanceLibrarySelectionWithAppShell")
+        self.assertIn("homeRequests", performance.SCENARIOS[name]["counters"])
+
     def test_profile_library_selection_measures_many_server_native_controls(self):
         name = "mobile-profile-library-selection"
         self.assertEqual(performance.select(None, [name], "iOS"), [name])

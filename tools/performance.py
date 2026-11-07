@@ -533,6 +533,14 @@ SCENARIOS = {
         "counters": ["servers", "libraries", "serverToggles", "libraryToggles",
                      "providerConstructions", "libraryRequests", "maxMainActorGapMicroseconds"],
     },
+    "mobile-profile-library-shell": {
+        "suite": "ui", "platforms": ["iOS"],
+        "test": "ProfileSelectionPerformanceTests/testPerformanceLibrarySelectionWithAppShell",
+        "file": "Tests/iOSPresentationTests/ProfileSelectionPerformanceTests.swift",
+        "description": "Full mobile root and profile setup Libraries cover with twenty synthetic servers; count covered Home feed requests during native server switches and library edits.",
+        "counters": ["servers", "libraries", "serverToggles", "libraryToggles",
+                     "homeRequests", "libraryRequests", "maxMainActorGapMicroseconds"],
+    },
     "mobile-profile-picker-entrance": {
         "suite": "ui", "platforms": ["iOS"],
         "test": "ProfilePickerPresentationTests/testPerformanceProfilePickerEntrance",

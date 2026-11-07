@@ -2,6 +2,7 @@
 import CoreModels
 import CoreUI
 import FeatureAuth
+import FeatureProfiles
 import FeatureSettings
 import SwiftUI
 import Synchronization
@@ -12,6 +13,172 @@ import XCTest
 
 @MainActor
 final class ProfileSelectionPerformanceTests: XCTestCase {
+    func testPerformanceLibrarySelectionWithAppShell() async throws {
+        try PerformanceProbe.requireEnabled()
+        try await exerciseLibrarySelectionWithAppShell(measuring: true)
+    }
+
+    func testProfileLibrarySelectionDoesNotReloadCoveredHome() async throws {
+        try await exerciseLibrarySelectionWithAppShell(measuring: false)
+    }
+
+    private func exerciseLibrarySelectionWithAppShell(measuring: Bool) async throws {
+        let suite = "ProfileLibrariesShell.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        let store = AccountStore(secureStore: InMemorySecureStore())
+        let app = PlozziOSAppModel(
+            appAdmissionStore: AppAdmissionStore(defaults: defaults),
+            accountStore: store, profileStore: ProfileStore(defaults: defaults)
+        )
+        app.profiles.markFirstRunProfileSetupComplete()
+        let requests = Mutex((home: 0, libraries: 0))
+        for index in 0..<20 {
+            let id = "shell-\(index)"
+            try store.add(Account(
+                id: id,
+                server: .init(id: id, name: String(format: "Server %02d", index),
+                              baseURL: URL(string: "https://server-\(index).invalid")!, provider: .jellyfin),
+                userID: "viewer", userName: "Viewer", deviceID: "fixture"
+            ), token: "fixture")
+        }
+        app.accountsProviders.registry.register(.jellyfin) { context in
+            LibrarySelectionPerformanceProvider(
+                session: context.session,
+                onLibraries: { requests.withLock { $0.libraries += 1 } }, onItems: {},
+                onHome: {
+                    requests.withLock { $0.home += 1 }
+                    try await Task.sleep(for: .milliseconds(150))
+                }
+            )
+        }
+        app.accountsProviders.tokenResolver = { _ in "fixture" }
+        app.accountsProviders.reloadAccounts()
+        app.saveProfile(.init(id: nil, name: "Library choices", avatarSymbol: "person.fill", colorIndex: 0))
+        let profileID = app.profiles.activeProfileID
+        let setupDeadline = ContinuousClock.now + .seconds(3)
+        while app.profileOnboardingStep != .libraries, ContinuousClock.now < setupDeadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertEqual(app.profileOnboardingStep, .libraries)
+
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
+        let host = UIHostingController(rootView:
+            PlozziOSRootView(appModel: app)
+                .environment(\.horizontalSizeClass, .compact)
+                .environment(\.locale, Locale(identifier: "en_US"))
+        )
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer {
+            host.dismiss(animated: false)
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+            defaults.removePersistentDomain(forName: suite)
+            removeOwnedProfileSettings([profileID])
+        }
+        func switches(_ view: UIView) -> [UISwitch] {
+            (view as? UISwitch).map { [$0] } ?? view.subviews.flatMap(switches)
+        }
+        func setupController() -> UIViewController {
+            var controller: UIViewController = host
+            while let presented = controller.presentedViewController { controller = presented }
+            return controller
+        }
+        let presentationDeadline = ContinuousClock.now + .seconds(5)
+        while (switches(setupController().view).isEmpty
+               || app.settings.discoveredLibraries.state.value?.count != 120),
+              ContinuousClock.now < presentationDeadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertFalse(switches(setupController().view).isEmpty)
+        XCTAssertEqual(app.settings.discoveredLibraries.state.value?.count, 120)
+        try await Task.sleep(for: .milliseconds(500))
+
+        func exercise() async throws -> [String: Int] {
+            let before = requests.withLock { $0 }
+            var maxGap = Duration.zero
+            let heartbeat = Task { @MainActor in
+                var previous = ContinuousClock.now
+                while !Task.isCancelled {
+                    do { try await Task.sleep(for: .milliseconds(2)) } catch { return }
+                    let now = ContinuousClock.now
+                    maxGap = max(maxGap, previous.duration(to: now))
+                    previous = now
+                }
+            }
+            defer { heartbeat.cancel() }
+            for enabled in [false, true, false, true] {
+                let control = try XCTUnwrap(switches(setupController().view).min {
+                    $0.convert($0.bounds, to: window).minY < $1.convert($1.bounds, to: window).minY
+                })
+                control.setOn(enabled, animated: false)
+                control.sendActions(for: .valueChanged)
+                XCTAssertEqual(app.activeAccountIDs(for: profileID).contains("shell-0"), enabled)
+                try await Task.sleep(for: .milliseconds(400))
+            }
+            for index in 0..<12 {
+                app.settings.homeVisibility.setEnabled(index.isMultiple(of: 2), for: "shell-0:library-0")
+                try await Task.sleep(for: .milliseconds(30))
+            }
+            let after = requests.withLock { $0 }
+            let parts = maxGap.components
+            return [
+                "servers": 20, "libraries": 120, "serverToggles": 4, "libraryToggles": 12,
+                "homeRequests": after.home - before.home, "libraryRequests": after.libraries - before.libraries,
+                "maxMainActorGapMicroseconds": Int(parts.seconds) * 1_000_000
+                    + Int(parts.attoseconds / 1_000_000_000_000)
+            ]
+        }
+        if measuring {
+            try await PerformanceProbe.measure(self, scenario: "mobile-profile-library-shell", operation: exercise)
+        } else {
+            let counters = try await exercise()
+            XCTAssertEqual(counters["homeRequests"], 0, "Home must not fan out behind the profile Libraries cover.")
+            XCTAssertEqual(requests.withLock { $0.home }, 0, "Setup must discover names without loading Home feeds.")
+        }
+        XCTAssertEqual(app.accountsProviders.activeAccountIDs.count, 20)
+        XCTAssertFalse(app.settings.homeVisibility.isEnabled("shell-0:library-0"))
+        XCTAssertEqual(app.profileOnboardingStep, .libraries)
+        if !measuring {
+            while app.profileOnboardingStep != nil { app.advanceProfileOnboarding() }
+            let homeDeadline = ContinuousClock.now + .seconds(5)
+            while requests.withLock({ $0.home }) == 0, ContinuousClock.now < homeDeadline {
+                try await Task.sleep(for: .milliseconds(20))
+            }
+            XCTAssertFalse(app.profiles.activeProfile.needsSetup)
+            XCTAssertGreaterThan(requests.withLock { $0.home }, 0, "Home must load after setup finishes.")
+
+            app.screenshotDirector.tab = "settings"
+            let settingsDeadline = ContinuousClock.now + .seconds(5)
+            while !app.isSettingsPresented, ContinuousClock.now < settingsDeadline {
+                try await Task.sleep(for: .milliseconds(20))
+            }
+            XCTAssertTrue(app.isSettingsPresented)
+            try await Task.sleep(for: .milliseconds(500))
+            let coveredRequests = requests.withLock { $0.home }
+            for enabled in [false, true, false, true] {
+                app.setAccount("shell-0", enabled: enabled, for: profileID)
+                try await Task.sleep(for: .milliseconds(100))
+            }
+            XCTAssertEqual(requests.withLock { $0.home }, coveredRequests,
+                           "Ordinary Settings must also defer hidden Home reloads.")
+            host.dismiss(animated: false)
+            let dismissalDeadline = ContinuousClock.now + .seconds(5)
+            while app.isSettingsPresented || requests.withLock({ $0.home }) == coveredRequests,
+                  ContinuousClock.now < dismissalDeadline {
+                try await Task.sleep(for: .milliseconds(20))
+            }
+            XCTAssertFalse(app.isSettingsPresented)
+            XCTAssertGreaterThan(requests.withLock { $0.home }, coveredRequests,
+                                 "Dismissing Settings must load the final account selection.")
+        }
+    }
+
     func testPlexSourceToggleKeepsTheOriginalSettingsSheet() async throws {
         for requiresPIN in [false, true] {
             let suite = "PlexSettingsContinuity.\(UUID())"
@@ -418,17 +585,25 @@ private struct LibrarySelectionPerformanceProvider: MediaProvider {
     let session: UserSession
     let onLibraries: @Sendable () -> Void
     let onItems: @Sendable () -> Void
+    var onHome: @Sendable () async throws -> Void = {}
     var kind: ProviderKind { session.server.provider }
     func libraries() async throws -> [MediaLibrary] {
         onLibraries()
         return (0..<6).map { MediaLibrary(id: "library-\($0)", title: "Library \($0)", kind: .movie) }
     }
-    func continueWatching(limit: Int) async throws -> [MediaItem] { [] }
-    func latest(limit: Int) async throws -> [MediaItem] { [] }
+    func continueWatching(limit: Int) async throws -> [MediaItem] {
+        try await onHome()
+        return []
+    }
+    func latest(limit: Int) async throws -> [MediaItem] {
+        try await onHome()
+        return []
+    }
     func item(id: String) async throws -> MediaItem { throw AppError.notFound }
     func children(of itemID: String) async throws -> [MediaItem] { [] }
     func items(in containerID: String, kind: MediaItemKind, page: PageRequest) async throws -> MediaPage {
         onItems()
+        try await onHome()
         return .init(items: [], startIndex: 0, totalCount: 0)
     }
     func search(query: String, limit: Int) async throws -> [MediaItem] { [] }

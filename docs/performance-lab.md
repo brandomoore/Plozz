@@ -481,6 +481,43 @@ heartbeat gaps are not tap latency or presented-frame timing. This fixture has
 no real share/server traffic and does not establish smoothness on a physical
 device or in the full onboarding flow.
 
+`mobile-profile-library-shell` closes that coverage gap by mounting the real
+mobile root and new-profile setup cover around the same twenty-server,
+120-library selection workload. Synthetic Home requests take 150 ms; no real
+network or share scanning is involved. It counts Home feed and library-name
+requests separately. The isolated Libraries-page scenario above missed Home
+fan-out and native tab reconstruction behind the cover, so its improvement did
+not establish that the full app was responsive.
+
+On the same iPhone 17 Pro / iOS 26.2 simulator, matched baseline
+`370aaf8455f54371a589bfdaf838f75f` and candidate
+`27b420be6a054a77a9f58d7b7beefea7` used one warmup and five retained samples:
+
+| Metric | Baseline median | Candidate median |
+| --- | ---: | ---: |
+| App-process CPU | 3742.311 ms | 583.862 ms |
+| Wall time | 4625.830 ms | 1998.593 ms |
+| Home feed requests | 314 | 0 |
+| Library-name requests | 251 | 78 |
+| Per-sample maximum main-actor scheduling gap | 493.829 ms | 40.869 ms |
+
+Candidate maximum scheduling gaps ranged from 37.820 to 55.877 ms. Home loading
+is now explicitly suspended while setup/Settings owns the screen, replaced Home
+models are invalidated immediately, and unfinished setup does not construct
+hidden tabs. Merely suspending requests left a 155.086 ms median maximum gap in
+an intermediate candidate; interaction stack sampling identified the covered
+tab catalogue as additional work. The final comparison excludes profiling
+overhead. Its roughly 1960 ms fixed input cadence dominates candidate wall time.
+Heartbeat gaps still are not touch latency or presented-frame timing, and this
+synthetic simulator result does not establish physical-device smoothness.
+
+After adding setup/Settings resumption and model-retirement correctness controls,
+final-source confirmation run `7b605fc421e04e189e6ab26bb5edf761` again recorded
+zero Home requests and 78 library-name requests in every retained sample.
+Maximum scheduling gaps ranged from 43.456 to 60.019 ms; median CPU was
+614.833 ms. The added correctness tests changed the fixture fingerprint, so this
+is a confirmation run, not another automated matched-baseline comparison.
+
 `mobile-profile-picker-entrance` mounts the production sixteen-profile touch
 picker in an iPad-sized window. It verifies the heading appears before avatars,
 a visible stagger, and substantially settled avatars within 1.5 seconds (450 ms

@@ -995,6 +995,11 @@ watch history and planning-list behavior are documented in
   library rows observe visibility separately from the server list. During new
   profile setup, library-name discovery remains available, but full cross-server
   identity indexing waits until setup finishes and uses the final membership.
+  Mobile also leaves the hidden tab catalogue unmounted beneath the opaque setup
+  cover, without removing its presentation owner. Home content loading pauses
+  during setup and ordinary Settings visits, then resumes with the final choices.
+  Account/profile replacement explicitly retires the previous Home model rather
+  than leaving its asynchronous fan-out running behind the selection controls.
   On mobile, enabling Plex verifies its user (and requests a PIN when required)
   inside the existing Settings presentation rather than replacing it with the
   launch profile picker. This presentation ownership applies only to the same

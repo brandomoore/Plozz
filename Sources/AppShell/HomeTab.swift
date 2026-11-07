@@ -269,7 +269,7 @@ struct HomeTab: View {
     }
 
     private var sharedHomeViewModel: HomeViewModel {
-        runtime.homeViewModel.value(forKey: runtime.scopeKey) {
+        runtime.homeViewModel.value(forKey: runtime.scopeKey, onDiscard: { $0.invalidate() }) {
             HomeViewModel(
                 accounts: accounts,
                 profileNamespace: libraryPreferencesNamespace,

@@ -56,13 +56,16 @@ extension PlozziOSAppModel {
 struct PlozziOSHomeLoadID: Equatable {
     let visibility: HomeLibraryVisibility
     let viewModelID: ObjectIdentifier
+    let isLoadingAllowed: Bool
 
     init(
         visibility: HomeLibraryVisibility,
-        viewModel: HomeViewModel
+        viewModel: HomeViewModel,
+        isLoadingAllowed: Bool = true
     ) {
         self.visibility = visibility
         viewModelID = ObjectIdentifier(viewModel)
+        self.isLoadingAllowed = isLoadingAllowed
     }
 }
 
@@ -407,9 +410,14 @@ struct PlozziOSHomeView: View {
         .task(
             id: PlozziOSHomeLoadID(
                 visibility: appModel.settings.homeVisibility.visibility.intent,
-                viewModel: viewModel
+                viewModel: viewModel,
+                isLoadingAllowed: appModel.allowsHomeContentLoading
             )
         ) {
+            guard appModel.allowsHomeContentLoading else {
+                viewModel.cancelPendingLoad()
+                return
+            }
             await viewModel.loadIfNeeded(
                 for: appModel.settings.homeVisibility.visibility
             )

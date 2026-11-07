@@ -772,6 +772,127 @@ final class HomeViewModelSnapshotHydrationTests: XCTestCase {
         )
     }
 
+    func testCoveredHomeDefersLoadsUntilItsOwnerAllowsThem() async {
+        let provider = FakeMediaProvider(allItems: [])
+        var allowed = false
+        let home = HomeViewModel(
+            accounts: [resolved(provider, accountID: "a")],
+            layoutStore: InMemoryHomeLayoutStore(),
+            isLoadingAllowed: { allowed }
+        )
+        await home.load()
+        await home.loadIfNeeded(for: .default)
+        XCTAssertEqual(provider.librariesCallCount, 0)
+        allowed = true
+        await home.loadIfNeeded(for: .default)
+        XCTAssertEqual(provider.librariesCallCount, 1)
+    }
+
+    func testPauseResumptionBeforeCancelledWorkReturnsKeepsFinalVisibility() async {
+        for merged in [true, false] {
+            let gate = HomeRefreshGate()
+            defer { gate.open() }
+            let provider = FakeMediaProvider(allItems: [])
+            provider.librariesGate = { await gate.wait() }
+            var allowed = true
+            var visibility = HomeLibraryVisibility(mergeLibrariesOnHome: merged)
+            let home = HomeViewModel(
+                accounts: [resolved(provider, accountID: "a")],
+                layoutStore: InMemoryHomeLayoutStore(),
+                currentVisibility: { visibility },
+                isLoadingAllowed: { allowed }
+            )
+            let first = Task { await home.loadIfNeeded(for: visibility) }
+            let deadline = ContinuousClock.now + .seconds(2)
+            while provider.librariesCallCount == 0, ContinuousClock.now < deadline {
+                await Task.yield()
+            }
+            XCTAssertEqual(provider.librariesCallCount, 1)
+            allowed = false
+            home.cancelPendingLoad()
+            visibility.setGlobalRowEnabled(false, for: .watchlist)
+            await home.loadIfNeeded(for: visibility)
+            XCTAssertEqual(provider.librariesCallCount, 1)
+            let pausedContent = home.state.value
+            allowed = true
+            await home.loadIfNeeded(for: visibility)
+            XCTAssertEqual(home.state.value, pausedContent)
+            gate.open()
+            await first.value
+            let resumedDeadline = ContinuousClock.now + .seconds(2)
+            while (provider.librariesCallCount < 2 || home.isRefreshing),
+                  ContinuousClock.now < resumedDeadline {
+                await Task.yield()
+            }
+            XCTAssertEqual(provider.librariesCallCount, 2)
+            XCTAssertFalse(home.isRefreshing)
+            await home.loadIfNeeded(for: visibility)
+            XCTAssertEqual(provider.librariesCallCount, 2, "The resumed load must use the final choices.")
+        }
+    }
+
+    func testCoveringOrRetiringHomeDuringPreparationDoesNotStartRequests() async {
+        for retiring in [false, true] {
+            let gate = HomeRefreshGate()
+            defer { gate.open() }
+            let preparing = expectation(description: "Home is preparing visibility")
+            var preparations = 0
+            var allowed = true
+            let provider = FakeMediaProvider(allItems: [])
+            let home = HomeViewModel(
+                accounts: [resolved(provider, accountID: "a")],
+                layoutStore: InMemoryHomeLayoutStore(),
+                prepareVisibility: {
+                    preparations += 1
+                    if preparations == 1 { preparing.fulfill() }
+                    await gate.wait()
+                },
+                isLoadingAllowed: { allowed }
+            )
+            let first = Task { await home.load() }
+            await fulfillment(of: [preparing], timeout: 2)
+            allowed = false
+            if retiring { home.invalidate() } else { home.cancelPendingLoad() }
+            gate.open()
+            await first.value
+            await home.loadIfNeeded(for: .default)
+            XCTAssertEqual(provider.librariesCallCount, 0)
+            XCTAssertFalse(home.isRefreshing)
+            allowed = true
+            await home.loadIfNeeded(for: .default)
+            XCTAssertEqual(provider.librariesCallCount, retiring ? 0 : 1)
+        }
+    }
+
+    func testInvalidatedHomeCannotPublishLateResultsOrRestart() async {
+        for merged in [true, false] {
+            let gate = HomeRefreshGate()
+            defer { gate.open() }
+            let provider = FakeMediaProvider(allItems: [])
+            provider.librariesGate = { await gate.wait() }
+            let visibility = HomeLibraryVisibility(mergeLibrariesOnHome: merged)
+            let home = HomeViewModel(
+                accounts: [resolved(provider, accountID: "a")],
+                layoutStore: InMemoryHomeLayoutStore(),
+                currentVisibility: { visibility }
+            )
+            let load = Task { await home.load() }
+            let deadline = ContinuousClock.now + .seconds(2)
+            while provider.librariesCallCount == 0, ContinuousClock.now < deadline {
+                await Task.yield()
+            }
+            home.invalidate()
+            let retiredContent = home.state.value
+            gate.open()
+            await load.value
+            await home.load()
+            await home.loadIfNeeded(for: visibility)
+            XCTAssertEqual(home.state.value, retiredContent)
+            XCTAssertEqual(provider.librariesCallCount, 1)
+            XCTAssertFalse(home.isRefreshing)
+        }
+    }
+
     func testViewTaskReplacementDuringPreparationStillLoadsRowsWithoutAnotherAppearance() async {
         for cached in [false, true] {
             for merged in [false, true] {

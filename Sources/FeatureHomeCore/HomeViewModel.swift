@@ -511,6 +511,10 @@ public final class HomeViewModel {
     @ObservationIgnored private var retryCancelledPreparation = false
     /// A load was requested while one was already running; run once more after.
     @ObservationIgnored private var wantsReloadAfterCurrent = false
+    @ObservationIgnored private var isInvalidated = false
+    @ObservationIgnored private var needsReenrichmentAfterPause = false
+    private let isLoadingAllowed: @MainActor () -> Bool
+    private var canLoadContent: Bool { !isInvalidated && isLoadingAllowed() }
 
     public init(
         accounts: [ResolvedAccount],
@@ -521,6 +525,7 @@ public final class HomeViewModel {
         identitySources: @escaping @Sendable (MediaItem) -> [MediaSourceRef] = { _ in [] },
         currentVisibility: @escaping () -> HomeLibraryVisibility = { .default },
         prepareVisibility: @escaping @MainActor () async -> Void = {},
+        isLoadingAllowed: @escaping @MainActor () -> Bool = { true },
         sectionDiagnostics: HomeSectionDiagnosticsModel? = nil,
         pendingWatchMutations: @escaping @Sendable () async -> [WatchMutation] = { [] },
         recentlyAppliedRecency: @escaping @Sendable () async -> [String: AppliedResumeRecord] = { [:] },
@@ -540,6 +545,7 @@ public final class HomeViewModel {
         self.identitySources = identitySources
         self.currentVisibility = currentVisibility
         self.prepareVisibility = prepareVisibility
+        self.isLoadingAllowed = isLoadingAllowed
         self.sectionDiagnostics = sectionDiagnostics
         self.pendingWatchMutations = pendingWatchMutations
         self.recentlyAppliedRecency = recentlyAppliedRecency
@@ -681,6 +687,34 @@ public final class HomeViewModel {
         layoutStore.save(layout)
     }
 
+    /// Settings/setup can pause the retained model without cancelling a valid
+    /// load merely because SwiftUI re-hosted Home or pushed a detail page.
+    public func cancelPendingLoad() {
+        loadGeneration &+= 1
+        loadingVisibility = nil
+        wantsReloadAfterCurrent = false
+        retryCancelledPreparation = false
+        aggregationTask?.cancel()
+        unmergedTask?.cancel()
+        collectionRefreshTask?.cancel()
+        collectionRefreshTask = nil
+        collectionRefreshWorkerGeneration &+= 1
+        collectionRefreshWaitingForDeadline = false
+        reenrichTask?.cancel()
+        reenrichGeneration &+= 1
+        needsReenrichmentAfterPause = !isInvalidated
+        if isLoading { lastLoadedVisibility = nil }
+    }
+
+    /// A replaced account/profile scope must retire its model-owned work now,
+    /// not wait for deinit while an outstanding load still retains the model.
+    public func invalidate() {
+        isInvalidated = true
+        cancelPendingLoad()
+        topShelfPublishTask?.cancel()
+        durableWatchlistRefreshTask?.cancel()
+    }
+
     /// Loads on first appearance and re-aggregates only when the visibility
     /// snapshot actually changed since the last successful load. tvOS cancels and
     /// restarts a `.task(id:)` every time Home reappears (returning from a pushed
@@ -690,6 +724,7 @@ public final class HomeViewModel {
     /// This guard makes the reappearance a no-op while still reacting to a genuine
     /// change: hiding/showing/disabling a library, or flipping the merge switch.
     public func loadIfNeeded(for visibility: HomeLibraryVisibility) async {
+        guard canLoadContent else { return }
         if isLoading {
             if !Task.isCancelled { retryCancelledPreparation = true }
             if loadingVisibility?.intent != visibility.intent {
@@ -731,7 +766,14 @@ public final class HomeViewModel {
                         ? "stale age=\(age.map { String(format: "%.0fs", $0) } ?? "never") > \(Int(policy.refreshAfter))s"
                         : "fresh age=\(age.map { String(format: "%.0fs", $0) } ?? "never")"
                 ))
-                guard isStale else { return }
+                guard isStale else {
+                    armCollectionRefresh()
+                    if needsReenrichmentAfterPause {
+                        needsReenrichmentAfterPause = false
+                        await reenrich()
+                    }
+                    return
+                }
                 await load(showLoadingState: false)
                 return
             }
@@ -755,6 +797,7 @@ public final class HomeViewModel {
     /// loaded rows stay on screen until the fresh content swaps in, so there's no
     /// skeleton flash or focus reset for a background update.
     public func load(showLoadingState: Bool) async {
+        guard canLoadContent else { return }
         // Coalesce concurrent loads. A load is a fan-out across every signed-in
         // account — measured at ~2.5s per account on a cold launch — so two
         // overlapping ones cost double the network and CPU for one result. They
@@ -774,6 +817,7 @@ public final class HomeViewModel {
         var diagnosticMetrics = PerformanceDiagnostics.Metrics()
         defer { diagnostic?.finish(diagnosticOutcome, metrics: diagnosticMetrics) }
         isLoading = true
+        needsReenrichmentAfterPause = false
         retryCancelledPreparation = false
         collectionRefreshTask?.cancel()
         collectionRefreshTask = nil
@@ -790,16 +834,17 @@ public final class HomeViewModel {
         defer {
             // The view may be covered when settings change, so a discarded load
             // must arrange its own replacement instead of leaving loading rows.
-            if let loadingVisibility, loadingVisibility != currentVisibility() {
+            if canLoadContent, let loadingVisibility, loadingVisibility != currentVisibility() {
                 wantsReloadAfterCurrent = true
             }
             isLoading = false
             loadingVisibility = nil
             retryCancelledPreparation = false
-            if wantsReloadAfterCurrent {
+            if wantsReloadAfterCurrent, canLoadContent {
                 wantsReloadAfterCurrent = false
                 Task { await load(showLoadingState: false) }
             } else {
+                wantsReloadAfterCurrent = false
                 isRefreshing = false
                 armCollectionRefresh()
             }
@@ -807,6 +852,7 @@ public final class HomeViewModel {
         PlozzLog.boot("HomeVM.load START vm=\(UInt(bitPattern: ObjectIdentifier(self).hashValue)) accounts=\(accounts.count) state=\(state.diagnosticName) silent=\(!showLoadingState)")
         loadingVisibility = currentVisibility()
         await prepareVisibility()
+        guard canLoadContent, generation == loadGeneration else { return }
         guard !Task.isCancelled else {
             // A replacement view task may already have coalesced into this load.
             // No aggregation started, so do not lose its request when we exit.
@@ -891,10 +937,12 @@ public final class HomeViewModel {
             // unless the model explicitly cancelled the aggregation task itself;
             // checking the caller here discarded an 8-second five-server result and
             // forced a second full fan-out before Continue Watching appeared.
-            guard !aggregationTask.isCancelled, currentVisibility() == visibility else { return }
+            guard !aggregationTask.isCancelled, canLoadContent,
+                  generation == loadGeneration, currentVisibility() == visibility else { return }
             let pending = await pendingWatchMutations()
             let appliedRecency = await recentlyAppliedRecency()
-            guard !aggregationTask.isCancelled, currentVisibility() == visibility else { return }
+            guard !aggregationTask.isCancelled, canLoadContent,
+                  generation == loadGeneration, currentVisibility() == visibility else { return }
             noteServerConfirmed(merged.continueWatching)
             let reconciledCW = Self.reconcileContinueWatching(
                 merged.continueWatching,
@@ -942,10 +990,12 @@ public final class HomeViewModel {
             }
             self.unmergedTask = unmergedTask
             let unmerged = await unmergedTask.value
-            guard !unmergedTask.isCancelled, currentVisibility() == visibility else { return }
+            guard !unmergedTask.isCancelled, canLoadContent,
+                  generation == loadGeneration, currentVisibility() == visibility else { return }
             let pending = await pendingWatchMutations()
             let appliedRecency = await recentlyAppliedRecency()
-            guard !unmergedTask.isCancelled, currentVisibility() == visibility else { return }
+            guard !unmergedTask.isCancelled, canLoadContent,
+                  generation == loadGeneration, currentVisibility() == visibility else { return }
             noteServerConfirmed(unmerged.continueWatching)
             let reconciledCW = Self.reconcileContinueWatching(
                 unmerged.continueWatching,
@@ -1141,7 +1191,8 @@ public final class HomeViewModel {
         visibility: HomeLibraryVisibility,
         publishesProgress: Bool
     ) async {
-        guard !Task.isCancelled, generation == loadGeneration, currentVisibility() == visibility else { return }
+        guard !Task.isCancelled, canLoadContent,
+              generation == loadGeneration, currentVisibility() == visibility else { return }
         loadFailures = progress.failures
         loadContinueWatchingDiagnostic = progress.continueWatchingDiagnostic
         guard publishesProgress else { return }
@@ -1151,7 +1202,8 @@ public final class HomeViewModel {
         if newlyReady.contains(.continueWatching) {
             let pending = await pendingWatchMutations()
             let recency = await recentlyAppliedRecency()
-            guard !Task.isCancelled, generation == loadGeneration, currentVisibility() == visibility else { return }
+            guard !Task.isCancelled, canLoadContent,
+                  generation == loadGeneration, currentVisibility() == visibility else { return }
             noteServerConfirmed(progress.content.continueWatching)
             resume = Self.reconcileContinueWatching(
                 progress.content.continueWatching, pending: pending, appliedRecency: recency,
@@ -1261,7 +1313,7 @@ public final class HomeViewModel {
     ) async {
         let pending = await pendingWatchMutations()
         let recency = await recentlyAppliedRecency()
-        guard !Task.isCancelled,
+        guard !Task.isCancelled, canLoadContent,
               generation == loadGeneration, currentVisibility() == visibility,
               accounts.contains(where: { $0.account.id == accountID }) else { return }
         detailResumeByAccount[accountID] = Self.reconcileContinueWatching(
@@ -2230,7 +2282,8 @@ public final class HomeViewModel {
     }
 
     private func armCollectionRefresh() {
-        guard !isLoading, state.value != nil, collectionRefreshTask == nil, !collectionRefreshQueue.isEmpty else { return }
+        guard canLoadContent, !isLoading, state.value != nil,
+              collectionRefreshTask == nil, !collectionRefreshQueue.isEmpty else { return }
         collectionRefreshWorkerGeneration &+= 1
         let workerGeneration = collectionRefreshWorkerGeneration
         collectionRefreshTask = Task(priority: .utility) { [weak self] in
@@ -2673,12 +2726,13 @@ public final class HomeViewModel {
     /// The merge and equality check run off MainActor. A content revision protects
     /// newer reloads and watch mutations while that immutable snapshot is processed.
     public func reenrich() async {
+        guard canLoadContent else { return }
         reenrichGeneration &+= 1
         let generation = reenrichGeneration
         let serverInfoMap = accounts.sourceServerInfo()
         let sources = identitySources
 
-        while !Task.isCancelled, generation == reenrichGeneration {
+        while !Task.isCancelled, canLoadContent, generation == reenrichGeneration {
             guard case let .loaded(current) = state else { return }
             let revision = stateRevision
             // Identity graph traversal and title normalization can take seconds
@@ -2710,7 +2764,7 @@ public final class HomeViewModel {
                 merge.cancel()
             }
 
-            guard !Task.isCancelled, generation == reenrichGeneration else { return }
+            guard !Task.isCancelled, canLoadContent, generation == reenrichGeneration else { return }
             // A reload or watch mutation can land while the merge is running.
             // Re-fold that newer content instead of restoring stale cards or progress.
             guard stateRevision == revision else { continue }
@@ -2729,6 +2783,7 @@ public final class HomeViewModel {
     public func scheduleReenrich(
         onSettled: @escaping @MainActor () -> Void = {}
     ) {
+        guard canLoadContent else { return }
         reenrichTask?.cancel()
         reenrichTask = Task { [weak self] in
             try? await Task.sleep(for: Self.reenrichDebounce)
