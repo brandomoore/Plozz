@@ -438,7 +438,8 @@ scene releases menu focus so reopening starts in the content. Back
 inside pushed pages and presentations still belongs to those surfaces. A hidden
 Home destination is temporarily available for this explicit return without
 changing the profile's hidden/order preferences. Native navigation and its
-optional exit protection are unchanged.
+optional exit protection are unchanged, except that Back at the Settings root
+shows Home first; the following Back opens the native sidebar.
 
 `HomeTab` applies `NavigationRailRootContentInset` only to its root, before
 registering destinations. Home, Watchlist and library roots retain their sidebar
