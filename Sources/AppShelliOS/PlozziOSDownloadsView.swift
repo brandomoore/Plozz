@@ -750,7 +750,6 @@ private struct PlozziOSDownloadManagementSettings: View {
 struct PlozziOSDownloadSettingsView: View {
     @Bindable var model: PlozziOSDownloadsModel
     let appModel: PlozziOSAppModel
-    @State var isHelpExpanded = false
     @State private var pendingBulkDeletion: PlozziOSDownloadsBulkDeletion?
 
     var body: some View {
@@ -876,11 +875,7 @@ struct PlozziOSDownloadSettingsView: View {
                     ).settingsSearchAnchor("downloads-bitrate")
                 }
             } footer: {
-                if model.downloadQuality == .original {
-                    Text("Keeps embedded audio and subtitles.")
-                } else {
-                    Text("Requires server conversion. May include fewer audio and subtitle tracks.")
-                }
+                PlozziOSDownloadQualityDescription(quality: model.downloadQuality)
             }
             .settingsSearchGroup([
                 "downloads-quality", "downloads-confirm",
@@ -893,7 +888,7 @@ struct PlozziOSDownloadSettingsView: View {
                     isOn: $model.notifiesOnStandaloneCompletion
                 ).settingsSearchAnchor("downloads-notify-one")
                 Toggle(
-                    "Batch Complete",
+                    "Season or Show Complete",
                     isOn: $model.notifiesOnBatchCompletion
                 ).settingsSearchAnchor("downloads-notify-batch")
                 Toggle(
@@ -902,29 +897,6 @@ struct PlozziOSDownloadSettingsView: View {
                 ).settingsSearchAnchor("downloads-notify-failure")
             }
             .settingsSearchGroup(["downloads-notify-one", "downloads-notify-batch", "downloads-notify-failure"])
-
-            SettingsSectionGroup {
-                DisclosureGroup("About Downloads", isExpanded: $isHelpExpanded) {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("These settings affect offline downloads only. Playback is never throttled.")
-                        if #available(iOS 26.0, *) {
-                            Text(
-                                "Live Activities show download progress when background processing is available. Cancel in the Live Activity to pause its downloads. You can resume them in Plozz.",
-                                comment: "iOS/iPadOS 26+ download-settings help. Live Activities is Apple's system feature. Cancelling its task pauses, rather than deletes, the downloads."
-                            )
-                        }
-                        Text("Original downloads the server’s existing file without transcoding.")
-                        Text(
-                            "Smaller copies request your preferred audio language where supported. Available tracks depend on the source. External subtitle files may be unavailable offline. Preparation can take time and use server CPU. Network shares support Original only."
-                        )
-                        Text("Batch notifications summarize a season or show instead of notifying for every episode.")
-                    }
-                    .font(.footnote)
-                    .plozzForeground(.secondary)
-                    .padding(.top, 8)
-                }
-                .accessibilityIdentifier("download-settings-help")
-            }
 
             PlozziOSDownloadManagementSettings(
                 model: model, pendingBulkDeletion: $pendingBulkDeletion

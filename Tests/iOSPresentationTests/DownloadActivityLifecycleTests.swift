@@ -50,7 +50,7 @@ final class DownloadActivityLifecycleTests: XCTestCase {
         )
         XCTAssertEqual(
             PlozziOSSystemDownloadActivityScheduler.subtitle(for: progress, locale: Locale(identifier: "en")),
-            "Downloading 4 of 10 · 62%"
+            "Downloading 4 of 10 · 62% · Cancel to pause"
         )
     }
 
@@ -66,7 +66,8 @@ final class DownloadActivityLifecycleTests: XCTestCase {
         func assertPresentation(_ title: String, _ subtitle: String) {
             let progress = DownloadActivityProgress(records: [second, first])
             XCTAssertEqual(PlozziOSSystemDownloadActivityScheduler.title(for: progress, locale: locale), title)
-            XCTAssertEqual(PlozziOSSystemDownloadActivityScheduler.subtitle(for: progress, locale: locale), subtitle)
+            let expected = progress.hasActiveWork ? "\(subtitle) · Cancel to pause" : subtitle
+            XCTAssertEqual(PlozziOSSystemDownloadActivityScheduler.subtitle(for: progress, locale: locale), expected)
         }
         assertPresentation("Spider-Man: Far From Home", "Downloading 1 of 2 · 53%")
         first.status = .preparing
@@ -101,19 +102,19 @@ final class DownloadActivityLifecycleTests: XCTestCase {
         }
         record.status = .preparing
         record.preparationFraction = 0.4
-        XCTAssertEqual(subtitle(), "Preparing 40%")
+        XCTAssertEqual(subtitle(), "Preparing 40% · Cancel to pause")
         record.preparationFraction = nil
-        XCTAssertEqual(subtitle(), "Preparing Download")
+        XCTAssertEqual(subtitle(), "Preparing Download · Cancel to pause")
         record.status = .downloading
         record.totalBytes = 1_000
         record.bytesDownloaded = 999
-        XCTAssertEqual(subtitle(), "Downloading · 99%")
+        XCTAssertEqual(subtitle(), "Downloading · 99% · Cancel to pause")
         record.bytesDownloaded = 1_000
-        XCTAssertEqual(subtitle(), "Finishing")
+        XCTAssertEqual(subtitle(), "Finishing · Cancel to pause")
         record.totalBytes = nil
-        XCTAssertEqual(subtitle(), "Downloading")
+        XCTAssertEqual(subtitle(), "Downloading · Cancel to pause")
         record.snapshot.seasonNumber = nil
-        XCTAssertEqual(subtitle(), "Downloading")
+        XCTAssertEqual(subtitle(), "Downloading · Cancel to pause")
         XCTAssertEqual(
             PlozziOSSystemDownloadActivityScheduler.title(
                 for: DownloadActivityProgress(records: [record]), locale: Locale(identifier: "en")
@@ -121,10 +122,10 @@ final class DownloadActivityLifecycleTests: XCTestCase {
             "episode · E4"
         )
         record.snapshot.episodeNumber = nil
-        XCTAssertEqual(subtitle(), "Downloading")
+        XCTAssertEqual(subtitle(), "Downloading · Cancel to pause")
         record.bytesDownloaded = 40
         record.totalBytes = 100
-        XCTAssertEqual(subtitle(), "Downloading · 40%")
+        XCTAssertEqual(subtitle(), "Downloading · 40% · Cancel to pause")
     }
 
     func testNativeSubtitleReportsParallelAndTerminalQueueStates() throws {
@@ -138,7 +139,7 @@ final class DownloadActivityLifecycleTests: XCTestCase {
                 for: DownloadActivityProgress(records: [first, second]), locale: Locale(identifier: "en")
             )
         }
-        XCTAssertEqual(subtitle(), "Completed: 0 of 2")
+        XCTAssertEqual(subtitle(), "Completed: 0 of 2 · Cancel to pause")
         XCTAssertEqual(
             PlozziOSSystemDownloadActivityScheduler.title(
                 for: DownloadActivityProgress(records: [first, second]), locale: Locale(identifier: "en")
@@ -149,7 +150,7 @@ final class DownloadActivityLifecycleTests: XCTestCase {
         second.batchID = "show"
         first.batchTitle = "Example Show"
         second.batchTitle = "Example Show"
-        XCTAssertEqual(subtitle(), "Active: 2 · Completed: 0 of 2")
+        XCTAssertEqual(subtitle(), "Active: 2 · Completed: 0 of 2 · Cancel to pause")
         XCTAssertEqual(
             PlozziOSSystemDownloadActivityScheduler.title(
                 for: DownloadActivityProgress(records: [first, second]), locale: Locale(identifier: "en")
@@ -158,7 +159,7 @@ final class DownloadActivityLifecycleTests: XCTestCase {
         )
         first.status = .queued
         second.status = .queued
-        XCTAssertEqual(subtitle(), "Queued · Completed: 0 of 2")
+        XCTAssertEqual(subtitle(), "Queued · Completed: 0 of 2 · Cancel to pause")
         first.status = .completed
         second.status = .paused
         XCTAssertEqual(subtitle(), "Download Paused · Completed: 1 of 2")
@@ -169,9 +170,9 @@ final class DownloadActivityLifecycleTests: XCTestCase {
         second.status = .downloading
         second.bytesDownloaded = 53
         first.status = .paused
-        XCTAssertEqual(subtitle(), "Downloading · 53% · Completed: 0 of 2")
+        XCTAssertEqual(subtitle(), "Downloading · 53% · Completed: 0 of 2 · Cancel to pause")
         first.status = .failed
-        XCTAssertEqual(subtitle(), "Downloading · 53% · Completed: 0 of 2")
+        XCTAssertEqual(subtitle(), "Downloading · 53% · Completed: 0 of 2 · Cancel to pause")
     }
 
     func testCurrentEpisodeAdvancesWithinTheSameActivityAfterFinalization() async throws {

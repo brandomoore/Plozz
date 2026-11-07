@@ -225,9 +225,8 @@ final class OfflineModePresentationTests: XCTestCase {
         }
     }
 
-    func testDownloadSettingsKeepHelpCollapsedAndUseShortLabelsOnPhoneAndTablet() async throws {
+    func testDownloadSettingsKeepOnlyContextualHelpOnPhoneAndTablet() async throws {
         let app = try makeApp()
-        app.downloads.downloadQuality = .original
         app.downloads.maximumDownloadMegabitsPerSecond = nil
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
         let previous = scene.windows.first(where: \.isKeyWindow)
@@ -241,6 +240,7 @@ final class OfflineModePresentationTests: XCTestCase {
             (CGSize(width: 402, height: 874), UserInterfaceSizeClass.compact, "phone"),
             (CGSize(width: 820, height: 1180), .regular, "tablet")
         ] {
+            app.downloads.downloadQuality = .original
             window.frame = CGRect(origin: .zero, size: size)
             await show(
                 NavigationStack {
@@ -265,27 +265,81 @@ final class OfflineModePresentationTests: XCTestCase {
             }
             await settle(window)
             let bottom = try recognizedText(in: window)
-            XCTAssertTrue(bottom.contains("About Downloads"), bottom)
+            XCTAssertTrue((top + bottom).contains("Season or Show Complete"), top + bottom)
+            XCTAssertFalse((top + bottom).contains("About Downloads"), top + bottom)
+            XCTAssertFalse((top + bottom).contains("Batch Complete"), top + bottom)
             XCTAssertFalse(bottom.contains("server CPU"), bottom)
-            capture(window, name: "download-settings-help-collapsed-\(name)")
+            capture(window, name: "download-settings-notifications-\(name)")
+            app.downloads.downloadQuality = .hd720
             await show(
                 NavigationStack {
-                    PlozziOSDownloadSettingsView(model: app.downloads, appModel: app, isHelpExpanded: true)
+                    PlozziOSDownloadSettingsView(model: app.downloads, appModel: app)
                 }.environment(\.horizontalSizeClass, sizeClass),
                 in: window
             )
-            if let expandedScroll = descendants(window).compactMap({ $0 as? UIScrollView })
+            let reducedTop = try recognizedText(in: window)
+            if let scroll = descendants(window).compactMap({ $0 as? UIScrollView })
                 .first(where: { $0.contentSize.height > $0.bounds.height }) {
-                expandedScroll.setContentOffset(CGPoint(
-                    x: 0, y: expandedScroll.contentSize.height - expandedScroll.bounds.height
-                        + expandedScroll.adjustedContentInset.bottom
+                scroll.setContentOffset(CGPoint(
+                    x: 0, y: scroll.contentSize.height - scroll.bounds.height
+                        + scroll.adjustedContentInset.bottom
                 ), animated: false)
             }
             await settle(window)
-            let expanded = try recognizedText(in: window)
-            XCTAssertTrue(expanded.contains("server CPU"), expanded)
-            XCTAssertTrue(expanded.contains("External subtitle files"), expanded)
-            capture(window, name: "download-settings-help-expanded-\(name)")
+            let reduced = reducedTop + (try recognizedText(in: window))
+            XCTAssertTrue(reduced.contains("Requires server conversion"), reduced)
+            XCTAssertTrue(reduced.contains("May include fewer audio and subtitle tracks"), reduced)
+            XCTAssertFalse(reduced.contains("Keeps embedded audio"), reduced)
+            XCTAssertFalse(reduced.contains("About Downloads"), reduced)
+            capture(window, name: "download-settings-reduced-quality-\(name)")
+        }
+    }
+
+    func testDownloadSelectionShowsTrackLimitsAndOnlyRelevantSourceRestrictions() async throws {
+        let app = try makeApp()
+        let item = MediaItem(
+            id: "movie", title: "Example Movie", kind: .movie,
+            versions: [.init(id: "original", height: 1080, sizeBytes: 420_000_000)]
+        )
+        let selection = EpisodeDownloadSelection(
+            items: [item], preferences: app.versionPreferences, capabilities: .default
+        )
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        for (size, sizeClass, name) in [
+            (CGSize(width: 402, height: 874), UserInterfaceSizeClass.compact, "phone"),
+            (CGSize(width: 820, height: 1180), .regular, "tablet")
+        ] {
+            window.frame = CGRect(origin: .zero, size: size)
+            for (quality, supportsReduced, suffix) in [
+                (DownloadQuality.original, true, "original"),
+                (.hd720, true, "smaller"),
+                (.original, false, "original-only")
+            ] {
+                await show(
+                    PlozziOSDownloadSelectionContent(
+                        title: Text("Example Movie"), selection: .constant(selection),
+                        quality: .constant(quality), supportsReducedQuality: supportsReduced,
+                        availableSpace: "72 GB", isBulk: false,
+                        onCancel: {}, onDownload: {}
+                    ).environment(\.horizontalSizeClass, sizeClass),
+                    in: window
+                )
+                let text = try recognizedText(in: window)
+                XCTAssertTrue(text.contains("External subtitle files may be unavailable offline"), text)
+                XCTAssertEqual(text.contains("Only Original is available for this source"), !supportsReduced, text)
+                XCTAssertEqual(text.contains("Keeps embedded audio and subtitles"), quality == .original, text)
+                XCTAssertEqual(text.contains("Requires server conversion"), quality != .original, text)
+                XCTAssertEqual(text.contains("May include fewer audio and subtitle tracks"), quality != .original, text)
+                XCTAssertTrue(text.contains("Quality"), text)
+                capture(window, name: "download-selection-\(name)-\(suffix)")
+            }
         }
     }
 

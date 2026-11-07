@@ -77,8 +77,13 @@ Dismissal persists across pages until the mode or connectivity episode changes;
 it never disables the mode.
 
 Download settings use short control labels. Background-speed and converted-quality
-limitations remain beside the relevant choices; the collapsed **About Downloads**
-section retains provider, audio/subtitle, Live Activity, and batch-notification help.
+limitations remain beside the relevant choices, without an About Downloads section.
+Download selection shows the quality-specific track guidance and external-subtitle
+limitation before confirmation; Original-only sources identify that restriction there,
+not in global settings. Automatic downloads still honor Ask Each Time being off.
+The notification toggle is labeled **Season or Show Complete**. Active system download
+Live Activities include **Cancel to pause** beside their progress, since the system's
+Cancel action pauses rather than deletes downloads.
 
 ## Download quality and tracks
 

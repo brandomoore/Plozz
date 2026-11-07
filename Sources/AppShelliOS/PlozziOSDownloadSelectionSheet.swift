@@ -263,6 +263,18 @@ struct PlozziOSDownloadSourceDetails {
     }
 }
 
+struct PlozziOSDownloadQualityDescription: View {
+    let quality: DownloadQuality
+
+    var body: some View {
+        if quality == .original {
+            Text("Keeps embedded audio and subtitles.")
+        } else {
+            Text("Requires server conversion. May include fewer audio and subtitle tracks.")
+        }
+    }
+}
+
 /// Shared by the real sheet and hosted interaction fixtures.
 struct PlozziOSDownloadSelectionContent: View {
     let title: Text
@@ -317,6 +329,10 @@ struct PlozziOSDownloadSelectionContent: View {
                                 Text(customQualityTitle).tag(customQuality)
                             }
                         }
+                    } else {
+                        LabeledContent("Quality") {
+                            Text("Original")
+                        }
                     }
                     LabeledContent("Selected", value: selection.selectedOptions.count.formatted())
                     if let size = selectedSize {
@@ -328,8 +344,17 @@ struct PlozziOSDownloadSelectionContent: View {
                 } header: {
                     title
                 } footer: {
-                    if isBulk, selection.episodes.contains(where: { $0.item.kind == .episode && $0.options.count > 1 }) {
-                        Text("Open an episode to change its selected versions.")
+                    VStack(alignment: .leading, spacing: 6) {
+                        if !supportsReducedQuality {
+                            Text("Only Original is available for this source.")
+                        }
+                        PlozziOSDownloadQualityDescription(
+                            quality: supportsReducedQuality ? quality : .original
+                        )
+                        Text("External subtitle files may be unavailable offline.")
+                        if isBulk, selection.episodes.contains(where: { $0.item.kind == .episode && $0.options.count > 1 }) {
+                            Text("Open an episode to change its selected versions.")
+                        }
                     }
                 }
 

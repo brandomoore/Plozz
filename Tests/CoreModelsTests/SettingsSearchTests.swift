@@ -101,6 +101,17 @@ final class SettingsSearchTests: XCTestCase {
         }
     }
 
+    func testSeasonOrShowCompletionRemainsSearchableAsBatchNotifications() throws {
+        let entry = try XCTUnwrap(SettingsSearchCatalog.entry(id: "downloads-notify-batch"))
+        XCTAssertEqual(entry.title.resolved(locale: Locale(identifier: "en_US")), "Season or Show Complete")
+        let mobile = SettingsSearchIndex(
+            entries: SettingsSearchCatalog.entries(on: .phone), locale: Locale(identifier: "en_US")
+        )
+        for query in ["season complete", "show complete", "batch notification"] {
+            XCTAssertTrue(mobile.results(for: query).contains { $0.id == entry.id }, query)
+        }
+    }
+
     func testCatalogIdentityAndPlatformRoutes() {
         let entries = SettingsSearchCatalog.entries
         XCTAssertEqual(entries.count, Set(entries.map(\.id)).count)

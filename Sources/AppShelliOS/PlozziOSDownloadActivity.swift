@@ -293,6 +293,19 @@ struct PlozziOSSystemDownloadActivityScheduler: PlozziOSDownloadActivityScheduli
         for progress: DownloadActivityProgress,
         locale: Locale = .current
     ) -> String {
+        let detail = progressSubtitle(for: progress, locale: locale)
+        guard progress.hasActiveWork else { return detail }
+        let cancellation = resolve(
+            .init("Cancel to pause", comment: "Download Live Activity hint beside the system-owned Cancel action. Cancelling pauses downloads without deleting them."),
+            locale: locale
+        )
+        return joinedDetails(detail, cancellation, locale: locale)
+    }
+
+    private static func progressSubtitle( // l10n:content - resolved system activity progress.
+        for progress: DownloadActivityProgress,
+        locale: Locale
+    ) -> String {
         let completed = progress.completedCount.formatted(.number.locale(locale))
         let total = progress.totalCount.formatted(.number.locale(locale))
         let completion = resolve(
