@@ -881,6 +881,19 @@ public final class HomeViewModel {
             initial.librarySections = !visibility.usesIndividualHomeRows ? [] : Self.plannedLibrarySections(
                 libraries: initial.libraries, visibility: visibility
             )
+            initial.serverRows = retainingServerRowContent(
+                HomeServerRow.plannedDefinitions(accounts: accounts, visibility: visibility)
+                    .map { HomeServerRow(definition: $0, isLoading: true) },
+                previous: initial.serverRows
+            )
+            initial.collectionRows = HomeCollectionRow.plannedDefinitions(accounts: accounts, visibility: visibility)
+                .map { definition in
+                    var row = initial.collectionRows.first { $0.definition == definition }
+                        ?? HomeCollectionRow(definition: definition)
+                    row.isLoading = true
+                    row.failure = nil
+                    return row
+                }
             state = .loaded(initial)
         } else if showLoadingState {
             state = .loading

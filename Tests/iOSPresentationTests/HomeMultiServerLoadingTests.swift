@@ -41,6 +41,73 @@ final class HomeMultiServerLoadingTests: XCTestCase {
         _ = try await exercise(scrollsWhileLoading: true)
     }
 
+    func testConfiguredRowsAreReservedBeforeAnyServerResponds() async throws {
+        let gate = HomeStartupResponseGate()
+        defer { gate.opened.withLock { $0 = true } }
+        let requests = MultiServerHomeRequests()
+        let accounts = (0..<20).map { index -> ResolvedAccount in
+            let id = "server-\(index)"
+            let account = Account(
+                id: id, server: .init(id: id, name: "Server", baseURL: URL(string: "https://example.invalid")!,
+                                     provider: .jellyfin),
+                userID: "viewer", userName: "Viewer", deviceID: "fixture"
+            )
+            let provider = MultiServerHomeProvider(
+                session: UserSession(server: account.server, userID: account.userID,
+                                     userName: account.userName, deviceID: account.deviceID, accessToken: "fixture"),
+                requests: requests, artwork: nil, slowLoading: false, gate: gate
+            )
+            return ResolvedAccount(account: account, provider: provider)
+        }
+        let definitions = accounts.flatMap { account in
+            ["first", "second"].map {
+                HomeServerRowDefinition(
+                    accountID: account.account.id, serverName: "Server", providerKind: .jellyfin,
+                    section: .init(id: $0, kind: .recommendations, libraryID: "movies")
+                )
+            }
+        }
+        let unavailable = HomeServerRowDefinition(
+            accountID: "absent", serverName: "Absent", providerKind: .plex,
+            section: .init(id: "first", kind: .recommendations)
+        )
+        let collection = CollectionSection(source: .init(
+            accountID: "server-0", collectionID: "collection", title: "Collection", serverUserID: "viewer"
+        ))
+        let otherViewer = CollectionSection(source: .init(
+            accountID: "server-0", collectionID: "private", title: "Private", serverUserID: "other"
+        ))
+        let visibility = HomeLibraryVisibility(
+            rowCustomization: .init(
+                defaults: .custom, order: definitions.map(\.id),
+                shown: Set(definitions.map(\.id) + [unavailable.id, collection.rowID, otherViewer.rowID]),
+                serverRows: definitions + [unavailable]
+            ),
+            collectionSections: [collection, otherViewer]
+        )
+        let model = HomeViewModel(
+            accounts: accounts, layoutStore: InMemoryHomeLayoutStore(), contentStore: NoOpHomeContentStore(),
+            currentVisibility: { visibility }
+        )
+        defer { model.invalidate() }
+        let loading = Task { await model.load() }
+        defer { loading.cancel() }
+        let deadline = ContinuousClock.now + .seconds(2)
+        while model.state.value?.serverRows.count != 40, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        let initial = try XCTUnwrap(model.state.value)
+        XCTAssertEqual(initial.serverRows.map(\.definition.id), definitions.map(\.id))
+        XCTAssertTrue(initial.serverRows.allSatisfy { $0.isLoading && $0.items.isEmpty && $0.failure == nil })
+        XCTAssertEqual(initial.collectionRows.map(\.definition.id), [collection.id])
+        XCTAssertTrue(initial.collectionRows.allSatisfy(\.isLoading))
+        XCTAssertTrue(model.isRefreshing)
+        gate.opened.withLock { $0 = true }
+        await loading.value
+        XCTAssertFalse(model.isRefreshing)
+        XCTAssertEqual(model.state.value?.serverRows.reduce(0) { $0 + $1.items.count }, 800)
+    }
+
     private func exercise(
         scrollsLoadedContent: Bool = false, scrollsWhileLoading: Bool = false
     ) async throws -> [String: Int] {
@@ -189,8 +256,8 @@ final class HomeMultiServerLoadingTests: XCTestCase {
         XCTAssertEqual(requests.value.withLock { $0 }, 100)
         let items = content.serverRows.reduce(0) { $0 + $1.items.count }
         XCTAssertEqual(items, 800)
-        // Empty global rows can disappear during loading; preservation follows
-        // their visible successor rather than retaining an absolute offset.
+        // Confirmed-empty global rows may disappear; Home does not command a
+        // replacement offset when that changes the document.
         if !scrollsWhileLoading { XCTAssertGreaterThan(scroll.contentOffset.y, 0) }
         window.layoutIfNeeded()
         try await Task.sleep(for: .milliseconds(150))
@@ -272,14 +339,26 @@ private final class MultiServerHomeRequests: Sendable {
     let value = Mutex(0)
 }
 
+private final class HomeStartupResponseGate: Sendable {
+    let opened = Mutex(false)
+
+    func wait() async throws {
+        while !opened.withLock({ $0 }) {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+    }
+}
+
 private struct MultiServerHomeProvider: MediaProvider {
     let session: UserSession
     let requests: MultiServerHomeRequests
     let artwork: URL?
     let slowLoading: Bool
+    var gate: HomeStartupResponseGate? = nil
     var kind: ProviderKind { .jellyfin }
 
     func libraries() async throws -> [MediaLibrary] {
+        try await gate?.wait()
         requests.value.withLock { $0 += 1 }
         return [.init(id: "movies", title: "Movies", kind: .movie)]
     }
@@ -304,6 +383,7 @@ private struct MultiServerHomeProvider: MediaProvider {
         return media("latest", limit: min(limit, 20))
     }
     private func delay() async throws {
+        try await gate?.wait()
         requests.value.withLock { $0 += 1 }
         let index = Int(session.server.id.split(separator: "-").last ?? "") ?? 0
         try await Task.sleep(for: .milliseconds(slowLoading ? 150 + index * 100 : 50 + index * 10))
@@ -322,10 +402,17 @@ private struct MultiServerHomeProvider: MediaProvider {
             return item
         }
     }
-    func item(id: String) async throws -> MediaItem { throw AppError.notFound }
-    func children(of itemID: String) async throws -> [MediaItem] { [] }
+    func item(id: String) async throws -> MediaItem {
+        try await gate?.wait()
+        throw AppError.notFound
+    }
+    func children(of itemID: String) async throws -> [MediaItem] {
+        try await gate?.wait()
+        return []
+    }
     func items(in containerID: String, kind: MediaItemKind, page: PageRequest) async throws -> MediaPage {
-        .init(items: [], startIndex: 0, totalCount: 0)
+        try await gate?.wait()
+        return .init(items: [], startIndex: 0, totalCount: 0)
     }
     func search(query: String, limit: Int) async throws -> [MediaItem] { [] }
     func playbackInfo(for itemID: String) async throws -> PlaybackRequest { throw AppError.notFound }

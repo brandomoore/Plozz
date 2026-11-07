@@ -1,6 +1,19 @@
 import CoreModels
 
 public struct HomeServerRow: Equatable, Sendable {
+    static func plannedDefinitions(
+        accounts: [ResolvedAccount], visibility: HomeLibraryVisibility
+    ) -> [HomeServerRowDefinition] {
+        let accountIDs = Set(accounts.map(\.account.id))
+        return (visibility.rowCustomization?.availableServerRows ?? []).filter { definition in
+            guard case .server = definition.id, accountIDs.contains(definition.accountID) else { return false }
+            return visibility.isHomeRowVisible(HomeRowChoice(serverRow: definition))
+                && definition.section.libraryID.map {
+                    visibility.isEnabled("\(definition.accountID):\($0)")
+                } != false
+        }
+    }
+
     public var definition: HomeServerRowDefinition
     public var items: [MediaItem]
     public var isLoading: Bool

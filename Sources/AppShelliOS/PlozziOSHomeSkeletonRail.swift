@@ -37,7 +37,10 @@ struct PlozziOSHomeSkeletonRail: View {
     }
 
     private func rail(metrics: PlozzMetrics) -> some View {
-        PlozziOSMediaSection(title: title, artworkInset: !isLibraryRow && cardStyle == .framed ? metrics.cardInset : 0) {
+        PlozziOSMediaSection(
+            title: title, artworkInset: !isLibraryRow && cardStyle == .framed ? metrics.cardInset : 0,
+            reservesBrowseSpace: !isLibraryRow
+        ) {
             ScrollView(.horizontal) {
                 // Match loaded rails: retain eager vertical sizing, but don't
                 // construct cards clipped beyond each horizontal viewport.

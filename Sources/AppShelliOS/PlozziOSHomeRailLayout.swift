@@ -1,10 +1,121 @@
 #if os(iOS)
 import CoreModels
 import CoreUI
+import FeatureHomeCore
 import SwiftUI
 
 private struct PlozziOSHomeViewportWidthKey: EnvironmentKey {
     static let defaultValue: CGFloat = 0
+}
+
+/// Content changes inside a row's reserved footprint, never the other way around.
+struct PlozziOSHomeRowSlot<Content: View>: View {
+    @Environment(\.plozzCardStyle) private var cardStyle
+    @Environment(\.horizontalSizeClass) private var sizeClass
+    @Environment(\.plozziOSHomeViewportWidth) private var viewportWidth
+    let presentation: HomePresentationRow
+    let captions: CardCaptionSettings
+    let continueWatchingLayout: ContinueWatchingCardLayout
+    let continueWatchingUsesSeriesArtwork: Bool
+    @ViewBuilder var content: Content
+
+    private var isLibraryRow: Bool { presentation.id == .libraries }
+    private var isLiveTV: Bool { presentation.id == .liveTV }
+    private var isContinueWatching: Bool { presentation.id == .global(.continueWatching) }
+    private var showsSeriesArtwork: Bool { isContinueWatching && continueWatchingUsesSeriesArtwork }
+    private var isFeatured: Bool { presentation.choice.collectionSection?.cardStyle == .featured }
+    private var style: PosterCardView.Style {
+        if isContinueWatching { return continueWatchingLayout.cardStyle }
+        if isLibraryRow { return .landscape }
+        switch presentation.source {
+        case let .home(row): return row.style == .landscape ? .landscape : .poster
+        case let .library(row): return row.section.style == .landscape ? .landscape : .poster
+        case .liveTV: return .landscape
+        }
+    }
+
+    private var title: Text {
+        switch presentation.source {
+        case let .home(row): Text(row.title)
+        case let .library(row): row.section.displayName
+        case .liveTV: Text("Live TV")
+        }
+    }
+
+    private var showsStatus: Bool {
+        switch presentation.source {
+        case let .home(row): row.failure != nil && row.items.isEmpty && row.libraries.isEmpty
+        case let .library(row): row.issue != nil || row.failure != nil
+        case .liveTV: false
+        }
+    }
+
+    var body: some View {
+        PlozziOSHomeRailLayout { metrics in
+            sizing(metrics: metrics)
+                .environment(\.plozzShimmerEnabled, false)
+                .hidden()
+                .accessibilityHidden(true)
+                .overlay(alignment: .topLeading) {
+                    if showsStatus {
+                        // Large text and long diagnostics remain reachable without
+                        // making a failed server resize the surrounding page.
+                        ScrollView { content }
+                            .scrollBounceBehavior(.basedOnSize)
+                    } else {
+                        content
+                    }
+                }
+        }
+    }
+
+    @ViewBuilder
+    private func sizing(metrics: PlozzMetrics) -> some View {
+        if isFeatured {
+            VStack(alignment: .leading, spacing: 12) {
+                BrowseRowHeading(title: title, action: nil)
+                    .font(metrics.usesDesktopSizing ? .title3.weight(.semibold) : .title2.bold())
+                    .padding(.horizontal, metrics.usesDesktopSizing ? DesktopMediaRailLayout.pageInset : 20)
+                Color.clear.frame(height: (metrics.usesDesktopSizing
+                    ? DesktopMediaRailLayout.featuredSize(in: viewportWidth, metrics: metrics)
+                    : FeaturedCardLayout.size(viewportWidth: viewportWidth > 0 ? viewportWidth : 390, television: false)
+                ).height + 8)
+            }
+        } else {
+            PlozziOSMediaSection(
+                title: title, artworkInset: !isLibraryRow && cardStyle == .framed ? metrics.cardInset : 0,
+                reservesBrowseSpace: !isLibraryRow
+            ) {
+                Group {
+                    if isLibraryRow {
+                        PlozziOSHomeLibraryCard(
+                            library: nil, artworkSource: nil,
+                            width: metrics.usesDesktopSizing ? metrics.landscapeWidth
+                                : metrics.density.iOSHomeLibraryWidth(horizontalSizeClass: sizeClass)
+                        )
+                        .environment(\.plozzCardCaptionSettings, captions)
+                    } else if isLiveTV {
+                        Color.clear.frame(height: metrics.cardSlotWidth(
+                            for: .landscape, cardStyle: cardStyle
+                        ) * 9 / 16)
+                    } else {
+                        SkeletonCardView(
+                            style: style == .landscape ? .landscape : .poster,
+                            showsCaption: captions.showsLabels(
+                                in: .home, hasArtworkTitle: showsSeriesArtwork,
+                                isContinueWatching: isContinueWatching
+                            ),
+                            showsSeriesArtwork: showsSeriesArtwork
+                        )
+                        .frame(width: metrics.cardSlotWidth(
+                            for: style, cardStyle: cardStyle, showsSeriesArtwork: showsSeriesArtwork
+                        ))
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+    }
 }
 
 extension EnvironmentValues {

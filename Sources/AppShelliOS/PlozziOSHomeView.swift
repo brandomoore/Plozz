@@ -686,7 +686,11 @@ struct PlozziOSHomeView: View {
                 rows: rows, content: content, visibility: visibility.visibility, liveTV: liveTV,
                 presentation: appModel.settings.libraryPresentation.settings
             )) { presentation in
-                Group {
+                PlozziOSHomeRowSlot(
+                    presentation: presentation, captions: appModel.settings.cardStyle.captions,
+                    continueWatchingLayout: visibility.continueWatchingLayout,
+                    continueWatchingUsesSeriesArtwork: visibility.continueWatchingUsesSeriesArtwork
+                ) {
                     switch presentation.source {
                     case let .home(row):
                         PlozziOSHomeRowView(
@@ -717,7 +721,6 @@ struct PlozziOSHomeView: View {
                     }
                 }
                 .environment(\.plozzLandscapeTitleLogo, presentation.choice.collectionSection?.titleLogo ?? .off)
-                .plozziOSHomeScrollRow(presentation.id)
             }
         }
         return scroll
@@ -2748,7 +2751,7 @@ struct PlozziOSHomeLibraryPresentationRow: View, Equatable {
     }
 }
 
-private struct PlozziOSHomeRowView: View {
+struct PlozziOSHomeRowView: View {
     @Environment(\.plozzMetrics) private var metrics
     @Environment(\.plozzCardStyle) private var artworkStyle
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
@@ -2972,7 +2975,7 @@ struct PlozziOSHomeMediaRail: View {
     private func rail(metrics: PlozzMetrics) -> some View {
         PlozziOSMediaSection(
             title: title, artworkInset: cardStyle == .framed ? metrics.cardInset : 0,
-            onBrowse: onBrowse
+            reservesBrowseSpace: true, onBrowse: onBrowse
         ) {
             if browseItem != nil && items.isEmpty && loadingPlaceholderCount == 0 {
                 Text("No titles in this collection.")

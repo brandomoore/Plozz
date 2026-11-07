@@ -533,7 +533,14 @@ and no page-height change. It uses synthetic items without remote artwork:
 this is loading-layout and app-process CPU evidence, not provider/network,
 image-decoding, full Home startup, or presented-frame/FPS evidence.
 `HomeLoadingLayoutTests` separately checks empty-row removal, insertion, content
-insets, library/featured placeholders, and existing heading geometry.
+insets, library/featured placeholders, and existing heading geometry. Its row-slot
+matrix compares reserved height with actual loading and populated content within
+0.5 points across phone/tablet widths, card shapes/styles, captions, and large
+text. Failure/retry transitions must retain that height. Separate Continue
+Watching, featured, and Live TV cases cover their distinct geometry; native
+animated scrolling must reach its target without offset reversal while rows
+change between content and errors. This is UIKit animation, not physical
+drag/deceleration evidence.
 
 `mobile-home-multi-server-loading` mounts the production mobile Home page and
 model with twenty synthetic providers, forty server rows and 800 items. Provider
@@ -582,6 +589,23 @@ Final-source confirmation `bb474979c865483a8f77da9e32ee2aab` completed all three
 twenty-server scenarios. Startup-scroll maximum gaps ranged from 93.202 to
 192.052 ms, versus 11.573 to 15.915 ms for settled scrolling; this remains a
 startup improvement, not evidence that every loading hitch has been eliminated.
+
+Stable-row confirmation run `a26271e20b02410aad2ff407b6502c28` completed the
+loading-layout, startup-scroll, and settled-scroll scenarios after removing
+custom scroll-position compensation. All five loading-layout samples reported
+zero page-height change. Every twenty-server sample retained forty completed
+rows, 800 items, and 100 requests; startup samples issued all 24 targets during
+loading. Startup maximum scheduling gaps ranged from 97.301 to 158.016 ms;
+settled-scroll gaps ranged from 13.506 to 15.033 ms. Median startup CPU was
+5556.280 ms. These are confirmation measurements, not proof of hitch-free
+scrolling or a matched speedup: new regression fixtures changed the fingerprint
+relative to pre-change run `4abfd4070ca84049bbf574b9125278f4`.
+Hosted correctness run `ac1c7b8bb3ca44d6aba11c9b541dcfce` passed seventeen
+selected tests, including reservation before any provider response and
+content/failure geometry. Shared-core run `c8d439cf89e04c43aa90fb55846a0ff0`
+passed twenty-two selected tvOS simulator tests for planning, authorization,
+empty/failure presentation, ordering, and progressive publication. Neither run
+skipped tests; neither represents the full suite or physical-device coverage.
 
 `mobile-home-rail-prefetch` updates the real mobile Continue Watching rail 24
 times with the same 180 metadata-rich episodes across twelve synthetic account

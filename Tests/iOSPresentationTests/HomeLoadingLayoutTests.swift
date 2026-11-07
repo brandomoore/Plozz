@@ -587,7 +587,7 @@ final class HomeLoadingLayoutTests: XCTestCase {
         }
     }
 
-    func testRemovingAnEmptyRowAboveTheViewportKeepsTheVisibleRowInPlace() async throws {
+    func testRemovingAnEmptyRowDoesNotIssueAScrollCorrection() async throws {
         let fixture = try Fixture()
         defer { fixture.close() }
         let state = Rows()
@@ -601,11 +601,14 @@ final class HomeLoadingLayoutTests: XCTestCase {
         let before = marker.convert(.zero, to: fixture.window).y
         XCTAssertEqual(before, 100, accuracy: 1)
         let oldHeight = scroll.contentSize.height
+        let oldOffset = scroll.contentOffset.y
         state.rows.removeFirst()
         try await fixture.settle()
         XCTAssertLessThan(scroll.contentSize.height, oldHeight, "An empty row must not leave a permanent gap.")
+        XCTAssertEqual(scroll.contentOffset.y, oldOffset, accuracy: 1,
+                       "A confirmed-empty row may disappear, but Home must not steer the native scroll view.")
         XCTAssertEqual(try XCTUnwrap(fixture.find("row-3")).convert(.zero, to: fixture.window).y,
-                       before, accuracy: 1, "Removing an empty row above must not move the visible content.")
+                       before - (oldHeight - scroll.contentSize.height), accuracy: 1)
     }
 
     func testReplacingSkeletonsWhileScrolledKeepsPageHeightAndPosition() async throws {
@@ -694,7 +697,7 @@ final class HomeLoadingLayoutTests: XCTestCase {
         }
     }
 
-    func testRowChangesPreserveTheViewportWithAContentInset() async throws {
+    func testRowChangesLeaveNativeScrollOffsetAloneWithAContentInset() async throws {
         let fixture = try Fixture()
         defer { fixture.close() }
         let state = Rows()
@@ -705,34 +708,265 @@ final class HomeLoadingLayoutTests: XCTestCase {
         let marker = try XCTUnwrap(fixture.find("row-3"))
         scroll.setContentOffset(CGPoint(x: 0, y: marker.convert(.zero, to: scroll).y - 100), animated: false)
         try await fixture.settle()
-        let before = marker.convert(.zero, to: fixture.window).y
+        let before = scroll.contentOffset.y
         state.rows.removeFirst()
         try await fixture.settle()
-        XCTAssertEqual(try XCTUnwrap(fixture.find("row-3")).convert(.zero, to: fixture.window).y, before, accuracy: 1)
+        XCTAssertEqual(scroll.contentOffset.y, before, accuracy: 1)
         state.rows.insert(.init(number: 99), at: 0)
         try await fixture.settle()
-        XCTAssertEqual(try XCTUnwrap(fixture.find("row-3")).convert(.zero, to: fixture.window).y, before, accuracy: 1)
+        XCTAssertEqual(scroll.contentOffset.y, before, accuracy: 1)
     }
 
-    func testSuccessiveLayoutChangesAccumulateUntilTheScrollPositionArrives() {
-        let preservation = PlozziOSHomeScrollPreservation()
-        preservation.geometry = ScrollGeometry(
-            contentOffset: CGPoint(x: 0, y: 400), contentSize: CGSize(width: 390, height: 2000),
-            contentInsets: .init(), containerSize: CGSize(width: 390, height: 600)
+    func testRowSlotsKeepExactHeightThroughContentFailureAndRetry() async throws {
+        let fixture = try Fixture()
+        defer { fixture.close() }
+        let model = HomeViewModel(accounts: [], profileNamespace: fixture.profileID)
+        defer { model.invalidate() }
+        let choice = HomeRowChoice(
+            id: .library(key: "fixture", section: "recentlyAdded"), title: "Recently Added",
+            isProviderDefault: true
         )
-        let id = HomeRowID.global(.recentlyAdded)
-        XCTAssertNil(preservation.offset(after: [id: CGRect(x: 0, y: 300, width: 390, height: 300)]))
-        XCTAssertEqual(preservation.offset(after: [id: CGRect(x: 0, y: 200, width: 390, height: 300)]), 300)
-        XCTAssertEqual(preservation.offset(after: [id: CGRect(x: 0, y: 100, width: 390, height: 300)]), 200)
-        preservation.geometry?.contentOffset.y = 200
-        XCTAssertNil(preservation.offset(after: [id: CGRect(x: 0, y: 100, width: 390, height: 300)]))
-        preservation.geometry?.contentOffset.y = 0
-        XCTAssertNil(preservation.offset(after: [id: CGRect(x: 0, y: 0, width: 390, height: 300)]),
-                     "At the top, loading must keep the top rather than scroll to a previously visible row.")
-        preservation.geometry?.contentOffset.y = 100
-        preservation.geometry?.containerSize.height = 500
-        XCTAssertNil(preservation.offset(after: [id: CGRect(x: 0, y: 50, width: 390, height: 300)]),
-                     "A viewport resize is not a provider row insertion.")
+        for width in [CGFloat(390), 768] {
+            for cardStyle in [CardStyle.borderless, .framed] {
+                for style in [LibrarySection.Style.poster, .landscape] {
+                    for captions in [true, false] {
+                        for textSize in [DynamicTypeSize.large, .accessibility3] {
+                            fixture.app.settings.cardStyle.captions = CardCaptionSettings(showsLabels: captions)
+                            let section = LibrarySection(
+                                id: "recentlyAdded", title: "Recently Added Recommendations",
+                                style: style, items: []
+                            )
+                            let state = RowState(row: .init(section: section, isLoading: true, failure: nil))
+                            let heights = Heights()
+                            fixture.mount(
+                                ScrollView {
+                                    ReservedLibraryRow(
+                                        choice: choice, state: state, app: fixture.app, model: model,
+                                        coordinator: FeaturedTrailerCoordinator(), controller: HeroTrailerController(),
+                                        onContentHeight: { heights.loading = $0 }
+                                    )
+                                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { heights.loaded = $0 }
+                                }
+                                .environment(\.plozziOSHomeViewportWidth, width)
+                                .environment(\.plozzCardStyle, cardStyle)
+                                .environment(\.dynamicTypeSize, textSize),
+                                width: width
+                            )
+                            try await fixture.settle()
+                            let reserved = heights.loaded
+                            XCTAssertGreaterThan(reserved, 100)
+                            XCTAssertEqual(heights.loading, reserved, accuracy: 0.5,
+                                           "Reserve the actual placeholder height, not an estimate.")
+                            var loaded = section
+                            loaded.items = fixture.items
+                            for row in [
+                                HomeLibrarySectionGroup.Row(section: loaded, isLoading: false, failure: nil),
+                                .init(section: section, isLoading: false, failure: .serverUnreachable),
+                                .init(section: section, isLoading: false, failure: nil,
+                                      issue: .init(choice: choice, reason: .failed(.serverUnreachable))),
+                                .init(section: section, isLoading: true, failure: nil)
+                            ] {
+                                state.row = row
+                                try await fixture.settle()
+                                XCTAssertEqual(heights.loaded, reserved, accuracy: 0.5,
+                                               "\(width), \(cardStyle), \(style), captions=\(captions), \(textSize)")
+                                if row.failure == nil && row.issue == nil {
+                                    XCTAssertEqual(heights.loading, reserved, accuracy: 0.5)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    func testStatusRowsRetainTheirConfiguredCardShape() throws {
+        let definition = HomeServerRowDefinition(
+            accountID: "server", serverName: "Server", providerKind: .jellyfin,
+            section: .init(id: "next", kind: .nextUp)
+        )
+        let choice = HomeRowChoice(serverRow: definition)
+        let visibility = HomeLibraryVisibility(
+            rowCustomization: .init(defaults: .custom, shown: [definition.id], serverRows: [definition]),
+            mergeNextUpIntoContinueWatching: false
+        )
+        var content = HomeViewModel.Content(serverRows: [
+            .init(definition: definition, failure: .serverUnreachable)
+        ])
+        content.sectionIssues = [.init(choice: choice, reason: .failed(.serverUnreachable))]
+        let rows = HomePresentationRow.resolve(rows: [], content: content, visibility: visibility)
+        guard case let .library(row) = try XCTUnwrap(rows.first).source else {
+            return XCTFail("Expected a visible failure.")
+        }
+        XCTAssertEqual(row.section.style, .landscape)
+        XCTAssertNotNil(row.issue)
+    }
+
+    func testReservedContinueWatchingHeightMatchesBothLayoutsAndCaptionPreferences() async throws {
+        let fixture = try Fixture()
+        defer { fixture.close() }
+        let model = HomeViewModel(accounts: [], profileNamespace: fixture.profileID)
+        defer { model.invalidate() }
+        let choice = try XCTUnwrap(HomeRowChoice.shared.first { $0.id == .global(.continueWatching) })
+        for width in [CGFloat(390), 768] {
+            for layout in ContinueWatchingCardLayout.allCases {
+                fixture.app.settings.homeVisibility.setContinueWatchingLayout(layout)
+                for captions in [true, false] {
+                    fixture.app.settings.cardStyle.captions = CardCaptionSettings(showsLabels: captions)
+                    var reserved: CGFloat?
+                    for row in [
+                        HomeRow(kind: .continueWatching, loadingPlaceholderCount: 8),
+                        HomeRow(kind: .continueWatching, items: fixture.items),
+                        HomeRow(kind: .continueWatching, failure: .serverUnreachable)
+                    ] {
+                        let heights = Heights()
+                        let presentation = HomePresentationRow(choice: choice, source: .home(row))
+                        fixture.mount(
+                            ScrollView {
+                                PlozziOSHomeRowSlot(
+                                    presentation: presentation, captions: fixture.app.settings.cardStyle.captions,
+                                    continueWatchingLayout: layout, continueWatchingUsesSeriesArtwork: true
+                                ) {
+                                    PlozziOSHomeRowView(
+                                        row: row, appModel: fixture.app, viewModel: model,
+                                        watchlistIntentRevision: 0, watchlistLoadingPlaceholderCount: 0, onBrowse: nil
+                                    )
+                                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { heights.loading = $0 }
+                                }
+                                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { heights.loaded = $0 }
+                            }
+                            .environment(\.plozziOSHomeViewportWidth, width),
+                            width: width
+                        )
+                        try await fixture.settle()
+                        if let reserved { XCTAssertEqual(heights.loaded, reserved, accuracy: 0.5) }
+                        else { reserved = heights.loaded }
+                        if row.failure == nil { XCTAssertEqual(heights.loading, heights.loaded, accuracy: 0.5) }
+                    }
+                }
+            }
+        }
+    }
+
+    func testFeaturedRowReservationSurvivesFailureAndMatchesLoadedContent() async throws {
+        let fixture = try Fixture()
+        defer { fixture.close() }
+        let model = HomeViewModel(accounts: [], profileNamespace: fixture.profileID)
+        defer { model.invalidate() }
+        let definition = CollectionSection(
+            source: .init(accountID: "fixture", collectionID: "collection", title: "Featured Collection"),
+            cardStyle: .featured
+        )
+        let choice = HomeRowChoice(collectionSection: definition)
+        for width in [CGFloat(390), 768] {
+            let state = RowState(row: HomeCollectionRow(definition: definition, isLoading: true).row)
+            let heights = Heights()
+            fixture.mount(
+                ScrollView {
+                    ReservedLibraryRow(
+                        choice: choice, state: state, app: fixture.app, model: model,
+                        coordinator: FeaturedTrailerCoordinator(), controller: HeroTrailerController(),
+                        onContentHeight: { heights.loading = $0 }
+                    )
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { heights.loaded = $0 }
+                }
+                .environment(\.plozziOSHomeViewportWidth, width),
+                width: width
+            )
+            try await fixture.settle()
+            let reserved = heights.loaded
+            XCTAssertEqual(heights.loading, reserved, accuracy: 0.5)
+            state.row = HomeCollectionRow(definition: definition, items: fixture.items).row
+            try await fixture.settle()
+            XCTAssertEqual(heights.loading, reserved, accuracy: 0.5)
+            XCTAssertEqual(heights.loaded, reserved, accuracy: 0.5)
+            state.row = HomeCollectionRow(definition: definition, failure: .serverUnreachable).row
+            try await fixture.settle()
+            XCTAssertEqual(heights.loaded, reserved, accuracy: 0.5)
+        }
+    }
+
+    func testLiveTVReservationDoesNotAddMediaCaptionSpace() async throws {
+        let fixture = try Fixture()
+        defer { fixture.close() }
+        let channel = HomeLiveTVChannel(
+            route: .init(profileID: fixture.profileID, channelID: "channel", sourceID: "source",
+                         sourceAuthorizationID: "source-auth", serverAuthorizationID: "server-auth"),
+            name: "Channel", sourceName: "Source", number: 1
+        )
+        let presentation = HomePresentationRow(
+            choice: try XCTUnwrap(HomeRowChoice.shared.first { $0.id == .liveTV }), source: .liveTV([channel])
+        )
+        for style in [CardStyle.borderless, .framed] {
+            let heights = Heights()
+            fixture.mount(
+                ScrollView {
+                    PlozziOSHomeRowSlot(
+                        presentation: presentation, captions: .default,
+                        continueWatchingLayout: .landscape, continueWatchingUsesSeriesArtwork: false
+                    ) {
+                        PlozziOSHomeMediaRail(
+                            title: Text("Live TV"), items: [], style: .landscape,
+                            appModel: fixture.app, liveChannels: [channel]
+                        )
+                        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { heights.loading = $0 }
+                    }
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { heights.loaded = $0 }
+                }
+                .environment(\.plozziOSHomeViewportWidth, 390)
+                .environment(\.plozzCardStyle, style)
+            )
+            try await fixture.settle()
+            XCTAssertGreaterThan(heights.loaded, 100)
+            XCTAssertEqual(heights.loaded, heights.loading, accuracy: 0.5)
+        }
+    }
+
+    func testContentAndFailuresKeepPageGeometryDuringNativeAnimatedScrolling() async throws {
+        let fixture = try Fixture()
+        defer { fixture.close() }
+        let model = HomeViewModel(accounts: [], profileNamespace: fixture.profileID)
+        defer { model.invalidate() }
+        let section = LibrarySection(id: "shelf", title: "Shelf", items: [])
+        let state = RowState(row: .init(section: section, isLoading: true, failure: nil))
+        let coordinator = FeaturedTrailerCoordinator()
+        let controller = HeroTrailerController()
+        fixture.mount(PlozziOSHomeScrollView(heroActive: false) {
+            EmptyView()
+        } rows: {
+            ForEach(0..<8, id: \.self) { index in
+                ReservedLibraryRow(
+                    choice: .init(id: .library(key: "\(index)", section: "shelf"), title: "Shelf", isProviderDefault: true),
+                    state: state, app: fixture.app, model: model, coordinator: coordinator, controller: controller
+                )
+            }
+        })
+        try await fixture.settle()
+        let scroll = try XCTUnwrap(fixture.scrollViews().first { $0.contentSize.height > $0.bounds.height })
+        let height = scroll.contentSize.height
+        let target = (height - scroll.bounds.height) * 0.75
+        let changes = Task { @MainActor in
+            for failure in [AppError?.none, .serverUnreachable, .none] {
+                try await Task.sleep(for: .milliseconds(50))
+                var next = section
+                next.items = failure == nil ? fixture.items : []
+                state.row = .init(section: next, isLoading: false, failure: failure)
+            }
+        }
+        defer { changes.cancel() }
+        scroll.setContentOffset(CGPoint(x: 0, y: target), animated: true)
+        var previous: CGFloat = 0
+        let deadline = ContinuousClock.now + .seconds(3)
+        repeat {
+            try await Task.sleep(for: .milliseconds(10))
+            XCTAssertEqual(scroll.contentSize.height, height, accuracy: 0.5)
+            XCTAssertGreaterThanOrEqual(scroll.contentOffset.y, previous - 0.5)
+            previous = scroll.contentOffset.y
+        } while abs(scroll.contentOffset.y - target) > 0.5 && ContinuousClock.now < deadline
+        try await changes.value
+        XCTAssertEqual(scroll.contentOffset.y, target, accuracy: 0.5)
+        XCTAssertEqual(scroll.contentSize.height, height, accuracy: 0.5)
     }
 
     func testFeaturedCollectionSkeletonMatchesTheFeaturedCardHeight() async throws {
@@ -881,6 +1115,38 @@ final class HomeLoadingLayoutTests: XCTestCase {
         var loaded: CGFloat = 0
     }
 
+    @MainActor @Observable final class RowState {
+        var row: HomeLibrarySectionGroup.Row
+        init(row: HomeLibrarySectionGroup.Row) { self.row = row }
+    }
+
+    private struct ReservedLibraryRow: View {
+        let choice: HomeRowChoice
+        let state: RowState
+        let app: PlozziOSAppModel
+        let model: HomeViewModel
+        let coordinator: FeaturedTrailerCoordinator
+        let controller: HeroTrailerController
+        var onContentHeight: (CGFloat) -> Void = { _ in }
+
+        var body: some View {
+            let presentation = HomePresentationRow(choice: choice, source: .library(state.row))
+            PlozziOSHomeRowSlot(
+                presentation: presentation, captions: app.settings.cardStyle.captions,
+                continueWatchingLayout: app.settings.homeVisibility.continueWatchingLayout,
+                continueWatchingUsesSeriesArtwork: app.settings.homeVisibility.continueWatchingUsesSeriesArtwork
+            ) {
+                PlozziOSHomeLibraryPresentationRow(
+                    presentation: presentation, row: state.row, appModel: app, viewModel: model,
+                    coordinator: coordinator, controller: controller, isActive: false,
+                    rowBrowser: .constant(nil), showingHomeCustomization: .constant(false)
+                )
+                .equatable()
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { onContentHeight($0) }
+            }
+        }
+    }
+
     @MainActor @Observable final class Rows {
         struct Row: Identifiable {
             let number: Int
@@ -901,7 +1167,17 @@ final class HomeLoadingLayoutTests: XCTestCase {
                 EmptyView()
             } rows: {
                 ForEach(state.rows) { row in
-                    Group {
+                    let presentation = HomePresentationRow(
+                        choice: .init(id: row.id, title: "Row \(row.number)", isProviderDefault: true),
+                        source: .library(.init(
+                            section: LibrarySection(id: "recentlyAdded", title: "Row \(row.number)", items: items),
+                            isLoading: state.loading && !state.loaded.contains(row.number), failure: nil
+                        ))
+                    )
+                    PlozziOSHomeRowSlot(
+                        presentation: presentation, captions: app.settings.cardStyle.captions,
+                        continueWatchingLayout: .landscape, continueWatchingUsesSeriesArtwork: false
+                    ) {
                         if state.loading && !state.loaded.contains(row.number) {
                             PlozziOSHomeSkeletonRail(title: Text(verbatim: "Row \(row.number)"), style: .poster)
                         } else {
@@ -912,7 +1188,6 @@ final class HomeLoadingLayoutTests: XCTestCase {
                         }
                     }
                     .background(RowMarker(name: "row-\(row.number)"))
-                    .plozziOSHomeScrollRow(row.id)
                 }
             }
         }

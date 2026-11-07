@@ -20,11 +20,21 @@ fallback when the user's server has no attached trailer.
 
 ## Mobile Home loading geometry
 
-Home measures its viewport once and shares that width with loaded and skeleton
-rails, so newly mounted rows do not first lay out at a fallback poster size.
-Browse headings keep their native 44-point touch target without enlarging the
-row. Library placeholders use the library card's own layout; featured collection
-placeholders use the featured row's card size.
+Home shares its measured viewport width with loaded and skeleton rails.
+`PlozziOSHomeRowSlot` reserves each row's footprint using the real card sizing
+primitives, heading, captions, and current layout settings. Loading, populated,
+and failed content occupy that space rather than determining its height. The
+invisible sizing content does not shimmer or enter the accessibility tree.
+Long status messages can scroll inside the reserved row instead of expanding
+the page. Browse headings reserve chevron space before their action is available;
+only actionable headings are buttons, with the native 44-point touch target.
+Library, featured, Continue Watching, and Live TV rows use their own geometry.
+
+The first progressive Home publication includes configured server and collection
+rows before provider responses arrive. Planning and fetching share the same
+active-account, server-user, enabled-library, and row-visibility filters.
+Matching cached content remains usable while refreshing; an unavailable response
+is not treated as an empty row.
 
 The vertical stack remains eager to avoid estimated-height changes. Loading-rail
 geometry is retained offscreen; its horizontal stack is lazy, like the loaded
@@ -38,13 +48,13 @@ browse closures. The comparison includes row content/status, Home model and
 controller identities, and featured playback activity. Profile settings and
 environment changes remain observable inside the row; browsing/customization
 bindings retain the owning Home's presentation state.
-Stable `HomeRowID` content-coordinate frames preserve the first surviving visible row
-when loading inserts or removes rows above it. Empty rows disappear rather than
-leaving gaps. Scroll geometry is retained in a non-observable owner, not published
-through the full Home view every frame; a new Home model resets the scroll scope.
-At the top, Home stays at the top. Viewport resizing is not treated as a row
-insertion. This does not promise a fixed total height before the server's row
-inventory is known, or prove physical-device frame pacing.
+Scrolling is native: there is no per-row frame tracking, anchor preservation, or
+compensating scroll command. Confirmed-empty rows follow the existing empty-message
+and dismissal policy; removing one is a real document change. Newly discovered
+inventory, hero availability, viewport/settings changes, and an Auto collection
+cover shape resolved from new metadata can also change the document. Reserving
+known row layouts does not promise immutable whole-page geometry or prove
+physical-device frame pacing.
 
 ## Inline library collections
 

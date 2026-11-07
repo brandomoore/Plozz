@@ -484,20 +484,9 @@ public struct HomeAggregator: Sendable {
                 var running: [RequestLane: Int] = [:]
                 var perAccount = accounts.map { _ in AccountContent() }
                 var perLibrary: [String: LibraryContent] = [:]
-                let definitions = (visibility.rowCustomization?.availableServerRows ?? []).filter { definition in
-                    guard case .server = definition.id else { return false }
-                    return visibility.isHomeRowVisible(HomeRowChoice(serverRow: definition))
-                        && definition.section.libraryID.map {
-                            visibility.isEnabled("\(definition.accountID):\($0)")
-                        } != false
-                }
+                let definitions = HomeServerRow.plannedDefinitions(accounts: accounts, visibility: visibility)
                 var serverRows: [HomeRowID: HomeServerRow] = [:]
-                let collectionDefinitions = visibility.collectionSections.filter {
-                    $0.source.serverUserID != nil
-                        && visibility.isHomeRowVisible(HomeRowChoice(collectionSection: $0))
-                        && $0.source.libraryKey.map(visibility.isEnabled) != false
-                        && accounts.contains(where: $0.source.matches)
-                }
+                let collectionDefinitions = HomeCollectionRow.plannedDefinitions(accounts: accounts, visibility: visibility)
                 var collectionRows: [String: HomeCollectionRow] = [:]
                 for definition in collectionDefinitions {
                     guard let index = accounts.firstIndex(where: definition.source.matches) else { continue }
