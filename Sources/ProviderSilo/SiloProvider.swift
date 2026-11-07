@@ -319,12 +319,22 @@ public final class SiloProvider: MediaProvider, CapabilityReporting, MediaSortFi
             URLQueryItem(name: "sort", value: sort)
         ])
         guard response.total >= 0 else { throw AppError.invalidResponse }
-        return MediaPage(items: response.items.map { map($0, libraryID: libraryID) },
+        return MediaPage(items: response.items.map { mapCatalogItem($0, libraryID: libraryID) },
                          startIndex: page.startIndex, totalCount: response.total)
     }
 
     func catalogItems(_ query: [URLQueryItem], limit: Int, libraryID: String? = nil) async throws -> [MediaItem] {
-        try await catalogDTOs(query, limit: limit).map { map($0, libraryID: libraryID) }
+        try await catalogDTOs(query, limit: limit).map { mapCatalogItem($0, libraryID: libraryID) }
+    }
+
+    private func mapCatalogItem(_ dto: SiloItem, libraryID: String?) -> MediaItem {
+        var item = map(dto, libraryID: libraryID)
+        // Native catalog ID fields carry the same available IDs as detail.
+        // An encoded content-ID anchor alone still needs the legacy fallback.
+        item.catalogIdentityIsComplete = [dto.imdb_id, dto.tmdb_id, dto.tvdb_id].contains {
+            $0?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+        }
+        return item
     }
 
     func catalogDTOs(

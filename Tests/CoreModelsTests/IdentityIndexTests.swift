@@ -548,6 +548,49 @@ final class IdentityIndexTests: XCTestCase {
         XCTAssertTrue(result.indexable.isEmpty)
     }
 
+    func testCompleteCatalogIdentityOnlySkipsItsOwnForcedEnrichment() async {
+        var complete = series("complete", account: "silo", tvdb: "7")
+        complete.catalogIdentityIsComplete = true
+        let partial = series("partial", account: "iptv", tvdb: "8")
+        XCTAssertFalse(partial.catalogIdentityIsComplete)
+        let result = await IdentityEnrichment.prepare(
+            [complete, partial], enrichIdentifiedItems: true
+        ) { item in
+            XCTAssertEqual(item.id, "partial")
+            var full = item
+            full.providerIDs["Tmdb"] = "9"
+            return full
+        }
+        XCTAssertFalse(result.inconclusive)
+        XCTAssertEqual(Set(result.indexable.map(\.id)), ["complete", "partial"])
+        XCTAssertEqual(result.indexable.first { $0.id == "partial" }?.providerID(.tmdb), "9")
+    }
+
+    func testCompleteCatalogHintCannotMakeAnIdentitylessSeriesConclusive() async {
+        var item = guidlessPlexSeries("no-id", account: "silo")
+        item.catalogIdentityIsComplete = true
+        let result = await IdentityEnrichment.prepare(
+            [item], enrichIdentifiedItems: true
+        ) { _ in nil }
+        XCTAssertTrue(result.inconclusive)
+        XCTAssertTrue(result.indexable.isEmpty)
+    }
+
+    func testCatalogIdentityCompletenessIsNotPersisted() async throws {
+        var fresh = series("complete", account: "silo", tvdb: "7")
+        fresh.catalogIdentityIsComplete = true
+        let data = try JSONEncoder().encode(fresh)
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        XCTAssertNil(object["catalogIdentityIsComplete"])
+        let restored = try JSONDecoder().decode(MediaItem.self, from: data)
+        XCTAssertFalse(restored.catalogIdentityIsComplete)
+        XCTAssertEqual(restored.providerIDs, fresh.providerIDs)
+        let result = await IdentityEnrichment.prepare(
+            [restored], enrichIdentifiedItems: true
+        ) { _ in nil }
+        XCTAssertTrue(result.inconclusive, "Stored IDs are not proof that a live refresh is complete")
+    }
+
     func testIdentityHydrationRejectsDifferentItemOrKind() async {
         let partial = series("series-tvdb-7", account: "silo", tvdb: "7")
         for changesKind in [false, true] {

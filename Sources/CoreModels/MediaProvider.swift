@@ -20,6 +20,8 @@ public protocol MediaProvider: Sendable {
     /// Catalog/search cards may expose one external ID but omit the other
     /// namespaces needed to match a title across providers. Fetch full details
     /// before publishing those cards as complete identity-index/search evidence.
+    /// Fresh cards with a complete provider-supplied identity can opt out via
+    /// `MediaItem.catalogIdentityIsComplete`; inferred IDs alone cannot.
     var catalogIdentityRequiresEnrichment: Bool { get }
 
     /// Browsing metadata may omit lazily resolved files. Offer explicit source

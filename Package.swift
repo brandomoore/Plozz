@@ -1006,7 +1006,7 @@ let package = Package(
         ),
         .testTarget(
             name: "ProviderSiloTests",
-            dependencies: ["ProviderSilo", "CoreModels", "CoreNetworking"]
+            dependencies: ["ProviderSilo", "CoreModels", "CoreNetworking", "TestSupportPerformance"]
         ),
         .testTarget(
             name: "ProviderIPTVTests",
