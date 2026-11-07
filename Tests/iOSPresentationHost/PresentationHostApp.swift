@@ -206,6 +206,12 @@ struct PresentationHostApp: App {
         func application(
             _ application: UIApplication, supportedInterfaceOrientationsFor window: UIWindow?
         ) -> UIInterfaceOrientationMask {
+            let arguments = ProcessInfo.processInfo.arguments
+            if let index = arguments.firstIndex(of: "--disc-review-fixture"),
+               arguments.indices.contains(index + 1),
+               !arguments[index + 1].hasPrefix("detail") {
+                return .landscape
+            }
             // Hosted XCTest links its own package globals; ask its window for its registry's policy.
             if let owner = window?.windowScene?.keyWindow as? PresentationOrientationWindow {
                 return owner.supportedPresentationOrientations
@@ -250,6 +256,8 @@ struct PresentationHostApp: App {
                 PlayerLayoutFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--device-setup-fixture") {
                 DeviceSetupInteractionFixture()
+            } else if ProcessInfo.processInfo.arguments.contains("--disc-review-fixture") {
+                DiscReviewFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--disc-touch-fixture") {
                 DiscTouchFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--player-glass-fixture") {

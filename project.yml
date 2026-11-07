@@ -493,6 +493,7 @@ targets:
       - path: Tests/FocusHost
       - path: Tests/DiscoverPresentationSupport/DiscoverBrowseFixture.swift
       - path: Tests/PlaybackPresentationSupport/PlaybackFailureFixture.swift
+      - path: Tests/PlaybackPresentationSupport/DiscReviewFixture.swift
       - path: Tests/LiveTVPresentationSupport/IPTVOrganizationFixture.swift
       - path: Tests/LiveTVPresentationSupport/LiveTVCategorySearchFixture.swift
       - path: Tests/AuthPresentationSupport/IPTVSetupFixture.swift
@@ -530,6 +531,7 @@ targets:
       - path: Tests/AuthPresentationSupport/OnboardingPreviewHTTP.swift
       - path: Tests/FeatureLiveTVRemoteTests/SourceOnboardingFixture.swift
       - path: Tests/PlaybackPresentationSupport/PlaybackFailureFixture.swift
+      - path: Tests/PlaybackPresentationSupport/DiscReviewFixture.swift
       - path: Tests/LiveTVPresentationSupport/IPTVOrganizationFixture.swift
       - path: Tests/LiveTVPresentationSupport/LiveTVCategorySearchFixture.swift
       - path: Tests/ProviderIPTVTests/IPTVTestHTTPServer.swift
@@ -633,6 +635,7 @@ targets:
     sources:
       - path: Tests/iOSInteractionTests
       - path: Tests/PlaybackPresentationSupport/PlaybackFailureInteractionTests.swift
+      - path: Tests/PlaybackPresentationSupport/DiscReviewScreenshotTests.swift
       - path: Tests/LiveTVPresentationSupport/IPTVOrganizationInteractionTests.swift
       - path: Tests/LiveTVPresentationSupport/LiveTVCategorySearchInteractionTests.swift
       - path: Tests/HomeRemoteTests/ServerAddressNavigationInteractionTests.swift
@@ -652,6 +655,7 @@ targets:
     sources:
       - path: Tests/HomeRemoteTests
       - path: Tests/PlaybackPresentationSupport/PlaybackFailureInteractionTests.swift
+      - path: Tests/PlaybackPresentationSupport/DiscReviewScreenshotTests.swift
       - path: Tests/LiveTVPresentationSupport/IPTVOrganizationInteractionTests.swift
       - path: Tests/LiveTVPresentationSupport/LiveTVCategorySearchInteractionTests.swift
       - path: Sources/FeatureHomeCore/LibraryTraversalEvidence.swift

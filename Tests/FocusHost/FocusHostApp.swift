@@ -9,7 +9,9 @@ import FeaturePlayback
 struct FocusHostApp: App {
     var body: some Scene {
         WindowGroup {
-            if ProcessInfo.processInfo.arguments.contains("--discover-fixture") {
+            if ProcessInfo.processInfo.arguments.contains("--disc-review-fixture") {
+                DiscReviewFixture()
+            } else if ProcessInfo.processInfo.arguments.contains("--discover-fixture") {
                 DiscoverBrowseFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--profile-pin-transition-fixture") {
                 ProfilePINTransitionFixture()
