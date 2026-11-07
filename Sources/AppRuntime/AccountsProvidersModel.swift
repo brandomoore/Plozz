@@ -498,6 +498,22 @@ public final class AccountsProvidersModel {
         onAccountsInvalidated()
         accounts = updated
         householdActiveAccountIDs = accountStore.activeAccountIDs()
+        publishActiveAccountSelection()
+    }
+
+    /// Membership edits do not change household credentials or unrelated
+    /// providers. Retire only disabled sources, retaining other connections.
+    public func refreshActiveAccountSelection() {
+        profilesModel.retryUnconfirmedAccountSelections()
+        let resolved = Set(activeAccountIDs(forProfile: profilesModel.activeProfileID))
+        for id in activeAccountIDs.subtracting(resolved) {
+            registry.invalidate(accountID: id)
+        }
+        onAccountsInvalidated()
+        publishActiveAccountSelection()
+    }
+
+    private func publishActiveAccountSelection() {
         let resolved = Set(activeAccountIDs(forProfile: profilesModel.activeProfileID))
         activeAccountIDs = resolved
         watchesNothingByChoice = resolved.isEmpty

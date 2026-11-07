@@ -458,6 +458,29 @@ from a fixed 5 ms Plex metadata delay, checks that every selection reaches the
 PIN gate, and verifies tokens remain denied. It measures activation work, not
 rendered frame pacing or physical-device network latency.
 
+`mobile-profile-library-selection` mounts the production mobile Libraries page
+for a new profile with twenty synthetic servers and 120 libraries. Each sample
+performs four native switch changes at 400 ms intervals and twelve library
+visibility changes through the production model at 30 ms intervals, requiring
+the final account/library choices and discovered inventory to remain correct.
+It counts provider constructions, library requests, and the maximum scheduling
+gap of a 2 ms main-actor heartbeat. The separate rapid-switch regression checks
+immediate persistence, retained library choices, and isolation after switching
+profiles without waiting for each switch animation.
+
+On the same iPhone 17 Pro / iOS 26.2 simulator workload, baseline run
+`4f640e9e798f4016a152d0618e1223b2` and candidate
+`6f2cadd6d0284bcba79c038108c1a3c8` reduced provider constructions per sample from
+78 to 2, median app-process CPU from 791.870 to 442.337 ms, and the median
+per-sample maximum main-actor gap from 59.967 to 33.520 ms. Five retained samples
+followed one warmup. Membership edits now retain unrelated providers, mobile
+switches no longer queue delayed writes, and full identity scans wait for setup
+completion. Library-name discovery still refreshes the selected sources; this
+is not per-account result caching. Fixed input pacing dominates wall time, and
+heartbeat gaps are not tap latency or presented-frame timing. This fixture has
+no real share/server traffic and does not establish smoothness on a physical
+device or in the full onboarding flow.
+
 `mobile-profile-picker-entrance` mounts the production sixteen-profile touch
 picker in an iPad-sized window. It verifies the heading appears before avatars,
 a visible stagger, and substantially settled avatars within 1.5 seconds (450 ms

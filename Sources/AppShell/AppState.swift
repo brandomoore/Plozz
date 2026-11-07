@@ -783,6 +783,9 @@ public final class AppState {
         onPublish: { [weak self] in
             self?.drainWatchOutbox()
             self?.universalWatchlistIdentityDidUpdate()
+        },
+        isWarmingAllowed: { [weak self] in
+            self?.profilesModel.activeProfile.needsSetup == false
         }
     )
 
@@ -2008,6 +2011,7 @@ public final class AppState {
     /// never re-runs it.
     public func confirmFirstRunProfile() {
         profilesModel.markFirstRunProfileSetupComplete()
+        identityIndex.warmIdentityIndex()
         apply(accountsProviders.accounts.isEmpty && allowsStandalonePlayback
             ? .standaloneProfileConfirmed
             : .profileConfirmed)
@@ -2060,10 +2064,12 @@ public final class AppState {
     /// Marks a profile's setup finished, releasing its watchlist import.
     public func completeProfileSetup(for id: String) {
         profileFlow.completeSetup(for: id)
+        if profilesModel.activeProfileID == id { identityIndex.warmIdentityIndex() }
     }
 
     public func completeProfileLibrariesInsideSetup(for id: String) {
         profileFlow.completeLibrariesInsideSetup(for: id)
+        if profilesModel.activeProfileID == id { identityIndex.warmIdentityIndex() }
     }
 
     public func finishProfileSetupFlow() {

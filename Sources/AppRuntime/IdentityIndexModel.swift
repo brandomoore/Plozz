@@ -81,16 +81,20 @@ public final class IdentityIndexModel {
     /// `drainWatchOutbox()`.
     @ObservationIgnored
     private let onPublish: @MainActor () -> Void
+    @ObservationIgnored
+    private let isWarmingAllowed: @MainActor () -> Bool
 
     public init(
         activeAccounts: @escaping @MainActor () -> [ResolvedAccount],
         namespace: @escaping @MainActor () -> String?,
         onPublish: @escaping @MainActor () -> Void,
+        isWarmingAllowed: @escaping @MainActor () -> Bool = { true },
         persistenceStore: (any IdentityIndexStoring)? = nil
     ) {
         self.activeAccounts = activeAccounts
         self.namespace = namespace
         self.onPublish = onPublish
+        self.isWarmingAllowed = isWarmingAllowed
         if let persistenceStore {
             self.persistence = IdentityIndexPersistence(makeStore: { _ in persistenceStore })
         } else {
@@ -223,6 +227,10 @@ public final class IdentityIndexModel {
     /// contributes nothing and is retried on the next warm, so the index only ever
     /// grows toward completeness and never blocks playback or watch writes.
     public func warmIdentityIndex(force: Bool = false) {
+        guard isWarmingAllowed() else {
+            identityWarmTask?.cancel()
+            return
+        }
         let resolved = activeAccounts()
         guard !resolved.isEmpty else { return }
         let activeIDs = Set(resolved.map(\.account.id))
@@ -472,7 +480,8 @@ public final class IdentityIndexModel {
     }
 
     private func isCurrentWarm(_ generation: Int, namespace: String?) -> Bool {
-        !Task.isCancelled && generation == identityWarmGeneration && self.namespace() == namespace
+        !Task.isCancelled && generation == identityWarmGeneration
+            && self.namespace() == namespace && isWarmingAllowed()
     }
 
     /// Includes restore, provider scans, and the final persistence attempt. Waits

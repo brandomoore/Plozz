@@ -62,6 +62,16 @@ Binary Images:
 
 
 class EvidenceTests(unittest.TestCase):
+    def test_profile_library_selection_measures_many_server_native_controls(self):
+        name = "mobile-profile-library-selection"
+        self.assertEqual(performance.select(None, [name], "iOS"), [name])
+        with self.assertRaises(performance.Failure):
+            performance.select(None, [name], "tvOS")
+        self.assertEqual(performance.SCENARIOS[name]["test"],
+                         "ProfileSelectionPerformanceTests/testPerformanceManyServerLibrarySelection")
+        self.assertTrue({"serverToggles", "libraryToggles", "providerConstructions", "libraryRequests",
+                         "maxMainActorGapMicroseconds"}.issubset(performance.SCENARIOS[name]["counters"]))
+
     def test_card_lifecycle_soak_requires_an_explicit_isolated_run(self):
         name = "cards-lifecycle-soak"
         self.assertEqual(performance.select(None, [name]), [name])

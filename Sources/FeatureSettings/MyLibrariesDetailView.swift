@@ -22,10 +22,19 @@ import CoreUI
 /// (The type + `.myLibraries` route keep their earlier names.)
 public struct MyLibrariesDetailView: View {
     public let scope: ProfileLibrariesScope
-    @Environment(\.managedProviderSetupRouter) private var providerSetupRouter
-    @Environment(SettingsSearchRequest.self) private var searchRequest: SettingsSearchRequest?
 
     public init(scope: ProfileLibrariesScope) { self.scope = scope }
+
+    public var body: some View {
+        MyLibrariesContentView(scope: scope, allGroups: serverGroups(from: scope.accounts))
+    }
+}
+
+private struct MyLibrariesContentView: View {
+    let scope: ProfileLibrariesScope
+    let allGroups: [ServerAccountGroup]
+    @Environment(\.managedProviderSetupRouter) private var providerSetupRouter
+    @Environment(SettingsSearchRequest.self) private var searchRequest: SettingsSearchRequest?
 
     /// Bumped on every server/identity mutation so the pushed view re-renders
     /// immediately and re-reads live state through `context`'s closures. This is
@@ -38,8 +47,6 @@ public struct MyLibrariesDetailView: View {
     #if os(tvOS)
     @Environment(\.settingsInWorkspace) private var inWorkspace
     #endif
-
-    private var allGroups: [ServerAccountGroup] { serverGroups(from: scope.accounts) }
 
     private func searchGroup(for target: String) -> ServerAccountGroup? {
         let candidates = allGroups.filter {

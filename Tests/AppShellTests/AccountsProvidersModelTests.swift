@@ -78,6 +78,58 @@ final class AccountsProvidersModelTests: XCTestCase {
         XCTAssertTrue(model.activeAccountIDs.isSubset(of: ["a", "b"]))
     }
 
+    func testMembershipChangesRetainUnrelatedProvidersAcrossTwentyServers() throws {
+        let (model, store, profiles) = try makeModel(accountIDs: [])
+        let kinds: [ProviderKind] = [.mediaShare, .plex, .jellyfin, .emby]
+        for index in 0..<20 {
+            try store.add(
+                account(id: "source-\(index)", host: "source-\(index).test", provider: kinds[index % kinds.count]),
+                token: "fixture"
+            )
+        }
+        for kind in kinds {
+            model.registry.register(kind) { LiveTVAccountsTestProvider(session: $0.session) }
+        }
+        model.tokenResolver = { _ in "fixture" }
+        let selected = Set((0..<20).map { "source-\($0)" })
+        profiles.setActiveAccountIDs(Array(selected), for: profiles.activeProfileID)
+        model.reloadAccounts()
+        let original = try Dictionary(uniqueKeysWithValues: model.resolvedActiveAccounts.map {
+            ($0.account.id, try XCTUnwrap($0.provider as? LiveTVAccountsTestProvider))
+        })
+        var notifications = 0
+        model.onActiveAccountsChanged = { ids, accounts in
+            notifications += 1
+            XCTAssertEqual(ids, model.activeAccountIDs)
+            XCTAssertEqual(accounts.count, 20)
+        }
+        for id in ["source-0", "source-1", "source-2", "source-3"] {
+            profiles.setActiveAccountIDs(Array(selected.subtracting([id])), for: profiles.activeProfileID)
+            model.refreshActiveAccountSelection()
+            XCTAssertEqual(model.activeAccountIDs, selected.subtracting([id]))
+            for resolved in model.resolvedActiveAccounts where resolved.account.id != id {
+                // Earlier disabled sources have already been replaced.
+                if !["source-0", "source-1", "source-2", "source-3"].contains(resolved.account.id) {
+                    XCTAssertTrue((resolved.provider as? LiveTVAccountsTestProvider) === original[resolved.account.id])
+                }
+            }
+            profiles.setActiveAccountIDs(Array(selected), for: profiles.activeProfileID)
+            model.refreshActiveAccountSelection()
+            let reenabled = try XCTUnwrap(model.provider(forAccountID: id) as? LiveTVAccountsTestProvider)
+            XCTAssertFalse(reenabled === original[id], "Disabled sources must release their old provider.")
+        }
+        XCTAssertEqual(notifications, 8)
+        profiles.setActiveAccountIDs([], for: profiles.activeProfileID)
+        model.refreshActiveAccountSelection()
+        XCTAssertTrue(model.watchesNothingByChoice)
+        XCTAssertTrue(model.homeAccounts.isEmpty)
+        XCTAssertNil(model.primaryProvider)
+        XCTAssertEqual(model.accounts.count, 20, "Profile edits must not remove household accounts.")
+
+        model.reloadAccounts()
+        XCTAssertTrue(model.homeAccounts.isEmpty, "Explicitly choosing nothing must survive a full reload.")
+    }
+
     func testAddressOnlyReloadUpdatesRetainedProviderWithoutEvictingOtherSignIns() throws {
         let (model, store, _) = try makeModel(accountIDs: [("a", "a.test"), ("b", "b.test")])
         model.registry.register(.jellyfin) { LiveTVAccountsTestProvider(session: $0.session) }

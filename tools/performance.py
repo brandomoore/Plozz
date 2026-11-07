@@ -525,6 +525,14 @@ SCENARIOS = {
         "description": "Activate sixteen profiles through the mobile app model and verify current Plex PIN gating; measure synchronous selection separately from 5-ms fixture metadata.",
         "counters": ["selections", "selectionMicroseconds", "maxSelectionMicroseconds"],
     },
+    "mobile-profile-library-selection": {
+        "suite": "ui", "platforms": ["iOS"],
+        "test": "ProfileSelectionPerformanceTests/testPerformanceManyServerLibrarySelection",
+        "file": "Tests/iOSPresentationTests/ProfileSelectionPerformanceTests.swift",
+        "description": "Mounted profile Libraries page with twenty synthetic servers and 120 libraries; four native server-switch actions and twelve library-selection mutations.",
+        "counters": ["servers", "libraries", "serverToggles", "libraryToggles",
+                     "providerConstructions", "libraryRequests", "maxMainActorGapMicroseconds"],
+    },
     "mobile-profile-picker-entrance": {
         "suite": "ui", "platforms": ["iOS"],
         "test": "ProfilePickerPresentationTests/testPerformanceProfilePickerEntrance",

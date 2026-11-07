@@ -47,6 +47,52 @@ final class IdentityIndexModelTests: XCTestCase {
         XCTAssertTrue(model.identitySnapshot.isEmpty)
     }
 
+    func testSetupDefersEvenForcedWarmUntilSelectionFinishes() async {
+        var allowed = false
+        var resolutions = 0
+        let source = resolved("a", movies: [movie("a1", account: "a", tmdb: "100")])
+        var selection = [source]
+        let model = IdentityIndexModel(
+            activeAccounts: { resolutions += 1; return selection },
+            namespace: { "setup-\(source.account.id)" },
+            onPublish: {},
+            isWarmingAllowed: { allowed },
+            persistenceStore: InMemoryIdentityIndexStore()
+        )
+        for _ in 0..<20 { model.warmIdentityIndex(force: true) }
+        await model.waitForIdentityWarm()
+        XCTAssertEqual(resolutions, 0)
+        XCTAssertTrue(model.identitySnapshot.isEmpty)
+        selection = [resolved("b", movies: [movie("b1", account: "b", tmdb: "200")])]
+        allowed = true
+        model.warmIdentityIndex()
+        await model.waitForIdentityWarm()
+        XCTAssertEqual(resolutions, 1)
+        XCTAssertEqual(model.identitySnapshot.indexedAccountIDs, ["b"])
+    }
+
+    func testBlockedWarmCannotPublishItsPreviousSelection() async {
+        var allowed = true
+        let gate = IdentityWarmGate()
+        let source = resolved("a", movies: [movie("a1", account: "a", tmdb: "100")], gate: gate)
+        let model = IdentityIndexModel(
+            activeAccounts: { [source] }, namespace: { "setup-cancellation" }, onPublish: {},
+            isWarmingAllowed: { allowed }, persistenceStore: InMemoryIdentityIndexStore()
+        )
+        model.warmIdentityIndex()
+        let started = await waitUntil { await gate.entered() }
+        XCTAssertTrue(started)
+        allowed = false
+        model.warmIdentityIndex()
+        await gate.release()
+        await model.waitForIdentityWarm()
+        XCTAssertTrue(model.identitySnapshot.isEmpty)
+        allowed = true
+        model.warmIdentityIndex()
+        await model.waitForIdentityWarm()
+        XCTAssertEqual(model.identitySnapshot.indexedAccountIDs, ["a"])
+    }
+
     func testResetFromEmptyIsSafeAndLeavesEmptySnapshot() {
         let (model, publishCount) = makeModel()
         model.reset()

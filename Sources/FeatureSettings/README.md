@@ -988,6 +988,13 @@ watch history and planning-list behavior are documented in
 - `ServerDetailView` + `ServersAndLibrariesDetailView` — manage stored
   household servers / accounts (`AccountStore`) and remove accounts.
   `MyLibrariesDetailView` owns the active profile's server-user and library choices.
+  Membership-only edits retain unrelated providers and retire disabled sources;
+  credential/account reloads still invalidate their existing provider scope.
+  Mobile switches commit each choice immediately rather than queuing delayed
+  writes. Both presentations avoid regrouping servers for each row, and mobile
+  library rows observe visibility separately from the server list. During new
+  profile setup, library-name discovery remains available, but full cross-server
+  identity indexing waits until setup finishes and uses the final membership.
   On TV, each enabled media-share section shows its own compact update phase,
   progress bar and known percentage. Only accounts included in the current
   profile contribute; idle, excluded and removed shares show no status. Progress
