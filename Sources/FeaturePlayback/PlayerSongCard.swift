@@ -53,6 +53,7 @@ struct PlayerSongCard: View {
     @FocusState.Binding var focus: PlayerControls.FocusSlot?
     @Environment(\.playerCardMetrics) private var metrics
     @Environment(\.playerControlForeground) private var foreground
+    @Environment(\.playerUsesNativeGlass) private var usesNativeGlass
     @Environment(\.openURL) private var openURL
 
     static func artworkSize(for metrics: PlayerCardMetrics) -> CGFloat {
@@ -62,21 +63,34 @@ struct PlayerSongCard: View {
     var body: some View {
         Group {
             if let url = song.appleMusicURL {
-                Button { openURL(url) } label: { label }
-                    #if os(tvOS)
-                    .plozzNativeMediaButtonStyle()
-                    #else
+                #if os(tvOS)
+                Group {
+                    if #available(tvOS 26.0, *), usesNativeGlass {
+                        Button { openURL(url) } label: { label }
+                            .buttonStyle(.glass)
+                    } else {
+                        Button { openURL(url) } label: { panelLabel }
+                            .buttonStyle(.card)
+                    }
+                }
+                .buttonBorderShape(.roundedRectangle(radius: metrics.panelCornerRadius))
+                .focused($focus, equals: .infoSong)
+                #else
+                Button { openURL(url) } label: { panelLabel }
                     .buttonStyle(.plain)
-                    #endif
                     .focused($focus, equals: .infoSong)
+                #endif
             } else {
-                label
+                panelLabel
             }
         }
-        .modifier(PanelGlassBackground(cornerRadius: metrics.panelCornerRadius, mediaGlass: true))
         .plozzFocusSection()
         .accessibilityElement(children: .ignore)
         .accessibilityLabel([song.title, song.artist].compactMap { $0 }.joined(separator: ", "))
+    }
+
+    private var panelLabel: some View {
+        label.modifier(PanelGlassBackground(cornerRadius: metrics.panelCornerRadius, mediaGlass: true))
     }
 
     private var label: some View {
