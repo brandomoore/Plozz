@@ -121,6 +121,7 @@ struct PlayerSongCard: View {
             .clipShape(RoundedRectangle(
                 cornerRadius: PlozzTheme.Metrics.mediumMediaCornerRadius, style: .continuous
             ))
+            .plozzMediaEdge(cornerRadius: PlozzTheme.Metrics.mediumMediaCornerRadius)
             .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 5) {
                 Text(verbatim: song.title)

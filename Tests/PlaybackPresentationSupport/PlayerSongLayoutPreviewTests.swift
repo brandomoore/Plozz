@@ -58,23 +58,9 @@ final class PlayerSongLayoutPreviewTests: XCTestCase {
             XCTAssertEqual(reference.size, linked.size)
 
             #if os(tvOS)
-            func focusItems() -> [any UIFocusItem] {
-                var containers: [any UIFocusItemContainer] = [window]
-                var seen = Set<ObjectIdentifier>()
-                var items: [ObjectIdentifier: any UIFocusItem] = [:]
-                while let container = containers.popLast() {
-                    guard seen.insert(ObjectIdentifier(container)).inserted else { continue }
-                    for item in container.focusItems(in: container.coordinateSpace.convert(window.bounds, from: window)) {
-                        if let child = item.focusItemContainer { containers.append(child) }
-                        if let view = item as? UIView { containers.append(view) }
-                        if item.canBecomeFocused, !(item is UIScrollView) { items[ObjectIdentifier(item)] = item }
-                    }
-                }
-                return Array(items.values)
-            }
             func focusTarget(in bounds: CGRect) async throws -> any UIFocusItem {
                 let point = CGPoint(x: bounds.midX, y: bounds.midY)
-                func target() -> (any UIFocusItem)? { focusItems().first {
+                func target() -> (any UIFocusItem)? { nativeFocusItems(in: window).first {
                     NativeFocusRegion.frame(of: $0, in: host.view)?.contains(point) == true
                 } }
                 let deadline = ContinuousClock.now + .seconds(3)
@@ -546,6 +532,12 @@ final class PlayerSongLayoutPreviewTests: XCTestCase {
             model.songRecognition.isAvailable = true
             try await Task.sleep(for: .seconds(2))
             window.layoutIfNeeded()
+            #if os(tvOS)
+            // This fixture mounts PlayerControls without the container that releases entry focus gating.
+            model.controlBar.settled = true
+            try await Task.sleep(for: .milliseconds(100))
+            window.layoutIfNeeded()
+            #endif
             do {
                 let artwork = try XCTUnwrap(probe.bounds[.song])
                 XCTAssertEqual(artwork.width, artwork.height, accuracy: 1)
@@ -578,12 +570,10 @@ final class PlayerSongLayoutPreviewTests: XCTestCase {
             #if os(tvOS)
             let artwork = try XCTUnwrap(probe.bounds[.song])
             let point = CGPoint(x: artwork.midX, y: artwork.midY)
-            func focusableViews(in view: UIView) -> [UIView] {
-                (view.canBecomeFocused ? [view] : []) + view.subviews.flatMap { focusableViews(in: $0) }
-            }
-            let card = try XCTUnwrap(focusableViews(in: window).first {
-                $0.convert($0.bounds, to: window).contains(point)
-            }, "The song link must expose a real native focus target.")
+            let items = nativeFocusItems(in: window)
+            let card = try XCTUnwrap(items.first {
+                NativeFocusRegion.frame(of: $0, in: host.view)?.contains(point) == true
+            }, "No native song target at \(point); candidates: \(items.compactMap { NativeFocusRegion.frame(of: $0, in: host.view) })")
             host.target = card
             host.setNeedsFocusUpdate()
             host.updateFocusIfNeeded()
@@ -593,6 +583,14 @@ final class PlayerSongLayoutPreviewTests: XCTestCase {
                 try await Task.sleep(for: .milliseconds(20))
             }
             XCTAssertTrue(UIFocusSystem.focusSystem(for: window)?.focusedItem === card)
+            try await Task.sleep(for: .milliseconds(300))
+            let focusedImage = UIGraphicsImageRenderer(bounds: window.bounds, format: format).image { _ in
+                XCTAssertTrue(window.drawHierarchy(in: window.bounds, afterScreenUpdates: true))
+            }
+            let focusedAttachment = XCTAttachment(image: focusedImage)
+            focusedAttachment.name = "separate-focused-\(Int(size.width))x\(Int(size.height))"
+            focusedAttachment.lifetime = .keepAlways
+            add(focusedAttachment)
             host.target = nil
             #endif
             model.songRecognition.state = .idle
@@ -606,6 +604,23 @@ final class PlayerSongLayoutPreviewTests: XCTestCase {
         }
         await player.stop()
     }
+
+    #if os(tvOS)
+    private func nativeFocusItems(in window: UIWindow) -> [any UIFocusItem] {
+        var containers: [any UIFocusItemContainer] = [window]
+        var seen = Set<ObjectIdentifier>()
+        var items: [ObjectIdentifier: any UIFocusItem] = [:]
+        while let container = containers.popLast() {
+            guard seen.insert(ObjectIdentifier(container)).inserted else { continue }
+            for item in container.focusItems(in: container.coordinateSpace.convert(window.bounds, from: window)) {
+                if let child = item.focusItemContainer { containers.append(child) }
+                if let view = item as? UIView { containers.append(view) }
+                if item.canBecomeFocused, !(item is UIScrollView) { items[ObjectIdentifier(item)] = item }
+            }
+        }
+        return Array(items.values)
+    }
+    #endif
 }
 
 @MainActor
