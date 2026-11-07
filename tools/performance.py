@@ -496,6 +496,14 @@ SCENARIOS = {
         "description": "Update a production mobile Continue Watching rail 24 times with 180 episodes across twelve synthetic source identities and cached artwork.",
         "counters": ["rootUpdates", "items", "accounts", "seriesSourceBuilds"],
     },
+    "mobile-home-multi-server-loading": {
+        "suite": "ui", "platforms": ["iOS"],
+        "test": "HomeMultiServerLoadingTests/testPerformanceHomeLoadingAcrossTwentyServers",
+        "file": "Tests/iOSPresentationTests/HomeMultiServerLoadingTests.swift",
+        "description": "Load forty production Home rows from twenty synthetic providers while scrolling; require all 800 items and completed navigation.",
+        "counters": ["servers", "loadedRows", "items", "providerRequests", "scrollTargets",
+                     "maxMainActorGapMicroseconds"],
+    },
     "mobile-home-loading-scroll": {
         "suite": "ui", "platforms": ["iOS"],
         "test": "HomeLoadingLayoutTests/testPerformanceLoadingWhileScrolling",

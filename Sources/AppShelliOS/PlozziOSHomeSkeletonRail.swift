@@ -18,6 +18,7 @@ import SwiftUI
 struct PlozziOSHomeSkeletonRail: View {
     @Environment(\.plozzCardStyle) private var cardStyle
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @State private var isVisible = false
 
     let title: Text
     let style: PosterCardView.Style
@@ -31,6 +32,8 @@ struct PlozziOSHomeSkeletonRail: View {
 
     var body: some View {
         PlozziOSHomeRailLayout { rail(metrics: $0) }
+            .environment(\.plozzShimmerEnabled, isVisible)
+            .onScrollVisibilityChange(threshold: 0.01) { isVisible = $0 }
     }
 
     private func rail(metrics: PlozzMetrics) -> some View {

@@ -742,6 +742,36 @@ final class HomeLoadingLayoutTests: XCTestCase {
         }
     }
 
+    func testLoadingRailsAnimateWhenScrolledIntoView() async throws {
+        let fixture = try Fixture()
+        defer { fixture.close() }
+        let state = Rows()
+        fixture.mount(LoadingRows(app: fixture.app, items: fixture.items, state: state))
+        try await fixture.settle()
+        let scroll = try XCTUnwrap(fixture.scrollViews().first { $0.contentSize.height > $0.bounds.height })
+        let height = scroll.contentSize.height
+        func snapshot() throws -> Data {
+            let image = UIGraphicsImageRenderer(bounds: fixture.window.bounds).image { _ in
+                XCTAssertTrue(fixture.window.drawHierarchy(in: fixture.window.bounds, afterScreenUpdates: true))
+            }
+            return try XCTUnwrap(image.pngData())
+        }
+        for offset in [CGFloat.zero, height - scroll.bounds.height, CGFloat.zero] {
+            scroll.setContentOffset(CGPoint(x: 0, y: offset), animated: false)
+            try await fixture.settle()
+            let first = try snapshot()
+            var changed = false
+            for _ in 0..<8 {
+                try await Task.sleep(for: .milliseconds(300))
+                let next = try snapshot()
+                changed = changed || first != next
+            }
+            XCTAssertTrue(changed, "Rows entering or reentering the viewport must shimmer.")
+            XCTAssertEqual(scroll.contentSize.height, height, accuracy: 1)
+            XCTAssertEqual(scroll.contentOffset.y, offset, accuracy: 1)
+        }
+    }
+
     func testPerformanceLoadingWhileScrolling() async throws {
         try PerformanceProbe.requireEnabled()
         let fixture = try Fixture()

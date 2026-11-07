@@ -219,6 +219,9 @@ Loading placeholders share `shimmering()`. Its static gradient band is rasterize
 before the animated translation, avoiding repeated gradient work without
 rasterizing the placeholder content or changing the sweep, masking, or intensity.
 Inactive placeholders remain unmodified; Reduce Motion retains the static dim.
+Eager scroll containers can set `plozzShimmerEnabled` to false for offscreen
+rows, retaining their static geometry without mounting animated gradient layers.
+Visible rows resume the same sweep; the Reduce Motion appearance is unchanged.
 The simulator lab's `skeletons-idle` and `skeletons-static` scenarios isolate this
 cost from loaded cards and network/provider work.
 

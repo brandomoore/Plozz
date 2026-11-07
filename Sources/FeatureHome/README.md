@@ -26,8 +26,11 @@ Browse headings keep their native 44-point touch target without enlarging the
 row. Library placeholders use the library card's own layout; featured collection
 placeholders use the featured row's card size.
 
-The vertical stack remains eager to avoid estimated-height changes. Stable
-`HomeRowID` content-coordinate frames preserve the first surviving visible row
+The vertical stack remains eager to avoid estimated-height changes. Loading-rail
+geometry is retained offscreen, but the mobile rail's native scroll
+visibility controls its shared shimmer animation. Only visible loading rows
+animate; scrolling a row into view resumes its shimmer without delaying loading.
+Stable `HomeRowID` content-coordinate frames preserve the first surviving visible row
 when loading inserts or removes rows above it. Empty rows disappear rather than
 leaving gaps. Scroll geometry is retained in a non-observable owner, not published
 through the full Home view every frame; a new Home model resets the scroll scope.

@@ -535,6 +535,29 @@ image-decoding, full Home startup, or presented-frame/FPS evidence.
 `HomeLoadingLayoutTests` separately checks empty-row removal, insertion, content
 insets, library/featured placeholders, and existing heading geometry.
 
+`mobile-home-multi-server-loading` mounts the production mobile Home page and
+model with twenty synthetic providers, forty server rows and 800 items. Provider
+responses arrive progressively while eight animated vertical scroll targets are
+sent; a ninth target verifies navigation after all rows finish. Every row must
+settle without error and retain all its items. The two-millisecond heartbeat
+reports main-actor scheduling gaps, not touch latency or presented frames. This
+includes model publication and eager page layout, but not the complete tab shell,
+remote artwork, real network transport, share scanning or physical-device pacing.
+
+For the forty-row workload, limiting mobile loading-rail shimmer to the visible
+viewport retained all 800 items, 100 provider requests and nine scroll targets.
+Matched iPhone 17 Pro simulator runs `bc41d4e554f34579abbf528147c073b5` and
+`3ff439011813430384a2e6e494b7f11c` reduced median app-process CPU from 3856.652
+to 2717.529 ms and wall time from 8042.028 to 2932.224 ms. The median of each
+sample's maximum main-actor scheduling gap fell from 905.030 to 214.146 ms;
+the candidate range was 202.327–219.082 ms, not hitch-free rendering.
+Resident memory was essentially unchanged. A separate bounded process sample
+attributed the baseline to SwiftUI graph/render work and RenderBox/Core Animation
+surface commits, not expensive provider callbacks. That instrumented run is not
+included in timing comparisons. Later animation/Reduce Motion correctness tests
+are separate from this matched fixture pair. Physical-device behavior and real
+share/background workloads remain outside this scenario.
+
 `mobile-home-rail-prefetch` updates the real mobile Continue Watching rail 24
 times with the same 180 metadata-rich episodes across twelve synthetic account
 identities. Artwork is preloaded into the test cache and online providers are
