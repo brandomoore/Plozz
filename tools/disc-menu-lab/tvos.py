@@ -32,6 +32,8 @@ def validate_jvm(headers: str, imports: str, exports: str, architecture: str,
 def prepare_source(pristine: Path, destination: Path) -> None:
     if not destination.exists():
         shutil.copytree(pristine, destination, symlinks=True)
+    from storage import prepare_storage
+    prepare_storage(pristine, destination)
     patches = {
         "make/autoconf/toolchain.m4": [
             (

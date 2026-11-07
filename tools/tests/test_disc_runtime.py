@@ -10,9 +10,28 @@ ROOT = Path(__file__).resolve().parents[2]
 SPEC = importlib.util.spec_from_file_location("embed_disc_runtime", ROOT / "tools/embed-disc-runtime.py")
 EMBED = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(EMBED)
+VALIDATE_SPEC = importlib.util.spec_from_file_location("validate_disc_runtime", ROOT / "tools/validate-disc-runtime.py")
+VALIDATE = importlib.util.module_from_spec(VALIDATE_SPEC)
+VALIDATE_SPEC.loader.exec_module(VALIDATE)
 
 
 class DiscRuntimeEmbeddingTests(unittest.TestCase):
+    def test_primary_openjdk_legal_texts_are_required_beyond_component_notices(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for name in ("java.base", "java.desktop", "libbluray", "asm", "dejavu", "libffi", "openjdk"):
+                (root / "legal" / name).mkdir(parents=True)
+            names = ("LICENSE", "ADDITIONAL_LICENSE_INFO", "ASSEMBLY_EXCEPTION")
+            for name in names:
+                (root / "legal/openjdk" / name).write_text("Original test notice")
+            VALIDATE.validate_notices(root)
+            for name in names:
+                path = root / "legal/openjdk" / name
+                path.write_text("")
+                with self.subTest(name=name), self.assertRaisesRegex(ValueError, "primary OpenJDK"):
+                    VALIDATE.validate_notices(root)
+                path.write_text("Original test notice")
+
     def test_framework_names_preserve_native_module_identity(self):
         self.assertEqual(EMBED.framework_install_name("libmlib_image.dylib"),
                          "@rpath/PlozzBDJmlib_image.framework/PlozzBDJmlib_image")

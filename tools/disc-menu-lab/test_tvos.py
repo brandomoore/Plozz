@@ -81,6 +81,12 @@ class TVOSPortTests(unittest.TestCase):
             with self.subTest(result=result), self.assertRaises(RuntimeError):
                 tvos_smoke.validate_result(result)
 
+    def test_mobile_probe_evidence_cannot_be_used_as_tv_evidence(self):
+        result = {"status": "pass", "platform": "iOS Simulator", "physical_device": False}
+        tvos_smoke.validate_result(result, mobile=True)
+        with self.assertRaises(RuntimeError):
+            tvos_smoke.validate_result(result)
+
     def test_simulator_cleanup_after_boot_failure_is_owned_and_bounded(self):
         with tempfile.TemporaryDirectory() as directory:
             class FakeLab:

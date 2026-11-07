@@ -7,8 +7,9 @@ import time
 import uuid
 
 
-def validate_result(result: dict, *, simulator: bool = True, run_id: str | None = None) -> None:
-    platform = "tvOS Simulator" if simulator else "tvOS"
+def validate_result(result: dict, *, simulator: bool = True, run_id: str | None = None,
+                    mobile: bool = False) -> None:
+    platform = ("iOS" if mobile else "tvOS") + (" Simulator" if simulator else "")
     if (result.get("status") != "pass" or result.get("platform") != platform
             or result.get("physical_device") is not (not simulator)):
         raise RuntimeError(f"Java runtime probe did not pass: {result}")
@@ -16,10 +17,10 @@ def validate_result(result: dict, *, simulator: bool = True, run_id: str | None 
         raise RuntimeError("Runtime evidence belongs to a different lab invocation")
 
 
-def build_app(lab, *, bdj: dict | None = None, simulator: bool = True) -> Path:
+def build_app(lab, *, bdj: dict | None = None, simulator: bool = True, mobile: bool = False) -> Path:
     from lab import HERE
-    sdk_name = "appletvsimulator" if simulator else "appletvos"
-    target = "arm64-apple-tvos18.0" + ("-simulator" if simulator else "")
+    sdk_name = ("iphone" if mobile else "appletv") + ("simulator" if simulator else "os")
+    target = ("arm64-apple-ios18.0" if mobile else "arm64-apple-tvos18.0") + ("-simulator" if simulator else "")
     app = lab.run_dir / "ZeroSmoke.app"
     app.mkdir()
     shutil.copytree(lab.run_dir / "runtime", app / "runtime")
@@ -28,7 +29,7 @@ def build_app(lab, *, bdj: dict | None = None, simulator: bool = True) -> Path:
     java = Path(lab.environment["JAVA_HOME"])
     if not bdj:
         lab.run("compile-java-runtime-probe", [
-            java / "bin/javac", "-d", classes, HERE / "RuntimeSmoke.java",
+            java / "bin/javac", "-d", classes, HERE / "RuntimeSmoke.java", HERE / "StorageSmoke.java",
         ])
     else:
         for directory in ("disc", "jars"):
@@ -64,8 +65,10 @@ def build_app(lab, *, bdj: dict | None = None, simulator: bool = True) -> Path:
             "CFBundlePackageType": "APPL",
             "CFBundleVersion": "1", "CFBundleShortVersionString": "1.0",
             "PlozzLabRunID": lab.run_dir.name,
-            "MinimumOSVersion": "18.0", "UIDeviceFamily": [3],
-            "CFBundleSupportedPlatforms": ["AppleTVSimulator" if simulator else "AppleTVOS"],
+            "MinimumOSVersion": "18.0", "UIDeviceFamily": [1, 2] if mobile else [3],
+            "CFBundleSupportedPlatforms": [
+                ("iPhoneSimulator" if simulator else "iPhoneOS") if mobile
+                else ("AppleTVSimulator" if simulator else "AppleTVOS")],
             "UILaunchScreen": {},
             "UIApplicationSceneManifest": {
                 "UIApplicationSupportsMultipleScenes": False,
@@ -80,35 +83,45 @@ def build_app(lab, *, bdj: dict | None = None, simulator: bool = True) -> Path:
     return app
 
 
-def run(lab, *, bdj: dict | None = None) -> None:
-    app = build_app(lab, bdj=bdj)
+def run(lab, *, bdj: dict | None = None, mobile: bool = False) -> None:
+    app = build_app(lab, bdj=bdj, mobile=mobile)
     for index, library in enumerate(sorted(app.rglob("*.dylib"))):
         lab.run(f"sign-smoke-library-{index}", ["codesign", "--force", "--sign", "-", library])
     lab.run("sign-runtime-smoke-app", ["codesign", "--force", "--sign", "-", app])
-    execute(lab, app, "app.plozz.lab.ZeroSmoke", artifacts=(
+    execute(lab, app, "app.plozz.lab.ZeroSmoke", mobile=mobile, artifacts=(
         ("menu-first.ppm", "menu-second.ppm", "episode-1.m2ts", "episode-2.m2ts")
         if bdj else ()))
 
 
-def execute(lab, app: Path, identifier: str, *, artifacts: tuple[str, ...] = ()) -> None:
+def execute(lab, app: Path, identifier: str, *, artifacts: tuple[str, ...] = (),
+            mobile: bool = False) -> None:
     lab.run("list-smoke-runtimes", ["xcrun", "simctl", "list", "runtimes", "-j"], timeout=30)
     runtimes = json.loads((lab.run_dir / lab.commands[-1]["log"]).read_text())["runtimes"]
     available = [
         runtime for runtime in runtimes
         if runtime.get("isAvailable") and runtime["identifier"].startswith(
-            "com.apple.CoreSimulator.SimRuntime.tvOS-")
+            "com.apple.CoreSimulator.SimRuntime." + ("iOS-" if mobile else "tvOS-"))
         and int(runtime["version"].split(".")[0]) >= 18
+        and (not mobile or any(device.get("productFamily") == "iPad"
+                               for device in runtime.get("supportedDeviceTypes", [])))
     ]
     if not available:
-        raise RuntimeError("No compatible tvOS simulator runtime is installed")
+        raise RuntimeError(f"No compatible {'iPad' if mobile else 'tvOS'} simulator runtime is installed")
     runtime = max(available, key=lambda value: tuple(map(int, value["version"].split("."))))
+    device_type = "com.apple.CoreSimulator.SimDeviceType.Apple-TV-4K-3rd-generation-1080p"
+    if mobile:
+        devices = [device["identifier"] for device in runtime.get("supportedDeviceTypes", [])
+                   if device.get("productFamily") == "iPad"]
+        if not devices:
+            raise RuntimeError("Selected iOS runtime does not declare a compatible iPad")
+        device_type = devices[0]
     simulator = None
     container = None
     cleanup_errors = []
     try:
         lab.run("create-owned-smoke-simulator", [
             "xcrun", "simctl", "create", f"Plozz Zero {lab.run_dir.name[:8]}",
-            "com.apple.CoreSimulator.SimDeviceType.Apple-TV-4K-3rd-generation-1080p",
+            device_type,
             runtime["identifier"],
         ], timeout=60)
         simulator = str(uuid.UUID((lab.run_dir / lab.commands[-1]["log"]).read_text().strip()))
@@ -130,7 +143,7 @@ def execute(lab, app: Path, identifier: str, *, artifacts: tuple[str, ...] = ())
             "xcrun", "simctl", "launch",
             f"--stdout={lab.run_dir / 'app-stdout.log'}",
             f"--stderr={lab.run_dir / 'app-stderr.log'}", simulator, identifier,
-        ], timeout=30)
+        ], timeout=90)
         result_path = container / "Library/Caches/runtime-result.json"
         deadline = time.monotonic() + 120
         while not result_path.exists():
@@ -141,7 +154,7 @@ def execute(lab, app: Path, identifier: str, *, artifacts: tuple[str, ...] = ())
             time.sleep(1)
         result = json.loads(result_path.read_text())
         (lab.run_dir / "runtime-result.json").write_text(json.dumps(result, indent=2) + "\n")
-        validate_result(result, run_id=lab.run_dir.name)
+        validate_result(result, run_id=lab.run_dir.name, mobile=mobile)
         for name in artifacts:
             shutil.copy2(container / "Library/Caches" / name, lab.run_dir / name)
         if artifacts:

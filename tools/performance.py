@@ -36,6 +36,13 @@ HOME_HOST_FITTING_COUNTERS = [
     "hostFittingMaxNanoseconds", "hostFittingReentrantCalls",
 ]
 SCENARIOS = {
+    "disc-java-flush": {
+        "suite": "ui",
+        "test": "DiscGraphicsHostedTests/testPerformanceJavaRepeatedFlushes",
+        "file": "Tests/SubtitlePresentationSupport/DiscGraphicsHostedTests.m",
+        "description": "Compose 200 original 960x540 Java menu updates, with 20 changing frames; measure synchronous producer work, not presentation FPS.",
+        "counters": ["frames", "changedFrames", "pixelsPerFrame"],
+    },
     **{
         f"active-picture-{players}-{state}": {
             "suite": "ui",

@@ -28,6 +28,7 @@
 @property(nonatomic) NSMutableData *pixels;
 @property(nonatomic) unsigned width, height;
 @property(nonatomic) UIImage *image;
+@property(nonatomic) BOOL dirty;
 @end
 @implementation DiscARGBPlane
 @end
@@ -1101,6 +1102,7 @@ static unsigned component(double value) {
             }
             plane = [DiscARGBPlane new];
             plane.width = event->w; plane.height = event->h;
+            plane.dirty = YES;
             plane.pixels = [NSMutableData dataWithLength:(NSUInteger)event->w * event->h * 4];
             _javaPlanes[key] = plane;
             return;
@@ -1112,14 +1114,21 @@ static unsigned component(double value) {
                 return;
             }
             uint32_t *pixels = plane.pixels.mutableBytes;
-            for (unsigned row = 0; row < event->h; row++)
-                memcpy(pixels + (event->y + row) * plane.width + event->x,
-                       event->argb + row * event->stride, event->w * sizeof(uint32_t));
+            for (unsigned row = 0; row < event->h; row++) {
+                uint32_t *target = pixels + (event->y + row) * plane.width + event->x;
+                const uint32_t *source = event->argb + row * event->stride;
+                size_t length = event->w * sizeof(uint32_t);
+                if (plane.dirty || memcmp(target, source, length) != 0) {
+                    memcpy(target, source, length);
+                    plane.dirty = YES;
+                }
+            }
             return;
         }
         if (event->cmd == BD_ARGB_OVERLAY_CLOSE) {
             [_javaPlanes removeObjectForKey:key];
         } else if (event->cmd == BD_ARGB_OVERLAY_FLUSH && plane) {
+            if (!plane.dirty) return;
             NSData *pixels = [plane.pixels copy];
             const uint32_t *values = pixels.bytes;
             BOOL visible = NO;
@@ -1140,6 +1149,7 @@ static unsigned component(double value) {
                     return;
                 }
             }
+            plane.dirty = NO;
         } else {
             dispatch_async(self.queue, ^{ [self fail:@"Unknown Java disc graphics command"]; });
             return;

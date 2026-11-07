@@ -257,7 +257,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("command", choices=[
         "bootstrap", "host", "navigate", "zero-probe", "tvos-build", "tvos-runtime",
-        "tvos-smoke", "tvos-bdj", "tvos-bdj-device-build",
+        "tvos-smoke", "ios-smoke", "tvos-bdj", "tvos-bdj-device-build",
     ])
     args = parser.parse_args()
     def interrupted(signum, frame):
@@ -267,21 +267,22 @@ def main() -> int:
     try:
         lab = Lab()
         dependencies = lab.dependencies(zero=args.command in (
-            "zero-probe", "tvos-build", "tvos-runtime", "tvos-smoke", "tvos-bdj",
+            "zero-probe", "tvos-build", "tvos-runtime", "tvos-smoke", "ios-smoke", "tvos-bdj",
             "tvos-bdj-device-build"),
             bdj=args.command in ("tvos-bdj", "tvos-bdj-device-build"))
-        if args.command in ("tvos-build", "tvos-runtime", "tvos-smoke", "tvos-bdj",
+        if args.command in ("tvos-build", "tvos-runtime", "tvos-smoke", "ios-smoke", "tvos-bdj",
                             "tvos-bdj-device-build"):
             import tvos
             tvos.build(lab, dependencies, runtime=args.command != "tvos-build",
-                       simulator=args.command in ("tvos-smoke", "tvos-bdj"),
+                       simulator=args.command in ("tvos-smoke", "ios-smoke", "tvos-bdj"),
+                       mobile=args.command == "ios-smoke",
                        bdj=args.command in ("tvos-bdj", "tvos-bdj-device-build"))
             if args.command in ("tvos-bdj", "tvos-bdj-device-build"):
                 import tvos_bdj
                 tvos_bdj.run(lab, dependencies, simulator=args.command == "tvos-bdj")
-            if args.command == "tvos-smoke":
+            if args.command in ("tvos-smoke", "ios-smoke"):
                 import tvos_smoke
-                tvos_smoke.run(lab)
+                tvos_smoke.run(lab, mobile=args.command == "ios-smoke")
         if args.command == "zero-probe":
             lab.zero_probe(dependencies)
         if args.command in ("host", "navigate"):

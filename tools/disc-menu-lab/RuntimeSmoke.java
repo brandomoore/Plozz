@@ -14,6 +14,7 @@ public final class RuntimeSmoke {
 
     @SuppressWarnings("removal")
     public static int run() throws Exception {
+        StorageSmoke.run();
         int sum = 0;
         for (int i = 1; i <= 100; i++) {
             sum += i;
@@ -53,6 +54,12 @@ public final class RuntimeSmoke {
             }
         }
         System.setSecurityManager(new SecurityManager());
+        try {
+            Class.forName("java.io.PlozzStorageBudget").getMethod("begin").invoke(null);
+            throw new AssertionError("An active disc reset its budget");
+        } catch (java.lang.reflect.InvocationTargetException expected) {
+            if (!(expected.getCause() instanceof SecurityException)) throw expected;
+        }
         try {
             System.getSecurityManager().checkPermission(
                     new SocketPermission("example.invalid:80", "connect"));

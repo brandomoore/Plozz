@@ -19,7 +19,8 @@ def source_fingerprint():
     for path in ["tools/build-disc-runtime.py", "tools/disc-menu-lab/dependencies.json",
                  "tools/disc-menu-lab/lab.py", "tools/disc-menu-lab/tvos.py",
                  "tools/disc-menu-lab/tvos_bdj.py", "tools/disc-menu-lab/tvos_process.c",
-                 "tools/disc-menu-lab/tvos_awt.c"]:
+                 "tools/disc-menu-lab/tvos_awt.c", "tools/disc-menu-lab/storage.py",
+                 "tools/disc-menu-lab/tvos_storage.h", "tools/disc-menu-lab/PlozzStorageBudget.java"]:
         digest.update(path.encode())
         digest.update((ROOT / path).read_bytes())
     return digest.hexdigest()
@@ -28,6 +29,30 @@ def source_fingerprint():
 def harden_bluray(bluray):
     security = bluray / "src/libbluray/bdj/java/org/videolan/BDJSecurityManager.java"
     text = security.read_text()
+    text = tvos.replace_once(text, """                checkWrite(perm.getName());
+                return;""", """                if (!canWrite(getCanonPath(perm.getName()))) deny(perm);
+                return;""")
+    text = tvos.replace_once(text, "        if (canWrite(file)) {\n            return;",
+                             """        if (canWrite(file)) {
+            try {
+                Class.forName("java.io.PlozzStorageBudget").getMethod("recordPath", String.class).invoke(null, file);
+            } catch (Exception error) {
+                throw new SecurityException("Disc storage path accounting failed", error);
+            }
+            return;""")
+    # Canonical sibling names must not inherit another directory's permission.
+    for root in ("cacheRoot", "discRoot", "budaRoot", "persistentRoot"):
+        text = text.replace(f"file.startsWith({root})", f"withinRoot(file, {root})")
+    text = tvos.replace_once(text, "if (!root.startsWith(cacheRoot))", "if (!withinRoot(root, cacheRoot))")
+    text = tvos.replace_once(text, "    private boolean canRead(String file) {",
+                             """    private static boolean withinRoot(String file, String root) {
+        if (root.endsWith(File.separator)) {
+            return file.equals(root.substring(0, root.length() - 1)) || file.startsWith(root);
+        }
+        return file.equals(root) || file.startsWith(root + File.separator);
+    }
+
+    private boolean canRead(String file) {""")
     text = tvos.replace_once(text, """        String enable = System.getProperty("bluray.network.connected");
         if (enable != null && enable.equals("YES"))
             return;
@@ -71,6 +96,11 @@ def harden_bluray(bluray):
         initOnce();""", """                               String persistentRoot, String budaRoot) {
         if (runtimeQuarantined) {
             throw new IllegalStateException("Previous disc did not terminate; restart the application");
+        }
+        try {
+            Class.forName("java.io.PlozzStorageBudget").getMethod("begin").invoke(null);
+        } catch (Exception error) {
+            throw new IllegalStateException("Disc storage accounting unavailable", error);
         }
         initOnce();""")
     text = tvos.replace_once(text, """    /* called only from native code */
@@ -149,6 +179,10 @@ def main():
         "-Dversion=j2se-1.5.0", "-Djava_version_asm=1.8", "-Djava_version_bdj=1.8",
     ])
     runtime = lab.run_dir / "runtime"
+    openjdk_legal = runtime / "legal/openjdk"
+    openjdk_legal.mkdir(parents=True, exist_ok=True)
+    for name in ("LICENSE", "ADDITIONAL_LICENSE_INFO", "ASSEMBLY_EXCEPTION"):
+        shutil.copy2(source / name, openjdk_legal / name)
     for module in (runtime / "modules").iterdir():
         legal = source / "src" / module.name / "share/legal"
         if legal.is_dir():

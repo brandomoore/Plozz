@@ -9,6 +9,15 @@ import subprocess
 
 PROCESS_IMPORTS = {"_fork", "_vfork", "_execve", "_posix_spawn", "_posix_spawnp", "_system", "_ptrace"}
 
+def validate_notices(runtime):
+    for notice in ("java.base", "java.desktop", "libbluray", "asm", "dejavu", "libffi"):
+        if not (runtime / "legal" / notice).is_dir():
+            raise ValueError(f"Missing runtime notice directory: {notice}")
+    for name in ("LICENSE", "ADDITIONAL_LICENSE_INFO", "ASSEMBLY_EXCEPTION"):
+        path = runtime / "legal/openjdk" / name
+        if not path.is_file() or not path.read_text().strip():
+            raise ValueError(f"Missing primary OpenJDK legal text: {name}")
+
 
 def command(*args):
     return subprocess.check_output(args, text=True, stderr=subprocess.STDOUT, timeout=60)
@@ -110,9 +119,7 @@ def validate(app):
     runtime = app / "DiscRuntime"
     if not (runtime / "jars/libbluray-j2se-1.5.0.jar").is_file():
         raise ValueError("Missing bundled disc Java classes")
-    for notice in ("java.base", "java.desktop", "libbluray", "asm", "dejavu", "libffi"):
-        if not (runtime / "legal" / notice).is_dir():
-            raise ValueError(f"Missing runtime notice directory: {notice}")
+    validate_notices(runtime)
     for resource in runtime.rglob("*"):
         if resource.is_file() and (resource.suffix == ".dylib" or resource.stat().st_mode & 0o111):
             raise ValueError(f"Executable code or executable resource in DiscRuntime: {resource.name}")

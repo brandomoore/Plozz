@@ -47,9 +47,9 @@ public final class DiscMenuPlaybackState {
     public var region: UInt32 = 1
     public var playlist: Int?
     public var playItem: Int?
-    public var sendKey: (UInt32) -> Void = { _ in }
-    public var sendPointerClick: (UInt16, UInt16) -> Void = { _, _ in }
-    public var openMenu: () -> Void = {}
+    @ObservationIgnored public var sendKey: (UInt32) -> Void = { _ in }
+    @ObservationIgnored public var sendPointerClick: (UInt16, UInt16) -> Void = { _, _ in }
+    @ObservationIgnored public var openMenu: () -> Void = {}
 
     public init() {}
 

@@ -25,6 +25,7 @@ python3 tools/disc-menu-lab/lab.py navigate
 python3 tools/disc-menu-lab/lab.py tvos-build
 python3 tools/disc-menu-lab/lab.py tvos-runtime
 python3 tools/disc-menu-lab/lab.py tvos-smoke
+python3 tools/disc-menu-lab/lab.py ios-smoke
 python3 tools/disc-menu-lab/lab.py tvos-bdj
 python3 tools/disc-menu-lab/lab.py tvos-bdj-device-build
 ```
@@ -40,6 +41,15 @@ lab invocations, bounds child processes, and retains each run's commands, logs
 and outputs in a unique directory. It does not clean caches or reset services.
 An unsuccessful command exits nonzero; missing evidence never becomes a pass.
 Use the printed evidence directory rather than an older successful run.
+
+The runtime smoke routes also execute `StorageSmoke.java` against the actual
+patched native libraries: stream growth, random-access writes and sparse resize,
+positional/vector/async channels, writable mappings, file-copy fallback,
+concurrent reservations, path exhaustion and reset boundaries. The byte limit is
+a conservative cumulative operation budget, not live-disk accounting. No large
+file needs to be written: the original fixture reserves most of the budget before
+attempting small real native operations. `ios-smoke` chooses an available runtime
+that declares an iPad device type; its result cannot substitute for tvOS evidence.
 
 ## What the host experiment establishes
 

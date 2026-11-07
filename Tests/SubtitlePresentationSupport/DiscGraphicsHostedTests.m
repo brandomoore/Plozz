@@ -3,6 +3,7 @@
 #include "../../Vendor/Libbluray/src/libbluray/decoders/overlay.h"
 #include "../../Vendor/Libbluray/src/libbluray/bluray.h"
 #include <mach/mach.h>
+#include <sys/resource.h>
 
 @interface HDMVSession (GraphicsTests)
 - (void)argbOverlay:(const BD_ARGB_OVERLAY *)event;
@@ -15,10 +16,184 @@ static uint64_t discTestFootprint(void) {
         ? info.phys_footprint : 0;
 }
 
+static uint64_t discTestResidentBytes(void) {
+    mach_task_basic_info_data_t info = {0};
+    mach_msg_type_number_t count = MACH_TASK_BASIC_INFO_COUNT;
+    return task_info(mach_task_self(), MACH_TASK_BASIC_INFO, (task_info_t)&info, &count) == KERN_SUCCESS
+        ? info.resident_size : 0;
+}
+
+static uint32_t discTestFirstPixel(UIImage *image) {
+    uint32_t pixel = 0;
+    CGImageRef crop = CGImageCreateWithImageInRect(image.CGImage, CGRectMake(0, 0, 1, 1));
+    CGColorSpaceRef space = CGColorSpaceCreateDeviceRGB();
+    CGContextRef context = CGBitmapContextCreate(&pixel, 1, 1, 8, 4, space,
+        kCGBitmapByteOrder32Little | kCGImageAlphaPremultipliedFirst);
+    if (context && crop) CGContextDrawImage(context, CGRectMake(0, 0, 1, 1), crop);
+    if (context) CGContextRelease(context);
+    if (crop) CGImageRelease(crop);
+    CGColorSpaceRelease(space);
+    return pixel;
+}
+
 @interface DiscGraphicsHostedTests : XCTestCase
 @end
 
 @implementation DiscGraphicsHostedTests
+- (void)testStoppingDropsQueuedGraphicsAndRepeatedStopDrains {
+    HDMVSession *session = [self graphicsSession];
+    __block BOOL published = NO;
+    session.imageChanged = ^(UIImage *image) { published = YES; };
+    session.menuVisibilityChanged = ^(BOOL visible) { published = YES; };
+    uint32_t pixel = 0xff336699;
+    BD_ARGB_OVERLAY init = {.plane = 1, .cmd = BD_ARGB_OVERLAY_INIT, .w = 1, .h = 1};
+    BD_ARGB_OVERLAY draw = {.plane = 1, .cmd = BD_ARGB_OVERLAY_DRAW,
+        .w = 1, .h = 1, .stride = 1, .argb = &pixel};
+    BD_ARGB_OVERLAY flush = {.plane = 1, .cmd = BD_ARGB_OVERLAY_FLUSH};
+    [session argbOverlay:&init];
+    [session argbOverlay:&draw];
+    [session argbOverlay:&flush];
+    [session stop];
+    [session stop];
+    [session argbOverlay:&draw];
+    [session argbOverlay:&flush];
+    XCTestExpectation *finished = [self expectationWithDescription:@"Repeated stop drains"];
+    [session drainWithCompletion:^(BOOL drained) {
+        XCTAssertTrue(drained);
+        dispatch_async(dispatch_get_main_queue(), ^{ [finished fulfill]; });
+    }];
+    [self waitForExpectations:@[finished] timeout:6];
+    XCTAssertFalse(published);
+    XCTAssertNil([session valueForKey:@"javaFrame"]);
+}
+
+- (HDMVSession *)graphicsSession {
+    HDMVSession *session = [[HDMVSession alloc] initWithFiles:@{@"BDMV/index.bdmv": @40}
+        region:1 readRange:^NSData *(NSString *path, int64_t offset, int64_t length) { return nil; }];
+    [session setValue:[NSMutableDictionary new] forKey:@"javaPlanes"];
+    [self addTeardownBlock:^{ [session stop]; }];
+    return session;
+}
+
+- (void)testPerformanceJavaRepeatedFlushes {
+    XCTSkipIf(![NSProcessInfo.processInfo.environment[@"PLOZZ_PERFORMANCE"] isEqualToString:@"1"],
+              @"Opt-in simulator workload; use tools/performance.py.");
+#if !TARGET_OS_SIMULATOR
+    XCTSkip(@"Simulator-only performance workload");
+#endif
+    NSMutableArray *samples = [NSMutableArray new];
+    for (NSInteger iteration = -1; iteration < 5; iteration++) {
+        @autoreleasepool {
+            HDMVSession *session = [self graphicsSession];
+            const unsigned width = 960, height = 540, frames = 200;
+            NSMutableData *source = [NSMutableData dataWithLength:width * height * 4];
+            uint32_t *pixels = source.mutableBytes;
+            for (unsigned index = 0; index < width * height; index++) pixels[index] = 0xff336699;
+            BD_ARGB_OVERLAY init = {.plane = 1, .cmd = BD_ARGB_OVERLAY_INIT, .w = width, .h = height};
+            BD_ARGB_OVERLAY draw = {.plane = 1, .cmd = BD_ARGB_OVERLAY_DRAW,
+                .w = width, .h = height, .stride = width, .argb = pixels};
+            BD_ARGB_OVERLAY flush = {.plane = 1, .cmd = BD_ARGB_OVERLAY_FLUSH};
+            [session argbOverlay:&init];
+            struct rusage before, after;
+            XCTAssertEqual(getrusage(RUSAGE_SELF, &before), 0);
+            uint64_t memory = discTestResidentBytes();
+            NSTimeInterval start = NSProcessInfo.processInfo.systemUptime;
+            for (unsigned frame = 0; frame < frames; frame++) {
+                if (frame % 10 == 0) {
+                    uint32_t color = pixels[0] ^ 0x00ffffff;
+                    for (unsigned index = 0; index < width * height; index++) pixels[index] = color;
+                }
+                [session argbOverlay:&draw];
+                [session argbOverlay:&flush];
+                if (frame % 10 == 0)
+                    XCTAssertEqual(discTestFirstPixel([session valueForKey:@"javaFrame"]), pixels[0]);
+            }
+            NSTimeInterval elapsed = NSProcessInfo.processInfo.systemUptime - start;
+            XCTAssertEqual(getrusage(RUSAGE_SELF, &after), 0);
+            uint64_t finalMemory = discTestResidentBytes();
+            XCTAssertGreaterThan(memory, 0);
+            XCTAssertGreaterThan(finalMemory, 0);
+            XCTAssertNotNil([session valueForKey:@"javaFrame"]);
+            if (iteration >= 0) {
+                double cpu = (after.ru_utime.tv_sec + after.ru_stime.tv_sec
+                    - before.ru_utime.tv_sec - before.ru_stime.tv_sec) * 1000.0
+                    + (after.ru_utime.tv_usec + after.ru_stime.tv_usec
+                    - before.ru_utime.tv_usec - before.ru_stime.tv_usec) / 1000.0;
+                [samples addObject:@{@"iteration": @(iteration), @"wallMilliseconds": @(elapsed * 1000),
+                    @"cpuMilliseconds": @(cpu), @"residentBytes": @(finalMemory),
+                    @"residentDeltaBytes": @((int64_t)finalMemory - (int64_t)memory),
+                    @"counters": @{@"frames": @(frames), @"changedFrames": @20, @"pixelsPerFrame": @(width * height)}}];
+            }
+            [session stop];
+        }
+    }
+    NSError *error = nil;
+    NSData *report = [NSJSONSerialization dataWithJSONObject:
+        @{@"schema": @1, @"scenario": @"disc-java-flush", @"warmups": @1, @"samples": samples}
+        options:0 error:&error];
+    XCTAssertNotNil(report, @"%@", error);
+    XCTAttachment *attachment = [XCTAttachment attachmentWithData:report uniformTypeIdentifier:@"public.json"];
+    attachment.name = @"plozz-performance-disc-java-flush.json";
+    attachment.lifetime = XCTAttachmentLifetimeKeepAlways;
+    [self addAttachment:attachment];
+}
+
+- (void)testJavaPlaneChangesClearCloseAndOrdering {
+    HDMVSession *session = [self graphicsSession];
+    uint32_t colors[] = {0xffff0000, 0xff00ff00, 0xff0000ff};
+    for (unsigned plane = 0; plane < 3; plane++) {
+        BD_ARGB_OVERLAY init = {.plane = plane, .cmd = BD_ARGB_OVERLAY_INIT, .w = 1, .h = 1};
+        BD_ARGB_OVERLAY draw = {.plane = plane, .cmd = BD_ARGB_OVERLAY_DRAW,
+            .w = 1, .h = 1, .stride = 1, .argb = &colors[plane]};
+        BD_ARGB_OVERLAY flush = {.plane = plane, .cmd = BD_ARGB_OVERLAY_FLUSH};
+        [session argbOverlay:&init];
+        [session argbOverlay:&draw];
+        [session argbOverlay:&flush];
+    }
+    UIImage *image = [session valueForKey:@"javaFrame"];
+    BD_ARGB_OVERLAY unchangedDraw = {.plane = 1, .cmd = BD_ARGB_OVERLAY_DRAW,
+        .w = 1, .h = 1, .stride = 1, .argb = &colors[1]};
+    BD_ARGB_OVERLAY unchangedFlush = {.plane = 1, .cmd = BD_ARGB_OVERLAY_FLUSH};
+    [session argbOverlay:&unchangedDraw];
+    [session argbOverlay:&unchangedFlush];
+    XCTAssertEqual([session valueForKey:@"javaFrame"], image,
+                   @"Identical drawing and flushing must reuse the composed frame");
+    BD_ARGB_OVERLAY reset = {.plane = 1, .cmd = BD_ARGB_OVERLAY_INIT, .w = 1, .h = 1};
+    [session argbOverlay:&reset];
+    [session argbOverlay:&unchangedFlush];
+    XCTAssertEqual(discTestFirstPixel([session valueForKey:@"javaFrame"]), colors[0]);
+    [session argbOverlay:&unchangedDraw];
+    [session argbOverlay:&unchangedFlush];
+    image = [session valueForKey:@"javaFrame"];
+    uint32_t pixel = 0;
+    CGColorSpaceRef space = CGColorSpaceCreateDeviceRGB();
+    CGContextRef context = CGBitmapContextCreate(&pixel, 1, 1, 8, 4, space,
+        kCGBitmapByteOrder32Little | kCGImageAlphaPremultipliedFirst);
+    CGContextDrawImage(context, CGRectMake(0, 0, 1, 1), image.CGImage);
+    XCTAssertEqual(pixel, colors[1], @"Plane 1 must remain above planes 0 and 2");
+    BD_ARGB_OVERLAY close = {.plane = 1, .cmd = BD_ARGB_OVERLAY_CLOSE};
+    [session argbOverlay:&close];
+    image = [session valueForKey:@"javaFrame"];
+    CGContextDrawImage(context, CGRectMake(0, 0, 1, 1), image.CGImage);
+    XCTAssertEqual(pixel, colors[0]);
+    uint32_t clear = 0;
+    BD_ARGB_OVERLAY draw = {.plane = 0, .cmd = BD_ARGB_OVERLAY_DRAW,
+        .w = 1, .h = 1, .stride = 1, .argb = &clear};
+    BD_ARGB_OVERLAY flush = {.plane = 0, .cmd = BD_ARGB_OVERLAY_FLUSH};
+    [session argbOverlay:&draw];
+    [session argbOverlay:&flush];
+    image = [session valueForKey:@"javaFrame"];
+    CGContextDrawImage(context, CGRectMake(0, 0, 1, 1), image.CGImage);
+    XCTAssertEqual(pixel, colors[2], @"Clearing a plane must reveal the lower plane");
+    close.plane = 2;
+    [session argbOverlay:&close];
+    XCTAssertNil([session valueForKey:@"javaFrame"]);
+    [session argbOverlay:&flush];
+    XCTAssertNil([session valueForKey:@"javaFrame"], @"An unchanged clear cannot resurrect old graphics");
+    CGContextRelease(context);
+    CGColorSpaceRelease(space);
+}
+
 - (BLURAY *)presentationMarkDisc {
     NSFileManager *manager = NSFileManager.defaultManager;
     NSURL *fixtures = [[NSBundle bundleForClass:self.class].resourceURL URLByAppendingPathComponent:@"Fixtures"];

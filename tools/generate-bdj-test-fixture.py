@@ -37,10 +37,14 @@ def main():
     if text.count(before) != 1:
         raise SystemExit("Original fixture playback entry changed")
     # The hosted variant exposes the real video surface after choosing a clip.
-    source.write_text(text.replace(before, before + "\n            scene.setVisible(false);"))
+    text = text.replace(before, before + "\n            scene.setVisible(false);")
+    boundary = '        System.out.println("PLOZZ_XLET network-permission-denied");'
+    if text.count(boundary) != 1:
+        raise SystemExit("Original fixture security entry changed")
+    source.write_text(text.replace(boundary, boundary + "\n        StorageBoundaryProbe.run(security);"))
     subprocess.run([java / "javac", "--release", "8", "-classpath",
                     runtime / "jars/libbluray-j2se-1.5.0.jar", "-d", classes,
-                    source], check=True, timeout=60)
+                    source, ROOT / "tools/disc-menu-lab/StorageBoundaryProbe.java"], check=True, timeout=60)
     subprocess.run([java / "jar", "--create", "--date=2026-01-01T00:00:00Z",
                     "--file", destination / "JAR/00000.jar", "-C", classes, "."], check=True, timeout=60)
 

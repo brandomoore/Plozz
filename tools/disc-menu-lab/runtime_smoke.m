@@ -60,7 +60,8 @@ void disc_menu_capture(const uint32_t *pixels, unsigned width, unsigned height) 
 static void saveResult(NSString *status, NSString *detail) {
     @autoreleasepool {
         NSDictionary *result = @{@"status": status, @"detail": detail,
-            @"platform": TARGET_OS_SIMULATOR ? @"tvOS Simulator" : @"tvOS",
+            @"platform": TARGET_OS_TV ? (TARGET_OS_SIMULATOR ? @"tvOS Simulator" : @"tvOS")
+                                      : (TARGET_OS_SIMULATOR ? @"iOS Simulator" : @"iOS"),
             @"physical_device": TARGET_OS_SIMULATOR ? @NO : @YES,
             @"run_id": [NSBundle.mainBundle objectForInfoDictionaryKey:@"PlozzLabRunID"]};
         NSError *error = nil;
