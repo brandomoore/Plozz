@@ -928,6 +928,43 @@ and its positive controls when evidence calls for it. Keep cold startup, warm
 steady state, and changed-data workloads separate. Preserve equal first-class
 Plex/Jellyfin coverage when an optimization reaches provider behavior.
 
+### Many-share scan pressure
+
+Run `--scenario multi-share-scanning` on either simulator platform. Twenty
+production catalog/scanner lifecycles each index 24 folders with eight files,
+using synthetic transport sessions with 30-ms directory latency. Every sample
+must finish all 20 scans, 500 directory listings, and 3,840 assets while bounded
+cached reads and main-actor scheduling probes continue. It uses no credentials,
+external metadata, real SMB/WebDAV server, artwork rendering, or app-shell
+navigation. It reproduces scan fan-out, not a physical-device freeze.
+
+With Xcode 27.2 and iOS/tvOS 26.2, the unbounded coordinator reached **80 concurrent
+listings** on both platforms. A two-scan shared budget reduced that to **8** in
+every retained sample, with identical completed work:
+
+| Simulator | Scan-cycle median, before / after | App CPU median, before / after |
+| --- | --- | --- |
+| iPhone 17 Pro | 597 / 2,598 ms | 2,261 / 1,802 ms |
+| Apple TV 4K third generation | 622 / 2,592 ms | 2,436 / 1,810 ms |
+
+This is intentional background throughput reduction, not a faster full scan.
+The generic comparison correctly flags the longer wall time as a regression;
+its threshold was not relaxed. Median per-window maximum cached-read latency
+fell from 6.8 to 1.4 ms on iPhone and 5.4 to 1.8 ms on TV, but one candidate
+iPhone window reached 271 ms. No consistent worst-case foreground-latency
+improvement is established. Main-actor probe maxima stayed below 1.1 ms;
+the fixture does not establish scrolling FPS, presented-frame timing, or
+responsiveness of the reported real profile. Resident snapshots were broadly
+unchanged and are not peak allocation measurements.
+
+Retained baseline/candidate runs are
+`2a05f812ff7d4f939cfe916a737b6e1a` / `6a756515ae754b3687500f972d1101a8`
+(iPhone) and
+`8a810882dda345c0999dd3b837a40983` / `4169cd4543244dc78d1b893f56822f05`
+(TV). Correctness tests additionally hold scan I/O and teardown open to verify
+queueing, cached reads, playback priority, profile cancellation/resumption,
+shared browsing pacing, and capacity retention until transport drain completes.
+
 ## Evidence contract
 
 Runs live in ignored `.build/performance/runs/<id>/`. `result.json` contains:

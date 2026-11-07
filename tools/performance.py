@@ -199,6 +199,15 @@ SCENARIOS = {
         "description": "Warm incremental scan of 1,000 films; then verify a newly added file.",
         "counters": ["directoryListings", "assets", "inventoryUpdates"],
     },
+    "multi-share-scanning": {
+        "suite": "core", "target": "ProviderShareTests",
+        "test": "ShareScanLifecycleTests/testPerformanceTwentyShareScans",
+        "file": "Tests/ProviderShareTests/ShareScanLifecycleTests.swift",
+        "description": "Twenty production share catalogs scan 3,840 files with synthetic 30-ms listings while cached reads and main-actor probes continue.",
+        "counters": ["shares", "completedScans", "assets", "directoryListings", "peakListings",
+                     "cachedReads", "maximumCachedReadMicroseconds", "mainActorSamples",
+                     "mainActorMaxDelayMicroseconds"],
+    },
     "catalog-import": {
         "suite": "core", "target": "ProviderIPTVTests",
         "test": "IPTVPerformanceProbeTests/testPerformanceCatalogImport",

@@ -169,8 +169,8 @@ actor ShareScanner {
         )
     }
 
-    /// Test seam for deterministic pacing behavior; production uses `.shared`
-    /// through the source-compatible initializer above.
+    /// The coordinator injects one pacer across its accounts; standalone
+    /// scanners can inject an isolated pacer for deterministic tests.
     init(store: ShareCatalogStore, shareID: String = "", name: String = "",
          reporter: ShareScanReporter = .noop, concurrency: Int = 4,
          pacer: ShareScanPacer,
@@ -610,7 +610,8 @@ actor ShareScanner {
 
             await withTaskGroup(of: DirResult.self) { group in
                 func spawnNext() {
-                    guard index < frontier.count, let lister = free.popLast() else { return }
+                    guard !Task.isCancelled, backgroundWorkAllowed, !isInvalidated,
+                          index < frontier.count, let lister = free.popLast() else { return }
                     let entry = frontier[index]
                     index += 1
                     listingRequests += 1
@@ -781,7 +782,7 @@ actor ShareScanner {
                     completedDirectories.insert(result.dir)
                     // Never pause for browsing (which could starve a scan forever).
                     // Instead, admit replacement directory requests at a bounded
-                    // slower rate while the user is actively navigating the share.
+                    // slower rate while the user is actively navigating any share.
                     if index < frontier.count {
                         await pacer.paceIfBrowsing()
                         spawnNext()
@@ -1577,8 +1578,8 @@ actor ShareScanner {
 
 }
 
-/// Bounded scan admission control shared by interactive ShareProvider requests
-/// and the background scanner. Recent navigation adds a small delay before each
+/// Bounded pacing shared by interactive ShareProvider requests and all scanners
+/// owned by a coordinator. Recent navigation adds a small delay before each
 /// replacement directory request; continuous navigation still makes guaranteed
 /// progress because the delay is fixed rather than waiting for an idle window.
 actor ShareScanPacer {
