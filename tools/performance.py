@@ -42,6 +42,13 @@ HOME_HOST_FITTING_COUNTERS = [
     "hostFittingMaxNanoseconds", "hostFittingReentrantCalls",
 ]
 SCENARIOS = {
+    "identity-unchanged-servers": {
+        "suite": "core", "target": "AppRuntimeTests",
+        "test": "IdentityIndexRefreshTests/testPerformanceRevalidatingTwentyUnchangedServers",
+        "file": "Tests/AppRuntimeTests/IdentityIndexRefreshTests.swift",
+        "description": "Restore and revalidate 4,000 unchanged titles across twenty Plex/Jellyfin accounts; require complete membership and every catalog request.",
+        "counters": ["accounts", "items", "providerRequests", "publications"],
+    },
     "mobile-home-startup-diagnostics": {
         "suite": "ui", "platforms": ["iOS"],
         "test": "HomeMultiServerLoadingTests/testPerformanceScrollingWhileTwentyServersLoadWithDiagnostics",

@@ -1320,6 +1320,14 @@ platform permanently invalidates it before creating the next one. Late results
 and queued reloads from that retired model cannot publish or restart work; do
 not rely on `deinit` while an outstanding load retains its model.
 
+Identity verification does not imply a membership change. `IdentityIndex` compares
+completed account rebuilds on its own actor and keeps its cached snapshot when
+membership and source metadata are unchanged. Scan freshness and persistence
+still advance. The shared runtime publishes only newer membership revisions,
+after pruning the active account set, and retains profile/generation fences.
+Home reenrichment and watchlist reconciliation therefore run for real changes,
+not every unchanged server completion; live source lookup closures remain live.
+
 Showcase keeps its first-row anchor while that row loads; a lower row finishing
 does not choose focus or scroll the page. Its leading loading card has a visible
 progress indicator and can hold focus without making the other skeletons

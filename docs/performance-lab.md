@@ -643,6 +643,55 @@ work, not twelve connected servers, profile-transition frame pacing or hardware
 scrolling. `watchlist-artwork-rehydration` separately exercises the production
 Plex/Jellyfin credential-restoration path, checking every title and cast image.
 
+### Unchanged multi-server identity verification
+
+A confirmed 30.093-second physical iPhone Home-scrolling trace showed about
+27.307 CPU seconds on the main thread and 116.531 CPU seconds across the app.
+Main-thread samples were dominated by SwiftUI/AttributeGraph updates; background
+stacks included identity snapshot construction, title-component labeling and
+Home reenrichment. The reproduction included a roughly 1.993-second hang.
+Stable page height in the preceding diagnostic report did not prevent stutter.
+These are captured costs, not proof that one subsystem explains every hitch.
+
+`identity-unchanged-servers` restores 4,000 movie memberships across twenty
+synthetic Plex/Jellyfin accounts, then verifies every account through the real
+identity-index runtime. All forty library/catalog requests must finish and the
+twenty-source union must remain available. It excludes rendering, network I/O,
+Silo detail enrichment and filesystem scanning.
+
+Matched iPhone 17 Pro simulator runs `2567af589b924de4910ec7f6d82336b7` and
+`0ce600e0ad46494dbc927b12ea24e105` used one discarded warmup and five retained
+samples. Median app-process CPU fell from 713.587 to 249.827 ms; wall time fell
+from 646.702 to 191.864 ms. Publications fell from 21 to one, with all twenty
+accounts and forty requests retained. The candidate still restores immediately,
+verifies each server, advances freshness and persists once per wave. Identical
+account rebuilds now retain the cached snapshot; revision checks suppress
+duplicate/out-of-order notifications without comparing the full index on MainActor.
+Real membership, metadata and account-removal changes remain progressive.
+
+Median resident size was 362,758,144 bytes before and 334,512,128 afterward;
+allocation history makes this informational, not an isolated memory saving.
+The tradeoff is actor-side equality over the completed account bucket instead
+of rebuilding the entire cross-server graph and invalidating its consumers.
+Cancellation still preserves last-known membership and rejects superseded
+publication. Additional correctness cases cover all 4,000 memberships, freshness,
+metadata-only changes, empty results, account pruning and reset/live lookup.
+They were added after the matched pair. This is measured redundant-work removal,
+not evidence that the physical iPhone's remaining scrolling stutter is eliminated.
+The old account-count publication guard also suppressed confirmed removals when
+an account became empty. Revision ordering permits those updates; restore/race
+fixtures use a failed library lookup to model an unavailable server rather than
+a successful, authoritative empty inventory.
+
+Confirmation run `1105779dd73d40e38742d6164bf35b60` passed 52 core cases and the
+mobile startup-scroll workload; all forty rows, 800 items and 100 requests
+completed. Maximum scheduling gaps remained 139.585-163.227 ms in that synthetic
+Home workload, which does not include real identity scanning. Final tvOS run
+`84afde8aceeb4c1d8b0b153e003b8f90` passed 78 selected identity, lifecycle and
+reenrichment cases. iOS run `0323007ac3044f5b9b9dac238df722f6` passed the six
+final refresh cases, including confirmed-empty inventory. None skipped tests.
+No new physical-device run or installation is included in this confirmation.
+
 `mobile-video-glow` measures the light inline video preview in 2.3-second
 windows against the existing 160-by-90 continuity fixture. Require the same
 surface and advancing playback; it isolates preview overhead, not HD decoding.

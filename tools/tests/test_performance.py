@@ -213,7 +213,7 @@ class EvidenceTests(unittest.TestCase):
         self.assertEqual(set(performance.select(None, None)), {
             "sync-unchanged", "library-unchanged", "multi-share-scanning", "catalog-import", "watchlist-artwork-rehydration",
             "live-tv-schedule-capture", "live-tv-schedule-sync", "poster-preview-admission",
-            "seek-generated-80ms", "seek-generated-180ms",
+            "seek-generated-80ms", "seek-generated-180ms", "identity-unchanged-servers",
         })
         self.assertEqual(performance.select(None, ["guide-large-batches"]), ["guide-large-batches"])
         self.assertEqual(performance.select(None, ["poster-preview-admission"]),
@@ -222,7 +222,8 @@ class EvidenceTests(unittest.TestCase):
                          ["watchlist-artwork-rehydration"])
         self.assertEqual(performance.select("matrix", None), ["runtime-matrix"])
         self.assertEqual(performance.select("diagnostics", None),
-                         ["diagnostics-disabled", "diagnostics-enabled", "diagnostics-snapshot"])
+                         ["diagnostics-disabled", "diagnostics-enabled", "diagnostics-snapshot",
+                          "playback-journal-disabled", "playback-journal-enabled"])
         self.assertEqual(len(performance.expected_reports(["runtime-matrix"])), 16)
         for suite, names in [("core", ["sync-unchanged"]), (None, ["unknown"]),
                              (None, ["sync-unchanged", "sync-unchanged"])]:
