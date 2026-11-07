@@ -15,6 +15,32 @@ import XCTest
 
 @MainActor
 final class DownloadPresentationTests: XCTestCase {
+    override func setUp() async throws {
+        try await super.setUp()
+        let preference = UserDefaults.standard.object(forKey: OfflineMode.preferenceKey)
+        let policy = OfflineMode.shared.isEnabled
+        UserDefaults.standard.set(false, forKey: OfflineMode.preferenceKey)
+        OfflineMode.shared.setEnabled(false)
+        addTeardownBlock {
+            UserDefaults.standard.set(preference, forKey: OfflineMode.preferenceKey)
+            OfflineMode.shared.setEnabled(policy)
+        }
+    }
+
+    func testPinnedArtworkLoadsThroughTheSharedCardCacheWhileOffline() async throws {
+        let storage = try temporaryStorage()
+        let folder = try storage.pinnedFolderURL(forKey: record().identityKey)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let url = folder.appendingPathComponent("offline-poster.png")
+        try imageData().write(to: url)
+        let previous = OfflineMode.shared.isEnabled
+        OfflineMode.shared.setEnabled(true)
+        defer { OfflineMode.shared.setEnabled(previous) }
+
+        let image = await ArtworkImageCache.shared.image(for: url, variant: .posterCard)
+        XCTAssertNotNil(image, "Home and Watchlist must decode pinned file URLs without a server or a warm cache.")
+    }
+
     func testDelayedWatchMutationKeepsItsCapturedServerUser() async throws {
         let account = Account(
             id: "emby",
@@ -1123,6 +1149,171 @@ final class DownloadPresentationTests: XCTestCase {
         ])
     }
 
+    func testPortraitPinningUsesTheSeriesPosterInsteadOfTheEpisodeStill() async throws {
+        let storage = try temporaryStorage()
+        let folder = try storage.pinnedMediaDirectory()
+        let thumbnail = folder.appendingPathComponent("episode.png")
+        let poster = folder.appendingPathComponent("series.png")
+        try imageData().write(to: thumbnail)
+        try posterData().write(to: poster)
+        let episode = MediaItem(
+            id: "episode", title: "Episode", kind: .episode,
+            parentTitle: "Show", seriesID: "show", posterURL: thumbnail, seriesPosterURL: poster,
+            allowsTitleBasedMetadataMatching: false
+        )
+        XCTAssertEqual(PlozziOSDownloadArtwork.references(for: episode, role: .poster), [.remote(poster)])
+        let data = try await PlozziOSDownloadArtwork.load(for: episode, role: .poster)
+        let image = try XCTUnwrap(UIImage(data: data))
+        XCTAssertLessThan(image.size.width, image.size.height)
+
+        var missing = episode
+        missing.seriesPosterURL = nil
+        XCTAssertTrue(PlozziOSDownloadArtwork.references(for: missing, role: .poster).isEmpty,
+                      "An episode still is not a show poster.")
+        let movie = MediaItem(
+            id: "movie", title: "Movie", kind: .movie, posterURL: poster, backdropURL: thumbnail,
+            allowsTitleBasedMetadataMatching: false
+        )
+        XCTAssertEqual(PlozziOSDownloadArtwork.references(for: movie, role: .poster), [.remote(poster)])
+    }
+
+    func testExistingDownloadsBackfillPostersAndReopenOfflineWithoutRefetching() async throws {
+        let previous = OfflineMode.shared.isEnabled
+        OfflineMode.shared.setEnabled(true)
+        defer { OfflineMode.shared.setEnabled(previous) }
+        let storage = try temporaryStorage()
+        var download = record()
+        download.snapshot.artworkFileName = "landscape.png"
+        let folder = try storage.pinnedFolderURL(forKey: download.identityKey)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let landscape = folder.appendingPathComponent("landscape.png")
+        try imageData().write(to: landscape)
+        let mediaURL = try storage.pinnedFileURL(for: download)
+        let media = Data("unchanged media".utf8)
+        try media.write(to: mediaURL)
+        let store = InMemoryDownloadedMediaStore(.init(records: [download.identityKey: download]))
+        let probe = ArtworkProbe(data: imageData())
+        let posters = ArtworkProbe(data: posterData())
+        let model = makeModel(
+            registry: DownloadedMediaRegistry(store: store), storage: storage, probe: probe, posterProbe: posters
+        )
+        defer { model.beginProfileTransition() }
+        try await waitUntil { model.records.count == 1 }
+        await model.refreshArtwork()
+        let offlineCalls = await posters.calls
+        XCTAssertEqual(offlineCalls, 0)
+        XCTAssertNil(model.records.first?.snapshot.posterArtworkFileName)
+        OfflineMode.shared.setEnabled(false)
+        await model.refreshArtwork()
+        let repaired = try XCTUnwrap(model.records.first)
+        let poster = try XCTUnwrap(model.artworkURL(for: repaired, role: .poster))
+        XCTAssertEqual(model.artworkURL(for: repaired), landscape)
+        XCTAssertNotEqual(poster, landscape)
+        XCTAssertEqual(repaired.status, .completed)
+        XCTAssertEqual(try Data(contentsOf: mediaURL), media)
+        let landscapeCalls = await probe.calls
+        let posterCalls = await posters.calls
+        XCTAssertEqual(landscapeCalls, 0)
+        XCTAssertEqual(posterCalls, 1)
+        model.beginProfileTransition()
+
+        OfflineMode.shared.setEnabled(true)
+        let reopened = makeModel(
+            registry: DownloadedMediaRegistry(store: store), storage: storage, probe: probe, posterProbe: posters
+        )
+        defer { reopened.beginProfileTransition() }
+        try await waitUntil { reopened.records.count == 1 }
+        await reopened.refreshArtwork()
+        let item = try XCTUnwrap(reopened.detailItem(for: repaired))
+        XCTAssertEqual(item.posterURL, landscape)
+        XCTAssertEqual(item.seriesPosterURL, poster)
+        let show = try XCTUnwrap(reopened.offlineWatchlistItem(.init(
+            id: "show", title: "Show", kind: .series, sourceAccountID: "emby"
+        )))
+        XCTAssertEqual(show.posterURL, poster)
+        let painted = await ArtworkImageCache.shared.image(for: poster, variant: .posterCard)
+        XCTAssertLessThan(try XCTUnwrap(painted).size.width, try XCTUnwrap(painted).size.height)
+        let reopenedCalls = await posters.calls
+        XCTAssertEqual(reopenedCalls, posterCalls)
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let previousWindow = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previousWindow?.makeKeyAndVisible()
+        }
+        window.frame = CGRect(x: 0, y: 0, width: 402, height: 600)
+        window.rootViewController = UIHostingController(rootView:
+            VStack(spacing: 24) {
+                HStack(spacing: 20) {
+                    PosterCardView(item: show, enablesAsyncArtworkFallback: false) {}.frame(width: 160)
+                    PosterCardView(item: item, enablesAsyncArtworkFallback: false) {}.frame(width: 160)
+                }
+                PosterCardView(item: item, style: .landscape, enablesAsyncArtworkFallback: false) {}.frame(width: 240)
+            }
+            .environment(\.themePalette, .dark)
+            .environment(\.plozzMetrics, .touch(density: .standard))
+            .environment(\.locale, Locale(identifier: "en"))
+            .environment(\.colorScheme, .dark)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(.black)
+        )
+        window.makeKeyAndVisible()
+        try await Task.sleep(for: .milliseconds(500))
+        window.layoutIfNeeded()
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        let rendered = UIGraphicsImageRenderer(bounds: window.bounds, format: format).image { _ in
+            XCTAssertTrue(window.drawHierarchy(in: window.bounds, afterScreenUpdates: true))
+        }
+        let attachment = XCTAttachment(image: rendered)
+        attachment.name = "offline-pinned-posters-and-episode-thumbnail"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+        let cgImage = try XCTUnwrap(rendered.cgImage)
+        var pixels = [UInt8](repeating: 0, count: cgImage.width * cgImage.height * 4)
+        let context = try XCTUnwrap(CGContext(
+            data: &pixels, width: cgImage.width, height: cgImage.height,
+            bitsPerComponent: 8, bytesPerRow: cgImage.width * 4, space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ))
+        context.draw(cgImage, in: CGRect(x: 0, y: 0, width: cgImage.width, height: cgImage.height))
+        let green = stride(from: 0, to: pixels.count, by: 4).filter {
+            pixels[$0] < 60 && pixels[$0 + 1] > 180 && pixels[$0 + 2] < 60
+        }.count
+        let magenta = stride(from: 0, to: pixels.count, by: 4).filter {
+            pixels[$0] > 180 && pixels[$0 + 1] < 60 && pixels[$0 + 2] > 180
+        }.count
+        XCTAssertGreaterThan(green, 30_000, "Both real portrait cards must paint their saved show poster.")
+        XCTAssertGreaterThan(magenta, 10_000, "The episode card must keep its separate landscape image.")
+    }
+
+    func testMissingPosterCanRepairWhenLandscapeIsUnavailableAndHonorsCancellation() async throws {
+        let storage = try temporaryStorage()
+        let download = record()
+        let registry = DownloadedMediaRegistry(store: InMemoryDownloadedMediaStore(.init(
+            records: [download.identityKey: download]
+        )))
+        let landscape = ArtworkProbe(data: imageData(), failures: .max)
+        let posters = ArtworkProbe(data: posterData(), blocked: true)
+        let model = makeModel(registry: registry, storage: storage, probe: landscape, posterProbe: posters)
+        let refresh = Task { await model.refreshArtwork() }
+        try await waitUntil { await posters.calls == 1 }
+        model.beginProfileTransition()
+        await posters.release()
+        await refresh.value
+        let cancelled = await registry.record(forKey: download.identityKey)
+        XCTAssertNil(cancelled?.snapshot.posterArtworkFileName)
+
+        let reopened = makeModel(registry: registry, storage: storage, probe: landscape, posterProbe: posters)
+        defer { reopened.beginProfileTransition() }
+        try await waitUntil { reopened.records.count == 1 }
+        await reopened.refreshArtwork()
+        XCTAssertNotNil(reopened.records.first?.snapshot.posterArtworkFileName)
+        XCTAssertNil(reopened.records.first?.snapshot.artworkFileName)
+    }
+
     func testDownloadRowArtworkReadsNeverAccessStorageOnTheMainThread() async throws {
         let backing = try temporaryStorage()
         var download = record()
@@ -1158,19 +1349,25 @@ final class DownloadPresentationTests: XCTestCase {
         let storage = try temporaryStorage()
         let fixtures = (0..<4).map { record(id: "episode-\($0)") }
         var records = fixtures
-        for index in 1..<4 { records[index].snapshot.artworkFileName = "artwork.img" }
+        for index in 1..<4 {
+            records[index].snapshot.artworkFileName = "artwork.img"
+            records[index].snapshot.posterArtworkFileName = "poster.img"
+        }
         for index in [2, 3] {
             let folder = try storage.pinnedFolderURL(forKey: records[index].identityKey)
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
             try (index == 2 ? Data("broken image".utf8) : imageData())
                 .write(to: folder.appendingPathComponent("artwork.img"))
+            try (index == 2 ? Data("broken poster".utf8) : posterData())
+                .write(to: folder.appendingPathComponent("poster.img"))
         }
         let store = InMemoryDownloadedMediaStore(.init(records: Dictionary(
             uniqueKeysWithValues: records.map { ($0.identityKey, $0) }
         )))
         let registry = DownloadedMediaRegistry(store: store)
         let probe = ArtworkProbe(data: imageData())
-        let model = makeModel(registry: registry, storage: storage, probe: probe)
+        let posters = ArtworkProbe(data: posterData())
+        let model = makeModel(registry: registry, storage: storage, probe: probe, posterProbe: posters)
         defer { model.beginProfileTransition() }
         try await waitUntil { model.records.count == 4 }
         await model.refreshArtwork()
@@ -1179,6 +1376,8 @@ final class DownloadPresentationTests: XCTestCase {
             let current = try XCTUnwrap(model.records.first { $0.identityKey == original.identityKey })
             let localURL = try XCTUnwrap(model.artworkURL(for: current))
             XCTAssertNotNil(UIImage(contentsOfFile: localURL.path))
+            let posterURL = try XCTUnwrap(model.artworkURL(for: current, role: .poster))
+            XCTAssertNotNil(UIImage(contentsOfFile: posterURL.path))
             XCTAssertEqual(current.status, .completed)
             XCTAssertEqual(current.bytesDownloaded, original.bytesDownloaded)
             XCTAssertEqual(current.localFileName, original.localFileName)
@@ -1187,15 +1386,21 @@ final class DownloadPresentationTests: XCTestCase {
         }
         let calls = await probe.calls
         XCTAssertEqual(calls, 3, "A valid pinned image must not be fetched again.")
+        let posterCalls = await posters.calls
+        XCTAssertEqual(posterCalls, 3)
         XCTAssertEqual(model.records.first { $0.identityKey == records[3].identityKey }?.snapshot.artworkFileName, "artwork.img")
         model.beginProfileTransition()
 
-        let reopened = makeModel(registry: DownloadedMediaRegistry(store: store), storage: storage, probe: probe)
+        let reopened = makeModel(
+            registry: DownloadedMediaRegistry(store: store), storage: storage, probe: probe, posterProbe: posters
+        )
         defer { reopened.beginProfileTransition() }
         try await waitUntil { reopened.records.count == 4 }
         await reopened.refreshArtwork()
         let reopenedCalls = await probe.calls
         XCTAssertEqual(reopenedCalls, calls, "Pinned artwork must survive a fresh registry/model without contacting a server.")
+        let reopenedPosterCalls = await posters.calls
+        XCTAssertEqual(reopenedPosterCalls, posterCalls)
     }
 
     func testLegacyDownloadIdentityRepairsOnCellularWithoutDownloadingArtwork() async throws {
@@ -1320,7 +1525,7 @@ final class DownloadPresentationTests: XCTestCase {
         defer { model.beginProfileTransition() }
         try await waitUntil { model.records.count == 1 }
         await model.refreshArtwork()
-        XCTAssertEqual(model.artworkURL(for: download), original)
+        XCTAssertEqual(model.artworkURL(for: try XCTUnwrap(model.records.first)), original)
         let initialCalls = await probe.calls
         XCTAssertEqual(initialCalls, 0)
 
@@ -1498,9 +1703,11 @@ final class DownloadPresentationTests: XCTestCase {
         probe: ArtworkProbe, startsActive: Bool = true,
         observer: any DownloadNetworkObserving = StaticDownloadNetworkObserver(),
         profileID: String? = nil,
-        sourceUserID: (@MainActor @Sendable (String) -> String?)? = nil
+        sourceUserID: (@MainActor @Sendable (String) -> String?)? = nil,
+        posterProbe: ArtworkProbe? = nil
     ) -> PlozziOSDownloadsModel {
-        PlozziOSDownloadsModel(
+        let poster = posterData()
+        return PlozziOSDownloadsModel(
             profileID: profileID ?? "download-test-\(UUID())", registry: registry, storage: storage,
             networkObserver: observer, networkFileResolver: UnusedNetworkResolver(),
             providerKind: { _ in .emby }, sourceUserID: sourceUserID, preferredAudioLanguages: { _ in [] },
@@ -1511,6 +1718,10 @@ final class DownloadPresentationTests: XCTestCase {
                 MediaItem(id: record.snapshot.sourceItemID ?? "item", title: record.snapshot.title, kind: record.snapshot.kind)
             },
             loadArtwork: { try await probe.load($0) },
+            loadPosterArtwork: { item in
+                if let posterProbe { return try await posterProbe.load(item) }
+                return poster
+            },
             managedURLResolver: { _, _, _ in throw CancellationError() }
         )
     }
@@ -1532,6 +1743,14 @@ final class DownloadPresentationTests: XCTestCase {
         UIGraphicsImageRenderer(size: CGSize(width: 100, height: 60)).pngData { context in
             UIColor.magenta.setFill()
             context.fill(CGRect(x: 0, y: 0, width: 100, height: 60))
+        }
+
+    }
+
+    private func posterData() -> Data {
+        UIGraphicsImageRenderer(size: CGSize(width: 60, height: 100)).pngData { context in
+            UIColor.green.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 60, height: 100))
         }
     }
 

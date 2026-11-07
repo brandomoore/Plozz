@@ -60,6 +60,56 @@ final class DownloadedMediaRegistryTests: XCTestCase {
         XCTAssertEqual(reloaded?.totalBytes, 100)
     }
 
+    func testPosterAttachmentSurvivesEnrichmentAndRejectsStaleOrCancelledWork() async throws {
+        let store = InMemoryDownloadedMediaStore()
+        let registry = DownloadedMediaRegistry(store: store)
+        var original = try DownloadTestFactory.record(status: .completed)
+        original.snapshot.artworkFileName = "landscape.jpg"
+        _ = try await registry.beginDownload(original)
+        let attached = try await registry.setArtworkFileName(
+            identityKey: original.identityKey, fileName: "poster.jpg", role: .poster,
+            expectedCreatedAt: original.createdAt
+        )
+        XCTAssertTrue(attached)
+        try await registry.enrichSnapshot(
+            identityKey: original.identityKey, expectedCreatedAt: original.createdAt,
+            snapshot: .init(title: "Updated", kind: .movie)
+        )
+        let cancelled = Task {
+            withUnsafeCurrentTask { $0?.cancel() }
+            return try await registry.setArtworkFileName(
+                identityKey: original.identityKey, fileName: "cancelled.jpg", role: .poster
+            )
+        }
+        do {
+            _ = try await cancelled.value
+            XCTFail("Cancelled posters must not attach.")
+        } catch is CancellationError {}
+        let stale = try await registry.setArtworkFileName(
+            identityKey: original.identityKey, fileName: "stale.jpg", role: .poster,
+            expectedCreatedAt: original.createdAt.addingTimeInterval(-1)
+        )
+        XCTAssertFalse(stale)
+        let reloaded = await DownloadedMediaRegistry(store: store).record(forKey: original.identityKey)
+        XCTAssertEqual(reloaded?.snapshot.artworkFileName, "landscape.jpg")
+        XCTAssertEqual(reloaded?.snapshot.posterArtworkFileName, "poster.jpg")
+        XCTAssertEqual(reloaded?.snapshot.title, "Updated")
+        XCTAssertEqual(reloaded?.status, .completed)
+    }
+
+    func testPinnedPosterSchemaReadsLegacySnapshotsAndRoundTripsNewOnes() throws {
+        var snapshot = PinnedMediaSnapshot(title: "Movie", kind: .movie, artworkFileName: "landscape.jpg")
+        let legacy = try JSONEncoder().encode(snapshot)
+        let decodedLegacy = try JSONDecoder().decode(PinnedMediaSnapshot.self, from: legacy)
+        XCTAssertNil(decodedLegacy.posterArtworkFileName)
+        XCTAssertEqual(decodedLegacy.artworkFileName, "landscape.jpg")
+        snapshot.posterArtworkFileName = "poster.jpg"
+        XCTAssertEqual(
+            try JSONDecoder().decode(PinnedMediaSnapshot.self, from: JSONEncoder().encode(snapshot)),
+            snapshot
+        )
+    }
+
     func testBeginDownloadRoundTripsThroughStore() async throws {
         let store = InMemoryDownloadedMediaStore()
         let registry = DownloadedMediaRegistry(store: store)

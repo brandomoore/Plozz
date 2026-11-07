@@ -593,6 +593,14 @@ public actor DownloadQueue {
         existing: DownloadedMediaRecord,
         replacement: DownloadedMediaRecord
     ) async throws {
+        var replacement = replacement
+        if replacement.snapshot.sourceUserID == existing.snapshot.sourceUserID,
+           replacement.snapshot.sourceAccountID == existing.snapshot.sourceAccountID {
+            replacement.snapshot.artworkFileName =
+                replacement.snapshot.artworkFileName ?? existing.snapshot.artworkFileName
+            replacement.snapshot.posterArtworkFileName =
+                replacement.snapshot.posterArtworkFileName ?? existing.snapshot.posterArtworkFileName
+        }
         if let persistentEngine = engine as? any DownloadPersistentWorkCancelling {
             await persistentEngine.discardPersistentWork(
                 identityKey: existing.identityKey
@@ -630,7 +638,7 @@ public actor DownloadQueue {
         }
 
         do {
-            _ = try await registry.withMutationPermit(lifetimePermit) {
+            _ = try await registry.withMutationPermit(lifetimePermit) { [replacement] in
                 try $0.beginQualityReplacement(replacement)
             }
         } catch {
@@ -641,14 +649,16 @@ public actor DownloadQueue {
             throw error
         }
 
-        if let artworkFileName = replacement.snapshot.artworkFileName {
+        for artworkFileName in Set(PinnedMediaSnapshot.ArtworkRole.allCases.compactMap({
+            replacement.snapshot.artworkFileName(for: $0)
+        })) {
             let backupArtwork = backup.appendingPathComponent(artworkFileName)
             if fileManager.fileExists(atPath: backupArtwork.path) {
                 try fileManager.createDirectory(
                     at: folder,
                     withIntermediateDirectories: true
                 )
-                try? fileManager.copyItem(
+                try fileManager.copyItem(
                     at: backupArtwork,
                     to: folder.appendingPathComponent(artworkFileName)
                 )

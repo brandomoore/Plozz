@@ -43,6 +43,16 @@ from their downloaded episodes; absent episodes and non-downloaded versions are
 not advertised. Artwork and subtitle references must be local. No online provider
 is used as a fallback, even when the local catalog is empty.
 
+Downloads pin both landscape artwork and a separate movie/series poster in their
+own folder. Home, Watchlist, search, and detail reuse those local files; episodes
+retain their landscape image while portrait cards use the owning show's poster.
+Any authorized downloaded episode or version can supply a missing parent poster.
+Existing downloads repair missing or damaged images when Plozz is active, online,
+and the download network policy permits it. Offline Mode never fetches artwork;
+previously unsaved posters need an allowed online opportunity before going offline.
+Artwork repair and quality replacement preserve downloaded media and both image
+roles across registry reloads.
+
 `PinnedMediaSnapshot.sourceUserID` captures the source identity when downloading.
 Older snapshots must first be revalidated against the currently authorized
 provider online; they are not silently attributed to a different server user.
@@ -65,3 +75,7 @@ internet or a particular server is reachable. The dismissible status uses the
 same adaptive placement as guide progress, yielding to guide and action messages.
 Dismissal persists across pages until the mode or connectivity episode changes;
 it never disables the mode.
+
+Download settings use short control labels. Background-speed and converted-quality
+limitations remain beside the relevant choices; the collapsed **About Downloads**
+section retains provider, audio/subtitle, Live Activity, and batch-notification help.

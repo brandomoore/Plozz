@@ -14,39 +14,49 @@ enum PlozziOSDownloadArtwork {
     }
 
     static func references(
-        for item: MediaItem, policy: ArtworkPresentationPolicy = .init(area: .downloads)
+        for item: MediaItem, policy: ArtworkPresentationPolicy = .init(area: .downloads),
+        role: PinnedMediaSnapshot.ArtworkRole = .landscape
     ) -> [ArtworkReference] {
         let policy = policy.forArea(.downloads)
+        let subject = role == .poster ? ArtworkRouter.seriesArtworkItem(for: item) : item
         var seen = Set<ArtworkReference>()
-        return placements(for: item).flatMap { policy.references(for: item, placement: $0) }
+        return placements(for: subject, role: role).flatMap { policy.references(for: subject, placement: $0) }
             .filter { seen.insert($0).inserted }
     }
 
-    static func placements(for item: MediaItem) -> [ArtworkPlacement] {
-        switch item.kind {
+    static func placements(
+        for item: MediaItem, role: PinnedMediaSnapshot.ArtworkRole = .landscape
+    ) -> [ArtworkPlacement] {
+        if role == .poster { return [.poster] }
+        return switch item.kind {
         case .episode: [.detailBackdrop, .episodeThumbnail, .poster, .seriesPoster]
         case .season: [.detailBackdrop, .poster, .seriesPoster]
         default: [.detailBackdrop, .poster]
         }
     }
 
-    static func lookup(for item: MediaItem, router: ArtworkRouter = .shared) async -> URL? {
+    static func lookup(
+        for item: MediaItem, router: ArtworkRouter = .shared,
+        role: PinnedMediaSnapshot.ArtworkRole = .landscape
+    ) async -> URL? {
         await ArtworkSession.artworkResolveLimiter.run {
             guard !Task.isCancelled else { return nil }
-            return await router.artworkURL(for: item, placements: placements(for: item))
+            return await router.artworkURL(for: item, placements: placements(for: item, role: role))
         }
     }
 
     static func load(
         for item: MediaItem, policy: ArtworkPresentationPolicy = .init(area: .downloads),
-        router: ArtworkRouter = .shared
+        router: ArtworkRouter = .shared,
+        role: PinnedMediaSnapshot.ArtworkRole = .landscape
     ) async throws -> Data {
-        let policy = policy.forArea(.downloads)
+        let policy = policy.forArea(.downloads).forPlacement(role == .poster ? .poster : policy.placement)
         try Task.checkCancellation()
         guard let artwork = await ArtworkFirstPaintResolver.resolve(
-            references: references(for: item, policy: policy),
-            variant: .landscapeCard,
-            asyncOnlineURL: { await lookup(for: item, router: router) },
+            references: references(for: item, policy: policy, role: role),
+            variant: role == .poster ? .posterCard : .landscapeCard,
+            maxAspectRatio: role == .poster ? 1 : nil,
+            asyncOnlineURL: { await lookup(for: item, router: router, role: role) },
             prefersOnlineArtwork: policy.prefersOnlineArtwork,
             background: true
         ) else { throw Failure.unavailable }
@@ -76,11 +86,14 @@ enum PlozziOSDownloadArtwork {
 actor PlozziOSDownloadArtworkIndex {
     struct Entry: Sendable, Equatable {
         let createdAt: Date
-        let fileName: String
+        let fileName: String?
+        let posterFileName: String?
         let url: URL?
+        let posterURL: URL?
 
         func matches(_ record: DownloadedMediaRecord) -> Bool {
             createdAt == record.createdAt && fileName == record.snapshot.artworkFileName
+                && posterFileName == record.snapshot.posterArtworkFileName
         }
     }
 
@@ -94,13 +107,17 @@ actor PlozziOSDownloadArtworkIndex {
         var next: [String: Entry] = [:]
         for record in records {
             guard !Task.isCancelled else { throw CancellationError() }
-            guard let fileName = record.snapshot.artworkFileName else { continue }
+            let fileName = record.snapshot.artworkFileName
+            let posterFileName = record.snapshot.posterArtworkFileName
+            guard fileName != nil || posterFileName != nil else { continue }
             if !refreshing, let cached = entries[record.identityKey], cached.matches(record) {
                 next[record.identityKey] = cached
             } else {
                 next[record.identityKey] = Entry(
                     createdAt: record.createdAt, fileName: fileName,
-                    url: existingURL(fileName: fileName, identityKey: record.identityKey, storage: storage)
+                    posterFileName: posterFileName,
+                    url: existingURL(fileName: fileName, identityKey: record.identityKey, storage: storage),
+                    posterURL: existingURL(fileName: posterFileName, identityKey: record.identityKey, storage: storage)
                 )
             }
         }
@@ -132,8 +149,9 @@ actor PlozziOSDownloadArtworkIndex {
     }
 
     private func existingURL(
-        fileName: String, identityKey: String, storage: any DownloadStorageLocating
+        fileName: String?, identityKey: String, storage: any DownloadStorageLocating
     ) -> URL? {
+        guard let fileName else { return nil }
         guard !fileName.isEmpty,
               fileName == URL(fileURLWithPath: fileName, isDirectory: false).lastPathComponent,
               fileName != ".", fileName != ".." else {

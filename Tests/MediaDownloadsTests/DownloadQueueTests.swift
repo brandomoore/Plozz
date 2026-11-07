@@ -393,7 +393,9 @@ final class DownloadQueueTests: XCTestCase {
         )
         defer { try? FileManager.default.removeItem(at: dir) }
         let storage = FixedDownloadStorageLocator(root: dir)
-        let completed = try DownloadTestFactory.record(status: .completed)
+        var completed = try DownloadTestFactory.record(status: .completed)
+        completed.snapshot.artworkFileName = "landscape.jpg"
+        completed.snapshot.posterArtworkFileName = "poster.jpg"
         _ = try await registry.beginDownload(completed)
         try await registry.markCompleted(
             identityKey: completed.identityKey,
@@ -405,6 +407,9 @@ final class DownloadQueueTests: XCTestCase {
             withIntermediateDirectories: true
         )
         try Data("offline-copy".utf8).write(to: originalURL)
+        for name in ["landscape.jpg", "poster.jpg"] {
+            try Data(name.utf8).write(to: originalURL.deletingLastPathComponent().appendingPathComponent(name))
+        }
 
         _ = try await queue.enqueue(
             try DownloadTestFactory.request(quality: .hd720)
@@ -413,6 +418,14 @@ final class DownloadQueueTests: XCTestCase {
 
         let replacement = await registry.record(forKey: completed.identityKey)
         XCTAssertEqual(replacement?.status, .failed)
+        XCTAssertEqual(replacement?.snapshot.artworkFileName, "landscape.jpg")
+        XCTAssertEqual(replacement?.snapshot.posterArtworkFileName, "poster.jpg")
+        for name in ["landscape.jpg", "poster.jpg"] {
+            XCTAssertEqual(
+                try Data(contentsOf: originalURL.deletingLastPathComponent().appendingPathComponent(name)),
+                Data(name.utf8)
+            )
+        }
         let resolver = RegistryOfflinePlaybackResolver(
             registry: registry,
             storage: storage

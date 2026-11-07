@@ -7,6 +7,7 @@ import FeatureProfiles
 import MediaDownloads
 import SwiftUI
 import UIKit
+import Vision
 import XCTest
 @testable import AppRuntime
 @testable import AppShelliOS
@@ -185,21 +186,26 @@ final class OfflineModePresentationTests: XCTestCase {
                     PlozziOSDownloadSettingsView(model: app.downloads, appModel: app)
                 }
                     .environment(\.locale, Locale(identifier: "en"))
+                    .environment(\.themePalette, .dark)
+                    .environment(\.colorScheme, .dark)
             )
             window.makeKeyAndVisible()
-            try await Task.sleep(for: .milliseconds(200))
-            window.layoutIfNeeded()
+            await settle(window)
             let controls = descendants(window).compactMap { $0 as? UISwitch }
-            let toggle = try XCTUnwrap(controls.first { $0.accessibilityIdentifier == "offline-mode-toggle" })
+            // SwiftUI owns accessibility identifiers, not the backing UISwitch.
+            let toggle = try XCTUnwrap(controls.min {
+                $0.convert($0.bounds, to: window).minY < $1.convert($1.bounds, to: window).minY
+            })
             XCTAssertTrue(toggle.isOn)
-            XCTAssertEqual(toggle.accessibilityIdentifier, "offline-mode-toggle")
             XCTAssertTrue(toggle.isEnabled)
             var ancestor: UIView? = toggle.superview
             while ancestor != nil, !(ancestor is UICollectionViewCell) { ancestor = ancestor?.superview }
             let row = try XCTUnwrap(ancestor as? UICollectionViewCell)
-            let toggleFrame = toggle.convert(toggle.bounds, to: row)
-            XCTAssertGreaterThanOrEqual(toggleFrame.minY, 11)
-            XCTAssertGreaterThanOrEqual(row.bounds.maxY - toggleFrame.maxY, 11)
+            let toggleFrame = toggle.convert(toggle.alignmentRect(forFrame: toggle.bounds), to: row)
+            XCTAssertGreaterThanOrEqual(row.bounds.height, 44)
+            XCTAssertGreaterThanOrEqual(row.bounds.height - toggleFrame.height, 24)
+            XCTAssertGreaterThanOrEqual(toggleFrame.minY, 8)
+            XCTAssertGreaterThanOrEqual(row.bounds.maxY - toggleFrame.maxY, 8)
             let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
                 XCTAssertTrue(window.drawHierarchy(in: window.bounds, afterScreenUpdates: true))
             }
@@ -217,6 +223,77 @@ final class OfflineModePresentationTests: XCTestCase {
             XCTAssertFalse(app.isChangingOfflineMode)
             await app.setOfflineMode(true)
         }
+    }
+
+    func testDownloadSettingsKeepHelpCollapsedAndUseShortLabelsOnPhoneAndTablet() async throws {
+        let app = try makeApp()
+        app.downloads.downloadQuality = .original
+        app.downloads.maximumDownloadMegabitsPerSecond = nil
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        for (size, sizeClass, name) in [
+            (CGSize(width: 402, height: 874), UserInterfaceSizeClass.compact, "phone"),
+            (CGSize(width: 820, height: 1180), .regular, "tablet")
+        ] {
+            window.frame = CGRect(origin: .zero, size: size)
+            await show(
+                NavigationStack {
+                    PlozziOSDownloadSettingsView(model: app.downloads, appModel: app)
+                }.environment(\.horizontalSizeClass, sizeClass),
+                in: window
+            )
+            let top = try recognizedText(in: window)
+            XCTAssertTrue(top.contains("Use Cellular"), top)
+            XCTAssertTrue(top.contains("Ask Each Time"), top)
+            XCTAssertFalse(top.contains("Live Activities"), top)
+            XCTAssertFalse(top.contains("without transcoding"), top)
+            capture(window, name: "download-settings-simplified-\(name)")
+            if let scroll = descendants(window).compactMap({ $0 as? UIScrollView })
+                .first(where: { $0.contentSize.height > $0.bounds.height }) {
+                scroll.setContentOffset(CGPoint(
+                    x: 0, y: scroll.contentSize.height - scroll.bounds.height + scroll.adjustedContentInset.bottom
+                ), animated: false)
+            }
+            await settle(window)
+            let bottom = try recognizedText(in: window)
+            XCTAssertTrue(bottom.contains("About Downloads"), bottom)
+            XCTAssertFalse(bottom.contains("server CPU"), bottom)
+            capture(window, name: "download-settings-help-collapsed-\(name)")
+            await show(
+                NavigationStack {
+                    PlozziOSDownloadSettingsView(model: app.downloads, appModel: app, isHelpExpanded: true)
+                }.environment(\.horizontalSizeClass, sizeClass),
+                in: window
+            )
+            if let expandedScroll = descendants(window).compactMap({ $0 as? UIScrollView })
+                .first(where: { $0.contentSize.height > $0.bounds.height }) {
+                expandedScroll.setContentOffset(CGPoint(
+                    x: 0, y: expandedScroll.contentSize.height - expandedScroll.bounds.height
+                        + expandedScroll.adjustedContentInset.bottom
+                ), animated: false)
+            }
+            await settle(window)
+            let expanded = try recognizedText(in: window)
+            XCTAssertTrue(expanded.contains("server CPU"), expanded)
+            XCTAssertTrue(expanded.contains("External subtitle sidecars"), expanded)
+            capture(window, name: "download-settings-help-expanded-\(name)")
+        }
+    }
+
+    private func recognizedText(in window: UIWindow) throws -> String {
+        let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+            XCTAssertTrue(window.drawHierarchy(in: window.bounds, afterScreenUpdates: true))
+        }
+        let request = VNRecognizeTextRequest()
+        request.recognitionLanguages = ["en-US"]
+        try VNImageRequestHandler(cgImage: XCTUnwrap(image.cgImage)).perform([request])
+        return (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ")
     }
 
     func testOfflineScreensInContext() async throws {

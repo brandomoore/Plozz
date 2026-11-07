@@ -85,6 +85,7 @@ public actor DownloadedMediaRegistry {
         guard var record = state.records[identityKey], record.createdAt == expectedCreatedAt else { return }
         var snapshot = snapshot
         snapshot.artworkFileName = record.snapshot.artworkFileName
+        snapshot.posterArtworkFileName = record.snapshot.posterArtworkFileName
         snapshot.resumePosition = record.snapshot.resumePosition ?? snapshot.resumePosition
         snapshot.isPlayed = record.snapshot.isPlayed ?? snapshot.isPlayed
         record.snapshot = snapshot
@@ -326,6 +327,7 @@ public actor DownloadedMediaRegistry {
     public func setArtworkFileName(
         identityKey: String,
         fileName: String,
+        role: PinnedMediaSnapshot.ArtworkRole = .landscape,
         expectedCreatedAt: Date? = nil
     ) throws -> Bool {
         try Task.checkCancellation()
@@ -334,7 +336,10 @@ public actor DownloadedMediaRegistry {
               expectedCreatedAt == nil || record.createdAt == expectedCreatedAt else {
             return false
         }
-        record.snapshot.artworkFileName = fileName
+        switch role {
+        case .landscape: record.snapshot.artworkFileName = fileName
+        case .poster: record.snapshot.posterArtworkFileName = fileName
+        }
         record.updatedAt = Date()
         try persist(record)
         return true
@@ -571,6 +576,9 @@ public actor DownloadedMediaRegistry {
         merged.pauseReason = existing.pauseReason
         if merged.snapshot.artworkFileName == nil {
             merged.snapshot.artworkFileName = existing.snapshot.artworkFileName
+        }
+        if merged.snapshot.posterArtworkFileName == nil {
+            merged.snapshot.posterArtworkFileName = existing.snapshot.posterArtworkFileName
         }
         return merged
     }
