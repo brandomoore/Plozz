@@ -1990,7 +1990,7 @@ struct PlozziOSHomeHeroForeground: View {
               let episode = item.episodeNumber else {
             return nil
         }
-        return "S\(season), E\(episode)"
+        return "S\(season) E\(episode)"
     }
 
     private var watchlistAction: MediaItemAction? {
@@ -2188,7 +2188,7 @@ struct PlozziOSDetailHeroForeground: View {
                 // Every action is already in "…" by here, so the only thing left
                 // to give is the Play button's resume detail. Without these the
                 // narrowest candidate could still be wider than the hero — a
-                // long "Resume S12, E7 • 43m" overflowed the text column and
+                // long "Resume S12 E7 • 43m" overflowed the text column and
                 // dragged the whole hero off to one side.
                 actionRow(
                     actions: entries,
@@ -2613,7 +2613,7 @@ struct PlozziOSDetailHeroForeground: View {
               let episode = item.episodeNumber else {
             return nil
         }
-        return "S\(season), E\(episode)"
+        return "S\(season) E\(episode)"
     }
 
 }

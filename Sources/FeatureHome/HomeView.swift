@@ -653,6 +653,7 @@ public struct HomeView: View {
                                         .prefersDefaultFocus(true, in: heroFocusScope)
                                         .focusEffectDisabled()
                                         .accessibilityLabel("Loading Home content")
+                                        .navigationEntryFocus(.pending)
                                 }
                                 LazyVStack(alignment: .leading, spacing: metrics.rowSpacing) {
                                     // Shown ABOVE the rows, not instead of them. A
@@ -1693,6 +1694,7 @@ public struct HomeView: View {
                 .prefersDefaultFocus(true, in: heroFocusScope)
                 .focusEffectDisabled()
                 .accessibilityLabel("Loading Home content")
+                .navigationEntryFocus(.pending)
                 .focusScope(heroFocusScope)
         } else {
             HomeHeroView(

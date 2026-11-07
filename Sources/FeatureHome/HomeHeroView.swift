@@ -1542,6 +1542,7 @@ struct HomeHeroView: View {
                     .accessibilityLabel(accessibilityLabel(for: item))
                     .accessibilityAction { activateSelected() }
                     .modifier(HeroActionAccessibility(actions: a11yActions))
+                    .navigationEntryFocus(.content)
             }
             // Pin a *constant* identity so focus is retained across a page (item
             // id changes). Never key this on the item id — that would drop focus.

@@ -64,12 +64,15 @@ public struct ContentStateView<Value: Sendable, Content: View>: View {
     public var body: some View {
         switch state {
         case .idle, .loading:
-            if let loadingContent {
-                loadingContent()
-            } else {
-                LoadingMessagesView()
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            Group {
+                if let loadingContent {
+                    loadingContent()
+                } else {
+                    LoadingMessagesView()
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
             }
+            .navigationEntryFocus(.pending)
 
         case let .loaded(value):
             content(value)
@@ -120,6 +123,7 @@ public struct ContentStateView<Value: Sendable, Content: View>: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding()
+        .navigationEntryFocus(.fallback)
     }
 }
 

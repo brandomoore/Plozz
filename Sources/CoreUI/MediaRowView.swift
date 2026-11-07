@@ -769,6 +769,7 @@ public struct MediaRowView: View {
                     // keeps tvOS's column-aligned X-projection (the "focus jumps to the
                     // opposite side" bug, commit f812fe64).
                     .focusSectionIf(gatesFocus || episodeEntry != nil)
+                    .navigationEntryFocus(reservesLoadingFocus && !items.isEmpty ? .content : nil)
                     .onAppear { applyInitialFocus(using: proxy) }
                     .onChange(of: reservesLoadingFocus) { _, reserves in
                         // Becoming the first row must not replace already-loaded
@@ -1117,6 +1118,7 @@ public struct MediaRowView: View {
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("Loading")
             .accessibilityIdentifier("media-row-loading-entry")
+            .navigationEntryFocus(.pending)
     }
 
     private var layoutMetrics: PlozzMetrics {
