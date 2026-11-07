@@ -92,12 +92,12 @@ public struct ProfileSeerrSetupView: View {
                 ViewThatFits(in: .horizontal) {
                     HStack(spacing: 12) {
                         heading
-                        profileChip
+                        ProfileChip(profile: profile)
                     }
                     .fixedSize(horizontal: true, vertical: false)
                     VStack(alignment: .leading, spacing: 12) {
                         heading
-                        profileChip
+                        ProfileChip(profile: profile)
                     }
                 }
                 .accessibilityElement(children: .combine)
@@ -129,33 +129,6 @@ public struct ProfileSeerrSetupView: View {
         .font(.largeTitle.bold())
         #endif
         .plozzForeground(.primary)
-    }
-
-    private var profileChip: some View {
-        HStack(spacing: 8) {
-            ProfileAvatarView(profile: profile, size: profileAvatarSize)
-                .accessibilityHidden(true)
-            Text(verbatim: profile.name)
-                .font(.headline)
-                .fixedSize(horizontal: false, vertical: true)
-                .plozzForeground(.primary)
-        }
-        .padding(.leading, 6)
-        .padding(.trailing, 12)
-        .padding(.vertical, 6)
-        .background(palette.cardSurface, in: RoundedRectangle(cornerRadius: 20))
-        .overlay {
-            RoundedRectangle(cornerRadius: 20)
-                .strokeBorder(palette.cardBorder, lineWidth: 1)
-        }
-    }
-
-    private var profileAvatarSize: CGFloat {
-        #if os(iOS)
-        28
-        #else
-        44
-        #endif
     }
 
     private var panelPadding: EdgeInsets {

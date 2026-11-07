@@ -87,6 +87,19 @@ public struct HomeAggregator: Sendable {
         await libraryDiscovery(from: accounts).libraries
     }
 
+    public static func cachedLibraries(
+        from accounts: [ResolvedAccount]
+    ) -> (libraries: [AggregatedLibrary], accountIDs: Set<String>) {
+        var libraries: [AggregatedLibrary] = []
+        var accountIDs: Set<String> = []
+        for resolved in accounts {
+            guard let cached = LibraryInventoryStore.shared.load(for: resolved) else { continue }
+            accountIDs.insert(resolved.account.id)
+            libraries += cached.map { aggregated($0, from: resolved) }
+        }
+        return (libraries, accountIDs)
+    }
+
     /// The result of a cross-account library discovery: the flattened library list
     /// plus the set of accounts whose fetch **failed** (server offline /
     /// unreachable). The failure set lets Settings tell a genuinely-empty server
@@ -130,6 +143,11 @@ public struct HomeAggregator: Sendable {
             case let .unreachable(accountID, error):
                 unreachable.insert(accountID)
                 failures[accountID] = error
+                if error == .serverUnreachable,
+                   let resolved = accounts.first(where: { $0.account.id == accountID }),
+                   let cached = LibraryInventoryStore.shared.load(for: resolved) {
+                    libraries += cached.map { Self.aggregated($0, from: resolved) }
+                }
             }
         }
         return LibraryDiscovery(libraries: libraries, unreachableAccountIDs: unreachable, failures: failures)
@@ -145,11 +163,17 @@ public struct HomeAggregator: Sendable {
 
     private static func libraryOutcome(from resolved: ResolvedAccount) async -> AccountLibraryOutcome {
         do {
-            let libs = try await resolved.provider.libraries()
+            let libs = try await libraryInventory(from: resolved)
             return .libraries(libs.map { aggregated($0, from: resolved) })
         } catch {
             PlozzLog.app.error("Aggregation: failed to list libraries for account \(resolved.account.id)")
             return .unreachable(resolved.account.id, (error as? AppError) ?? .unknown(""))
+        }
+    }
+
+    private static func libraryInventory(from resolved: ResolvedAccount) async throws -> [MediaLibrary] {
+        try await LibraryInventoryStore.shared.refresh(for: resolved) {
+            try await resolved.provider.libraries()
         }
     }
 
@@ -737,7 +761,7 @@ public struct HomeAggregator: Sendable {
         case let .libraries(index):
             let resolved = accounts[index]
             return .libraries(index, await fetch("libraries", from: resolved) {
-                try await resolved.provider.libraries()
+                try await libraryInventory(from: resolved)
             })
         case let .feed(index, feed, libraryIDs):
             let resolved = accounts[index]

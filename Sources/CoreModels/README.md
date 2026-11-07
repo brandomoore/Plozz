@@ -238,6 +238,13 @@ contracts before they can become templates in this editor. Do not overload an
 existing `HomeRowID` to represent independent instances or change provider IDs
 to make them unique in the UI.
 
+`LibraryInventoryStore` is a bounded, local names/IDs cache for already authorized
+server viewers, separate from profile choices and navigation's per-profile
+snapshot. Home and Settings warm it through live library discovery. It never
+resolves credentials or authorizes a profile; callers supply currently resolved
+accounts. See [Libraries behavior](../FeatureSettings/README.md#responsibility) for
+refresh, error, and storage limits.
+
 ## Profile deletion and namespace ownership
 
 Transferable preferences use byte-stable sync values. JSON object keys and

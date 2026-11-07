@@ -1,6 +1,7 @@
 #if canImport(SwiftUI)
 import CoreModels
 import CoreUI
+import FeatureProfiles
 import SwiftUI
 
 /// Exactly what the Libraries screen needs, and nothing else.
@@ -85,6 +86,29 @@ public struct ProfileLibrariesScope {
         self.onAddUser = onAddUser
         self.plexHomeUsersFetcher = plexHomeUsersFetcher
         self.onSelectPlexHomeUser = onSelectPlexHomeUser
+    }
+}
+
+public struct ProfileLibrariesSummary: View {
+    public let profile: Profile
+
+    public init(profile: Profile) { self.profile = profile }
+
+    public var body: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 12) {
+                Text("Saved for").plozzForeground(.secondary)
+                ProfileChip(profile: profile)
+            }
+            .fixedSize(horizontal: true, vertical: false)
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Saved for").plozzForeground(.secondary)
+                ProfileChip(profile: profile)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("libraries-profile-summary")
     }
 }
 

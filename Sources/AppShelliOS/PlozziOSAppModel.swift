@@ -164,13 +164,21 @@ final class PlozziOSAppModel {
 
     @discardableResult
     func refreshNavigationLibraries() async -> Bool {
+        guard !Task.isCancelled else { return false }
         let scope = navigationLibrariesScopeKey
         let currentSettings = settings
         let accountIDs = Set(accountsProviders.navigationAccounts.map(\.id))
-        let request = currentSettings.discoveredLibraries.beginRefresh(accountIDs: accountIDs)
+        let accounts = accountsProviders.homeAccounts
+        let cached = HomeAggregator.cachedLibraries(from: accounts)
+        currentSettings.discoveredLibraries.seed(
+            libraries: cached.libraries, cachedAccountIDs: cached.accountIDs, accountIDs: accountIDs
+        )
+        let request = currentSettings.discoveredLibraries.beginRefresh(
+            accountIDs: accountIDs.subtracting(cached.accountIDs)
+        )
         defer { currentSettings.discoveredLibraries.cancelRefresh(request) }
         guard let discovered = await navigationLibraryDiscovery.refresh(
-            from: accountsProviders.homeAccounts,
+            from: accounts,
             expectedAccountIDs: accountIDs,
             navigation: currentSettings.navigation,
             isCurrent: { self.settings === currentSettings && self.navigationLibrariesScopeKey == scope }

@@ -268,7 +268,6 @@ private struct PlozziOSMyLibrariesContent: View {
     private var discovery: DiscoveredLibrariesStore { appModel.settings.discoveredLibraries }
     private var unreachableAccountIDs: Set<String> { discovery.unreachableAccountIDs }
     private var libraryFailures: [String: AppError] { discovery.failures }
-    private var isLoading: Bool { discovery.state == .loading || !discovery.refreshingAccountIDs.isEmpty }
 
     private var profileID: String {
         appModel.profiles.activeProfileID
@@ -291,6 +290,10 @@ private struct PlozziOSMyLibrariesContent: View {
 
     var body: some View {
         SettingsPageList {
+            ProfileLibrariesSummary(profile: appModel.profiles.activeProfile)
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
+                .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 16, trailing: 0))
             if searchRequest?.targetID == "watcher-plex-user",
                searchGroup(for: "watcher-plex-user") == nil {
                 Text("Add a Plex server to choose a Plex user.")
@@ -394,39 +397,16 @@ private struct PlozziOSMyLibrariesContent: View {
             if isWatching(group) {
                 identityControl(for: group)
 
-                if isLoading, librariesForActiveIdentity(in: group).isEmpty {
+                if let account = activeAccount(in: group),
+                   discovery.refreshingAccountIDs.contains(account.id),
+                   librariesForActiveIdentity(in: group).isEmpty {
                     HStack {
                         ProgressView()
                         Text("Loading libraries…")
                     }
                 } else if librariesForActiveIdentity(in: group).isEmpty {
                     if isUnreachable(group) {
-                        let account = activeAccount(in: group)
-                        let failure = account.flatMap { libraryFailures[$0.id] } ?? .serverUnreachable
-                        HStack {
-                            Label {
-                                if failure == .serverUnreachable {
-                                    Text("Can't reach this server — it may be offline.")
-                                } else {
-                                    Text(failure.userMessage)
-                                }
-                            } icon: {
-                                Image(systemName: failure.requiresSignIn ? "person.crop.circle.badge.exclamationmark" : "exclamationmark.triangle")
-                            }
-                            .plozzForeground(.secondary)
-                            Spacer()
-                            if failure.requiresSignIn, let account,
-                               account.server.provider.supportsAccountReauthentication, let providerSetupRouter {
-                                Button("Sign In Again") { providerSetupRouter.reauthenticationAccount = account }
-                            } else if failure.requiresSignIn, let account,
-                                      account.server.provider == .iptv, let providerSetupRouter {
-                                Button("Edit connection") { providerSetupRouter.connectIPTV(account: account) }
-                            } else {
-                                Button { Task { await loadLibraries() } } label: {
-                                    Label("Retry", systemImage: "arrow.clockwise")
-                                }
-                            }
-                        }
+                        libraryFailure(for: group)
                     } else {
                         Text("No video libraries are available.")
                             .plozzForeground(.secondary)
@@ -446,12 +426,40 @@ private struct PlozziOSMyLibrariesContent: View {
                                 && library.id == librariesForActiveIdentity(in: group).first?.id
                         )
                     }
+                    if isUnreachable(group) { libraryFailure(for: group) }
                 }
             }
-        } footer: {
-            Text("Saved for profile “\(appModel.profiles.activeProfile.name)”.")
         }
         .settingsSearchGroup(searchTargets(for: group))
+    }
+
+    private func libraryFailure(for group: ServerAccountGroup) -> some View {
+        let account = activeAccount(in: group)
+        let failure = account.flatMap { libraryFailures[$0.id] } ?? .serverUnreachable
+        return HStack {
+            Label {
+                if failure == .serverUnreachable {
+                    Text("Can't reach this server — it may be offline.")
+                } else {
+                    Text(failure.userMessage)
+                }
+            } icon: {
+                Image(systemName: failure.requiresSignIn ? "person.crop.circle.badge.exclamationmark" : "exclamationmark.triangle")
+            }
+            .plozzForeground(.secondary)
+            Spacer()
+            if failure.requiresSignIn, let account,
+               account.server.provider.supportsAccountReauthentication, let providerSetupRouter {
+                Button("Sign In Again") { providerSetupRouter.reauthenticationAccount = account }
+            } else if failure.requiresSignIn, let account,
+                      account.server.provider == .iptv, let providerSetupRouter {
+                Button("Edit connection") { providerSetupRouter.connectIPTV(account: account) }
+            } else {
+                Button { Task { await loadLibraries() } } label: {
+                    Label("Retry", systemImage: "arrow.clockwise")
+                }
+            }
+        }
     }
 
     /// One library, as a checkmark child of its server's master switch.

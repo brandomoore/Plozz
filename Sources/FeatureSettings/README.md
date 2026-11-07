@@ -1004,6 +1004,24 @@ watch history and planning-list behavior are documented in
   inside the existing Settings presentation rather than replacing it with the
   launch profile picker. This presentation ownership applies only to the same
   active profile; source authorization remains withheld until verification.
+  Settings and new-profile setup immediately reuse `LibraryInventoryStore`
+  names from currently authorized accounts, while bounded live discovery refreshes
+  them. Normal Home library discovery warms the same cache. Its scope includes
+  the account, server connection, credential revision, and verified Plex Home
+  viewer, never the Plozz profile's selection. Reissued Plex activation tokens
+  can share names only for the same verified viewer and persisted login revision.
+  Pending PINs and unresolved providers cannot read inventories. Offline refreshes
+  retain names with an explicit failure/Retry; authentication or access refusals
+  remove them, and successful empty inventories replace old names. Canceled or
+  superseded answers cannot overwrite a newer completed inventory.
+  This local cache is a disposable paint hint, not authorization or content:
+  no artwork URLs, tokens, merged-account routes, or profile preferences are saved.
+  It keeps at most 128 identities, 512 libraries per identity and 2 MiB on disk;
+  larger inventories still arrive from live discovery. Unchanged inventories do
+  not rewrite the disk cache on every refresh. Loading indicators belong
+  only to cache misses; a successfully cached empty inventory is not a miss.
+  Both Libraries presentations show one scrolling "Saved for" profile chip,
+  shared with Seerr setup, rather than a fixed introduction or per-server footers.
   On TV, each enabled media-share section shows its own compact update phase,
   progress bar and known percentage. Only accounts included in the current
   profile contribute; idle, excluded and removed shares show no status. Progress

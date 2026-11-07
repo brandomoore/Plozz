@@ -80,23 +80,8 @@ private struct MyLibrariesContentView: View {
         ScrollViewReader { scrollProxy in
             ScrollView {
                 VStack(alignment: .leading, spacing: 28) {
-                    switch scope.presentation {
-                    case .settings:
-                        SettingsPageHeader(
-                            SettingsCopy.libraries,
-                            subtitle: "Turn servers and libraries on or off, and pick who you watch as."
-                        )
-                    case .profileSetup:
-                        // Same controls, different moment: this is a question
-                        // being answered, not a setting being adjusted.
-                        SettingsPageHeader(
-                            "What does this profile watch?",
-                            // Says the two things the screen can't show you: the
-                            // choices are scoped to this profile, and the identity
-                            // picker decides whose watchlist comes with it.
-                            subtitle: "Only this profile is affected. Who you watch as sets whose watchlist it uses."
-                        )
-                    }
+                    SettingsPageHeader(SettingsCopy.libraries)
+                    ProfileLibrariesSummary(profile: scope.activeProfile)
                     if searchRequest?.targetID == "watcher-plex-user",
                        searchGroup(for: "watcher-plex-user") == nil {
                         Text("Add a Plex server to choose a Plex user.")
@@ -406,13 +391,12 @@ private struct MyLibrariesContentView: View {
     @ViewBuilder
     private func librarySection(for group: ServerAccountGroup) -> some View {
         switch scope.discoveredLibraries {
-        case .idle, .loading:
-            HStack(spacing: 12) {
-                ProgressView()
-                Text("Discovering libraries…").font(.footnote).plozzForeground(.secondary)
+        case .idle, .loading, .empty:
+            if isRefreshingLibraries(for: group) {
+                discoveringLibraries
+            } else {
+                libraryStatusMessage(for: group)
             }
-        case .empty:
-            libraryStatusMessage(for: group)
         case .failed:
             HStack {
                 Text("Couldn't load libraries.").font(.footnote).plozzForeground(.secondary)
@@ -449,6 +433,7 @@ private struct MyLibrariesContentView: View {
                     group.serverKey == searchGroup(for: "profile-library-inclusion")?.serverKey
                         ? "profile-library-inclusion" : "profile-libraries-\(group.serverKey)"
                 )
+                if isUnreachable(group) { libraryStatusMessage(for: group) }
             }
         }
     }
