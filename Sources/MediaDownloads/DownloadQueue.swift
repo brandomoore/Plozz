@@ -420,6 +420,19 @@ public actor DownloadQueue {
 
     // MARK: - Draining
 
+    /// Joins optional work for the completed generations owned by a background activity.
+    public func waitForSubtitleCompletion(for tracked: [String: Date]) async {
+        for (identityKey, createdAt) in tracked {
+            guard schedulingEnabled, !Task.isCancelled else { return }
+            guard let task = running[identityKey], let permit = attemptPermits[identityKey] else { continue }
+            let record = await registry.record(forKey: identityKey)
+            guard schedulingEnabled, !Task.isCancelled else { return }
+            guard record?.status == .completed, record?.createdAt == createdAt,
+                  attemptPermits[identityKey] === permit else { continue }
+            await task.value
+        }
+    }
+
     /// Refreshes sidecars without changing the completed video or fetching it again.
     public func retrySubtitles(identityKey: String) async throws {
         try lifetimePermit.check()

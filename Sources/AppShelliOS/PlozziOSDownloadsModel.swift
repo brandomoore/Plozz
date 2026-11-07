@@ -388,8 +388,10 @@ final class PlozziOSDownloadsModel {
                     }
                     await self.reload()
                 },
-                beforeCompletion: { [weak self] in
-                    await self?.downloadNotifications?.deliverPending()
+                beforeCompletion: { [weak self] tracked in
+                    await queue.waitForSubtitleCompletion(for: tracked)
+                    guard let self, self.acceptsNewWork, !Task.isCancelled else { return }
+                    await self.downloadNotifications?.deliverPending()
                 }
             )
         }

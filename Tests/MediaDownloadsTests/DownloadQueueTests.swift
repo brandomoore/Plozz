@@ -192,6 +192,60 @@ private struct SubtitleStatusRejectingStore: DownloadedMediaStoring {
 }
 
 final class DownloadQueueTests: XCTestCase {
+    func testSubtitleCompletionWaitIsScopedToTrackedCompletedGenerations() async throws {
+        let registry = DownloadedMediaRegistry(store: InMemoryDownloadedMediaStore())
+        let directory = DownloadTestFactory.tempDirectory()
+        let firstIdentity = DownloadTestFactory.imdbIdentity()
+        let firstGate = SuspensionTestGate()
+        let otherGate = SuspensionTestGate()
+        let queue = DownloadQueue(
+            registry: registry, storage: FixedDownloadStorageLocator(root: directory),
+            engine: FakeDownloadEngine.completing(at: 10),
+            saveSubtitles: { record, _, _ in
+                if record.identity == firstIdentity {
+                    await firstGate.wait()
+                } else {
+                    await otherGate.wait()
+                }
+                return .saved
+            },
+            policy: DownloadNetworkPolicy(maxConcurrentDownloads: 2)
+        )
+        addTeardownBlock {
+            await firstGate.open()
+            await otherGate.open()
+            await queue.drainForTesting()
+            try FileManager.default.removeItem(at: directory)
+        }
+        let first = try await queue.enqueue(DownloadTestFactory.request(identity: firstIdentity))
+        let other = try await queue.enqueue(DownloadTestFactory.request(identity: DownloadTestFactory.imdbIdentity("tt1234567")))
+        await firstGate.waitUntilEntered()
+        await otherGate.waitUntilEntered()
+
+        let skipped = expectation(description: "Untracked work and old generations must not delay completion")
+        let ignored = Task {
+            await queue.waitForSubtitleCompletion(for: [:])
+            await queue.waitForSubtitleCompletion(for: [first.identityKey: first.createdAt.addingTimeInterval(-1)])
+            skipped.fulfill()
+        }
+        await fulfillment(of: [skipped], timeout: 1)
+
+        let joined = expectation(description: "Tracked subtitles finish independently of unrelated work")
+        let completion = Task {
+            await queue.waitForSubtitleCompletion(for: [first.identityKey: first.createdAt])
+            let saved = await registry.record(forKey: first.identityKey)
+            XCTAssertEqual(saved?.subtitleStatus, .saved)
+            joined.fulfill()
+        }
+        await firstGate.open()
+        await fulfillment(of: [joined], timeout: 1)
+        let unrelated = await registry.record(forKey: other.identityKey)
+        XCTAssertNil(unrelated?.subtitleStatus)
+        await otherGate.open()
+        await ignored.value
+        await completion.value
+    }
+
     func testInitialSubtitleCancellationKeepsFinishedVideoPlayable() async throws {
         for interruption in 0..<3 {
             let store = InMemoryDownloadedMediaStore()

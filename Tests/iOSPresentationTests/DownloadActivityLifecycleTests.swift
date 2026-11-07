@@ -401,6 +401,24 @@ final class DownloadActivityLifecycleTests: XCTestCase {
     }
 
     func testModelActivityExpirationCancelsInitialSubtitlesWithoutHidingFinishedVideo() async throws {
+        try await exerciseSubtitleCompletion(hasRemainingVideo: true, expires: true)
+    }
+
+    func testLastVideoKeepsBackgroundExecutionUntilSubtitlesAreSaved() async throws {
+        try await exerciseSubtitleCompletion(hasRemainingVideo: false, expires: false)
+    }
+
+    func testLastVideoSubtitleFailureCompletesActivityAndRetainsWarning() async throws {
+        try await exerciseSubtitleCompletion(hasRemainingVideo: false, expires: false, subtitleResult: .unavailable)
+    }
+
+    func testLastVideoSubtitleWaitStillHonorsActivityExpiration() async throws {
+        try await exerciseSubtitleCompletion(hasRemainingVideo: false, expires: true)
+    }
+
+    private func exerciseSubtitleCompletion(
+        hasRemainingVideo: Bool, expires: Bool, subtitleResult: DownloadSubtitleStatus = .saved
+    ) async throws {
         let previousOffline = OfflineMode.shared.isEnabled
         OfflineMode.shared.setEnabled(false)
         defer { OfflineMode.shared.setEnabled(previousOffline) }
@@ -418,7 +436,8 @@ final class DownloadActivityLifecycleTests: XCTestCase {
         let storage = PlatformDownloadStorageLocator(subdirectory: "PlozzDownloads/\(profile)")
         let directory = try storage.pinnedMediaDirectory()
         let registry = DownloadedMediaRegistry(store: InMemoryDownloadedMediaStore())
-        var records = [downloadActivityRecord(id: "first"), downloadActivityRecord(id: "next")]
+        var records = [downloadActivityRecord(id: "first")]
+        if hasRemainingVideo { records.append(downloadActivityRecord(id: "next")) }
         for index in records.indices {
             records[index].status = .queued
             records[index].totalBytes = Int64(bytes.count)
@@ -445,7 +464,7 @@ final class DownloadActivityLifecycleTests: XCTestCase {
             },
             saveSubtitles: { _, _, _ in
                 try await subtitleGate.wait()
-                return .saved
+                return subtitleResult
             }
         )
         addTeardownBlock {
@@ -461,24 +480,42 @@ final class DownloadActivityLifecycleTests: XCTestCase {
         scheduler.launch(task)
         try await waitForDownloadCondition { !task.updates.isEmpty }
         await model.setApplicationActive(false)
+        let prematureCompletion = expectation(description: "Activity must remain alive while subtitles are saving")
+        prematureCompletion.isInverted = true
+        task.onCompletion = { _ in prematureCompletion.fulfill() }
         await videoGate.open()
         try await waitForDownloadCondition { await subtitleGate.entered }
         let finishedVideo = await registry.record(forKey: records[0].identityKey)
         XCTAssertEqual(finishedVideo?.status, .completed)
-        XCTAssertTrue(task.completions.isEmpty, "The remaining video keeps this activity active")
-        try XCTUnwrap(task.expiration)()
-        try await waitForDownloadCondition { !task.completions.isEmpty }
-        XCTAssertEqual(task.completions, [false])
+        await fulfillment(of: [prematureCompletion], timeout: 0.15)
+        task.onCompletion = nil
+        XCTAssertTrue(task.completions.isEmpty, "Subtitle work must keep even the last video's activity active")
+        if expires {
+            try XCTUnwrap(task.expiration)()
+            try await waitForDownloadCondition { !task.completions.isEmpty }
+            XCTAssertEqual(task.completions, [false])
+        }
         await subtitleGate.open()
         try await waitForDownloadCondition { await subtitleGate.finished }
         let cancelled = await subtitleGate.wasCancelled
-        XCTAssertTrue(cancelled, "Expiration must reach subtitle work even though its video is complete")
+        XCTAssertEqual(cancelled, expires, "Expiration must reach subtitle work even though its video is complete")
+        if !expires {
+            try await waitForDownloadCondition { !task.completions.isEmpty }
+            XCTAssertEqual(task.completions, [true])
+        }
         let current = await registry.record(forKey: records[0].identityKey)
         XCTAssertEqual(current?.status, .completed)
-        XCTAssertNil(current?.subtitleStatus)
+        if expires {
+            XCTAssertNil(current?.subtitleStatus)
+        } else {
+            XCTAssertEqual(current?.subtitleStatus, subtitleResult)
+            XCTAssertEqual(current?.subtitleWarningID != nil, subtitleResult == .unavailable)
+        }
         XCTAssertEqual(try Data(contentsOf: storage.pinnedFileURL(for: records[0])), bytes)
-        let remaining = await registry.record(forKey: records[1].identityKey)
-        XCTAssertEqual(remaining?.status, .paused)
+        if hasRemainingVideo {
+            let remaining = await registry.record(forKey: records[1].identityKey)
+            XCTAssertEqual(remaining?.status, .paused)
+        }
     }
 
     func testAdditionalItemsShareOneActivityAndUnknownETAIsCleared() async throws {
@@ -508,7 +545,7 @@ final class DownloadActivityLifecycleTests: XCTestCase {
         var notificationDelivery: CheckedContinuation<Void, Never>?
         let activity = PlozziOSDownloadActivity(
             scheduler: scheduler, beginExecution: { _ in true }, pauseExpiredWork: { _ in },
-            beforeCompletion: {
+            beforeCompletion: { _ in
                 await withCheckedContinuation { notificationDelivery = $0 }
             }
         )
@@ -538,7 +575,7 @@ final class DownloadActivityLifecycleTests: XCTestCase {
         var deliveryFinished = false
         let activity = PlozziOSDownloadActivity(
             scheduler: scheduler, beginExecution: { _ in true }, pauseExpiredWork: { _ in },
-            beforeCompletion: {
+            beforeCompletion: { _ in
                 await withCheckedContinuation { notificationDelivery = $0 }
                 deliveryFinished = true
             }
@@ -559,6 +596,53 @@ final class DownloadActivityLifecycleTests: XCTestCase {
         XCTAssertTrue(activity.hasExecutionLease)
         XCTAssertTrue(task.completions.isEmpty)
         XCTAssertEqual(scheduler.submissions.count, 1)
+    }
+
+    func testWorkCompletedDuringFinalizationWaitsForItsOwnPendingSubtitles() async throws {
+        for replacesGeneration in [false, true] {
+            let scheduler = DownloadActivitySchedulerStub()
+            var pendingWork: CheckedContinuation<Void, Never>?
+            var prepared: [[String: Date]] = []
+            let activity = PlozziOSDownloadActivity(
+                scheduler: scheduler, beginExecution: { _ in true }, pauseExpiredWork: { _ in },
+                beforeCompletion: { tracked in
+                    prepared.append(tracked)
+                    await withCheckedContinuation { pendingWork = $0 }
+                }
+            )
+            defer { pendingWork?.resume(); activity.retire() }
+            var first = downloadActivityRecord()
+            await activity.start(records: [first])
+            let task = DownloadActivityTaskStub()
+            scheduler.launch(task)
+            try await waitForDownloadCondition { !task.updates.isEmpty }
+            first.status = .completed
+            activity.update(records: [first], bytesPerSecond: 0)
+            try await waitForDownloadCondition { pendingWork != nil }
+            XCTAssertEqual(prepared, [[first.identityKey: first.createdAt]])
+
+            var next = downloadActivityRecord(id: "next")
+            if replacesGeneration {
+                next = first
+                next.status = .downloading
+                next.createdAt = first.createdAt.addingTimeInterval(1)
+            }
+            await activity.start(records: replacesGeneration ? [next] : [first, next])
+            next.status = .completed
+            activity.update(records: replacesGeneration ? [next] : [first, next], bytesPerSecond: 0)
+            pendingWork?.resume()
+            pendingWork = nil
+            try await waitForDownloadCondition { pendingWork != nil || !task.completions.isEmpty }
+            XCTAssertEqual(prepared.count, 2, "Newly completed work needs its own finalization pass")
+            XCTAssertEqual(prepared.last?[next.identityKey], next.createdAt)
+            XCTAssertTrue(activity.hasExecutionLease)
+            XCTAssertTrue(task.completions.isEmpty)
+            pendingWork?.resume()
+            pendingWork = nil
+            try await waitForDownloadCondition { !task.completions.isEmpty }
+            XCTAssertEqual(task.completions, [true])
+            XCTAssertEqual(scheduler.submissions.count, 1)
+        }
     }
 }
 
@@ -790,9 +874,13 @@ private final class DownloadActivityTaskStub: PlozziOSDownloadActivityTask {
     var expiration: (@Sendable () -> Void)?
     var updates: [DownloadActivityProgress] = []
     var completions: [Bool] = []
+    var onCompletion: ((Bool) -> Void)?
     func onExpiration(_ handler: @escaping @Sendable () -> Void) { expiration = handler }
     func update(_ progress: DownloadActivityProgress) { updates.append(progress) }
-    func complete(success: Bool) { completions.append(success) }
+    func complete(success: Bool) {
+        completions.append(success)
+        onCompletion?(success)
+    }
 }
 
 @MainActor

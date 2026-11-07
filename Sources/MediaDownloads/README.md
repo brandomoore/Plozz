@@ -123,7 +123,10 @@ replacement use the video's existing folder lifecycle. Downloads cap each subtit
 playable text before publishing. Retrying repairs malformed indexes; cancelled or
 backgrounded subtitle updates leave the completed video and its previous status intact.
 Cancelling or expiring a Live Activity also cancels its tracked subtitle work without
-changing completed videos back to paused.
+changing completed videos back to paused. Normal activity completion keeps its
+background execution grant until the tracked downloads' subtitle saving finishes,
+including the last video and downloads added while completion is pending. This waits
+for the actual work, not a fixed delay; subtitle failures remain nonfatal.
 
 New requests use `ManagedHTTPDownloadSource`'s defaults (one preferred audio
 rendition, available text subtitles). The retired global track flags are ignored

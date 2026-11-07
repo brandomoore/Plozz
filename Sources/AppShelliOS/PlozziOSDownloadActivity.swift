@@ -26,7 +26,7 @@ final class PlozziOSDownloadActivity {
     private let scheduler: any PlozziOSDownloadActivityScheduling
     private let beginExecution: @MainActor (DownloadBackgroundExecutionLease) async -> Bool
     private let pauseExpiredWork: @MainActor ([String: Date]) async -> Void
-    private let beforeCompletion: @MainActor () async -> Void
+    private let beforeCompletion: @MainActor ([String: Date]) async -> Void
     private var identifier: String?
     private var task: (any PlozziOSDownloadActivityTask)?
     private var lease: DownloadBackgroundExecutionLease?
@@ -55,7 +55,7 @@ final class PlozziOSDownloadActivity {
         scheduler: any PlozziOSDownloadActivityScheduling,
         beginExecution: @escaping @MainActor (DownloadBackgroundExecutionLease) async -> Bool,
         pauseExpiredWork: @escaping @MainActor ([String: Date]) async -> Void,
-        beforeCompletion: @escaping @MainActor () async -> Void = {}
+        beforeCompletion: @escaping @MainActor ([String: Date]) async -> Void = { _ in }
     ) {
         self.scheduler = scheduler
         self.beginExecution = beginExecution
@@ -128,7 +128,7 @@ final class PlozziOSDownloadActivity {
             $0.status == .paused && $0.pauseReason == .directShareBackground
         }
         if !snapshot.hasActiveWork, !awaitingBackgroundAdmission {
-            finishAfterPendingNotifications()
+            finishAfterPendingWork()
         } else {
             task?.update(snapshot)
         }
@@ -191,16 +191,21 @@ final class PlozziOSDownloadActivity {
         expirationTask = nil
     }
 
-    private func finishAfterPendingNotifications() {
+    private func finishAfterPendingWork() {
         guard completionTask == nil, let identifier else { return }
         completionTask = Task { [weak self] in
             guard let self else { return }
-            await beforeCompletion()
+            let completing = tracked
+            await beforeCompletion(completing)
             guard self.identifier == identifier, !Task.isCancelled else { return }
             completionTask = nil
             guard !isExpiring else { return }
             let snapshot = progress
             guard !snapshot.hasActiveWork else { return }
+            guard tracked == completing else {
+                finishAfterPendingWork()
+                return
+            }
             task?.update(snapshot)
             finish(success: snapshot.succeeded)
         }
