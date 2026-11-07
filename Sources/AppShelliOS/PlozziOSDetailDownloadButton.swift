@@ -185,7 +185,8 @@ struct PlozziOSDetailDownloadButton: View {
             quality = Text("Only Original is available for this source.")
         }
         let subtitles = Text("Available external text subtitles are saved too.")
-        return Text("\(source) • \(size)\n\(quality)\n\(subtitles)")
+        return source + Text(verbatim: " • ") + size + Text(verbatim: "\n")
+            + quality + Text(verbatim: "\n") + subtitles
     }
 
     private func pauseDownload() async {
