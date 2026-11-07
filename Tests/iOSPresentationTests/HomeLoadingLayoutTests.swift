@@ -92,9 +92,11 @@ final class HomeLoadingLayoutTests: XCTestCase {
                     home.failure = failure
                     XCTAssertFalse(HomePresentationRow(choice: choice, source: .home(home))
                         .supportsBrowsing(loadedItemThreshold: threshold))
-                    XCTAssertFalse(HomePresentationRow(choice: choice, source: .library(
+                    let retained = HomePresentationRow(choice: choice, source: .library(
                         .init(section: section, isLoading: loading, failure: failure)
-                    )).supportsBrowsing(loadedItemThreshold: threshold))
+                    ))
+                    XCTAssertEqual(retained.supportsBrowsing(loadedItemThreshold: threshold), count > 10)
+                    XCTAssertEqual(retained.canBrowse, hasMore && count > 0)
                 }
             }
         }
@@ -686,8 +688,14 @@ final class HomeLoadingLayoutTests: XCTestCase {
             )
         }
         XCTAssertEqual(view(row), view(row))
-        XCTAssertNotEqual(view(row), view(.init(section: section, isLoading: true, failure: nil)))
-        XCTAssertNotEqual(view(row), view(.init(section: section, isLoading: false, failure: .serverUnreachable)))
+        XCTAssertEqual(view(row), view(.init(section: section, isLoading: true, failure: nil)))
+        XCTAssertEqual(view(row), view(.init(section: section, isLoading: false, failure: .serverUnreachable)))
+        let emptySection = LibrarySection(id: "shelf", title: "Shelf", items: [])
+        let emptyRow = HomeLibrarySectionGroup.Row(section: emptySection, isLoading: false, failure: nil)
+        XCTAssertNotEqual(view(emptyRow), view(.init(section: emptySection, isLoading: true, failure: nil)))
+        XCTAssertNotEqual(
+            view(emptyRow), view(.init(section: emptySection, isLoading: false, failure: .serverUnreachable))
+        )
         var changedSection = section
         changedSection.items[0].title = "Updated movie"
         XCTAssertNotEqual(view(row), view(.init(section: changedSection, isLoading: false, failure: nil)))

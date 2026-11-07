@@ -30,6 +30,10 @@ public protocol MediaProvider: Sendable {
 
     // MARK: Library browsing
 
+    /// False for profile-local projections such as downloaded media, whose
+    /// libraries must not read or replace the shared server-viewer inventory.
+    var sharesLibraryInventoryAcrossProfiles: Bool { get }
+
     /// Top-level libraries/views available to the user.
     func libraries() async throws -> [MediaLibrary]
 
@@ -507,6 +511,7 @@ public extension MediaProvider {
     }
     var catalogIdentityRequiresEnrichment: Bool { false }
     var playbackInventoryRequiresEnrichment: Bool { false }
+    var sharesLibraryInventoryAcrossProfiles: Bool { true }
 
     func playbackItem(id: String) async throws -> MediaItem {
         try await item(id: id)

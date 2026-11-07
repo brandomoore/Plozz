@@ -102,6 +102,7 @@ class FakeMediaProvider: MediaProvider, InteractiveBrowseActivityReporting,
     var supplementalFactsByItem: [String: ProbedStreamFacts] = [:]
     var supplementalFactsGate: (@Sendable () async -> Void)?
     var librariesGate: (@Sendable () async -> Void)?
+    var librariesError: AppError?
     var libraryItems: [MediaLibrary] = []
     var latestItems: [MediaItem] = []
     var containerGates: [String: @Sendable () async -> Void] = [:]
@@ -146,6 +147,7 @@ class FakeMediaProvider: MediaProvider, InteractiveBrowseActivityReporting,
     func libraries() async throws -> [MediaLibrary] {
         withLock { _librariesCallCount += 1 }
         await librariesGate?()
+        if let librariesError { throw librariesError }
         return libraryItems
     }
     /// How many times `libraries()` was called — lets a test prove whether the

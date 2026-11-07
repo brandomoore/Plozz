@@ -1121,7 +1121,9 @@ public final class HomeViewModel {
         }
         hasReceivedLiveContent = true
         hasCompletedHomeLoad = true
-        receivedLiveRows = Set(HomeRowKind.allCases)
+        receivedLiveRows = Self.retainedReadyRows(
+            Set(HomeRowKind.allCases), content: content, failures: loadFailures, visibility: visibility
+        )
         isShowingCachedSnapshot = false
         let publication = PerformanceDiagnostics.shared.begin(.homePublish)
         state = content.isEmpty && watchlistLoadingPlaceholderCount == 0 && rowFailures.isEmpty
@@ -1293,7 +1295,9 @@ public final class HomeViewModel {
         }
         content = applyingLoadMutations(to: content)
         publishedLoadRows.formUnion(ready)
-        receivedLiveRows.formUnion(ready)
+        receivedLiveRows = Self.retainedReadyRows(
+            receivedLiveRows.union(ready), content: content, failures: progress.failures, visibility: visibility
+        )
         // Publish failures with reconciled content, never across an await that
         // could replace a focused loading row before its usable cards arrive.
         rowFailures = progress.failures
@@ -1308,6 +1312,25 @@ public final class HomeViewModel {
         }
         for row in newlyReady {
             PlozzLog.boot("HomeVM.rowReady row=\(row.rawValue)")
+        }
+    }
+
+    private static func retainedReadyRows(
+        _ ready: Set<HomeRowKind>, content: Content, failures: [HomeRowKind: AppError],
+        visibility: HomeLibraryVisibility
+    ) -> Set<HomeRowKind> {
+        ready.filter { row in
+            guard failures[row] != nil else { return true }
+            switch row {
+            case .continueWatching: return !content.continueWatching.isEmpty
+            case .recentlyAdded:
+                return (content.recentlyAddedCandidates ?? content.latest).contains {
+                    $0.isVisibleOnHome(isLibraryVisible: visibility.isEnabled)
+                        && (!visibility.hideWatchedRecentlyAdded || !HomeRecentlyAddedPolicy.isWatched($0))
+                }
+            case .watchlist: return !content.watchlist.isEmpty
+            case .libraries: return content.libraries.contains(where: visibility.isVisibleOnHome)
+            }
         }
     }
 

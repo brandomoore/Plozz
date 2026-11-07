@@ -73,6 +73,11 @@ final class OfflineMediaProviderTests: XCTestCase {
         }
         let libraries = try await provider.libraries()
         XCTAssertEqual(libraries.map(\.id), ["shows"])
+        let inventory = LibraryInventoryStore(directory: nil)
+        let resolved = ResolvedAccount(account: account(), provider: provider)
+        let discovered = try await inventory.refresh(for: resolved) { try await provider.libraries() }
+        XCTAssertEqual(discovered, libraries)
+        XCTAssertNil(inventory.load(for: resolved), "Downloaded libraries are not the shared server inventory")
         let shows = try await provider.children(of: "shows")
         XCTAssertEqual(shows.map(\.id), ["series"])
         let seasons = try await provider.children(of: "series")

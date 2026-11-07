@@ -34,7 +34,11 @@ The first progressive Home publication includes configured server and collection
 rows before provider responses arrive. Planning and fetching share the same
 active-account, server-user, enabled-library, and row-visibility filters.
 Matching cached content remains usable while refreshing; an unavailable response
-is not treated as an empty row.
+is not treated as an empty row. A failed global row with no usable cards regains
+its loading reservation when an interrupted load resumes or an explicit retry
+starts. Only content surviving library/tile visibility and the Recently Added
+watched filter counts as usable. Successfully empty rows stay absent; retained
+cards stay visible.
 
 The vertical stack remains eager to avoid estimated-height changes. Loading-rail
 geometry is retained offscreen; its horizontal stack is lazy, like the loaded

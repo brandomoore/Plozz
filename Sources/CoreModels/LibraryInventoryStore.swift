@@ -41,6 +41,7 @@ public final class LibraryInventoryStore: @unchecked Sendable {
     }
 
     public func load(for account: ResolvedAccount) -> [MediaLibrary]? {
+        guard account.provider.sharesLibraryInventoryAcrossProfiles else { return nil }
         lock.lock()
         defer { lock.unlock() }
         return readEntries()[scope(account)]?.libraries
@@ -53,6 +54,11 @@ public final class LibraryInventoryStore: @unchecked Sendable {
         load: @Sendable () async throws -> [MediaLibrary]
     ) async throws -> [MediaLibrary] {
         try Task.checkCancellation()
+        guard account.provider.sharesLibraryInventoryAcrossProfiles else {
+            let libraries = try await load()
+            try Task.checkCancellation()
+            return libraries
+        }
         let request = beginRefresh(for: account)
         do {
             let libraries = try await load()

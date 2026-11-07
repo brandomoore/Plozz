@@ -6,6 +6,7 @@ public struct OfflineMediaProvider: MediaProvider, MediaSortFieldProviding {
     public let session: UserSession
     public var kind: ProviderKind { session.server.provider }
     public var connectionLocality: SourceLocality { .local }
+    public var sharesLibraryInventoryAcrossProfiles: Bool { false }
     private let accountID: String
     private let sourceUserID: String?
     private let knownLibraries: [MediaLibrary]

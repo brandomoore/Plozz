@@ -247,7 +247,9 @@ to make them unique in the UI.
 server viewers, separate from profile choices and navigation's per-profile
 snapshot. Home and Settings warm it through live library discovery. It never
 resolves credentials or authorizes a profile; callers supply currently resolved
-accounts. See [Libraries behavior](../FeatureSettings/README.md#responsibility) for
+accounts. Profile-local providers, including downloaded-media projections, bypass
+both cache reads and writes so they cannot replace the server's full inventory.
+See [Libraries behavior](../FeatureSettings/README.md#responsibility) for
 refresh, error, and storage limits.
 
 ## Profile deletion and namespace ownership

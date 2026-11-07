@@ -129,6 +129,60 @@ final class LibraryInventoryStoreTests: XCTestCase {
         }
     }
 
+    func testProfileLocalInventoryCannotReadReplaceOrInvalidateSharedServerInventory() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = LibraryInventoryStore(directory: directory)
+        let serverLibraries = [
+            MediaLibrary(id: "movies", title: "Movies", kind: .movie),
+            MediaLibrary(id: "shows", title: "Shows", kind: .series)
+        ]
+        let localLibraries = [serverLibraries[0], MediaLibrary(id: "offline.movies", title: "Downloads", kind: .movie)]
+        for kind in [ProviderKind.jellyfin, .emby, .plex] {
+            var metadata = account().account
+            metadata.server.provider = kind
+            let online = account(metadata)
+            let offline = account(metadata, sharesInventory: false)
+            _ = try await store.refresh(for: online) { serverLibraries }
+            XCTAssertNil(store.load(for: offline))
+            let downloaded = try await store.refresh(for: offline) { localLibraries }
+            XCTAssertEqual(downloaded, localLibraries)
+            XCTAssertNil(store.load(for: offline))
+            XCTAssertEqual(store.load(for: online), serverLibraries)
+            do {
+                _ = try await store.refresh(for: offline) { throw AppError.unauthorized }
+                XCTFail("Offline authorization failures must still surface")
+            } catch {
+                XCTAssertEqual(error as? AppError, .unauthorized)
+            }
+            do {
+                _ = try await store.refresh(for: online) { throw AppError.serverUnreachable }
+                XCTFail("Online discovery failures must still surface")
+            } catch {
+                XCTAssertEqual(error as? AppError, .serverUnreachable)
+            }
+            XCTAssertEqual(LibraryInventoryStore(directory: directory).load(for: online), serverLibraries)
+        }
+    }
+
+    func testCancelledProfileLocalDiscoveryDoesNotReturnItsLateAnswer() async throws {
+        let store = LibraryInventoryStore(directory: nil)
+        let source = account(sharesInventory: false)
+        let started = expectation(description: "Local discovery started")
+        let gate = InventoryGate()
+        let refresh = Task { try await store.refresh(for: source) { await gate.load(started: started) } }
+        await fulfillment(of: [started], timeout: 5)
+        refresh.cancel()
+        await gate.finish()
+        do {
+            _ = try await refresh.value
+            XCTFail("Cancelled local discovery must not return success")
+        } catch {
+            XCTAssertTrue(error is CancellationError)
+        }
+        XCTAssertNil(store.load(for: source))
+    }
+
     func testCancelledNewRequestDoesNotStrandOlderLiveRequest() async throws {
         let store = LibraryInventoryStore(directory: nil)
         let source = account()
@@ -184,14 +238,18 @@ final class LibraryInventoryStoreTests: XCTestCase {
     }
 
     private func account(
-        _ metadata: Account? = nil, viewer: String? = nil, revision: CredentialRevision? = nil
+        _ metadata: Account? = nil, viewer: String? = nil, revision: CredentialRevision? = nil,
+        sharesInventory: Bool = true
     ) -> ResolvedAccount {
         let metadata = metadata ?? Account(
             server: .init(id: "server", name: "Server", baseURL: URL(string: "https://fixture.invalid")!, provider: .jellyfin),
             userID: "viewer", userName: "Viewer", deviceID: "fixture"
         )
         return .init(
-            account: metadata, provider: InventoryProvider(session: metadata.session(token: "FIXTURE-TOKEN")),
+            account: metadata, provider: InventoryProvider(
+                session: metadata.session(token: "FIXTURE-TOKEN"),
+                sharesLibraryInventoryAcrossProfiles: sharesInventory
+            ),
             plexHomeUserID: viewer, credentialRevision: revision
         )
     }
@@ -213,6 +271,7 @@ private actor InventoryGate {
 
 private struct InventoryProvider: MediaProvider {
     let session: UserSession
+    var sharesLibraryInventoryAcrossProfiles = true
     var kind: ProviderKind { session.server.provider }
     func libraries() async throws -> [MediaLibrary] { [] }
     func continueWatching(limit: Int) async throws -> [MediaItem] { [] }
