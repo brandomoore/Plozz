@@ -1524,7 +1524,7 @@ struct MainTabView: View {
             uniqueKeysWithValues: entries.map { ($0.destination, $0) }
         )
         let browsableLibraries = NavigationRailPlan.browsableLibraries(libraries)
-        return TabView(selection: nativeSidebarSelection(in: destinations)) {
+        let tabs = TabView(selection: nativeSidebarSelection(in: destinations)) {
             Tab(value: NativeSidebarDestination.profile) {
                 // Selection immediately raises RootView's existing profile page.
                 AnyView(Color.clear.tvNavigationExitProtectionContent())
@@ -1559,6 +1559,7 @@ struct MainTabView: View {
         }
         .tabViewStyle(.sidebarAdaptable)
         .tvNavigationExitProtection(isEnabled: navigationStyleModel.preventsAccidentalExit)
+        return NativeSidebarNavigation(selection: selection, handoff: nativeSidebarFocus, content: tabs)
         .onChange(of: selection) { _, destination in
             if let request = nativeSidebarFocus.request, request.destination != destination {
                 nativeSidebarFocus.cancel()

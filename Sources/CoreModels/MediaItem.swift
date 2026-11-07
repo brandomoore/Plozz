@@ -342,6 +342,9 @@ public struct MediaItem: Codable, Hashable, Identifiable, Sendable {
     /// External database identifiers (e.g. `["Imdb": "tt0111161", "Tmdb": "278"]`),
     /// used by enrichment services to look up additional ratings/metadata.
     public var providerIDs: [String: String]
+    /// A fresh catalog response includes all external IDs the provider knows.
+    /// Transient: persisted cards must not suppress a later identity refresh.
+    public var catalogIdentityIsComplete = false
     /// Discovery-feed attribution, independent of playable server ownership.
     public var discoverySources: [HeroDiscoverySource]
     public var discoveryURLs: [String: URL]

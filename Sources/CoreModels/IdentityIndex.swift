@@ -758,7 +758,7 @@ public enum IdentityEnrichment {
     ///     cost. Bounded so it speeds up the scan without flooding the connection
     ///     pool or the small tvOS cooperative thread pool.
     ///   - enrichIdentifiedItems: also hydrate cards whose one ID is only a partial
-    ///     identity. Silo's catalog anchor omits the cross-namespace links in detail.
+    ///     identity, unless the provider marks the fresh card's identity complete.
     ///   - fetchFull: fetches the fuller per-item record for an item that lacks a
     ///     strong id. Return `nil` to signal the fetch **failed** (inconclusive);
     ///     return the enriched item (ideally now carrying external ids) on success.
@@ -780,7 +780,8 @@ public enum IdentityEnrichment {
         var indexable: [MediaItem] = []
         var needsFetch: [MediaItem] = []
         for item in items where item.kind == .movie || item.kind == .series {
-            if enrichIdentifiedItems || MediaItemIdentity.identities(for: item).isEmpty {
+            if (enrichIdentifiedItems && !item.catalogIdentityIsComplete)
+                || MediaItemIdentity.identities(for: item).isEmpty {
                 needsFetch.append(item)
             } else {
                 indexable.append(item)

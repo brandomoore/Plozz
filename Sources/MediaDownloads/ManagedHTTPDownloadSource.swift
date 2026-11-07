@@ -26,6 +26,8 @@ public struct ManagedHTTPDownloadSource: Codable, Sendable, Hashable {
     public let itemID: String
     public let mediaSourceID: String?
     public let quality: DownloadQuality
+    /// Saved request flags, retained for existing downloads. New requests use
+    /// preferred audio and available text subtitles; Original keeps its file intact.
     public let includesAllAudioTracks: Bool
     public let includesTextSubtitleTracks: Bool
     public let preferredAudioLanguages: [String]

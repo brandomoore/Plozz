@@ -60,6 +60,17 @@ SCENARIOS = {
                      "diagnosticScrollingSamples", "diagnosticLoadingSamples"],
     },
     **{
+        f"silo-identity-{cards}": {
+            "suite": "network", "target": "ProviderSiloTests",
+            "test": f"SiloProviderTests/testPerformance{cards.title()}CatalogIdentity",
+            "file": "Tests/ProviderSiloTests/SiloIdentityEnrichmentTests.swift",
+            "description": f"Index 200 {cards} Silo catalog cards while loading native Home, with 75-ms synthetic HTTP latency; require all cross-namespace matches and Home items.",
+            "counters": ["items", "matchedItems", "homeItems", "catalogRequests",
+                         "detailRequests", "homeRequests", "maxInFlight"],
+        }
+        for cards in ("modern", "legacy", "mixed")
+    },
+    **{
         f"song-card-{state}": {
             "suite": "ui",
             "test": f"PlayerSongLayoutPreviewTests/testPerformanceSongCard{state.title()}",

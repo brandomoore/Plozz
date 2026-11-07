@@ -1067,6 +1067,17 @@ without pretending a sample count measures frame smoothness.
 | `diagnostics` | 10,000 operation attempts with recording disabled/enabled, plus 100 bounded snapshot encodes. Measures recorder and event-time serialization overhead without starting Sentry or creating uploads. |
 | `network` | `catalog-cached-refresh`: 1,000-channel loopback M3U import with a 100-ms header delay, then an expired-catalog refresh held while three cached reads complete. Verifies one refresh and actual replacement visibility. Cold/cached foreground timings are separate counters; whole-cycle wall time includes setup, controlled waiting and settling. No external playlist or stream links are fetched. |
 
+`silo-identity-modern`, `silo-identity-legacy`, and `silo-identity-mixed` in the
+`network` suite load 200 series through the native Silo catalog, then run shared
+identity enrichment alongside a 20-card native Home request. The synthetic HTTP
+client adds 75 ms per request. Modern cards declare all known external IDs;
+legacy cards expose only an encoded anchor; mixed pages contain 40 legacy cards.
+Every sample must finish all 200 IMDb/TMDB/TVDB ownership matches and preserve
+the exact Home order. Counters separate catalog, detail and Home requests and
+peak concurrency. These measure completed indexing with competing Home work,
+not Home first-pixel timing, real-server rate limits, DNS or physical devices.
+Refusal/cooldown behavior is covered separately by correctness tests.
+
 `live-tv-schedule-sync` uses the real automatic planner for 4,000 films and five
 distinct channels, then changes only genre/studio spelling. It measures retained
 snapshot records while checking that published broadcasts are preserved.

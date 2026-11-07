@@ -20,7 +20,6 @@ final class NativeSidebarHandoffTests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Production Home ready"].waitForExistence(timeout: 30))
         let hero = app.buttons["home-hero-action-row"]
         XCTAssertTrue(hero.waitForExistence(timeout: 15), app.debugDescription)
-        if !hero.hasFocus { XCUIRemote.shared.press(.select) }
         assertFocused(hero, app: app)
         XCUIRemote.shared.press(.left)
         assertFocused(app.buttons["Home"], app: app)
@@ -59,7 +58,6 @@ final class NativeSidebarHandoffTests: XCTestCase {
 
         let home = app.buttons["native-page-home"]
         XCTAssertTrue(home.waitForExistence(timeout: 15), app.debugDescription)
-        if !home.hasFocus { XCUIRemote.shared.press(.select) }
         assertFocused(home, app: app)
         XCUIRemote.shared.press(.left)
         assertFocused(app.buttons["Home"], app: app)

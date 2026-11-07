@@ -12,6 +12,8 @@ struct NavigationContentFocusRequester: UIViewRepresentable {
     var returnFocus: ReturnFocus?
     var restoresPreviousFocus = false
     var onDirectionalEntry: (() -> Void)?
+    var isStartupRequest = false
+    var onStartupCancelled: (() -> Void)?
 
     func makeUIView(context: Context) -> RequestView {
         let view = RequestView()
@@ -27,14 +29,18 @@ struct NavigationContentFocusRequester: UIViewRepresentable {
         returnFocus?.marker = view
         view.returnFocus = restoresPreviousFocus ? returnFocus : nil
         view.onDirectionalEntry = onDirectionalEntry
+        view.onStartupCancelled = onStartupCancelled
+        view.isStartupRequest = isStartupRequest
         view.request = request
     }
 
     static func dismantleUIView(_ view: RequestView, coordinator: ()) {
+        view.isStartupRequest = false
         view.request = nil
         view.onCompleted = nil
         view.returnFocus = nil
         view.onDirectionalEntry = nil
+        view.onStartupCancelled = nil
     }
 
     @MainActor
@@ -81,7 +87,7 @@ struct NavigationContentFocusRequester: UIViewRepresentable {
         }
     }
 
-    final class RequestView: UIView {
+    final class RequestView: UIView, UIGestureRecognizerDelegate {
         var isRightToLeft = false
         var onCompleted: ((UInt64, Bool) -> Void)?
         var returnFocus: ReturnFocus?
@@ -90,6 +96,14 @@ struct NavigationContentFocusRequester: UIViewRepresentable {
         }
         private weak var directionalEntryOwner: NavigationRailFocusHostController?
         private var pendingDirectionalEntry: UUID?
+        var isStartupRequest = false {
+            didSet {
+                if isStartupRequest != oldValue { updateObservation() }
+            }
+        }
+        private weak var observedWindow: UIWindow?
+        private var inputObserver: UITapGestureRecognizer?
+        var onStartupCancelled: (() -> Void)?
         var request: UInt64? {
             didSet {
                 guard request != oldValue else { return }
@@ -150,11 +164,60 @@ struct NavigationContentFocusRequester: UIViewRepresentable {
 
         private func updateObservation() {
             NotificationCenter.default.removeObserver(self, name: NavigationEntryFocusRegionView.didChange, object: nil)
-            guard request != nil, window != nil else { return }
+            NotificationCenter.default.removeObserver(self, name: UIFocusSystem.didUpdateNotification, object: nil)
+            if let inputObserver { observedWindow?.removeGestureRecognizer(inputObserver) }
+            inputObserver = nil
+            observedWindow = nil
+            guard request != nil || isStartupRequest, window != nil else { return }
             NotificationCenter.default.addObserver(
                 self, selector: #selector(entryPreferenceChanged(_:)),
                 name: NavigationEntryFocusRegionView.didChange, object: nil
             )
+            if isStartupRequest, let window {
+                observedWindow = window
+                NotificationCenter.default.addObserver(
+                    self, selector: #selector(focusMoved(_:)),
+                    name: UIFocusSystem.didUpdateNotification, object: nil
+                )
+                let observer = UITapGestureRecognizer()
+                observer.allowedTouchTypes = []
+                observer.allowedPressTypes = [
+                    UIPress.PressType.upArrow, .downArrow, .leftArrow, .rightArrow, .select, .menu, .playPause
+                ].map { NSNumber(value: $0.rawValue) }
+                observer.cancelsTouchesInView = false
+                observer.delaysTouchesBegan = false
+                observer.delaysTouchesEnded = false
+                observer.delegate = self
+                window.addGestureRecognizer(observer)
+                inputObserver = observer
+            }
+        }
+
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive press: UIPress) -> Bool {
+            cancelStartup()
+            return false
+        }
+
+        @objc private func focusMoved(_ notification: Notification) {
+            guard let context = notification.userInfo?[UIFocusSystem.focusUpdateContextUserInfoKey]
+                    as? UIFocusUpdateContext,
+                  let item = context.nextFocusedItem,
+                  let window, UIFocusSystem.focusSystem(for: window)?.focusedItem === item else { return }
+            if context.focusHeading.isEmpty {
+                schedule()
+            } else {
+                cancelStartup()
+            }
+        }
+
+        private func cancelStartup() {
+            guard isStartupRequest else { return }
+            isStartupRequest = false
+            if let request {
+                complete(request, didFocus: false)
+            } else {
+                onStartupCancelled?()
+            }
         }
 
         @objc private func entryPreferenceChanged(_ notification: Notification) {
@@ -183,7 +246,7 @@ struct NavigationContentFocusRequester: UIViewRepresentable {
             }
             stop()
             guard let system = UIFocusSystem.focusSystem(for: window) else {
-                complete(request, didFocus: false)
+                if !isStartupRequest { complete(request, didFocus: false) }
                 return
             }
             HeroFocusDiagnostics.emit("sidebar.content frame-ready")
@@ -199,11 +262,21 @@ struct NavigationContentFocusRequester: UIViewRepresentable {
                 )
             HeroFocusDiagnostics.emit("sidebar.content selection-ready pending=\(selection.isPending)")
             HeroFocusDiagnostics.entry(selection.isPending ? "selection-pending" : "selection-ready")
-            // A loading page will wake this request when its entry regions change.
-            // Do not focus its toolbar first and then visibly redirect into content.
-            guard !selection.isPending else { return }
+            // Data loading waits for a region change. A mounted content region can
+            // precede its nested host's native focus items, so finish that render
+            // handoff instead of leaving startup stranded on navigation.
+            guard !selection.isPending else {
+                if isStartupRequest && selection.awaitsLayout { schedule() }
+                return
+            }
             guard let target = selection.target else {
                 HeroFocusDiagnostics.entry("target-missing")
+                // Nested hosting controllers can publish their native targets
+                // after the outer presentation fence has crossed.
+                if isStartupRequest {
+                    schedule()
+                    return
+                }
                 PlozzLog.app.debug("New navigation page has no visible focus target yet")
                 complete(request, didFocus: false)
                 return
@@ -220,6 +293,10 @@ struct NavigationContentFocusRequester: UIViewRepresentable {
             HeroFocusDiagnostics.emit("sidebar.content request=\(request) previous=\(String(describing: previous)) target=\(String(describing: target)) focused=\(String(describing: system.focusedItem)) success=\(didFocus)")
             if !didFocus {
                 PlozzLog.app.debug("New navigation page rejected its first-content focus request")
+                if isStartupRequest {
+                    schedule()
+                    return
+                }
             }
             complete(request, didFocus: didFocus)
         }
@@ -232,6 +309,7 @@ struct NavigationContentFocusRequester: UIViewRepresentable {
 
         private func complete(_ request: UInt64, didFocus: Bool) {
             guard self.request == request else { return }
+            isStartupRequest = false
             self.request = nil
             onCompleted?(request, didFocus)
         }
@@ -247,6 +325,7 @@ struct NavigationContentFocusRequester: UIViewRepresentable {
     struct EntrySelection {
         let target: (any UIFocusItem)?
         let isPending: Bool
+        var awaitsLayout = false
     }
 
     static func entrySelection(
@@ -260,6 +339,7 @@ struct NavigationContentFocusRequester: UIViewRepresentable {
             if let row = view as? NavigationRowFocusRequester.RequestView { rows.append(row) }
             if let region = view as? NavigationEntryFocusRegionView,
                region.preference != nil, !region.bounds.isEmpty,
+               isRegionEnabled(region),
                marker.bounds.intersects(region.convert(region.bounds, to: marker)) {
                 regions.append(region)
             }
@@ -327,6 +407,7 @@ struct NavigationContentFocusRequester: UIViewRepresentable {
         candidates.removeAll { candidate in
             isInNavigation(candidate.item, frame: candidate.frame)
         }
+        let declaredPreferences = regions.filter { $0.preference == .content || $0.preference == .fallback }
         for preference in [NavigationEntryFocusPreference.content, .fallback] {
             let preferred = candidates.filter { candidate in
                 regions.contains { region in
@@ -336,6 +417,9 @@ struct NavigationContentFocusRequester: UIViewRepresentable {
             if !preferred.isEmpty {
                 candidates = preferred
                 break
+            }
+            if preference == .fallback, !declaredPreferences.isEmpty {
+                return EntrySelection(target: nil, isPending: true, awaitsLayout: true)
             }
         }
         guard let index = firstFrameIndex(candidates.map(\.frame), isRightToLeft: isRightToLeft) else {
@@ -366,6 +450,15 @@ struct NavigationContentFocusRequester: UIViewRepresentable {
             ancestor = current.superview
         }
         return false
+    }
+
+    private static func isRegionEnabled(_ region: NavigationEntryFocusRegionView) -> Bool {
+        var ancestor = NativeFocusRegion.owningController(of: region)?.viewIfLoaded
+        while let current = ancestor {
+            guard current.isUserInteractionEnabled else { return false }
+            ancestor = current.superview
+        }
+        return true
     }
 
     private static func isVisible(_ view: UIView, in window: UIWindow) -> Bool {

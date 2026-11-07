@@ -1,7 +1,7 @@
 import AVFoundation
 import CoreImage
 import CoreModels
-import CoreUI
+@testable import CoreUI
 @testable import FeaturePlayback
 #if os(iOS)
 @testable import AppShelliOS
@@ -13,6 +13,270 @@ import XCTest
 
 @MainActor
 final class PlayerSongLayoutPreviewTests: XCTestCase {
+    func testLinkedSongCardMatchesPanelSurfaceAndCorners() async throws {
+        let presentationDeadline = ContinuousClock.now + .seconds(5)
+        while !UIApplication.shared.connectedScenes.contains(where: { $0.activationState == .foregroundActive }),
+              ContinuousClock.now < presentationDeadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        let host = SongPreviewFocusHost(rootView: AnyView(EmptyView()))
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        window.frame = CGRect(x: 0, y: 0, width: 1400, height: 800)
+        host.view.frame = window.bounds
+        defer {
+            host.target = nil
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+
+        for (appearance, reducedGlass, reducedTransparency) in [
+            ("glass", false, false),
+            ("reduced-glass", true, false),
+            ("reduced-transparency", false, true)
+        ] {
+            let probe = SongSurfaceProbe()
+            host.target = nil
+            host.rootView = AnyView(SongSurfaceHarness(probe: probe)
+                .environment(\.playerCardMetrics, .tv)
+                .environment(\.plozzReducePanelGlass, reducedGlass)
+                .environment(\.plozzReduceTransparency, reducedTransparency)
+                .environment(\.colorScheme, .dark)
+                .environment(\.themePalette, .dark)
+                .id(appearance))
+            window.layoutIfNeeded()
+            let deadline = ContinuousClock.now + .seconds(3)
+            while probe.frames.count < 3, ContinuousClock.now < deadline {
+                try await Task.sleep(for: .milliseconds(20))
+            }
+            let reference = try XCTUnwrap(probe.frames["reference"])
+            let linked = try XCTUnwrap(probe.frames["linked"])
+            XCTAssertEqual(reference.size, linked.size)
+
+            #if os(tvOS)
+            func focusTarget(in bounds: CGRect) async throws -> any UIFocusItem {
+                let point = CGPoint(x: bounds.midX, y: bounds.midY)
+                func target() -> (any UIFocusItem)? { nativeFocusItems(in: window).first {
+                    NativeFocusRegion.frame(of: $0, in: host.view)?.contains(point) == true
+                } }
+                let deadline = ContinuousClock.now + .seconds(3)
+                while target() == nil, ContinuousClock.now < deadline {
+                    window.layoutIfNeeded()
+                    try await Task.sleep(for: .milliseconds(20))
+                }
+                return try XCTUnwrap(target(), "No native focus item at \(bounds).")
+            }
+            func focus(_ target: any UIFocusItem) async throws {
+                host.target = target
+                host.setNeedsFocusUpdate()
+                host.updateFocusIfNeeded()
+                let deadline = ContinuousClock.now + .seconds(3)
+                while UIFocusSystem.focusSystem(for: window)?.focusedItem !== target,
+                      ContinuousClock.now < deadline {
+                    try await Task.sleep(for: .milliseconds(20))
+                }
+                XCTAssertTrue(UIFocusSystem.focusSystem(for: window)?.focusedItem === target)
+            }
+            let parked = try await focusTarget(in: XCTUnwrap(probe.frames["park"]))
+            try await focus(parked)
+            #endif
+            try await Task.sleep(for: .milliseconds(600))
+            let format = UIGraphicsImageRendererFormat()
+            format.scale = 1
+            let image = UIGraphicsImageRenderer(bounds: window.bounds, format: format).image { _ in
+                XCTAssertTrue(window.drawHierarchy(in: window.bounds, afterScreenUpdates: true))
+            }
+            let attachment = XCTAttachment(image: image)
+            attachment.name = "song-panel-surface-\(appearance)"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+
+            for name in ["reference", "linked"] {
+                let frame = try XCTUnwrap(probe.frames[name])
+                let artwork = try XCTUnwrap(probe.artworkFrames[name])
+                XCTAssertEqual(artwork.minX - frame.minX, PlayerCardMetrics.tv.contentPadding, accuracy: 1,
+                               "The native button must not add another horizontal inset; \(name), \(appearance).")
+                XCTAssertEqual(artwork.minY - frame.minY, PlayerCardMetrics.tv.contentPadding, accuracy: 1)
+                XCTAssertEqual(frame.maxY - artwork.maxY, PlayerCardMetrics.tv.contentPadding, accuracy: 1)
+                try assertCompleteSongText(in: image, frame: frame)
+            }
+
+            let source = CIImage(cgImage: try XCTUnwrap(image.cgImage))
+            let context = CIContext()
+            func pixel(_ source: CIImage, _ frame: CGRect, _ point: CGPoint) -> [UInt8] {
+                var bytes = [UInt8](repeating: 0, count: 4)
+                bytes.withUnsafeMutableBytes {
+                    context.render(source, toBitmap: $0.baseAddress!, rowBytes: 4,
+                                   bounds: CGRect(x: frame.minX + point.x,
+                                                  y: window.bounds.height - frame.minY - point.y - 1,
+                                                  width: 1, height: 1),
+                                   format: .RGBA8, colorSpace: CGColorSpaceCreateDeviceRGB())
+                }
+                return bytes
+            }
+            for point in [
+                CGPoint(x: 450, y: 20), CGPoint(x: 450, y: 230),
+                CGPoint(x: 3, y: 3), CGPoint(x: 14, y: 14),
+                CGPoint(x: 26, y: 8), CGPoint(x: 8, y: 26),
+                CGPoint(x: linked.width - 14, y: linked.height - 14)
+            ] {
+                let expected = pixel(source, reference, point), actual = pixel(source, linked, point)
+                for channel in 0..<3 {
+                    // Native glass edge lighting varies slightly with screen position.
+                    XCTAssertEqual(Double(actual[channel]), Double(expected[channel]), accuracy: 16,
+                                   "Linked card must retain the panel surface and corners at \(point); appearance=\(appearance).")
+                }
+            }
+            #if os(tvOS)
+            try await focus(focusTarget(in: linked))
+            try await Task.sleep(for: .milliseconds(300))
+            let focusedImage = UIGraphicsImageRenderer(bounds: window.bounds, format: format).image { _ in
+                XCTAssertTrue(window.drawHierarchy(in: window.bounds, afterScreenUpdates: true))
+            }
+            let focusedAttachment = XCTAttachment(image: focusedImage)
+            focusedAttachment.name = "song-panel-focused-\(appearance)"
+            focusedAttachment.lifetime = .keepAlways
+            add(focusedAttachment)
+            let focusedSource = CIImage(cgImage: try XCTUnwrap(focusedImage.cgImage))
+            let focusDifference = [
+                CGPoint(x: 450, y: 20), CGPoint(x: linked.width / 2, y: -5)
+            ].flatMap { point in
+                let before = pixel(source, linked, point), after = pixel(focusedSource, linked, point)
+                return (0..<3).map { abs(Int(after[$0]) - Int(before[$0])) }
+            }.max() ?? 0
+            XCTAssertGreaterThan(focusDifference, 24, "Native focus must be visible, not just assigned.")
+            try await focus(parked)
+            #endif
+        }
+    }
+
+    func testSongTextWrapsAtMobileCardWidths() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        let host = UIHostingController(rootView: AnyView(EmptyView()))
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        window.frame = CGRect(x: 0, y: 0, width: 1400, height: 800)
+        host.view.frame = window.bounds
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+
+        for metrics in [PlayerCardMetrics.horizontalWide, .verticalNarrow] {
+            let probe = SongSurfaceProbe()
+            host.rootView = AnyView(SongSurfaceHarness(probe: probe, metrics: metrics)
+                .environment(\.colorScheme, .dark)
+                .environment(\.themePalette, .dark))
+            window.layoutIfNeeded()
+            let deadline = ContinuousClock.now + .seconds(3)
+            while probe.frames.count < 3, ContinuousClock.now < deadline {
+                try await Task.sleep(for: .milliseconds(20))
+            }
+            try await Task.sleep(for: .milliseconds(600))
+            let format = UIGraphicsImageRendererFormat()
+            format.scale = 1
+            let image = UIGraphicsImageRenderer(bounds: window.bounds, format: format).image { _ in
+                XCTAssertTrue(window.drawHierarchy(in: window.bounds, afterScreenUpdates: true))
+            }
+            let attachment = XCTAttachment(image: image)
+            attachment.name = "song-wrapping-\(metrics.isVertical ? "phone" : "tablet")"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+            for name in ["reference", "linked"] {
+                try assertCompleteSongText(in: image, frame: XCTUnwrap(probe.frames[name]))
+            }
+        }
+    }
+
+    private func assertCompleteSongText(in image: UIImage, frame: CGRect) throws {
+        let card = try XCTUnwrap(image.cgImage?.cropping(to: frame))
+        let recognition = VNRecognizeTextRequest()
+        recognition.recognitionLevel = .accurate
+        recognition.recognitionLanguages = ["en-US"]
+        try VNImageRequestHandler(cgImage: card).perform([recognition])
+        let text = (recognition.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ")
+        XCTAssertTrue(text.contains("Wembley Stadium"), text)
+        XCTAssertTrue(text.contains("Festival Orchestra"), text)
+        XCTAssertTrue(text.contains("Electric Light Orchestra and friends"), text)
+        XCTAssertFalse(text.contains("…") || text.contains("..."), text)
+        let lineStarts = (recognition.results ?? []).map { $0.boundingBox.minX * frame.width }
+        if let leading = lineStarts.min() {
+            for start in lineStarts {
+                // Vision estimates ink bounds, which vary with glyphs and font weight.
+                XCTAssertEqual(start, leading, accuracy: 6, "Wrapped lines must stay leading-aligned: \(text)")
+            }
+        }
+    }
+
+    func testInfoUsesAllSpaceUnlessSongCardIsVisible() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let song = SongMatch(title: "Synthetic cue", artist: nil, artworkURL: nil, appleMusicURL: nil)
+
+        for (metrics, width) in [
+            (PlayerCardMetrics.tv, CGFloat(1800)),
+            (.horizontalWide, 1200),
+            (.verticalNarrow, 360)
+        ] {
+            let probe = SongLayoutProbe()
+            let window = UIWindow(windowScene: scene)
+            let host = UIHostingController(rootView: SongLayoutHarness(probe: probe, metrics: metrics, width: width))
+            window.rootViewController = host
+            window.makeKeyAndVisible()
+            window.frame = CGRect(x: 0, y: 0, width: width, height: 800)
+            host.view.frame = window.bounds
+            defer {
+                window.isHidden = true
+                window.rootViewController = nil
+                previous?.makeKeyAndVisible()
+            }
+
+            func waitForLayout(_ condition: () -> Bool) async throws {
+                let deadline = ContinuousClock.now + .seconds(3)
+                while !condition(), ContinuousClock.now < deadline {
+                    window.layoutIfNeeded()
+                    try await Task.sleep(for: .milliseconds(20))
+                }
+                XCTAssertTrue(condition(), "Info: \(probe.infoBounds), layout: \(probe.layoutBounds)")
+            }
+            func isFullSize() -> Bool {
+                abs(probe.infoBounds.width - width) < 1 && abs(probe.layoutBounds.height - 100) < 1
+            }
+            func isShowingSong() -> Bool {
+                metrics.isVertical
+                    ? probe.layoutBounds.height > 200 && abs(probe.infoBounds.width - width) < 1
+                    : probe.infoBounds.width > 0 && probe.infoBounds.width < width - 100
+            }
+
+            try await waitForLayout(isFullSize)
+            XCTAssertEqual(probe.appearances, 1)
+
+            probe.state = .found(song)
+            try await waitForLayout(isShowingSong)
+            probe.state = .idle
+            try await waitForLayout(isFullSize)
+
+            probe.state = .found(song)
+            try await waitForLayout(isShowingSong)
+            probe.enabled = false
+            try await waitForLayout(isFullSize)
+            probe.enabled = true
+            try await waitForLayout(isShowingSong)
+            probe.state = .idle
+            try await waitForLayout(isFullSize)
+
+            XCTAssertEqual(probe.appearances, 1, "Song transitions must not remount the Info card.")
+            XCTAssertEqual(probe.disappearances, 0)
+        }
+    }
+
     func testPerformanceSongCardHidden() async throws {
         try await measureSongCard(visible: false)
     }
@@ -268,6 +532,12 @@ final class PlayerSongLayoutPreviewTests: XCTestCase {
             model.songRecognition.isAvailable = true
             try await Task.sleep(for: .seconds(2))
             window.layoutIfNeeded()
+            #if os(tvOS)
+            // This fixture mounts PlayerControls without the container that releases entry focus gating.
+            model.controlBar.settled = true
+            try await Task.sleep(for: .milliseconds(100))
+            window.layoutIfNeeded()
+            #endif
             do {
                 let artwork = try XCTUnwrap(probe.bounds[.song])
                 XCTAssertEqual(artwork.width, artwork.height, accuracy: 1)
@@ -300,12 +570,10 @@ final class PlayerSongLayoutPreviewTests: XCTestCase {
             #if os(tvOS)
             let artwork = try XCTUnwrap(probe.bounds[.song])
             let point = CGPoint(x: artwork.midX, y: artwork.midY)
-            func focusableViews(in view: UIView) -> [UIView] {
-                (view.canBecomeFocused ? [view] : []) + view.subviews.flatMap { focusableViews(in: $0) }
-            }
-            let card = try XCTUnwrap(focusableViews(in: window).first {
-                $0.convert($0.bounds, to: window).contains(point)
-            }, "The song link must expose a real native focus target.")
+            let items = nativeFocusItems(in: window)
+            let card = try XCTUnwrap(items.first {
+                NativeFocusRegion.frame(of: $0, in: host.view)?.contains(point) == true
+            }, "No native song target at \(point); candidates: \(items.compactMap { NativeFocusRegion.frame(of: $0, in: host.view) })")
             host.target = card
             host.setNeedsFocusUpdate()
             host.updateFocusIfNeeded()
@@ -315,6 +583,14 @@ final class PlayerSongLayoutPreviewTests: XCTestCase {
                 try await Task.sleep(for: .milliseconds(20))
             }
             XCTAssertTrue(UIFocusSystem.focusSystem(for: window)?.focusedItem === card)
+            try await Task.sleep(for: .milliseconds(300))
+            let focusedImage = UIGraphicsImageRenderer(bounds: window.bounds, format: format).image { _ in
+                XCTAssertTrue(window.drawHierarchy(in: window.bounds, afterScreenUpdates: true))
+            }
+            let focusedAttachment = XCTAttachment(image: focusedImage)
+            focusedAttachment.name = "separate-focused-\(Int(size.width))x\(Int(size.height))"
+            focusedAttachment.lifetime = .keepAlways
+            add(focusedAttachment)
             host.target = nil
             #endif
             model.songRecognition.state = .idle
@@ -328,6 +604,23 @@ final class PlayerSongLayoutPreviewTests: XCTestCase {
         }
         await player.stop()
     }
+
+    #if os(tvOS)
+    private func nativeFocusItems(in window: UIWindow) -> [any UIFocusItem] {
+        var containers: [any UIFocusItemContainer] = [window]
+        var seen = Set<ObjectIdentifier>()
+        var items: [ObjectIdentifier: any UIFocusItem] = [:]
+        while let container = containers.popLast() {
+            guard seen.insert(ObjectIdentifier(container)).inserted else { continue }
+            for item in container.focusItems(in: container.coordinateSpace.convert(window.bounds, from: window)) {
+                if let child = item.focusItemContainer { containers.append(child) }
+                if let view = item as? UIView { containers.append(view) }
+                if item.canBecomeFocused, !(item is UIScrollView) { items[ObjectIdentifier(item)] = item }
+            }
+        }
+        return Array(items.values)
+    }
+    #endif
 }
 
 @MainActor
@@ -341,6 +634,89 @@ private final class SongPreviewFocusHost<Content: View>: UIHostingController<Con
 @MainActor
 private final class SongArtworkProbe {
     var bounds: [PlayerSongArtworkBounds.Role: CGRect] = [:]
+}
+
+@MainActor
+private final class SongSurfaceProbe {
+    var frames: [String: CGRect] = [:]
+    var artworkFrames: [String: CGRect] = [:]
+}
+
+private struct SongSurfaceHarness: View {
+    let probe: SongSurfaceProbe
+    var metrics: PlayerCardMetrics = .tv
+    @FocusState private var focus: PlayerControls.FocusSlot?
+
+    var body: some View {
+        ZStack {
+            Color(red: 0.1, green: 0.35, blue: 0.55).ignoresSafeArea()
+            VStack(spacing: 100) {
+                HStack(spacing: 60) {
+                    card(linked: false)
+                    card(linked: true)
+                }
+                Button("Park focus") {}
+                    .frame(width: 220, height: 60)
+                    .onGeometryChange(for: CGRect.self, of: { $0.frame(in: .global) }) {
+                        probe.frames["park"] = $0
+                    }
+            }
+        }
+        .environment(\.playerCardMetrics, metrics)
+    }
+
+    private func card(linked: Bool) -> some View {
+        let artSize = PlayerSongCard.artworkSize(for: metrics)
+        let width = metrics.isVertical ? 360 : artSize * 2 + metrics.columnSpacing + metrics.contentPadding * 2
+        return PlayerSongCard(
+            song: SongMatch(
+                title: "Mr. Blue Sky (Live at Wembley Stadium with the Festival Orchestra)",
+                artist: "Electric Light Orchestra and friends", artworkURL: nil,
+                appleMusicURL: linked ? URL(string: "https://music.apple.com/") : nil
+            ),
+            focus: $focus
+        )
+        .frame(width: width, height: artSize + metrics.contentPadding * 2)
+        .onGeometryChange(for: CGRect.self, of: { $0.frame(in: .global) }) {
+            probe.frames[linked ? "linked" : "reference"] = $0
+        }
+        .onPreferenceChange(PlayerSongArtworkBounds.self) {
+            probe.artworkFrames[linked ? "linked" : "reference"] = $0[.song]
+        }
+    }
+}
+
+@MainActor @Observable
+private final class SongLayoutProbe {
+    var enabled = true
+    var state: SongIDState = .idle
+    var infoBounds = CGRect.zero
+    var layoutBounds = CGRect.zero
+    var appearances = 0
+    var disappearances = 0
+}
+
+private struct SongLayoutHarness: View {
+    let probe: SongLayoutProbe
+    let metrics: PlayerCardMetrics
+    let width: CGFloat
+    @FocusState private var focus: PlayerControls.FocusSlot?
+
+    var body: some View {
+        PlayerSongLayout(enabled: probe.enabled, state: probe.state, focus: $focus) {
+            Color.gray
+                .frame(height: 100)
+                .frame(maxWidth: .infinity)
+                .onGeometryChange(for: CGRect.self, of: { $0.frame(in: .global) }) { probe.infoBounds = $0 }
+                .onAppear { probe.appearances += 1 }
+                .onDisappear { probe.disappearances += 1 }
+        }
+        .environment(\.playerCardMetrics, metrics)
+        .frame(width: width)
+        .fixedSize(horizontal: false, vertical: true)
+        .onGeometryChange(for: CGRect.self, of: { $0.frame(in: .global) }) { probe.layoutBounds = $0 }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
 }
 
 private struct SongPreviewPlayer: View {

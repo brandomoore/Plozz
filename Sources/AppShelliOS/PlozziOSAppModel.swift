@@ -797,7 +797,8 @@ final class PlozziOSAppModel {
             mediaShareRuntime: mediaShareRuntime,
             accountsProviders: accountsProviders,
             settingsNamespace: profiles.activeNamespace,
-            authenticatedHTTPResolver: authenticatedHTTPResolver
+            authenticatedHTTPResolver: authenticatedHTTPResolver,
+            statusPresenter: transientStatusPresenter
         )
         self.pendingLibrarySelection = nil
         self.pendingFirstRunStep =
@@ -1926,7 +1927,8 @@ final class PlozziOSAppModel {
                 accountsProviders: self.accountsProviders,
                 settingsNamespace: self.profiles.activeNamespace,
                 startsActive: self.applicationIsActive,
-                authenticatedHTTPResolver: self.authenticatedHTTPResolver
+                authenticatedHTTPResolver: self.authenticatedHTTPResolver,
+                statusPresenter: self.transientStatusPresenter
             )
             self.refreshOfflineProviders()
         }
@@ -2405,7 +2407,8 @@ final class PlozziOSAppModel {
         accountsProviders: AccountsProvidersModel,
         settingsNamespace: String?,
         startsActive: Bool = true,
-        authenticatedHTTPResolver: ManagedAuthenticatedHTTPResolver
+        authenticatedHTTPResolver: ManagedAuthenticatedHTTPResolver,
+        statusPresenter: TransientStatusPresenter
     ) -> PlozziOSDownloadsModel {
         guard let durableStore else {
             return PlozziOSDownloadsModel(
@@ -2419,7 +2422,7 @@ final class PlozziOSAppModel {
         let audioPolicyStore = AudioPolicyStore(namespace: settingsNamespace)
         let artworkStore = ArtworkSettingsStore(namespace: settingsNamespace)
         do {
-            return PlozziOSDownloadsModel(
+            let model = PlozziOSDownloadsModel(
                 profileID: namespace,
                 registry: DownloadedMediaRegistry(store: try DurableDownloadedMediaStore(
                     store: durableStore, profileID: namespace
@@ -2525,7 +2528,7 @@ final class PlozziOSAppModel {
                         case .plex:
                             guard !source.includesAllAudioTracks else {
                                 throw MediaTransportError.unsupportedCapability(
-                                    "Plex reduced-quality downloads support one audio track. Turn off Include All Audio Tracks or choose Original quality."
+                                    "Plex reduced-quality downloads support one audio track. Choose Original quality to keep every embedded track."
                                 )
                             }
                             let audioStreamID = playback.audioTracks.first {
@@ -2628,6 +2631,25 @@ final class PlozziOSAppModel {
                         cleanupURL: nil
                     )
                 },
+                saveSubtitles: { record, destination, policy in
+                    guard let accountID = record.managedHTTPSource?.accountID ?? record.directShareSource?.accountID,
+                          let userID = record.snapshot.sourceUserID else { throw CancellationError() }
+                    let authorize: @Sendable () async throws -> Void = {
+                        try Task.checkCancellation()
+                        let authorized = await MainActor.run {
+                            !OfflineMode.shared.isEnabled
+                                && accountsProviders.downloadUserID(for: accountID, profileID: namespace) == userID
+                        }
+                        guard authorized else { throw CancellationError() }
+                    }
+                    try await authorize()
+                    let provider = await MainActor.run { accountsProviders.provider(forAccountID: accountID) }
+                    guard let provider else { throw AppError.unauthorized }
+                    return try await PlozziOSOfflineSubtitles.save(
+                        record: record, destination: destination, policy: policy, provider: provider,
+                        authorize: authorize, resolve: { try await authenticatedHTTPResolver.resolve($0) }
+                    )
+                },
                 managedRemoval: { source in
                     guard source.provider == .silo, let saved = source.preparationReference,
                           saved.queueIdentifier.hasPrefix("silo:"),
@@ -2650,6 +2672,8 @@ final class PlozziOSAppModel {
                                                       status: "completed", at: timestamp)
                 }
             )
+            model.statusPresenter = statusPresenter
+            return model
         } catch {
             return PlozziOSDownloadsModel(
                 profileID: namespace,
