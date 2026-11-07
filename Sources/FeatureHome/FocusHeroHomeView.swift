@@ -706,6 +706,7 @@ private struct FocusHeroRowStack<RowContent: View>: View {
         VStack(alignment: .leading, spacing: FocusHeroLayout.rowSpacing) {
             ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
                 rowBody(row)
+                    .navigationEntryFocus(index == 0 ? (row.isPlaceholder ? .pending : .content) : nil)
                     .disabled(awaitsFirstEntry && index > 0)
                     .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
                         model.record(height: height, for: row.id)

@@ -262,6 +262,15 @@ iPhone and iPad retain their existing carousel presentation.
 
 ## Navigation planning
 
+All three TV navigation styles enter the first usable page item on cold entry.
+The handoff waits for presentation and loading entry regions, including Home's
+Spotlight and first-row placeholders. Empty and failed pages retain their recovery
+actions. Startup uses the shared native focus owner and stops after entry or user
+navigation; later content refreshes must not pull focus back to the first item.
+Loading regions suspend the request until readiness changes; mounted content
+finishes its native render handoff before the request is retired. Inactive hosts
+cannot block the visible page's entry.
+
 Settings is a normal destination in all three navigation shells. Its root keeps
 app navigation visible and available; categories and nested pages hide it.
 In the custom pinned and top-bar shells, programmatic destination changes
@@ -332,9 +341,10 @@ While Settings owns the shell, hidden navigation cancels focus handoffs and
 cannot overwrite the selected Settings destination.
 The focus owner's exit direction defaults to Right for pinned navigation and
 is Down for the horizontal strip; Left/Right never trigger a page handoff there.
-Initial focus resolves the selected destination, including a scrolled-off library,
-before allowing neighboring controls. Live TV's first-use preview choice waits
-for explicit content entry; its presentation owns focus until the choice finishes.
+Returning to navigation resolves the selected destination, including a scrolled-off
+library, before allowing neighboring controls. Live TV's first-use preview choice
+opens on content entry, including cold launch; its presentation owns focus until
+the choice finishes.
 Physical Down starts entry in the bar's native press recognizer, while actual
 focus belongs to that bar, instead of waiting for SwiftUI's move-command delivery.
 Native downward focus proposals also start that same handoff: the shared owner
