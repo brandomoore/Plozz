@@ -692,6 +692,31 @@ reenrichment cases. iOS run `0323007ac3044f5b9b9dac238df722f6` passed the six
 final refresh cases, including confirmed-empty inventory. None skipped tests.
 No new physical-device run or installation is included in this confirmation.
 
+`HomeSettingsReturnTests` mounts the real mobile root with twenty synthetic
+servers, opens its Settings sheet for two seconds, then dismisses it without
+changing preferences. Response gates distinguish a completed forty-row Home
+from an unfinished Home with two loaded rows. Both cases retain the same
+profile/account-scoped model and pause Home requests while Settings is visible.
+The completed case must not refetch feeds; the unfinished case must retain its
+cards throughout the resumed request window, then finish all forty rows and
+800 items. Cloud sync is disabled and restored by this unsigned-host fixture;
+an active scene otherwise invokes production CloudKit foreground work.
+
+Baseline `3c2b4ceb5afd49a4a943d7ca0828880a` preserved completed Home but replaced
+both already-loaded partial rows with placeholders. The model still held the
+cards: resumption marked the rows loading, and presentation chose skeletons.
+Library and collection progress also needed to retain previously published
+sections until their replacement requests settled. Candidate
+`3246b411e2eb4d8fba23cd14a68dc982` recorded zero placeholder regressions in both
+cases and passed all eight selected mobile tests, including startup scrolling
+and Settings/profile ownership. Shared tvOS run
+`f2cc44425ec64d70a184a57e0765ed45` passed 69 cases, covering cold-cache freshness,
+cancellation, changed visibility, live global/library/collection retention for
+synthetic Jellyfin and Plex providers, and authoritative empty replacements.
+No tests skipped. These are content-continuity and completed-work checks, not
+physical-device frame-pacing evidence; incomplete loads still restart their
+cancelled aggregation rather than checkpointing individual provider requests.
+
 `mobile-video-glow` measures the light inline video preview in 2.3-second
 windows against the existing 160-by-90 continuity fixture. Require the same
 surface and advancing playback; it isolates preview overhead, not HD decoding.

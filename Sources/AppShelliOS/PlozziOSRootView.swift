@@ -71,8 +71,9 @@ public struct PlozziOSRootView: View {
         _appModel = State(initialValue: PlozziOSProcessComposition.appModel)
     }
 
-    init(appModel: PlozziOSAppModel) {
+    init(appModel: PlozziOSAppModel, homeViewModelBox: LazyViewState<HomeViewModel>? = nil) {
         _appModel = State(initialValue: appModel)
+        _homeViewModelBox = State(initialValue: homeViewModelBox ?? .init())
     }
 
     public var body: some View {

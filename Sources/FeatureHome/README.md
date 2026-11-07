@@ -1315,6 +1315,13 @@ is unfinished, or the active profile is unauthorized. A suspended load cancels
 aggregation and its collection-refresh/reenrichment work; resumption uses the
 final library choices. If the loaded content is still fresh, queued collection
 previews and identity enrichment resume without refetching all Home feeds.
+If loading was incomplete, resumption keeps already-published global, library,
+server and collection cards visible and interactive while replacement results
+arrive. Only unresolved rows show skeletons. Loading/failure evidence remains
+on the source rows and in section diagnostics, not over usable retained cards.
+Successful empty responses still remove old content. Live global-row readiness
+is scoped to the viewer's library intent; it does not relax cold-launch snapshot
+freshness or carry across changed choices.
 Replacing an account/profile-scoped Home model on either
 platform permanently invalidates it before creating the next one. Late results
 and queued reloads from that retired model cannot publish or restart work; do

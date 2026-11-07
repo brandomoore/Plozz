@@ -372,8 +372,157 @@ final class HomeMultiServerLoadingTests: XCTestCase {
     }
 }
 
+@MainActor
+final class HomeSettingsReturnTests: XCTestCase {
+    func testSettingsReturnKeepsPartiallyLoadedHomeCards() async throws {
+        try await exerciseSettingsReturn(duringLoading: true)
+    }
+
+    func testSettingsReturnDoesNotRefetchCompletedHome() async throws {
+        try await exerciseSettingsReturn(duringLoading: false)
+    }
+
+    private func exerciseSettingsReturn(duringLoading: Bool) async throws {
+        let syncEnabled = UserDefaults.standard.object(forKey: SyncSetupFeatureFlag.storageKey)
+        SyncSetupFeatureFlag().isEnabled = false
+        defer { UserDefaults.standard.set(syncEnabled, forKey: SyncSetupFeatureFlag.storageKey) }
+        let consentKey = "com.plozz.crashReportingSettings"
+        let storedConsent = UserDefaults.standard.object(forKey: consentKey)
+        CrashReportingSettingsStore().save(.init(
+            isEnabled: false, consentVersion: CrashReportingSettings.currentConsentVersion
+        ))
+        defer { UserDefaults.standard.set(storedConsent, forKey: consentKey) }
+        let suite = "HomeSettingsReturn.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        let store = AccountStore(secureStore: InMemorySecureStore())
+        let app = PlozziOSAppModel(
+            appAdmissionStore: AppAdmissionStore(defaults: defaults),
+            accountStore: store, profileStore: ProfileStore(defaults: defaults)
+        )
+        let profile = app.profiles.add(name: "Settings return", isAwaitingSetup: false)
+        app.selectProfile(profile.id)
+        app.profiles.markFirstRunProfileSetupComplete()
+        app.settings.hero.settings.isEnabled = false
+        let metadata = app.metadataProviderSettingsModel.settings
+        app.metadataProviderSettingsModel.settings = MetadataProviderSettings(
+            orderMode: .custom, preferOnlineArtwork: false,
+            disabledOrder: MetadataSourceAttribution.all.map(\.id)
+        )
+        defer {
+            app.metadataProviderSettingsModel.settings = metadata
+            defaults.removePersistentDomain(forName: suite)
+            for key in UserDefaults.standard.dictionaryRepresentation().keys
+            where key.components(separatedBy: ".").contains(profile.id) {
+                UserDefaults.standard.removeObject(forKey: key)
+            }
+        }
+        let first = HomeStartupResponseGate()
+        first.opened.withLock { $0 = true }
+        let remaining = HomeStartupResponseGate()
+        remaining.opened.withLock { $0 = !duringLoading }
+        defer {
+            first.opened.withLock { $0 = true }
+            remaining.opened.withLock { $0 = true }
+        }
+        let requests = MultiServerHomeRequests()
+        for index in 0..<20 {
+            let id = "server-\(index)"
+            try store.add(Account(
+                id: id,
+                server: .init(id: id, name: "Server \(index)",
+                              baseURL: URL(string: "https://server-\(index).invalid")!, provider: .jellyfin),
+                userID: "viewer", userName: "Viewer", deviceID: "fixture"
+            ), token: "fixture")
+        }
+        app.profiles.setActiveAccountIDs((0..<20).map { "server-\($0)" }, for: profile.id)
+        app.accountsProviders.registry.register(.jellyfin) { context in
+            MultiServerHomeProvider(
+                session: context.session, requests: requests, artwork: nil, slowLoading: false,
+                gate: context.session.server.id == "server-0" ? first : remaining
+            )
+        }
+        app.accountsProviders.tokenResolver = { _ in "fixture" }
+        app.accountsProviders.reloadAccounts()
+        await app.settings.homeVisibility.prepareServerDefaults(accounts: app.accountsProviders.homeAccounts)
+        let scope = app.navigationLibrariesScopeKey
+        let box = LazyViewState<HomeViewModel>()
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
+        let host = UIHostingController(rootView:
+            PlozziOSRootView(appModel: app, homeViewModelBox: box)
+                .environment(\.horizontalSizeClass, .compact)
+                .environment(\.scenePhase, .active)
+                .environment(\.locale, Locale(identifier: "en_US"))
+        )
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer {
+            box.discard { $0.invalidate() }
+            host.dismiss(animated: false)
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        try await wait {
+            guard let model = box.existingValue(forKey: scope),
+                  model.state.value?.serverRows.contains(where: { !$0.isLoading && !$0.items.isEmpty }) == true
+            else { return false }
+            return duringLoading || !model.isRefreshing
+        }
+        let model = try XCTUnwrap(box.existingValue(forKey: scope))
+        XCTAssertEqual(model.isRefreshing, duringLoading)
+        let loaded = try XCTUnwrap(model.state.value).serverRows.filter { !$0.isLoading && !$0.items.isEmpty }
+        XCTAssertEqual(loaded.count, duringLoading ? 2 : 40)
+        app.screenshotDirector.tab = "settings"
+        try await wait { app.isSettingsPresented && !model.isRefreshing }
+        let before = requests.home.withLock { $0 }
+        try await Task.sleep(for: .seconds(2))
+        XCTAssertEqual(requests.home.withLock { $0 }, before, "Home must remain paused behind Settings.")
+        first.opened.withLock { $0 = false }
+        host.dismiss(animated: false)
+        try await wait { !app.isSettingsPresented }
+        XCTAssertEqual(app.navigationLibrariesScopeKey, scope)
+        XCTAssertTrue(box.existingValue(forKey: scope) === model)
+        var placeholderRegressions = Set<HomeRowID>()
+        for _ in 0..<40 {
+            let current = try XCTUnwrap(model.state.value)
+            for row in loaded {
+                let retained = current.serverRows.first { $0.definition.id == row.definition.id }
+                if retained?.items != row.items || retained?.row.isLoading != false {
+                    placeholderRegressions.insert(row.definition.id)
+                }
+            }
+            try await Task.sleep(for: .milliseconds(25))
+        }
+        print("HomeSettingsReturn loading=\(duringLoading) retainedRows=\(loaded.count) placeholderRegressions=\(placeholderRegressions.count)")
+        XCTAssertTrue(placeholderRegressions.isEmpty, "Previously loaded cards must never become skeletons.")
+        if !duringLoading {
+            XCTAssertEqual(requests.home.withLock { $0 }, before, "Fresh Home must not refetch after an unchanged Settings visit.")
+            XCTAssertFalse(model.isRefreshing)
+        }
+        first.opened.withLock { $0 = true }
+        remaining.opened.withLock { $0 = true }
+        try await wait { !model.isRefreshing && model.state.value?.serverRows.count == 40 }
+        let finished = try XCTUnwrap(model.state.value)
+        XCTAssertTrue(finished.serverRows.allSatisfy { !$0.isLoading && $0.failure == nil })
+        XCTAssertEqual(finished.serverRows.reduce(0) { $0 + $1.items.count }, 800)
+    }
+
+    private func wait(until condition: () -> Bool) async throws {
+        let deadline = ContinuousClock.now + .seconds(30)
+        while !condition(), ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertTrue(condition(), "The real-root Home/Settings transition did not finish.")
+    }
+}
+
 private final class MultiServerHomeRequests: Sendable {
     let value = Mutex(0)
+    let home = Mutex(0)
 }
 
 private final class HomeStartupResponseGate: Sendable {
@@ -422,6 +571,7 @@ private struct MultiServerHomeProvider: MediaProvider {
     private func delay() async throws {
         try await gate?.wait()
         requests.value.withLock { $0 += 1 }
+        requests.home.withLock { $0 += 1 }
         let index = Int(session.server.id.split(separator: "-").last ?? "") ?? 0
         try await Task.sleep(for: .milliseconds(slowLoading ? 150 + index * 100 : 50 + index * 10))
     }

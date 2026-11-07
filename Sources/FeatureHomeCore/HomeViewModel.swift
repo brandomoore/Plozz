@@ -359,6 +359,8 @@ public final class HomeViewModel {
     public var hasLiveContinueWatching: Bool { hasReceivedLiveContent }
     @ObservationIgnored private var loadGeneration: UInt64 = 0
     @ObservationIgnored private var publishedLoadRows: Set<HomeRowKind> = []
+    @ObservationIgnored private var receivedLiveRows: Set<HomeRowKind> = []
+    @ObservationIgnored private var receivedLiveRowsVisibility: HomeLibraryVisibility?
     @ObservationIgnored private var mutationsDuringLoad: [MediaItemMutation] = []
     @ObservationIgnored private var loadFailures: [HomeRowKind: AppError] = [:]
     @ObservationIgnored private var loadContinueWatchingDiagnostic: LibraryLoadDiagnostic?
@@ -866,6 +868,10 @@ public final class HomeViewModel {
         let onScreenContinueWatching = previousContent?.continueWatching ?? []
         let visibility = currentVisibility()
         loadingVisibility = visibility
+        if receivedLiveRowsVisibility?.intent != visibility.intent {
+            receivedLiveRows = []
+            receivedLiveRowsVisibility = visibility
+        }
         let sectionDiagnosticGeneration = sectionDiagnostics?.begin(accounts: accounts, visibility: visibility)
         defer {
             if let sectionDiagnosticGeneration { sectionDiagnostics?.cancel(sectionDiagnosticGeneration) }
@@ -874,12 +880,13 @@ public final class HomeViewModel {
         if publishesProgress, !accounts.isEmpty {
             rowFailures = [:]
             continueWatchingDiagnostic = nil
-            loadingRows = Set(HomeRowKind.allCases)
+            loadingRows = Set(HomeRowKind.allCases).subtracting(receivedLiveRows)
             var initial = previousContent ?? Content()
             initial.sectionIssues = []
             initial.mergeLibraries = !visibility.usesIndividualHomeRows
-            initial.librarySections = !visibility.usesIndividualHomeRows ? [] : Self.plannedLibrarySections(
-                libraries: initial.libraries, visibility: visibility
+            initial.librarySections = !visibility.usesIndividualHomeRows ? [] : retainingLibraryRowContent(
+                Self.plannedLibrarySections(libraries: initial.libraries, visibility: visibility),
+                previous: initial.librarySections
             )
             initial.serverRows = retainingServerRowContent(
                 HomeServerRow.plannedDefinitions(accounts: accounts, visibility: visibility)
@@ -1085,6 +1092,12 @@ public final class HomeViewModel {
         content.serverRows = retainingServerRowContent(
             content.serverRows, previous: previousContent?.serverRows ?? []
         )
+        content.librarySections = retainingLibraryRowContent(
+            content.librarySections, previous: previousContent?.librarySections ?? []
+        )
+        content.collectionRows = retainingCollectionRowContent(
+            content.collectionRows, previous: previousContent?.collectionRows ?? []
+        )
         content = applyingLoadMutations(to: content)
         loadingRows = []
         rowFailures = loadFailures
@@ -1108,6 +1121,7 @@ public final class HomeViewModel {
         }
         hasReceivedLiveContent = true
         hasCompletedHomeLoad = true
+        receivedLiveRows = Set(HomeRowKind.allCases)
         isShowingCachedSnapshot = false
         let publication = PerformanceDiagnostics.shared.begin(.homePublish)
         state = content.isEmpty && watchlistLoadingPlaceholderCount == 0 && rowFailures.isEmpty
@@ -1235,7 +1249,9 @@ public final class HomeViewModel {
         content.serverRows = retainingServerRowContent(
             progress.content.serverRows, previous: content.serverRows
         )
-        content.collectionRows = progress.content.collectionRows
+        content.collectionRows = retainingCollectionRowContent(
+            progress.content.collectionRows, previous: content.collectionRows
+        )
         if let resume { content.continueWatching = resume }
         if newlyReady.contains(.recentlyAdded) {
             content.latest = progress.content.latest
@@ -1265,7 +1281,7 @@ public final class HomeViewModel {
                 : content.libraries + progress.content.libraries.filter { library in
                     !content.libraries.contains { $0.key == library.key }
                 }
-            content.librarySections = Self.plannedLibrarySections(
+            let planned = Self.plannedLibrarySections(
                 libraries: inventory, visibility: visibility
             ).compactMap { planned in
                 if let fresh = arrived[planned.id] { return fresh }
@@ -1273,14 +1289,16 @@ public final class HomeViewModel {
                 if ready.contains(.libraries) { return nil }
                 return planned
             }
+            content.librarySections = retainingLibraryRowContent(planned, previous: content.librarySections)
         }
         content = applyingLoadMutations(to: content)
         publishedLoadRows.formUnion(ready)
+        receivedLiveRows.formUnion(ready)
         // Publish failures with reconciled content, never across an await that
         // could replace a focused loading row before its usable cards arrive.
         rowFailures = progress.failures
         continueWatchingDiagnostic = progress.continueWatchingDiagnostic
-        loadingRows = progress.loadingRows
+        loadingRows = progress.loadingRows.subtracting(receivedLiveRows)
         let publication = PerformanceDiagnostics.shared.begin(.homePublish)
         if state.value != content { state = .loaded(content) }
         publication?.finish(.succeeded)
@@ -1548,6 +1566,35 @@ public final class HomeViewModel {
             row.items = cached.items
             row.hasMore = cached.hasMore
             row.browseID = cached.browseID
+            return row
+        }
+    }
+
+    private func retainingLibraryRowContent(
+        _ groups: [HomeLibrarySectionGroup], previous: [HomeLibrarySectionGroup]
+    ) -> [HomeLibrarySectionGroup] {
+        let cached = Dictionary(previous.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        return groups.map { group in
+            guard let previous = cached[group.id] else { return group }
+            var group = group
+            let pending = group.loadingRows.union(group.failures.keys)
+            let freshIDs = Set(group.sections.map(\.id))
+            group.sections += previous.sections.filter {
+                pending.contains(LibraryHomeRowKind(rawValue: $0.id) ?? .hubs) && !freshIDs.contains($0.id)
+            }
+            return group
+        }
+    }
+
+    private func retainingCollectionRowContent(
+        _ rows: [HomeCollectionRow], previous: [HomeCollectionRow]
+    ) -> [HomeCollectionRow] {
+        rows.map { row in
+            guard row.isLoading || row.failure != nil,
+                  let cached = previous.first(where: { $0.definition == row.definition }) else { return row }
+            var row = row
+            row.items = cached.items
+            row.hasMore = cached.hasMore
             return row
         }
     }
