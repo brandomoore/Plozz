@@ -995,6 +995,10 @@ watch history and planning-list behavior are documented in
   library rows observe visibility separately from the server list. During new
   profile setup, library-name discovery remains available, but full cross-server
   identity indexing waits until setup finishes and uses the final membership.
+  On mobile, enabling Plex verifies its user (and requests a PIN when required)
+  inside the existing Settings presentation rather than replacing it with the
+  launch profile picker. This presentation ownership applies only to the same
+  active profile; source authorization remains withheld until verification.
   On TV, each enabled media-share section shows its own compact update phase,
   progress bar and known percentage. Only accounts included in the current
   profile contribute; idle, excluded and removed shares show no status. Progress

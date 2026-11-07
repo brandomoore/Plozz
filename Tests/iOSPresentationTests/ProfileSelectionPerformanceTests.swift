@@ -12,6 +12,125 @@ import XCTest
 
 @MainActor
 final class ProfileSelectionPerformanceTests: XCTestCase {
+    func testPlexSourceToggleKeepsTheOriginalSettingsSheet() async throws {
+        for requiresPIN in [false, true] {
+            let suite = "PlexSettingsContinuity.\(UUID())"
+            let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+            let store = AccountStore(secureStore: InMemorySecureStore())
+            let app = PlozziOSAppModel(
+                appAdmissionStore: AppAdmissionStore(defaults: defaults),
+                accountStore: store, profileStore: ProfileStore(defaults: defaults)
+            )
+            let accountID = "plex-\(UUID())"
+            let profile = app.profiles.add(
+                name: "Settings continuity",
+                plexHomeUserBindings: [accountID: .init(
+                    homeUserID: "viewer", name: "Viewer", requiresPIN: requiresPIN,
+                    pinRequirementVerified: true
+                )]
+            )
+            app.profiles.select(profile.id)
+            app.refreshActiveProfileSettings()
+            app.profiles.markFirstRunProfileSetupComplete()
+            app.profiles.setActiveAccountIDs([], for: profile.id)
+            try store.add(Account(
+                id: accountID,
+                server: .init(id: accountID, name: "Plex fixture",
+                              baseURL: URL(string: "https://plex.invalid")!, provider: .plex),
+                userID: "owner", userName: "Owner", deviceID: "fixture"
+            ), token: "FIXTURE-OWNER")
+            app.accountsProviders.registry.register(.plex) { context in
+                LibrarySelectionPerformanceProvider(
+                    session: context.session, onLibraries: {}, onItems: {}
+                )
+            }
+            app.accountsProviders.reloadAccounts()
+            app.plexHomeUsers.plexHomeUsersFetch = { _, _ in
+                try await Task.sleep(for: .milliseconds(250))
+                return [PlexHomeUser(id: "viewer", name: "Viewer", requiresPIN: requiresPIN)]
+            }
+            app.plexHomeUsers.plexHomeUserSwitch = { _, pin, _, _ in
+                XCTAssertEqual(pin, requiresPIN ? "2468" : nil)
+                return "FIXTURE-CLOUD"
+            }
+            app.plexHomeUsers.plexServerTokenResolve = { _, _, _ in "FIXTURE-SERVER" }
+            app.plexHomeUsers.ensurePlexIdentityForActiveProfile()
+            XCTAssertFalse(app.requiresLaunchProfileSelection)
+            XCTAssertFalse(app.didCompleteLaunchProfileSelection)
+
+            let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+                .first { $0.activationState == .foregroundActive })
+            let previous = scene.windows.first(where: \.isKeyWindow)
+            let window = UIWindow(windowScene: scene)
+            window.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
+            let host = UIHostingController(rootView:
+                PlozziOSRootView(appModel: app)
+                    .environment(\.horizontalSizeClass, .compact)
+                    .environment(\.locale, Locale(identifier: "en_US"))
+            )
+            window.rootViewController = host
+            window.makeKeyAndVisible()
+            defer {
+                host.dismiss(animated: false)
+                window.isHidden = true
+                window.rootViewController = nil
+                previous?.makeKeyAndVisible()
+                app.plexHomeUsers.forgetAccount(accountID)
+                defaults.removePersistentDomain(forName: suite)
+                removeOwnedProfileSettings([profile.id])
+            }
+            try await Task.sleep(for: .milliseconds(400))
+            app.screenshotDirector.tab = "settings"
+            let deadline = ContinuousClock.now + .seconds(5)
+            while (host.presentedViewController?.view.window == nil || !app.isSettingsPresented),
+                  ContinuousClock.now < deadline {
+                try await Task.sleep(for: .milliseconds(20))
+            }
+            let settings = try XCTUnwrap(host.presentedViewController)
+            XCTAssertTrue(app.isSettingsPresented)
+            try await Task.sleep(for: .milliseconds(400))
+
+            app.setAccount(accountID, enabled: true, for: profile.id)
+            XCTAssertNotNil(app.plexHomeUsers.pendingPlexPINRequest)
+            XCTAssertNil(app.accountsProviders.tokenResolver(accountID),
+                         "Keeping Settings open must not authorize the newly enabled source.")
+            for _ in 0..<20 {
+                try await Task.sleep(for: .milliseconds(20))
+                XCTAssertTrue(host.presentedViewController === settings,
+                              "Plex verification must not dismiss and recreate Settings.")
+                XCTAssertFalse(settings.isBeingDismissed)
+                XCTAssertNotNil(settings.view.window)
+            }
+            await app.plexHomeUsers.waitForPlexPINRequirementCheck()
+            if requiresPIN {
+                XCTAssertNotNil(app.plexHomeUsers.pendingPlexPINRequest)
+                XCTAssertNil(app.accountsProviders.tokenResolver(accountID))
+                XCTAssertNotNil(settings.presentedViewController,
+                                "The required PIN must be presented above the existing Settings sheet.")
+                app.plexHomeUsers.submitPlexPIN("2468")
+                await app.plexHomeUsers.waitForPlexPINRequirementCheck()
+            }
+            XCTAssertNil(app.plexHomeUsers.pendingPlexPINRequest)
+            XCTAssertEqual(app.accountsProviders.tokenResolver(accountID), "FIXTURE-SERVER")
+            app.setAccount(accountID, enabled: false, for: profile.id)
+            try await Task.sleep(for: .milliseconds(400))
+            XCTAssertTrue(host.presentedViewController === settings)
+            XCTAssertFalse(settings.isBeingDismissed)
+            XCTAssertNotNil(settings.view.window)
+            XCTAssertTrue(app.isSettingsPresented)
+            XCTAssertNil(app.accountsProviders.tokenResolver(accountID))
+
+            let other = app.profiles.add(name: "Different profile")
+            defer { removeOwnedProfileSettings([other.id]) }
+            app.selectProfile(other.id)
+            let dismissalDeadline = ContinuousClock.now + .seconds(3)
+            while settings.view.window != nil, ContinuousClock.now < dismissalDeadline {
+                try await Task.sleep(for: .milliseconds(20))
+            }
+            XCTAssertNil(settings.view.window, "A different profile must not retain the old Settings presentation.")
+        }
+    }
+
     func testPerformanceManyServerLibrarySelection() async throws {
         try PerformanceProbe.requireEnabled()
         try await exerciseManyServerLibrarySelection(measuring: true)

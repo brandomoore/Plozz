@@ -552,10 +552,19 @@ public struct PlozziOSRootView: View {
     }
 
     private var showsLaunchProfilePicker: Bool {
-        isSelectingLaunchProfile || appModel.mustChooseProfile
+        // Settings owns a newly enabled Plex source's verification/PIN sheet.
+        // Replacing its tab shell with the launch picker tears that presenter down.
+        let needsPlexLaunchGate = appModel.plexHomeUsers.pendingPlexPINRequest != nil
+            && !settingsOwnsActiveProfilePresentation
+        return isSelectingLaunchProfile || appModel.mustChooseProfile
             || (!appModel.didCompleteLaunchProfileSelection
                 && (appModel.requiresLaunchProfileSelection
-                    || appModel.plexHomeUsers.pendingPlexPINRequest != nil))
+                    || needsPlexLaunchGate))
+    }
+
+    private var settingsOwnsActiveProfilePresentation: Bool {
+        appModel.isSettingsPresented
+            && settingsShellIdentity?.profileID == appModel.profiles.activeProfileID
     }
 
     private var shellIdentity: String {
@@ -572,8 +581,7 @@ public struct PlozziOSRootView: View {
     private var presentationShellIdentity: String {
         // Settings owns its navigation and nested identity chooser. Rebuild the
         // covered content after dismissal, but never retain a different profile.
-        if appModel.isSettingsPresented, let settingsShellIdentity,
-           settingsShellIdentity.profileID == appModel.profiles.activeProfileID {
+        if settingsOwnsActiveProfilePresentation, let settingsShellIdentity {
             return settingsShellIdentity.value
         }
         return shellIdentity
