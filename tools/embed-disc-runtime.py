@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Embed and sign a previously built, matching-platform BD-J runtime."""
+"""Exclude Java by default; embed the experimental runtime only in local Debug builds."""
 import json
 import os
 from pathlib import Path
@@ -9,6 +9,37 @@ import runpy
 import shutil
 import subprocess
 import tempfile
+
+
+def experimental_enabled(environment):
+    value = environment.get("PLOZZ_EXPERIMENTAL_BDJ", "0")
+    if value not in ("0", "1"):
+        raise ValueError("PLOZZ_EXPERIMENTAL_BDJ must be 0 or 1")
+    if value == "1" and (environment.get("CONFIGURATION") != "Debug"
+                         or environment.get("ACTION") == "install"
+                         or environment.get("PLOZZ_RELEASE_CHANNEL")):
+        raise ValueError("Experimental Java disc menus are restricted to local Debug builds")
+    return value == "1"
+
+
+def remove_runtime(app):
+    """Remove only this embedder's outputs when reusing an experimental build directory."""
+    targets = [app / "DiscRuntime"]
+    frameworks = app / "Frameworks"
+    if frameworks.is_symlink():
+        raise ValueError("Refusing to clean a symlinked Frameworks directory")
+    if frameworks.is_dir():
+        targets += [path for path in frameworks.iterdir()
+                    if path.name.startswith("PlozzBDJ") and path.suffix == ".framework"]
+    for path in targets:
+        if path.is_symlink():
+            path.unlink()
+        elif path.exists():
+            if not path.resolve().is_relative_to(app.resolve()):
+                raise ValueError("Disc runtime output escapes the application bundle")
+            if not path.is_dir():
+                raise ValueError(f"Unexpected disc runtime output: {path.name}")
+            shutil.rmtree(path)
 
 
 def replace_file(source, destination):
@@ -86,6 +117,15 @@ def embed_libraries(source, frameworks, sdk, minimum_os, bundle_id, identity):
 
 def main():
     root = Path(__file__).resolve().parents[1]
+    enabled = experimental_enabled(os.environ)
+    build = Path(os.environ["TARGET_BUILD_DIR"]).resolve()
+    app = build / os.environ["UNLOCALIZED_RESOURCES_FOLDER_PATH"]
+    if app.is_symlink() or not app.resolve().is_relative_to(build) or app == build:
+        raise ValueError("Invalid app resource destination")
+    if not enabled:
+        remove_runtime(app)
+        print("Native disc navigation: Java runtime excluded.")
+        return
     sdk = os.environ["PLATFORM_NAME"]
     receipt = root / ".build/disc-runtime" / f"{sdk}.json"
     if not receipt.is_file():
@@ -97,8 +137,7 @@ def main():
     source = Path(info["runtime"]).resolve()
     if info["sdk"] != sdk or not source.is_relative_to(root / ".build/disc-menu-lab/runs"):
         raise SystemExit("Invalid BD-J runtime build receipt")
-    build = Path(os.environ["TARGET_BUILD_DIR"])
-    destination = build / os.environ["UNLOCALIZED_RESOURCES_FOLDER_PATH"] / "DiscRuntime"
+    destination = app / "DiscRuntime"
     # Relinking invalidates the linker signature; arm64 simulator loading still
     # requires an ad-hoc signature when Xcode's app signing phase is disabled.
     identity = "-" if os.environ.get("CODE_SIGNING_ALLOWED") == "NO" else (

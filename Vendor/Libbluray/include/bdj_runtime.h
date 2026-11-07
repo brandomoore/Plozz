@@ -1,5 +1,9 @@
 #pragma once
 
+#if defined(PLOZZ_EMBEDDED_BDJ) && defined(PLOZZ_DISTRIBUTION_BUILD)
+#error Experimental Java disc menus cannot be compiled into Release builds
+#endif
+
 /* Immutable application-owned paths; never derived from a disc. */
 int plozz_bdj_configure(const char *runtime, const char *cache);
 const char *plozz_bdj_cache_root(void);

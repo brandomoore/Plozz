@@ -2,6 +2,14 @@
 import PackageDescription
 import Foundation
 
+// Experimental Java menus are local-only. Native compilation also rejects
+// this opt-in in Release, including a cached experimental package graph.
+let experimentalDiscJava = ProcessInfo.processInfo.environment["PLOZZ_EXPERIMENTAL_BDJ"] == "1"
+let discJavaSettings: [CSetting] = experimentalDiscJava ? [.define("PLOZZ_EMBEDDED_BDJ", to: "1")] : []
+let discJavaSources = experimentalDiscJava
+    ? ["src/libbluray/bdj/bdj.c", "src/libbluray/bdj/native"]
+    : ["BDJDisabled.c"]
+
 // MARK: - Plozz modular package
 //
 // Plozz is split into small, single-responsibility modules so that:
@@ -319,7 +327,7 @@ let package = Package(
             name: "CoreModels",
             swiftSettings: [
                 .define("PLOZZ_DIAGNOSTICS", .when(configuration: .debug))
-            ]
+            ] + (experimentalDiscJava ? [.define("PLOZZ_EXPERIMENTAL_BDJ", .when(configuration: .debug))] : [])
         ),
         .target(
             name: "CoreNetworking",
@@ -768,7 +776,6 @@ let package = Package(
                 "contrib/libudfread/src/ecma167.c", "contrib/libudfread/src/udfread.c",
                 "src/libbluray/bluray.c", "src/libbluray/register.c",
                 "src/libbluray/bdj/bdjo_parse.c",
-                "src/libbluray/bdj/bdj.c", "src/libbluray/bdj/native",
                 "src/libbluray/bdnav", "src/libbluray/decoders",
                 "src/libbluray/disc", "src/libbluray/hdmv",
                 "src/file/file.c", "src/file/filesystem.c",
@@ -777,15 +784,16 @@ let package = Package(
                 "src/util/bits.c", "src/util/logging.c", "src/util/refcnt.c",
                 "src/util/time.c", "src/util/array.c", "src/util/mutex.c",
                 "src/util/event_queue.c", "src/util/strutl.c",
-            ],
+            ] + discJavaSources,
             publicHeadersPath: "include",
             cSettings: [
                 .define("HAVE_CONFIG_H", to: "1"), .headerSearchPath("."), .headerSearchPath("src"),
-                .define("PLOZZ_EMBEDDED_BDJ", to: "1"), .define("HAVE_FT2", to: "1"),
+                .define("PLOZZ_DISTRIBUTION_BUILD", .when(configuration: .release)),
+                .define("HAVE_FT2", to: "1"),
                 .headerSearchPath("jni"),
                 .headerSearchPath("../Libass/dependency-headers/Libfreetype/freetype2"),
                 .headerSearchPath("src/libbluray"), .headerSearchPath("contrib/libudfread/src")
-            ],
+            ] + discJavaSettings,
             linkerSettings: [.linkedFramework("CoreFoundation")]
         ),
 
@@ -802,7 +810,7 @@ let package = Package(
             name: "DiscNavigation",
             dependencies: ["CLibbluray"],
             publicHeadersPath: "include",
-            cSettings: [.unsafeFlags(["-fobjc-arc"])],
+            cSettings: [.unsafeFlags(["-fobjc-arc"])] + discJavaSettings,
             linkerSettings: [.linkedFramework("UIKit")]
         ),
         .target(

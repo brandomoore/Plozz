@@ -77,12 +77,22 @@ public extension MediaItem {
         let container = (version?.container ?? mediaInfo?.container)?.lowercased()
         guard container == "bdmv" else { return nil }
         let availability = version?.discMenuAvailability ?? .unknown
-        // Older library snapshots classified all Java menus as unsupported.
-        return availability == .unavailable(.unsupportedRuntime) ? .unknown : availability
+        if DiscMenuInspection.supportsJavaMenus, availability == .unavailable(.unsupportedRuntime) {
+            return .unknown
+        }
+        return availability
     }
 }
 
 public enum DiscMenuInspection {
+    public static var supportsJavaMenus: Bool {
+        #if PLOZZ_EXPERIMENTAL_BDJ && DEBUG
+        true
+        #else
+        false
+        #endif
+    }
+
     /// Reads the top-menu declaration only. Malformed or unfamiliar metadata
     /// remains attemptable; a valid HDMV declaration is not a compatibility guarantee.
     public static func availability(index: Data) -> DiscMenuAvailability {
@@ -104,7 +114,7 @@ public enum DiscMenuInspection {
             let object = Int(bytes[offset + 22]) << 8 | Int(bytes[offset + 23])
             return object == 0xffff ? .unavailable(.missingMenu) : .unknown
         case 2:
-            return .unknown
+            return supportsJavaMenus ? .unknown : .unavailable(.unsupportedRuntime)
         default:
             return .unknown
         }

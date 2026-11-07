@@ -57,6 +57,7 @@ static dispatch_semaphore_t javaSessionGate(void) {
     return gate;
 }
 
+#if defined(PLOZZ_EMBEDDED_BDJ)
 static NSURL *javaCacheRoot(void) {
     static NSURL *cache;
     static int lease = -1;
@@ -124,6 +125,7 @@ static NSURL *javaCacheRoot(void) {
     });
     return cache;
 }
+#endif
 
 #if PLOZZ_DISC_MENU_LAB
 @interface LabHTTPGuard : NSObject <NSURLSessionTaskDelegate>
@@ -276,9 +278,11 @@ static BD_DIR_H *openDirectory(void *opaque, const char *path) {
 static void overlay(void *opaque, const BD_OVERLAY *event) {
     [(__bridge HDMVSession *)opaque overlay:event];
 }
+#if defined(PLOZZ_EMBEDDED_BDJ)
 static void argbOverlay(void *opaque, const BD_ARGB_OVERLAY *event) {
     [(__bridge HDMVSession *)opaque argbOverlay:event];
 }
+#endif
 static unsigned component(double value) {
     return (unsigned)MAX(0, MIN(255, lround(value)));
 }
@@ -326,6 +330,14 @@ static unsigned component(double value) {
         if ([candidate caseInsensitiveCompare:path] == NSOrderedSame) return candidate;
     }
     return nil;
+}
+
++ (BOOL)supportsJavaMenus {
+#if defined(PLOZZ_EMBEDDED_BDJ)
+    return YES;
+#else
+    return NO;
+#endif
 }
 
 - (unsigned)selectedRegion { return _region; }
@@ -562,8 +574,8 @@ static unsigned component(double value) {
                 if (region) self->_region = region;
             }
         }
+#if defined(PLOZZ_EMBEDDED_BDJ)
         NSURL *runtime = [NSBundle.mainBundle.resourceURL URLByAppendingPathComponent:@"DiscRuntime"];
-#if __has_include(<bdj_runtime.h>)
         BOOL runtimePresent = [NSFileManager.defaultManager fileExistsAtPath:runtime.path];
         NSURL *cache = runtimePresent ? javaCacheRoot() : nil;
         if (runtimePresent &&
@@ -573,15 +585,18 @@ static unsigned component(double value) {
         }
 #endif
         self->_disc = bd_init();
+#if defined(PLOZZ_EMBEDDED_BDJ)
         if (self->_disc) {
             bd_set_player_setting_str(self->_disc, BLURAY_PLAYER_JAVA_HOME, runtime.fileSystemRepresentation);
             bd_set_player_setting(self->_disc, BLURAY_PLAYER_SETTING_PERSISTENT_STORAGE, 0);
         }
+#endif
         if (!self->_disc || !bd_open_files(self->_disc, (__bridge void *)self, openDirectory, openFile)) {
             [self fail:@"Could not open the disc"]; return;
         }
         if (self.stopped) return;
         const BLURAY_DISC_INFO *info = bd_get_disc_info(self->_disc);
+#if defined(PLOZZ_EMBEDDED_BDJ)
         self->_javaSession = info && info->bdj_detected;
         if (self->_javaSession) {
 #if __has_include(<bdj_runtime.h>)
@@ -599,6 +614,11 @@ static unsigned component(double value) {
             }
             bd_register_argb_overlay_proc(self->_disc, (__bridge void *)self, argbOverlay, NULL);
         }
+#else
+        if (info && info->top_menu && info->top_menu->bdj) {
+            [self fail:@"This disc's menu format is not supported"]; return;
+        }
+#endif
         if (!info || !info->bluray_detected || !info->top_menu_supported ||
             info->aacs_detected || info->bdplus_detected) {
             [self fail:@"This disc's menu format is not supported"]; return;
@@ -607,7 +627,11 @@ static unsigned component(double value) {
             [self fail:@"Could not configure the selected player region"]; return;
         }
         bd_register_overlay_proc(self->_disc, (__bridge void *)self, overlay);
-        if (bd_play(self->_disc) <= 0 && bd_menu_call(self->_disc, -1) <= 0) {
+        // Initialize navigation before opening a native menu on a mixed disc
+        // whose first-play program requires the excluded Java runtime.
+        int started = bd_play(self->_disc);
+        if (started <= 0 || !info->first_play_supported) started = bd_menu_call(self->_disc, -1);
+        if (started <= 0) {
             [self fail:@"Disc startup failed"]; return;
         }
         self.timer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, self.queue);

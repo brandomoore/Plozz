@@ -4,8 +4,10 @@ Aether-primary playback coordination, engine-agnostic playback surface, resume
 reporting back to the server, caption style rules, trickplay scrubbing,
 and the diagnostics overlay.
 
-Original HDMV and BD-J disc navigation share the existing player through
+Original HDMV disc navigation shares the existing player through
 `VideoEngine.discMenu`; this module does not import the native runtime.
+Java (BD-J) menus are excluded from distribution builds and retained only as an
+explicit local Debug experiment. Unsupported menus retain direct title playback.
 The profile default and transient entry intent keep direct playback separate
 from menu navigation. Menu failures require an explicit retry or direct-play
 choice, and menu clocks never reach ordinary watch reporting.

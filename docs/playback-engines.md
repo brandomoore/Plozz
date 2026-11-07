@@ -33,20 +33,28 @@ default) or **Open disc menu**. The detail Play button follows that preference;
 its hold menu offers the opposite action for this play only. Direct playback
 does not create a navigation session and keeps its normal resume/watch behavior.
 
-Menu navigation supports HDMV and a bundled BD-J interpreter in media-share BDMV folders.
+Distribution and default local builds support native HDMV menus in media-share
+BDMV folders, not Java (BD-J) menus. Java-only menus are marked unsupported, with
+direct video/title playback still available. A stale or unknown menu declaration
+is also checked at the native entry point before any menu video starts. Mixed
+discs retain a supported HDMV top menu even when other titles require Java; an
+unsupported Java first-play can be bypassed only to enter that native top menu
+for an explicit menu request.
 `DiscNavigation` statically links pinned libbluray 1.5.0 without optional
 decryption loaders. It drives original navigation and graphics while the existing
 Plozzigen adapter plays the selected playlist or its bounded play items. Separate transport cursors
 retain the same account, credential revision, file identity and root allowlist.
 The normal app uses the production transport resolver, not the lab's HTTP relay.
-BD-J uses the pinned OpenJDK Zero interpreter and libbluray's offscreen AWT.
+The experimental local-only BD-J implementation uses the pinned OpenJDK Zero
+interpreter and libbluray's offscreen AWT.
 Java graphics can open before any video is selected; authored playback then uses
 the same playlist and renderer path as HDMV. Java callbacks copy and composite
 their graphics before publishing on the main thread. Only one Java disc session
 can own the process-wide JVM, including while an old session is closing.
 
 Detail inspection recognizes 0100, 0200, 0240 and 0300 index layouts, including
-declared BD-J top menus. Only an explicitly absent or unsupported menu is hidden.
+declared BD-J top menus. An explicitly absent or unsupported menu is replaced by
+its existing explanation in the Play context menu.
 Unfamiliar, damaged or temporarily unreadable metadata stays unknown,
 not permanently unsupported. A conservative MovieObject inspection recognizes
 the tested region-register/warning-loop pattern and selects A, B or C before
@@ -56,7 +64,7 @@ affect only the current session, not the profile preference.
 Missing opening clips permit one top-menu attempt, respecting disc restrictions.
 Opening disc navigation follows the disc's authored first-play program, including
 language/region setup, timed menu transitions and automatic feature playback.
-Plozz does not freeze authored timers or redirect startup into the top menu.
+Plozz does not freeze authored timers or redirect supported startup programs into the top menu.
 The player's explicit menu action requests the top menu when the disc permits it;
 reaching that title completes the request.
 Transition diagnostics correlate directional/activation keys, playlist generations,
@@ -85,8 +93,9 @@ play-item identities. Software-rendered formats cannot yet use these intervals;
 that limitation is reported instead of skipping the pause or playing outside it.
 Stopping a session cancels its transport and waits up to five seconds for its
 native navigation queue. If shutdown is still pending, the queue keeps its
-native owner alive while the player can leave or start direct playback. This
-deadline does not terminate Java threads or free objects beneath an active call.
+native owner alive while the player can leave or start direct playback. In the
+Java experiment, this deadline does not terminate Java threads or free objects
+beneath an active call.
 
 For this initial integration, menu sessions deliberately do not update watched
 or resume state: a menu's playlist clock does not identify a library movie,
@@ -125,6 +134,9 @@ Taps inside the aspect-fitted menu image are mapped
 to disc pixels and sent as native pointer selection/activation; taps in the
 letterbox area never activate a previously selected button. Arrow and Select
 controls remain available for discs that do not implement pointer input.
+
+#### Experimental Java resource ownership
+
 Java graphics callbacks drain temporary Cocoa objects after each event, including
 on long-lived Java drawing threads. Unchanged draw/flush sequences retain the
 existing composed frame instead of copying and composing all planes again.
@@ -134,7 +146,7 @@ canvas dimensions, plane count and measured process footprint in the playback
 trace; these diagnostics do not by themselves establish the allocation's cause.
 BD-J networking and durable disc storage are disabled. libbluray still creates
 temporary binding-unit and persistent-storage directories for disc applications.
-The bundled runtime applies a shared 256 MiB **cumulative operation budget**
+The experimental runtime applies a shared 256 MiB **cumulative operation budget**
 per disc, plus 4,096 distinct canonical write destinations. Stream, random-access,
 NIO/vector/async writes, writable positions, resizing, mapping ranges, buffered
 copies and extended-attribute values reserve their cost before the native operation.
@@ -164,7 +176,32 @@ UUID-named disc caches whose process-held lease can be acquired exclusively.
 Active/quarantined process caches and unmarked legacy directories are retained.
 The cleanup does not inspect or remove developer build caches.
 
-Build the matching runtime before building an app or hosted test:
+#### Native-only distribution and experimental local builds
+
+`Package.swift` selects native-only sources by default, with no JNI implementation
+or JVM loader. `PLOZZ_EXPERIMENTAL_BDJ=1` opts into the retained Java implementation
+for local Debug builds only. Pass it in the environment of **both** package
+resolution/build and the runtime embed phase, not just as an Xcode build-setting
+argument. For command-line work, prefix the generation and `xcodebuild` commands
+with that environment value; use a separate entrypoint-private package workspace
+and DerivedData for experimental builds. Normal Xcode launches without that
+environment remain native-only.
+
+Release compilation rejects an experimental package graph, even if it was cached
+from Debug. The embed phase also rejects experimental Release, archive/install
+actions and release-channel builds. Native-only embedding does not require a
+runtime receipt and removes only its own stale `DiscRuntime` and `PlozzBDJ*.framework`
+outputs from the current app bundle. No runtime setting or remote flag enables
+Java. Do not distribute an experimental Debug build through TestFlight.
+
+The distribution validator rejects Java runtime resources/frameworks and JNI/JVM
+entry points, including in extensions, while retaining platform, dependency and
+signature checks. These are engineering guards, not legal or App Review approval.
+Native libraries still require their applicable licensing obligations to be met.
+
+#### Experimental runtime packaging
+
+For an explicitly opted-in local experiment, build the matching runtime first:
 `tools/with-apple-build-lease.sh plozz/disc-runtime -- python3 tools/build-disc-runtime.py --sdk appletvsimulator`.
 Use `appletvos`, `iphoneos` or `iphonesimulator` for the other destinations.
 The builder verifies pinned downloads, checks each native library's platform,
@@ -181,22 +218,23 @@ font notices. These files identify inputs, not a complete corresponding-source o
 relinking offer.
 The primary OpenJDK GPLv2 license, additional-license information and assembly
 exception are also retained in `DiscRuntime/legal/openjdk`; component notice
-directories alone do not substitute for those texts. Artifact validation rejects
-missing or empty primary texts.
-
-The archive lane runs `tools/validate-disc-runtime.py --app <archived-app>` before
-upload. It checks device architectures/platforms, framework dependencies,
-extension version parity, executable placement, exact process-symbol imports,
-runtime resource permissions and the signed bundle. Its process-symbol denylist
-is a project guard, not a complete list of Apple's validation rules. It does not
-establish physical-device execution without a debugger, safe termination of
-arbitrary disc code, licensing compliance or approval under App Review's
-downloaded-code rules. Those remain separate release gates. The corrected JVM
-flags disable implicit null checks and reduce signal use; they do not eliminate
-all runtime signal handlers. Offscreen disc graphics require
+directories alone do not substitute for those required texts.
+The experimental JVM flags disable implicit null checks and reduce signal use;
+they do not eliminate all runtime signal handlers. Offscreen disc graphics require
 `java.awt.headless=false`.
 
-Before distribution, separately close these gates for the exact archived candidate:
+#### Distribution validation
+
+The archive lane runs `tools/validate-disc-runtime.py --app <archived-app>` before
+upload and requires a native-only app. It checks device architectures/platforms, framework dependencies,
+extension version parity, executable placement, exact process-symbol imports,
+Java exclusion and the signed bundle. Its process-symbol denylist
+is a project guard, not a complete list of Apple's validation rules. It does not
+establish physical-device compatibility, licensing compliance or App Review
+approval. Those remain separate release gates.
+
+The following additional gates apply before any proposal to re-enable Java in
+distribution; a native-only release does not inherit approval of the experiment:
 
 - Exercise original menu selection, playback, return, repeated reopen, cancellation
   and noncooperative shutdown on both supported device platforms. Simulator

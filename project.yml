@@ -590,6 +590,7 @@ targets:
       - path: Tests/FeatureLiveTVCoreTests/LiveTVPlaybackCoordinatorTests.swift
       - path: Tests/FeatureLiveTVTests/LiveTVGuideRowLayoutTests.swift
       - path: Tests/CoreModelsTests/SettingsHydrationTests.swift
+      - path: Tests/CoreModelsTests/DiscPlaybackTests.swift
       - path: Tests/CoreModelsTests/PlaybackOrientationSettingsTests.swift
       - path: Tests/CoreModelsTests/ResumeRewindSettingsTests.swift
       - path: Tests/CoreModelsTests/SubtitleStylePreferencesTests.swift
@@ -624,6 +625,7 @@ targets:
       - target: PlozziOSPresentationHost
       - package: Plozz
         product: AppShelliOS
+        link: false
 
   PlozziOSInteractionTests:
     type: bundle.ui-testing
@@ -686,9 +688,10 @@ targets:
         BUNDLE_LOADER: "$(TEST_HOST)"
     dependencies:
       - target: PlozzFocusHost
-      # Share one umbrella package product instead of duplicating its module code.
+      # Resolve package symbols from the host, without duplicating Objective-C classes.
       - package: Plozz
         product: AppShell
+        link: false
 
 schemes:
   PlozziOSInteractionTests:

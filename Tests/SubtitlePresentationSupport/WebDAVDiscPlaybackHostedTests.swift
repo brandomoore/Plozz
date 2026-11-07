@@ -85,6 +85,12 @@ final class WebDAVDiscPlaybackHostedTests: XCTestCase {
         try await checkBluRayPlayback(startPosition: 0, discMenus: true, missingOpening: true)
     }
 
+    func testMixedDiscOpensNativeTopMenuWithoutJavaFirstPlay() async throws {
+        try XCTSkipIf(DiscMenuInspection.supportsJavaMenus, "Native-only build regression.")
+        try await checkBluRayPlayback(startPosition: 0, discMenus: true, missingOpening: true,
+                                      discJavaFirstPlay: true)
+    }
+
     func testNativeHDMVFiniteStillHonorsPauseAndResumesNavigation() async throws {
         try await checkBluRayPlayback(startPosition: 0, discMenus: true, discStillSeconds: 2)
     }
@@ -102,6 +108,7 @@ final class WebDAVDiscPlaybackHostedTests: XCTestCase {
     }
 
     func testJavaMenuPlaysBothChoicesAndReopensAfterShutdown() async throws {
+        try XCTSkipUnless(DiscMenuInspection.supportsJavaMenus, "Requires an experimental local Java-menu build.")
         let manager = FileManager.default
         let caches = try XCTUnwrap(manager.urls(for: .cachesDirectory, in: .userDomainMask).first)
         func cacheFixture(marked: Bool) throws -> URL {
@@ -188,7 +195,7 @@ final class WebDAVDiscPlaybackHostedTests: XCTestCase {
         discStillSeconds: UInt16? = nil, discAudioSelection: Bool = false, discIntermediateStill: Bool = false,
         discShortSecondItem: Bool = false, discJava: Bool = false, discJavaQuarantine: Bool = false,
         inspectVideos: Bool = false, discStartupAutoplay: Bool = false, discStartupRestricted: Bool = false,
-        nativeClockOnly: Bool = false
+        nativeClockOnly: Bool = false, discJavaFirstPlay: Bool = false
     ) async throws {
         let root = try XCTUnwrap(Bundle(for: Self.self).resourceURL)
             .appendingPathComponent("Fixtures/bluray-test-pattern")
@@ -224,6 +231,15 @@ final class WebDAVDiscPlaybackHostedTests: XCTestCase {
                 let playlist = metadata.appendingPathComponent("audio-selection.mpls")
                 files["BDMV/PLAYLIST/00001.mpls"] = playlist
                 sizes["BDMV/PLAYLIST/00001.mpls"] = try Data(contentsOf: playlist).count
+            }
+            if discJavaFirstPlay {
+                let path = "BDMV/index.bdmv"
+                var index = try Data(contentsOf: XCTUnwrap(files[path]))
+                let table = index[8..<12].reduce(0) { ($0 << 8) | Int($1) }
+                // Unsupported Java first-play, unchanged native top-menu declaration.
+                index.replaceSubrange((table + 4)..<(table + 16),
+                                      with: [0x80, 0, 0, 0, 0, 0, 48, 48, 48, 48, 48, 0])
+                overrides[path] = index
             }
             if discStartupAutoplay {
                 let path = "BDMV/MovieObject.bdmv"

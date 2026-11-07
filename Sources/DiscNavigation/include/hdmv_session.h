@@ -11,6 +11,7 @@ NS_ASSUME_NONNULL_BEGIN
 @end
 
 @interface HDMVSession : NSObject
+@property(class, nonatomic, readonly) BOOL supportsJavaMenus;
 @property(nonatomic) BOOL automaticRegion;
 @property(atomic) BOOL playbackPaused;
 @property(nonatomic, readonly) unsigned selectedRegion;

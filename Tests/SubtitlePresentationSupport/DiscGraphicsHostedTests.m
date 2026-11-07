@@ -40,6 +40,68 @@ static uint32_t discTestFirstPixel(UIImage *image) {
 @end
 
 @implementation DiscGraphicsHostedTests
+- (void)testNativeBuildRejectsJavaMenusWithoutReadingCodeButStillListsVideos {
+    XCTSkipIf(HDMVSession.supportsJavaMenus, @"Native-only build regression.");
+    NSURL *fixtures = [[NSBundle bundleForClass:self.class].resourceURL URLByAppendingPathComponent:@"Fixtures"];
+    NSURL *navigation = [fixtures URLByAppendingPathComponent:@"bdj-navigation"];
+    NSMutableDictionary<NSString *, NSData *> *contents = [NSMutableDictionary dictionary];
+    NSDirectoryEnumerator *enumerator = [NSFileManager.defaultManager enumeratorAtURL:navigation
+        includingPropertiesForKeys:@[NSURLIsRegularFileKey] options:0 errorHandler:nil];
+    for (NSURL *file in enumerator) {
+        NSNumber *regular = nil;
+        [file getResourceValue:&regular forKey:NSURLIsRegularFileKey error:nil];
+        if (!regular.boolValue) continue;
+        NSString *relative = [file.path substringFromIndex:navigation.path.length + 1];
+        NSData *data = [NSData dataWithContentsOfURL:file];
+        XCTAssertNotNil(data);
+        contents[relative] = data;
+    }
+    for (NSString *clip in @[@"00001", @"00002"]) {
+        NSString *path = [NSString stringWithFormat:@"BDMV/STREAM/%@.m2ts", clip];
+        NSData *data = [NSData dataWithContentsOfURL:
+            [fixtures URLByAppendingPathComponent:[@"bluray-test-pattern/" stringByAppendingString:path]]];
+        XCTAssertNotNil(data);
+        contents[path] = data;
+    }
+    NSMutableDictionary *sizes = [NSMutableDictionary dictionary];
+    for (NSString *path in contents) sizes[path] = @(contents[path].length);
+    NSMutableSet<NSString *> *reads = [NSMutableSet set];
+    NSData *(^reader)(NSString *, int64_t, int64_t) = ^NSData *(NSString *path, int64_t offset, int64_t length) {
+        @synchronized (reads) { [reads addObject:path]; }
+        NSData *data = contents[path];
+        if (!data || offset < 0 || length < 0 || offset > data.length || length > data.length - offset) return nil;
+        return [data subdataWithRange:NSMakeRange((NSUInteger)offset, (NSUInteger)length)];
+    };
+    HDMVSession *menu = [[HDMVSession alloc] initWithFiles:sizes region:1 readRange:reader];
+    XCTAssertNotNil(menu);
+    XCTestExpectation *rejected = [self expectationWithDescription:@"Java menu rejected before playback"];
+    menu.statusChanged = ^(NSString *status) {
+        XCTAssertEqualObjects(status, @"This disc's menu format is not supported");
+        [rejected fulfill];
+    };
+    menu.selectionChanged = ^(NSInteger playlist, double position, NSInteger generation) {
+        XCTFail(@"Unsupported Java menu must not start background video");
+    };
+    [self addTeardownBlock:^{ [menu stop]; }];
+    [menu start];
+    [self waitForExpectations:@[rejected] timeout:10];
+    HDMVSession *catalog = [[HDMVSession alloc] initWithFiles:sizes region:1 readRange:reader];
+    [self addTeardownBlock:^{ [catalog stop]; }];
+    XCTestExpectation *listed = [self expectationWithDescription:@"Java disc retains direct title access"];
+    [catalog listVideosWithCompletion:^(NSArray<HDMVDiscVideo *> *videos, NSString *failure) {
+        XCTAssertNil(failure);
+        XCTAssertEqual(videos.count, 2);
+        [listed fulfill];
+    }];
+    [self waitForExpectations:@[listed] timeout:10];
+    @synchronized (reads) {
+        for (NSString *path in reads) {
+            XCTAssertFalse([path containsString:@"/JAR/"]);
+            XCTAssertFalse([path containsString:@"/BDJO/"]);
+        }
+    }
+}
+
 - (void)testStoppingDropsQueuedGraphicsAndRepeatedStopDrains {
     HDMVSession *session = [self graphicsSession];
     __block BOOL published = NO;

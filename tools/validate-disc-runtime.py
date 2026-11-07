@@ -9,6 +9,20 @@ import subprocess
 
 PROCESS_IMPORTS = {"_fork", "_vfork", "_execve", "_posix_spawn", "_posix_spawnp", "_system", "_ptrace"}
 
+
+def validate_no_java(app):
+    for path in app.rglob("*"):
+        if (path.name == "DiscRuntime" or path.name.startswith("PlozzBDJ")
+                or path.suffix.lower() in (".jar", ".class", ".jmod")
+                or path.name in ("libjvm.dylib", "libjava.dylib")):
+            raise ValueError(f"Java runtime is prohibited in distribution apps: {path.relative_to(app)}")
+
+
+def java_symbols(output):
+    return sorted({line.split()[-1] for line in output.splitlines() if line.split()
+                   and re.match(r"_?(?:JNI_|JVM_|Java_)", line.split()[-1])})
+
+
 def validate_notices(runtime):
     for notice in ("java.base", "java.desktop", "libbluray", "asm", "dejavu", "libffi"):
         if not (runtime / "legal" / notice).is_dir():
@@ -116,15 +130,7 @@ def validate(app):
     expected = {"AppleTVOS": {"3", "TVOS"}, "iPhoneOS": {"2", "IOS"}}
     if len(supported) != 1 or supported[0] not in expected:
         raise ValueError("A device distribution app is required, not a simulator app")
-    runtime = app / "DiscRuntime"
-    if not (runtime / "jars/libbluray-j2se-1.5.0.jar").is_file():
-        raise ValueError("Missing bundled disc Java classes")
-    validate_notices(runtime)
-    for resource in runtime.rglob("*"):
-        if resource.is_file() and (resource.suffix == ".dylib" or resource.stat().st_mode & 0o111):
-            raise ValueError(f"Executable code or executable resource in DiscRuntime: {resource.name}")
-    if not (app / "Frameworks/PlozzBDJjvm.framework/PlozzBDJjvm").is_file():
-        raise ValueError("Missing embedded JVM framework")
+    validate_no_java(app)
     binaries = bundled_binaries(app, info)
     failures = []
     for binary, executable_root in binaries:
@@ -137,6 +143,8 @@ def validate(app):
         imports = process_imports(command("nm", "-u", str(binary)))
         if imports:
             failures.append(f"{binary.name}: process imports {', '.join(imports)}")
+        if java_symbols(command("nm", "-g", str(binary))):
+            failures.append(f"{binary.name}: Java runtime entry points are prohibited")
         for line in command("otool", "-L", str(binary)).splitlines()[1:]:
             dependency = line.strip().split(" (", 1)[0]
             dependency_path(dependency, binary, app, executable_root)
@@ -154,7 +162,7 @@ def main():
         count = validate(args.app.resolve())
     except (ValueError, KeyError, OSError, subprocess.SubprocessError) as error:
         raise SystemExit(f"Disc distribution artifact validation failed: {error}") from error
-    print(f"Disc artifact checks passed for {count} binaries. Apple review and licensing remain separate gates.")
+    print(f"Native-only disc artifact checks passed for {count} binaries. Apple review and licensing remain separate gates.")
 
 
 if __name__ == "__main__":

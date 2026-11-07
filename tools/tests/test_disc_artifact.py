@@ -3,6 +3,7 @@ from pathlib import Path
 import tempfile
 import unittest
 import plistlib
+from unittest.mock import patch
 
 
 SPEC = importlib.util.spec_from_file_location(
@@ -12,6 +13,46 @@ SPEC.loader.exec_module(ARTIFACT)
 
 
 class DiscArtifactTests(unittest.TestCase):
+    def test_native_device_app_does_not_require_a_java_runtime(self):
+        for platform, load_command in (("iPhoneOS", "IOS"), ("AppleTVOS", "TVOS")):
+            with self.subTest(platform=platform), tempfile.TemporaryDirectory() as directory:
+                app = Path(directory)
+                (app / "App").write_bytes(b"\xcf\xfa\xed\xfe")
+                (app / "Info.plist").write_bytes(plistlib.dumps({
+                    "CFBundleExecutable": "App", "CFBundleSupportedPlatforms": [platform]
+                }))
+                def command(*args):
+                    if args[0] == "lipo": return "arm64"
+                    if args[:2] == ("otool", "-l"): return f"  platform {load_command}\n"
+                    if args[:2] == ("otool", "-L"): return "App:\n /usr/lib/libSystem.B.dylib (version 1)\n"
+                    if args[:2] == ("nm", "-g"): return "000 T _bdj_open\n"
+                    if args[:2] == ("nm", "-u"): return " U _malloc\n"
+                    if args[:4] == ("codesign", "--verify", "--deep", "--strict"): return ""
+                    self.fail(f"Unexpected validation command: {args}")
+                with patch.object(ARTIFACT, "command", side_effect=command):
+                    self.assertEqual(ARTIFACT.validate(app), 1)
+
+    def test_distribution_rejects_java_anywhere_including_extensions(self):
+        with tempfile.TemporaryDirectory() as directory:
+            app = Path(directory)
+            ARTIFACT.validate_no_java(app)
+            for name in ("DiscRuntime", "Frameworks/PlozzBDJjvm.framework",
+                         "PlugIns/Shelf.appex/DiscRuntime",
+                         "Resources/renamed.jar", "Resources/Menu.class", "Resources/java.base.jmod",
+                         "Frameworks/libjvm.dylib"):
+                path = app / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(b"fixture")
+                with self.subTest(name=name), self.assertRaisesRegex(ValueError, "prohibited"):
+                    ARTIFACT.validate_no_java(app)
+                path.unlink()
+
+    def test_java_symbol_scan_includes_exports_and_imports_not_generic_disc_stubs(self):
+        self.assertEqual(ARTIFACT.java_symbols(
+            " U _JNI_CreateJavaVM\n000 T _JVM_FindClass\n000 T _Java_org_videolan_test\n"
+            "000 T _bdj_open\n000 T _some_Java_title\n"),
+            ["_JNI_CreateJavaVM", "_JVM_FindClass", "_Java_org_videolan_test"])
+
     def test_import_scan_matches_exact_symbols_not_substrings(self):
         self.assertEqual(ARTIFACT.process_imports(" U _posix_spawnp\n U _fork\n U _fork_reader\n"),
                          ["_fork", "_posix_spawnp"])

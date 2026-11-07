@@ -1,5 +1,9 @@
 # Disc-menu laboratory
 
+Java menus are a local experiment, not part of TestFlight or App Store builds.
+See the [native-only distribution boundary](../../docs/playback-engines.md#native-only-distribution-and-experimental-local-builds)
+for the app's build-time opt-in and distribution checks.
+
 An isolated experiment, **not an enabled Plozz playback feature**. It runs
 authored Java menus and, through a separate live prototype, native HDMV menus
 using libbluray rather than imitating a disc menu in SwiftUI.
@@ -363,10 +367,11 @@ The lab's success is not an App Store compliance result. In particular:
   Unsupported function stubs must preserve each API's actual error contract.
 - Replace the lab-only standalone FreeType dylib layout with supported framework
   packaging or an appropriately licensed static link when distributing a player.
-  The production app now embeds individual signed `PlozzBDJ*.framework` bundles;
-  the lab retains its independent experimental layout. The app archive lane's
-  `tools/validate-disc-runtime.py` gate checks packaging and native imports, not
-  Apple acceptance. Framework metadata and deployment targets must be valid;
+  The opted-in local Debug app embeds individual signed `PlozzBDJ*.framework`
+  bundles; the lab retains its independent experimental layout. Distribution
+  apps exclude this runtime. The app archive lane's `tools/validate-disc-runtime.py`
+  gate rejects Java resources and entry points; it is not Apple acceptance.
+  Experimental framework metadata and deployment targets must be valid;
   their versions need not equal the app's. Preserve applicable license texts and
   redistribution/relinking obligations.
 - Keep the Zero runtime's no-generated-executable-memory requirement. Validate

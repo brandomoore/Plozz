@@ -2,10 +2,11 @@ libbluray 1.5.0 and bundled libudfread
 Source archive: https://download.videolan.org/pub/videolan/libbluray/1.5.0/libbluray-1.5.0.tar.xz
 Plozz build adaptations: Vendor/Libbluray and Sources/DiscNavigation.
 
-BD-J runtime: OpenJDK Zero, with application-specific interpreter and AWT
+Distribution builds include native disc navigation, not a Java runtime.
+Experimental local Debug builds may opt into OpenJDK Zero with interpreter and AWT
 adaptations in tools/disc-menu-lab/tvos.py and tools/build-disc-runtime.py.
 Pinned source archives and checksums: tools/disc-menu-lab/dependencies.json.
-OpenJDK and its component license notices are retained in DiscRuntime/legal.
+In those experimental builds, runtime notices are retained in DiscRuntime/legal.
 Its primary GPLv2 license, additional-license information and assembly exception
 are retained in DiscRuntime/legal/openjdk.
 ASM bytecode support retains its notice in DiscRuntime/legal/asm/LICENSE.txt.

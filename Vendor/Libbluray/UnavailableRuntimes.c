@@ -1,6 +1,7 @@
 #include "bdj_runtime.h"
 #include "file/dl.h"
 #include "util/logging.h"
+#if defined(PLOZZ_EMBEDDED_BDJ)
 #include <dlfcn.h>
 #include <limits.h>
 #include <pthread.h>
@@ -72,3 +73,23 @@ int dl_dlclose(void *handle) {
 }
 
 const char *dl_get_path(void) { return jar_root[0] ? jar_root : NULL; }
+#else
+#include <stddef.h>
+
+void plozz_bdj_quarantine(void) {}
+int plozz_bdj_is_quarantined(void) { return 0; }
+int plozz_bdj_configure(const char *runtime, const char *cache) {
+    (void)runtime; (void)cache;
+    BD_DEBUG(DBG_CRIT, "Java disc menus are not included in this build\n");
+    return 0;
+}
+const char *plozz_bdj_cache_root(void) { return NULL; }
+void *dl_dlopen(const char *path, const char *version) {
+    (void)path; (void)version;
+    BD_DEBUG(DBG_CRIT, "Optional disc runtimes are not included in this build\n");
+    return NULL;
+}
+void *dl_dlsym(void *handle, const char *symbol) { (void)handle; (void)symbol; return NULL; }
+int dl_dlclose(void *handle) { (void)handle; return -1; }
+const char *dl_get_path(void) { return NULL; }
+#endif

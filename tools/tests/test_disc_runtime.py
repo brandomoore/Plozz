@@ -16,6 +16,54 @@ VALIDATE_SPEC.loader.exec_module(VALIDATE)
 
 
 class DiscRuntimeEmbeddingTests(unittest.TestCase):
+    def test_java_requires_explicit_local_debug_opt_in(self):
+        self.assertFalse(EMBED.experimental_enabled({}))
+        self.assertFalse(EMBED.experimental_enabled({"CONFIGURATION": "Release"}))
+        self.assertTrue(EMBED.experimental_enabled({"CONFIGURATION": "Debug", "PLOZZ_EXPERIMENTAL_BDJ": "1"}))
+        for extra in ({}, {"CONFIGURATION": "Release"}, {"CONFIGURATION": "Debug", "ACTION": "install"},
+                      {"CONFIGURATION": "Debug", "PLOZZ_RELEASE_CHANNEL": "testflight"},
+                      {"CONFIGURATION": "Debug", "PLOZZ_RELEASE_CHANNEL": "production"},
+                      {"CONFIGURATION": "Debug", "PLOZZ_EXPERIMENTAL_BDJ": "yes"}):
+            with self.subTest(extra=extra), self.assertRaises(ValueError):
+                EMBED.experimental_enabled({"PLOZZ_EXPERIMENTAL_BDJ": "1", **extra})
+
+    def test_native_build_removes_only_owned_stale_runtime_outputs(self):
+        with tempfile.TemporaryDirectory() as directory:
+            app = Path(directory) / "App.app"
+            for name in ("DiscRuntime/modules", "Frameworks/PlozzBDJjvm.framework",
+                         "Frameworks/PlozzBDJjava.framework", "Frameworks/Player.framework"):
+                (app / name).mkdir(parents=True)
+                (app / name / "fixture").write_text("original")
+            EMBED.remove_runtime(app)
+            self.assertFalse((app / "DiscRuntime").exists())
+            self.assertEqual([p.name for p in (app / "Frameworks").iterdir()], ["Player.framework"])
+            self.assertTrue((app / "Frameworks/Player.framework/fixture").is_file())
+            EMBED.remove_runtime(app)
+
+    def test_cleanup_never_follows_runtime_or_framework_symlinks(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            app = root / "App.app"
+            app.mkdir()
+            outside = root / "outside"
+            outside.mkdir()
+            (outside / "keep").write_text("keep")
+            (app / "DiscRuntime").symlink_to(outside, target_is_directory=True)
+            EMBED.remove_runtime(app)
+            self.assertTrue((outside / "keep").is_file())
+            (app / "Frameworks").symlink_to(outside, target_is_directory=True)
+            with self.assertRaisesRegex(ValueError, "symlinked"):
+                EMBED.remove_runtime(app)
+
+    def test_default_embedding_does_not_read_a_java_build_receipt(self):
+        with tempfile.TemporaryDirectory() as directory:
+            with patch.dict(EMBED.os.environ, {
+                "TARGET_BUILD_DIR": directory, "UNLOCALIZED_RESOURCES_FOLDER_PATH": "App.app",
+                "CONFIGURATION": "Release",
+            }, clear=True), patch.object(EMBED.runpy, "run_path") as runtime_builder:
+                EMBED.main()
+            runtime_builder.assert_not_called()
+
     def test_primary_openjdk_legal_texts_are_required_beyond_component_notices(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

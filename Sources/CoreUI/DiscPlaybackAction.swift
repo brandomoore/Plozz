@@ -56,14 +56,16 @@ public struct DiscPlaybackAlternativeAction: View {
     }
 
     public var body: some View {
-        if let availability = item.discMenuAvailability,
-           let alternative = DiscPlaybackChoice(
-               default: defaultBehavior, availability: availability
-           ).alternative {
-            Button {
-                onPlay(item.requestingDiscPlayback(alternative))
-            } label: {
-                Label(alternative.title, systemImage: alternative == .openMenu ? "opticaldisc" : "play.fill")
+        if let availability = item.discMenuAvailability {
+            let choice = DiscPlaybackChoice(default: defaultBehavior, availability: availability)
+            if let alternative = choice.alternative {
+                Button {
+                    onPlay(item.requestingDiscPlayback(alternative))
+                } label: {
+                    Label(alternative.title, systemImage: alternative == .openMenu ? "opticaldisc" : "play.fill")
+                }
+            } else if let reason = choice.unavailableReason {
+                Text(reason.message)
             }
         }
     }

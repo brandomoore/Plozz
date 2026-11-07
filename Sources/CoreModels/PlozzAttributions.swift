@@ -48,6 +48,25 @@ public struct PlozzAttribution: Identifiable, Sendable {
 }
 
 public enum PlozzAttributions {
+    private static let experimentalJavaEntries: [PlozzAttribution] = {
+        #if PLOZZ_EXPERIMENTAL_BDJ && DEBUG
+        [
+            PlozzAttribution(
+                title: "OpenJDK & DejaVu",
+                detail:
+                    "This experimental build uses the OpenJDK Zero interpreter under GPL-2.0, "
+                    + "with exceptions applying to designated components, plus DejaVu fonts. "
+                    + "Sources and build adaptations are recorded in "
+                    + "tools/disc-menu-lab/dependencies.json and tools/build-disc-runtime.py. "
+                    + "Complete component notices are bundled in DiscRuntime/legal.",
+                licenses: [.init("GPL-2.0; component-specific exceptions", family: .gpl)]
+            ),
+        ]
+        #else
+        []
+        #endif
+    }()
+
     public static let introduction =
         "Plozz is free and open source under the GPL-3.0 license with an App Store "
         + "exception. It is not affiliated with, endorsed, or certified by any of "
@@ -138,16 +157,7 @@ public enum PlozzAttributions {
                 + "Complete license texts are bundled in LibblurayNotices.txt.",
             licenses: [.init("LGPL-2.1-or-later", family: .lgpl)]
         ),
-        PlozzAttribution(
-            title: "OpenJDK & DejaVu",
-            detail:
-                "Java disc menus use the OpenJDK Zero interpreter under GPL-2.0 "
-                + "with the Classpath exception, plus DejaVu fonts. "
-                + "Sources and build adaptations are recorded in "
-                + "tools/disc-menu-lab/dependencies.json and tools/build-disc-runtime.py. "
-                + "Complete component notices are bundled in DiscRuntime/legal.",
-            licenses: [.init("GPL-2.0 with Classpath exception", family: .gpl)]
-        ),
+    ] + experimentalJavaEntries + [
         PlozzAttribution(
             title: "dav1d",
             detail:
