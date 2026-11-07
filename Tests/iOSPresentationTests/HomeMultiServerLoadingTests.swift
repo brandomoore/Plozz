@@ -37,6 +37,20 @@ final class HomeMultiServerLoadingTests: XCTestCase {
         }
     }
 
+    func testPerformanceScrollingWhileOneServerLoads() async throws {
+        try PerformanceProbe.requireEnabled()
+        try await PerformanceProbe.measure(self, scenario: "mobile-home-one-server-startup-scroll") {
+            try await self.exercise(scrollsWhileLoading: true, serverCount: 1)
+        }
+    }
+
+    func testPerformanceScrollingWhileThreeServersLoad() async throws {
+        try PerformanceProbe.requireEnabled()
+        try await PerformanceProbe.measure(self, scenario: "mobile-home-three-server-startup-scroll") {
+            try await self.exercise(scrollsWhileLoading: true, serverCount: 3)
+        }
+    }
+
     func testPerformanceScrollingWhileTwentyServersLoadWithDiagnostics() async throws {
         try PerformanceProbe.requireEnabled()
         try await PerformanceProbe.measure(self, scenario: "mobile-home-startup-diagnostics") {
@@ -120,7 +134,8 @@ final class HomeMultiServerLoadingTests: XCTestCase {
     }
 
     private func exercise(
-        scrollsLoadedContent: Bool = false, scrollsWhileLoading: Bool = false, diagnosticsEnabled: Bool = false
+        scrollsLoadedContent: Bool = false, scrollsWhileLoading: Bool = false, diagnosticsEnabled: Bool = false,
+        serverCount: Int = 20
     ) async throws -> [String: Int] {
         let consentKey = "com.plozz.crashReportingSettings"
         let storedConsent = UserDefaults.standard.object(forKey: consentKey)
@@ -153,7 +168,9 @@ final class HomeMultiServerLoadingTests: XCTestCase {
         }
         let artwork = scrollsLoadedContent || scrollsWhileLoading ? try await cachedArtwork() : nil
         let requests = MultiServerHomeRequests()
-        for index in 0..<20 {
+        let startupGate = scrollsWhileLoading ? HomeStartupResponseGate() : nil
+        defer { startupGate?.opened.withLock { $0 = true } }
+        for index in 0..<serverCount {
             let id = "server-\(index)"
             try store.add(Account(
                 id: id,
@@ -162,11 +179,11 @@ final class HomeMultiServerLoadingTests: XCTestCase {
                 userID: "viewer", userName: "Viewer", deviceID: "fixture"
             ), token: "fixture")
         }
-        app.profiles.setActiveAccountIDs((0..<20).map { "server-\($0)" }, for: profile.id)
+        app.profiles.setActiveAccountIDs((0..<serverCount).map { "server-\($0)" }, for: profile.id)
         app.accountsProviders.registry.register(.jellyfin) { context in
             MultiServerHomeProvider(
                 session: context.session, requests: requests, artwork: artwork,
-                slowLoading: scrollsWhileLoading
+                slowLoading: scrollsWhileLoading, gate: startupGate
             )
         }
         app.accountsProviders.tokenResolver = { _ in "fixture" }
@@ -189,12 +206,24 @@ final class HomeMultiServerLoadingTests: XCTestCase {
         var maximumGap = Duration.zero
         var lastHeartbeat = ContinuousClock.now
         var scrollingStarted: ContinuousClock.Instant?
+        var loadingStarted: ContinuousClock.Instant?
+        var firstRowReady: Duration?
+        var allRowsReady: Duration?
         let heartbeat = Task { @MainActor in
             while !Task.isCancelled {
                 do { try await Task.sleep(for: .milliseconds(2)) } catch { return }
                 let now = ContinuousClock.now
                 let gap = lastHeartbeat.duration(to: now)
                 maximumGap = max(maximumGap, gap)
+                if let loadingStarted {
+                    if firstRowReady == nil,
+                       model.state.value?.serverRows.contains(where: { !$0.isLoading && !$0.items.isEmpty }) == true {
+                        firstRowReady = loadingStarted.duration(to: now)
+                    }
+                    if allRowsReady == nil, firstRowReady != nil, !model.isRefreshing {
+                        allRowsReady = loadingStarted.duration(to: now)
+                    }
+                }
                 if scrollsWhileLoading, let scrollingStarted, gap > .milliseconds(50) {
                     print("HomeStartupScrollGap elapsed=\(scrollingStarted.duration(to: now)) gap=\(gap)")
                 }
@@ -223,13 +252,13 @@ final class HomeMultiServerLoadingTests: XCTestCase {
             ((view as? UIScrollView).map { [$0] } ?? []) + view.subviews.flatMap(scrollViews)
         }
         let deadline = ContinuousClock.now + .seconds(40)
-        while model.state.value?.serverRows.count != 40, ContinuousClock.now < deadline {
+        while model.state.value?.serverRows.count != serverCount * 2, ContinuousClock.now < deadline {
             try await Task.sleep(for: .milliseconds(10))
         }
         var mountedScroll: UIScrollView?
         while mountedScroll == nil, ContinuousClock.now < deadline {
             window.layoutIfNeeded()
-            mountedScroll = scrollViews(window).first { $0.contentSize.height > $0.bounds.height }
+            mountedScroll = scrollViews(window).first { $0.bounds.height > $0.bounds.width }
             if mountedScroll == nil { try await Task.sleep(for: .milliseconds(10)) }
         }
         let scroll = try XCTUnwrap(mountedScroll)
@@ -244,10 +273,12 @@ final class HomeMultiServerLoadingTests: XCTestCase {
             lastHeartbeat = .now
             let started = ContinuousClock.now
             scrollingStarted = started
-            print("HomeStartupScrollTrace start rows=40")
+            loadingStarted = started
+            print("HomeStartupScrollTrace start pid=\(ProcessInfo.processInfo.processIdentifier) epoch=\(Date().timeIntervalSince1970) servers=\(serverCount)")
+            startupGate?.opened.withLock { $0 = true }
             for step in (1...12).map({ $0 }) + (0..<12).reversed() {
                 if model.isRefreshing { loadingScrollTargets += 1 }
-                let bottom = scroll.contentSize.height - scroll.bounds.height + scroll.adjustedContentInset.bottom
+                let bottom = max(0, scroll.contentSize.height - scroll.bounds.height + scroll.adjustedContentInset.bottom)
                 scroll.setContentOffset(CGPoint(x: 0, y: bottom * CGFloat(step) / 12), animated: true)
                 try await Task.sleep(for: .milliseconds(400))
                 finishedRowsWhileScrolling = max(
@@ -258,8 +289,9 @@ final class HomeMultiServerLoadingTests: XCTestCase {
             scrollingGap = maximumGap
             scrollingWall = started.duration(to: .now)
             scrollingCPU = Int(((try PerformanceProbe.usage()).cpuMilliseconds - before.cpuMilliseconds) * 1_000)
+            print("HomeStartupScrollTrace end pid=\(ProcessInfo.processInfo.processIdentifier) epoch=\(Date().timeIntervalSince1970) servers=\(serverCount)")
             scrollingStarted = nil
-            XCTAssertGreaterThanOrEqual(loadingScrollTargets, 8)
+            XCTAssertGreaterThanOrEqual(loadingScrollTargets, serverCount == 20 ? 8 : 1)
             XCTAssertGreaterThan(finishedRowsWhileScrolling, 0)
         } else {
             for index in 1...8 {
@@ -272,24 +304,27 @@ final class HomeMultiServerLoadingTests: XCTestCase {
         }
         XCTAssertFalse(model.isRefreshing)
         let content = try XCTUnwrap(model.state.value)
-        XCTAssertEqual(content.serverRows.count, 40)
+        XCTAssertEqual(content.serverRows.count, serverCount * 2)
         XCTAssertTrue(content.serverRows.allSatisfy { !$0.isLoading && $0.failure == nil })
-        XCTAssertEqual(requests.value.withLock { $0 }, 100)
+        XCTAssertEqual(requests.value.withLock { $0 }, serverCount * 5)
         let items = content.serverRows.reduce(0) { $0 + $1.items.count }
-        XCTAssertEqual(items, 800)
+        XCTAssertEqual(items, serverCount * 40)
         // Confirmed-empty global rows may disappear; Home does not command a
         // replacement offset when that changes the document.
         if !scrollsWhileLoading { XCTAssertGreaterThan(scroll.contentOffset.y, 0) }
         window.layoutIfNeeded()
         try await Task.sleep(for: .milliseconds(150))
-        scroll.setContentOffset(CGPoint(x: 0, y: 1440), animated: true)
+        let scrollableDistance = max(0, scroll.contentSize.height - scroll.bounds.height + scroll.adjustedContentInset.bottom)
+        let finalOffset = min(1440, scrollableDistance)
+        if serverCount > 1 { XCTAssertGreaterThan(finalOffset, 0) }
+        scroll.setContentOffset(CGPoint(x: 0, y: finalOffset), animated: true)
         let scrollDeadline = ContinuousClock.now + .seconds(3)
-        while abs(scroll.contentOffset.y - 1440) > 1, ContinuousClock.now < scrollDeadline {
+        while abs(scroll.contentOffset.y - finalOffset) > 1, ContinuousClock.now < scrollDeadline {
             try await Task.sleep(for: .milliseconds(20))
         }
         window.layoutIfNeeded()
-        XCTAssertEqual(scroll.contentOffset.y, 1440, accuracy: 1)
-        XCTAssertGreaterThan(scroll.contentSize.height, 8_000)
+        XCTAssertEqual(scroll.contentOffset.y, finalOffset, accuracy: 1)
+        XCTAssertGreaterThan(scroll.contentSize.height, CGFloat(serverCount * 400))
         if scrollsLoadedContent {
             maximumGap = .zero
             lastHeartbeat = .now
@@ -320,16 +355,21 @@ final class HomeMultiServerLoadingTests: XCTestCase {
         let gap = (scrollsWhileLoading ? scrollingGap : maximumGap).components
         let elapsed = scrollingWall.components
         var counters = [
-            "servers": 20, "loadedRows": content.serverRows.count, "items": items,
+            "servers": serverCount, "loadedRows": content.serverRows.count, "items": items,
             "providerRequests": requests.value.withLock { $0 }, "scrollTargets": scrollsWhileLoading ? 25 : 9,
             "maxMainActorGapMicroseconds": Int(gap.seconds) * 1_000_000 + Int(gap.attoseconds / 1_000_000_000_000)
         ]
         if scrollsWhileLoading {
             counters["loadingScrollTargets"] = loadingScrollTargets
+            counters["scrollableDistancePoints"] = Int(scrollableDistance)
             counters["finishedRowsWhileScrolling"] = finishedRowsWhileScrolling
             counters["scrollCPUTimeMicroseconds"] = scrollingCPU
             counters["scrollWallMicroseconds"] =
                 Int(elapsed.seconds) * 1_000_000 + Int(elapsed.attoseconds / 1_000_000_000_000)
+            for (name, value) in [("firstRowMicroseconds", firstRowReady), ("allRowsMicroseconds", allRowsReady)] {
+                let duration = try XCTUnwrap(value).components
+                counters[name] = Int(duration.seconds) * 1_000_000 + Int(duration.attoseconds / 1_000_000_000_000)
+            }
             if diagnosticsEnabled {
                 XCTAssertTrue(AppReleaseChannel.current.isBeta)
                 XCTAssertTrue(app.crashReporting.isEnabled)

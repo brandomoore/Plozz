@@ -628,6 +628,42 @@ final class HomeLoadingLayoutTests: XCTestCase {
         XCTAssertEqual(scroll.contentOffset.y, offset, accuracy: 1)
     }
 
+    func testReservedRowsDeferOffscreenContentWithoutChangingGeometry() async throws {
+        let fixture = try Fixture()
+        defer { fixture.close() }
+        let state = Rows()
+        state.rows = (0..<40).map { Rows.Row(number: $0) }
+        fixture.mount(LoadingRows(app: fixture.app, items: fixture.items, state: state))
+        try await fixture.settle()
+        let scroll = try XCTUnwrap(fixture.scrollViews().first { $0.contentSize.height > $0.bounds.height })
+        let height = scroll.contentSize.height
+        XCTAssertGreaterThan(height, 8_000)
+        XCTAssertNotNil(fixture.find("row-39"), "Every configured row reserves its footprint immediately.")
+        XCTAssertNotNil(fixture.find("content-0"))
+        XCTAssertNil(fixture.find("content-39"), "Offscreen rails must not mount merely to measure the page.")
+
+        state.loading = false
+        try await fixture.settle()
+        XCTAssertEqual(scroll.contentSize.height, height, accuracy: 0.5)
+        XCTAssertNil(fixture.find("content-39"), "Background results must not eagerly build offscreen cards.")
+        for index in [39, 0, 20] {
+            let slot = try XCTUnwrap(fixture.find("row-\(index)"))
+            let bottom = scroll.contentSize.height - scroll.bounds.height + scroll.adjustedContentInset.bottom
+            let target = min(bottom, max(0, slot.convert(.zero, to: scroll).y))
+            scroll.setContentOffset(CGPoint(x: 0, y: target), animated: true)
+            let deadline = ContinuousClock.now + .seconds(3)
+            while abs(scroll.contentOffset.y - target) > 0.5, ContinuousClock.now < deadline {
+                try await Task.sleep(for: .milliseconds(20))
+            }
+            try await fixture.settle()
+            XCTAssertEqual(scroll.contentOffset.y, target, accuracy: 0.5)
+            XCTAssertEqual(scroll.contentSize.height, height, accuracy: 0.5)
+            let content = try XCTUnwrap(fixture.find("content-\(index)"))
+            XCTAssertGreaterThan(content.bounds.height, 100)
+            XCTAssertTrue(content.convert(content.bounds, to: fixture.window).intersects(fixture.window.bounds))
+        }
+    }
+
     func testLibraryRowUpdatesIncludeContentFailuresAndHomeScope() throws {
         let fixture = try Fixture()
         defer { fixture.close() }
@@ -771,7 +807,9 @@ final class HomeLoadingLayoutTests: XCTestCase {
                                 XCTAssertEqual(heights.loaded, reserved, accuracy: 0.5,
                                                "\(width), \(cardStyle), \(style), captions=\(captions), \(textSize)")
                                 if row.failure == nil && row.issue == nil {
-                                    XCTAssertEqual(heights.loading, reserved, accuracy: 0.5)
+                                    let rendered = try XCTUnwrap(fixture.find("reserved-content"))
+                                    XCTAssertEqual(rendered.bounds.height, reserved, accuracy: 0.5,
+                                                   "\(width), \(cardStyle), \(style), captions=\(captions), \(textSize), loading=\(row.isLoading)")
                                 }
                             }
                         }
@@ -1142,6 +1180,7 @@ final class HomeLoadingLayoutTests: XCTestCase {
                     rowBrowser: .constant(nil), showingHomeCustomization: .constant(false)
                 )
                 .equatable()
+                .background(RowMarker(name: "reserved-content"))
                 .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { onContentHeight($0) }
             }
         }
@@ -1178,14 +1217,17 @@ final class HomeLoadingLayoutTests: XCTestCase {
                         presentation: presentation, captions: app.settings.cardStyle.captions,
                         continueWatchingLayout: .landscape, continueWatchingUsesSeriesArtwork: false
                     ) {
-                        if state.loading && !state.loaded.contains(row.number) {
-                            PlozziOSHomeSkeletonRail(title: Text(verbatim: "Row \(row.number)"), style: .poster)
-                        } else {
-                            PlozziOSHomeMediaRail(
-                                title: Text(verbatim: "Row \(row.number)"), items: items,
-                                style: .poster, appModel: app, onBrowse: {}
-                            )
+                        Group {
+                            if state.loading && !state.loaded.contains(row.number) {
+                                PlozziOSHomeSkeletonRail(title: Text(verbatim: "Row \(row.number)"), style: .poster)
+                            } else {
+                                PlozziOSHomeMediaRail(
+                                    title: Text(verbatim: "Row \(row.number)"), items: items,
+                                    style: .poster, appModel: app, onBrowse: {}
+                                )
+                            }
                         }
+                        .background(RowMarker(name: "content-\(row.number)"))
                     }
                     .background(RowMarker(name: "row-\(row.number)"))
                 }

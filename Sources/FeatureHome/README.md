@@ -1303,6 +1303,14 @@ removing successful rows. Cancellation stops queued requests. Parent-series
 identity lookups are coalesced per account and load, and incomplete Home content
 does not overwrite the durable snapshot.
 
+Mobile Home measures every configured row's exact footprint eagerly, while a
+native lazy vertical stack mounts its rail content near the viewport. Offscreen
+responses update the model without constructing all of their card views. The
+sizing template receives only geometry and caption inputs, not changing media
+payloads. Lazy content never determines the reserved height; native scrolling
+still owns the offset. This changes presentation work, not provider concurrency,
+request ordering, cancellation, or how much content is loaded.
+
 If SwiftUI replaces Home's view task during library-settings preparation, a
 coalesced replacement request retries the cancelled preparation once. The rows
 must not wait for another trip away from Home and back. Cancellation without a

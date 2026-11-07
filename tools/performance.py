@@ -521,6 +521,16 @@ SCENARIOS = {
         "counters": ["servers", "loadedRows", "items", "providerRequests", "scrollTargets",
                      "maxMainActorGapMicroseconds"],
     },
+    **{f"mobile-home-{count}-server-startup-scroll": {
+        "suite": "ui", "platforms": ["iOS"],
+        "test": f"HomeMultiServerLoadingTests/testPerformanceScrollingWhile{method}",
+        "file": "Tests/iOSPresentationTests/HomeMultiServerLoadingTests.swift",
+        "description": f"Traverse Home while {count} staggered providers fill their rows; verify every request, item and completed navigation.",
+        "counters": ["servers", "loadedRows", "items", "providerRequests", "scrollTargets",
+                     "loadingScrollTargets", "finishedRowsWhileScrolling", "maxMainActorGapMicroseconds",
+                     "scrollCPUTimeMicroseconds", "scrollWallMicroseconds",
+                     "firstRowMicroseconds", "allRowsMicroseconds", "scrollableDistancePoints"],
+    } for count, method in [("one", "OneServerLoads"), ("three", "ThreeServersLoad")]},
     "mobile-home-multi-server-startup-scroll": {
         "suite": "ui", "platforms": ["iOS"],
         "test": "HomeMultiServerLoadingTests/testPerformanceScrollingWhileTwentyServersLoad",
@@ -528,7 +538,8 @@ SCENARIOS = {
         "description": "Traverse the whole Home page while twenty staggered providers progressively fill forty rows; require completed content after scrolling.",
         "counters": ["servers", "loadedRows", "items", "providerRequests", "scrollTargets",
                      "loadingScrollTargets", "finishedRowsWhileScrolling", "maxMainActorGapMicroseconds",
-                     "scrollCPUTimeMicroseconds", "scrollWallMicroseconds"],
+                     "scrollCPUTimeMicroseconds", "scrollWallMicroseconds",
+                     "firstRowMicroseconds", "allRowsMicroseconds", "scrollableDistancePoints"],
     },
     "mobile-home-multi-server-scroll": {
         "suite": "ui", "platforms": ["iOS"],

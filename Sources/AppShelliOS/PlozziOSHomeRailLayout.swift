@@ -10,9 +10,6 @@ private struct PlozziOSHomeViewportWidthKey: EnvironmentKey {
 
 /// Content changes inside a row's reserved footprint, never the other way around.
 struct PlozziOSHomeRowSlot<Content: View>: View {
-    @Environment(\.plozzCardStyle) private var cardStyle
-    @Environment(\.horizontalSizeClass) private var sizeClass
-    @Environment(\.plozziOSHomeViewportWidth) private var viewportWidth
     let presentation: HomePresentationRow
     let captions: CardCaptionSettings
     let continueWatchingLayout: ContinueWatchingCardLayout
@@ -52,21 +49,53 @@ struct PlozziOSHomeRowSlot<Content: View>: View {
 
     var body: some View {
         PlozziOSHomeRailLayout { metrics in
-            sizing(metrics: metrics)
-                .environment(\.plozzShimmerEnabled, false)
-                .hidden()
-                .accessibilityHidden(true)
-                .overlay(alignment: .topLeading) {
-                    if showsStatus {
-                        // Large text and long diagnostics remain reachable without
-                        // making a failed server resize the surrounding page.
-                        ScrollView { content }
-                            .scrollBounceBehavior(.basedOnSize)
-                    } else {
-                        content
+            PlozziOSHomeRowFootprint(
+                metrics: metrics, title: title, style: style, captions: captions,
+                isLibraryRow: isLibraryRow, isLiveTV: isLiveTV, isFeatured: isFeatured,
+                isContinueWatching: isContinueWatching, showsSeriesArtwork: showsSeriesArtwork
+            )
+            .environment(\.plozzShimmerEnabled, false)
+            .hidden()
+            .accessibilityHidden(true)
+            .overlay(alignment: .topLeading) {
+                // Measure every footprint, but mount rail content only near
+                // the viewport. The lazy content never determines row height.
+                GeometryReader { geometry in
+                    LazyVStack(alignment: .leading, spacing: 0) {
+                        Group {
+                            if showsStatus {
+                                // Keep long diagnostics reachable within the reserved row.
+                                ScrollView { content }
+                                    .scrollBounceBehavior(.basedOnSize)
+                            } else {
+                                content
+                            }
+                        }
+                        .frame(height: geometry.size.height, alignment: .top)
                     }
                 }
+            }
         }
+    }
+}
+
+/// Item updates do not invalidate the row's unchanged sizing template.
+private struct PlozziOSHomeRowFootprint: View {
+    @Environment(\.plozzCardStyle) private var cardStyle
+    @Environment(\.horizontalSizeClass) private var sizeClass
+    @Environment(\.plozziOSHomeViewportWidth) private var viewportWidth
+    let metrics: PlozzMetrics
+    let title: Text
+    let style: PosterCardView.Style
+    let captions: CardCaptionSettings
+    let isLibraryRow: Bool
+    let isLiveTV: Bool
+    let isFeatured: Bool
+    let isContinueWatching: Bool
+    let showsSeriesArtwork: Bool
+
+    var body: some View {
+        sizing(metrics: metrics)
     }
 
     @ViewBuilder

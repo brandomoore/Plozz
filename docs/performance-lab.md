@@ -717,6 +717,73 @@ No tests skipped. These are content-continuity and completed-work checks, not
 physical-device frame-pacing evidence; incomplete loads still restart their
 cancelled aggregation rather than checkpointing individual provider requests.
 
+The startup-scroll fixture also has `mobile-home-one-server-startup-scroll`
+and `mobile-home-three-server-startup-scroll` controls. All three use the same
+page, per-server content, response delays, warm artwork and 24 input targets.
+A response gate opens when the page is mounted, so fast providers are not
+artificially slowed to fill the scrolling window. First-row and all-row times
+are observed by the main-actor heartbeat independently of the input loop.
+The one-server page fits the viewport: its scrollable distance is zero, so it
+measures loading/presentation overhead, not a long one-server scrolling page.
+The three- and twenty-server pages traverse 1173 and 9860 points, respectively.
+
+Six bounded process samples in `4333b0a502754dd499a31748b431102c` were verified
+against the owned simulator PID and timestamped loading-window boundaries.
+Their complete capture intervals exclude fixture construction and the next
+sample's setup. SwiftUI transaction updates and AttributeGraph dominate the
+non-waiting main-thread stacks; provider aggregation does not. These are stack
+samples, including waits, not CPU milliseconds. The earlier Instruments attempt
+`af2621228c354e249d68b1802e1737b8` did not finalize and is not attribution evidence.
+
+Mobile row slots now keep exact eager sizing but use native lazy layout for
+their contents. The sizing view receives only stable presentation inputs,
+not the row's media payload. The measured height is also the lazy child's
+layout proposal; otherwise landscape captions can shrink inside the slot.
+This avoids constructing and updating every offscreen rail as responses arrive,
+without estimating page heights or adjusting scroll offsets.
+
+Final matched control `0a2d9aa98ba64a0bbe859c96730131bb` uses the original
+renderer with the final fixtures. Candidate `ccf3f8dd664f4c2fb458d7d121603822`
+uses identical fixtures, scenario order and runner settings. The original
+pre-change baseline `3aaeca701e804bd28c66aa9a7f46fd75` preceded the added
+geometry regressions; the later control avoids comparing different fixture
+fingerprints. Comparison `b6b2d487c721400e8c11f6ba5e832e89` is within budget.
+Each value below is the median of five retained samples after one warmup:
+
+| Servers | Total app CPU, ms | Maximum UI scheduling gap, ms | All rows ready, ms |
+| --- | --- | --- | --- |
+| 1 | 1054.562 to 1002.919 | 24.410 to 25.938 | 335.038 to 335.080 |
+| 3 | 2098.941 to 2121.619 | 30.235 to 30.481 | 757.729 to 750.238 |
+| 20 | 6199.501 to 4883.714 | 121.443 to 58.299 | 9967.883 to 9890.176 |
+
+Twenty-server scroll-window CPU fell from 5313.135 to 4274.084 ms. All forty
+rows, 800 items and 100 tracked provider requests still finish. The faster input
+loop ends with 38 rather than forty rows ready, then awaits the remaining two;
+this is not dropped content. Resident snapshots were 996.7 versus 941.6 MiB,
+not allocation or leak measurements. No provider concurrency, data-request
+ordering, persistence or cancellation policy changed. Artwork work can now
+start later, when an offscreen rail approaches the viewport; these warm-artwork
+fixtures do not quantify real network/image I/O.
+
+The candidate's twenty-server maximum gaps ranged from 56.887 to 74.175 ms.
+One one-server sample had a 279.830 ms scheduling outlier before its first
+response; it remains in the evidence. A separate final-source confirmation
+reported one-server maxima of 20.7–33.8 ms. Small-server median readiness and
+CPU remain comparable, but these results do not prove zero hitches or identical
+tail latency under every host load.
+
+Final-source confirmation `4a3e0ab953b04c5cb26aecfbd99b8072` passed seventeen
+selected hosted tests without skips: four performance scenarios plus thirteen
+geometry, deferred-mounting and Settings-continuity regressions. The new
+forty-row case verifies every footprint exists immediately, distant rail content
+does not mount when its data arrives, and native navigation mounts that content
+without changing page height. The shape/caption/large-text matrix reads current
+rendered bounds on retry, not a cached geometry-change callback from the previous
+error view. Settled twenty-server scrolling completed with maximum gaps of
+42.6–45.6 ms; this is confirmation, not a matched settled-scroll speedup.
+Deferred construction still costs work when rows approach the viewport.
+No new physical-device capture or installation is included.
+
 `mobile-video-glow` measures the light inline video preview in 2.3-second
 windows against the existing 160-by-90 continuity fixture. Require the same
 surface and advancing playback; it isolates preview overhead, not HD decoding.
