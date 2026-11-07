@@ -2,6 +2,7 @@
 import CoreModels
 import Foundation
 import MediaDownloads
+import MediaTransportCore
 import UserNotifications
 import XCTest
 @testable import AppShelliOS
@@ -399,6 +400,87 @@ final class DownloadActivityLifecycleTests: XCTestCase {
         XCTAssertFalse(activity.hasExecutionLease)
     }
 
+    func testModelActivityExpirationCancelsInitialSubtitlesWithoutHidingFinishedVideo() async throws {
+        let previousOffline = OfflineMode.shared.isEnabled
+        OfflineMode.shared.setEnabled(false)
+        defer { OfflineMode.shared.setEnabled(previousOffline) }
+        let bytes = Data(repeating: 0x5a, count: 1_024)
+        let server = try IPTVTestHTTPServer { _ in .init(data: bytes) }
+        let url = try await server.start()
+        let profile = "subtitle-expiration-\(UUID().uuidString)"
+        let policyKey = "downloads.policy.\(profile)"
+        // Registry iteration order must not let the blocked video starve the subtitle fixture.
+        UserDefaults.standard.set(
+            try JSONEncoder().encode(DownloadNetworkPolicy(maxConcurrentDownloads: 2)),
+            forKey: policyKey
+        )
+        defer { UserDefaults.standard.removeObject(forKey: policyKey) }
+        let storage = PlatformDownloadStorageLocator(subdirectory: "PlozzDownloads/\(profile)")
+        let directory = try storage.pinnedMediaDirectory()
+        let registry = DownloadedMediaRegistry(store: InMemoryDownloadedMediaStore())
+        var records = [downloadActivityRecord(id: "first"), downloadActivityRecord(id: "next")]
+        for index in records.indices {
+            records[index].status = .queued
+            records[index].totalBytes = Int64(bytes.count)
+            records[index].contentType = "application/octet-stream"
+            records[index].managedHTTPSource = .init(
+                provider: .emby, accountID: "fixture", itemID: index == 0 ? "first" : "next"
+            )
+            try await registry.beginDownload(records[index])
+        }
+        let videoGate = DownloadActivitySavingGate()
+        let subtitleGate = DownloadActivitySavingGate()
+        let scheduler = DownloadActivitySchedulerStub()
+        let model = PlozziOSDownloadsModel(
+            profileID: profile, registry: registry, storage: storage,
+            networkObserver: StaticDownloadNetworkObserver(),
+            networkFileResolver: DownloadActivityUnusedResolver(),
+            providerKind: { _ in .emby }, preferredAudioLanguages: { _ in [] },
+            activityScheduler: scheduler,
+            notificationClient: DownloadNotificationClientStub(authorization: .denied),
+            managedURLResolver: { source, _, _ in
+                try await videoGate.wait()
+                if source.itemID == "next" { try await Task.sleep(for: .seconds(30)) }
+                return .init(url: url, expectedDuration: nil, cleanupURL: nil, expectedBytes: Int64(bytes.count))
+            },
+            saveSubtitles: { _, _, _ in
+                try await subtitleGate.wait()
+                return .saved
+            }
+        )
+        addTeardownBlock {
+            await MainActor.run { model.beginProfileTransition() }
+            await videoGate.open()
+            await subtitleGate.open()
+            await model.quiesceForProfileSwitch()
+            await server.stop()
+            try FileManager.default.removeItem(at: directory)
+        }
+        try await waitForDownloadCondition { !scheduler.submissions.isEmpty }
+        let task = DownloadActivityTaskStub()
+        scheduler.launch(task)
+        try await waitForDownloadCondition { !task.updates.isEmpty }
+        await model.setApplicationActive(false)
+        await videoGate.open()
+        try await waitForDownloadCondition { await subtitleGate.entered }
+        let finishedVideo = await registry.record(forKey: records[0].identityKey)
+        XCTAssertEqual(finishedVideo?.status, .completed)
+        XCTAssertTrue(task.completions.isEmpty, "The remaining video keeps this activity active")
+        try XCTUnwrap(task.expiration)()
+        try await waitForDownloadCondition { !task.completions.isEmpty }
+        XCTAssertEqual(task.completions, [false])
+        await subtitleGate.open()
+        try await waitForDownloadCondition { await subtitleGate.finished }
+        let cancelled = await subtitleGate.wasCancelled
+        XCTAssertTrue(cancelled, "Expiration must reach subtitle work even though its video is complete")
+        let current = await registry.record(forKey: records[0].identityKey)
+        XCTAssertEqual(current?.status, .completed)
+        XCTAssertNil(current?.subtitleStatus)
+        XCTAssertEqual(try Data(contentsOf: storage.pinnedFileURL(for: records[0])), bytes)
+        let remaining = await registry.record(forKey: records[1].identityKey)
+        XCTAssertEqual(remaining?.status, .paused)
+    }
+
     func testAdditionalItemsShareOneActivityAndUnknownETAIsCleared() async throws {
         let scheduler = DownloadActivitySchedulerStub()
         let activity = PlozziOSDownloadActivity(
@@ -732,6 +814,34 @@ private final class DownloadActivitySchedulerStub: PlozziOSDownloadActivitySched
     func launch(_ task: any PlozziOSDownloadActivityTask) { onStart?(task) }
 }
 
+private actor DownloadActivitySavingGate {
+    private var opened = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+    private(set) var entered = false
+    private(set) var finished = false
+    private(set) var wasCancelled = false
+
+    func wait() async throws {
+        entered = true
+        if !opened { await withCheckedContinuation { waiters.append($0) } }
+        wasCancelled = Task.isCancelled
+        finished = true
+        try Task.checkCancellation()
+    }
+
+    func open() {
+        opened = true
+        waiters.forEach { $0.resume() }
+        waiters.removeAll()
+    }
+}
+
+private struct DownloadActivityUnusedResolver: MediaTransportNetworkFileResolving {
+    func resolve(_ locator: NetworkFileLocator) async throws -> MediaTransportResolvedSource {
+        throw CancellationError()
+    }
+}
+
 private func downloadActivityRecord(id: String = "episode") -> DownloadedMediaRecord {
     DownloadedMediaRecord(
         identity: .external(source: "example", value: id),
@@ -742,9 +852,10 @@ private func downloadActivityRecord(id: String = "episode") -> DownloadedMediaRe
 }
 
 @MainActor
-private func waitForDownloadCondition(_ predicate: () -> Bool) async throws {
+private func waitForDownloadCondition(_ predicate: () async -> Bool) async throws {
     let deadline = Date().addingTimeInterval(5)
-    while !predicate(), Date() < deadline { try await Task.sleep(for: .milliseconds(10)) }
-    XCTAssertTrue(predicate())
+    while !(await predicate()), Date() < deadline { try await Task.sleep(for: .milliseconds(10)) }
+    let satisfied = await predicate()
+    XCTAssertTrue(satisfied)
 }
 #endif

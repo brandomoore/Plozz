@@ -177,9 +177,120 @@ private struct BlockedDiscardEngine: MediaDownloadEngine, DownloadPersistentWork
 private actor SubtitleAttemptCounter {
     private var count = 0
     func increment() -> Int { count += 1; return count }
+    func callCount() -> Int { count }
+}
+
+private struct SubtitleStatusRejectingStore: DownloadedMediaStoring {
+    let base = InMemoryDownloadedMediaStore()
+    func load() -> DownloadedMediaRegistryState { base.load() }
+    func save(_ state: DownloadedMediaRegistryState) throws {
+        guard !state.records.values.contains(where: { $0.subtitleStatus != nil }) else {
+            throw CocoaError(.fileWriteOutOfSpace)
+        }
+        try base.save(state)
+    }
 }
 
 final class DownloadQueueTests: XCTestCase {
+    func testInitialSubtitleCancellationKeepsFinishedVideoPlayable() async throws {
+        for interruption in 0..<3 {
+            let store = InMemoryDownloadedMediaStore()
+            let registry = DownloadedMediaRegistry(store: store)
+            let directory = DownloadTestFactory.tempDirectory()
+            defer { try? FileManager.default.removeItem(at: directory) }
+            let storage = FixedDownloadStorageLocator(root: directory)
+            let attempts = SubtitleAttemptCounter()
+            let engine = FakeDownloadEngine { record, _ in
+                _ = await attempts.increment()
+                try Data([1]).write(to: storage.pinnedFileURL(for: record))
+                return 1
+            }
+            let gate = SuspensionTestGate()
+            let queue = DownloadQueue(
+                registry: registry, storage: storage, engine: engine,
+                saveSubtitles: { _, _, _ in
+                    await gate.wait()
+                    try Task.checkCancellation()
+                    return .saved
+                }
+            )
+            let record = try await queue.enqueue(DownloadTestFactory.request())
+            await gate.waitUntilEntered()
+            let duringSubtitles = await registry.record(forKey: record.identityKey)
+            XCTAssertEqual(duringSubtitles?.status, .completed, "Video readiness must precede optional subtitle work")
+            switch interruption {
+            case 0:
+                await queue.networkConditionsDidChange(.unsatisfied)
+            case 1:
+                await queue.suspendScheduling()
+                await queue.pause(identityKey: record.identityKey, reason: .inactiveProfile)
+            default:
+                await queue.setApplicationActive(false, revision: 1)
+            }
+            await gate.open()
+            await queue.drainForTesting()
+            let reopened = DownloadedMediaRegistry(store: store)
+            let persisted = await reopened.record(forKey: record.identityKey)
+            XCTAssertEqual(persisted?.status, .completed)
+            XCTAssertNil(persisted?.subtitleStatus, "Cancelled sidecars must not be reported as saved")
+            let resolver = RegistryOfflinePlaybackResolver(registry: reopened, storage: storage)
+            let asset = await resolver.localPlaybackAsset(for: DownloadTestFactory.movie(), versionID: nil)
+            XCTAssertNotNil(asset, "A finished video must remain accessible without resuming its download")
+            let resumed = DownloadQueue(
+                registry: reopened, storage: storage, engine: engine,
+                saveSubtitles: { _, _, _ in .saved }
+            )
+            try await resumed.retrySubtitles(identityKey: record.identityKey)
+            let updated = await reopened.record(forKey: record.identityKey)
+            XCTAssertEqual(updated?.subtitleStatus, .saved)
+            let videoCalls = await attempts.callCount()
+            XCTAssertEqual(videoCalls, 1)
+        }
+    }
+
+    func testSubtitlePersistenceFailureDoesNotRetryCompletedVideo() async throws {
+        let registry = DownloadedMediaRegistry(store: SubtitleStatusRejectingStore())
+        let directory = DownloadTestFactory.tempDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let engine = CountingDownloadEngine()
+        let queue = DownloadQueue(
+            registry: registry, storage: FixedDownloadStorageLocator(root: directory), engine: engine,
+            saveSubtitles: { _, _, _ in .saved },
+            backoff: { _ in XCTFail("Subtitle persistence must not retry the video") }
+        )
+        let record = try await queue.enqueue(DownloadTestFactory.request())
+        await queue.drainForTesting()
+        let current = await registry.record(forKey: record.identityKey)
+        let calls = await engine.callCount()
+        XCTAssertEqual(current?.status, .completed)
+        XCTAssertEqual(calls, 1)
+    }
+
+    func testRemovalDuringInitialSubtitleSavingDoesNotRecreateCompletedDownload() async throws {
+        let registry = DownloadedMediaRegistry(store: InMemoryDownloadedMediaStore())
+        let directory = DownloadTestFactory.tempDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let storage = FixedDownloadStorageLocator(root: directory)
+        let gate = SuspensionTestGate()
+        let queue = DownloadQueue(
+            registry: registry, storage: storage, engine: FakeDownloadEngine.completing(at: 10),
+            saveSubtitles: { _, destination, _ in
+                await gate.wait()
+                try Data("late subtitle".utf8).write(to: destination.appendingPathExtension("srt"))
+                return .saved
+            }
+        )
+        let record = try await queue.enqueue(DownloadTestFactory.request())
+        await gate.waitUntilEntered()
+        let removal = Task { try await queue.cancelAndRemove(identityKey: record.identityKey) }
+        await gate.open()
+        try await removal.value
+        await queue.drainForTesting()
+        let removed = await registry.record(forKey: record.identityKey)
+        XCTAssertNil(removed)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: try storage.pinnedFolderURL(forKey: record.identityKey).path))
+    }
+
     func testSubtitleFailureKeepsVideoCompletedAndRetryDoesNotDownloadVideo() async throws {
         let store = InMemoryDownloadedMediaStore()
         let registry = DownloadedMediaRegistry(store: store)

@@ -51,6 +51,8 @@ public struct DownloadedMediaRecord: Codable, Sendable, Hashable, Identifiable {
     public var failureReason: String?
     public var pauseReason: DownloadPauseReason?
     public var subtitleStatus: DownloadSubtitleStatus?
+    /// An undelivered warning. Each failure gets its own acknowledgement identity.
+    public var subtitleWarningID: UUID?
 
     /// Pinned, offline-renderable metadata (title/kind/year/artwork filename).
     public var snapshot: PinnedMediaSnapshot

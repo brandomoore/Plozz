@@ -137,6 +137,116 @@ final class DownloadPresentationTests: XCTestCase {
         XCTAssertNil(presenter.message, "Unrelated updates must not repeat a subtitle warning")
     }
 
+    func testBackgroundSubtitleWarningIsPresentedOnceOnForegroundActivation() async throws {
+        for offline in [false, true] {
+            let saved = record()
+            let registry = DownloadedMediaRegistry(store: InMemoryDownloadedMediaStore(.init(records: [saved.identityKey: saved])))
+            let model = makeModel(
+                registry: registry, storage: try temporaryStorage(), probe: ArtworkProbe(data: imageData()),
+                startsActive: false
+            )
+            defer { model.beginProfileTransition(); OfflineMode.shared.setEnabled(false) }
+            let presenter = TransientStatusPresenter()
+            model.statusPresenter = presenter
+            try await waitUntil { model.records.count == 1 }
+            OfflineMode.shared.setEnabled(offline)
+            await model.setApplicationActive(false)
+            try await registry.setStatus(identityKey: saved.identityKey, .downloading)
+            try await registry.markCompleted(identityKey: saved.identityKey, totalBytes: 10, subtitleStatus: .unavailable)
+            try await waitUntil { model.records.first?.subtitleStatus == .unavailable }
+            XCTAssertNil(presenter.message)
+            await model.setApplicationActive(true)
+            try await waitUntil { presenter.message != nil }
+            XCTAssertTrue(String(localized: try XCTUnwrap(presenter.message?.text)).contains("Some subtitles couldn't be saved"))
+            try await waitUntil { await registry.record(forKey: saved.identityKey)?.subtitleWarningID == nil }
+            presenter.dismiss()
+            await model.setApplicationActive(false)
+            await model.setApplicationActive(true)
+            XCTAssertNil(presenter.message, "A delivered warning must not repeat")
+        }
+    }
+
+    func testPersistedSubtitleWarningsWaitForExistingToastAndDrainIndividually() async throws {
+        let first = record(id: "first")
+        let second = record(id: "second")
+        let store = InMemoryDownloadedMediaStore(.init(records: [first.identityKey: first, second.identityKey: second]))
+        let original = DownloadedMediaRegistry(store: store)
+        try await original.setSubtitleStatus(identityKey: first.identityKey, .unavailable)
+        try await original.setSubtitleStatus(identityKey: second.identityKey, .unavailable)
+        let restored = try JSONDecoder().decode(
+            DownloadedMediaRegistryState.self, from: JSONEncoder().encode(store.load())
+        )
+        let registry = DownloadedMediaRegistry(store: InMemoryDownloadedMediaStore(restored))
+        let model = makeModel(
+            registry: registry, storage: try temporaryStorage(), probe: ArtworkProbe(data: imageData()),
+            startsActive: false
+        )
+        defer { model.beginProfileTransition() }
+        let presenter = TransientStatusPresenter()
+        model.statusPresenter = presenter
+        presenter.present(icon: "info.circle", text: "Existing toast", isProgress: true)
+        await model.setApplicationActive(true)
+        XCTAssertEqual(String(localized: try XCTUnwrap(presenter.message?.text)), "Existing toast")
+        let stillPending = await registry.all().filter { $0.subtitleWarningID != nil }
+        XCTAssertEqual(stillPending.count, 2)
+        presenter.dismiss()
+        try await waitUntil { presenter.message != nil }
+        let firstText = String(localized: try XCTUnwrap(presenter.message?.text))
+        XCTAssertTrue(firstText.contains("Some subtitles couldn't be saved"))
+        try await waitUntil { await registry.all().filter { $0.subtitleWarningID != nil }.count == 1 }
+        presenter.dismiss()
+        try await waitUntil { presenter.message != nil }
+        let secondText = String(localized: try XCTUnwrap(presenter.message?.text))
+        XCTAssertTrue(secondText.contains("Some subtitles couldn't be saved"))
+        XCTAssertNotEqual(firstText, secondText)
+        try await waitUntil { await registry.all().allSatisfy { $0.subtitleWarningID == nil } }
+        presenter.dismiss()
+        await model.setApplicationActive(true)
+        XCTAssertNil(presenter.message)
+    }
+
+    func testSubtitleWarningsRespectRemovalRetirementAndServerUserAuthorization() async throws {
+        var removed = record(id: "removed")
+        removed.snapshot.sourceUserID = "a"
+        var authorized = record(id: "authorized")
+        authorized.snapshot.sourceUserID = "a"
+        var otherUser = record(id: "other-user")
+        otherUser.snapshot.sourceUserID = "b"
+        let store = InMemoryDownloadedMediaStore(.init(records: Dictionary(
+            uniqueKeysWithValues: [removed, authorized, otherUser].map { ($0.identityKey, $0) }
+        )))
+        let registry = DownloadedMediaRegistry(store: store)
+        let storage = try temporaryStorage()
+        let model = makeModel(
+            registry: registry, storage: storage, probe: ArtworkProbe(data: imageData()),
+            startsActive: false, sourceUserID: { _ in "a" }
+        )
+        let presenter = TransientStatusPresenter()
+        model.statusPresenter = presenter
+        for record in [removed, authorized, otherUser] {
+            try await registry.setSubtitleStatus(identityKey: record.identityKey, .unavailable)
+        }
+        try await registry.remove(identityKey: removed.identityKey)
+        model.beginProfileTransition()
+        await model.setApplicationActive(true)
+        XCTAssertNil(presenter.message, "Retired models cannot deliver another profile's warnings")
+        let reopened = DownloadedMediaRegistry(store: store)
+        let replacement = makeModel(
+            registry: reopened, storage: storage, probe: ArtworkProbe(data: imageData()),
+            sourceUserID: { _ in "a" }
+        )
+        defer { replacement.beginProfileTransition() }
+        replacement.statusPresenter = presenter
+        try await waitUntil { presenter.message != nil }
+        XCTAssertTrue(String(localized: try XCTUnwrap(presenter.message?.text)).hasPrefix("authorized:"))
+        try await waitUntil { await reopened.record(forKey: authorized.identityKey)?.subtitleWarningID == nil }
+        presenter.dismiss()
+        await replacement.setApplicationActive(true)
+        XCTAssertNil(presenter.message)
+        let retained = await reopened.record(forKey: otherUser.identityKey)
+        XCTAssertNotNil(retained?.subtitleWarningID, "Another server user's warning must not be consumed")
+    }
+
     override func setUp() async throws {
         try await super.setUp()
         let preference = UserDefaults.standard.object(forKey: OfflineMode.preferenceKey)

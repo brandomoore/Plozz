@@ -87,7 +87,7 @@ public actor DownloadQueue {
         await networkConditionsDidChange(conditions)
     }
 
-    public func setApplicationActive(_ isActive: Bool, revision: UInt64) {
+    public func setApplicationActive(_ isActive: Bool, revision: UInt64) async {
         guard revision > applicationActivityRevision
                 || (revision == applicationActivityRevision
                     && isActive == applicationIsActive) else {
@@ -103,6 +103,14 @@ public actor DownloadQueue {
             for key in subtitleRefreshes {
                 attemptPermits[key]?.invalidate()
                 running[key]?.cancel()
+            }
+            for key in Array(running.keys) {
+                let record = await registry.record(forKey: key)
+                guard revision == applicationActivityRevision, !applicationIsActive else { return }
+                if let record, record.status == .completed, !permitsRunning(record) {
+                    attemptPermits[key]?.invalidate()
+                    running[key]?.cancel()
+                }
             }
         }
     }
@@ -489,6 +497,25 @@ public actor DownloadQueue {
         }
     }
 
+    private func finishSubtitles(
+        for record: DownloadedMediaRecord, destination: URL, permit: DownloadMutationPermit
+    ) async {
+        guard permitsRunning(record), !Task.isCancelled else { return }
+        do {
+            try permit.check()
+            let result = try await subtitleResult(for: record, destination: destination)
+            try Task.checkCancellation()
+            try await registry.withMutationPermit(permit) {
+                if let result { try $0.setSubtitleStatus(identityKey: record.identityKey, result) }
+            }
+        } catch is CancellationError {
+            return
+        } catch {
+            // Optional sidecars must never send a completed video through transport retry.
+            NSLog("External subtitle status could not be persisted for an offline download")
+        }
+    }
+
     private func schedule(_ identityKey: String) {
         guard schedulingEnabled,
               running[identityKey] == nil,
@@ -629,16 +656,15 @@ public actor DownloadQueue {
                 }
                 guard !Task.isCancelled else { return }
                 let finalRecord = await registry.record(forKey: identityKey) ?? currentRecord
-                let subtitleStatus = try await subtitleResult(for: finalRecord, destination: destination)
-                try Task.checkCancellation()
                 try await registry.withMutationPermit(permit) {
-                    try $0.markCompleted(identityKey: identityKey, totalBytes: total, subtitleStatus: subtitleStatus)
+                    try $0.markCompleted(identityKey: identityKey, totalBytes: total)
                 }
                 if let backup = try? storage.replacementBackupFolderURL(
                     forKey: identityKey
                 ) {
                     try? fileManager.removeItem(at: backup)
                 }
+                await finishSubtitles(for: finalRecord, destination: destination, permit: permit)
                 return
             } catch is CancellationError {
                 if !Task.isCancelled {

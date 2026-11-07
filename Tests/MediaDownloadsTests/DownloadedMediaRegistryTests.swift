@@ -3,6 +3,41 @@ import XCTest
 @testable import MediaDownloads
 
 final class DownloadedMediaRegistryTests: XCTestCase {
+    func testSubtitleWarningAcknowledgementIsDurableAndCannotConsumeANewerFailure() async throws {
+        let store = InMemoryDownloadedMediaStore()
+        let registry = DownloadedMediaRegistry(store: store)
+        let record = try await registry.beginDownload(DownloadTestFactory.record())
+        try await registry.markCompleted(identityKey: record.identityKey, totalBytes: 10, subtitleStatus: .unavailable)
+        let first = await registry.record(forKey: record.identityKey)
+        let firstWarning = try XCTUnwrap(first?.subtitleWarningID)
+        let decoded = try JSONDecoder().decode(
+            DownloadedMediaRegistryState.self, from: JSONEncoder().encode(store.load())
+        )
+        XCTAssertEqual(decoded.records[record.identityKey]?.subtitleWarningID, firstWarning)
+        try await registry.setSubtitleStatus(identityKey: record.identityKey, .unavailable)
+        try await registry.acknowledgeSubtitleWarning(identityKey: record.identityKey, warningID: firstWarning)
+        let second = await registry.record(forKey: record.identityKey)
+        let secondWarning = try XCTUnwrap(second?.subtitleWarningID)
+        XCTAssertNotEqual(secondWarning, firstWarning)
+        try await registry.acknowledgeSubtitleWarning(identityKey: record.identityKey, warningID: secondWarning)
+        let acknowledged = await DownloadedMediaRegistry(store: store).record(forKey: record.identityKey)
+        XCTAssertNil(acknowledged?.subtitleWarningID)
+        XCTAssertEqual(acknowledged?.subtitleStatus, .unavailable)
+        try await registry.setSubtitleStatus(identityKey: record.identityKey, .unavailable)
+        try await registry.setSubtitleStatus(identityKey: record.identityKey, .saved)
+        let recovered = await registry.record(forKey: record.identityKey)
+        XCTAssertNil(recovered?.subtitleWarningID)
+    }
+
+    func testLegacyDownloadDoesNotInventASubtitleWarning() throws {
+        let record = try DownloadTestFactory.record(status: .completed)
+        let data = try JSONEncoder().encode(record)
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        XCTAssertNil(json["subtitleWarningID"])
+        let decoded = try JSONDecoder().decode(DownloadedMediaRecord.self, from: data)
+        XCTAssertNil(decoded.subtitleWarningID)
+    }
+
     func testCancelledArtworkCannotAttach() async throws {
         let registry = DownloadedMediaRegistry(store: InMemoryDownloadedMediaStore())
         let original = try DownloadTestFactory.record(status: .completed)

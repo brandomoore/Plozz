@@ -449,6 +449,7 @@ public actor DownloadedMediaRegistry {
         record.failureReason = nil
         record.pauseReason = nil
         record.subtitleStatus = subtitleStatus
+        record.subtitleWarningID = subtitleStatus == .unavailable ? UUID() : nil
         record.updatedAt = Date()
         lastProgressPersistence[identityKey] = nil
         try persist(record)
@@ -457,7 +458,15 @@ public actor DownloadedMediaRegistry {
     public func setSubtitleStatus(identityKey: String, _ status: DownloadSubtitleStatus) throws {
         guard var record = state.records[identityKey], record.status == .completed else { return }
         record.subtitleStatus = status
+        record.subtitleWarningID = status == .unavailable ? UUID() : nil
         record.updatedAt = Date()
+        try persist(record)
+    }
+
+    public func acknowledgeSubtitleWarning(identityKey: String, warningID: UUID) throws {
+        guard var record = state.records[identityKey],
+              record.subtitleWarningID == warningID else { return }
+        record.subtitleWarningID = nil
         try persist(record)
     }
 

@@ -13,7 +13,8 @@ import CoreNetworking
 @Observable
 final class PlozziOSDownloadSubtitleState {
     var refreshing: Set<String> = []
-    @ObservationIgnored var awaitingCompletion: Set<String> = []
+    @ObservationIgnored var presentingWarning = false
+    @ObservationIgnored var observingToast = false
 }
 
 @MainActor
@@ -379,8 +380,10 @@ final class PlozziOSDownloadsModel {
                 pauseExpiredWork: { [weak self] tracked in
                     guard let self, self.acceptsNewWork else { return }
                     for record in await registry.all()
-                    where tracked[record.identityKey] == record.createdAt && record.status.isActive {
+                    where tracked[record.identityKey] == record.createdAt
+                        && (record.status.isActive || record.status == .completed) {
                         guard self.acceptsNewWork else { return }
+                        // Completed videos can still own optional subtitle work.
                         await queue.pause(identityKey: record.identityKey, reason: .manual)
                     }
                     await self.reload()
@@ -1339,7 +1342,7 @@ final class PlozziOSDownloadsModel {
                   let updated,
                   updated.createdAt == record.createdAt else { return }
             if updated.subtitleStatus == .unavailable {
-                presentSubtitleWarning(record)
+                await presentPendingSubtitleWarning()
             } else {
                 statusPresenter?.present(icon: "captions.bubble", text: "Subtitles updated.")
             }
@@ -1351,12 +1354,46 @@ final class PlozziOSDownloadsModel {
         }
     }
 
-    private func presentSubtitleWarning(_ record: DownloadedMediaRecord) {
-        guard acceptsNewWork, applicationIsActive, recordIsAuthorized(record) else { return }
-        statusPresenter?.present(
+    private func presentPendingSubtitleWarning() async {
+        guard acceptsNewWork, applicationIsActive, !subtitleState.presentingWarning,
+              let registry, let presenter = statusPresenter else { return }
+        subtitleState.presentingWarning = true
+        defer { subtitleState.presentingWarning = false }
+        let pending = await registry.all()
+        guard acceptsNewWork, applicationIsActive, !Task.isCancelled,
+              let record = pending.filter({
+                  $0.status == .completed && $0.subtitleStatus == .unavailable
+                      && $0.subtitleWarningID != nil && recordIsAuthorized($0)
+              }).min(by: { $0.updatedAt < $1.updatedAt }),
+              let warningID = record.subtitleWarningID else { return }
+        if presenter.message != nil {
+            observeSubtitleWarningDismissal(presenter)
+            return
+        }
+        presenter.present(
             icon: "exclamationmark.triangle",
             text: "\(record.snapshot.title): Some subtitles couldn't be saved. You can retry from Downloads."
         )
+        observeSubtitleWarningDismissal(presenter)
+        do {
+            try await registry.acknowledgeSubtitleWarning(identityKey: record.identityKey, warningID: warningID)
+        } catch {
+            PlozzLog.networking.error("Download subtitle warning acknowledgement could not be saved")
+        }
+    }
+
+    private func observeSubtitleWarningDismissal(_ presenter: TransientStatusPresenter) {
+        guard !subtitleState.observingToast else { return }
+        subtitleState.observingToast = true
+        withObservationTracking {
+            _ = presenter.message
+        } onChange: {
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.subtitleState.observingToast = false
+                await self.presentPendingSubtitleWarning()
+            }
+        }
     }
 
     private func resumeWithoutReload(_ record: DownloadedMediaRecord) async {
@@ -1633,10 +1670,6 @@ final class PlozziOSDownloadsModel {
         _ isActive: Bool,
         revision: UInt64
     ) async {
-        if OfflineMode.shared.isEnabled {
-            await suspendForOfflineMode()
-            return
-        }
         guard revision > applicationActivityRevision
                 || (revision == applicationActivityRevision
                     && isActive == applicationIsActive) else {
@@ -1647,6 +1680,10 @@ final class PlozziOSDownloadsModel {
         }
         if isActive, !applicationIsActive { downloadActivity?.allowRetry() }
         applicationIsActive = isActive
+        if OfflineMode.shared.isEnabled {
+            await suspendForOfflineMode()
+            return
+        }
         if !isActive {
             cancelArtworkTasks()
         } else {
@@ -1925,14 +1962,6 @@ final class PlozziOSDownloadsModel {
     private func receive(_ event: DownloadProgressEvent) async {
         switch event {
         case .item(let record):
-            if record.status.isActive {
-                subtitleState.awaitingCompletion.insert(record.identityKey)
-            } else if record.status == .completed {
-                let wasActive = subtitleState.awaitingCompletion.remove(record.identityKey) != nil
-                if wasActive, record.subtitleStatus == .unavailable {
-                    presentSubtitleWarning(record)
-                }
-            }
             if let previous = recordsByKey[record.identityKey],
                previous.createdAt == record.createdAt,
                previous.status == record.status,
@@ -1953,8 +1982,7 @@ final class PlozziOSDownloadsModel {
             } else {
                 await reload()
             }
-        case .removed(let identityKey):
-            subtitleState.awaitingCompletion.remove(identityKey)
+        case .removed:
             await reload()
         case .group, .global:
             break
@@ -1987,6 +2015,8 @@ final class PlozziOSDownloadsModel {
         }
         if records != refreshed { records = refreshed }
         hasLoadedRecords = true
+        await presentPendingSubtitleWarning()
+        guard generation == reloadGeneration else { return }
         if let storage {
             let artworkRevision = artworkRefreshRevision
             let files: [String: PlozziOSDownloadArtworkIndex.Entry]

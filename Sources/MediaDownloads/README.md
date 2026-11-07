@@ -104,8 +104,13 @@ SRT, WebVTT, ASS, and SSA delivery is supported; image subtitles and unavailable
 unreadable files are not advertised as saved. Jellyfin/Emby retain their existing
 subtitle delivery format (SRT for SubRip, WebVTT for other text formats).
 
-A subtitle failure does not invalidate a successfully downloaded video. The existing
-in-app toast reports the limitation; **Retry Subtitles** in the movie/episode download
+A video is marked complete before optional subtitle saving starts, so cancelling
+that work cannot hide it offline or restart the video transfer. An interrupted initial
+save can be retried with **Update Subtitles**, including after restarting the app.
+A subtitle failure does not invalidate a successfully downloaded video. Warnings
+persist until the authorized profile is foregrounded and the existing in-app toast
+is free; delivered warnings are acknowledged individually, without replacing an
+active toast. **Retry Subtitles** in the movie/episode download
 menu retries only sidecars. **Update Subtitles** also allows older downloads to acquire
 sidecars without downloading the video again. There is no automatic legacy backfill.
 These operations respect profile/server-user authorization, Offline Mode and download
@@ -117,6 +122,8 @@ replacement use the video's existing folder lifecycle. Downloads cap each subtit
 16 MiB and the saved set (including retained files) at 64 MiB/64 tracks, and validate
 playable text before publishing. Retrying repairs malformed indexes; cancelled or
 backgrounded subtitle updates leave the completed video and its previous status intact.
+Cancelling or expiring a Live Activity also cancels its tracked subtitle work without
+changing completed videos back to paused.
 
 New requests use `ManagedHTTPDownloadSource`'s defaults (one preferred audio
 rendition, available text subtitles). The retired global track flags are ignored
