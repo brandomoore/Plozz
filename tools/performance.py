@@ -42,6 +42,16 @@ HOME_HOST_FITTING_COUNTERS = [
     "hostFittingMaxNanoseconds", "hostFittingReentrantCalls",
 ]
 SCENARIOS = {
+    "mobile-home-startup-diagnostics": {
+        "suite": "ui", "platforms": ["iOS"],
+        "test": "HomeMultiServerLoadingTests/testPerformanceScrollingWhileTwentyServersLoadWithDiagnostics",
+        "file": "Tests/iOSPresentationTests/HomeMultiServerLoadingTests.swift",
+        "description": "The twenty-server startup scrolling workload with consent-gated Home observation enabled; require retained scrolling, loading and publication evidence.",
+        "counters": ["servers", "loadedRows", "items", "providerRequests", "scrollTargets",
+                     "maxMainActorGapMicroseconds", "loadingScrollTargets", "finishedRowsWhileScrolling",
+                     "scrollCPUTimeMicroseconds", "scrollWallMicroseconds", "homeUISamples",
+                     "diagnosticScrollingSamples", "diagnosticLoadingSamples"],
+    },
     **{
         f"song-card-{state}": {
             "suite": "ui",

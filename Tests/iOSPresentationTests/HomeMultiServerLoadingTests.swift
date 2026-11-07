@@ -37,6 +37,17 @@ final class HomeMultiServerLoadingTests: XCTestCase {
         }
     }
 
+    func testPerformanceScrollingWhileTwentyServersLoadWithDiagnostics() async throws {
+        try PerformanceProbe.requireEnabled()
+        try await PerformanceProbe.measure(self, scenario: "mobile-home-startup-diagnostics") {
+            try await self.exercise(scrollsWhileLoading: true, diagnosticsEnabled: true)
+        }
+    }
+
+    func testHomeObserverCollectsDuringStartupScrolling() async throws {
+        _ = try await exercise(scrollsWhileLoading: true, diagnosticsEnabled: true)
+    }
+
     func testHomeFinishesEveryServerRowDuringStartupScrolling() async throws {
         _ = try await exercise(scrollsWhileLoading: true)
     }
@@ -109,8 +120,14 @@ final class HomeMultiServerLoadingTests: XCTestCase {
     }
 
     private func exercise(
-        scrollsLoadedContent: Bool = false, scrollsWhileLoading: Bool = false
+        scrollsLoadedContent: Bool = false, scrollsWhileLoading: Bool = false, diagnosticsEnabled: Bool = false
     ) async throws -> [String: Int] {
+        let consentKey = "com.plozz.crashReportingSettings"
+        let storedConsent = UserDefaults.standard.object(forKey: consentKey)
+        CrashReportingSettingsStore().save(.init(
+            isEnabled: false, consentVersion: CrashReportingSettings.currentConsentVersion
+        ))
+        defer { UserDefaults.standard.set(storedConsent, forKey: consentKey) }
         let suite = "HomeMultiServer.\(UUID())"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         let store = AccountStore(secureStore: InMemorySecureStore())
@@ -160,6 +177,9 @@ final class HomeMultiServerLoadingTests: XCTestCase {
             contentStore: NoOpHomeContentStore(),
             currentVisibility: { app.settings.homeVisibility.visibility }
         )
+        app.crashReporting.isEnabled = diagnosticsEnabled
+        if diagnosticsEnabled { PerformanceDiagnostics.shared.start() }
+        defer { if diagnosticsEnabled { PerformanceDiagnostics.shared.stop() } }
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
             .first { $0.activationState == .foregroundActive })
         let previous = scene.windows.first(where: \.isKeyWindow)
@@ -196,6 +216,7 @@ final class HomeMultiServerLoadingTests: XCTestCase {
         .environment(\.horizontalSizeClass, .compact)
         .environment(\.themePalette, .dark)
         .environment(\.plozzMetrics, .touch(density: .standard))
+        .environment(\.scenePhase, .active)
         window.rootViewController = UIHostingController(rootView: root)
         window.makeKeyAndVisible()
         func scrollViews(_ view: UIView) -> [UIScrollView] {
@@ -309,6 +330,22 @@ final class HomeMultiServerLoadingTests: XCTestCase {
             counters["scrollCPUTimeMicroseconds"] = scrollingCPU
             counters["scrollWallMicroseconds"] =
                 Int(elapsed.seconds) * 1_000_000 + Int(elapsed.attoseconds / 1_000_000_000_000)
+            if diagnosticsEnabled {
+                XCTAssertTrue(AppReleaseChannel.current.isBeta)
+                XCTAssertTrue(app.crashReporting.isEnabled)
+                XCTAssertFalse(app.isOfflineMode)
+                let snapshot = try XCTUnwrap(PerformanceDiagnostics.shared.snapshot())
+                let samples = snapshot.homeUI.reduce(0) { $0 + $1.metrics.samples }
+                let scrollingSamples = snapshot.homeUI.reduce(0) { $0 + $1.metrics.scrollingSamples }
+                let loadingSamples = snapshot.homeUI.reduce(0) { $0 + $1.metrics.loadingSamples }
+                XCTAssertGreaterThan(samples, 0)
+                XCTAssertGreaterThan(scrollingSamples, 0)
+                XCTAssertGreaterThan(loadingSamples, 0)
+                XCTAssertTrue((snapshot.homeRecent + snapshot.homeSlow).contains { $0.operation == .homePublish })
+                counters["homeUISamples"] = samples
+                counters["diagnosticScrollingSamples"] = scrollingSamples
+                counters["diagnosticLoadingSamples"] = loadingSamples
+            }
         }
         return counters
     }

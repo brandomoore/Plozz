@@ -607,6 +607,33 @@ passed twenty-two selected tvOS simulator tests for planning, authorization,
 empty/failure presentation, ordering, and progressive publication. Neither run
 skipped tests; neither represents the full suite or physical-device coverage.
 
+`mobile-home-startup-diagnostics` repeats the startup-scroll workload with the
+production, consent-gated Home observer enabled. Both it and the disabled control
+now explicitly supply an active scene to their manually hosted window; the
+bare hosting controller did not supply the app's active-scene environment.
+Consequently, do not treat older startup-scroll measurements as a matched
+baseline for these fixtures.
+
+Run `b5c51eb7c62d43b4b59f5195e23db572` passed fifty focused correctness cases
+and five measured workloads, without skips. In the same-binary Home controls,
+median total CPU was 6546.955 ms disabled and 6505.209 ms enabled; scroll-window
+CPU was 5643.647 and 5630.512 ms. Maximum scheduling gaps overlapped
+(130.536–174.723 ms disabled, 119.730–199.264 ms enabled). Every retained sample
+completed forty rows, 800 items, 100 requests and 25 scroll targets. Enabled
+samples retained 83–88 observer ticks, including both scrolling and loading,
+plus Home publication evidence. These controls show no increase in median CPU
+for this run, not a performance improvement or proof of hitch-free hardware.
+
+Process residency rose across repeated fixtures even with observation disabled;
+the later enabled run's absolute resident size is not an isolated observer-memory
+comparison. Retention and cancellation are checked separately: fixed history
+capacities, network flooding, owner/consent replacement, inactive/hidden/removed
+Home, invalid measurements, strict redaction and manual attachment export.
+The full diagnostic snapshot workload serialized 156 records (32,097 bytes)
+per snapshot, with a median 159.103 ms CPU for 100 serializations. The observer
+adds no network requests or disk writes; see the
+[sampling limits and interpretation](performance-debugging.md).
+
 `mobile-home-rail-prefetch` updates the real mobile Continue Watching rail 24
 times with the same 180 metadata-rich episodes across twelve synthetic account
 identities. Artwork is preloaded into the test cache and online providers are

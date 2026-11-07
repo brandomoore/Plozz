@@ -1,28 +1,15 @@
 #if canImport(SwiftUI)
+import CoreModels
 import CoreNetworking
 import Foundation
 import SwiftUI
 
-/// Temporary diagnostic: measures how long the **main thread** is actually
-/// blocked, so a "hiccup" can be reported as a number instead of a feeling.
-///
-/// Sentry already tells us a hang happened and that the main thread was inside
-/// SwiftUI's layout engine — but its stack arrives truncated above our frames,
-/// so it never names the screen. This fills that gap: it wakes on the main
-/// actor at a fixed cadence and reports the *overshoot* whenever a tick lands
-/// late, which is exactly the interval the main thread spent unable to run.
-///
-/// Opt-in via `PLZSTALL=1` so it costs nothing unless a diagnosis is underway.
-/// Pair it with `PLZBOOT_STDOUT=1` and
-/// `devicectl device process launch --console` to read the stalls live.
-///
-/// Deliberately timer-free: a `Task.sleep` loop on the main actor measures the
-/// same thing without a RunLoop source, and a blocked main actor delays it in
-/// exactly the way we want to observe.
+/// Main-actor wake-up delay. Scheduling overshoot is neither presented-frame
+/// timing nor proof that the main thread was blocked for that entire interval.
+/// The legacy console probe is separately opt-in through `PLZSTALL=1`.
 @MainActor
 public enum MainThreadStallProbe {
-    /// Wake-up cadence. Short enough to catch a dropped frame or two, long
-    /// enough that the probe itself is not the load being measured.
+    /// Coarse scheduling samples, deliberately slower than display refresh.
     private static let interval: Duration = .milliseconds(100)
 
     /// Only overshoots beyond this are worth a line. One frame at 60 Hz is
@@ -49,6 +36,106 @@ public enum MainThreadStallProbe {
             if context != oldValue {
                 NotificationCenter.default.post(name: contextDidChange, object: nil)
             }
+        }
+    }
+
+    /// A passive sink, deliberately not observable: samples must not invalidate Home.
+    @MainActor
+    final class HomeResponsivenessProbe {
+        var isScrolling = false
+        var isLoading = false
+        private var observation: PerformanceDiagnostics.HomeObservation?
+        private var metrics = PerformanceDiagnostics.HomeUIMetrics()
+
+        func noteHeight(from old: CGFloat, to new: CGFloat) {
+            guard observation?.isCurrent == true, old.isFinite, new.isFinite, old > 0, new >= 0 else { return }
+            let delta = abs(new - old)
+            guard delta >= 0.5 else { return }
+            metrics.heightChanges = min(PerformanceDiagnostics.maximumCount, metrics.heightChanges + 1)
+            metrics.maximumHeightDeltaPoints = max(
+                metrics.maximumHeightDeltaPoints,
+                Int(min(CGFloat(PerformanceDiagnostics.maximumCount), delta.rounded(.up)))
+            )
+        }
+
+        func run(diagnostics: PerformanceDiagnostics) async {
+            guard !Task.isCancelled, let observation = diagnostics.beginHomeObservation() else { return }
+            self.observation = observation
+            metrics = .init()
+            defer {
+                if self.observation === observation {
+                    if metrics.samples > 0 { observation.record(metrics) }
+                    observation.stop()
+                    self.observation = nil
+                    metrics = .init()
+                }
+            }
+            let clock = ContinuousClock()
+            var windowStarted = clock.now
+            while !Task.isCancelled, observation.isCurrent {
+                let started = clock.now
+                do { try await Task.sleep(for: MainThreadStallProbe.interval) } catch { return }
+                guard !Task.isCancelled, observation.isCurrent else { return }
+                let now = clock.now
+                let delay = max(0, min(
+                    PerformanceDiagnostics.maximumMilliseconds,
+                    (started.duration(to: now) - MainThreadStallProbe.interval).milliseconds
+                ))
+                metrics.samples += 1
+                if delay >= PerformanceDiagnostics.homeDelayThresholdMilliseconds { metrics.delayedSamples += 1 }
+                metrics.maximumDelayMilliseconds = max(metrics.maximumDelayMilliseconds, delay)
+                if isScrolling { metrics.scrollingSamples += 1 }
+                if isLoading { metrics.loadingSamples += 1 }
+                let shares = ShareBackgroundActivity.snapshot()
+                metrics.maximumActiveScans = max(metrics.maximumActiveScans, shares.scans)
+                metrics.maximumActiveListers = max(metrics.maximumActiveListers, shares.activeListers)
+                if windowStarted.duration(to: now) >= .seconds(1) {
+                    guard observation.record(metrics) else { return }
+                    metrics = .init()
+                    windowStarted = now
+                }
+            }
+        }
+    }
+
+    @MainActor
+    struct HomeResponsivenessModifier: ViewModifier {
+        let isEnabled: Bool
+        let scope: ObjectIdentifier
+        let isScrolling: Bool
+        let isLoading: Bool
+        let diagnostics: PerformanceDiagnostics
+        @Environment(\.scenePhase) private var scenePhase
+        @State private var probe = HomeResponsivenessProbe()
+
+        init(
+            isEnabled: Bool, scope: ObjectIdentifier, isScrolling: Bool, isLoading: Bool,
+            diagnostics: PerformanceDiagnostics = .shared
+        ) {
+            self.isEnabled = isEnabled
+            self.scope = scope
+            self.isScrolling = isScrolling
+            self.isLoading = isLoading
+            self.diagnostics = diagnostics
+        }
+
+        private struct TaskKey: Equatable {
+            let enabled: Bool
+            let scope: ObjectIdentifier
+        }
+
+        func body(content: Content) -> some View {
+            let key = TaskKey(enabled: isEnabled && scenePhase == .active, scope: scope)
+            content
+                .onChange(of: isScrolling, initial: true) { _, value in probe.isScrolling = value }
+                .onChange(of: isLoading, initial: true) { _, value in probe.isLoading = value }
+                .onScrollGeometryChange(for: CGFloat.self) { $0.contentSize.height } action: { old, new in
+                    probe.noteHeight(from: old, to: new)
+                }
+                .task(id: key) {
+                    guard key.enabled else { return }
+                    await probe.run(diagnostics: diagnostics)
+                }
         }
     }
 
@@ -95,6 +182,15 @@ public func plozzPrintChanges(_ dump: () -> Void) {
 }
 
 public extension View {
+    @MainActor
+    func homeResponsivenessDiagnostics(
+        isEnabled: Bool, scope: ObjectIdentifier, isScrolling: Bool, isLoading: Bool
+    ) -> some View {
+        modifier(MainThreadStallProbe.HomeResponsivenessModifier(
+            isEnabled: isEnabled, scope: scope, isScrolling: isScrolling, isLoading: isLoading
+        ))
+    }
+
     /// Names the screen a main-thread stall should be attributed to. No-op
     /// unless the probe is armed.
     func plozzStallContext(_ name: String) -> some View {

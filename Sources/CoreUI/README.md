@@ -24,6 +24,13 @@ cache that every feature module reuses on tvOS and iOS/iPadOS — guarded behind
 
 ## Responsibility
 
+`homeResponsivenessDiagnostics` passively observes visible mobile Home in
+opted-in diagnostic builds. Its cancellable 100 ms main-actor wake-up sampler
+and content-height callback feed the bounded CoreModels recorder without
+observable state writes or scroll corrections. Scene inactivity, view removal,
+owner replacement and consent revocation stop collection. Scheduling delay is
+not presented-frame timing; see [diagnostic interpretation](../../docs/performance-debugging.md).
+
 `PlozzMetrics.desktop` supplies artwork width limits for the iOS-on-Mac shell
 without scaling touch controls, captions, or overlays with the artwork.
 `fittingDesktopRail` resolves those limits against the content viewport, leaving

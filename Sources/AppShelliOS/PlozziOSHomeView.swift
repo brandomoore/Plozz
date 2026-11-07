@@ -727,6 +727,12 @@ struct PlozziOSHomeView: View {
             .id(ObjectIdentifier(viewModel))
             .scrollClipDisabled()
             .onScrollPhaseChange { _, phase in homeIsScrolling = phase != .idle }
+            .homeResponsivenessDiagnostics(
+                isEnabled: AppReleaseChannel.current.isBeta && appModel.crashReporting.isEnabled
+                    && !appModel.isOfflineMode && homeIsFrontmost && homeHasAppeared && playbackRequest == nil,
+                scope: ObjectIdentifier(viewModel),
+                isScrolling: homeIsScrolling, isLoading: viewModel.isRefreshing
+            )
             .onScrollGeometryChange(for: Bool.self) { geometry in
                 geometry.contentOffset.y > trailerPauseThreshold
             } action: { _, isPastHalfHero in
