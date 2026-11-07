@@ -163,8 +163,8 @@ struct DetailHeroView: View, Equatable {
     /// When provided, a "… left" remaining-time line is shown inside the Play
     /// button, after the progress bar.
     var playRemainingText: String? = nil
-    /// The episode the Play button will play, as `S{n}, E{m}` — appended to the plain
-    /// label ("Play S21, E8") and prefixed to the resume trailing ("S5, E12 • 43m").
+    /// The episode the Play button will play, as `S{n} E{m}` — appended to the plain
+    /// label ("Play S21 E8") and prefixed to the resume trailing ("S5 E12 • 43m").
     /// For a series hero this is the next-up/resume episode's S/E, not the series.
     var playSeasonEpisodeText: String? = nil
     /// When provided, a secondary "Trailer" button is shown next to Play.
@@ -1624,7 +1624,7 @@ struct DetailHeroView: View, Equatable {
         }
     }
 
-    /// The live resume trailing text — `S{n}, E{m} • {remaining}` (or just the
+    /// The live resume trailing text — `S{n} E{m} • {remaining}` (or just the
     /// remaining time for a movie) — when the item has a real partial position
     /// (0 < progress < 1), else `nil`. Used to reserve the Play button's width.
     private var resumeText: String? {

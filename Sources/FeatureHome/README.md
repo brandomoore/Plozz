@@ -802,6 +802,8 @@ records on both platforms; error dialogs, playback routing and timeouts are unch
   `DetailHeroView` / `DetailExtrasView` render the cinematic full-bleed
   backdrop, logo, overview, ratings, cast, and Play/Resume button. Works
   for movies, episodes, and people.
+  Home and detail Play/Resume buttons use the compact `S1 E22` episode label on
+  TV and mobile. Episode metadata elsewhere retains its existing punctuation.
   Explicit episode entries retain that episode as the hero's watched-action
   target. The opening card selects identity, not ongoing watch state: TV and
   mobile resolve the loaded episode with live resume data, never reapplying the
