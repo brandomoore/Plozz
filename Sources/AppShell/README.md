@@ -108,6 +108,12 @@ registry.
   `EmptyPinnedNavigationTests` covers entry, return, cold startup, and retained
   Live TV while switching back to Settings and empty Home.
 
+- **Live TV owns the guide-to-categories directional handoff.** The native guide
+  declares horizontal-input ownership while it has a category exit, so pinned
+  navigation cannot interpret a held Left or swipe as an unused page-edge move.
+  Categories remain outside that ownership: a subsequent Left can open navigation,
+  and Back retains its existing navigation behavior.
+
 - **Signing in does not change the starting page.** TV and mobile navigation
   availability uses the active profile's configured account metadata, not its
   credential-ready playback providers. A pending Plex Home identity or another

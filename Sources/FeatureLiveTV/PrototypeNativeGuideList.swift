@@ -199,9 +199,11 @@ struct PrototypeNativeGuideList<Revision: Equatable, Content: View>: UIViewContr
         }
     }
 
-    final class Controller: UICollectionViewController {
+    final class Controller: UICollectionViewController, HorizontalNavigationInputOwning {
         var parentView: PrototypeNativeGuideList?
         var swiftUIEnvironment: EnvironmentValues?
+        // The category handoff completes on release, after the rail's passive edge check.
+        var ownsHorizontalNavigationInput: Bool { parentView?.leadingExit != nil }
         private var rowIDs: [LiveTVGuideRowID] = []
         private var sectionStarts: [Int] = []
         private var scrollReportScheduled = false

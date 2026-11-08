@@ -100,7 +100,13 @@ struct FocusHostApp: App {
             } else if ProcessInfo.processInfo.arguments.contains("--library-channel-actions") {
                 LibraryChannelActionsFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--navigation-fixture") {
-                NavigationRailFixture { Color.clear }
+                NavigationRailFixture {
+                    if ProcessInfo.processInfo.arguments.contains("--navigation-guide") {
+                        LiveTVCategorySearchFixture()
+                    } else {
+                        Color.clear
+                    }
+                }
             } else if ProcessInfo.processInfo.arguments.contains("--live-jellyfin-home") {
                 LiveJellyfinHomeFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--production-home-fixture") {
