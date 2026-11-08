@@ -753,7 +753,12 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   Caption, overlay and transition-anchor readers update without rebuilding
   the poster's artwork loader or context menu.
   Detail episode cards using system focus attach a `UIContextMenuInteraction`
-  to the poster's enclosing native view, with its artwork as the targeted preview.
+  to the poster's enclosing native view. Its artwork and hosted caption form one
+  targeted preview, so the title and synopsis lift with the thumbnail. Caption
+  presentation remains active until dismissal completes; an older dismissal
+  cannot collapse a newly reopened preview. Keep the existing row spacing and
+  card positions. UIKit still controls preview placement and may nudge an
+  enlarged preview inward at the screen's safe-area edge.
   Keep the interaction off the `UIButton`: button-owned holds intermittently
   stopped reopening after dismissal even without a menu rebuild. Do not
   substitute `UIButton.menu`: its control-menu presentation omits the contextual

@@ -114,11 +114,27 @@ final class NativeFocusRequestHostedTests: XCTestCase {
         XCTAssertEqual(calls, 1, "The old ordered-action scope must no longer execute.")
     }
 
-    func testNativeEpisodeMenuUsesAContextualArtworkPreview() async throws {
+    func testNativeEpisodeMenuUsesAWholeCardPreview() async throws {
         let fixture = try await makeFixture()
         defer { fixture.close() }
+        fixture.window.rootViewController = UIHostingController(rootView:
+            EpisodeColumnCard(item: MediaItem(
+                id: "episode", title: "Episode title", kind: .episode,
+                overview: "The episode description remains below its artwork throughout the native preview."
+            )) {}
+                .environment(\.plozzCardFocusStyle, .system)
+                .frame(width: EpisodeColumnCard.slotWidth, alignment: .topLeading)
+        )
+        try await waitUntil { self.nativePoster(in: fixture.window) != nil }
+        fixture.window.layoutIfNeeded()
         let button = try XCTUnwrap(nativePoster(in: fixture.window))
         let container = try XCTUnwrap(button.superview)
+        let caption = try XCTUnwrap(container.subviews.first { $0 !== button })
+        XCTAssertEqual(button.bounds.width, EpisodeColumnCard.artworkSize.width, accuracy: 1)
+        XCTAssertEqual(button.bounds.height, EpisodeColumnCard.artworkSize.height, accuracy: 1)
+        XCTAssertGreaterThan(caption.bounds.height, 80)
+        XCTAssertEqual(caption.frame.minY, button.frame.maxY, accuracy: 1)
+        XCTAssertEqual(container.bounds.height, caption.frame.maxY, accuracy: 1)
         let coordinator = NativeMediaItemMenuCoordinator()
         coordinator.update(
             .init(item: MediaItem(id: "episode", title: "Episode", kind: .episode),
@@ -137,9 +153,42 @@ final class NativeFocusRequestHostedTests: XCTestCase {
         let dismissal = try XCTUnwrap(coordinator.contextMenuInteraction(
             interaction, configuration: configuration, dismissalPreviewForItemWithIdentifier: configuration.identifier
         ))
-        XCTAssertTrue(highlight.view === button.artworkView)
-        XCTAssertTrue(dismissal.view === button.artworkView)
+        XCTAssertTrue(highlight.view === container)
+        XCTAssertTrue(dismissal.view === container)
         XCTAssertFalse(highlight.view.bounds.isEmpty)
+    }
+
+    func testNativeMenuRetainsCaptionPresentationUntilDismissalCompletes() throws {
+        let coordinator = NativeMediaItemMenuCoordinator()
+        let button = UIButton(type: .custom)
+        let container = UIView()
+        container.addSubview(button)
+        var presented = false
+        coordinator.update(.init(
+            item: MediaItem(id: "episode", title: "Episode", kind: .episode),
+            actions: [.markWatched], perform: { _ in },
+            onPresentationChanged: { presented = $0 }
+        ), locale: .current, button: button, interactionView: container)
+        let interaction = try XCTUnwrap(coordinator.interaction)
+        let configuration = UIContextMenuConfiguration(identifier: nil, previewProvider: nil, actionProvider: nil)
+        coordinator.contextMenuInteraction(interaction, willDisplayMenuFor: configuration, animator: nil)
+        XCTAssertTrue(presented)
+        let dismissal = MenuDismissalAnimator()
+        coordinator.contextMenuInteraction(interaction, willEndFor: configuration, animator: dismissal)
+        XCTAssertTrue(presented, "Caption focus must survive the native rollback animation.")
+        coordinator.contextMenuInteraction(interaction, willDisplayMenuFor: configuration, animator: nil)
+        dismissal.complete()
+        XCTAssertTrue(presented, "An older dismissal cannot collapse a reopened card's caption.")
+        coordinator.update(nil, locale: .current, button: button, interactionView: container)
+        XCTAssertFalse(presented)
+    }
+
+    private final class MenuDismissalAnimator: NSObject, UIContextMenuInteractionAnimating {
+        var previewViewController: UIViewController? { nil }
+        private var completion: (() -> Void)?
+        func addAnimations(_ animations: @escaping () -> Void) { animations() }
+        func addCompletion(_ completion: @escaping () -> Void) { self.completion = completion }
+        func complete() { completion?() }
     }
 
     func testCinematicGuardBlocksNativeDirectionsButAllowsSourceRestoration() async throws {

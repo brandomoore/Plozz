@@ -118,8 +118,13 @@ public extension View {
     /// the environment's action handler. A no-op when no handler is installed or
     /// the item has no available actions.
     /// Set `nativeControl` only when the content owns a `NativeTVPoster` button.
-    func mediaItemContextMenu(for item: MediaItem, nativeControl: Bool = false) -> some View {
-        modifier(MediaItemContextMenu(item: item, nativeControl: nativeControl))
+    func mediaItemContextMenu(
+        for item: MediaItem, nativeControl: Bool = false,
+        onNativePresentationChanged: ((Bool) -> Void)? = nil
+    ) -> some View {
+        modifier(MediaItemContextMenu(
+            item: item, nativeControl: nativeControl, onNativePresentationChanged: onNativePresentationChanged
+        ))
     }
 
     /// Waits for the native menu to dismiss before using this card's navigation origin.
@@ -269,6 +274,7 @@ public struct SeasonWatchStateMenu<MenuLabel: View>: View {
 public struct MediaItemContextMenu: ViewModifier {
     private let item: MediaItem
     private let nativeControl: Bool
+    private let onNativePresentationChanged: ((Bool) -> Void)?
     @Environment(\.mediaItemActionHandler) private var handler
     @Environment(\.mediaItemActionContext) private var context
     @Environment(\.mediaItemNavigator) private var navigator
@@ -279,9 +285,13 @@ public struct MediaItemContextMenu: ViewModifier {
     /// the menu dismiss first, then the task below pushes after a small safety margin.
     @State private var pendingNavigationTarget: MediaItem?
 
-    public init(item: MediaItem, nativeControl: Bool = false) {
+    public init(
+        item: MediaItem, nativeControl: Bool = false,
+        onNativePresentationChanged: ((Bool) -> Void)? = nil
+    ) {
         self.item = item
         self.nativeControl = nativeControl
+        self.onNativePresentationChanged = onNativePresentationChanged
     }
 
     public func body(content: Content) -> some View {
@@ -293,7 +303,8 @@ public struct MediaItemContextMenu: ViewModifier {
                     .environment(\.nativeMediaItemMenu, NativeMediaItemMenu(
                         item: item, actions: actions, context: context,
                         handlerIdentity: handler.map(ObjectIdentifier.init),
-                        navigator: navigator, perform: perform
+                        navigator: navigator, perform: perform,
+                        onPresentationChanged: onNativePresentationChanged
                     ))
                     .mediaItemMenuNavigation(target: $pendingNavigationTarget)
             } else {
@@ -371,6 +382,7 @@ struct NativeMediaItemMenu {
     var handlerIdentity: ObjectIdentifier?
     var navigator: MediaItemNavigator?
     let perform: (MediaItemAction) -> Void
+    var onPresentationChanged: ((Bool) -> Void)? = nil
 }
 
 private struct NativeMediaItemMenuKey: EnvironmentKey {
@@ -393,6 +405,7 @@ final class NativeMediaItemMenuCoordinator: NSObject, UIContextMenuInteractionDe
     private(set) var menu: UIMenu?
     private(set) var interaction: UIContextMenuInteraction?
     private var isPresented = false
+    private var presentationRevision = 0
 
     func update(_ configuration: NativeMediaItemMenu?, locale: Locale, button: UIButton, interactionView: UIView) {
         let siblingsMatch = (self.configuration?.context.orderedSiblings ?? []).elementsEqual(
@@ -407,6 +420,10 @@ final class NativeMediaItemMenuCoordinator: NSObject, UIContextMenuInteractionDe
             || self.configuration?.handlerIdentity != configuration?.handlerIdentity
             || self.configuration?.navigator != configuration?.navigator
         let changed = scopeChanged || self.configuration?.actions != configuration?.actions || self.locale != locale
+        if scopeChanged {
+            presentationRevision += 1
+            self.configuration?.onPresentationChanged?(false)
+        }
         if let interaction, self.button !== button || interaction.view !== interactionView {
             interaction.dismissMenu()
             interaction.view?.removeInteraction(interaction)
@@ -473,14 +490,14 @@ final class NativeMediaItemMenuCoordinator: NSObject, UIContextMenuInteractionDe
         _ interaction: UIContextMenuInteraction, configuration: UIContextMenuConfiguration,
         highlightPreviewForItemWithIdentifier identifier: any NSCopying
     ) -> UITargetedPreview? {
-        artworkPreview()
+        cardPreview()
     }
 
     func contextMenuInteraction(
         _ interaction: UIContextMenuInteraction, configuration: UIContextMenuConfiguration,
         dismissalPreviewForItemWithIdentifier identifier: any NSCopying
     ) -> UITargetedPreview? {
-        artworkPreview()
+        cardPreview()
     }
 
     func contextMenuInteraction(
@@ -488,6 +505,8 @@ final class NativeMediaItemMenuCoordinator: NSObject, UIContextMenuInteractionDe
         animator: (any UIContextMenuInteractionAnimating)?
     ) {
         isPresented = true
+        presentationRevision += 1
+        self.configuration?.onPresentationChanged?(true)
     }
 
     func contextMenuInteraction(
@@ -495,14 +514,23 @@ final class NativeMediaItemMenuCoordinator: NSObject, UIContextMenuInteractionDe
         animator: (any UIContextMenuInteractionAnimating)?
     ) {
         isPresented = false
+        let revision = presentationRevision
+        let complete: @MainActor () -> Void = { [weak self] in
+            guard let self, self.presentationRevision == revision else { return }
+            self.configuration?.onPresentationChanged?(false)
+        }
+        if let animator {
+            animator.addCompletion(complete)
+        } else {
+            complete()
+        }
     }
 
-    private func artworkPreview() -> UITargetedPreview? {
-        guard let button, button.window != nil else { return nil }
-        let artwork = (button as? NativePosterButton)?.artworkView ?? button
+    private func cardPreview() -> UITargetedPreview? {
+        guard let view = interaction?.view, view.window != nil else { return nil }
         let parameters = UIPreviewParameters()
         parameters.backgroundColor = .clear
-        return UITargetedPreview(view: artwork, parameters: parameters)
+        return UITargetedPreview(view: view, parameters: parameters)
     }
 }
 #endif
