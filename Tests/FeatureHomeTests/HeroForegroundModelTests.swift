@@ -95,6 +95,45 @@ final class HeroForegroundModelTests: XCTestCase {
         XCTAssertEqual(cache.presentation(for: item).familyGuidanceAge, 16)
     }
 
+    func testDetailHeroCacheHydratesSeriesMetadataWithoutRatings() {
+        let cache = HeroPresentationCache()
+        var item = MediaItem(id: "show", title: "Show", kind: .series)
+        XCTAssertNil(cache.presentation(for: item).overview)
+        item.overview = "A quiet village beside the ocean."
+        item.taglines = ["Every village has a story."]
+        item.genres = ["Drama"]
+        item.officialRating = "TV-PG"
+        item.productionYear = 2020
+        XCTAssertEqual(
+            cache.presentation(for: item),
+            HeroPresentation(item: item, artworkStyle: .landscape, surface: .detail)
+        )
+        item.overview = nil
+        item.taglines = []
+        XCTAssertNil(cache.presentation(for: item).overview)
+        XCTAssertNil(cache.presentation(for: item).tagline)
+    }
+
+    func testDetailHeroCacheRefreshesSameCountArtworkAndAccountCollisions() throws {
+        let cache = HeroPresentationCache()
+        var first = movie()
+        first.sourceAccountID = "first-account"
+        let original = cache.presentation(for: first)
+        var second = first
+        second.sourceAccountID = "second-account"
+        second.title = "Another server's title"
+        second.logoURL = try XCTUnwrap(URL(string: "https://fixture.invalid/replacement-logo"))
+        let replacement = cache.presentation(for: second)
+        XCTAssertNotEqual(replacement, original)
+        XCTAssertEqual(
+            replacement,
+            HeroPresentation(item: second, artworkStyle: .landscape, surface: .detail)
+        )
+        XCTAssertEqual(cache.presentation(for: first), original)
+        first.logoURL = second.logoURL
+        XCTAssertEqual(cache.presentation(for: first).logoReferences, replacement.logoReferences)
+    }
+
     func testFocusedEpisodeKeepsTheShowsAgeRecommendation() {
         let root = HeroPresentation(
             item: MediaItem(id: "show", title: "Show", kind: .series,

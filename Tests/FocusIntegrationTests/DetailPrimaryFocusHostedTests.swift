@@ -61,6 +61,71 @@ final class DetailPrimaryFocusHostedTests: XCTestCase {
         }
     }
 
+    func testEpisodeContextHydratesAnUnratedSeriesHeaderAfterFirstPaint() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
+        let gate = PrimaryFocusLoadGate()
+        let provider = PrimaryFocusProvider(kind: .series, gate: gate, includesSeriesRatings: false)
+        let episode = MediaItem(
+            id: "primary-episode", title: "First episode", kind: .episode,
+            overview: "The murderer is revealed.", parentTitle: provider.seed.title,
+            seasonNumber: 1, episodeNumber: 1, seriesID: provider.seed.id,
+            allowsTitleBasedMetadataMatching: false, sourceAccountID: "fixture"
+        )
+        let environment = DetailOpenEnvironment(
+            resolveProvider: { _ in provider }, resolveOptionalProvider: { _ in provider },
+            identitySources: { _ in [] }, crossServerSourceResolver: nil,
+            onlineTrailerResolver: { _ in [] }
+        )
+        let detail = try environment.makeSeriesContextViewModel(
+            seriesID: provider.seed.id, seed: episode, sourceAccountID: "fixture", originAccountID: nil
+        )
+        let model = PrimaryFocusModel(mode: .ready)
+        defer {
+            detail.suspendEnrichment()
+            Task { await gate.release() }
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        window.rootViewController = UIHostingController(rootView:
+            ItemDetailView(
+                viewModel: detail, spoilerSettings: .default, onPlay: { _ in }, onSelectChild: { _ in },
+                initialEpisode: episode
+            )
+            .environment(model.trailer)
+            .environment(model.background)
+            .mediaItemActionHandler(model.actions)
+            .environment(\.themePalette, .dark)
+            .environment(\.locale, Locale(identifier: "en_US"))
+            .environment(\.scenePhase, .active)
+            .preferredColorScheme(.dark)
+        )
+        window.makeKeyAndVisible()
+        func visibleText() throws -> String {
+            let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+                window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+            }
+            let request = VNRecognizeTextRequest()
+            request.recognitionLanguages = ["en-US"]
+            try VNImageRequestHandler(cgImage: XCTUnwrap(image.cgImage)).perform([request])
+            return (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ")
+        }
+        try await waitUntil { try visibleText().contains(provider.seed.title) }
+        XCTAssertNil(detail.state.value?.item.overview)
+        capture(window, name: "unrated-series-before-parent")
+        await gate.release()
+        try await waitUntil { detail.state.value?.item.overview == provider.seed.overview }
+        try await waitUntil { try visibleText().contains("quiet village") }
+        let text = try visibleText()
+        XCTAssertTrue(text.contains("quiet village"), text)
+        XCTAssertFalse(text.contains("murderer"), text)
+        XCTAssertTrue(detail.state.value?.item.ratings.isEmpty == true)
+        capture(window, name: "unrated-series-after-parent")
+    }
+
     func testActualTVHeroTrailerButtonsNeverShowText() async throws {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
         let previous = scene.windows.first(where: \.isKeyWindow)
@@ -499,11 +564,16 @@ private struct PrimaryFocusProvider: MediaProvider {
     let mediaKind: MediaItemKind
     let gate: PrimaryFocusLoadGate
     let holdsResume: Bool
+    let includesSeriesRatings: Bool
 
-    init(kind: MediaItemKind, gate: PrimaryFocusLoadGate, holdsResume: Bool = false) {
+    init(
+        kind: MediaItemKind, gate: PrimaryFocusLoadGate, holdsResume: Bool = false,
+        includesSeriesRatings: Bool = true
+    ) {
         mediaKind = kind
         self.gate = gate
         self.holdsResume = holdsResume
+        self.includesSeriesRatings = includesSeriesRatings
     }
 
     var kind: ProviderKind { .jellyfin }
@@ -520,7 +590,8 @@ private struct PrimaryFocusProvider: MediaProvider {
                   parentTitle: mediaKind == .episode ? "Fixture Show" : nil,
                   seriesID: mediaKind == .episode ? "fixture-show" : nil,
                   runtime: 1800,
-                  ratings: mediaKind == .series ? [.init(source: .imdb, value: 8.7, scale: .outOfTen)] : [],
+                  ratings: mediaKind == .series && includesSeriesRatings
+                      ? [.init(source: .imdb, value: 8.7, scale: .outOfTen)] : [],
                   allowsTitleBasedMetadataMatching: false, sourceAccountID: "fixture")
     }
     func item(id: String) async throws -> MediaItem {
