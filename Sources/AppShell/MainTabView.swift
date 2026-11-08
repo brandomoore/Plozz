@@ -2057,7 +2057,8 @@ struct MainTabView: View {
         let scopedAccounts = currentAccounts()
         if !railLibraries.isEmpty { railLibrariesLoaded = true }
         let loaded = await discovery.refreshNavigationLibraries(
-            from: scopedAccounts, navigation: navigation, settings: librariesStore,
+            from: scopedAccounts, expectedAccountIDs: Set(accountsProviders.navigationAccounts.map(\.id)),
+            navigation: navigation, settings: librariesStore,
             changedAccountID: changedAccountID,
             isCurrent: {
                 navigationStyleModel === navigation

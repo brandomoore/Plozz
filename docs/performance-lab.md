@@ -458,6 +458,66 @@ from a fixed 5 ms Plex metadata delay, checks that every selection reaches the
 PIN gate, and verifies tokens remain denied. It measures activation work, not
 rendered frame pacing or physical-device network latency.
 
+`mobile-profile-library-selection` mounts the production mobile Libraries page
+for a new profile with twenty synthetic servers and 120 libraries. Each sample
+performs four native switch changes at 400 ms intervals and twelve library
+visibility changes through the production model at 30 ms intervals, requiring
+the final account/library choices and discovered inventory to remain correct.
+It counts provider constructions, library requests, and the maximum scheduling
+gap of a 2 ms main-actor heartbeat. The separate rapid-switch regression checks
+immediate persistence, retained library choices, and isolation after switching
+profiles without waiting for each switch animation.
+
+On the same iPhone 17 Pro / iOS 26.2 simulator workload, baseline run
+`4f640e9e798f4016a152d0618e1223b2` and candidate
+`6f2cadd6d0284bcba79c038108c1a3c8` reduced provider constructions per sample from
+78 to 2, median app-process CPU from 791.870 to 442.337 ms, and the median
+per-sample maximum main-actor gap from 59.967 to 33.520 ms. Five retained samples
+followed one warmup. Membership edits now retain unrelated providers, mobile
+switches no longer queue delayed writes, and full identity scans wait for setup
+completion. Library-name discovery still refreshes the selected sources; this
+is not per-account result caching. Fixed input pacing dominates wall time, and
+heartbeat gaps are not tap latency or presented-frame timing. This fixture has
+no real share/server traffic and does not establish smoothness on a physical
+device or in the full onboarding flow.
+
+`mobile-profile-library-shell` closes that coverage gap by mounting the real
+mobile root and new-profile setup cover around the same twenty-server,
+120-library selection workload. Synthetic Home requests take 150 ms; no real
+network or share scanning is involved. It counts Home feed and library-name
+requests separately. The isolated Libraries-page scenario above missed Home
+fan-out and native tab reconstruction behind the cover, so its improvement did
+not establish that the full app was responsive.
+
+On the same iPhone 17 Pro / iOS 26.2 simulator, matched baseline
+`370aaf8455f54371a589bfdaf838f75f` and candidate
+`27b420be6a054a77a9f58d7b7beefea7` used one warmup and five retained samples:
+
+| Metric | Baseline median | Candidate median |
+| --- | ---: | ---: |
+| App-process CPU | 3742.311 ms | 583.862 ms |
+| Wall time | 4625.830 ms | 1998.593 ms |
+| Home feed requests | 314 | 0 |
+| Library-name requests | 251 | 78 |
+| Per-sample maximum main-actor scheduling gap | 493.829 ms | 40.869 ms |
+
+Candidate maximum scheduling gaps ranged from 37.820 to 55.877 ms. Home loading
+is now explicitly suspended while setup/Settings owns the screen, replaced Home
+models are invalidated immediately, and unfinished setup does not construct
+hidden tabs. Merely suspending requests left a 155.086 ms median maximum gap in
+an intermediate candidate; interaction stack sampling identified the covered
+tab catalogue as additional work. The final comparison excludes profiling
+overhead. Its roughly 1960 ms fixed input cadence dominates candidate wall time.
+Heartbeat gaps still are not touch latency or presented-frame timing, and this
+synthetic simulator result does not establish physical-device smoothness.
+
+After adding setup/Settings resumption and model-retirement correctness controls,
+final-source confirmation run `7b605fc421e04e189e6ab26bb5edf761` again recorded
+zero Home requests and 78 library-name requests in every retained sample.
+Maximum scheduling gaps ranged from 43.456 to 60.019 ms; median CPU was
+614.833 ms. The added correctness tests changed the fixture fingerprint, so this
+is a confirmation run, not another automated matched-baseline comparison.
+
 `mobile-profile-picker-entrance` mounts the production sixteen-profile touch
 picker in an iPad-sized window. It verifies the heading appears before avatars,
 a visible stagger, and substantially settled avatars within 1.5 seconds (450 ms
@@ -473,7 +533,106 @@ and no page-height change. It uses synthetic items without remote artwork:
 this is loading-layout and app-process CPU evidence, not provider/network,
 image-decoding, full Home startup, or presented-frame/FPS evidence.
 `HomeLoadingLayoutTests` separately checks empty-row removal, insertion, content
-insets, library/featured placeholders, and existing heading geometry.
+insets, library/featured placeholders, and existing heading geometry. Its row-slot
+matrix compares reserved height with actual loading and populated content within
+0.5 points across phone/tablet widths, card shapes/styles, captions, and large
+text. Failure/retry transitions must retain that height. Separate Continue
+Watching, featured, and Live TV cases cover their distinct geometry; native
+animated scrolling must reach its target without offset reversal while rows
+change between content and errors. This is UIKit animation, not physical
+drag/deceleration evidence.
+
+`mobile-home-multi-server-loading` mounts the production mobile Home page and
+model with twenty synthetic providers, forty server rows and 800 items. Provider
+responses arrive progressively while eight animated vertical scroll targets are
+sent; a ninth target verifies navigation after all rows finish. Every row must
+settle without error and retain all its items. The two-millisecond heartbeat
+reports main-actor scheduling gaps, not touch latency or presented frames. This
+includes model publication and eager page layout, but not the complete tab shell,
+remote artwork, real network transport, share scanning or physical-device pacing.
+
+For the forty-row workload, limiting mobile loading-rail shimmer to the visible
+viewport retained all 800 items, 100 provider requests and nine scroll targets.
+Matched iPhone 17 Pro simulator runs `bc41d4e554f34579abbf528147c073b5` and
+`3ff439011813430384a2e6e494b7f11c` reduced median app-process CPU from 3856.652
+to 2717.529 ms and wall time from 8042.028 to 2932.224 ms. The median of each
+sample's maximum main-actor scheduling gap fell from 905.030 to 214.146 ms;
+the candidate range was 202.327–219.082 ms, not hitch-free rendering.
+Resident memory was essentially unchanged. A separate bounded process sample
+attributed the baseline to SwiftUI graph/render work and RenderBox/Core Animation
+surface commits, not expensive provider callbacks. That instrumented run is not
+included in timing comparisons. Later animation/Reduce Motion correctness tests
+are separate from this matched fixture pair. Physical-device behavior and real
+share/background workloads remain outside this scenario.
+
+`mobile-home-multi-server-startup-scroll` keeps the same twenty-provider,
+forty-row workload loading throughout 24 animated full-page scroll targets.
+Responses are staggered, artwork uses a warmed synthetic local cache, and all
+800 items and 100 requests must finish before the sample succeeds. Separate
+scroll-window CPU, wall time and heartbeat gaps exclude mounting and final
+scroll verification. `mobile-home-multi-server-scroll` is the negative control:
+it traverses the same page only after content finishes loading. Neither mounts
+the complete root shell or reproduces real share scans, network image decoding,
+slow-provider failures, or physical-device presented-frame timing.
+
+Matched startup-scroll runs `4019d336b4b041708f291bb8c258f96c` and
+`b6cd29350be84d0e9de813b972c764fc` retained the same completed work and 24
+scroll targets during loading. Lazy horizontal placeholders and a stable
+library-row rendering boundary reduced median total CPU from 6103.226 to
+5220.285 ms; scroll-window CPU fell from 5317.490 to 4527.785 ms. The median of
+per-sample maximum main-actor gaps fell from 267.068 to 97.887 ms, not to zero.
+An intermediate plain row extraction increased CPU and was discarded; the
+retained boundary compares complete row inputs rather than changing data
+loading or ignoring provider results. Geometry/settings regressions are
+separate correctness runs, not additional timing samples.
+Final-source confirmation `bb474979c865483a8f77da9e32ee2aab` completed all three
+twenty-server scenarios. Startup-scroll maximum gaps ranged from 93.202 to
+192.052 ms, versus 11.573 to 15.915 ms for settled scrolling; this remains a
+startup improvement, not evidence that every loading hitch has been eliminated.
+
+Stable-row confirmation run `a26271e20b02410aad2ff407b6502c28` completed the
+loading-layout, startup-scroll, and settled-scroll scenarios after removing
+custom scroll-position compensation. All five loading-layout samples reported
+zero page-height change. Every twenty-server sample retained forty completed
+rows, 800 items, and 100 requests; startup samples issued all 24 targets during
+loading. Startup maximum scheduling gaps ranged from 97.301 to 158.016 ms;
+settled-scroll gaps ranged from 13.506 to 15.033 ms. Median startup CPU was
+5556.280 ms. These are confirmation measurements, not proof of hitch-free
+scrolling or a matched speedup: new regression fixtures changed the fingerprint
+relative to pre-change run `4abfd4070ca84049bbf574b9125278f4`.
+Hosted correctness run `ac1c7b8bb3ca44d6aba11c9b541dcfce` passed seventeen
+selected tests, including reservation before any provider response and
+content/failure geometry. Shared-core run `c8d439cf89e04c43aa90fb55846a0ff0`
+passed twenty-two selected tvOS simulator tests for planning, authorization,
+empty/failure presentation, ordering, and progressive publication. Neither run
+skipped tests; neither represents the full suite or physical-device coverage.
+
+`mobile-home-startup-diagnostics` repeats the startup-scroll workload with the
+production, consent-gated Home observer enabled. Both it and the disabled control
+now explicitly supply an active scene to their manually hosted window; the
+bare hosting controller did not supply the app's active-scene environment.
+Consequently, do not treat older startup-scroll measurements as a matched
+baseline for these fixtures.
+
+Run `b5c51eb7c62d43b4b59f5195e23db572` passed fifty focused correctness cases
+and five measured workloads, without skips. In the same-binary Home controls,
+median total CPU was 6546.955 ms disabled and 6505.209 ms enabled; scroll-window
+CPU was 5643.647 and 5630.512 ms. Maximum scheduling gaps overlapped
+(130.536–174.723 ms disabled, 119.730–199.264 ms enabled). Every retained sample
+completed forty rows, 800 items, 100 requests and 25 scroll targets. Enabled
+samples retained 83–88 observer ticks, including both scrolling and loading,
+plus Home publication evidence. These controls show no increase in median CPU
+for this run, not a performance improvement or proof of hitch-free hardware.
+
+Process residency rose across repeated fixtures even with observation disabled;
+the later enabled run's absolute resident size is not an isolated observer-memory
+comparison. Retention and cancellation are checked separately: fixed history
+capacities, network flooding, owner/consent replacement, inactive/hidden/removed
+Home, invalid measurements, strict redaction and manual attachment export.
+The full diagnostic snapshot workload serialized 156 records (32,097 bytes)
+per snapshot, with a median 159.103 ms CPU for 100 serializations. The observer
+adds no network requests or disk writes; see the
+[sampling limits and interpretation](performance-debugging.md).
 
 `mobile-home-rail-prefetch` updates the real mobile Continue Watching rail 24
 times with the same 180 metadata-rich episodes across twelve synthetic account
@@ -483,6 +642,147 @@ waiting for each hosting-graph update. It isolates repeated layout/prefetch-key
 work, not twelve connected servers, profile-transition frame pacing or hardware
 scrolling. `watchlist-artwork-rehydration` separately exercises the production
 Plex/Jellyfin credential-restoration path, checking every title and cast image.
+
+### Unchanged multi-server identity verification
+
+A confirmed 30.093-second physical iPhone Home-scrolling trace showed about
+27.307 CPU seconds on the main thread and 116.531 CPU seconds across the app.
+Main-thread samples were dominated by SwiftUI/AttributeGraph updates; background
+stacks included identity snapshot construction, title-component labeling and
+Home reenrichment. The reproduction included a roughly 1.993-second hang.
+Stable page height in the preceding diagnostic report did not prevent stutter.
+These are captured costs, not proof that one subsystem explains every hitch.
+
+`identity-unchanged-servers` restores 4,000 movie memberships across twenty
+synthetic Plex/Jellyfin accounts, then verifies every account through the real
+identity-index runtime. All forty library/catalog requests must finish and the
+twenty-source union must remain available. It excludes rendering, network I/O,
+Silo detail enrichment and filesystem scanning.
+
+Matched iPhone 17 Pro simulator runs `2567af589b924de4910ec7f6d82336b7` and
+`0ce600e0ad46494dbc927b12ea24e105` used one discarded warmup and five retained
+samples. Median app-process CPU fell from 713.587 to 249.827 ms; wall time fell
+from 646.702 to 191.864 ms. Publications fell from 21 to one, with all twenty
+accounts and forty requests retained. The candidate still restores immediately,
+verifies each server, advances freshness and persists once per wave. Identical
+account rebuilds now retain the cached snapshot; revision checks suppress
+duplicate/out-of-order notifications without comparing the full index on MainActor.
+Real membership, metadata and account-removal changes remain progressive.
+
+Median resident size was 362,758,144 bytes before and 334,512,128 afterward;
+allocation history makes this informational, not an isolated memory saving.
+The tradeoff is actor-side equality over the completed account bucket instead
+of rebuilding the entire cross-server graph and invalidating its consumers.
+Cancellation still preserves last-known membership and rejects superseded
+publication. Additional correctness cases cover all 4,000 memberships, freshness,
+metadata-only changes, empty results, account pruning and reset/live lookup.
+They were added after the matched pair. This is measured redundant-work removal,
+not evidence that the physical iPhone's remaining scrolling stutter is eliminated.
+The old account-count publication guard also suppressed confirmed removals when
+an account became empty. Revision ordering permits those updates; restore/race
+fixtures use a failed library lookup to model an unavailable server rather than
+a successful, authoritative empty inventory.
+
+Confirmation run `1105779dd73d40e38742d6164bf35b60` passed 52 core cases and the
+mobile startup-scroll workload; all forty rows, 800 items and 100 requests
+completed. Maximum scheduling gaps remained 139.585-163.227 ms in that synthetic
+Home workload, which does not include real identity scanning. Final tvOS run
+`84afde8aceeb4c1d8b0b153e003b8f90` passed 78 selected identity, lifecycle and
+reenrichment cases. iOS run `0323007ac3044f5b9b9dac238df722f6` passed the six
+final refresh cases, including confirmed-empty inventory. None skipped tests.
+No new physical-device run or installation is included in this confirmation.
+
+`HomeSettingsReturnTests` mounts the real mobile root with twenty synthetic
+servers, opens its Settings sheet for two seconds, then dismisses it without
+changing preferences. Response gates distinguish a completed forty-row Home
+from an unfinished Home with two loaded rows. Both cases retain the same
+profile/account-scoped model and pause Home requests while Settings is visible.
+The completed case must not refetch feeds; the unfinished case must retain its
+cards throughout the resumed request window, then finish all forty rows and
+800 items. Cloud sync is disabled and restored by this unsigned-host fixture;
+an active scene otherwise invokes production CloudKit foreground work.
+
+Baseline `3c2b4ceb5afd49a4a943d7ca0828880a` preserved completed Home but replaced
+both already-loaded partial rows with placeholders. The model still held the
+cards: resumption marked the rows loading, and presentation chose skeletons.
+Library and collection progress also needed to retain previously published
+sections until their replacement requests settled. Candidate
+`3246b411e2eb4d8fba23cd14a68dc982` recorded zero placeholder regressions in both
+cases and passed all eight selected mobile tests, including startup scrolling
+and Settings/profile ownership. Shared tvOS run
+`f2cc44425ec64d70a184a57e0765ed45` passed 69 cases, covering cold-cache freshness,
+cancellation, changed visibility, live global/library/collection retention for
+synthetic Jellyfin and Plex providers, and authoritative empty replacements.
+No tests skipped. These are content-continuity and completed-work checks, not
+physical-device frame-pacing evidence; incomplete loads still restart their
+cancelled aggregation rather than checkpointing individual provider requests.
+
+The startup-scroll fixture also has `mobile-home-one-server-startup-scroll`
+and `mobile-home-three-server-startup-scroll` controls. All three use the same
+page, per-server content, response delays, warm artwork and 24 input targets.
+A response gate opens when the page is mounted, so fast providers are not
+artificially slowed to fill the scrolling window. First-row and all-row times
+are observed by the main-actor heartbeat independently of the input loop.
+The one-server page fits the viewport: its scrollable distance is zero, so it
+measures loading/presentation overhead, not a long one-server scrolling page.
+The three- and twenty-server pages traverse 1173 and 9860 points, respectively.
+
+Six bounded process samples in `4333b0a502754dd499a31748b431102c` were verified
+against the owned simulator PID and timestamped loading-window boundaries.
+Their complete capture intervals exclude fixture construction and the next
+sample's setup. SwiftUI transaction updates and AttributeGraph dominate the
+non-waiting main-thread stacks; provider aggregation does not. These are stack
+samples, including waits, not CPU milliseconds. The earlier Instruments attempt
+`af2621228c354e249d68b1802e1737b8` did not finalize and is not attribution evidence.
+
+Mobile row slots now keep exact eager sizing but use native lazy layout for
+their contents. The sizing view receives only stable presentation inputs,
+not the row's media payload. The measured height is also the lazy child's
+layout proposal; otherwise landscape captions can shrink inside the slot.
+This avoids constructing and updating every offscreen rail as responses arrive,
+without estimating page heights or adjusting scroll offsets.
+
+Final matched control `0a2d9aa98ba64a0bbe859c96730131bb` uses the original
+renderer with the final fixtures. Candidate `ccf3f8dd664f4c2fb458d7d121603822`
+uses identical fixtures, scenario order and runner settings. The original
+pre-change baseline `3aaeca701e804bd28c66aa9a7f46fd75` preceded the added
+geometry regressions; the later control avoids comparing different fixture
+fingerprints. Comparison `b6b2d487c721400e8c11f6ba5e832e89` is within budget.
+Each value below is the median of five retained samples after one warmup:
+
+| Servers | Total app CPU, ms | Maximum UI scheduling gap, ms | All rows ready, ms |
+| --- | --- | --- | --- |
+| 1 | 1054.562 to 1002.919 | 24.410 to 25.938 | 335.038 to 335.080 |
+| 3 | 2098.941 to 2121.619 | 30.235 to 30.481 | 757.729 to 750.238 |
+| 20 | 6199.501 to 4883.714 | 121.443 to 58.299 | 9967.883 to 9890.176 |
+
+Twenty-server scroll-window CPU fell from 5313.135 to 4274.084 ms. All forty
+rows, 800 items and 100 tracked provider requests still finish. The faster input
+loop ends with 38 rather than forty rows ready, then awaits the remaining two;
+this is not dropped content. Resident snapshots were 996.7 versus 941.6 MiB,
+not allocation or leak measurements. No provider concurrency, data-request
+ordering, persistence or cancellation policy changed. Artwork work can now
+start later, when an offscreen rail approaches the viewport; these warm-artwork
+fixtures do not quantify real network/image I/O.
+
+The candidate's twenty-server maximum gaps ranged from 56.887 to 74.175 ms.
+One one-server sample had a 279.830 ms scheduling outlier before its first
+response; it remains in the evidence. A separate final-source confirmation
+reported one-server maxima of 20.7–33.8 ms. Small-server median readiness and
+CPU remain comparable, but these results do not prove zero hitches or identical
+tail latency under every host load.
+
+Final-source confirmation `4a3e0ab953b04c5cb26aecfbd99b8072` passed seventeen
+selected hosted tests without skips: four performance scenarios plus thirteen
+geometry, deferred-mounting and Settings-continuity regressions. The new
+forty-row case verifies every footprint exists immediately, distant rail content
+does not mount when its data arrives, and native navigation mounts that content
+without changing page height. The shape/caption/large-text matrix reads current
+rendered bounds on retry, not a cached geometry-change callback from the previous
+error view. Settled twenty-server scrolling completed with maximum gaps of
+42.6–45.6 ms; this is confirmation, not a matched settled-scroll speedup.
+Deferred construction still costs work when rows approach the viewport.
+No new physical-device capture or installation is included.
 
 `mobile-video-glow` measures the light inline video preview in 2.3-second
 windows against the existing 160-by-90 continuity fixture. Require the same
@@ -767,6 +1067,17 @@ without pretending a sample count measures frame smoothness.
 | `diagnostics` | 10,000 operation attempts with recording disabled/enabled, plus 100 bounded snapshot encodes. Measures recorder and event-time serialization overhead without starting Sentry or creating uploads. |
 | `network` | `catalog-cached-refresh`: 1,000-channel loopback M3U import with a 100-ms header delay, then an expired-catalog refresh held while three cached reads complete. Verifies one refresh and actual replacement visibility. Cold/cached foreground timings are separate counters; whole-cycle wall time includes setup, controlled waiting and settling. No external playlist or stream links are fetched. |
 
+`silo-identity-modern`, `silo-identity-legacy`, and `silo-identity-mixed` in the
+`network` suite load 200 series through the native Silo catalog, then run shared
+identity enrichment alongside a 20-card native Home request. The synthetic HTTP
+client adds 75 ms per request. Modern cards declare all known external IDs;
+legacy cards expose only an encoded anchor; mixed pages contain 40 legacy cards.
+Every sample must finish all 200 IMDb/TMDB/TVDB ownership matches and preserve
+the exact Home order. Counters separate catalog, detail and Home requests and
+peak concurrency. These measure completed indexing with competing Home work,
+not Home first-pixel timing, real-server rate limits, DNS or physical devices.
+Refusal/cooldown behavior is covered separately by correctness tests.
+
 `live-tv-schedule-sync` uses the real automatic planner for 4,000 films and five
 distinct channels, then changes only genre/studio spelling. It measures retained
 snapshot records while checking that published broadcasts are preserved.
@@ -927,6 +1238,43 @@ changes, artwork state, active/retained guide, playback, slow/offline provider)
 and its positive controls when evidence calls for it. Keep cold startup, warm
 steady state, and changed-data workloads separate. Preserve equal first-class
 Plex/Jellyfin coverage when an optimization reaches provider behavior.
+
+### Many-share scan pressure
+
+Run `--scenario multi-share-scanning` on either simulator platform. Twenty
+production catalog/scanner lifecycles each index 24 folders with eight files,
+using synthetic transport sessions with 30-ms directory latency. Every sample
+must finish all 20 scans, 500 directory listings, and 3,840 assets while bounded
+cached reads and main-actor scheduling probes continue. It uses no credentials,
+external metadata, real SMB/WebDAV server, artwork rendering, or app-shell
+navigation. It reproduces scan fan-out, not a physical-device freeze.
+
+With Xcode 27.2 and iOS/tvOS 26.2, the unbounded coordinator reached **80 concurrent
+listings** on both platforms. A two-scan shared budget reduced that to **8** in
+every retained sample, with identical completed work:
+
+| Simulator | Scan-cycle median, before / after | App CPU median, before / after |
+| --- | --- | --- |
+| iPhone 17 Pro | 597 / 2,598 ms | 2,261 / 1,802 ms |
+| Apple TV 4K third generation | 622 / 2,592 ms | 2,436 / 1,810 ms |
+
+This is intentional background throughput reduction, not a faster full scan.
+The generic comparison correctly flags the longer wall time as a regression;
+its threshold was not relaxed. Median per-window maximum cached-read latency
+fell from 6.8 to 1.4 ms on iPhone and 5.4 to 1.8 ms on TV, but one candidate
+iPhone window reached 271 ms. No consistent worst-case foreground-latency
+improvement is established. Main-actor probe maxima stayed below 1.1 ms;
+the fixture does not establish scrolling FPS, presented-frame timing, or
+responsiveness of the reported real profile. Resident snapshots were broadly
+unchanged and are not peak allocation measurements.
+
+Retained baseline/candidate runs are
+`2a05f812ff7d4f939cfe916a737b6e1a` / `6a756515ae754b3687500f972d1101a8`
+(iPhone) and
+`8a810882dda345c0999dd3b837a40983` / `4169cd4543244dc78d1b893f56822f05`
+(TV). Correctness tests additionally hold scan I/O and teardown open to verify
+queueing, cached reads, playback priority, profile cancellation/resumption,
+shared browsing pacing, and capacity retention until transport drain completes.
 
 ## Evidence contract
 

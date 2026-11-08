@@ -21,35 +21,29 @@ struct PlayerSongLayout<Content: View>: View {
     @ViewBuilder var content: () -> Content
     @Environment(\.playerCardMetrics) private var metrics
 
+    private var song: SongMatch? {
+        guard enabled, case let .found(song) = state else { return nil }
+        return song
+    }
+
     var body: some View {
-        Group {
-            if enabled {
-                let artSize = PlayerSongCard.artworkSize(for: metrics)
-                let layout = metrics.isVertical
-                    ? AnyLayout(VStackLayout(spacing: 12))
-                    : AnyLayout(HStackLayout(alignment: .top, spacing: 16))
-                layout {
-                    content()
-                    Group {
-                        if case let .found(song) = state {
-                            PlayerSongCard(song: song, focus: $focus)
-                        } else {
-                            // Reserve geometry without constructing hidden artwork or glass.
-                            Color.clear.accessibilityHidden(true)
-                        }
-                    }
+        let artSize = PlayerSongCard.artworkSize(for: metrics)
+        let layout = metrics.isVertical
+            ? AnyLayout(VStackLayout(spacing: 12))
+            : AnyLayout(HStackLayout(alignment: .top, spacing: 16))
+        layout {
+            content()
+            if let song {
+                PlayerSongCard(song: song, focus: $focus)
                     .frame(
                         width: metrics.isVertical ? nil : artSize * 2 + metrics.columnSpacing + metrics.contentPadding * 2,
                         height: artSize + metrics.contentPadding * 2
                     )
                     .frame(maxWidth: metrics.isVertical ? .infinity : nil)
-                }
-            } else {
-                content()
             }
         }
-        .onChange(of: state) { _, state in
-            if state == .idle, focus == .infoSong { focus = .infoStats }
+        .onChange(of: song != nil) { _, isVisible in
+            if !isVisible, focus == .infoSong { focus = .infoStats }
         }
     }
 }
@@ -59,6 +53,7 @@ struct PlayerSongCard: View {
     @FocusState.Binding var focus: PlayerControls.FocusSlot?
     @Environment(\.playerCardMetrics) private var metrics
     @Environment(\.playerControlForeground) private var foreground
+    @Environment(\.playerUsesNativeGlass) private var usesNativeGlass
     @Environment(\.openURL) private var openURL
 
     static func artworkSize(for metrics: PlayerCardMetrics) -> CGFloat {
@@ -68,21 +63,42 @@ struct PlayerSongCard: View {
     var body: some View {
         Group {
             if let url = song.appleMusicURL {
-                Button { openURL(url) } label: { label }
-                    #if os(tvOS)
-                    .plozzNativeMediaButtonStyle()
-                    #else
+                #if os(tvOS)
+                Group {
+                    if #available(tvOS 26.0, *), usesNativeGlass {
+                        GeometryReader { geometry in
+                            Button { openURL(url) } label: {
+                                Color.clear.overlay {
+                                    // The card owns its insets, not the native button's text margins.
+                                    label.frame(width: geometry.size.width, height: geometry.size.height)
+                                }
+                            }
+                            .buttonStyle(.glass)
+                            .frame(width: geometry.size.width, height: geometry.size.height)
+                        }
+                    } else {
+                        Button { openURL(url) } label: { panelLabel }
+                            .buttonStyle(.card)
+                    }
+                }
+                .buttonBorderShape(.roundedRectangle(radius: metrics.panelCornerRadius))
+                .focused($focus, equals: .infoSong)
+                #else
+                Button { openURL(url) } label: { panelLabel }
                     .buttonStyle(.plain)
-                    #endif
                     .focused($focus, equals: .infoSong)
+                #endif
             } else {
-                label
+                panelLabel
             }
         }
-        .modifier(PanelGlassBackground(cornerRadius: metrics.panelCornerRadius, mediaGlass: true))
         .plozzFocusSection()
         .accessibilityElement(children: .ignore)
         .accessibilityLabel([song.title, song.artist].compactMap { $0 }.joined(separator: ", "))
+    }
+
+    private var panelLabel: some View {
+        label.modifier(PanelGlassBackground(cornerRadius: metrics.panelCornerRadius, mediaGlass: true))
     }
 
     private var label: some View {
@@ -105,21 +121,23 @@ struct PlayerSongCard: View {
             .clipShape(RoundedRectangle(
                 cornerRadius: PlozzTheme.Metrics.mediumMediaCornerRadius, style: .continuous
             ))
+            .plozzMediaEdge(cornerRadius: PlozzTheme.Metrics.mediumMediaCornerRadius)
             .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 5) {
                 Text(verbatim: song.title)
                     .font(.system(size: metrics.bodySize, weight: .semibold))
-                    .lineLimit(2)
+                    .lineLimit(nil)
                     .fixedSize(horizontal: false, vertical: true)
                 if let artist = song.artist {
                     Text(verbatim: artist)
                         .font(.system(size: metrics.captionSize))
                         .foregroundStyle(.secondary)
-                        .lineLimit(1)
+                        .lineLimit(nil)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
             .foregroundStyle(foreground)
+            .multilineTextAlignment(.leading)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(metrics.contentPadding)

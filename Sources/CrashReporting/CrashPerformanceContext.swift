@@ -17,11 +17,59 @@ enum CrashPerformanceContext {
               let recent = raw["recent"] as? [Any], recent.count <= PerformanceDiagnostics.maximumRecent,
               let slow = raw["slow"] as? [Any], slow.count <= PerformanceDiagnostics.maximumSlow
         else { return nil }
-        return [
+        var safe: [String: Any] = [
             "schema": 1, "elapsedMilliseconds": elapsed, "maxActive": maxActive, "dropped": dropped,
             "active": active.compactMap { record($0, active: true, slow: false, elapsed: elapsed, maxActive: maxActive) },
             "recent": recent.compactMap { record($0, active: false, slow: false, elapsed: elapsed, maxActive: maxActive) },
             "slow": slow.compactMap { record($0, active: false, slow: true, elapsed: elapsed, maxActive: maxActive) }
+        ]
+        for (key, isSlow, capacity) in [
+            ("homeRecent", false, PerformanceDiagnostics.maximumRecent),
+            ("homeSlow", true, PerformanceDiagnostics.maximumSlow)
+        ] {
+            if let value = raw[key] {
+                guard let entries = value as? [Any], entries.count <= capacity else { return nil }
+                safe[key] = entries.compactMap { value -> [String: Any]? in
+                    guard let entry = record(value, active: false, slow: isSlow, elapsed: elapsed, maxActive: maxActive),
+                          let operation = (entry["operation"] as? String).flatMap(PerformanceDiagnostics.Operation.init(rawValue:)),
+                          operation.isHomePresentation else { return nil }
+                    return entry
+                }
+            }
+        }
+        for key in ["homeDropped", "homeUIDropped"] {
+            if let value = raw[key] {
+                guard let count = integer(value, in: 0...PerformanceDiagnostics.maximumCount) else { return nil }
+                safe[key] = count
+            }
+        }
+        if let value = raw["homeUI"] {
+            guard let entries = value as? [Any], entries.count <= PerformanceDiagnostics.maximumHomeUI else { return nil }
+            safe["homeUI"] = entries.compactMap { homeUI($0, elapsed: elapsed) }
+        }
+        return safe
+    }
+
+    private static func homeUI(_ value: Any, elapsed: Int) -> [String: Any]? {
+        guard let raw = value as? [String: Any],
+              let started = integer(raw["startedMilliseconds"], in: 0...elapsed),
+              let duration = integer(raw["elapsedMilliseconds"], in: 0...elapsed),
+              elapsed == PerformanceDiagnostics.maximumMilliseconds || duration <= elapsed - started,
+              let metrics = raw["metrics"] as? [String: Any],
+              let samples = integer(metrics["samples"], in: 1...PerformanceDiagnostics.maximumCount),
+              let delay = integer(metrics["maximumDelayMilliseconds"], in: 0...duration)
+        else { return nil }
+        var safeMetrics: [String: Any] = ["samples": samples, "maximumDelayMilliseconds": delay]
+        for key in ["delayedSamples", "scrollingSamples", "loadingSamples"] {
+            guard let value = integer(metrics[key], in: 0...samples) else { return nil }
+            safeMetrics[key] = value
+        }
+        for key in ["heightChanges", "maximumHeightDeltaPoints", "maximumActiveScans", "maximumActiveListers"] {
+            guard let value = integer(metrics[key], in: 0...PerformanceDiagnostics.maximumCount) else { return nil }
+            safeMetrics[key] = value
+        }
+        return [
+            "startedMilliseconds": started, "elapsedMilliseconds": duration, "metrics": safeMetrics
         ]
     }
 

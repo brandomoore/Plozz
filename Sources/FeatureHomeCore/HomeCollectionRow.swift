@@ -1,6 +1,17 @@
 import CoreModels
 
 public struct HomeCollectionRow: Equatable, Sendable {
+    static func plannedDefinitions(
+        accounts: [ResolvedAccount], visibility: HomeLibraryVisibility
+    ) -> [CollectionSection] {
+        visibility.collectionSections.filter {
+            $0.source.serverUserID != nil
+                && visibility.isHomeRowVisible(HomeRowChoice(collectionSection: $0))
+                && $0.source.libraryKey.map(visibility.isEnabled) != false
+                && accounts.contains(where: $0.source.matches)
+        }
+    }
+
     public var definition: CollectionSection
     public var items: [MediaItem]
     public var isLoading: Bool

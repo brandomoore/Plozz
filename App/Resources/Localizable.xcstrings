@@ -10709,6 +10709,233 @@
         }
       }
     },
+    "%@ • %@\n%@\n%@" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%1$@ • %2$@\n%3$@\n%4$@"
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%1$@ • %2$@\n%3$@\n%4$@"
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%1$@ • %2$@\n%3$@\n%4$@"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%1$@ • %2$@\n%3$@\n%4$@"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%1$@ • %2$@\n%3$@\n%4$@"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%1$@ • %2$@\n%3$@\n%4$@"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%1$@ • %2$@\n%3$@\n%4$@"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ • %2$@\n%3$@\n%4$@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%1$@ • %2$@\n%3$@\n%4$@"
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%1$@ • %2$@\n%3$@\n%4$@"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%1$@ • %2$@\n%3$@\n%4$@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%1$@ • %2$@\n%3$@\n%4$@"
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%1$@ • %2$@\n%3$@\n%4$@"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%1$@ • %2$@\n%3$@\n%4$@"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%1$@ • %2$@\n%3$@\n%4$@"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%1$@ • %2$@\n%3$@\n%4$@"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%1$@ • %2$@\n%3$@\n%4$@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%1$@ • %2$@\n%3$@\n%4$@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%1$@ • %2$@\n%3$@\n%4$@"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%1$@ • %2$@\n%3$@\n%4$@"
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%1$@ • %2$@\n%3$@\n%4$@"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%1$@ • %2$@\n%3$@\n%4$@"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%1$@ • %2$@\n%3$@\n%4$@"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%1$@ • %2$@\n%3$@\n%4$@"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%1$@ • %2$@\n%3$@\n%4$@"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%1$@ • %2$@\n%3$@\n%4$@"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%1$@ • %2$@\n%3$@\n%4$@"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%1$@ • %2$@\n%3$@\n%4$@"
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%1$@ • %2$@\n%3$@\n%4$@"
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%1$@ • %2$@\n%3$@\n%4$@"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%1$@ • %2$@\n%3$@\n%4$@"
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%1$@ • %2$@\n%3$@\n%4$@"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%1$@ • %2$@\n%3$@\n%4$@"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%1$@ • %2$@\n%3$@\n%4$@"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%1$@ • %2$@\n%3$@\n%4$@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%1$@ • %2$@\n%3$@\n%4$@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%1$@ • %2$@\n%3$@\n%4$@"
+          }
+        }
+      }
+    },
     "%@%@" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -11381,6 +11608,226 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "已完成：%1$@/%2$@"
+          }
+        }
+      }
+    },
+    "%@: Some subtitles couldn't be saved. You can retry from Downloads." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@: تعذّر حفظ بعض الترجمات. يمكنك إعادة المحاولة من التنزيلات."
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@: Някои субтитри не можаха да бъдат запазени. Можете да опитате отново от Изтегляния."
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@: No s'han pogut desar alguns subtítols. Pots tornar-ho a provar des de Baixades."
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@: Některé titulky se nepodařilo uložit. Zkuste to znovu v sekci Stažené."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@: Nogle undertekster kunne ikke gemmes. Du kan prøve igen i Downloads."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@: Einige Untertitel konnten nicht gespeichert werden. Du kannst es unter Downloads erneut versuchen."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@: Δεν ήταν δυνατή η αποθήκευση ορισμένων υποτίτλων. Μπορείτε να δοκιμάσετε ξανά από τις Λήψεις."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@: No se pudieron guardar algunos subtítulos. Puedes reintentarlo desde Descargas."
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@: برخی زیرنویس‌ها ذخیره نشدند. می‌توانید از بخش دانلودها دوباره تلاش کنید."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@: Joitakin tekstityksiä ei voitu tallentaa. Voit yrittää uudelleen Lataukset-osiossa."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ : certains sous-titres n’ont pas pu être enregistrés. Vous pouvez réessayer dans Téléchargements."
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@: לא ניתן היה לשמור חלק מהכתוביות. אפשר לנסות שוב דרך הורדות."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@: कुछ सबटाइटल सेव नहीं हो सके। डाउनलोड से फिर से कोशिश कर सकते हैं।"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@: Neke titlove nije bilo moguće spremiti. Možeš pokušati ponovno u odjeljku Preuzimanja."
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@: Néhány feliratot nem sikerült menteni. A Letöltések résznél újrapróbálhatod."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@: Beberapa subtitle tidak dapat disimpan. Anda dapat mencoba lagi dari Unduhan."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@: Non è stato possibile salvare alcuni sottotitoli. Puoi riprovare da Download."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@: 一部の字幕を保存できませんでした。ダウンロードから再試行できます。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@: 일부 자막을 저장하지 못했습니다. 다운로드에서 다시 시도할 수 있습니다."
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@: Sesetengah sari kata tidak dapat disimpan. Anda boleh mencuba semula dari Muat Turun."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@: Noen undertekster kunne ikke lagres. Du kan prøve igjen fra Nedlastinger."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@: Sommige ondertitels konden niet worden opgeslagen. Probeer het opnieuw via Downloads."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@: Nie udało się zapisać niektórych napisów. Możesz spróbować ponownie w sekcji Pobrane."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@: Algumas legendas não puderam ser salvas. Você pode tentar novamente em Downloads."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@: Unele subtitrări nu au putut fi salvate. Poți încerca din nou din Descărcări."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@: Некоторые субтитры не удалось сохранить. Повторите попытку в разделе «Загрузки»."
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@: Niektoré titulky sa nepodarilo uložiť. Skúste to znova v časti Stiahnuté."
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@: Nekaterih podnapisov ni bilo mogoče shraniti. Poskusite znova v razdelku Prenosi."
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@: Neki titlovi nisu sačuvani. Pokušajte ponovo u odeljku Preuzimanja."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@: Vissa undertexter kunde inte sparas. Försök igen i Nedladdningar."
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@: บันทึกคำบรรยายบางรายการไม่สำเร็จ ลองอีกครั้งได้จากหน้าดาวน์โหลด"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@: Bazı altyazılar kaydedilemedi. İndirilenler bölümünden tekrar deneyebilirsiniz."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@: Не вдалося зберегти деякі субтитри. Можна повторити спробу в розділі «Завантаження»."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@: Không thể lưu một số phụ đề. Bạn có thể thử lại trong mục Tải xuống."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@: 部分字幕无法保存。可在“下载”中重试。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@: 部分字幕無法儲存。可在「下載」中重試。"
           }
         }
       }
@@ -144314,6 +144761,7 @@
       }
     },
     "Allow Cellular Downloads" : {
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -156220,6 +156668,7 @@
       }
     },
     "Ask Before Downloading" : {
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -156435,6 +156884,226 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "下載前詢問"
+          }
+        }
+      }
+    },
+    "Ask Each Time" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "السؤال في كل مرة"
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Питай всеки път"
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Pregunta cada vegada"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Pokaždé se zeptat"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Spørg hver gang"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Jedes Mal fragen"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ερώτηση κάθε φορά"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Preguntar cada vez"
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "هر بار بپرس"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Kysy joka kerta"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Demander à chaque fois"
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "שאל בכל פעם"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "हर बार पूछें"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Pitaj svaki put"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Kérdezzen rá minden alkalommal"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Tanya Setiap Kali"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Chiedi ogni volta"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "毎回確認"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "매번 확인"
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Tanya Setiap Kali"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Spør hver gang"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Elke keer vragen"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Pytaj za każdym razem"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Perguntar sempre"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Întreabă de fiecare dată"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Спрашивать каждый раз"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Opýtať sa zakaždým"
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Vprašaj vsakič"
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Pitaj svaki put"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Fråga varje gång"
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ถามทุกครั้ง"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Her Seferinde Sor"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Запитувати щоразу"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Hỏi mỗi lần"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "每次询问"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "每次詢問"
           }
         }
       }
@@ -168352,6 +169021,226 @@
         }
       }
     },
+    "Available external text subtitles are saved too." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "تُحفظ أيضًا ملفات الترجمة النصية الخارجية المتاحة."
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Наличните външни текстови субтитри също се запазват."
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "També es desen els fitxers de subtítols externs de text disponibles."
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ukládají se i dostupné externí soubory s textovými titulky."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Tilgængelige eksterne tekstbaserede undertekstfiler gemmes også."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Verfügbare externe Untertiteldateien im Textformat werden ebenfalls gespeichert."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Αποθηκεύονται επίσης οι διαθέσιμοι εξωτερικοί υπότιτλοι κειμένου."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "También se guardan los subtítulos externos de texto disponibles."
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "زیرنویس‌های متنیِ جداگانهٔ موجود هم ذخیره می‌شوند."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Myös saatavilla olevat erilliset tekstimuotoiset tekstitykset tallennetaan."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Les sous-titres externes au format texte disponibles sont aussi enregistrés."
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "גם קובצי כתוביות חיצוניים בפורמט טקסט נשמרים כשהם זמינים."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "उपलब्ध बाहरी टेक्स्ट सबटाइटल भी सेव होते हैं।"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Spremaju se i dostupni vanjski tekstualni titlovi."
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Az elérhető külső szöveges feliratokat is menti."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Subtitle teks eksternal yang tersedia juga disimpan."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Vengono salvati anche i sottotitoli testuali esterni disponibili."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "利用可能な外部テキスト字幕も保存されます。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "사용 가능한 외부 텍스트 자막 파일도 함께 저장됩니다."
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Fail sari kata teks luaran yang tersedia turut disimpan."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Tilgjengelige eksterne tekstbaserte undertekstfiler lagres også."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Beschikbare externe tekstondertitels worden ook opgeslagen."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Dostępne zewnętrzne pliki napisów tekstowych są też zapisywane."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Os arquivos externos de legendas de texto disponíveis também são salvos."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Se salvează și fișierele separate de subtitrări text disponibile."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Доступные отдельные файлы текстовых субтитров тоже сохраняются."
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ukladajú sa aj dostupné samostatné súbory textových titulkov."
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Shranijo se tudi razpoložljive ločene datoteke besedilnih podnapisov."
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Čuvaju se i dostupne zasebne datoteke tekstualnih titlova."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Tillgängliga separata filer med textbaserade undertexter sparas också."
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "บันทึกคำบรรยายภายนอกแบบข้อความที่มีอยู่ด้วย"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Varsa harici metin altyazıları da kaydedilir."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Також зберігаються доступні зовнішні текстові субтитри."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Phụ đề rời dạng văn bản có sẵn cũng được lưu."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "也会保存可用的外挂文本字幕。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "可用的外掛文字字幕也會一併儲存。"
+          }
+        }
+      }
+    },
     "Available in Another Version" : {
       "localizations" : {
         "ar" : {
@@ -172982,6 +173871,226 @@
         }
       }
     },
+    "Background downloads pause or run at full speed." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "تتوقف التنزيلات في الخلفية مؤقتًا أو تعمل بأقصى سرعة."
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Изтеглянията във фонов режим се поставят на пауза или продължават с пълна скорост."
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Les baixades en segon pla es pausen o continuen a tota velocitat."
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Stahování na pozadí se pozastaví nebo pokračuje plnou rychlostí."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Downloads i baggrunden sættes på pause eller kører med fuld hastighed."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Downloads im Hintergrund pausieren oder laufen mit voller Geschwindigkeit."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Οι λήψεις στο παρασκήνιο τίθενται σε παύση ή συνεχίζονται με πλήρη ταχύτητα."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Las descargas en segundo plano se pausan o continúan a máxima velocidad."
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "دانلودها در پس‌زمینه موقتاً متوقف می‌شوند یا با حداکثر سرعت ادامه می‌یابند."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Taustalla lataukset ovat tauolla tai jatkuvat täydellä nopeudella."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Les téléchargements en arrière-plan sont mis en pause ou continuent à pleine vitesse."
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "הורדות ברקע מושהות או ממשיכות במהירות מלאה."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "बैकग्राउंड में डाउनलोड पॉज़ होते हैं या पूरी गति से चलते हैं।"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Preuzimanja u pozadini pauziraju se ili nastavljaju punom brzinom."
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "A háttérben a letöltések szünetelnek vagy teljes sebességgel folytatódnak."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Unduhan di latar belakang dijeda atau berjalan dengan kecepatan penuh."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "In background, i download vengono sospesi o proseguono a piena velocità."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "バックグラウンドではダウンロードを一時停止するか、フルスピードで続行します。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "백그라운드 다운로드는 일시정지되거나 최대 속도로 진행됩니다."
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Muat turun di latar belakang dijeda atau berjalan pada kelajuan penuh."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nedlastinger i bakgrunnen settes på pause eller kjører med full hastighet."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Downloads op de achtergrond worden gepauzeerd of gaan op volle snelheid door."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Pobieranie w tle jest wstrzymywane lub odbywa się z pełną prędkością."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Os downloads em segundo plano são pausados ou continuam em velocidade máxima."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "În fundal, descărcările se pun pe pauză sau continuă la viteză maximă."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "В фоновом режиме загрузки приостанавливаются или идут на полной скорости."
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Na pozadí sa sťahovanie pozastaví alebo beží plnou rýchlosťou."
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Prenosi v ozadju se začasno ustavijo ali potekajo s polno hitrostjo."
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Preuzimanja u pozadini se pauziraju ili nastavljaju punom brzinom."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "I bakgrunden pausas nedladdningar eller körs med full hastighet."
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "การดาวน์โหลดในเบื้องหลังจะหยุดชั่วคราวหรือทำงานด้วยความเร็วเต็มที่"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Arka planda indirmeler duraklar veya tam hızda devam eder."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Фонові завантаження призупиняються або тривають на повній швидкості."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Tải xuống trong nền sẽ tạm dừng hoặc chạy ở tốc độ tối đa."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "后台下载会暂停或全速进行。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "背景下載會暫停或全速進行。"
+          }
+        }
+      }
+    },
     "Backgrounds, logos, and Home rows." : {
       "extractionState" : "stale",
       "localizations" : {
@@ -173866,6 +174975,7 @@
       }
     },
     "Batch Completed" : {
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -174086,6 +175196,7 @@
       }
     },
     "Batch notifications summarize a season or show instead of notifying for every episode." : {
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -192250,6 +193361,227 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "取消掃描"
+          }
+        }
+      }
+    },
+    "Cancel to pause" : {
+      "comment" : "Download Live Activity hint beside the system-owned Cancel action. Cancelling pauses downloads without deleting them.",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "«إلغاء» للإيقاف المؤقت"
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "„Отказ“ за пауза"
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Cancel·la per posar en pausa"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Pozastavíte volbou Zrušit"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Annullér for at sætte på pause"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Abbrechen zum Pausieren"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ακύρωση για παύση"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Cancelar para pausar"
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "لغو برای توقف موقت"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Peruuta, niin lataus jää tauolle"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Annuler pour mettre en pause"
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ביטול כדי להשהות"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "पॉज़ करने के लिए रद्द करें"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Otkaži za pauziranje"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Szüneteltetéshez: Mégse"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Batal untuk menjeda"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Annulla per mettere in pausa"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "キャンセルで一時停止"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "취소하면 일시정지됩니다"
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Batal untuk menjeda"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Avbryt for å sette på pause"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Annuleer om te pauzeren"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Anuluj, aby wstrzymać"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Cancele para pausar"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Anulează pentru a pune pe pauză"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Отменить, чтобы приостановить"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zrušením pozastavíte sťahovanie"
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Prekliči za začasno ustavitev"
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Otkaži za pauziranje"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Avbryt för att pausa"
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "เลือกยกเลิกเพื่อหยุดชั่วคราว"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Duraklatmak için “İptal”i seçin"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "«Скасувати» призупиняє завантаження"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Chọn Hủy để tạm dừng"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "选择“取消”以暂停"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "選擇「取消」以暫停"
           }
         }
       }
@@ -228596,6 +229928,7 @@
     },
     "Choose whether speed-limited downloads pause or continue at full speed while Plozz is in the background." : {
       "comment" : "Download speed settings footer explaining the two background choices: pause, or temporarily remove the speed limit.",
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -315654,6 +316987,7 @@
       }
     },
     "Download Quality" : {
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -316537,6 +317871,7 @@
       }
     },
     "Download Speed" : {
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -324263,6 +325598,7 @@
       }
     },
     "Downloads use the full available connection speed." : {
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -419001,6 +420337,226 @@
         }
       }
     },
+    "In Background" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "في الخلفية"
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Във фонов режим"
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "En segon pla"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Na pozadí"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "I baggrunden"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Im Hintergrund"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Στο παρασκήνιο"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "En segundo plano"
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "در پس‌زمینه"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Taustalla"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "En arrière-plan"
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ברקע"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "बैकग्राउंड में"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "U pozadini"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Háttérben"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Di Latar Belakang"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "In background"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "バックグラウンド時"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "백그라운드에서"
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Di Latar Belakang"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "I bakgrunnen"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Op de achtergrond"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "W tle"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Em segundo plano"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "În fundal"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "В фоновом режиме"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Na pozadí"
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "V ozadju"
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "U pozadini"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "I bakgrunden"
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ในเบื้องหลัง"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Arka Planda"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "У фоновому режимі"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Trong nền"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "在后台"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "背景執行時"
+          }
+        }
+      }
+    },
     "In Library" : {
       "localizations" : {
         "ar" : {
@@ -420544,6 +422100,7 @@
       }
     },
     "Include All Audio Tracks" : {
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -420984,6 +422541,7 @@
       }
     },
     "Include Text Subtitles When Supported" : {
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -433208,6 +434766,226 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "正在保留先前載入的節目表"
+          }
+        }
+      }
+    },
+    "Keeps embedded audio and subtitles." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "يحتفظ بمسارات الصوت والترجمة المضمّنة."
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Запазва вградените аудио писти и субтитри."
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Conserva l'àudio i els subtítols integrats."
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zachovává vložené zvukové stopy a titulky."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Bevarer indlejret lyd og undertekster."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Behält eingebettete Audiospuren und Untertitel bei."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Διατηρεί τα ενσωματωμένα κομμάτια ήχου και υποτίτλων."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Conserva el audio y los subtítulos integrados."
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "صدا و زیرنویس‌های تعبیه‌شده را حفظ می‌کند."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Säilyttää upotetut ääni- ja tekstitysraidat."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Conserve l’audio et les sous-titres intégrés."
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "משמר את השמע והכתוביות שבקובץ."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "एम्बेड किए गए ऑडियो और सबटाइटल बने रहते हैं।"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zadržava ugrađene zvučne zapise i titlove."
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Megőrzi a beágyazott hangot és feliratokat."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Mempertahankan audio dan subtitle yang tertanam."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Mantiene l'audio e i sottotitoli incorporati."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "埋め込みの音声と字幕を保持します。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "내장된 오디오와 자막을 유지합니다."
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Mengekalkan audio dan sari kata terbenam."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Beholder innebygd lyd og undertekster."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Behoudt ingesloten audio en ondertitels."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zachowuje osadzone ścieżki dźwiękowe i napisy."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Mantém o áudio e as legendas incorporados."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Păstrează sunetul și subtitrările încorporate."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Сохраняет встроенные аудиодорожки и субтитры."
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zachová vložený zvuk a titulky."
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ohrani vdelani zvok in podnapise."
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zadržava ugrađeni zvuk i titlove."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Behåller inbäddat ljud och undertexter."
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "เก็บเสียงและคำบรรยายที่ฝังไว้ในไฟล์"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Gömülü ses ve altyazıları korur."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Зберігає вбудоване аудіо та субтитри."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Giữ âm thanh và phụ đề nhúng."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "保留内嵌音轨和字幕。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "保留內嵌音軌和字幕。"
           }
         }
       }
@@ -450850,6 +452628,7 @@
     },
     "Live Activities show download progress when background processing is available. Cancel in the Live Activity to pause its downloads. You can resume them in Plozz." : {
       "comment" : "iOS/iPadOS 26+ download-settings footer. Live Activities is Apple's system feature. Cancelling its task pauses, rather than deletes, the downloads.",
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -554185,6 +555964,226 @@
         }
       }
     },
+    "Only Original is available for this source." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "يتوفر خيار «الأصلية» فقط لهذا المصدر."
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "За този източник е налична само опцията „Оригинален“."
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Només hi ha l'opció Original per a aquesta font."
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Pro tento zdroj je dostupná pouze možnost Původní."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Kun Original er tilgængelig for denne kilde."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Für diese Quelle ist nur Original verfügbar."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Για αυτή την πηγή διατίθεται μόνο η Πρωτότυπη ποιότητα."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Solo está disponible la calidad Original para esta fuente."
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "برای این منبع فقط کیفیت اصلی در دسترس است."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Tästä lähteestä on saatavilla vain alkuperäinen laatu."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Seule la qualité Originale est disponible pour cette source."
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "רק האיכות המקורית זמינה למקור זה."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "इस स्रोत के लिए केवल ओरिजिनल उपलब्ध है।"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Za ovaj je izvor dostupna samo opcija Izvorni."
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ehhez a forráshoz csak az Eredeti érhető el."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Hanya Asli yang tersedia untuk sumber ini."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Per questa sorgente è disponibile solo Originale."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "このソースではオリジナルのみ利用できます。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "이 소스는 ‘원어’(원본 화질)만 지원합니다."
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Hanya kualiti Asal tersedia untuk sumber ini."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Bare Original er tilgjengelig for denne kilden."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Voor deze bron is alleen Origineel beschikbaar."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Dla tego źródła dostępna jest tylko opcja „Oryginalny”."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Somente Original está disponível para esta fonte."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Pentru această sursă este disponibilă doar opțiunea „Originală”."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Для этого источника доступен только вариант «Оригинальный»."
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Pre tento zdroj je dostupná iba možnosť „Pôvodný“."
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Za ta vir je na voljo le možnost »Izvirni«."
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Za ovaj izvor je dostupna samo opcija „Izvorni“."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Endast Original är tillgängligt för den här källan."
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "แหล่งนี้รองรับเฉพาะคุณภาพต้นฉบับ"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Bu kaynak için yalnızca Orijinal kullanılabilir."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Для цього джерела доступна лише оригінальна якість."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nguồn này chỉ hỗ trợ Bản gốc."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "此来源仅支持原始画质。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "此來源僅支援原始畫質。"
+          }
+        }
+      }
+    },
     "Only SDH" : {
       "comment" : "Subtitle playback and search preference for subtitles for the deaf or hard of hearing (SDH).",
       "localizations" : {
@@ -556612,6 +558611,7 @@
     },
     "Only this profile is affected. Who you watch as sets whose watchlist it uses." : {
       "comment" : "Explains that the library and identity choices on this screen apply to the current profile alone.",
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -566093,6 +568093,7 @@
       }
     },
     "Original downloads the server’s existing file without transcoding." : {
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -583086,6 +585087,7 @@
     },
     "Pick the servers %@ watches with, and who they are on each." : {
       "comment" : "Subtitle of the profile setup screen. %@ is the profile's name.",
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -652755,6 +654757,7 @@
       }
     },
     "Reduced qualities are transcoded by your media server." : {
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -652975,6 +654978,7 @@
       }
     },
     "Reduced quality asks Plex, Jellyfin, or Emby to transcode a separate offline copy using your profile’s preferred audio language. Plex keeps one audio track and at most one text subtitle; choose Original to keep every embedded track. External subtitle sidecars remain on the server. Preparation can take time and use significant server CPU. Network shares support Original only." : {
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -684240,6 +686244,226 @@
         }
       }
     },
+    "Requires server conversion. May include fewer audio and subtitle tracks." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "يتطلب تحويلًا على الخادم. قد يتضمن مسارات صوت وترجمة أقل."
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Изисква преобразуване на сървъра. Може да включва по-малко аудио писти и писти със субтитри."
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Requereix conversió al servidor. Pot incloure menys pistes d'àudio i de subtítols."
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Vyžaduje převod na serveru. Může obsahovat méně zvukových a titulkových stop."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Kræver konvertering på serveren. Kan indeholde færre lyd- og undertekstspor."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Erfordert eine Konvertierung auf dem Server. Kann weniger Audio- und Untertitelspuren enthalten."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Απαιτεί μετατροπή στον διακομιστή. Ενδέχεται να περιλαμβάνει λιγότερα κομμάτια ήχου και υποτίτλων."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Requiere conversión en el servidor. Puede incluir menos pistas de audio y subtítulos."
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "به تبدیل در سرور نیاز دارد. ممکن است شامل ترک‌های صوتی و زیرنویس کمتری باشد."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Vaatii muunnoksen palvelimella. Voi sisältää vähemmän ääni- ja tekstitysraitoja."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nécessite une conversion sur le serveur. Peut inclure moins de pistes audio et de sous-titres."
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "נדרשת המרה בשרת. ייתכן שייכללו פחות רצועות שמע וכתוביות."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "सर्वर पर रूपांतरण ज़रूरी है। ऑडियो और सबटाइटल ट्रैक कम हो सकते हैं।"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zahtijeva pretvorbu na poslužitelju. Može sadržavati manje zvučnih zapisa i titlova."
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Szerveroldali átalakítást igényel. Kevesebb hang- és feliratsávot tartalmazhat."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Memerlukan konversi di server. Mungkin berisi lebih sedikit trek audio dan subtitle."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Richiede la conversione sul server. Potrebbe includere meno tracce audio e di sottotitoli."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "サーバーでの変換が必要です。音声や字幕のトラック数が少なくなる場合があります。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "서버 변환이 필요합니다. 오디오 및 자막 트랙 수가 줄어들 수 있습니다."
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Memerlukan penukaran pada pelayan. Mungkin mengandungi lebih sedikit trek audio dan sari kata."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Krever konvertering på serveren. Kan inneholde færre lydspor og undertekstspor."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Vereist conversie op de server. Kan minder audio- en ondertiteltracks bevatten."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Wymaga konwersji na serwerze. Może zawierać mniej ścieżek dźwiękowych i napisów."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Requer conversão no servidor. Pode incluir menos faixas de áudio e legendas."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Necesită conversie pe server. Poate include mai puține piste audio și de subtitrare."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Требуется конвертация на сервере. Аудиодорожек и дорожек субтитров может быть меньше."
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Vyžaduje konverziu na serveri. Môže obsahovať menej zvukových a titulkových stôp."
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zahteva pretvorbo na strežniku. Lahko vsebuje manj zvočnih stez in stez podnapisov."
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zahteva konverziju na serveru. Može sadržati manje zvučnih traka i traka sa titlovima."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Kräver konvertering på servern. Kan innehålla färre ljud- och undertextspår."
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ต้องให้เซิร์ฟเวอร์แปลงไฟล์ อาจมีแทร็กเสียงและคำบรรยายน้อยลง"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Sunucuda dönüştürme gerekir. Daha az ses ve altyazı parçası içerebilir."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Потрібне перетворення на сервері. Може містити менше аудіодоріжок і доріжок субтитрів."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Cần chuyển đổi trên máy chủ. Có thể có ít luồng âm thanh và phụ đề hơn."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "需要服务器转换。可能包含较少的音轨和字幕轨道。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "需要伺服器轉換。可能包含較少的音軌和字幕軌道。"
+          }
+        }
+      }
+    },
     "Rescan" : {
       "comment" : "Button that starts a fresh nearby-server or network-share discovery scan in add-server and add-share flows on tvOS and iOS.",
       "localizations" : {
@@ -695916,6 +698140,226 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "重試載入分季"
+          }
+        }
+      }
+    },
+    "Retry Subtitles" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "إعادة محاولة حفظ الترجمات"
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Повтори запазването на субтитри"
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Torna a provar de desar els subtítols"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zkusit titulky uložit znovu"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Prøv at gemme undertekster igen"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Untertitel erneut speichern"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Επανάληψη λήψης υποτίτλων"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Reintentar descarga de subtítulos"
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "تلاش مجدد برای دانلود زیرنویس‌ها"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Yritä ladata tekstitykset uudelleen"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Réessayer le téléchargement des sous-titres"
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "נסה שוב להוריד כתוביות"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "सबटाइटल फिर से सेव करें"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ponovno pokušaj spremiti titlove"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Feliratmentés újrapróbálása"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Coba Simpan Subtitle Lagi"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Riprova a salvare i sottotitoli"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "字幕の保存を再試行"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "자막 저장 재시도"
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Muat Turun Semula Sari Kata"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Last ned undertekster på nytt"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ondertitels opnieuw downloaden"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ponów pobieranie napisów"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Baixar legendas novamente"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Reîncearcă salvarea subtitrărilor"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Повторить загрузку субтитров"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Znova stiahnuť titulky"
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Znova prenesi podnapise"
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ponovo preuzmi titlove"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Försök hämta undertexter igen"
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ลองบันทึกคำบรรยายอีกครั้ง"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Altyazıları Kaydetmeyi Tekrar Dene"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Повторити завантаження субтитрів"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Thử tải lại phụ đề"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "重试保存字幕"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "重試儲存字幕"
           }
         }
       }
@@ -713143,6 +715587,227 @@
         }
       }
     },
+    "Saved for" : {
+      "comment" : "Short label before a profile's avatar and name, identifying whose library preferences are saved.",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "تم الحفظ للملف الشخصي:"
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Запазено за"
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Desat per a"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Uloženo pro profil:"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Gemt til"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Gespeichert für"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Αποθηκεύτηκε για το προφίλ:"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Guardado para"
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ذخیره‌شده برای"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Tallennettu profiilille:"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Enregistré pour"
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "נשמר עבור"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "इस प्रोफ़ाइल के लिए सहेजा गया:"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Spremljeno za profil:"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Mentve ehhez a profilhoz:"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Disimpan untuk"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Salvato per"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "設定が保存されたプロファイル："
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "설정이 저장된 프로필:"
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Disimpan untuk"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Lagret for"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Opgeslagen voor"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zapisano dla profilu:"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Salvo para"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Salvat pentru"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Сохранено для профиля:"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Uložené pre profil:"
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Shranjeno za profil:"
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Sačuvano za profil:"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Sparat för"
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "บันทึกไว้สำหรับ"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Şu profil için kaydedildi:"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Збережено для профілю:"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Đã lưu cho"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "已保存至个人资料："
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "已儲存至個人檔案："
+          }
+        }
+      }
+    },
     "Saved for %@." : {
       "comment" : "Footer under iOS settings sections showing that these preferences are stored per profile. %@ is the active profile name.",
       "extractionState" : "stale",
@@ -713366,6 +716031,7 @@
       }
     },
     "Saved for profile “%@”." : {
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -734527,6 +737193,226 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "無法取得季資訊。"
+          }
+        }
+      }
+    },
+    "Season or Show Complete" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "اكتمال تنزيل الموسم أو المسلسل"
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Изтеглен сезон или сериал"
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Temporada o sèrie baixada"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Stažení sezóny nebo seriálu dokončeno"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Sæson eller serie færdighentet"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Staffel oder Serie heruntergeladen"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ολοκλήρωση λήψεων σεζόν ή σειράς"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Temporada o serie descargada"
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "پایان دانلود فصل یا سریال"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Kausi tai sarja ladattu"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Saison ou série téléchargée"
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "הורדת עונה או סדרה הושלמה"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "सीज़न या सीरीज़ का डाउनलोड पूरा"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Preuzimanje sezone ili serije dovršeno"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Évad vagy sorozat letöltve"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Unduhan Musim atau Serial Selesai"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Stagione o serie scaricata"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "シーズン・シリーズのダウンロード完了"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "시즌 또는 TV 프로그램 다운로드 완료"
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Muat Turun Musim atau Siri Selesai"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Sesong eller serie ferdig nedlastet"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Seizoen of serie gedownload"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Pobrano sezon lub serial"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Download da temporada ou série concluído"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Sezon sau serial descărcat"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Сезон или сериал загружен"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Po stiahnutí sezóny alebo seriálu"
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Prenos sezone ali serije končan"
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Preuzeta sezona ili serija"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Säsong eller serie nedladdad"
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ดาวน์โหลดครบซีซันหรือซีรีส์"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Sezon veya Dizi İndirildiğinde"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Завантажено сезон або серіал"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Tải xong mùa hoặc loạt phim"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "整季或整部剧集下载完成"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "整季或整部影集下載完成"
           }
         }
       }
@@ -790347,6 +793233,7 @@
       }
     },
     "Silo reduced-quality downloads keep one audio track. Choose Original to keep every embedded track." : {
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -798942,6 +801829,226 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "小型大寫字母"
+          }
+        }
+      }
+    },
+    "Smaller copies require server conversion and may include fewer tracks." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "تتطلب النسخ الأصغر تحويلًا على الخادم وقد تتضمن مسارات أقل."
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "По-малките копия изискват преобразуване на сървъра и могат да включват по-малко писти."
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Les còpies més petites requereixen conversió al servidor i poden incloure menys pistes."
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Menší kopie vyžadují převod na serveru a mohou obsahovat méně stop."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Mindre kopier kræver konvertering på serveren og kan indeholde færre spor."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Kleinere Kopien erfordern eine Konvertierung auf dem Server und können weniger Spuren enthalten."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Τα μικρότερα αντίγραφα απαιτούν μετατροπή στον διακομιστή και ενδέχεται να περιλαμβάνουν λιγότερα κομμάτια."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Las copias más pequeñas requieren conversión en el servidor y pueden incluir menos pistas."
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "نسخه‌های کم‌حجم‌تر به تبدیل در سرور نیاز دارند و ممکن است شامل ترک‌های کمتری باشند."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Pienemmät kopiot vaativat muunnoksen palvelimella ja voivat sisältää vähemmän raitoja."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Les copies plus petites nécessitent une conversion sur le serveur et peuvent inclure moins de pistes."
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "עותקים קטנים יותר דורשים המרה בשרת ועשויים לכלול פחות רצועות."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "छोटी कॉपियों के लिए सर्वर पर रूपांतरण ज़रूरी है और उनमें कम ट्रैक हो सकते हैं।"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Manje kopije zahtijevaju pretvorbu na poslužitelju i mogu sadržavati manje zapisa."
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "A kisebb másolatok szerveroldali átalakítást igényelnek, és kevesebb sávot tartalmazhatnak."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Salinan yang lebih kecil memerlukan konversi di server dan mungkin berisi lebih sedikit trek."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Le copie più piccole richiedono la conversione sul server e potrebbero includere meno tracce."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "小容量のコピーにはサーバーでの変換が必要で、トラック数が少なくなる場合があります。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "더 작은 사본은 서버 변환이 필요하며 트랙 수가 줄어들 수 있습니다."
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Salinan lebih kecil memerlukan penukaran pada pelayan dan mungkin mengandungi lebih sedikit trek."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Mindre kopier krever konvertering på serveren og kan inneholde færre spor."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Kleinere kopieën vereisen conversie op de server en kunnen minder tracks bevatten."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Mniejsze kopie wymagają konwersji na serwerze i mogą zawierać mniej ścieżek."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Cópias menores requerem conversão no servidor e podem incluir menos faixas."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Copiile mai mici necesită conversie pe server și pot include mai puține piste."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Копии меньшего размера требуют конвертации на сервере и могут содержать меньше дорожек."
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Menšie kópie vyžadujú konverziu na serveri a môžu obsahovať menej stôp."
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Manjše kopije zahtevajo pretvorbo na strežniku in lahko vsebujejo manj stez."
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Manje kopije zahtevaju konverziju na serveru i mogu sadržati manje traka."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Mindre kopior kräver konvertering på servern och kan innehålla färre spår."
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "สำเนาที่มีขนาดเล็กกว่าต้องให้เซิร์ฟเวอร์แปลงไฟล์ และอาจมีแทร็กเสียงและคำบรรยายน้อยลง"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Daha küçük kopyalar sunucuda dönüştürme gerektirir ve daha az ses ve altyazı parçası içerebilir."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Менші копії потребують перетворення на сервері й можуть містити менше доріжок."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Bản sao nhỏ hơn cần chuyển đổi trên máy chủ và có thể có ít luồng âm thanh, phụ đề hơn."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "较小的副本需要服务器转换，可能包含较少的音轨和字幕轨道。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "較小的副本需要伺服器轉換，可能包含較少的音軌和字幕軌道。"
           }
         }
       }
@@ -808856,6 +811963,226 @@
         }
       }
     },
+    "Speed" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "السرعة"
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Скорост"
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Velocitat"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Rychlost"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Hastighed"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Geschwindigkeit"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ταχύτητα"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Velocidad"
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "سرعت"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nopeus"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Vitesse"
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "מהירות"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "गति"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Brzina"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Sebesség"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Kecepatan"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Velocità"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "速度"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "속도"
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Kelajuan"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Hastighet"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Snelheid"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Prędkość"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Velocidade"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Viteză"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Скорость"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Rýchlosť"
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Hitrost"
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Brzina"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Hastighet"
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ความเร็ว"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Hız"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Швидкість"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Tốc độ"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "速度"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "速度"
+          }
+        }
+      }
+    },
     "Spoiler Protection" : {
       "localizations" : {
         "ar" : {
@@ -810180,6 +813507,7 @@
       }
     },
     "Standalone Download Completed" : {
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -824278,6 +827606,226 @@
         }
       }
     },
+    "Subtitles couldn't be updated. Check your connection and download settings." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "تعذّر تحديث الترجمات. تحقق من اتصالك وإعدادات التنزيل."
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Субтитрите не можаха да бъдат обновени. Проверете връзката и настройките за изтегляне."
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "No s'han pogut actualitzar els subtítols. Comprova la connexió i els ajustos de baixada."
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Titulky se nepodařilo aktualizovat. Zkontrolujte připojení a nastavení stahování."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Underteksterne kunne ikke opdateres. Tjek din forbindelse og dine downloadindstillinger."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Untertitel konnten nicht aktualisiert werden. Prüfe deine Verbindung und die Download-Einstellungen."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Δεν ήταν δυνατή η ενημέρωση των υποτίτλων. Ελέγξτε τη σύνδεση και τις ρυθμίσεις λήψης."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "No se pudieron actualizar los subtítulos. Comprueba tu conexión y los ajustes de descarga."
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "زیرنویس‌ها به‌روز نشدند. اتصال و تنظیمات دانلود خود را بررسی کنید."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Tekstityksiä ei voitu päivittää. Tarkista yhteys ja latausasetukset."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Les sous-titres n’ont pas pu être mis à jour. Vérifiez votre connexion et les réglages de téléchargement."
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "לא ניתן היה לעדכן את הכתוביות. בדוק את החיבור ואת הגדרות ההורדה."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "सबटाइटल अपडेट नहीं हो सके। कनेक्शन और डाउनलोड सेटिंग जाँचें।"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Titlove nije bilo moguće ažurirati. Provjeri vezu i postavke preuzimanja."
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nem sikerült frissíteni a feliratokat. Ellenőrizd a kapcsolatot és a letöltési beállításokat."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Subtitle tidak dapat diperbarui. Periksa koneksi dan pengaturan unduhan Anda."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Impossibile aggiornare i sottotitoli. Controlla la connessione e le impostazioni di download."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "字幕を更新できませんでした。接続とダウンロード設定を確認してください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "자막을 업데이트하지 못했습니다. 연결 상태와 다운로드 설정을 확인하세요."
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Sari kata tidak dapat dikemas kini. Semak sambungan dan tetapan muat turun anda."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Undertekstene kunne ikke oppdateres. Sjekk tilkoblingen og nedlastingsinnstillingene dine."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ondertitels konden niet worden bijgewerkt. Controleer je verbinding en downloadinstellingen."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nie udało się zaktualizować napisów. Sprawdź połączenie i ustawienia pobierania."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Não foi possível atualizar as legendas. Verifique sua conexão e as configurações de download."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Subtitrările nu au putut fi actualizate. Verifică conexiunea și setările de descărcare."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Не удалось обновить субтитры. Проверьте подключение и настройки загрузки."
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Titulky sa nepodarilo aktualizovať. Skontrolujte pripojenie a nastavenia sťahovania."
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Podnapisov ni bilo mogoče posodobiti. Preverite povezavo in nastavitve prenosov."
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ažuriranje titlova nije uspelo. Proverite vezu i podešavanja preuzimanja."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Undertexterna kunde inte uppdateras. Kontrollera anslutningen och nedladdningsinställningarna."
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ไม่สามารถอัปเดตคำบรรยายได้ ตรวจสอบการเชื่อมต่อและการตั้งค่าการดาวน์โหลด"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Altyazılar güncellenemedi. Bağlantınızı ve indirme ayarlarınızı kontrol edin."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Не вдалося оновити субтитри. Перевірте з’єднання та налаштування завантажень."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Không thể cập nhật phụ đề. Kiểm tra kết nối và cài đặt tải xuống."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "无法更新字幕。请检查网络连接和下载设置。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "無法更新字幕。請檢查網路連線與下載設定。"
+          }
+        }
+      }
+    },
     "Subtitles show %@s earlier than the audio" : {
       "comment" : "Helper text under the subtitle sync control in the player. %@ is the absolute subtitle delay in seconds.",
       "localizations" : {
@@ -824936,6 +828484,226 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "字幕無法使用"
+          }
+        }
+      }
+    },
+    "Subtitles updated." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "تم تحديث الترجمات."
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Субтитрите са обновени."
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Subtítols actualitzats."
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Titulky aktualizovány."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Undertekster opdateret."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Untertitel aktualisiert."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Οι υπότιτλοι ενημερώθηκαν."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Subtítulos actualizados."
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "زیرنویس‌ها به‌روز شدند."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Tekstitykset päivitetty."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Sous-titres mis à jour."
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "הכתוביות עודכנו."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "सबटाइटल अपडेट हो गए।"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Titlovi su ažurirani."
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Feliratok frissítve."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Subtitle diperbarui."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Sottotitoli aggiornati."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "字幕を更新しました。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "자막이 업데이트되었습니다."
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Sari kata dikemas kini."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Undertekstene er oppdatert."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ondertitels bijgewerkt."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zaktualizowano napisy."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Legendas atualizadas."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Subtitrări actualizate."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Субтитры обновлены."
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Titulky aktualizované."
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Podnapisi posodobljeni."
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Titlovi su ažurirani."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Undertexterna har uppdaterats."
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "อัปเดตคำบรรยายแล้ว"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Altyazılar güncellendi."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Субтитри оновлено."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Đã cập nhật phụ đề."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "字幕已更新。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "字幕已更新。"
           }
         }
       }
@@ -888405,6 +892173,7 @@
       }
     },
     "These settings affect offline downloads only. Playback is never throttled." : {
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -943664,6 +947433,7 @@
       }
     },
     "Turn servers and libraries on or off, and pick who you watch as." : {
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -956558,6 +960328,226 @@
         }
       }
     },
+    "Update Subtitles" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "تحديث الترجمات"
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Обнови субтитрите"
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Actualitza els subtítols"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Aktualizovat titulky"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Opdater undertekster"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Untertitel aktualisieren"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ενημέρωση υποτίτλων"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Actualizar subtítulos"
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "به‌روزرسانی زیرنویس‌ها"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Päivitä tekstitykset"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Mettre à jour les sous-titres"
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "עדכן כתוביות"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "सबटाइटल अपडेट करें"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ažuriraj titlove"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Feliratok frissítése"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Perbarui Subtitle"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Aggiorna sottotitoli"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "字幕を更新"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "자막 업데이트"
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Kemas Kini Sari Kata"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Oppdater undertekster"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ondertitels bijwerken"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Aktualizuj napisy"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Atualizar legendas"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Actualizează subtitrările"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Обновить субтитры"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Aktualizovať titulky"
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Posodobi podnapise"
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ažuriraj titlove"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Uppdatera undertexter"
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "อัปเดตคำบรรยาย"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Altyazıları Güncelle"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Оновити субтитри"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Cập nhật phụ đề"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "更新字幕"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "更新字幕"
+          }
+        }
+      }
+    },
     "Update library watch history from Plozz channels" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -959068,6 +963058,226 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "使用粗體和斜體"
+          }
+        }
+      }
+    },
+    "Use Cellular" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "استخدام بيانات الجوال"
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Използвай мобилни данни"
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Utilitza dades mòbils"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Používat mobilní data"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Brug mobildata"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Mobile Daten nutzen"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Χρήση δεδομένων κινητής"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Usar datos móviles"
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "استفاده از دادهٔ همراه"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Käytä mobiilidataa"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Utiliser les données mobiles"
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "שימוש בנתונים סלולריים"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "मोबाइल डेटा इस्तेमाल करें"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Koristi mobilne podatke"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Mobiladat-forgalom használata"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Gunakan Data Seluler"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Usa dati cellulare"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "モバイルデータ通信を使用"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "셀룰러 데이터 사용"
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Gunakan Data Selular"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Bruk mobildata"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Mobiele data gebruiken"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Używaj danych komórkowych"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Usar dados móveis"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Folosește date mobile"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Использовать мобильные данные"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Použiť mobilné dáta"
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Uporabi mobilne podatke"
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Koristi mobilne podatke"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Använd mobildata"
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ใช้ข้อมูลมือถือ"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Mobil Veri Kullan"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Використовувати мобільні дані"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Dùng dữ liệu di động"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "使用蜂窝数据"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "使用行動數據"
           }
         }
       }
@@ -997269,6 +1001479,7 @@
     },
     "What does this profile watch?" : {
       "comment" : "Title of the screen for choosing which servers and libraries this profile sees.",
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -998590,6 +1002801,7 @@
       }
     },
     "When Plozz Is in the Background" : {
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -1038507,6 +1042719,886 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "下載 離線 儲存 儲存空間 畫質 網路"
+          }
+        }
+      }
+    },
+    "download offline save storage quality network ask before downloading" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "تنزيل بدون إنترنت حفظ مساحة تخزين جودة شبكة سؤال قبل التنزيل"
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "изтегляне офлайн запазване място качество мрежа питане преди изтегляне"
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "baixada sense connexió desar emmagatzematge qualitat xarxa pregunta abans de baixar"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "stahování offline uložit úložiště kvalita síť zeptat se před stažením"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "download offline gem lagerplads kvalitet netværk spørg før download"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "download offline speichern speicherplatz qualität netzwerk vor dem download fragen"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "λήψη εκτός σύνδεσης αποθήκευση χώρος ποιότητα δίκτυο ερώτηση πριν τη λήψη"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "descargar sin conexión guardar almacenamiento calidad red preguntar antes de descargar"
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "دانلود آفلاین ذخیره حافظه کیفیت شبکه پرسش پیش از دانلود"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "lataus offline tallenna tallennustila laatu verkko kysy ennen latausta"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "télécharger hors ligne enregistrer stockage qualité réseau demander avant de télécharger"
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "הורדה לא מקוון שמירה אחסון איכות רשת לשאול לפני הורדה"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "डाउनलोड ऑफ़लाइन सेव स्टोरेज गुणवत्ता नेटवर्क डाउनलोड से पहले पूछें"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "preuzimanje izvanmrežno spremanje pohrana kvaliteta mreža pitaj prije preuzimanja"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "letöltés offline mentés tárhely minőség hálózat rákérdezés letöltés előtt"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "unduh offline simpan penyimpanan kualitas jaringan tanya sebelum mengunduh"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "download offline salva spazio qualità rete chiedi prima di scaricare"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ダウンロード オフライン 保存 ストレージ 画質 ネットワーク ダウンロード前に確認"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "다운로드 오프라인 저장 저장공간 화질 네트워크 다운로드 전 확인"
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "muat turun luar talian simpan storan kualiti rangkaian tanya sebelum memuat turun"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "nedlasting offline lagre lagring kvalitet nettverk spør før nedlasting"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "download offline opslaan opslag kwaliteit netwerk vragen voor downloaden"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "pobieranie offline zapisz pamięć jakość sieć pytaj przed pobraniem"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "download offline salvar armazenamento qualidade rede perguntar antes de baixar"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "descărcare offline salvare stocare calitate rețea întreabă înainte de descărcare"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "загрузка офлайн сохранение хранилище качество сеть спрашивать перед загрузкой"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "sťahovanie offline uloženie úložisko kvalita sieť opýtať sa pred sťahovaním"
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "prenos brez povezave shranjevanje shramba kakovost omrežje vprašaj pred prenosom"
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "preuzimanje van mreže čuvanje skladište kvalitet mreža pitaj pre preuzimanja"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "nedladdning offline spara lagring kvalitet nätverk fråga före nedladdning"
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ดาวน์โหลด ออฟไลน์ บันทึก พื้นที่จัดเก็บ คุณภาพ เครือข่าย ถามก่อนดาวน์โหลด"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "indirme çevrimdışı kaydetme depolama kalite ağ indirmeden önce sor"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "завантаження офлайн збереження сховище якість мережа запит перед завантаженням"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "tải xuống ngoại tuyến lưu bộ nhớ chất lượng mạng hỏi trước khi tải"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "下载 离线 保存 存储空间 画质 网络 下载前询问"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "下載 離線 儲存 儲存空間 畫質 網路 下載前詢問"
+          }
+        }
+      }
+    },
+    "download offline save storage quality network batch completed notification" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "تنزيل بدون إنترنت حفظ مساحة تخزين جودة شبكة دفعة اكتمال إشعار"
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "изтегляне офлайн запазване място качество мрежа група завършване известие"
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "baixada sense connexió desar emmagatzematge qualitat xarxa lot completat notificació"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "stahování offline uložit úložiště kvalita síť dávka dokončeno oznámení"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "download offline gem lagerplads kvalitet netværk samlet fuldført notifikation"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "download offline speichern speicherplatz qualität netzwerk gruppe abgeschlossen benachrichtigung"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "λήψη εκτός σύνδεσης αποθήκευση χώρος ποιότητα δίκτυο ομαδική ολοκλήρωση ειδοποίηση"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "descargar sin conexión guardar almacenamiento calidad red lote completado notificación"
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "دانلود آفلاین ذخیره حافظه کیفیت شبکه گروهی تکمیل اعلان"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "lataus offline tallenna tallennustila laatu verkko erä valmis ilmoitus"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "télécharger hors ligne enregistrer stockage qualité réseau lot terminé notification"
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "הורדה לא מקוון שמירה אחסון איכות רשת קבוצה הושלם התראה"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "डाउनलोड ऑफ़लाइन सेव स्टोरेज गुणवत्ता नेटवर्क समूह पूरा होने की सूचना"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "preuzimanje izvanmrežno spremanje pohrana kvaliteta mreža skupno dovršeno obavijest"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "letöltés offline mentés tárhely minőség hálózat csoportos befejezés értesítés"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "unduh offline simpan penyimpanan kualitas jaringan kelompok selesai notifikasi"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "download offline salva spazio qualità rete gruppo completato notifica"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ダウンロード オフライン 保存 ストレージ 画質 ネットワーク 一括 完了 通知"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "다운로드 오프라인 저장 저장공간 화질 네트워크 일괄 완료 알림"
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "muat turun luar talian simpan storan kualiti rangkaian kelompok selesai pemberitahuan"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "nedlasting offline lagre lagring kvalitet nettverk gruppe fullført varsling"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "download offline opslaan opslag kwaliteit netwerk batch voltooid melding"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "pobieranie offline zapisz pamięć jakość sieć grupa ukończone powiadomienie"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "download offline salvar armazenamento qualidade rede lote concluído notificação"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "descărcare offline salvare stocare calitate rețea lot finalizat notificare"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "загрузка офлайн сохранение хранилище качество сеть пакет завершено уведомление"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "sťahovanie offline uloženie úložisko kvalita sieť dávka dokončené oznámenie"
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "prenos brez povezave shranjevanje shramba kakovost omrežje skupina končano obvestilo"
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "preuzimanje van mreže čuvanje skladište kvalitet mreža grupa završeno obaveštenje"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "nedladdning offline spara lagring kvalitet nätverk grupp klar avisering"
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ดาวน์โหลด ออฟไลน์ บันทึก พื้นที่จัดเก็บ คุณภาพ เครือข่าย เป็นชุด ดาวน์โหลดเสร็จ การแจ้งเตือน"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "indirme çevrimdışı kaydetme depolama kalite ağ toplu indirme tamamlandı bildirim"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "завантаження офлайн збереження сховище якість мережа пакетне завантаження завершено сповіщення"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "tải xuống ngoại tuyến lưu bộ nhớ chất lượng mạng hàng loạt hoàn tất thông báo"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "下载 离线 保存 存储空间 画质 网络 批量 完成 通知"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "下載 離線 儲存 儲存空間 畫質 網路 批次 完成 通知"
+          }
+        }
+      }
+    },
+    "download offline save storage quality network original audio tracks subtitles" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "تنزيل بدون إنترنت حفظ مساحة تخزين جودة شبكة الأصلية صوت مسارات ترجمات"
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "изтегляне офлайн запазване място качество мрежа оригинален аудио писти субтитри"
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "baixada sense connexió desar emmagatzematge qualitat xarxa original àudio pistes subtítols"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "stahování offline uložit úložiště kvalita síť původní zvuk stopy titulky"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "download offline gem lagerplads kvalitet netværk original lyd spor undertekster"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "download offline speichern speicherplatz qualität netzwerk original audio spuren untertitel"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "λήψη εκτός σύνδεσης αποθήκευση χώρος ποιότητα δίκτυο πρωτότυπη ήχος κομμάτια υπότιτλοι"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "descargar sin conexión guardar almacenamiento calidad red original audio pistas subtítulos"
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "دانلود آفلاین ذخیره حافظه کیفیت شبکه اصلی صدا ترک‌ها زیرنویس‌ها"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "lataus offline tallenna tallennustila laatu verkko alkuperäinen ääni raidat tekstitykset"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "télécharger hors ligne enregistrer stockage qualité réseau originale audio pistes sous-titres"
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "הורדה לא מקוון שמירה אחסון איכות רשת מקורית שמע רצועות כתוביות"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "डाउनलोड ऑफ़लाइन सेव स्टोरेज गुणवत्ता नेटवर्क ओरिजिनल ऑडियो ट्रैक सबटाइटल"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "preuzimanje izvanmrežno spremanje pohrana kvaliteta mreža izvorni zvuk zapisi titlovi"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "letöltés offline mentés tárhely minőség hálózat eredeti hang sávok feliratok"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "unduh offline simpan penyimpanan kualitas jaringan asli audio trek subtitle"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "download offline salva spazio qualità rete originale audio tracce sottotitoli"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ダウンロード オフライン 保存 ストレージ 画質 ネットワーク オリジナル 音声 トラック 字幕"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "다운로드 오프라인 저장 저장공간 화질 네트워크 원본 오디오 트랙 자막"
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "muat turun luar talian simpan storan kualiti rangkaian asal audio trek sari kata"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "nedlasting offline lagre lagring kvalitet nettverk original lyd spor undertekster"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "download offline opslaan opslag kwaliteit netwerk origineel audio tracks ondertitels"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "pobieranie offline zapisz pamięć jakość sieć oryginał dźwięk ścieżki napisy"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "download offline salvar armazenamento qualidade rede original áudio faixas legendas"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "descărcare offline salvare stocare calitate rețea original audio piste subtitrări"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "загрузка офлайн сохранение хранилище качество сеть оригинал аудио дорожки субтитры"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "sťahovanie offline uloženie úložisko kvalita sieť pôvodný zvuk stopy titulky"
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "prenos brez povezave shranjevanje shramba kakovost omrežje izvirno zvok steze podnapisi"
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "preuzimanje van mreže čuvanje skladište kvalitet mreža izvorno zvuk trake titlovi"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "nedladdning offline spara lagring kvalitet nätverk original ljud spår undertexter"
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ดาวน์โหลด ออฟไลน์ บันทึก พื้นที่จัดเก็บ คุณภาพ เครือข่าย ต้นฉบับ เสียง แทร็กเสียง คำบรรยาย"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "indirme çevrimdışı kaydetme depolama kalite ağ orijinal ses ses parçaları altyazılar"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "завантаження офлайн збереження сховище якість мережа оригінал аудіо аудіодоріжки субтитри"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "tải xuống ngoại tuyến lưu bộ nhớ chất lượng mạng bản gốc âm thanh luồng âm thanh phụ đề"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "下载 离线 保存 存储空间 画质 网络 原始 音频 音轨 字幕"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "下載 離線 儲存 儲存空間 畫質 網路 原始 音訊 音軌 字幕"
+          }
+        }
+      }
+    },
+    "download offline save storage quality network standalone completed notification" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "تنزيل بدون إنترنت حفظ مساحة تخزين جودة شبكة فردي اكتمال إشعار"
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "изтегляне офлайн запазване място качество мрежа отделно завършване известие"
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "baixada sense connexió desar emmagatzematge qualitat xarxa individual completada notificació"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "stahování offline uložit úložiště kvalita síť jednotlivé dokončeno oznámení"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "download offline gem lagerplads kvalitet netværk enkelt fuldført notifikation"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "download offline speichern speicherplatz qualität netzwerk einzeln abgeschlossen benachrichtigung"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "λήψη εκτός σύνδεσης αποθήκευση χώρος ποιότητα δίκτυο μεμονωμένη ολοκλήρωση ειδοποίηση"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "descargar sin conexión guardar almacenamiento calidad red individual completado notificación"
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "دانلود آفلاین ذخیره حافظه کیفیت شبکه تکی تکمیل اعلان"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "lataus offline tallenna tallennustila laatu verkko yksittäinen valmis ilmoitus"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "télécharger hors ligne enregistrer stockage qualité réseau individuel terminé notification"
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "הורדה לא מקוון שמירה אחסון איכות רשת בודד הושלם התראה"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "डाउनलोड ऑफ़लाइन सेव स्टोरेज गुणवत्ता नेटवर्क अलग डाउनलोड पूरा होने की सूचना"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "preuzimanje izvanmrežno spremanje pohrana kvaliteta mreža pojedinačno dovršeno obavijest"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "letöltés offline mentés tárhely minőség hálózat önálló befejezés értesítés"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "unduh offline simpan penyimpanan kualitas jaringan tunggal selesai notifikasi"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "download offline salva spazio qualità rete singolo completato notifica"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ダウンロード オフライン 保存 ストレージ 画質 ネットワーク 個別 完了 通知"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "다운로드 오프라인 저장 저장공간 화질 네트워크 개별 완료 알림"
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "muat turun luar talian simpan storan kualiti rangkaian individu selesai pemberitahuan"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "nedlasting offline lagre lagring kvalitet nettverk enkeltvis fullført varsling"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "download offline opslaan opslag kwaliteit netwerk afzonderlijk voltooid melding"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "pobieranie offline zapisz pamięć jakość sieć pojedyncze ukończone powiadomienie"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "download offline salvar armazenamento qualidade rede individual concluído notificação"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "descărcare offline salvare stocare calitate rețea individual finalizat notificare"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "загрузка офлайн сохранение хранилище качество сеть отдельно завершено уведомление"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "sťahovanie offline uloženie úložisko kvalita sieť samostatné dokončené oznámenie"
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "prenos brez povezave shranjevanje shramba kakovost omrežje posamezno končano obvestilo"
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "preuzimanje van mreže čuvanje skladište kvalitet mreža pojedinačno završeno obaveštenje"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "nedladdning offline spara lagring kvalitet nätverk enskild klar avisering"
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ดาวน์โหลด ออฟไลน์ บันทึก พื้นที่จัดเก็บ คุณภาพ เครือข่าย รายการเดียว ดาวน์โหลดเสร็จ การแจ้งเตือน"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "indirme çevrimdışı kaydetme depolama kalite ağ tek indirme tamamlandı bildirim"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "завантаження офлайн збереження сховище якість мережа окреме завантаження завершено сповіщення"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "tải xuống ngoại tuyến lưu bộ nhớ chất lượng mạng từng mục hoàn tất thông báo"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "下载 离线 保存 存储空间 画质 网络 单项 完成 通知"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "下載 離線 儲存 儲存空間 畫質 網路 單項 完成 通知"
           }
         }
       }

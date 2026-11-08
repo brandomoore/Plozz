@@ -41,17 +41,6 @@ struct PlozziOSProfileSetupView: View {
                     Button("Done", action: onDone)
                 }
             }
-            .safeAreaInset(edge: .top) {
-                Text(
-                    "Pick the servers \(appModel.profiles.activeProfile.name) watches with, and who they are on each."
-                )
-                .font(.subheadline)
-                .plozzForeground(.secondary)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: .infinity)
-                .padding(.horizontal)
-                .padding(.bottom, 8)
-            }
         }
         .guidePreparationOverlay(
             model: appModel.guidePreparation, presenter: appModel.transientStatusPresenter,

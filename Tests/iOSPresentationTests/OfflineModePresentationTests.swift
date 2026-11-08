@@ -7,6 +7,7 @@ import FeatureProfiles
 import MediaDownloads
 import SwiftUI
 import UIKit
+import Vision
 import XCTest
 @testable import AppRuntime
 @testable import AppShelliOS
@@ -185,21 +186,26 @@ final class OfflineModePresentationTests: XCTestCase {
                     PlozziOSDownloadSettingsView(model: app.downloads, appModel: app)
                 }
                     .environment(\.locale, Locale(identifier: "en"))
+                    .environment(\.themePalette, .dark)
+                    .environment(\.colorScheme, .dark)
             )
             window.makeKeyAndVisible()
-            try await Task.sleep(for: .milliseconds(200))
-            window.layoutIfNeeded()
+            await settle(window)
             let controls = descendants(window).compactMap { $0 as? UISwitch }
-            let toggle = try XCTUnwrap(controls.first { $0.accessibilityIdentifier == "offline-mode-toggle" })
+            // SwiftUI owns accessibility identifiers, not the backing UISwitch.
+            let toggle = try XCTUnwrap(controls.min {
+                $0.convert($0.bounds, to: window).minY < $1.convert($1.bounds, to: window).minY
+            })
             XCTAssertTrue(toggle.isOn)
-            XCTAssertEqual(toggle.accessibilityIdentifier, "offline-mode-toggle")
             XCTAssertTrue(toggle.isEnabled)
             var ancestor: UIView? = toggle.superview
             while ancestor != nil, !(ancestor is UICollectionViewCell) { ancestor = ancestor?.superview }
             let row = try XCTUnwrap(ancestor as? UICollectionViewCell)
-            let toggleFrame = toggle.convert(toggle.bounds, to: row)
-            XCTAssertGreaterThanOrEqual(toggleFrame.minY, 11)
-            XCTAssertGreaterThanOrEqual(row.bounds.maxY - toggleFrame.maxY, 11)
+            let toggleFrame = toggle.convert(toggle.alignmentRect(forFrame: toggle.bounds), to: row)
+            XCTAssertGreaterThanOrEqual(row.bounds.height, 44)
+            XCTAssertGreaterThanOrEqual(row.bounds.height - toggleFrame.height, 24)
+            XCTAssertGreaterThanOrEqual(toggleFrame.minY, 8)
+            XCTAssertGreaterThanOrEqual(row.bounds.maxY - toggleFrame.maxY, 8)
             let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
                 XCTAssertTrue(window.drawHierarchy(in: window.bounds, afterScreenUpdates: true))
             }
@@ -217,6 +223,134 @@ final class OfflineModePresentationTests: XCTestCase {
             XCTAssertFalse(app.isChangingOfflineMode)
             await app.setOfflineMode(true)
         }
+    }
+
+    func testDownloadSettingsKeepOnlyContextualHelpOnPhoneAndTablet() async throws {
+        let app = try makeApp()
+        app.downloads.maximumDownloadMegabitsPerSecond = nil
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        for (size, sizeClass, name) in [
+            (CGSize(width: 402, height: 874), UserInterfaceSizeClass.compact, "phone"),
+            (CGSize(width: 820, height: 1180), .regular, "tablet")
+        ] {
+            app.downloads.downloadQuality = .original
+            window.frame = CGRect(origin: .zero, size: size)
+            await show(
+                NavigationStack {
+                    PlozziOSDownloadSettingsView(model: app.downloads, appModel: app)
+                }.environment(\.horizontalSizeClass, sizeClass),
+                in: window
+            )
+            let top = try recognizedText(in: window)
+            XCTAssertTrue(top.contains("Use Cellular"), top)
+            XCTAssertTrue(top.contains("Ask Each Time"), top)
+            XCTAssertTrue(top.contains("Keeps embedded audio and subtitles"), top)
+            XCTAssertFalse(top.contains("All Audio Tracks"), top)
+            XCTAssertFalse(top.contains("Text Subtitles"), top)
+            XCTAssertFalse(top.contains("Live Activities"), top)
+            XCTAssertFalse(top.contains("without transcoding"), top)
+            capture(window, name: "download-settings-simplified-\(name)")
+            if let scroll = descendants(window).compactMap({ $0 as? UIScrollView })
+                .first(where: { $0.contentSize.height > $0.bounds.height }) {
+                scroll.setContentOffset(CGPoint(
+                    x: 0, y: scroll.contentSize.height - scroll.bounds.height + scroll.adjustedContentInset.bottom
+                ), animated: false)
+            }
+            await settle(window)
+            let bottom = try recognizedText(in: window)
+            XCTAssertTrue((top + bottom).contains("Season or Show Complete"), top + bottom)
+            XCTAssertFalse((top + bottom).contains("About Downloads"), top + bottom)
+            XCTAssertFalse((top + bottom).contains("Batch Complete"), top + bottom)
+            XCTAssertFalse(bottom.contains("server CPU"), bottom)
+            capture(window, name: "download-settings-notifications-\(name)")
+            app.downloads.downloadQuality = .hd720
+            await show(
+                NavigationStack {
+                    PlozziOSDownloadSettingsView(model: app.downloads, appModel: app)
+                }.environment(\.horizontalSizeClass, sizeClass),
+                in: window
+            )
+            let reducedTop = try recognizedText(in: window)
+            if let scroll = descendants(window).compactMap({ $0 as? UIScrollView })
+                .first(where: { $0.contentSize.height > $0.bounds.height }) {
+                scroll.setContentOffset(CGPoint(
+                    x: 0, y: scroll.contentSize.height - scroll.bounds.height
+                        + scroll.adjustedContentInset.bottom
+                ), animated: false)
+            }
+            await settle(window)
+            let reduced = reducedTop + (try recognizedText(in: window))
+            XCTAssertTrue(reduced.contains("Requires server conversion"), reduced)
+            XCTAssertTrue(reduced.contains("May include fewer audio and subtitle tracks"), reduced)
+            XCTAssertFalse(reduced.contains("Keeps embedded audio"), reduced)
+            XCTAssertFalse(reduced.contains("About Downloads"), reduced)
+            capture(window, name: "download-settings-reduced-quality-\(name)")
+        }
+    }
+
+    func testDownloadSelectionShowsTrackLimitsAndOnlyRelevantSourceRestrictions() async throws {
+        let app = try makeApp()
+        let item = MediaItem(
+            id: "movie", title: "Example Movie", kind: .movie,
+            versions: [.init(id: "original", height: 1080, sizeBytes: 420_000_000)]
+        )
+        let selection = EpisodeDownloadSelection(
+            items: [item], preferences: app.versionPreferences, capabilities: .default
+        )
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        for (size, sizeClass, name) in [
+            (CGSize(width: 402, height: 874), UserInterfaceSizeClass.compact, "phone"),
+            (CGSize(width: 820, height: 1180), .regular, "tablet")
+        ] {
+            window.frame = CGRect(origin: .zero, size: size)
+            for (quality, supportsReduced, suffix) in [
+                (DownloadQuality.original, true, "original"),
+                (.hd720, true, "smaller"),
+                (.original, false, "original-only")
+            ] {
+                await show(
+                    PlozziOSDownloadSelectionContent(
+                        title: Text("Example Movie"), selection: .constant(selection),
+                        quality: .constant(quality), supportsReducedQuality: supportsReduced,
+                        availableSpace: "72 GB", isBulk: false,
+                        onCancel: {}, onDownload: {}
+                    ).environment(\.horizontalSizeClass, sizeClass),
+                    in: window
+                )
+                let text = try recognizedText(in: window)
+                XCTAssertTrue(text.contains("Available external text subtitles are saved too"), text)
+                XCTAssertEqual(text.contains("Only Original is available for this source"), !supportsReduced, text)
+                XCTAssertEqual(text.contains("Keeps embedded audio and subtitles"), quality == .original, text)
+                XCTAssertEqual(text.contains("Requires server conversion"), quality != .original, text)
+                XCTAssertEqual(text.contains("May include fewer audio and subtitle tracks"), quality != .original, text)
+                XCTAssertTrue(text.contains("Quality"), text)
+                capture(window, name: "download-selection-\(name)-\(suffix)")
+            }
+        }
+    }
+
+    private func recognizedText(in window: UIWindow) throws -> String {
+        let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+            XCTAssertTrue(window.drawHierarchy(in: window.bounds, afterScreenUpdates: true))
+        }
+        let request = VNRecognizeTextRequest()
+        request.recognitionLanguages = ["en-US"]
+        try VNImageRequestHandler(cgImage: XCTUnwrap(image.cgImage)).perform([request])
+        return (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ")
     }
 
     func testOfflineScreensInContext() async throws {

@@ -62,6 +62,25 @@ Binary Images:
 
 
 class EvidenceTests(unittest.TestCase):
+    def test_profile_library_shell_measures_covered_home_requests(self):
+        name = "mobile-profile-library-shell"
+        self.assertEqual(performance.select(None, [name], "iOS"), [name])
+        with self.assertRaises(performance.Failure):
+            performance.select(None, [name], "tvOS")
+        self.assertEqual(performance.SCENARIOS[name]["test"],
+                         "ProfileSelectionPerformanceTests/testPerformanceLibrarySelectionWithAppShell")
+        self.assertIn("homeRequests", performance.SCENARIOS[name]["counters"])
+
+    def test_profile_library_selection_measures_many_server_native_controls(self):
+        name = "mobile-profile-library-selection"
+        self.assertEqual(performance.select(None, [name], "iOS"), [name])
+        with self.assertRaises(performance.Failure):
+            performance.select(None, [name], "tvOS")
+        self.assertEqual(performance.SCENARIOS[name]["test"],
+                         "ProfileSelectionPerformanceTests/testPerformanceManyServerLibrarySelection")
+        self.assertTrue({"serverToggles", "libraryToggles", "providerConstructions", "libraryRequests",
+                         "maxMainActorGapMicroseconds"}.issubset(performance.SCENARIOS[name]["counters"]))
+
     def test_card_lifecycle_soak_requires_an_explicit_isolated_run(self):
         name = "cards-lifecycle-soak"
         self.assertEqual(performance.select(None, [name]), [name])
@@ -192,9 +211,9 @@ class EvidenceTests(unittest.TestCase):
 
     def test_selection_is_explicit_and_narrow_by_default(self):
         self.assertEqual(set(performance.select(None, None)), {
-            "sync-unchanged", "library-unchanged", "catalog-import", "watchlist-artwork-rehydration",
+            "sync-unchanged", "library-unchanged", "multi-share-scanning", "catalog-import", "watchlist-artwork-rehydration",
             "live-tv-schedule-capture", "live-tv-schedule-sync", "poster-preview-admission",
-            "seek-generated-80ms", "seek-generated-180ms",
+            "seek-generated-80ms", "seek-generated-180ms", "identity-unchanged-servers",
         })
         self.assertEqual(performance.select(None, ["guide-large-batches"]), ["guide-large-batches"])
         self.assertEqual(performance.select(None, ["poster-preview-admission"]),
@@ -203,7 +222,8 @@ class EvidenceTests(unittest.TestCase):
                          ["watchlist-artwork-rehydration"])
         self.assertEqual(performance.select("matrix", None), ["runtime-matrix"])
         self.assertEqual(performance.select("diagnostics", None),
-                         ["diagnostics-disabled", "diagnostics-enabled", "diagnostics-snapshot"])
+                         ["diagnostics-disabled", "diagnostics-enabled", "diagnostics-snapshot",
+                          "playback-journal-disabled", "playback-journal-enabled"])
         self.assertEqual(len(performance.expected_reports(["runtime-matrix"])), 16)
         for suite, names in [("core", ["sync-unchanged"]), (None, ["unknown"]),
                              (None, ["sync-unchanged", "sync-unchanged"])]:
@@ -265,18 +285,20 @@ class EvidenceTests(unittest.TestCase):
                 performance.verify_summary(dict(summary(), **change), 1)
 
     def test_mobile_loading_scroll_requires_complete_layout_work(self):
-        name = "mobile-home-loading-scroll"
-        self.assertEqual(performance.select(None, [name], "iOS"), [name])
-        with self.assertRaisesRegex(performance.Failure, "not supported on tvOS"):
-            performance.select(None, [name], "tvOS")
-        spec = performance.SCENARIOS[name]
-        sample = report(name=name)
-        performance.validate_report(sample, spec)
-        for counter in spec["counters"]:
-            incomplete = copy.deepcopy(sample)
-            del incomplete["samples"][0]["counters"][counter]
-            with self.assertRaises(performance.Failure):
-                performance.validate_report(incomplete, spec)
+        for name in ("mobile-home-loading-scroll", "mobile-home-multi-server-loading",
+                     "mobile-home-multi-server-scroll", "mobile-home-multi-server-startup-scroll"):
+            with self.subTest(scenario=name):
+                self.assertEqual(performance.select(None, [name], "iOS"), [name])
+                with self.assertRaisesRegex(performance.Failure, "not supported on tvOS"):
+                    performance.select(None, [name], "tvOS")
+                spec = performance.SCENARIOS[name]
+                sample = report(name=name)
+                performance.validate_report(sample, spec)
+                for counter in spec["counters"]:
+                    incomplete = copy.deepcopy(sample)
+                    del incomplete["samples"][0]["counters"][counter]
+                    with self.assertRaises(performance.Failure):
+                        performance.validate_report(incomplete, spec)
 
     def test_controls_reveal_scenarios_require_tv_and_complete_responsiveness_counters(self):
         for name in ("player-controls-reveal", "player-controls-reveal-contended"):

@@ -230,7 +230,6 @@ private struct PlozziOSServerSettingsDetailView: View {
 }
 
 struct PlozziOSMyLibrariesSettingsView: View {
-    @Environment(\.managedProviderSetupRouter) private var providerSetupRouter
     let appModel: PlozziOSAppModel
     let onAddServer: () -> Void
     /// Signs an additional user in to an already-added server. Same capability as
@@ -243,26 +242,32 @@ struct PlozziOSMyLibrariesSettingsView: View {
     /// Add-account actions are supplied by whichever host owns the screen, so
     /// they remain inside Settings or profile setup instead of escaping either.
     var presentation: ProfileLibrariesScope.Presentation = .settings
-    private var discovery: DiscoveredLibrariesStore { appModel.settings.discoveredLibraries }
-    private var libraries: [ProfileLibraryChoice] {
-        (discovery.state.value ?? []).filter { !$0.library.isMusic }.map {
-            ProfileLibraryChoice(accountID: $0.accountID, library: $0.library)
-        }.sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
+
+    var body: some View {
+        let libraries = (appModel.settings.discoveredLibraries.state.value ?? [])
+            .filter { !$0.library.isMusic }
+            .map { ProfileLibraryChoice(accountID: $0.accountID, library: $0.library) }
+            .sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
+        PlozziOSMyLibrariesContent(
+            appModel: appModel, onAddServer: onAddServer, onAddUser: onAddUser,
+            presentation: presentation, groups: serverGroups(from: appModel.accounts),
+            librariesByAccountID: Dictionary(grouping: libraries, by: \.accountID)
+        )
     }
+}
+
+private struct PlozziOSMyLibrariesContent: View {
+    @Environment(\.managedProviderSetupRouter) private var providerSetupRouter
+    @Environment(SettingsSearchRequest.self) private var searchRequest: SettingsSearchRequest?
+    let appModel: PlozziOSAppModel
+    let onAddServer: () -> Void
+    let onAddUser: (MediaServer) -> Void
+    let presentation: ProfileLibrariesScope.Presentation
+    let groups: [ServerAccountGroup]
+    let librariesByAccountID: [String: [ProfileLibraryChoice]]
+    private var discovery: DiscoveredLibrariesStore { appModel.settings.discoveredLibraries }
     private var unreachableAccountIDs: Set<String> { discovery.unreachableAccountIDs }
     private var libraryFailures: [String: AppError] { discovery.failures }
-    private var isLoading: Bool { discovery.state == .loading || !discovery.refreshingAccountIDs.isEmpty }
-
-    /// Server keys whose switch has been flipped but whose write hasn't landed.
-    @State private var pendingWatching: [String: Bool] = [:]
-
-    /// Slightly longer than the knob's 0.18s travel, so the commit lands after
-    /// the animation rather than during it.
-    private static let switchSettleMilliseconds = 220
-
-    private var groups: [ServerAccountGroup] {
-        serverGroups(from: appModel.accounts)
-    }
 
     private var profileID: String {
         appModel.profiles.activeProfileID
@@ -283,10 +288,12 @@ struct PlozziOSMyLibrariesSettingsView: View {
         return (group.serverKey == groups.first?.serverKey ? ["profile-source-inclusion"] : []) + dependentTargets
     }
 
-    @Environment(SettingsSearchRequest.self) private var searchRequest: SettingsSearchRequest?
-
     var body: some View {
         SettingsPageList {
+            ProfileLibrariesSummary(profile: appModel.profiles.activeProfile)
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
+                .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 16, trailing: 0))
             if searchRequest?.targetID == "watcher-plex-user",
                searchGroup(for: "watcher-plex-user") == nil {
                 Text("Add a Plex server to choose a Plex user.")
@@ -322,10 +329,6 @@ struct PlozziOSMyLibrariesSettingsView: View {
             }
         }
         .navigationTitle(SettingsCopy.libraries)
-        // Optimistic switch positions belong to the profile they were tapped for.
-        .onChange(of: appModel.profiles.activeProfileID) { _, _ in
-            pendingWatching.removeAll()
-        }
         .task(id: appModel.navigationLibrariesScopeKey) {
             await loadLibraries()
         }
@@ -373,7 +376,7 @@ struct PlozziOSMyLibrariesSettingsView: View {
             Toggle(
                 isOn: Binding(
                     get: { isWatching(group) },
-                    set: { setWatchingSmoothly($0, group: group) }
+                    set: { setWatching($0, group: group) }
                 )
             ) {
                 HStack(spacing: 12) {
@@ -394,39 +397,16 @@ struct PlozziOSMyLibrariesSettingsView: View {
             if isWatching(group) {
                 identityControl(for: group)
 
-                if isLoading, librariesForActiveIdentity(in: group).isEmpty {
+                if let account = activeAccount(in: group),
+                   discovery.refreshingAccountIDs.contains(account.id),
+                   librariesForActiveIdentity(in: group).isEmpty {
                     HStack {
                         ProgressView()
                         Text("Loading libraries…")
                     }
                 } else if librariesForActiveIdentity(in: group).isEmpty {
                     if isUnreachable(group) {
-                        let account = activeAccount(in: group)
-                        let failure = account.flatMap { libraryFailures[$0.id] } ?? .serverUnreachable
-                        HStack {
-                            Label {
-                                if failure == .serverUnreachable {
-                                    Text("Can't reach this server — it may be offline.")
-                                } else {
-                                    Text(failure.userMessage)
-                                }
-                            } icon: {
-                                Image(systemName: failure.requiresSignIn ? "person.crop.circle.badge.exclamationmark" : "exclamationmark.triangle")
-                            }
-                            .plozzForeground(.secondary)
-                            Spacer()
-                            if failure.requiresSignIn, let account,
-                               account.server.provider.supportsAccountReauthentication, let providerSetupRouter {
-                                Button("Sign In Again") { providerSetupRouter.reauthenticationAccount = account }
-                            } else if failure.requiresSignIn, let account,
-                                      account.server.provider == .iptv, let providerSetupRouter {
-                                Button("Edit connection") { providerSetupRouter.connectIPTV(account: account) }
-                            } else {
-                                Button { Task { await loadLibraries() } } label: {
-                                    Label("Retry", systemImage: "arrow.clockwise")
-                                }
-                            }
-                        }
+                        libraryFailure(for: group)
                     } else {
                         Text("No video libraries are available.")
                             .plozzForeground(.secondary)
@@ -446,32 +426,47 @@ struct PlozziOSMyLibrariesSettingsView: View {
                                 && library.id == librariesForActiveIdentity(in: group).first?.id
                         )
                     }
+                    if isUnreachable(group) { libraryFailure(for: group) }
                 }
             }
-        } footer: {
-            Text("Saved for profile “\(appModel.profiles.activeProfile.name)”.")
         }
         .settingsSearchGroup(searchTargets(for: group))
     }
 
+    private func libraryFailure(for group: ServerAccountGroup) -> some View {
+        let account = activeAccount(in: group)
+        let failure = account.flatMap { libraryFailures[$0.id] } ?? .serverUnreachable
+        return HStack {
+            Label {
+                if failure == .serverUnreachable {
+                    Text("Can't reach this server — it may be offline.")
+                } else {
+                    Text(failure.userMessage)
+                }
+            } icon: {
+                Image(systemName: failure.requiresSignIn ? "person.crop.circle.badge.exclamationmark" : "exclamationmark.triangle")
+            }
+            .plozzForeground(.secondary)
+            Spacer()
+            if failure.requiresSignIn, let account,
+               account.server.provider.supportsAccountReauthentication, let providerSetupRouter {
+                Button("Sign In Again") { providerSetupRouter.reauthenticationAccount = account }
+            } else if failure.requiresSignIn, let account,
+                      account.server.provider == .iptv, let providerSetupRouter {
+                Button("Edit connection") { providerSetupRouter.connectIPTV(account: account) }
+            } else {
+                Button { Task { await loadLibraries() } } label: {
+                    Label("Retry", systemImage: "arrow.clockwise")
+                }
+            }
+        }
+    }
+
     /// One library, as a checkmark child of its server's master switch.
     private func libraryCheckRow(_ library: ProfileLibraryChoice, isSearchTarget: Bool) -> some View {
-        let isOn = appModel.settings.homeVisibility.isVisibleOnHome(library.key, library: library.library)
-        return Button {
-            appModel.settings.homeVisibility.setEnabled(!isOn, for: library.key)
-        } label: {
-            HStack {
-                Text(verbatim: library.title)
-                Spacer(minLength: 12)
-                SettingsCheckmark(isChecked: isOn, prominence: .secondary)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(Rectangle())
-        }
-        .settingsActionRow()
-        .accessibilityAddTraits(isOn ? [.isButton, .isSelected] : .isButton)
-        .settingsSearchAnchor(
-            isSearchTarget ? "profile-library-inclusion" : "profile-library-\(library.id)"
+        ProfileLibraryCheckRow(
+            library: library, visibility: appModel.settings.homeVisibility,
+            isSearchTarget: isSearchTarget
         )
     }
 
@@ -564,46 +559,8 @@ struct PlozziOSMyLibrariesSettingsView: View {
     }
 
     private func isWatching(_ group: ServerAccountGroup) -> Bool {
-        // The optimistic value wins while a write is in flight, so the switch
-        // reflects the tap immediately rather than waiting on the model.
-        if let pending = pendingWatching[group.serverKey] { return pending }
-        return isWatchingCommitted(group)
-    }
-
-    private func isWatchingCommitted(_ group: ServerAccountGroup) -> Bool {
         let active = appModel.activeAccountIDs(for: profileID)
         return group.accounts.contains { active.contains($0.id) }
-    }
-
-    /// Flips the switch now and commits once it has finished moving.
-    ///
-    /// `setAccount` re-scopes the profile, reloads the account set and rebuilds
-    /// the crash context, all on the main actor. Running that from the switch's
-    /// own action meant the work landed in the middle of the knob's 0.18s
-    /// animation and stalled it — the switch felt heavy and late even though the
-    /// tap had registered. Painting the new state from local state first makes the
-    /// control answer instantly; the rows below arrive a beat later, which is the
-    /// natural reading order anyway.
-    private func setWatchingSmoothly(_ enabled: Bool, group: ServerAccountGroup) {
-        let key = group.serverKey
-        // Pinned BEFORE the wait. `profileID` reads the ACTIVE profile live, so
-        // resolving it after the sleep would write to whatever profile happened
-        // to be active by then — and a synced deletion can re-point that with no
-        // user action at all.
-        let targetProfileID = profileID
-        pendingWatching[key] = enabled
-        Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(Self.switchSettleMilliseconds))
-            // The person moved on; their new profile's membership isn't ours to
-            // change, and the switch they were looking at is long gone.
-            guard profileID == targetProfileID else {
-                if pendingWatching[key] == enabled { pendingWatching[key] = nil }
-                return
-            }
-            setWatching(enabled, group: group, for: targetProfileID)
-            // Only clear our own value: a second tap during the wait owns the key.
-            if pendingWatching[key] == enabled { pendingWatching[key] = nil }
-        }
     }
 
     private struct PlozziOSPlexIdentityAvatar: View {
@@ -683,7 +640,7 @@ struct PlozziOSMyLibrariesSettingsView: View {
         in group: ServerAccountGroup
     ) -> [ProfileLibraryChoice] {
         guard let account = activeAccount(in: group) else { return [] }
-        return libraries.filter { $0.accountID == account.id }
+        return librariesByAccountID[account.id] ?? []
     }
 
     private func loadLibraries() async {
@@ -695,6 +652,35 @@ struct PlozziOSMyLibrariesSettingsView: View {
     private func isUnreachable(_ group: ServerAccountGroup) -> Bool {
         guard let account = activeAccount(in: group) else { return false }
         return unreachableAccountIDs.contains(account.id)
+    }
+}
+
+private struct ProfileLibraryCheckRow: View {
+    let library: ProfileLibraryChoice
+    let visibility: HomeLibraryVisibilityModel
+    let isSearchTarget: Bool
+
+    var body: some View {
+        let isOn = visibility.isVisibleOnHome(library.key, library: library.library)
+        Button {
+            visibility.setEnabled(
+                !visibility.isVisibleOnHome(library.key, library: library.library),
+                for: library.key
+            )
+        } label: {
+            HStack {
+                Text(verbatim: library.title)
+                Spacer(minLength: 12)
+                SettingsCheckmark(isChecked: isOn, prominence: .secondary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .settingsActionRow()
+        .accessibilityAddTraits(isOn ? [.isButton, .isSelected] : .isButton)
+        .settingsSearchAnchor(
+            isSearchTarget ? "profile-library-inclusion" : "profile-library-\(library.id)"
+        )
     }
 }
 

@@ -6,6 +6,14 @@ import CoreModels
 /// remain consistent across merged and unmerged layouts.
 @MainActor
 final class HomeAggregatorCurationTests: XCTestCase {
+    func testNormalHomeLoadingWarmsLibraryNamesWithoutCopyingProfileChoices() async {
+        let source = resolved("warm-home-\(UUID())", provider: ResumeStub(continueWatching: []))
+        XCTAssertNil(LibraryInventoryStore.shared.load(for: source))
+        _ = await HomeAggregator().content(from: [source], visibility: merged)
+        XCTAssertEqual(LibraryInventoryStore.shared.load(for: source)?.map(\.id), ["L1"])
+        XCTAssertEqual(HomeAggregator.cachedLibraries(from: [source]).accountIDs, [source.account.id])
+        XCTAssertTrue(HomeAggregator.cachedLibraries(from: []).libraries.isEmpty)
+    }
 
     private func resolved(_ id: String, provider: any MediaProvider) -> ResolvedAccount {
         let server = MediaServer(

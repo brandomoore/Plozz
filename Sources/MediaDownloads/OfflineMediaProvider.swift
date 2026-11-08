@@ -6,6 +6,7 @@ public struct OfflineMediaProvider: MediaProvider, MediaSortFieldProviding {
     public let session: UserSession
     public var kind: ProviderKind { session.server.provider }
     public var connectionLocality: SourceLocality { .local }
+    public var sharesLibraryInventoryAcrossProfiles: Bool { false }
     private let accountID: String
     private let sourceUserID: String?
     private let knownLibraries: [MediaLibrary]
@@ -40,6 +41,7 @@ public struct OfflineMediaProvider: MediaProvider, MediaSortFieldProviding {
     private func catalog() async throws -> Catalog {
         try await authorize()
         var catalog = Catalog()
+        var posters: [String: URL] = [:]
         let records = await registry.all().sorted { $0.updatedAt > $1.updatedAt }
         for record in records {
             try Task.checkCancellation()
@@ -53,6 +55,8 @@ public struct OfflineMediaProvider: MediaProvider, MediaSortFieldProviding {
                   snapshot.kind == .movie || snapshot.kind == .episode else { continue }
             let libraryID = snapshot.libraryID
                 ?? (snapshot.kind == .movie ? "offline.movies" : "offline.series")
+            let landscape = artworkURL(for: record)
+            let poster = artworkURL(for: record, role: .poster)
             var item = MediaItem(
                 id: id, title: snapshot.title, kind: snapshot.kind,
                 overview: snapshot.overview, parentTitle: snapshot.seriesTitle,
@@ -61,10 +65,22 @@ public struct OfflineMediaProvider: MediaProvider, MediaSortFieldProviding {
                 genres: snapshot.genres ?? [], seriesID: snapshot.seriesID,
                 seasonID: snapshot.seasonID, runtime: snapshot.runtime,
                 resumePosition: snapshot.resumePosition, isPlayed: snapshot.isPlayed ?? false,
-                posterURL: artworkURL(for: record), providerIDs: snapshot.providerIDs,
+                posterURL: snapshot.kind == .episode ? landscape : poster ?? landscape,
+                seriesPosterURL: snapshot.kind == .episode ? poster : nil,
+                backdropURL: landscape, providerIDs: snapshot.providerIDs,
                 allowsTitleBasedMetadataMatching: false,
                 sourceAccountID: accountID, libraryID: libraryID
             )
+            if item.kind == .episode {
+                let seriesID = snapshot.seriesID ?? "offline.series.\(record.groupID ?? id)"
+                let seasonID = snapshot.seasonID ?? "\(seriesID).offline.season.\(snapshot.seasonNumber ?? 0)"
+                item.seriesID = seriesID
+                item.seasonID = seasonID
+                posters[seriesID] = posters[seriesID] ?? poster
+                posters[seasonID] = posters[seasonID] ?? poster
+            } else {
+                posters[id] = posters[id] ?? poster
+            }
             if let versionID = record.versionID {
                 item.versions = [MediaVersion(
                     id: versionID, name: record.versionLabel, sizeBytes: record.totalBytes,
@@ -75,18 +91,16 @@ public struct OfflineMediaProvider: MediaProvider, MediaSortFieldProviding {
             catalog.records[id, default: []].append(record)
             if var existing = catalog.items[id] {
                 existing.versions += item.versions
+                existing.posterURL = existing.posterURL ?? item.posterURL
+                existing.backdropURL = existing.backdropURL ?? item.backdropURL
                 catalog.items[id] = existing
                 continue
             }
-            if item.kind == .episode {
-                let seriesID = snapshot.seriesID ?? "offline.series.\(record.groupID ?? id)"
-                let seasonID = snapshot.seasonID ?? "\(seriesID).offline.season.\(snapshot.seasonNumber ?? 0)"
-                item.seriesID = seriesID
-                item.seasonID = seasonID
+            if item.kind == .episode, let seriesID = item.seriesID, let seasonID = item.seasonID {
                 if catalog.items[seriesID] == nil {
                     catalog.items[seriesID] = MediaItem(
                         id: seriesID, title: snapshot.seriesTitle ?? snapshot.title, kind: .series,
-                        posterURL: artworkURL(for: record), allowsTitleBasedMetadataMatching: false,
+                        posterURL: poster, backdropURL: landscape, allowsTitleBasedMetadataMatching: false,
                         sourceAccountID: accountID, libraryID: libraryID
                     )
                     catalog.roots[libraryID, default: []].append(seriesID)
@@ -95,7 +109,7 @@ public struct OfflineMediaProvider: MediaProvider, MediaSortFieldProviding {
                     catalog.items[seasonID] = MediaItem(
                         id: seasonID, title: snapshot.seriesTitle ?? snapshot.title, kind: .season,
                         parentTitle: snapshot.seriesTitle, seasonNumber: snapshot.seasonNumber,
-                        seriesID: seriesID, posterURL: artworkURL(for: record),
+                        seriesID: seriesID, posterURL: poster, backdropURL: landscape,
                         allowsTitleBasedMetadataMatching: false,
                         sourceAccountID: accountID, libraryID: libraryID
                     )
@@ -104,6 +118,15 @@ public struct OfflineMediaProvider: MediaProvider, MediaSortFieldProviding {
                 catalog.children[seasonID, default: []].append(id)
             } else {
                 catalog.roots[libraryID, default: []].append(id)
+            }
+            catalog.items[id] = item
+        }
+        // Any authorized episode/version can supply a missing parent poster.
+        for (id, var item) in catalog.items {
+            if item.kind == .episode {
+                item.seriesPosterURL = item.seriesID.flatMap { posters[$0] }
+            } else {
+                item.posterURL = posters[id] ?? item.seriesID.flatMap { posters[$0] } ?? item.posterURL
             }
             catalog.items[id] = item
         }
@@ -234,8 +257,11 @@ public struct OfflineMediaProvider: MediaProvider, MediaSortFieldProviding {
         persistedURL.isFileURL ? persistedURL : nil
     }
 
-    private func artworkURL(for record: DownloadedMediaRecord) -> URL? {
-        guard let name = record.snapshot.artworkFileName, !name.contains("/"), !name.contains("\\"),
+    private func artworkURL(
+        for record: DownloadedMediaRecord, role: PinnedMediaSnapshot.ArtworkRole = .landscape
+    ) -> URL? {
+        guard let name = record.snapshot.artworkFileName(for: role), !name.isEmpty,
+              !name.contains("/"), !name.contains("\\"),
               name != ".", name != "..",
               let folder = try? storage.pinnedFolderURL(forKey: record.identityKey) else { return nil }
         let url = folder.appendingPathComponent(name)

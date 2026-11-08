@@ -255,6 +255,7 @@ private struct PlozziOSDownloadedEpisodeRow: View {
                     Task { await model.resume(record) }
                 }
             }
+            PlozziOSDownloadSubtitleAction(record: record, model: model)
             Button("Remove", systemImage: "trash", role: .destructive) {
                 Task { await model.remove(record) }
             }

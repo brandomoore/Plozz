@@ -90,6 +90,28 @@ final class SettingsSearchTests: XCTestCase {
         XCTAssertTrue(index.results(for: String(repeating: "z", count: 10_000)).isEmpty)
     }
 
+    func testDownloadTracksFindQualityWithoutAdvertisingRemovedSwitches() {
+        XCTAssertNil(SettingsSearchCatalog.entry(id: "downloads-audio"))
+        XCTAssertNil(SettingsSearchCatalog.entry(id: "downloads-subtitles"))
+        let mobile = SettingsSearchIndex(
+            entries: SettingsSearchCatalog.entries(on: .phone), locale: Locale(identifier: "en_US")
+        )
+        for query in ["download audio tracks", "download subtitles", "download original"] {
+            XCTAssertTrue(mobile.results(for: query).contains { $0.id == "downloads-quality" }, query)
+        }
+    }
+
+    func testSeasonOrShowCompletionRemainsSearchableAsBatchNotifications() throws {
+        let entry = try XCTUnwrap(SettingsSearchCatalog.entry(id: "downloads-notify-batch"))
+        XCTAssertEqual(entry.title.resolved(locale: Locale(identifier: "en_US")), "Season or Show Complete")
+        let mobile = SettingsSearchIndex(
+            entries: SettingsSearchCatalog.entries(on: .phone), locale: Locale(identifier: "en_US")
+        )
+        for query in ["season complete", "show complete", "batch notification"] {
+            XCTAssertTrue(mobile.results(for: query).contains { $0.id == entry.id }, query)
+        }
+    }
+
     func testCatalogIdentityAndPlatformRoutes() {
         let entries = SettingsSearchCatalog.entries
         XCTAssertEqual(entries.count, Set(entries.map(\.id)).count)

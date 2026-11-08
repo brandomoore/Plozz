@@ -2166,13 +2166,25 @@ public struct JellyfinProvider: MediaProvider, ServerRatingsProviding, SeriesRes
     /// fetched via a plain item lookup — no `PlaybackInfo`/transcode. Used to
     /// observe a just-downloaded subtitle so it can be hot-loaded.
     public func subtitleTracks(forItemID itemID: String) async throws -> [MediaTrack] {
-        let dto = try await client.item(userID: session.userID, id: itemID)
-        let source = dto.MediaSources?.first
-        let sourceID = source?.Id ?? itemID
-        let streams = source?.MediaStreams ?? dto.MediaStreams ?? []
+        try await subtitleTracks(context: .init(itemID: itemID))
+    }
+
+    public func subtitleTracks(context: RemoteSubtitleContext) async throws -> [MediaTrack] {
+        let dto = try await client.item(userID: session.userID, id: context.itemID)
+        let source: MediaSourceInfo?
+        if let sourceID = context.mediaSourceID {
+            guard let selected = dto.MediaSources?.first(where: { $0.Id == sourceID }) else {
+                throw AppError.notFound
+            }
+            source = selected
+        } else {
+            source = dto.MediaSources?.first
+        }
+        let sourceID = source?.Id ?? context.itemID
+        let streams = source?.MediaStreams ?? (context.mediaSourceID == nil ? dto.MediaStreams : nil) ?? []
         return try streams
             .filter { $0.`Type` == "Subtitle" }
-            .map { try map(subtitleStream: $0, itemID: itemID, sourceID: sourceID) }
+            .map { try map(subtitleStream: $0, itemID: context.itemID, sourceID: sourceID) }
     }
 
     // MARK: - Mapping

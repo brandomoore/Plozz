@@ -421,6 +421,13 @@ final class CrashDiagnosticsTests: XCTestCase {
         operations.start()
         operations.begin(.serverRequest, provider: .jellyfin)?
             .finish(.failed, metrics: .init(bytes: 128, requests: 1), httpStatus: 401)
+        operations.begin(.homePublish, metrics: .init(items: 800, rows: 40))?.finish(.succeeded)
+        let homeObservation = try XCTUnwrap(operations.beginHomeObservation())
+        var homeMetrics = PerformanceDiagnostics.HomeUIMetrics()
+        homeMetrics.samples = 1
+        homeMetrics.loadingSamples = 1
+        XCTAssertTrue(homeObservation.record(homeMetrics))
+        homeObservation.stop()
         let searches = SearchDiagnosticJournal()
         searches.start()
         let search = try XCTUnwrap(searches.beginSearch())
@@ -452,6 +459,9 @@ final class CrashDiagnosticsTests: XCTestCase {
                 XCTAssertEqual(records?.first?["attempt"] as? String, records?.last?["attempt"] as? String)
                 XCTAssertEqual((records?.first?["facts"] as? [String: Any])?["sourceVideo"] as? String, "hevc")
                 XCTAssertNotNil(body["operations"])
+                let operationBody = body["operations"] as? [String: Any]
+                XCTAssertEqual((operationBody?["homeRecent"] as? [[String: Any]])?.first?["operation"] as? String, "homePublish")
+                XCTAssertEqual((operationBody?["homeUI"] as? [[String: Any]])?.count, 1)
                 let searchEntries = (body["search"] as? [String: Any])?["entries"] as? [[String: Any]]
                 let searchFacts = searchEntries?.first?["facts"] as? [String: Any]
                 XCTAssertEqual(searchFacts?["provider"] as? String, "silo")

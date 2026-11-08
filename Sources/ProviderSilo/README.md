@@ -168,9 +168,17 @@ These Home and device-login contracts were checked at upstream revision
   provider-anchored content-ID scheme, so the identity index can match owned
   copies before a detail page is opened. Explicit detail fields win; an
   episode's embedded series anchor is never treated as its own episode ID.
-  Those anchors are partial identity, not a complete set of provider IDs. Library
-  indexing and on-demand ownership searches hydrate native item details with
-  bounded concurrency to join TVDB-anchored titles to TMDB/IMDb watchlist entries.
+  Those anchors are partial identity, not a complete set of provider IDs. Fresh
+  catalog/search cards with explicit external IDs carry the same known identity
+  set as detail ([Silo-Server/silo-server#3618](https://github.com/Silo-Server/silo-server/pull/3618)).
+  Library indexing and on-demand ownership searches reuse these cards without
+  a detail request per title. Unknown IDs are omitted by the server, so one
+  usable explicit ID is sufficient; completeness is checked per card, not inferred
+  for the server. Anchor-only, empty-ID, older-server and restored cards retain
+  bounded detail enrichment to join TVDB-anchored titles to TMDB/IMDb entries.
+  The completeness hint is transient, is not persisted, and is not applied to
+  native Home cards. Identity matching, exact library membership, profile scope,
+  cancellation and server cooldowns are unchanged.
   Episode file resolution and coarse HDR/SDR fields fill missing track-level
   metadata for hero badges; detailed track facts take precedence. An explicit
   file-level `hdr: false` means SDR even when no video tracks are supplied;

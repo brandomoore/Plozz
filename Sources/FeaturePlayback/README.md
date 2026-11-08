@@ -82,9 +82,18 @@ bounded language-match/accessibility flags without track titles or URLs.
   accepted sightings renew expiry without changing equal observable state, and
   cancelled timers cannot clear a newer song.
   The separate neighboring card (stacked on phones) places a rounded square album cover beside the song
-  details, matching the Info thumbnail's height and insets on wide layouts.
-  Space is reserved only on supported, enabled playback and stays fixed between
-  matches; an empty slot creates no hidden artwork or glass. `PlayerSongLayoutPreviewTests`
+  details, matching the Info thumbnail's height, content insets, and shared media-edge
+  treatment on wide layouts.
+  Song links use the native TV glass button with Info's panel corner radius,
+  not an opaque media-card wrapper or a second glass underlay. The label uses
+  the full card bounds so the button's text margins do not add a second inset.
+  Song titles and artists wrap rather than truncating to fixed line counts. Reduced-effects
+  and older-system fallbacks use a native card button around the shared frosted
+  panel. Mobile and non-link cards retain the shared Info panel surface.
+  Space is used only while a recognized song card is visible. Without a match,
+  Info keeps its full width and phone layouts have no empty row or gap. Song
+  appearance, expiry and availability changes preserve the Info view's identity;
+  disappearing song focus returns to Playback Info. `PlayerSongLayoutPreviewTests`
   captures the production controls over native video with a seeded song match.
   Opt in with `TEST_RUNNER_PLOZZ_SONG_PREVIEW_DIRECTORY` pointing to an owned
   directory containing `film.mp4`, `still.jpg`, and `album.jpg`; these captures
@@ -92,6 +101,9 @@ bounded language-match/accessibility flags without track titles or URLs.
   The [performance lab](../../docs/performance-lab.md#song-recognition) exercises
   real local-catalog recognition separately. Fingerprinting is not free, and
   simulator measurements do not establish device energy or native-route cost.
+  Matching Apple's music catalog also requires enabling ShazamKit under the
+  app identifier's **App Services** in the Apple Developer portal. Local custom
+  catalog tests do not verify that service authorization.
 - **Subtitle rendering** — `SubtitleOverlayView` draws in-app captions from
   sidecars, Plozzigen decoders, and `NativeSubtitleCueOutput` for native legible
   tracks. `SubtitleStyleRules` remains the reduced AVPlayer styling adapter

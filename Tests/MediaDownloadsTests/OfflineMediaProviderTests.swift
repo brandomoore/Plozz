@@ -73,6 +73,11 @@ final class OfflineMediaProviderTests: XCTestCase {
         }
         let libraries = try await provider.libraries()
         XCTAssertEqual(libraries.map(\.id), ["shows"])
+        let inventory = LibraryInventoryStore(directory: nil)
+        let resolved = ResolvedAccount(account: account(), provider: provider)
+        let discovered = try await inventory.refresh(for: resolved) { try await provider.libraries() }
+        XCTAssertEqual(discovered, libraries)
+        XCTAssertNil(inventory.load(for: resolved), "Downloaded libraries are not the shared server inventory")
         let shows = try await provider.children(of: "shows")
         XCTAssertEqual(shows.map(\.id), ["series"])
         let seasons = try await provider.children(of: "series")
@@ -84,6 +89,67 @@ final class OfflineMediaProviderTests: XCTestCase {
         )
         XCTAssertEqual(page.totalCount, 2)
         XCTAssertEqual(page.items.map(\.id), ["episode3"])
+    }
+
+    func testPinnedPostersStayDistinctAndFillParentsAcrossEpisodesAndVersions() async throws {
+        let root = DownloadTestFactory.tempDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let storage = FixedDownloadStorageLocator(root: root)
+        let registry = DownloadedMediaRegistry(store: InMemoryDownloadedMediaStore())
+        let provider = OfflineMediaProvider(
+            account: account(), registry: registry, storage: storage, sourceUserID: "viewer", authorize: {}
+        )
+        let episode = MediaItem(
+            id: "episode", title: "Episode", kind: .episode, parentTitle: "Show",
+            seasonNumber: 1, episodeNumber: 1, seriesID: "show", seasonID: "season1",
+            sourceAccountID: "account1", libraryID: "shows"
+        )
+        let saved = try await pin(episode, registry: registry, root: root, version: "older", sourceUserID: "viewer")
+        let folder = try storage.pinnedFolderURL(forKey: saved.identityKey)
+        let landscape = folder.appendingPathComponent("landscape.jpg")
+        let poster = folder.appendingPathComponent("poster.jpg")
+        try Data("landscape fixture".utf8).write(to: landscape)
+        try Data("portrait fixture".utf8).write(to: poster)
+        try await registry.setArtworkFileName(identityKey: saved.identityKey, fileName: "landscape.jpg")
+        try await registry.setArtworkFileName(identityKey: saved.identityKey, fileName: "poster.jpg", role: .poster)
+        _ = try await pin(episode, registry: registry, root: root, version: "newer", sourceUserID: "viewer")
+        var sibling = episode
+        sibling.id = "sibling"
+        sibling.seasonID = "season2"
+        sibling.seasonNumber = 2
+        let missing = try await pin(sibling, registry: registry, root: root, sourceUserID: "viewer")
+        try await registry.setArtworkFileName(
+            identityKey: missing.identityKey, fileName: "missing.jpg", role: .poster
+        )
+
+        let show = try await provider.item(id: "show")
+        let seasons = try await provider.children(of: "show")
+        let episodes = try await provider.latest(limit: 10)
+        let local = try await provider.item(id: "episode")
+        XCTAssertEqual(show.posterURL, poster)
+        XCTAssertEqual(seasons.count, 2)
+        XCTAssertTrue(seasons.allSatisfy { $0.posterURL == poster })
+        XCTAssertEqual(episodes.count, 2)
+        XCTAssertTrue(episodes.allSatisfy { $0.seriesPosterURL == poster })
+        XCTAssertEqual(local.posterURL, landscape)
+        XCTAssertEqual(Set(local.versions.map(\.id)), ["older", "newer"])
+        let search = try await provider.search(query: "Show", limit: 10)
+        XCTAssertEqual(search.first { $0.kind == .series }?.posterURL, poster)
+
+        var movie = DownloadTestFactory.movie()
+        movie.sourceAccountID = "account1"
+        let movieRecord = try await pin(movie, registry: registry, root: root, sourceUserID: "viewer")
+        let movieFolder = try storage.pinnedFolderURL(forKey: movieRecord.identityKey)
+        let moviePoster = movieFolder.appendingPathComponent("poster.jpg")
+        try Data("movie poster".utf8).write(to: moviePoster)
+        try await registry.setArtworkFileName(
+            identityKey: movieRecord.identityKey, fileName: "poster.jpg", role: .poster
+        )
+        let localMovie = try await provider.item(id: movie.id)
+        XCTAssertEqual(localMovie.posterURL, moviePoster)
+        XCTAssertNil(localMovie.seriesPosterURL)
+        XCTAssertTrue([show.posterURL, local.posterURL, local.seriesPosterURL, localMovie.posterURL]
+            .allSatisfy { $0?.isFileURL == true })
     }
 
     func testCatalogAndProgressAreFencedToTheAuthenticatedServerUser() async throws {

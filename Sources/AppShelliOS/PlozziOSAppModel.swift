@@ -84,6 +84,10 @@ final class PlozziOSAppModel {
             && !activeProfileNeedsUnlock
             && !accountsProviders.activeProfileAwaitsIdentity
     }
+
+    var allowsHomeContentLoading: Bool {
+        isActiveProfileAuthorized && !profiles.activeProfile.needsSetup && !isSettingsPresented
+    }
     var allowsStandalonePlayback: Bool { admissionContext.explicitStandaloneChoice }
     var pendingStandaloneLiveTVEntry: Bool { appAdmission.pendingLiveTVEntry }
 
@@ -160,13 +164,21 @@ final class PlozziOSAppModel {
 
     @discardableResult
     func refreshNavigationLibraries() async -> Bool {
+        guard !Task.isCancelled else { return false }
         let scope = navigationLibrariesScopeKey
         let currentSettings = settings
         let accountIDs = Set(accountsProviders.navigationAccounts.map(\.id))
-        let request = currentSettings.discoveredLibraries.beginRefresh(accountIDs: accountIDs)
+        let accounts = accountsProviders.homeAccounts
+        let cached = HomeAggregator.cachedLibraries(from: accounts)
+        currentSettings.discoveredLibraries.seed(
+            libraries: cached.libraries, cachedAccountIDs: cached.accountIDs, accountIDs: accountIDs
+        )
+        let request = currentSettings.discoveredLibraries.beginRefresh(
+            accountIDs: accountIDs.subtracting(cached.accountIDs)
+        )
         defer { currentSettings.discoveredLibraries.cancelRefresh(request) }
         guard let discovered = await navigationLibraryDiscovery.refresh(
-            from: accountsProviders.homeAccounts,
+            from: accounts,
             expectedAccountIDs: accountIDs,
             navigation: currentSettings.navigation,
             isCurrent: { self.settings === currentSettings && self.navigationLibrariesScopeKey == scope }
@@ -622,6 +634,9 @@ final class PlozziOSAppModel {
         onPublish: { [weak self] in
             self?.drainWatchOutbox()
             self?.universalWatchlistIdentityDidUpdate()
+        },
+        isWarmingAllowed: { [weak self] in
+            self?.profiles.activeProfile.needsSetup == false
         }
     )
 
@@ -782,7 +797,8 @@ final class PlozziOSAppModel {
             mediaShareRuntime: mediaShareRuntime,
             accountsProviders: accountsProviders,
             settingsNamespace: profiles.activeNamespace,
-            authenticatedHTTPResolver: authenticatedHTTPResolver
+            authenticatedHTTPResolver: authenticatedHTTPResolver,
+            statusPresenter: transientStatusPresenter
         )
         self.pendingLibrarySelection = nil
         self.pendingFirstRunStep =
@@ -1202,7 +1218,12 @@ final class PlozziOSAppModel {
                 transition.isActive,
                 revision: transition.revision
             )
-        _ = await (mediaShareTransition, downloadTransition)
+        async let storageTransition: Void =
+            ApplicationStorageLifecycle.shared.setApplicationActive(
+                transition.isActive,
+                revision: transition.revision
+            )
+        _ = await (mediaShareTransition, downloadTransition, storageTransition)
     }
 
     private static func makeSuspensionLease(
@@ -1468,6 +1489,7 @@ final class PlozziOSAppModel {
             // holds every server it inherited, and importing against that pulls
             // the household's aggregate watchlist into it.
             if profiles.finishSetup(for: id) {
+                identityIndex.warmIdentityIndex()
                 Task { @MainActor in
                     await updateTrackersForActiveProfile()
                     await prepareUniversalWatchlist()
@@ -1487,6 +1509,7 @@ final class PlozziOSAppModel {
     func cancelProfileOnboarding() {
         guard let id = profileOnboardingID else { return }
         if profiles.finishSetup(for: id) {
+            identityIndex.warmIdentityIndex()
             Task { @MainActor in
                 await updateTrackersForActiveProfile()
                 await prepareUniversalWatchlist()
@@ -1909,7 +1932,8 @@ final class PlozziOSAppModel {
                 accountsProviders: self.accountsProviders,
                 settingsNamespace: self.profiles.activeNamespace,
                 startsActive: self.applicationIsActive,
-                authenticatedHTTPResolver: self.authenticatedHTTPResolver
+                authenticatedHTTPResolver: self.authenticatedHTTPResolver,
+                statusPresenter: self.transientStatusPresenter
             )
             self.refreshOfflineProviders()
         }
@@ -2388,7 +2412,8 @@ final class PlozziOSAppModel {
         accountsProviders: AccountsProvidersModel,
         settingsNamespace: String?,
         startsActive: Bool = true,
-        authenticatedHTTPResolver: ManagedAuthenticatedHTTPResolver
+        authenticatedHTTPResolver: ManagedAuthenticatedHTTPResolver,
+        statusPresenter: TransientStatusPresenter
     ) -> PlozziOSDownloadsModel {
         guard let durableStore else {
             return PlozziOSDownloadsModel(
@@ -2402,7 +2427,7 @@ final class PlozziOSAppModel {
         let audioPolicyStore = AudioPolicyStore(namespace: settingsNamespace)
         let artworkStore = ArtworkSettingsStore(namespace: settingsNamespace)
         do {
-            return PlozziOSDownloadsModel(
+            let model = PlozziOSDownloadsModel(
                 profileID: namespace,
                 registry: DownloadedMediaRegistry(store: try DurableDownloadedMediaStore(
                     store: durableStore, profileID: namespace
@@ -2508,7 +2533,7 @@ final class PlozziOSAppModel {
                         case .plex:
                             guard !source.includesAllAudioTracks else {
                                 throw MediaTransportError.unsupportedCapability(
-                                    "Plex reduced-quality downloads support one audio track. Turn off Include All Audio Tracks or choose Original quality."
+                                    "Plex reduced-quality downloads support one audio track. Choose Original quality to keep every embedded track."
                                 )
                             }
                             let audioStreamID = playback.audioTracks.first {
@@ -2611,6 +2636,25 @@ final class PlozziOSAppModel {
                         cleanupURL: nil
                     )
                 },
+                saveSubtitles: { record, destination, policy in
+                    guard let accountID = record.managedHTTPSource?.accountID ?? record.directShareSource?.accountID,
+                          let userID = record.snapshot.sourceUserID else { throw CancellationError() }
+                    let authorize: @Sendable () async throws -> Void = {
+                        try Task.checkCancellation()
+                        let authorized = await MainActor.run {
+                            !OfflineMode.shared.isEnabled
+                                && accountsProviders.downloadUserID(for: accountID, profileID: namespace) == userID
+                        }
+                        guard authorized else { throw CancellationError() }
+                    }
+                    try await authorize()
+                    let provider = await MainActor.run { accountsProviders.provider(forAccountID: accountID) }
+                    guard let provider else { throw AppError.unauthorized }
+                    return try await PlozziOSOfflineSubtitles.save(
+                        record: record, destination: destination, policy: policy, provider: provider,
+                        authorize: authorize, resolve: { try await authenticatedHTTPResolver.resolve($0) }
+                    )
+                },
                 managedRemoval: { source in
                     guard source.provider == .silo, let saved = source.preparationReference,
                           saved.queueIdentifier.hasPrefix("silo:"),
@@ -2633,6 +2677,8 @@ final class PlozziOSAppModel {
                                                       status: "completed", at: timestamp)
                 }
             )
+            model.statusPresenter = statusPresenter
+            return model
         } catch {
             return PlozziOSDownloadsModel(
                 profileID: namespace,
@@ -2819,12 +2865,17 @@ final class PlozziOSAppModel {
     }
 
     func setAccount(_ accountID: String, enabled: Bool, for profileID: String) {
-        var ids = activeAccountIDs(for: profileID)
+        let previous = activeAccountIDs(for: profileID)
+        var ids = previous
         if enabled {
             ids.insert(accountID)
         } else {
             ids.remove(accountID)
         }
+        guard ids != previous
+            || profiles.storedActiveAccountIDs(for: profileID) == nil
+            || profiles.unconfirmedAccountSelectionProfileIDs.contains(profileID)
+        else { return }
         profiles.setActiveAccountIDs(Array(ids), for: profileID)
         watchReconcilers[profileID] = nil
         // Noted BEFORE the reload below, which schedules a watchlist import: the
@@ -2839,15 +2890,16 @@ final class PlozziOSAppModel {
         }
         if profiles.activeProfileID == profileID {
             // The account set drives what's on screen, so this stays synchronous.
-            reloadAccountsAndCrashContext()
+            heroTrailerCache.removeAll()
+            accountsProviders.refreshActiveAccountSelection()
+            identityIndex.reset()
             // Everything else is bookkeeping, and it was running in the same
             // turn as the toggle — blocking the main actor long enough that the
             // switch's own animation dropped frames and the expanding card
             // appeared to jump. Yield first so the UI settles, then catch up.
             Task { @MainActor [weak self] in
                 await Task.yield()
-                guard let self else { return }
-                self.identityIndex.reset()
+                guard let self, self.profiles.activeProfileID == profileID else { return }
                 self.identityIndex.warmIdentityIndex()
                 self.drainWatchOutbox()
             }
@@ -3045,6 +3097,7 @@ final class PlozziOSAppModel {
 
     func finishFirstRunThemeSelection() {
         profiles.markFirstRunProfileSetupComplete()
+        identityIndex.warmIdentityIndex()
         pendingFirstRunStep = nil
         if appliesPlexIdentityAfterLibrarySelection {
             appliesPlexIdentityAfterLibrarySelection = false

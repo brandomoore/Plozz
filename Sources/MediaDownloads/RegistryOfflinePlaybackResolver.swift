@@ -31,17 +31,16 @@ public struct RegistryOfflinePlaybackResolver:
     }
 
     func subtitleTracks(at mediaURL: URL) -> [MediaTrack] {
-        let indexURL = mediaURL.appendingPathExtension("subtitles.json")
-        guard fileManager.fileExists(atPath: indexURL.path) else { return [] }
-        guard let data = try? Data(contentsOf: indexURL), data.count <= 1_048_576,
-              let files = try? JSONDecoder().decode([OfflineSubtitleFile].self, from: data) else { return [] }
+        let files: [OfflineSubtitleFile]
+        do { files = try OfflineSubtitleStore.files(beside: mediaURL) }
+        catch {
+            NSLog("Offline subtitle index unavailable")
+            return []
+        }
         return files.enumerated().compactMap { index, file in
-            guard !file.fileName.isEmpty, !file.fileName.contains("/"), !file.fileName.contains("\\"),
-                  file.fileName != ".", file.fileName != ".." else { return nil }
-            let url = mediaURL.deletingLastPathComponent().appendingPathComponent(file.fileName)
-            guard fileManager.fileExists(atPath: url.path) else { return nil }
+            guard let url = OfflineSubtitleStore.localURL(for: file, beside: mediaURL) else { return nil }
             return MediaTrack(id: 100_000 + index, kind: .subtitle,
-                              displayTitle: file.language ?? file.codec, language: file.language, codec: file.codec,
+                              displayTitle: file.displayTitle ?? file.language ?? file.codec, language: file.language, codec: file.codec,
                               isForced: file.forced, isHearingImpaired: file.hearingImpaired,
                               deliverySource: .localFile(url), isExternal: true)
         }

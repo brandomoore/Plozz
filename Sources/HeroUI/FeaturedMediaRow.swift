@@ -146,12 +146,11 @@ public struct FeaturedMediaRow: View {
             )
             #else
             HStack {
-                if let onBrowse {
-                    BrowseRowHeading(title: title) { coordinator.stop(); onBrowse() }
-                        .font(metrics.usesDesktopSizing ? .title3.weight(.semibold) : .title2.bold())
-                } else {
-                    title.font(metrics.usesDesktopSizing ? .title3.weight(.semibold) : .title2.bold())
-                }
+                BrowseRowHeading(title: title, action: onBrowse.map { action in {
+                    coordinator.stop()
+                    action()
+                } })
+                .font(metrics.usesDesktopSizing ? .title3.weight(.semibold) : .title2.bold())
                 Spacer()
                 if !usesRowBrowsing, let onSeeAll {
                     Button("See all") {

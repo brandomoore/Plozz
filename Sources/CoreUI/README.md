@@ -24,6 +24,13 @@ cache that every feature module reuses on tvOS and iOS/iPadOS — guarded behind
 
 ## Responsibility
 
+`homeResponsivenessDiagnostics` passively observes visible mobile Home in
+opted-in diagnostic builds. Its cancellable 100 ms main-actor wake-up sampler
+and content-height callback feed the bounded CoreModels recorder without
+observable state writes or scroll corrections. Scene inactivity, view removal,
+owner replacement and consent revocation stop collection. Scheduling delay is
+not presented-frame timing; see [diagnostic interpretation](../../docs/performance-debugging.md).
+
 `PlozzMetrics.desktop` supplies artwork width limits for the iOS-on-Mac shell
 without scaling touch controls, captions, or overlays with the artwork.
 `fittingDesktopRail` resolves those limits against the content viewport, leaving
@@ -219,6 +226,9 @@ Loading placeholders share `shimmering()`. Its static gradient band is rasterize
 before the animated translation, avoiding repeated gradient work without
 rasterizing the placeholder content or changing the sweep, masking, or intensity.
 Inactive placeholders remain unmodified; Reduce Motion retains the static dim.
+Eager scroll containers can set `plozzShimmerEnabled` to false for offscreen
+rows, retaining their static geometry without mounting animated gradient layers.
+Visible rows resume the same sweep; the Reduce Motion appearance is unchanged.
 The simulator lab's `skeletons-idle` and `skeletons-static` scenarios isolate this
 cost from loaded cards and network/provider work.
 
