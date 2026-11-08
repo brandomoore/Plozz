@@ -274,6 +274,10 @@ glass. Reduced-transparency fallbacks remain available.
 Phone portrait keeps the existing bounded, compact vertical-list layout, with
 the same row height and natural content sizing as Chapters. Playback details
 and progress-only bars sit beside the small artwork rather than shrinking Home's overlays.
+The Continue Watching button label defines the whole rounded card's touch area,
+including artwork and padding, even with labels hidden or a borderless surface.
+The shared artwork renderer stays non-interactive; taps must not fall through
+to the player's background gesture surface.
 Home's Showcase background and absolute card sizing are not copied into playback.
 Narrow artwork keeps detailed playback indicators on one line. It uses the same
 fitting order as mobile Home: drop the play glyph, then the progress bar, before
