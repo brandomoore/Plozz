@@ -823,11 +823,13 @@ struct HomeTab: View {
                         item, accounts: accounts, identitySources: identitySources
                     )
                     guard target.kind.needsPlaybackTargetResolution else {
+                        resumePrompt = nil
                         playRequest = PlayRequest(item: target, startPosition: seconds)
                         return
                     }
                     Task { @MainActor in
                         guard let episode = await resolveSeriesNextUpEpisode(target) else { return }
+                        resumePrompt = nil
                         playRequest = PlayRequest(
                             item: bestSourcePlayItem(
                                 episode, accounts: accounts, identitySources: identitySources
@@ -1081,7 +1083,7 @@ struct HomeTab: View {
     ///
     /// Lives on ``DeepLinkPlayRouter`` rather than on the tab so that watching
     /// the pending id cannot invalidate the tab's body.
-    private struct DeepLinkPlayRouter: View {
+    struct DeepLinkPlayRouter: View {
         let pendingPlay: PendingPlayRequest
         let accounts: [ResolvedAccount]
         let scopeKey: String
@@ -1398,6 +1400,7 @@ struct HomeTab: View {
             HandoffDiagnostics.emit(
                 "tap RESUME_PROMPT item=\(target.id) provider=\(target.sourceAccountID ?? "nil")"
             )
+            playRequest = nil
             resumePrompt = target
         } else {
             let playlist: VideoPlaylistPlaybackContext? = playlistOrigin.flatMap { origin in
@@ -1410,6 +1413,7 @@ struct HomeTab: View {
                 "tap PLAY trace=\(request.traceID.uuidString.prefix(8)) item=\(target.id) "
                     + "provider=\(target.sourceAccountID ?? "nil")"
             )
+            resumePrompt = nil
             playRequest = request
         }
     }

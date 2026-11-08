@@ -37,6 +37,13 @@ registry.
 - `PlayerPresentation` handles Back only while preparing the initial playback
   version. Once it creates the player model, it removes that handler so the
   player's menus, controls, and video surface own their normal Back sequence.
+- `PlaybackPresentationHost` serializes shell playback requests. A warm deep
+  link dismisses the outgoing player before presenting the latest request or
+  resume dialog. Dismissal cannot clear a newer queued request, and repeated
+  links to the same title get a fresh presentation identity. Resume preferences,
+  account resolution and profile authorization still apply. Request producers
+  clear the competing play/resume binding synchronously, so coalesced updates
+  preserve the latest intent rather than inferring its order during rendering.
 - `AppInfo` — version / build / display-name helpers read from
   `Info.plist`.
 
