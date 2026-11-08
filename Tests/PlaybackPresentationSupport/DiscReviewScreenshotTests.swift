@@ -40,6 +40,7 @@ final class DiscReviewScreenshotTests: XCTestCase {
         app.buttons["disc-menu-control-opticaldisc"].tap()
         #endif
         XCTAssertTrue(app.buttons["Try another region"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "watched")).firstMatch.exists)
         #if os(iOS)
         XCTAssertTrue(app.collectionViews.buttons["Close player"].isHittable,
                       "All native menu actions must fit on screen")
@@ -84,6 +85,9 @@ final class DiscReviewScreenshotTests: XCTestCase {
         let app = launch("videos")
         let first = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Playlist 00800")).firstMatch
         XCTAssertTrue(first.waitForExistence(timeout: 10))
+        XCTAssertTrue(first.label.contains("2:00:00 \u{00B7} 18 chapters"),
+                      "Duration and chapter count should form one compact metadata line")
+        XCTAssertFalse(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "watched")).firstMatch.exists)
         #if os(tvOS)
         let focused = XCTNSPredicateExpectation(predicate: NSPredicate(format: "hasFocus == true"), object: first)
         XCTAssertEqual(XCTWaiter.wait(for: [focused], timeout: 5), .completed)
@@ -152,11 +156,24 @@ final class DiscReviewScreenshotTests: XCTestCase {
         app.launch()
         defer { app.terminate() }
         let picker = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Disc playback")).firstMatch
+        let notice = app.staticTexts.matching(NSPredicate(
+            format: "label == %@",
+            "HDMV menus only. BD-J plays video.\nDisc menus and videos selected from \"Disc videos\" don't update watched status or resume position."
+        )).firstMatch
         #if os(iOS)
+        let contentTop = app.navigationBars.firstMatch.frame.maxY + 24
+        let visibleFrame = CGRect(x: app.frame.minX, y: contentTop,
+                                  width: app.frame.width, height: app.frame.maxY - contentTop - 24)
         for _ in 0..<5 {
-            if picker.exists && picker.isHittable { break }
-            app.swipeUp()
+            if picker.exists && picker.isHittable && notice.exists && notice.isHittable
+                && visibleFrame.contains(picker.frame.union(notice.frame)) { break }
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.75))
+                .press(forDuration: 0.05, thenDragTo: app.coordinate(
+                    withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)
+                ), withVelocity: .slow, thenHoldForDuration: 0.2)
         }
+        XCTAssertTrue(visibleFrame.contains(picker.frame.union(notice.frame)),
+                      "The setting and complete note must be visible below the navigation bar")
         #endif
         XCTAssertTrue(picker.waitForExistence(timeout: 5))
         #if os(tvOS)
@@ -164,6 +181,7 @@ final class DiscReviewScreenshotTests: XCTestCase {
         XCTAssertEqual(picker.value as? String, "Play video")
         XCTAssertFalse(app.segmentedControls.containing(.button, identifier: "Play video").firstMatch.exists)
         #endif
+        XCTAssertTrue(notice.waitForExistence(timeout: 5))
         capture(app, "Playback setting")
         #if os(tvOS)
         XCUIRemote.shared.press(.select)

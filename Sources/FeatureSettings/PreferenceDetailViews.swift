@@ -938,15 +938,20 @@ struct PlaybackDetailView: View {
     private var resumeRows: [SettingsSplitRow] {
         [
             SettingsSplitRow(id: "disc-playback", title: "Disc playback") {
-                SettingsMenuRow(
-                    title: "Disc playback",
-                    value: Text(playback.settings.discPlayback.title)
-                ) {
-                    Picker("Disc playback", selection: $playback.settings.discPlayback) {
-                        ForEach(DiscPlaybackBehavior.allCases, id: \.self) {
-                            Text($0.title).tag($0)
+                VStack(alignment: .leading, spacing: SettingsFormMetrics.relatedControlSpacing) {
+                    SettingsMenuRow(
+                        title: "Disc playback",
+                        value: Text(playback.settings.discPlayback.title)
+                    ) {
+                        Picker("Disc playback", selection: $playback.settings.discPlayback) {
+                            ForEach(DiscPlaybackBehavior.allCases, id: \.self) {
+                                Text($0.title).tag($0)
+                            }
                         }
                     }
+                    Text(DiscPlaybackBehavior.settingsNotice)
+                        .settingsHelperText()
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 .settingsSearchAnchor("disc-playback")
             }.labeledControl(),

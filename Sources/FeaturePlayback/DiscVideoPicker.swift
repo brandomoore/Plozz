@@ -28,13 +28,10 @@ struct DiscVideoPicker: View {
                             failure = error.localizedDescription
                         }
                     } label: {
-                        VStack(alignment: .leading) {
+                        VStack(alignment: .leading, spacing: 4) {
                             Text("Playlist \(String(format: "%05d", video.playlist))")
-                            HStack {
-                                Text(Duration.seconds(video.duration).formatted(.time(pattern: .hourMinuteSecond)))
-                                Text("\(video.chapterCount) chapters")
-                            }
-                            .font(.caption)
+                            Text("\(Duration.seconds(video.duration).formatted(.time(pattern: .hourMinuteSecond))) \u{00B7} \(video.chapterCount) chapters")
+                                .font(.caption)
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(8)
@@ -43,9 +40,6 @@ struct DiscVideoPicker: View {
                     .buttonBorderShape(.roundedRectangle(radius: 16))
                     .focused($focusedPlaylist, equals: video.playlist)
                 }
-                Text("These videos may include extras or alternate versions. Playing one does not update watched or resume progress.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
             } else {
                 ProgressView("Reading disc")
             }

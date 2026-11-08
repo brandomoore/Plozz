@@ -65,8 +65,6 @@ struct DiscMenuPlayerContent: View {
                         Button("Play video", systemImage: "play") { model.playVideoWithoutMenus() }
                         Button("Disc videos", systemImage: "list.bullet", action: showVideos)
                         Button("Try another region", systemImage: "globe", action: tryAnotherRegion)
-                    } header: {
-                        Text("Disc-menu playback does not update watched or resume progress.")
                     }
                     Section {
                         Button("Close player", systemImage: "xmark", action: dismiss)
@@ -78,9 +76,6 @@ struct DiscMenuPlayerContent: View {
         #if os(tvOS)
         .discPlaybackSheet(isPresented: $showsActions, onDismiss: performPendingAction) {
             DiscPlaybackDialog(title: "Disc menu", close: { showsActions = false }) {
-                Text("Disc-menu playback does not update watched or resume progress.")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
                 actionButton("Open disc menu") { state.openMenu() }
                     .focused($actionFocused)
                 actionButton("Play video") { model.playVideoWithoutMenus() }
