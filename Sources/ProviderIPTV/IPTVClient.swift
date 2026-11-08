@@ -4,7 +4,7 @@ import CryptoKit
 import Foundation
 import os
 
-actor IPTVClient {
+actor IPTVClient: ApplicationStorageParticipant {
     private static let playlistCatalogScope = "playlist-v5"
     let credential: IPTVCredential
     private let http: IPTVHTTP
@@ -15,7 +15,8 @@ actor IPTVClient {
     private var refreshHasBackgroundOwner = false
     private var refreshRetryAfter: [String: Date] = [:]
     private var refreshWaiters: [UUID: CheckedContinuation<Void, Error>] = [:]
-    private let awaitsLegacyGuideDiscovery: Bool
+    private var awaitsLegacyGuideDiscovery: Bool?
+    private let storageLifecycle: ApplicationStorageLifecycle
     private var guideDiscoveryResult: Result<Void, Error>?
     private var authenticatedAt: Date?
     private var liveExtension = "ts"
@@ -35,16 +36,24 @@ actor IPTVClient {
     var pendingCatalogRequestCount: Int { refreshWaiters.count }
     private var didReclaimJournal = false
 
-    private func reclaimJournalOnce() {
+    private func reclaimJournalOnce() throws {
+        try storageLifecycle.checkAccess()
+        if awaitsLegacyGuideDiscovery == nil {
+            awaitsLegacyGuideDiscovery = try credential.mode == .playlist
+                && !credential.automaticallyDiscoversGuides && credential.explicitGuideURLs.isEmpty
+                && catalog.state(Self.playlistCatalogScope) == nil
+        }
         guard !didReclaimJournal else { return }
         didReclaimJournal = catalog.reclaimJournal()
     }
 
     init(
         credential: IPTVCredential, directory: URL? = nil, configuration: URLSessionConfiguration? = nil,
+        storageLifecycle: ApplicationStorageLifecycle = .shared,
         progress: @escaping @Sendable (IPTVImportProgress) -> Void = { _ in }
     ) throws {
         self.credential = credential
+        self.storageLifecycle = storageLifecycle
         artworkSecrets = IPTVRedirectPolicy.protectedValues(url: credential.address, headers: credential.headers)
             + [credential.password].filter { !$0.isEmpty }
         self.progress = progress
@@ -53,17 +62,24 @@ actor IPTVClient {
             ? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
                 .appendingPathComponent("IPTVCatalogs", isDirectory: true)
             : IPTVCatalogStorage.cacheDirectory)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         catalog = try IPTVCatalog(
             url: directory.appendingPathComponent(credential.identity.uuidString + ".sqlite"),
-            key: credential.catalogKey
+            key: credential.catalogKey, storageLifecycle: storageLifecycle
         )
-        awaitsLegacyGuideDiscovery = try credential.mode == .playlist
-            && !credential.automaticallyDiscoversGuides && credential.explicitGuideURLs.isEmpty
-            && catalog.state(Self.playlistCatalogScope) == nil
+        storageLifecycle.register(self)
+    }
+
+    func prepareForSuspension() {
+        guard !storageLifecycle.isActive else { return }
+        refresh?.cancel()
+        didReclaimJournal = false
+        do { try catalog.closeForSuspension() }
+        catch { PlozzLog.networking.error("IPTV catalogue suspension close failed") }
     }
 
     func authenticate() async throws {
-        reclaimJournalOnce()
+        try reclaimJournalOnce()
         let diagnostic = IPTVSetupDiagnostics.current
         diagnostic?.advance(to: .authentication)
         if credential.mode == .file {
@@ -110,7 +126,7 @@ actor IPTVClient {
     }
 
     func ensureCatalog(_ library: String, force: Bool = false) async throws {
-        reclaimJournalOnce()
+        try reclaimJournalOnce()
         if credential.mode == .file {
             try await authenticate()
             return
@@ -167,7 +183,7 @@ actor IPTVClient {
                 recordCatalogRefresh(diagnosticIDs, metrics: metrics, started: started, error: nil)
                 HandoffDiagnostics.emit("IPTV catalogRefresh complete elapsed=\(started.duration(to: .now))")
             } catch {
-                self.refreshRetryAfter[scope] = Date().addingTimeInterval(60)
+                self.refreshRetryAfter[scope] = error is CancellationError ? nil : Date().addingTimeInterval(60)
                 performance?.finish(
                     IPTVPerformanceMetrics.outcome(for: error), metrics: metrics.snapshot
                 )
@@ -177,7 +193,7 @@ actor IPTVClient {
                 HandoffDiagnostics.emit("IPTV catalogRefresh failed reason=\(reason) elapsed=\(started.duration(to: .now))")
                 result = .failure(error)
             }
-            if awaitsLegacyGuideDiscovery, scope == Self.playlistCatalogScope {
+            if awaitsLegacyGuideDiscovery == true, scope == Self.playlistCatalogScope {
                 guideDiscoveryResult = result
             }
             self.refresh = nil
@@ -240,13 +256,13 @@ actor IPTVClient {
         }
         diagnostic?.advance(to: credential.mode == .playlist ? .playlist
             : library == "movies" ? .movies : library == "series" ? .series : .channels)
-        try catalog.beginImport()
+        let importID = try catalog.beginImport()
         defer {
-            catalog.discardImport()
+            catalog.discardImport(importID)
             didReclaimJournal = false
         }
         if credential.mode == .playlist {
-            try await importPlaylist()
+            try await importPlaylist(importID: importID)
         } else {
             let action: String
             switch library {
@@ -266,6 +282,7 @@ actor IPTVClient {
             }
             var parser = IPTVJSONArrayStream()
             try await read(url: endpoint(action: action)) { data in
+                try catalog.checkImport(importID)
                 try parser.append(data) { bytes in
                     let value = try JSONDecoder().decode(IPTVObject.self, from: bytes)
                     try store(IPTVMapping.listEntry(value, library: library, categories: categories), into: .incoming)
@@ -280,7 +297,7 @@ actor IPTVClient {
             }
             progress(IPTVImportProgress(stage: stage, entries: count))
         }
-        try Task.checkCancellation()
+        try catalog.checkImport(importID)
         diagnostic?.advance(to: .catalogCommit)
         try catalog.commitImport(
             library: credential.mode == .playlist ? nil : library,
@@ -327,17 +344,17 @@ actor IPTVClient {
 
     private func importFileContents(_ url: URL) async throws {
         IPTVSetupDiagnostics.current?.advance(to: .playlist)
-        try catalog.beginImport()
-        defer { catalog.discardImport() }
-        try await importPlaylist(fileURL: url)
-        try Task.checkCancellation()
+        let importID = try catalog.beginImport()
+        defer { catalog.discardImport(importID) }
+        try await importPlaylist(fileURL: url, importID: importID)
+        try catalog.checkImport(importID)
         IPTVSetupDiagnostics.current?.advance(to: .catalogCommit)
         try catalog.commitImport(library: nil, scope: "playlist") {
             progress(IPTVImportProgress(stage: .catalogCommit, entries: $0))
         }
     }
 
-    private func importPlaylist(fileURL: URL? = nil) async throws {
+    private func importPlaylist(fileURL: URL? = nil, importID: UUID) async throws {
         let diagnostic = IPTVSetupDiagnostics.current
         let origin: URL
         let bytes: URLSession.AsyncBytes?
@@ -362,6 +379,7 @@ actor IPTVClient {
         }
         progress(IPTVImportProgress(stage: .playlist, entries: 0))
         func persist(_ entries: [M3UPlaylistParser.CatalogEntry]) throws {
+            try catalog.checkImport(importID)
             for entry in entries {
                 for record in IPTVMapping.playlistEntry(entry) {
                     try store(record, overwrite: record.item.kind != .series && record.item.kind != .season, into: .incoming)
@@ -675,7 +693,8 @@ actor IPTVClient {
     }
 
     func completeGuideDiscovery() async throws -> Bool? {
-        guard awaitsLegacyGuideDiscovery else { return nil }
+        try reclaimJournalOnce()
+        guard awaitsLegacyGuideDiscovery == true else { return nil }
         if refresh != nil, refreshScope == Self.playlistCatalogScope {
             try await waitForRefresh()
         } else {

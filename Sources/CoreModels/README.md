@@ -13,6 +13,10 @@ language every other module speaks.
 - The dual-provider abstraction: `MediaProvider` protocol, `ProviderKind`,
   `ProviderRegistry` / `ProviderResolving`, `ResolvedAccount`.
 - Cross-cutting UI state: `LoadState`, `AppError`.
+- `ApplicationStorageLifecycle` fences process-wide storage admission before
+  asynchronously closing registered actor-owned stores. Owners register before
+  opening files, reject inactive access, and ignore stale cleanup after resume.
+  Registration is weak, so the registry does not retain retired stores.
 - `ThemeMusicVolume` persists a bounded 0–1 gain per profile. Legacy named levels
   decode to their original gain; only the old `"off"` token triggers the paired
   background-mode migration, not a new numeric zero.

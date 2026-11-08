@@ -1,4 +1,5 @@
 import CoreModels
+import CoreNetworking
 import CryptoKit
 import Foundation
 import SQLite3
@@ -37,7 +38,7 @@ public enum LiveTVCacheError: Error, Equatable, Sendable {
 /// Restores require current source URLs (and imported-file content); guide documents
 /// also validate retention, provider and manual mappings. Identity history is profile-scoped
 /// independently of downloaded generations. URLs/headers/artwork remain authenticated ciphertext.
-public actor LiveTVIndexedCache {
+public actor LiveTVIndexedCache: ApplicationStorageParticipant {
     public static let maximumWindowChannels = 200
     public static let maximumWindowPrograms = 20_000
     private let url: URL
@@ -46,6 +47,7 @@ public actor LiveTVIndexedCache {
     private let durableScope: String
     private let importedFilesURL: URL?
     private var connection: LiveTVCacheConnection?
+    private let storageLifecycle: ApplicationStorageLifecycle
     private var encryptionKey: SymmetricKey?
     private var identityEncryptionKey: SymmetricKey?
     private var pendingPortableGuideChannelIDs: Set<String> = []
@@ -84,14 +86,28 @@ public actor LiveTVIndexedCache {
 
     public init(
         url: URL, namespace: String, authorizationScope: String, secureStore: any SecureStoring,
-        importedFilesURL: URL? = nil
+        importedFilesURL: URL? = nil, storageLifecycle: ApplicationStorageLifecycle = .shared
     ) {
         self.url = url
         self.secureStore = secureStore
+        self.storageLifecycle = storageLifecycle
         self.importedFilesURL = importedFilesURL
         self.scope = SHA256.hash(data: Data((namespace + "\u{1f}" + authorizationScope).utf8))
             .map { String(format: "%02x", $0) }.joined()
         self.durableScope = LiveTVIdentityDigest.hex(SHA256.hash(data: Data(namespace.utf8)))
+        storageLifecycle.register(self)
+    }
+
+    public func prepareForSuspension() {
+        guard !storageLifecycle.isActive else { return }
+        do {
+            try connection?.close()
+            connection = nil
+            portableRevisionState = nil
+            portableRevision = UUID()
+        } catch {
+            PlozzLog.app.error("Live TV catalogue suspension close failed")
+        }
     }
 
     public static func defaultURL(namespace: String, authorizationScope: String) throws -> URL {
@@ -624,7 +640,10 @@ public actor LiveTVIndexedCache {
             try db.execute("DELETE FROM program_search WHERE source=?", [.text(sourceID)])
             try db.execute("DELETE FROM programs WHERE source=?", [.text(sourceID)])
             try db.execute("DELETE FROM guide_channels WHERE source=?", [.text(sourceID)])
-            result = try LiveTVXMLTVParser(provider: provider, preferredLanguage: preferredLanguage).parseIndexed(
+            result = try LiveTVXMLTVParser(
+                provider: provider, preferredLanguage: preferredLanguage,
+                isCancelled: { [storageLifecycle] in Task.isCancelled || !storageLifecycle.isActive }
+            ).parseIndexed(
                 data: data, channels: channels, now: now, overrides: overrides,
                 lookbackDays: lookbackDays, lookaheadDays: lookaheadDays,
                 indexGuideStations: indexState != nil
@@ -1091,9 +1110,10 @@ public actor LiveTVIndexedCache {
     }
 
     private func database() throws -> LiveTVCacheConnection {
+        try storageLifecycle.checkAccess()
         if let connection { return connection }
         _ = try key()
-        let result = try LiveTVCacheConnection(url: url)
+        let result = try LiveTVCacheConnection(url: url, storageLifecycle: storageLifecycle)
         if let savedScope = try result.rows("SELECT value FROM meta WHERE key='scope'").first?.text(0) {
             guard savedScope == scope else { throw LiveTVCacheError.authorizationScopeMismatch }
         } else {
@@ -1134,12 +1154,15 @@ private final class LiveTVCacheConnection {
     private var handle: OpaquePointer?
     private var statements: [String: OpaquePointer] = [:]
     private let url: URL
+    private let storageLifecycle: ApplicationStorageLifecycle
     private var openedFile: LiveTVSyncFileRevision?
     private static let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
     var changes: Int32 { sqlite3_changes(handle) }
 
-    init(url: URL) throws {
+    init(url: URL, storageLifecycle: ApplicationStorageLifecycle) throws {
         self.url = url
+        self.storageLifecycle = storageLifecycle
+        try storageLifecycle.checkAccess()
         guard url.isFileURL, !url.path.isEmpty else { throw LiveTVCacheError.unavailable }
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         guard sqlite3_open_v2(url.path, &handle, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_FULLMUTEX, nil) == SQLITE_OK else {
@@ -1148,6 +1171,7 @@ private final class LiveTVCacheConnection {
             throw LiveTVCacheError.unavailable
         }
         sqlite3_busy_timeout(handle, 5_000)
+        installProgressHandler()
         do {
             try execute("PRAGMA journal_mode=WAL")
             try execute("PRAGMA synchronous=FULL")
@@ -1178,8 +1202,20 @@ private final class LiveTVCacheConnection {
     }
 
     deinit {
+        guard let handle else { return }
+        sqlite3_progress_handler(handle, 0, nil, nil)
         for statement in statements.values { sqlite3_finalize(statement) }
-        if let handle { sqlite3_close(handle) }
+        sqlite3_close(handle)
+    }
+
+    func close() throws {
+        guard let handle else { return }
+        guard sqlite3_get_autocommit(handle) != 0 else { throw LiveTVCacheError.unavailable }
+        sqlite3_progress_handler(handle, 0, nil, nil)
+        for statement in statements.values { sqlite3_finalize(statement) }
+        statements.removeAll()
+        guard sqlite3_close(handle) == SQLITE_OK else { throw LiveTVCacheError.unavailable }
+        self.handle = nil
     }
 
     func checkFileIdentity() throws {
@@ -1192,9 +1228,10 @@ private final class LiveTVCacheConnection {
         do {
             try body()
             try Task.checkCancellation()
+            try storageLifecycle.checkAccess()
             try execute("COMMIT")
         } catch {
-            guard sqlite3_exec(handle, "ROLLBACK", nil, nil, nil) == SQLITE_OK else { throw LiveTVCacheError.unavailable }
+            try rollback()
             throw error
         }
 
@@ -1208,27 +1245,32 @@ private final class LiveTVCacheConnection {
             try execute("COMMIT")
             return result
         } catch {
-            guard sqlite3_exec(handle, "ROLLBACK", nil, nil, nil) == SQLITE_OK else { throw LiveTVCacheError.unavailable }
+            try rollback()
             throw error
         }
     }
 
     func execute(_ sql: String, _ bindings: [LiveTVCacheValue] = []) throws {
+        try storageLifecycle.checkAccess()
         let statement = try prepare(sql, bindings)
         defer { sqlite3_reset(statement); sqlite3_clear_bindings(statement) }
         let code = sqlite3_step(statement)
-        guard code == SQLITE_DONE || code == SQLITE_ROW else { throw LiveTVCacheError.unavailable }
+        guard code == SQLITE_DONE || code == SQLITE_ROW else { try fail(code) }
     }
 
     func rows(_ sql: String, _ bindings: [LiveTVCacheValue] = []) throws -> [LiveTVCacheRow] {
+        try storageLifecycle.checkAccess()
         let statement = try prepare(sql, bindings)
         defer { sqlite3_reset(statement); sqlite3_clear_bindings(statement) }
         var result: [LiveTVCacheRow] = []
         while true {
             let code = sqlite3_step(statement)
             if code == SQLITE_DONE { break }
-            guard code == SQLITE_ROW else { throw LiveTVCacheError.unavailable }
-            if result.count.isMultiple(of: 128) { try Task.checkCancellation() }
+            guard code == SQLITE_ROW else { try fail(code) }
+            if result.count.isMultiple(of: 128) {
+                try Task.checkCancellation()
+                try storageLifecycle.checkAccess()
+            }
             var values: [LiveTVCacheValue] = []
             for column in 0..<sqlite3_column_count(statement) {
                 switch sqlite3_column_type(statement, column) {
@@ -1248,6 +1290,31 @@ private final class LiveTVCacheConnection {
             result.append(LiveTVCacheRow(values: values))
         }
         return result
+    }
+
+    private func installProgressHandler() {
+        sqlite3_progress_handler(handle, 1_000, { context in
+            guard let context else { return 1 }
+            let lifecycle = Unmanaged<ApplicationStorageLifecycle>.fromOpaque(context).takeUnretainedValue()
+            return Task.isCancelled || !lifecycle.isActive ? 1 : 0
+        }, Unmanaged.passUnretained(storageLifecycle).toOpaque())
+    }
+
+    private func rollback() throws {
+        guard sqlite3_get_autocommit(handle) == 0 else { return }
+        sqlite3_progress_handler(handle, 0, nil, nil)
+        defer { installProgressHandler() }
+        guard sqlite3_exec(handle, "ROLLBACK", nil, nil, nil) == SQLITE_OK else {
+            throw LiveTVCacheError.unavailable
+        }
+    }
+
+    private func fail(_ code: Int32) throws -> Never {
+        if code & 0xff == SQLITE_INTERRUPT {
+            try Task.checkCancellation()
+            try storageLifecycle.checkAccess()
+        }
+        throw LiveTVCacheError.unavailable
     }
 
     private func prepare(_ sql: String, _ bindings: [LiveTVCacheValue]) throws -> OpaquePointer {

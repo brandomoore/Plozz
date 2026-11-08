@@ -1203,7 +1203,12 @@ final class PlozziOSAppModel {
                 transition.isActive,
                 revision: transition.revision
             )
-        _ = await (mediaShareTransition, downloadTransition)
+        async let storageTransition: Void =
+            ApplicationStorageLifecycle.shared.setApplicationActive(
+                transition.isActive,
+                revision: transition.revision
+            )
+        _ = await (mediaShareTransition, downloadTransition, storageTransition)
     }
 
     private static func makeSuspensionLease(
