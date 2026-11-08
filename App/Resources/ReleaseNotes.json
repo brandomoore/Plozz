@@ -2,6 +2,31 @@
   "schemaVersion": 1,
   "releases": [
     {
+      "id": "release/071.3",
+      "version": "2026.11.8",
+      "marketingVersion": "2026.11.6",
+      "build": "71.3",
+      "releasedAt": "2026-11-08",
+      "sections": [
+        {
+          "category": "Updated",
+          "items": [
+            "Series synopsis and ratings on TV show details.",
+            "Faster loading of Related titles."
+          ]
+        },
+        {
+          "category": "Fixed",
+          "items": [
+            {
+              "text": "Home focus staying on navigation after closing release notes.",
+              "platforms": ["tvOS"]
+            }
+          ]
+        }
+      ]
+    },
+    {
       "id": "release/071.2",
       "version": "2026.11.7",
       "marketingVersion": "2026.11.6",
