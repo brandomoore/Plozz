@@ -149,9 +149,9 @@ public enum WatchMutationFactory {
         return (identities, !identities.isEmpty, normalized.isEmpty ? nil : normalized, item.productionYear)
     }
 
-    /// A mark-watched / mark-unwatched mutation. Marking watched clears resume
-    /// everywhere and mirrors to Trakt (write-if-missing); unwatch never touches
-    /// Trakt (no deletes) and leaves resume alone.
+    /// Both explicit watch-state actions clear resume everywhere. Only marking
+    /// watched mirrors to Trakt (write-if-missing); unwatch never deletes history
+    /// from external trackers.
     public static func playedToggle(item: MediaItem, played: Bool, primaryAccountID: String?, additionalSources: [MediaSourceRef] = [], crossServerSync: Bool = true, capturedAt: Date = Date()) -> WatchMutation? {
         let targets = targets(for: item, primaryAccountID: primaryAccountID, additionalSources: additionalSources, crossServerSync: crossServerSync)
         guard !targets.isEmpty else { return nil }
@@ -161,13 +161,23 @@ public enum WatchMutationFactory {
         // opt-out, so the origin-only write must carry no expansion intent.
         let episode = crossServerSync ? episodeExpansion(for: item, primaryAccountID: primaryAccountID) : (origin: nil, pending: false)
         let identity = crossServerSync ? identityExpansion(for: item) : (identities: [], pending: false, anchorTitle: nil, anchorYear: nil)
+        let observedLastPlayedAt: [String: Date] = played ? [:] : Dictionary(uniqueKeysWithValues: targets.compactMap { target in
+            let source = (item.sources + additionalSources).first {
+                $0.accountID == target.accountID && $0.itemID == target.itemID
+            }
+            let isOrigin = target.accountID == (item.sourceAccountID ?? primaryAccountID) && target.itemID == item.id
+            guard let date = source?.lastPlayedAt ?? (source == nil && isOrigin ? item.lastPlayedAt : nil) else {
+                return nil
+            }
+            return (target.id, date)
+        })
         return WatchMutation(
             capturedAt: capturedAt,
             canonicalMediaID: canonicalID(for: item, primaryAccountID: primaryAccountID),
             seasonNumber: item.seasonNumber,
             episodeNumber: item.episodeNumber,
             played: played,
-            clearResume: played,
+            clearResume: true,
             targets: targets,
             trakt: played && !item.isExtra && !item.isTrailer && !item.isYouTubeTrailer ? traktIntent(for: item, progress: 100) : nil,
             episodeOrigin: episode.origin,
@@ -176,7 +186,8 @@ public enum WatchMutationFactory {
             kind: item.kind,
             anchorTitle: identity.anchorTitle,
             anchorYear: identity.anchorYear,
-            rejectedSourceIDs: item.rejectedSourceIDs.subtracting(targets.map(\.id))
+            rejectedSourceIDs: item.rejectedSourceIDs.subtracting(targets.map(\.id)),
+            observedLastPlayedAt: observedLastPlayedAt
         )
     }
 

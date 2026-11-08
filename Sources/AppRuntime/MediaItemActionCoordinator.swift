@@ -363,8 +363,8 @@ public final class MediaItemActionCoordinator: MediaItemActionHandling {
             scopedItemIDs: scoped,
             cascadesToSeasonEpisodes: item.kind == .season,
             played: played,
-            resumePosition: played ? 0 : nil,
-            playedPercentage: played ? 1 : nil,
+            resumePosition: 0,
+            playedPercentage: played ? 1 : 0,
             item: item
         ).post()
 

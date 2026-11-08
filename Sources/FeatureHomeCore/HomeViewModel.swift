@@ -1315,6 +1315,18 @@ public final class HomeViewModel {
         }
     }
 
+    private func applying(
+        _ mutation: MediaItemMutation, toContinueWatching items: [MediaItem]
+    ) -> [MediaItem] {
+        items.compactMap { item in
+            if mutation.targets(item),
+               mutation.played == true || mutation.resumePosition == 0 {
+                return nil
+            }
+            return apply(mutation, to: item)
+        }
+    }
+
     private static func retainedReadyRows(
         _ ready: Set<HomeRowKind>, content: Content, failures: [HomeRowKind: AppError],
         visibility: HomeLibraryVisibility
@@ -1337,13 +1349,7 @@ public final class HomeViewModel {
     private func applyingLoadMutations(to content: Content) -> Content {
         var content = content
         for mutation in mutationsDuringLoad {
-            content.continueWatching = content.continueWatching.compactMap { item in
-                if mutation.targets(item),
-                   mutation.played == true || (mutation.resumePosition == 0 && mutation.played != false) {
-                    return nil
-                }
-                return apply(mutation, to: item)
-            }
+            content.continueWatching = applying(mutation, toContinueWatching: content.continueWatching)
             content.latest = content.latest.map { apply(mutation, to: $0) }
             content.recentlyAddedCandidates = content.recentlyAddedCandidates?.map { apply(mutation, to: $0) }
             content.serverRows = applying(mutation, to: content.serverRows)
@@ -1370,9 +1376,12 @@ public final class HomeViewModel {
         guard !Task.isCancelled, canLoadContent,
               generation == loadGeneration, currentVisibility() == visibility,
               accounts.contains(where: { $0.account.id == accountID }) else { return }
-        detailResumeByAccount[accountID] = Self.reconcileContinueWatching(
+        let reconciled = Self.reconcileContinueWatching(
             items, pending: pending, appliedRecency: recency
         ).filter { $0.sourceAccountID == accountID }
+        detailResumeByAccount[accountID] = mutationsDuringLoad.reduce(reconciled) { items, mutation in
+            applying(mutation, toContinueWatching: items)
+        }
     }
 
     /// Applies a watched-state or watchlist mutation to the loaded rows **in
@@ -1418,13 +1427,7 @@ public final class HomeViewModel {
             if completedEpisode { schedulePlaybackReload() }
         }
         for (accountID, items) in detailResumeByAccount {
-            detailResumeByAccount[accountID] = items.compactMap { item in
-                if mutation.targets(item),
-                   mutation.played == true || (mutation.resumePosition == 0 && mutation.played != false) {
-                    return nil
-                }
-                return apply(mutation, to: item)
-            }
+            detailResumeByAccount[accountID] = applying(mutation, toContinueWatching: items)
         }
         guard case var .loaded(content) = state else {
             // There may be no card to update yet, but a completed episode still
@@ -1509,7 +1512,7 @@ public final class HomeViewModel {
         // viewer taking it off deliberately. Distinguished from "unchanged" by the
         // value being explicitly 0 rather than absent: `nil` means this mutation
         // says nothing about position, while 0 says there is no longer one.
-        let clearedResume = mutation.resumePosition == 0 && mutation.played != false
+        let clearedResume = mutation.resumePosition == 0
         if mutation.played == true || clearedResume {
             content.continueWatching.removeAll { mutation.targets($0) }
             unconfirmedContinueWatchingIDs.subtract(
@@ -1626,6 +1629,10 @@ public final class HomeViewModel {
         rows.map { row in
             var row = row
             row.items = row.items.compactMap { item in
+                if row.definition.section.kind == .continueWatching, mutation.targets(item),
+                   mutation.played == true || mutation.resumePosition == 0 {
+                    return nil
+                }
                 if row.definition.section.kind == .nextUp, mutation.targets(item),
                    mutation.played == true || (mutation.resumePosition ?? 0) > 0 {
                     return nil
@@ -1649,6 +1656,10 @@ public final class HomeViewModel {
 
     private func applying(_ mutation: MediaItemMutation, to section: LibrarySection) -> [MediaItem] {
         let items: [MediaItem] = section.items.compactMap { item in
+            if section.id == "continueWatching", mutation.targets(item),
+               mutation.played == true || mutation.resumePosition == 0 {
+                return nil
+            }
             if section.id == "nextUp", mutation.targets(item),
                mutation.played == true || (mutation.resumePosition ?? 0) > 0 {
                 return nil
@@ -2532,7 +2543,7 @@ public final class HomeViewModel {
 
         func targetKey(_ accountID: String, _ itemID: String) -> String { accountID + "\u{1}" + itemID }
         let pendingByTarget: [String: [WatchMutation]] = pending.reduce(into: [:]) { acc, m in
-            for t in m.targets { acc[targetKey(t.accountID, t.itemID), default: []].append(m) }
+            for t in m.optimisticTargets { acc[targetKey(t.accountID, t.itemID), default: []].append(m) }
         }
 
         func newestMatch(for item: MediaItem) -> WatchMutation? {
@@ -2548,9 +2559,18 @@ public final class HomeViewModel {
             return best
         }
 
+        let candidates = items + carriedForward(
+            carryForward,
+            fetched: items,
+            pending: pending,
+            appliedRecency: appliedRecency,
+            serverConfirmed: serverConfirmed,
+            now: now,
+            window: carryForwardWindow
+        )
         var overlaid: [MediaItem] = []
-        overlaid.reserveCapacity(items.count)
-        for rawItem in items {
+        overlaid.reserveCapacity(candidates.count)
+        for rawItem in candidates {
             // Undo any server drain-time timestamp inflation before the pending
             // overlay reads the card's recency, so an offline-drained Plex resume
             // can't leave a stale play floating at the top.
@@ -2559,10 +2579,15 @@ public final class HomeViewModel {
                 : clampInflatedRecency(rawItem, appliedRecency: appliedRecency, now: now, clampFreshness: clampFreshness)
             guard let m = newestMatch(for: item) else { overlaid.append(item); continue }
             // Ignore a pending write the server has already superseded with a newer play.
-            guard m.capturedAt >= (item.lastPlayedAt ?? .distantPast) else { overlaid.append(item); continue }
+            let observedReset = m.played == false && m.clearResume
+                && hasObservedPlayback(item, in: m)
+            guard m.capturedAt >= (item.lastPlayedAt ?? .distantPast) || observedReset else {
+                overlaid.append(item)
+                continue
+            }
 
-            if m.played == true {
-                // Finished / marked-watched: the title leaves Continue Watching.
+            if m.played == true || m.clearResume || m.resumePosition == 0 {
+                // Finished, reset or dismissed: the stale resume must not return.
                 continue
             }
             guard let resume = m.resumePosition, resume > 0 else {
@@ -2583,16 +2608,23 @@ public final class HomeViewModel {
             }
             overlaid.append(updated)
         }
-        overlaid.append(contentsOf: carriedForward(
-            carryForward,
-            fetched: items,
-            pending: pending,
-            appliedRecency: appliedRecency,
-            serverConfirmed: serverConfirmed,
-            now: now,
-            window: carryForwardWindow
-        ))
         return HomeAggregator.sortedByRecency(overlaid.filter(ContinueWatchingPolicy.admits))
+    }
+
+    private nonisolated static func hasObservedPlayback(_ item: MediaItem, in mutation: WatchMutation) -> Bool {
+        if item.sources.isEmpty {
+            guard let account = item.sourceAccountID,
+                  let observed = mutation.observedLastPlayedAt["\(account):\(item.id)"] else { return false }
+            return (item.lastPlayedAt ?? .distantPast) <= observed
+        }
+        var latestObserved = mutation.capturedAt
+        for source in item.sources {
+            guard let playedAt = source.lastPlayedAt else { continue }
+            let observed = mutation.observedLastPlayedAt["\(source.accountID):\(source.itemID)"] ?? mutation.capturedAt
+            guard playedAt <= max(mutation.capturedAt, observed) else { return false }
+            latestObserved = max(latestObserved, playedAt)
+        }
+        return (item.lastPlayedAt ?? .distantPast) <= latestObserved
     }
 
     /// Cards on screen that the fresh feed left out, kept only while a write for

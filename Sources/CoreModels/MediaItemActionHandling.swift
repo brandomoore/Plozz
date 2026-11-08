@@ -263,13 +263,14 @@ public struct MediaItemMutation: Sendable, Equatable {
         else {
             return nil
         }
+        let resumePosition = watchMutation.resumePosition ?? (watchMutation.clearResume ? 0 : nil)
         self.init(
             itemIDs: Set(watchMutation.optimisticTargets.map(\.itemID)),
             scopedItemIDs: Set(watchMutation.optimisticTargets.map(\.id)),
             cascadesToSeasonEpisodes: watchMutation.kind == .season,
             played: played,
-            resumePosition: watchMutation.kind == .season && watchMutation.clearResume
-                ? 0 : watchMutation.resumePosition,
+            resumePosition: resumePosition,
+            playedPercentage: resumePosition == 0 ? (played ? 1 : 0) : nil,
             kind: watchMutation.kind
         )
     }
