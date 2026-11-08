@@ -2,8 +2,27 @@ import CoreModels
 import CoreNetworking
 import Foundation
 
-extension SiloProvider: StreamingQualityProviding {
+extension SiloProvider: StreamingSessionReleasing, ExternalPlaybackProviding {
     public var streamingQualitySupport: StreamingQualitySupport { .silo }
+
+    public func externalPlaybackInfo(
+        for itemID: String, mediaSourceID: String?, player: ExternalPlayer,
+        streaming: StreamingPlaybackOptions?
+    ) async throws -> PlaybackRequest {
+        if let streaming {
+            try streaming.quality.validate()
+            if let message = streamingQualitySupport.validationMessage(for: streaming.quality) {
+                throw StreamingQualityError.serverRefusal(message)
+            }
+        }
+        var options = streaming
+        options?.startPosition = 0
+        return try await resolvePlayback(
+            for: itemID, mediaSourceID: mediaSourceID,
+            forceTranscode: options?.forceTranscoding ?? false,
+            streaming: options, externalPlayer: true
+        )
+    }
 
     public func playbackInfo(
         for itemID: String, mediaSourceID: String?, forceTranscode: Bool,
@@ -31,18 +50,39 @@ extension SiloProvider: StreamingQualityProviding {
     public func releaseStreamingSession(_ request: PlaybackRequest) async {
         guard let id = request.streamingSessionID, id == request.playSessionID,
               let context = await playback.releaseContext(id: id, itemID: request.item.id) else { return }
-        struct Body: Encodable { let installation_id: String; let stop_id: String }
-        struct Receipt: Decodable, Sendable { let outcome: String }
         do {
-            let receipt: Receipt = try await client.request(
-                "/playback/\(try SiloAPI.pathComponent(id))", method: .delete,
-                body: JSONEncoder().encode(Body(installation_id: context.installationID, stop_id: context.stopID))
-            )
-            guard ["stopped", "replayed"].contains(receipt.outcome) else { throw AppError.invalidResponse }
-            await playback.remove(id)
+            try await stopStreamingSession(id: id, installationID: context.installationID, stopID: context.stopID)
         } catch {
             PlozzLog.playback.error("Unable to release the previous Silo playback session.")
         }
+    }
+
+    public func releaseStreamingSession(id: String) async {
+        do {
+            _ = try SiloAPI.pathComponent(id)
+            // A restored external receipt has no in-memory grant. The authenticated
+            // server still enforces the current installation, account and profile.
+            let capability: SiloPlaybackCapabilities = try await client.request("/playback/capabilities")
+            guard let installationID = capability.installation_id, !installationID.isEmpty else {
+                throw AppError.invalidResponse
+            }
+            try await stopStreamingSession(
+                id: id, installationID: installationID, stopID: UUID().uuidString.lowercased()
+            )
+        } catch {
+            PlozzLog.playback.error("Unable to release the restored Silo playback session.")
+        }
+    }
+
+    private func stopStreamingSession(id: String, installationID: String, stopID: String) async throws {
+        struct Body: Encodable { let installation_id: String; let stop_id: String }
+        struct Receipt: Decodable, Sendable { let outcome: String }
+        let receipt: Receipt = try await client.request(
+            "/playback/\(try SiloAPI.pathComponent(id))", method: .delete,
+            body: JSONEncoder().encode(Body(installation_id: installationID, stop_id: stopID))
+        )
+        guard ["stopped", "replayed"].contains(receipt.outcome) else { throw AppError.invalidResponse }
+        await playback.remove(id)
     }
 }
 

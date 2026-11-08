@@ -97,6 +97,28 @@ final class ExternalPlayerTests: XCTestCase {
         }
     }
 
+    func testDASHIsHandedToVLCWithoutRelaxingURLSecurityChecks() throws {
+        let manifest = URL(string: "https://server.test/movie.MPD?token=synthetic")!
+        for player in ExternalPlayer.allCases {
+            XCTAssertEqual(ExternalPlayerURL.isSupportedMediaURL(manifest, player: player), player == .vlc)
+            for value in ["file:///movie.mpd", "http://127.0.0.1/movie.mpd", "https://user:password@server.test/movie.mpd"] {
+                XCTAssertFalse(ExternalPlayerURL.isSupportedMediaURL(URL(string: value)!, player: player))
+            }
+        }
+        let link = try ExternalPlayerURL.make(
+            settings: .init(player: .vlc), mediaURL: manifest, title: "Movie",
+            position: 0, callbackScheme: "test", nonce: nonce
+        )
+        XCTAssertEqual(
+            URLComponents(url: link, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "url" }?.value,
+            manifest.absoluteString
+        )
+        XCTAssertThrowsError(try ExternalPlayerURL.make(
+            settings: .init(player: .infuse), mediaURL: manifest, title: "Movie",
+            position: 0, callbackScheme: "test", nonce: nonce
+        ))
+    }
+
     func testOldAndFutureSettingsPreserveOtherPreferencesAndDefaultToPlozz() throws {
         for external in ["", #","externalPlayer":{"player":"futurePlayer","customURLTemplate":""}"#] {
             let data = Data(#"{"autoPlayNextEpisode":false\#(external)}"#.utf8)

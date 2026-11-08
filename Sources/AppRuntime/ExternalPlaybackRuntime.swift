@@ -193,7 +193,8 @@ public final class ExternalPlaybackRuntime {
               let account = context.accounts.first(where: { $0.account.id == item.sourceAccountID })
                 ?? (item.sourceAccountID == nil ? context.accounts.first : nil),
               [.jellyfin, .emby, .plex].contains(account.provider.kind)
-                || (account.provider.kind == .iptv && account.provider is any ExternalPlaybackProviding) else { return [] }
+                || ([.iptv, .silo].contains(account.provider.kind)
+                    && account.provider is any ExternalPlaybackProviding) else { return [] }
         return ExternalPlayer.supported.filter { player in
             guard player != selection.player else { return false }
             if player == .builtIn { return true }
@@ -228,12 +229,11 @@ public final class ExternalPlaybackRuntime {
         }
         try checkCurrent()
         switch account.provider.kind {
-        case .mediaShare, .silo:
-            // These sources need Plozz's transport or session lifecycle. Do not
-            // negotiate an external stream or expose credentials speculatively.
+        case .mediaShare:
+            // Share transports enforce connection policies the app-link APIs cannot carry.
             PlozzLog.playback.info("Source requires Plozz playback; skipping external player.")
             return false
-        case .iptv:
+        case .iptv, .silo:
             guard account.provider is any ExternalPlaybackProviding else { return false }
         case .jellyfin, .emby, .plex:
             break
@@ -254,11 +254,14 @@ public final class ExternalPlaybackRuntime {
         try checkCurrent()
         let provider = account.provider
         var request: PlaybackRequest
-        if provider.kind == .iptv, let external = provider as? any ExternalPlaybackProviding {
-            guard streamingOptions?.requiresConversionPolicy != true else {
-                throw ExternalPlayerError.unsupportedSource
-            }
-            request = try await external.externalPlaybackInfo(for: item.id, mediaSourceID: item.selectedVersionID)
+        if [.iptv, .silo].contains(provider.kind), let external = provider as? any ExternalPlaybackProviding {
+            try streamingOptions?.quality.validate()
+            var options = streamingOptions
+            options?.startPosition = 0
+            request = try await external.externalPlaybackInfo(
+                for: item.id, mediaSourceID: item.selectedVersionID,
+                player: selection.player, streaming: options
+            )
         } else if let options = streamingOptions {
             try options.quality.validate()
             guard let streaming = provider as? any StreamingQualityProviding else {
@@ -288,7 +291,8 @@ public final class ExternalPlaybackRuntime {
                 throw ExternalPlayerError.unsupportedSource
             }
             let mediaURL = try await resolveURL(
-                source: request.playbackSource, fallback: request.streamURL, resolver: initial.resolver
+                source: request.playbackSource, fallback: request.streamURL,
+                player: selection.player, resolver: initial.resolver
             )
             try checkCurrent()
             var subtitles: [URL] = []
@@ -338,7 +342,8 @@ public final class ExternalPlaybackRuntime {
             if receipt?.id == nonce { clearReceipt() }
             if needsRelease, let streaming = provider as? any StreamingQualityProviding {
                 if request.streamingSessionID != nil {
-                    await streaming.releaseStreamingSession(request)
+                    let cleanup = Task { [request] in await streaming.releaseStreamingSession(request) }
+                    await cleanup.value
                 }
             }
             throw error
@@ -346,12 +351,15 @@ public final class ExternalPlaybackRuntime {
     }
 
     private func resolveURL(
-        source: PlaybackSource?, fallback: URL?, resolver: any AuthenticatedHTTPResourceResolving
+        source: PlaybackSource?, fallback: URL?, player: ExternalPlayer,
+        resolver: any AuthenticatedHTTPResourceResolving
     ) async throws -> URL {
         let url: URL
         switch source {
         case .authenticatedHTTP(let locator):
-            guard locator.deliveryMode != .dash else { throw ExternalPlayerError.unsupportedSource }
+            guard locator.deliveryMode != .dash || player.supportsDASH else {
+                throw ExternalPlayerError.unsupportedSource
+            }
             url = try await resolver.resolve(locator)
         case .publicURL(let source): url = source.url
         case .networkFile, .networkDisc, .dlnaResource: throw ExternalPlayerError.unsupportedSource
@@ -359,7 +367,9 @@ public final class ExternalPlaybackRuntime {
             guard let fallback else { throw ExternalPlayerError.unsupportedSource }
             url = fallback
         }
-        guard ExternalPlayerURL.isSupportedMediaURL(url) else { throw ExternalPlayerError.unsupportedSource }
+        guard ExternalPlayerURL.isSupportedMediaURL(url, player: player) else {
+            throw ExternalPlayerError.unsupportedSource
+        }
         return url
     }
 

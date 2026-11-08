@@ -438,8 +438,16 @@ IPTV movies and episodes can use a provider-owned independent handoff: the
 origin HTTP(S) URL is sent directly, without starting Plozz's local proxy.
 Sources requiring custom HTTP headers stay in Plozz; the app-link APIs cannot
 carry those headers. Explicit unknown versions are not replaced with a default.
-NAS shares and Silo bypass external negotiation. Silo's session-bound grants need its built-in lifecycle;
-no speculative external session is opened. Live TV always stays in Plozz,
+NAS shares bypass external negotiation because the app-link APIs do not carry
+their transport authentication and connection policies. Silo negotiates its native
+original-file or HLS plan, retaining the exact version and mobile quality limits.
+Native Silo URLs require account authentication on every media request. Handoff
+requires the current account token and any advertised grant expiry to cover the
+full video plus five minutes for startup; otherwise playback stays internal.
+Unknown-duration native streams also stay internal. External sessions use
+client-owned progress: only a valid player callback updates resume/watch state.
+Media requests sustain the server session, with cleanup on callback or the next
+play intent, including after an app restart. Live TV always stays in Plozz,
 including explicit Watch actions and preview expansion. YouTube trailers keep
 their existing source-opening behavior, and background trailers/music never
 launch another app.
@@ -450,9 +458,10 @@ preference. External playback remains available for supported online sources.
 
 External playback requires independently accessible HTTP(S) media: original
 files, remote HLS, and server remux/transcode streams are eligible. App-local
-proxies, downloaded files, private share connections, separate audio streams,
-and DASH manifests remain internal. Mobile quality limits and forced conversion
-are negotiated through the same provider streaming API, not bypassed by handing
+proxies, downloaded files, private share connections and separate audio streams
+remain internal. DASH can open in VLC; other players retain the built-in fallback.
+Mobile quality limits and forced conversion are negotiated through the same
+provider streaming API, not bypassed by handing
 off the original. The external player applies resume to the complete rendition
 timeline; the server is not also asked to trim it to that position. Links can contain
 server tokens, so the settings explain that the chosen app receives them.
@@ -472,8 +481,10 @@ app may still be playing in PiP.
 
 Plozz does not run a background keepalive or local relay after handoff. The
 external app's media requests must sustain the server stream; servers may expire
-long-paused conversions. These paths need external-app/device verification and
-do not establish universal playback compatibility.
+long-paused conversions. Silo's native session can expire after 45 seconds without
+media activity (subject to its startup/proxy grace); external players cannot send
+its pause reports or recreate an expired session. These paths need
+external-app/device verification and do not establish universal playback compatibility.
 
 `AppRuntime.ExternalPlaybackRuntime` correlates returns with a random session,
 bundle-specific callback scheme, and media-URL digest. Its device-local receipt

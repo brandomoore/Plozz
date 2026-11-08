@@ -135,25 +135,109 @@ final class ExternalPlaybackRuntimeTests: XCTestCase {
         }
     }
 
-    func testNASAndSiloNeverNegotiateOrLaunchExternalPlayback() async throws {
-        for kind in [ProviderKind.mediaShare, .silo] {
-            for player in [ExternalPlayer.nativePlayer, .infuse, .vlc, .custom] {
-                for mediaKind in [MediaItemKind.movie, .episode, .video] {
-                    let fixture = ExternalPlaybackFixture()
-                    defer { fixture.cleanup() }
-                    fixture.kind = kind
-                    fixture.item.kind = mediaKind
-                    fixture.selection = .init(player: player, customURLTemplate: "customplayer://play?url={url}")
-                    let opened = try await fixture.launch()
-                    XCTAssertFalse(opened, "\(kind) \(player) \(mediaKind)")
-                    XCTAssertNil(fixture.selectedVersion)
-                    XCTAssertTrue(fixture.opened.isEmpty)
-                    XCTAssertEqual(fixture.installationChecks, 0)
-                    XCTAssertNil(fixture.runtime.receipt)
-                    XCTAssertNil(fixture.runtime.error)
-                }
+    func testNASNeverNegotiatesOrLaunchesExternalPlayback() async throws {
+        for player in [ExternalPlayer.nativePlayer, .infuse, .vlc, .custom] {
+            for mediaKind in [MediaItemKind.movie, .episode, .video] {
+                let fixture = ExternalPlaybackFixture()
+                defer { fixture.cleanup() }
+                fixture.kind = .mediaShare
+                fixture.item.kind = mediaKind
+                fixture.selection = .init(player: player, customURLTemplate: "customplayer://play?url={url}")
+                let opened = try await fixture.launch()
+                XCTAssertFalse(opened, "\(player) \(mediaKind)")
+                XCTAssertNil(fixture.selectedVersion)
+                XCTAssertTrue(fixture.opened.isEmpty)
+                XCTAssertEqual(fixture.installationChecks, 0)
+                XCTAssertNil(fixture.runtime.receipt)
+                XCTAssertNil(fixture.runtime.error)
             }
         }
+    }
+
+    func testSiloUsesExternalNegotiationAndRetainsEvenDirectPlaySessions() async throws {
+        for player in [ExternalPlayer.nativePlayer, .infuse] {
+            let fixture = ExternalPlaybackFixture()
+            defer { fixture.cleanup() }
+            fixture.selection.player = player
+            let options: StreamingPlaybackOptions? = player == .nativePlayer ? nil : .init(quality: .hd720)
+            fixture.kind = .silo
+            fixture.request.playSessionID = "silo-session"
+            fixture.request.streamingSessionID = "silo-session"
+            XCTAssertTrue(fixture.runtime.availablePlayers(
+                for: fixture.item, context: fixture.context, selection: fixture.selection
+            ).contains(.vlc))
+            let opened = try await fixture.runtime.launch(
+                item: fixture.item, startPosition: 120, settings: fixture.settings,
+                selection: fixture.selection, streamingOptions: options,
+                context: { fixture.context }, isPresented: { true }
+            )
+            XCTAssertTrue(opened)
+            XCTAssertEqual(fixture.externalRequests, 1)
+            XCTAssertEqual(fixture.selectedVersion, "version-one")
+            XCTAssertEqual(fixture.streamingOptions?.quality, options?.quality)
+            XCTAssertEqual(fixture.streamingOptions?.startPosition, options == nil ? nil : 0)
+            XCTAssertEqual(fixture.runtime.receipt?.streamingSessionID, "silo-session")
+            XCTAssertTrue(fixture.releasedSessionIDs.isEmpty)
+            let restored = ExternalPlaybackRuntime(defaults: fixture.defaults, callbackScheme: fixture.callbackScheme)
+            XCTAssertTrue(restored.receive(try fixture.callback(position: "300")))
+            await restored.processReturn(context: { fixture.context }) { completion in
+                XCTAssertEqual(completion.position, 300)
+            }
+            XCTAssertEqual(fixture.releasedSessionIDs, ["silo-session"])
+        }
+    }
+
+    func testSiloFailedAndCancelledHandoffsReleaseTheirOwnedSession() async throws {
+        for cancelled in [false, true] {
+            let fixture = ExternalPlaybackFixture()
+            defer { fixture.cleanup() }
+            fixture.kind = .silo
+            fixture.request.playSessionID = "silo-session"
+            fixture.request.streamingSessionID = "silo-session"
+            fixture.openSucceeds = false
+            if cancelled { fixture.beforeRequest = { fixture.profileID = "other" } }
+            do {
+                let opened = try await fixture.launch()
+                XCTAssertFalse(opened)
+                XCTAssertFalse(cancelled)
+            } catch { XCTAssertTrue(cancelled && error is CancellationError) }
+            XCTAssertEqual(fixture.releasedSessionIDs, ["silo-session"])
+            XCTAssertNil(fixture.runtime.receipt)
+        }
+    }
+
+    func testDASHDeliveryUsesPlayerCapabilityEvenWithoutAnMPDExtension() async throws {
+        for player in [ExternalPlayer.infuse, .vlc, .custom] {
+            let fixture = ExternalPlaybackFixture()
+            defer { fixture.cleanup() }
+            fixture.selection = .init(player: player, customURLTemplate: "player://play?url={url}")
+            fixture.request.playbackSource = .authenticatedHTTP(try AuthenticatedHTTPPlaybackLocator(
+                provider: .jellyfin, accountID: "account", credentialRevision: .init(),
+                itemID: "movie", deliveryMode: .dash,
+                resource: .init(pathBase: .configuredBaseURL, path: "manifest")
+            ))
+            let opened = try await fixture.launch()
+            XCTAssertEqual(opened, player == .vlc)
+            XCTAssertEqual(fixture.opened.count, player == .vlc ? 1 : 0)
+        }
+    }
+
+    func testCancelledLaunchReleasesSessionInAnUncancelledTask() async throws {
+        let fixture = ExternalPlaybackFixture()
+        defer { fixture.cleanup() }
+        fixture.kind = .silo
+        fixture.request.playSessionID = "silo-session"
+        fixture.request.streamingSessionID = "silo-session"
+        var task: Task<Bool, Error>?
+        fixture.beforeOpen = { task?.cancel() }
+        task = Task { try await fixture.launch() }
+        do {
+            _ = try await task?.value
+            XCTFail("The handoff task was cancelled")
+        } catch { XCTAssertTrue(error is CancellationError) }
+        XCTAssertEqual(fixture.releasedSessionIDs, ["silo-session"])
+        XCTAssertEqual(fixture.cancelledReleaseAttempts, 0)
+        XCTAssertNil(fixture.runtime.receipt)
     }
 
     func testJellyfinEmbyAndPlexStillHandOffSupportedMoviesAndEpisodes() async throws {
@@ -351,7 +435,7 @@ final class ExternalPlaybackRuntimeTests: XCTestCase {
         XCTAssertEqual(fixture.opened.count, 1)
     }
 
-    func testDASHAndScheduledPlaybackRemainInternal() async throws {
+    func testInfuseDASHAndScheduledPlaybackRemainInternal() async throws {
         let fixture = ExternalPlaybackFixture()
         defer { fixture.cleanup() }
         fixture.request.playbackSource = .authenticatedHTTP(try AuthenticatedHTTPPlaybackLocator(
@@ -390,13 +474,17 @@ final class ExternalPlaybackRuntimeTests: XCTestCase {
     }
 
     func testDownloadedVideoFallsBackBeforeResolvingRemotePlayback() async throws {
-        let fixture = ExternalPlaybackFixture()
-        defer { fixture.cleanup() }
-        fixture.offlineResolver = ExternalOfflineResolver()
-        let opened = try await fixture.launch()
-        XCTAssertFalse(opened)
-        XCTAssertTrue(fixture.opened.isEmpty)
-        XCTAssertNil(fixture.selectedVersion)
+        for kind in [ProviderKind.jellyfin, .emby, .plex, .silo, .iptv] {
+            let fixture = ExternalPlaybackFixture()
+            defer { fixture.cleanup() }
+            fixture.kind = kind
+            fixture.offlineResolver = ExternalOfflineResolver()
+            let opened = try await fixture.launch()
+            XCTAssertFalse(opened)
+            XCTAssertTrue(fixture.opened.isEmpty)
+            XCTAssertNil(fixture.selectedVersion)
+            XCTAssertEqual(fixture.externalRequests, 0)
+        }
     }
 
     func testCallbackSchemeAndNonceAreCaseInsensitive() async throws {
@@ -667,6 +755,7 @@ private final class ExternalPlaybackFixture {
     var opened: [URL] = []
     var selectedVersion: String?
     var releasedSessions = 0
+    var cancelledReleaseAttempts = 0
     var releasedSessionIDs: [String] = []
     var streamingOptions: StreamingPlaybackOptions?
     var externalRequests = 0
@@ -766,9 +855,17 @@ private struct ExternalPlaybackProvider: StreamingSessionReleasing, ExternalPlay
         await MainActor.run { fixture.streamingOptions = streaming }
         return try await playbackInfo(for: itemID, mediaSourceID: mediaSourceID, forceTranscode: forceTranscode)
     }
-    func externalPlaybackInfo(for itemID: String, mediaSourceID: String?) async throws -> PlaybackRequest {
+    func externalPlaybackInfo(
+        for itemID: String, mediaSourceID: String?, player: ExternalPlayer,
+        streaming: StreamingPlaybackOptions?
+    ) async throws -> PlaybackRequest {
         try await MainActor.run {
+            guard kind != .iptv || streaming?.requiresConversionPolicy != true else {
+                throw ExternalPlayerError.unsupportedSource
+            }
             fixture.externalRequests += 1
+            fixture.streamingOptions = streaming
+            if kind == .silo { fixture.selectedVersion = mediaSourceID }
             fixture.beforeRequest?()
             if let error = fixture.requestError { throw error }
             return fixture.request
@@ -778,7 +875,9 @@ private struct ExternalPlaybackProvider: StreamingSessionReleasing, ExternalPlay
         if let id = request.streamingSessionID { await releaseStreamingSession(id: id) }
     }
     func releaseStreamingSession(id: String) async {
+        let cancelled = Task.isCancelled
         await MainActor.run {
+            if cancelled { fixture.cancelledReleaseAttempts += 1 }
             fixture.releasedSessions += 1
             fixture.releasedSessionIDs.append(id)
         }

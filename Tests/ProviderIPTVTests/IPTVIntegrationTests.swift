@@ -360,6 +360,50 @@ final class IPTVIntegrationTests: XCTestCase {
         }
     }
 
+    func testExternalDASHPlaylistUsesVLCWithoutProxyOrQualityBypass() async throws {
+        IPTVFixture.state.handler = { _ in
+            (200, [:], Data("#EXTM3U\n#EXTINF:-1,Movie\nhttps://provider.test/movie/one.mpd\n".utf8))
+        }
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try FileManager.default.removeItem(at: root) }
+        let credential = try IPTVCredential(
+            mode: .playlist, address: XCTUnwrap(URL(string: "https://provider.test/list"))
+        )
+        let session = try await IPTVProvider.signIn(
+            credential: credential, name: "Fixture", deviceID: "device",
+            cacheDirectory: root, configuration: configuration()
+        )
+        let provider = try IPTVProvider(
+            context: .init(
+                session: session, accountID: "account", credentialRevision: .init(),
+                localMediaContext: .init(accountID: "account", profileID: "profile", profileNamespace: nil)
+            ), cacheDirectory: root, configuration: configuration()
+        )
+        addTeardownBlock { await provider.teardown() }
+        let movies = try await provider.items(in: "movies", kind: .movie, page: .init(limit: 20))
+        let movie = try XCTUnwrap(movies.items.first)
+        for player in [ExternalPlayer.infuse, .vlc] {
+            do {
+                let request = try await provider.externalPlaybackInfo(
+                    for: movie.id, mediaSourceID: nil, player: player, streaming: .init(quality: .original)
+                )
+                XCTAssertEqual(player, .vlc)
+                XCTAssertEqual(request.streamURL?.absoluteString, "https://provider.test/movie/one.mpd")
+                XCTAssertNil(request.playSessionID)
+            } catch {
+                XCTAssertEqual(player, .infuse)
+                XCTAssertEqual(error as? ExternalPlayerError, .unsupportedSource)
+            }
+        }
+        do {
+            _ = try await provider.externalPlaybackInfo(
+                for: movie.id, mediaSourceID: nil, player: .vlc, streaming: .init(quality: .hd720)
+            )
+            XCTFail("An independent origin cannot honor a conversion policy")
+        } catch { XCTAssertEqual(error as? ExternalPlayerError, .unsupportedSource) }
+        XCTAssertTrue(IPTVFixture.state.requests.allSatisfy { $0.url?.path == "/list" })
+    }
+
     func testFailedPlaylistRefreshKeepsPriorCatalog() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }

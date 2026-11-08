@@ -577,7 +577,11 @@ public final class IPTVProvider: MediaProvider, CapabilityReporting, MediaSortFi
 }
 
 extension IPTVProvider: ExternalPlaybackProviding {
-    public func externalPlaybackInfo(for itemID: String, mediaSourceID: String?) async throws -> PlaybackRequest {
+    public func externalPlaybackInfo(
+        for itemID: String, mediaSourceID: String?, player: ExternalPlayer,
+        streaming: StreamingPlaybackOptions?
+    ) async throws -> PlaybackRequest {
+        guard streaming?.requiresConversionPolicy != true else { throw ExternalPlayerError.unsupportedSource }
         let record = try await client.record(itemID, details: true)
         guard !record.isLive, record.item.kind == .movie || record.item.kind == .episode,
               mediaSourceID == nil else {
@@ -586,7 +590,7 @@ extension IPTVProvider: ExternalPlaybackProviding {
         let delivery = try await client.delivery(itemID)
         // App-link APIs do not carry arbitrary HTTP headers. Never silently drop
         // authentication, referer or user-agent requirements, or export the proxy.
-        guard delivery.headers.isEmpty, ExternalPlayerURL.isSupportedMediaURL(delivery.url) else {
+        guard delivery.headers.isEmpty, ExternalPlayerURL.isSupportedMediaURL(delivery.url, player: player) else {
             throw ExternalPlayerError.unsupportedSource
         }
         let item = await applyingWatch([record.item])[0]

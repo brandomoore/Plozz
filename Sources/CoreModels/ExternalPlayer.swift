@@ -1,9 +1,18 @@
 import Foundation
 
-/// Providers whose ordinary playback needs an app-local transport can explicitly
-/// prepare a source that remains usable while Plozz is suspended.
+/// Providers can negotiate an independent source and lifecycle for an external
+/// player without reusing an app-local proxy or bypassing streaming limits.
 public protocol ExternalPlaybackProviding: MediaProvider {
-    func externalPlaybackInfo(for itemID: String, mediaSourceID: String?) async throws -> PlaybackRequest
+    func externalPlaybackInfo(
+        for itemID: String, mediaSourceID: String?, player: ExternalPlayer,
+        streaming: StreamingPlaybackOptions?
+    ) async throws -> PlaybackRequest
+}
+
+public extension ExternalPlaybackProviding {
+    func externalPlaybackInfo(for itemID: String, mediaSourceID: String?) async throws -> PlaybackRequest {
+        try await externalPlaybackInfo(for: itemID, mediaSourceID: mediaSourceID, player: .infuse, streaming: nil)
+    }
 }
 
 public enum ExternalPlayer: String, Codable, CaseIterable, Sendable {
@@ -29,6 +38,8 @@ public enum ExternalPlayer: String, Codable, CaseIterable, Sendable {
     }
 
     public var returnsProgress: Bool { self == .nativePlayer || self == .infuse }
+
+    public var supportsDASH: Bool { self == .vlc }
 
     public static var supported: [Self] {
         #if os(tvOS)
@@ -97,7 +108,7 @@ public enum ExternalPlayerError: Error, Equatable, Sendable {
 
 /// App links contain authenticated media URLs. Never persist or log the result.
 public enum ExternalPlayerURL {
-    public static func isSupportedMediaURL(_ url: URL) -> Bool {
+    public static func isSupportedMediaURL(_ url: URL, player: ExternalPlayer = .infuse) -> Bool {
         guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
               ["http", "https"].contains(components.scheme?.lowercased() ?? ""),
               let host = components.host, !host.isEmpty,
@@ -106,7 +117,7 @@ public enum ExternalPlayerURL {
         return !["localhost", "::1", "0.0.0.0", "0", "2130706433"].contains(normalizedHost)
             && !normalizedHost.hasPrefix("127.") && !normalizedHost.hasPrefix("::ffff:127.")
             && !normalizedHost.hasSuffix(".localhost")
-            && url.pathExtension.lowercased() != "mpd"
+            && (url.pathExtension.lowercased() != "mpd" || player.supportsDASH)
     }
 
     public static func validateCustomTemplate(_ template: String) throws {
@@ -130,7 +141,7 @@ public enum ExternalPlayerURL {
         settings: ExternalPlayerSettings, mediaURL: URL, title: String,
         position: TimeInterval, subtitles: [URL] = [], callbackScheme: String, nonce: UUID
     ) throws -> URL {
-        guard isSupportedMediaURL(mediaURL), position.isFinite, position >= 0,
+        guard isSupportedMediaURL(mediaURL, player: settings.player), position.isFinite, position >= 0,
               position < Double(Int.max) else { throw ExternalPlayerError.unsupportedSource }
         if settings.player == .custom {
             try validateCustomTemplate(settings.customURLTemplate)
@@ -161,7 +172,7 @@ public enum ExternalPlayerURL {
                 query.append(URLQueryItem(name: "x-" + outcome, value: url.absoluteString))
             }
         }
-        let supportedSubtitles = subtitles.filter(isSupportedMediaURL)
+        let supportedSubtitles = subtitles.filter { isSupportedMediaURL($0) }
         for url in supportedSubtitles.prefix(settings.player == .vlc ? 1 : 8) {
             query.append(URLQueryItem(name: "sub", value: url.absoluteString))
         }
