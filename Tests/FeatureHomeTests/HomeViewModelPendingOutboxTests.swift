@@ -151,6 +151,34 @@ final class HomeViewModelPendingOutboxTests: XCTestCase {
         )
     }
 
+    func testResetRecognizesAlreadyObservedServerPlaybackAheadOfTheClientClock() throws {
+        let observed = t1.addingTimeInterval(0.75)
+        var reset = mutation(account: "plex", itemID: "a", capturedAt: t1, played: false, clearResume: true)
+        reset.observedLastPlayedAt = ["plex:a": observed]
+        let restored = try JSONDecoder().decode(WatchMutation.self, from: JSONEncoder().encode(reset))
+        XCTAssertEqual(restored.observedLastPlayedAt, reset.observedLastPlayedAt)
+        for withSources in [false, true] {
+            var stale = cwItem(id: "a", account: "plex", lastPlayedAt: observed, resume: 600)
+            if !withSources { stale.sources = [] }
+            XCTAssertTrue(HomeViewModel.reconcileContinueWatching([stale], pending: [restored]).isEmpty)
+            var newer = cwItem(id: "a", account: "plex", lastPlayedAt: observed.addingTimeInterval(1), resume: 900)
+            if !withSources { newer.sources = [] }
+            XCTAssertEqual(HomeViewModel.reconcileContinueWatching([newer], pending: [restored]), [newer])
+            var unrelated = stale
+            unrelated.sourceAccountID = "other"
+            unrelated.sources = []
+            XCTAssertEqual(HomeViewModel.reconcileContinueWatching([unrelated], pending: [restored]), [unrelated])
+        }
+    }
+
+    func testObservedServerPlaybackDoesNotHideANewerMergedSource() {
+        var card = cwItem(id: "a", account: "plex", lastPlayedAt: t2, resume: 600)
+        card.sources.append(.init(accountID: "jellyfin", itemID: "b", resumePosition: 900, lastPlayedAt: t2))
+        var reset = mutation(account: "plex", itemID: "a", capturedAt: t0, played: false, clearResume: true)
+        reset.observedLastPlayedAt = ["plex:a": t2, "jellyfin:b": t1]
+        XCTAssertEqual(HomeViewModel.reconcileContinueWatching([card], pending: [reset]), [card])
+    }
+
     func testMatchesMergedCardViaAnySourceRef() {
         // A cross-server merged card lists several servers; a pending write that
         // targets a *secondary* source (the server the user actually played from)

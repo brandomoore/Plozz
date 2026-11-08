@@ -2579,7 +2579,12 @@ public final class HomeViewModel {
                 : clampInflatedRecency(rawItem, appliedRecency: appliedRecency, now: now, clampFreshness: clampFreshness)
             guard let m = newestMatch(for: item) else { overlaid.append(item); continue }
             // Ignore a pending write the server has already superseded with a newer play.
-            guard m.capturedAt >= (item.lastPlayedAt ?? .distantPast) else { overlaid.append(item); continue }
+            let observedReset = m.played == false && m.clearResume
+                && hasObservedPlayback(item, in: m)
+            guard m.capturedAt >= (item.lastPlayedAt ?? .distantPast) || observedReset else {
+                overlaid.append(item)
+                continue
+            }
 
             if m.played == true || m.clearResume || m.resumePosition == 0 {
                 // Finished, reset or dismissed: the stale resume must not return.
@@ -2604,6 +2609,22 @@ public final class HomeViewModel {
             overlaid.append(updated)
         }
         return HomeAggregator.sortedByRecency(overlaid.filter(ContinueWatchingPolicy.admits))
+    }
+
+    private nonisolated static func hasObservedPlayback(_ item: MediaItem, in mutation: WatchMutation) -> Bool {
+        if item.sources.isEmpty {
+            guard let account = item.sourceAccountID,
+                  let observed = mutation.observedLastPlayedAt["\(account):\(item.id)"] else { return false }
+            return (item.lastPlayedAt ?? .distantPast) <= observed
+        }
+        var latestObserved = mutation.capturedAt
+        for source in item.sources {
+            guard let playedAt = source.lastPlayedAt else { continue }
+            let observed = mutation.observedLastPlayedAt["\(source.accountID):\(source.itemID)"] ?? mutation.capturedAt
+            guard playedAt <= max(mutation.capturedAt, observed) else { return false }
+            latestObserved = max(latestObserved, playedAt)
+        }
+        return (item.lastPlayedAt ?? .distantPast) <= latestObserved
     }
 
     /// Cards on screen that the fresh feed left out, kept only while a write for

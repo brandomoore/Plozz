@@ -25,6 +25,9 @@ In-progress movies, episodes and videos offer both **Mark as Watched** and
 completion and saved progress, as if the selected item had not been started.
 Home removes its in-progress card immediately and retains that reset while the
 account-scoped server writes are queued, including after relaunch.
+Queued resets retain the server playback timestamps already observed when the
+action was chosen, so a server clock ahead of the device cannot revive that same
+resume point. Genuinely newer server playback still takes precedence.
 Other episodes are not reset; the provider's Next Up feed remains authoritative.
 Existing cross-server sync preferences apply. External tracker history is not deleted.
 
