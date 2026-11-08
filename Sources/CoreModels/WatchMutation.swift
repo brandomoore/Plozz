@@ -107,8 +107,8 @@ public struct WatchMutation: Codable, Hashable, Sendable, Identifiable {
     public var resumePosition: TimeInterval?
     /// Desired played flag to converge on every target, or `nil` to leave it.
     public var played: Bool?
-    /// When `true`, finishing also clears the resume point everywhere (a finished
-    /// title shouldn't keep a stale resume on any server).
+    /// When `true`, clear the resume point everywhere, including when explicitly
+    /// marking a title unwatched to reset it to unstarted.
     /// With no `played` flag or `resumePosition`, this instead represents the
     /// user's explicit "Remove from Continue Watching" action.
     public var clearResume: Bool

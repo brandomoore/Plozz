@@ -154,6 +154,33 @@ final class MediaItemActionCatalogTests: XCTestCase {
         XCTAssertEqual(MediaItemActionCatalog.actions(for: movie, supportsWatchState: true), [.markUnwatched, .goToMovie])
     }
 
+    func testInProgressItemsOfferBothWatchActionsAndSeparateRemoval() {
+        for kind in [MediaItemKind.movie, .episode, .video] {
+            for played in [false, true] {
+                var media = item(id: "progress", kind: kind, isPlayed: played)
+                media.resumePosition = 600
+                let actions = MediaItemActionCatalog.actions(for: media, supportsWatchState: true)
+                XCTAssertEqual(Array(actions.prefix(2)), [.markWatched, .markUnwatched])
+                XCTAssertEqual(actions.filter { $0 == .markUnwatched }.count, 1)
+                XCTAssertEqual(actions.last, .removeFromContinueWatching)
+                let unsupported = MediaItemActionCatalog.actions(for: media, supportsWatchState: false)
+                XCTAssertFalse(unsupported.contains(.markWatched))
+                XCTAssertFalse(unsupported.contains(.markUnwatched))
+                XCTAssertFalse(unsupported.contains(.removeFromContinueWatching))
+            }
+        }
+    }
+
+    func testZeroProgressDoesNotOfferRedundantUnwatchedReset() {
+        for kind in [MediaItemKind.movie, .episode, .video, .season, .series] {
+            var media = item(id: "unstarted", kind: kind)
+            media.resumePosition = 0
+            let actions = MediaItemActionCatalog.actions(for: media, supportsWatchState: true)
+            XCTAssertTrue(actions.contains(.markWatched))
+            XCTAssertFalse(actions.contains(.markUnwatched))
+        }
+    }
+
     func testSeasonAndSeriesAreEligible() {
         for kind in [MediaItemKind.season, .series] {
             let it = item(id: "c", kind: kind, isPlayed: false)

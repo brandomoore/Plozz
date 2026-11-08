@@ -18,6 +18,19 @@ an empty provider feed from local curation without recording media or account ID
 Home rows, item detail, series/season experience, and the online-trailer
 fallback when the user's server has no attached trailer.
 
+## Continue Watching watch actions
+
+In-progress movies, episodes and videos offer both **Mark as Watched** and
+**Mark as Unwatched** in the shared TV/mobile menu. Mark as Unwatched resets
+completion and saved progress, as if the selected item had not been started.
+Home removes its in-progress card immediately and retains that reset while the
+account-scoped server writes are queued, including after relaunch.
+Other episodes are not reset; the provider's Next Up feed remains authoritative.
+Existing cross-server sync preferences apply. External tracker history is not deleted.
+
+**Remove from Continue Watching** stays separate: it dismisses the title where
+supported, or clears resume as a fallback, without changing its watched status.
+
 ## Mobile Home loading geometry
 
 Home measures its viewport once and shares that width with loaded and skeleton

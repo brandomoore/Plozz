@@ -18,6 +18,89 @@ import CoreModels
 /// These tests pin both halves of that contract.
 final class WatchMutationFanoutTests: XCTestCase {
     @MainActor
+    func testMarkUnwatchedResetsProgressImmediatelyAndInDurableReplay() throws {
+        for kind in [MediaItemKind.movie, .episode] {
+            for played in [false, true] {
+                let item = MediaItem(
+                    id: "item", title: "Item", kind: kind,
+                    resumePosition: 600, playedPercentage: 0.5,
+                    isPlayed: played, sourceAccountID: "a",
+                    sources: [.init(
+                        accountID: "a", itemID: "item", kind: kind,
+                        resumePosition: 600, playedPercentage: 0.5, isPlayed: played
+                    )]
+                )
+                var queued: [WatchMutation] = []
+                let coordinator = MediaItemActionCoordinator(
+                    providerResolver: { _ in nil },
+                    providerCapabilityResolver: { _ in (true, false, false) },
+                    primaryAccountID: { "a" },
+                    crossServerWatchSyncEnabled: { false },
+                    enqueueWatchMutation: { queued.append($0) }
+                )
+                XCTAssertTrue(coordinator.actions(for: item, context: .none).contains(.markUnwatched))
+                let received = expectation(forNotification: .mediaItemDidMutate, object: nil) { note in
+                    guard let change = MediaItemMutation.from(note) else { return false }
+                    XCTAssertEqual(change.played, false)
+                    XCTAssertEqual(change.resumePosition, 0)
+                    XCTAssertEqual(change.playedPercentage, 0)
+                    let updated = change.applied(to: item)
+                    XCTAssertFalse(updated.isPlayed)
+                    XCTAssertFalse(updated.hasBeenPlayed)
+                    XCTAssertNil(updated.resumePosition)
+                    XCTAssertEqual(updated.playedPercentage, 0)
+                    XCTAssertNil(updated.sources.first?.resumePosition)
+                    XCTAssertEqual(updated.sources.first?.playedPercentage, 0)
+                    return true
+                }
+                coordinator.perform(.markUnwatched, on: item, context: .none)
+                wait(for: [received], timeout: 1)
+                XCTAssertEqual(queued.count, 1)
+                let intent = try XCTUnwrap(queued.first)
+                XCTAssertEqual(intent.played, false)
+                XCTAssertTrue(intent.clearResume)
+                XCTAssertNil(intent.trakt)
+                XCTAssertEqual(intent.targets.map(\.id), ["a:item"])
+                XCTAssertFalse(intent.expansionPending)
+                let restored = try JSONDecoder().decode(WatchMutation.self, from: JSONEncoder().encode(intent))
+                let replay = try XCTUnwrap(MediaItemMutation(watchMutation: restored))
+                XCTAssertNil(replay.applied(to: item).resumePosition)
+                XCTAssertEqual(replay.applied(to: item).playedPercentage, 0)
+                var otherAccount = item
+                otherAccount.sourceAccountID = "b"
+                otherAccount.sources = []
+                XCTAssertEqual(replay.applied(to: otherAccount), otherAccount)
+            }
+        }
+    }
+
+    func testUnwatchedResetFansOutOnlyToTheSameTitle() throws {
+        let peer = MediaSourceRef(accountID: "plex", itemID: "px", providerKind: .plex)
+        let movie = makeItem()
+        let intent = try XCTUnwrap(WatchMutationFactory.playedToggle(
+            item: movie, played: false, primaryAccountID: nil, additionalSources: [peer]
+        ))
+        XCTAssertEqual(Set(intent.targets.map(\.id)), ["jellyfin-account:jf-1", "plex:px"])
+        XCTAssertTrue(intent.clearResume)
+        XCTAssertNil(intent.trakt)
+
+        let episode = MediaItem(
+            id: "e3", title: "Third", kind: .episode,
+            seasonNumber: 1, episodeNumber: 3, seriesID: "show",
+            resumePosition: 600, sourceAccountID: "jellyfin-account"
+        )
+        let episodeIntent = try XCTUnwrap(WatchMutationFactory.playedToggle(
+            item: episode, played: false, primaryAccountID: nil,
+            additionalSources: [.init(accountID: "plex", itemID: "e2", kind: .episode)]
+        ))
+        XCTAssertEqual(episodeIntent.targets.map(\.id), ["jellyfin-account:e3"])
+        XCTAssertEqual(episodeIntent.seasonNumber, 1)
+        XCTAssertEqual(episodeIntent.episodeNumber, 3)
+        XCTAssertTrue(episodeIntent.expansionPending)
+        XCTAssertTrue(episodeIntent.clearResume)
+    }
+
+    @MainActor
     func testSeasonMenuQueuesOnlyTheChosenSeasonAndPublishesItsCascade() throws {
         for played in [false, true] {
             var queued: [WatchMutation] = []

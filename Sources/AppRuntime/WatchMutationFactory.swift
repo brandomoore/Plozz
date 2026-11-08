@@ -149,9 +149,9 @@ public enum WatchMutationFactory {
         return (identities, !identities.isEmpty, normalized.isEmpty ? nil : normalized, item.productionYear)
     }
 
-    /// A mark-watched / mark-unwatched mutation. Marking watched clears resume
-    /// everywhere and mirrors to Trakt (write-if-missing); unwatch never touches
-    /// Trakt (no deletes) and leaves resume alone.
+    /// Both explicit watch-state actions clear resume everywhere. Only marking
+    /// watched mirrors to Trakt (write-if-missing); unwatch never deletes history
+    /// from external trackers.
     public static func playedToggle(item: MediaItem, played: Bool, primaryAccountID: String?, additionalSources: [MediaSourceRef] = [], crossServerSync: Bool = true, capturedAt: Date = Date()) -> WatchMutation? {
         let targets = targets(for: item, primaryAccountID: primaryAccountID, additionalSources: additionalSources, crossServerSync: crossServerSync)
         guard !targets.isEmpty else { return nil }
@@ -167,7 +167,7 @@ public enum WatchMutationFactory {
             seasonNumber: item.seasonNumber,
             episodeNumber: item.episodeNumber,
             played: played,
-            clearResume: played,
+            clearResume: true,
             targets: targets,
             trakt: played && !item.isExtra && !item.isTrailer && !item.isYouTubeTrailer ? traktIntent(for: item, progress: 100) : nil,
             episodeOrigin: episode.origin,

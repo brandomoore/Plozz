@@ -57,6 +57,38 @@ final class HomeViewModelSnapshotHydrationTests: XCTestCase {
         XCTAssertEqual(provider.librariesCallCount, 1, "Publishing a row must not restart the launch load.")
     }
 
+    func testUnwatchedResetDuringLoadSurvivesLateContinueWatchingPublication() async {
+        let resumeGate = HomeRefreshGate()
+        defer { resumeGate.open() }
+        let item = MediaItem(
+            id: "resume", title: "Resume", kind: .episode,
+            resumePosition: 600, playedPercentage: 0.5, sourceAccountID: "a"
+        )
+        let provider = FakeMediaProvider(allItems: [])
+        provider.continueWatchingItems = [item]
+        provider.continueWatchingGate = { await resumeGate.wait() }
+        provider.latestItems = [item]
+        let home = makeViewModel(provider: provider, contentStore: InMemoryHomeContentStore())
+        let load = Task { await home.load() }
+        let deadline = ContinuousClock.now + .seconds(2)
+        while ContinuousClock.now < deadline, home.state.value?.latest.first?.id != item.id {
+            try? await Task.sleep(for: .milliseconds(2))
+        }
+        XCTAssertEqual(home.state.value?.latest.first?.id, item.id)
+        XCTAssertTrue(home.isRefreshing)
+        home.applyWatchedState(.init(
+            itemIDs: [item.id], scopedItemIDs: ["a:\(item.id)"],
+            played: false, resumePosition: 0, playedPercentage: 0, item: item
+        ))
+        resumeGate.open()
+        await load.value
+        XCTAssertTrue(home.state.value?.continueWatching.isEmpty == true)
+        XCTAssertTrue(home.continueWatchingForDetail.isEmpty,
+                      "The late native resume feed must not restore the reset item's progress.")
+        XCTAssertNil(home.state.value?.latest.first?.resumePosition)
+        XCTAssertEqual(home.state.value?.latest.first?.playedPercentage, 0)
+    }
+
     func testUnmergedRowsPublishBeforeSlowResumeAndRemainingLibraryRequests() async {
         let resumeGate = HomeRefreshGate()
         let libraryGate = HomeRefreshGate()

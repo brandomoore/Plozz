@@ -121,6 +121,36 @@ final class HomeViewModelPendingOutboxTests: XCTestCase {
         XCTAssertEqual(result.map(\.id), ["b", "a"], "Non-play mutation leaves the server order intact")
     }
 
+    func testUnwatchedResetCannotReturnFromStaleFeedOrCarriedResume() {
+        let item = cwItem(id: "a", account: "plex", lastPlayedAt: t0, resume: 600)
+        let unrelated = cwItem(id: "a", account: "other", lastPlayedAt: t1, resume: 900)
+        var reset = WatchMutation(
+            capturedAt: t2, canonicalMediaID: "movie", played: false, clearResume: true,
+            targets: [
+                .init(accountID: "plex", itemID: "a"),
+                .init(accountID: "jellyfin", itemID: "jf")
+            ]
+        )
+        // The first copy has been written, but another server is still offline.
+        reset.targets.removeFirst()
+        let result = HomeViewModel.reconcileContinueWatching([item, unrelated], pending: [reset])
+        XCTAssertEqual(result.map(\.sourceAccountID), ["other"])
+        XCTAssertTrue(HomeViewModel.reconcileContinueWatching(
+            [], pending: [reset],
+            appliedRecency: ["plex:a": .init(capturedAt: t0, appliedAt: t2)],
+            carryForward: [item], now: t2
+        ).isEmpty)
+    }
+
+    func testNewerPlaybackStillWinsOverAnOlderUnwatchedReset() {
+        let item = cwItem(id: "a", account: "plex", lastPlayedAt: t2, resume: 600)
+        let reset = mutation(account: "plex", itemID: "a", capturedAt: t1, played: false, clearResume: true)
+        XCTAssertEqual(
+            HomeViewModel.reconcileContinueWatching([item], pending: [reset]).first?.resumePosition,
+            600
+        )
+    }
+
     func testMatchesMergedCardViaAnySourceRef() {
         // A cross-server merged card lists several servers; a pending write that
         // targets a *secondary* source (the server the user actually played from)
