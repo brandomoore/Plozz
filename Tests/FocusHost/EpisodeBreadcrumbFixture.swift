@@ -45,6 +45,16 @@ struct EpisodeBreadcrumbFixture: View {
                 }
         }
         .overlay(alignment: .topLeading) {
+            if ProcessInfo.processInfo.arguments.contains("--episode-menu") {
+                VStack {
+                    Text(verbatim: model.actions.performedActions.isEmpty
+                         ? "none" : model.actions.performedActions.joined(separator: ","))
+                        .accessibilityIdentifier("episode-menu-performed-actions")
+                    Text(verbatim: "\(playCount)")
+                        .accessibilityIdentifier("episode-menu-play-count")
+                }
+                .allowsHitTesting(false)
+            }
             if ProcessInfo.processInfo.arguments.contains("--delayed-series-entry") || model.provider.isDiscovery {
                 VStack {
                     Text(verbatim: "\(playCount)").accessibilityIdentifier("detail-entry-play-count")
@@ -83,6 +93,17 @@ struct EpisodeBreadcrumbFixture: View {
                 path.append(model.provider.series)
             }
             path.append(model.provider.episode)
+        }
+        .task {
+            guard ProcessInfo.processInfo.arguments.contains("--refresh-episode-progress") else { return }
+            for revision in 0..<1000 {
+                do { try await Task.sleep(for: .milliseconds(250)) }
+                catch { return }
+                model.show.applyWatchedState(MediaItemMutation(
+                    itemIDs: ["episode-1", "episode-2", "episode-3"],
+                    resumePosition: Double(revision % 2 + 1) / 10
+                ))
+            }
         }
     }
 
@@ -175,6 +196,7 @@ private final class EpisodeBreadcrumbModel {
 @MainActor @Observable
 private final class EpisodeBreadcrumbActions: MediaItemActionHandling {
     var contextID = "original"
+    var performedActions: [String] = []
 
     func actions(for item: MediaItem, context: MediaItemActionContext) -> [MediaItemAction] {
         if ProcessInfo.processInfo.arguments.contains("--delayed-series-entry") { return [.addToWatchlist] }
@@ -186,6 +208,7 @@ private final class EpisodeBreadcrumbActions: MediaItemActionHandling {
         )
     }
     func perform(_ action: MediaItemAction, on item: MediaItem, context: MediaItemActionContext) {
+        performedActions.append(action.rawValue)
         if ProcessInfo.processInfo.arguments.contains("--change-context-on-watchlist") {
             contextID = "changed"
         }

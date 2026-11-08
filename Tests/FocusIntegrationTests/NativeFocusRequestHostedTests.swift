@@ -12,34 +12,47 @@ final class NativeFocusRequestHostedTests: XCTestCase {
     func testNativeMenuRetainsItsListAndUsesFreshActions() throws {
         let coordinator = NativeMediaItemMenuCoordinator()
         let button = UIButton(type: .custom)
+        let container = UIView()
+        container.addSubview(button)
         let locale = Locale(identifier: "en_US")
         var item = MediaItem(id: "episode", title: "Episode", kind: .episode, sourceAccountID: "first")
         var received = 0
         coordinator.update(.init(item: item, actions: [.markWatched], perform: { _ in received = 1 }),
-                           locale: locale, button: button)
-        let menu = try XCTUnwrap(button.menu)
+                           locale: locale, button: button, interactionView: container)
+        let menu = try XCTUnwrap(coordinator.menu)
+        let interaction = try XCTUnwrap(coordinator.interaction)
         let originalAction = try XCTUnwrap(menu.children.first as? UIAction)
         coordinator.update(.init(item: item, actions: [.markWatched], perform: { _ in received = 2 }),
-                           locale: locale, button: button)
-        XCTAssertTrue(button.menu === menu, "Callback refresh must not replace the visible menu.")
+                           locale: locale, button: button, interactionView: container)
+        XCTAssertTrue(coordinator.menu === menu, "Callback refresh must not replace the visible menu.")
         let activation = UIButton(type: .custom)
         activation.addAction(originalAction, for: .primaryActionTriggered)
         activation.sendActions(for: .primaryActionTriggered)
         XCTAssertEqual(received, 2)
 
+        item.overview = "Refreshed episode metadata."
+        coordinator.update(.init(item: item, actions: [.markWatched], perform: { _ in received = 4 }),
+                           locale: locale, button: button, interactionView: container)
+        XCTAssertTrue(coordinator.menu === menu, "Unrelated metadata must not interrupt a pending hold.")
+        XCTAssertTrue(coordinator.interaction === interaction)
+        activation.sendActions(for: .primaryActionTriggered)
+        XCTAssertEqual(received, 4)
+
         item.sourceAccountID = "second"
         coordinator.update(.init(item: item, actions: [.markWatched], perform: { _ in received = 3 }),
-                           locale: locale, button: button)
-        XCTAssertFalse(button.menu === menu)
+                           locale: locale, button: button, interactionView: container)
+        XCTAssertFalse(coordinator.menu === menu)
         activation.sendActions(for: .primaryActionTriggered)
-        XCTAssertEqual(received, 2, "An old menu must not act in a replacement account context.")
-        let currentAction = try XCTUnwrap(button.menu?.children.first as? UIAction)
+        XCTAssertEqual(received, 4, "An old menu must not act in a replacement account context.")
+        let currentAction = try XCTUnwrap(coordinator.menu?.children.first as? UIAction)
         activation.removeAction(originalAction, for: .primaryActionTriggered)
         activation.addAction(currentAction, for: .primaryActionTriggered)
         activation.sendActions(for: .primaryActionTriggered)
         XCTAssertEqual(received, 3)
-        coordinator.update(nil, locale: locale, button: button)
-        XCTAssertNil(button.menu)
+        coordinator.update(nil, locale: locale, button: button, interactionView: container)
+        XCTAssertNil(coordinator.menu)
+        XCTAssertNil(coordinator.interaction)
+        XCTAssertFalse(container.interactions.contains { $0 === interaction })
         received = 0
         activation.sendActions(for: .primaryActionTriggered)
         XCTAssertEqual(received, 0)
@@ -48,22 +61,85 @@ final class NativeFocusRequestHostedTests: XCTestCase {
     func testNativeMenuPreservesGroupingRolesAndLocaleUpdates() throws {
         let coordinator = NativeMediaItemMenuCoordinator()
         let button = UIButton(type: .custom)
+        let container = UIView()
+        container.addSubview(button)
         let configuration = NativeMediaItemMenu(
             item: MediaItem(id: "episode", title: "Episode", kind: .episode),
             actions: [.markWatched, .removeDownload, .removeFromContinueWatching], perform: { _ in }
         )
-        coordinator.update(configuration, locale: Locale(identifier: "en_US"), button: button)
-        let menu = try XCTUnwrap(button.menu)
+        coordinator.update(configuration, locale: Locale(identifier: "en_US"), button: button, interactionView: container)
+        let menu = try XCTUnwrap(coordinator.menu)
         let destructive = try XCTUnwrap(menu.children[1] as? UIAction)
         XCTAssertTrue(destructive.attributes.contains(.destructive))
         let separated = try XCTUnwrap(menu.children.last as? UIMenu)
         XCTAssertTrue(separated.options.contains(.displayInline))
         XCTAssertEqual(separated.children.count, 1)
         let locale = Locale(identifier: "de")
-        coordinator.update(configuration, locale: locale, button: button)
-        XCTAssertFalse(button.menu === menu)
-        XCTAssertEqual(button.menu?.children.first?.title,
+        coordinator.update(configuration, locale: locale, button: button, interactionView: container)
+        XCTAssertFalse(coordinator.menu === menu)
+        XCTAssertEqual(coordinator.menu?.children.first?.title,
                        NativePosterText.localized(MediaItemAction.markWatched.title).resolve(locale: locale))
+    }
+
+    func testNativeMenuDistinguishesSiblingMetadataFromActionScopeChanges() throws {
+        let coordinator = NativeMediaItemMenuCoordinator()
+        let button = UIButton(type: .custom)
+        let container = UIView()
+        container.addSubview(button)
+        let item = MediaItem(id: "episode-2", title: "Episode 2", kind: .episode)
+        var sibling = MediaItem(id: "episode-1", title: "Episode 1", kind: .episode)
+        let locale = Locale(identifier: "en_US")
+        var calls = 0
+        func update(_ siblings: [MediaItem]) {
+            coordinator.update(.init(
+                item: item, actions: [.markWatched], context: .init(orderedSiblings: siblings),
+                perform: { _ in calls += 1 }
+            ), locale: locale, button: button, interactionView: container)
+        }
+        update([sibling, item])
+        let menu = try XCTUnwrap(coordinator.menu)
+        let interaction = try XCTUnwrap(coordinator.interaction)
+        sibling.overview = "New metadata."
+        update([sibling, item])
+        XCTAssertTrue(coordinator.menu === menu)
+        XCTAssertTrue(coordinator.interaction === interaction)
+        let activation = UIButton(type: .custom)
+        activation.addAction(try XCTUnwrap(menu.children.first as? UIAction), for: .primaryActionTriggered)
+        activation.sendActions(for: .primaryActionTriggered)
+        XCTAssertEqual(calls, 1)
+        update([item, sibling])
+        XCTAssertFalse(coordinator.menu === menu)
+        XCTAssertTrue(coordinator.interaction === interaction)
+        activation.sendActions(for: .primaryActionTriggered)
+        XCTAssertEqual(calls, 1, "The old ordered-action scope must no longer execute.")
+    }
+
+    func testNativeEpisodeMenuUsesAContextualArtworkPreview() async throws {
+        let fixture = try await makeFixture()
+        defer { fixture.close() }
+        let button = try XCTUnwrap(nativePoster(in: fixture.window))
+        let container = try XCTUnwrap(button.superview)
+        let coordinator = NativeMediaItemMenuCoordinator()
+        coordinator.update(
+            .init(item: MediaItem(id: "episode", title: "Episode", kind: .episode),
+                  actions: [.markWatched], perform: { _ in }),
+            locale: Locale(identifier: "en_US"), button: button, interactionView: container
+        )
+        let interaction = try XCTUnwrap(coordinator.interaction)
+        XCTAssertTrue(interaction.view === container, "The enclosing view owns holds; the button owns ordinary clicks.")
+        XCTAssertNil(button.menu, "A control menu does not provide the contextual thumbnail lift.")
+        let configuration = try XCTUnwrap(coordinator.contextMenuInteraction(
+            interaction, configurationForMenuAtLocation: .zero
+        ))
+        let highlight = try XCTUnwrap(coordinator.contextMenuInteraction(
+            interaction, configuration: configuration, highlightPreviewForItemWithIdentifier: configuration.identifier
+        ))
+        let dismissal = try XCTUnwrap(coordinator.contextMenuInteraction(
+            interaction, configuration: configuration, dismissalPreviewForItemWithIdentifier: configuration.identifier
+        ))
+        XCTAssertTrue(highlight.view === button.artworkView)
+        XCTAssertTrue(dismissal.view === button.artworkView)
+        XCTAssertFalse(highlight.view.bounds.isEmpty)
     }
 
     func testCinematicGuardBlocksNativeDirectionsButAllowsSourceRestoration() async throws {

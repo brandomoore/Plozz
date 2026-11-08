@@ -17,12 +17,32 @@ final class EpisodeBreadcrumbRemoteTests: XCTestCase {
         }
     }
 
-    private func exerciseEpisodeContextMenu(style: String, descriptionsOnFocus: Bool, trace: Bool = false) throws {
+    func testNativeEpisodeMenuAcceptsRepeatedShortAndLongHolds() throws {
+        for descriptionsOnFocus in [false, true] {
+            try exerciseEpisodeContextMenu(
+                style: "--system", descriptionsOnFocus: descriptionsOnFocus, refreshProgress: true,
+                holds: Array(repeating: [0.6, 0.8, 1.2, 0.6, 1, 0.8], count: 2).flatMap { $0 }
+            )
+        }
+    }
+
+    func testNativeEpisodeMenuRepeatedlyReopensOnTheSameCard() throws {
+        try exerciseEpisodeContextMenu(
+            style: "--system", descriptionsOnFocus: false,
+            holds: Array(repeating: [0.6, 0.8, 1.2, 0.6, 1, 0.8], count: 4).flatMap { $0 }
+        )
+    }
+
+    private func exerciseEpisodeContextMenu(
+        style: String, descriptionsOnFocus: Bool, trace: Bool = false, refreshProgress: Bool = false,
+        holds: [TimeInterval] = [1, 1, 1]
+    ) throws {
         continueAfterFailure = false
         let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.FocusHost")
         app.launchArguments = ["--episode-breadcrumb-fixture", "--series-navigation", "--episode-menu", style]
             + (descriptionsOnFocus ? ["--descriptions-on-focus"] : [])
             + (trace ? ["--trace-menu-appearance"] : [])
+            + (refreshProgress ? ["--refresh-episode-progress"] : [])
         app.launch()
         defer { app.terminate() }
         let play = app.buttons["detail-hero-play"]
@@ -47,17 +67,35 @@ final class EpisodeBreadcrumbRemoteTests: XCTestCase {
                 waitFor { episodeHasFocus() }
             }
         }
-        for iteration in 0..<3 {
-            XCUIRemote.shared.press(.select, forDuration: 1)
+        if trace { attach(app.screenshot(), name: "episode-before-contextual-preview") }
+        for (iteration, duration) in holds.enumerated() {
+            XCUIRemote.shared.press(.select, forDuration: duration)
             let navigation = app.descendants(matching: .any)
                 .matching(NSPredicate(format: "label == %@", "Go to Episode")).firstMatch
-            XCTAssertTrue(navigation.waitForExistence(timeout: 5), app.debugDescription)
+            let opened = navigation.waitForExistence(timeout: 5)
+            if !opened {
+                XCTAssertEqual(app.staticTexts["episode-menu-performed-actions"].label, "none",
+                               "Holding Select must not activate a menu action.")
+            }
+            XCTAssertTrue(opened, app.debugDescription)
             XCTAssertTrue(app.descendants(matching: .any)
                 .matching(NSPredicate(format: "label == %@", "Mark as Watched")).firstMatch.exists)
             if trace {
                 Thread.sleep(forTimeInterval: 3)
+                attach(app.screenshot(), name: "episode-contextual-preview-open")
                 XCUIRemote.shared.press(.menu)
                 waitFor { episodeHasFocus() }
+                XCTAssertEqual(app.staticTexts["episode-menu-performed-actions"].label, "none")
+                XCTAssertEqual(app.staticTexts["episode-menu-play-count"].label, "0",
+                               "A hold must not also trigger the button's ordinary playback action.")
+                if refreshProgress {
+                    XCUIRemote.shared.press(iteration.isMultiple(of: 2) ? .right : .left)
+                    let number = iteration.isMultiple(of: 2) ? 2 : 1
+                    episode = app.descendants(matching: .any).matching(NSPredicate(
+                        format: "label BEGINSWITH %@", "E\(number) · Fixture Episode \(number),"
+                    )).firstMatch
+                    waitFor { episodeHasFocus() }
+                }
                 let result = app.descendants(matching: .any)["episode-menu-appearance-result"]
                 waitFor { result.exists && result.value as? String != "pending" }
                 let json = try XCTUnwrap(result.value as? String)
@@ -81,6 +119,8 @@ final class EpisodeBreadcrumbRemoteTests: XCTestCase {
             XCUIRemote.shared.press(.menu)
             waitFor { episodeHasFocus() }
         }
+        XCUIRemote.shared.press(.select)
+        waitFor { app.staticTexts["episode-menu-play-count"].label == "1" }
     }
 
     func testLoadingPrimaryQueuesOnePlayWithoutResizing() throws {

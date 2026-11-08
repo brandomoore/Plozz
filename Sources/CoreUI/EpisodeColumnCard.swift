@@ -128,7 +128,7 @@ public struct EpisodeColumnCard: View, Equatable {
 
             SpoilerSafeOverviewText(
                 overview: presentation.overviewTreatment == .blurred
-                    ? item.overview
+                    ? EpisodeColumnPresentation.compactOverview(item.overview)
                     : presentation.visibleOverview,
                 hidesSpoilers: presentation.overviewTreatment == .blurred
                     || presentation.overviewTreatment == .placeholder,

@@ -801,7 +801,7 @@ struct NativeTVPoster<Overlay: View>: UIViewRepresentable {
 
     static func dismantleUIView(_ container: Container, coordinator: Coordinator) {
         coordinator.cancelPresentation()
-        coordinator.menu.update(nil, locale: .current, button: container.poster)
+        coordinator.menu.update(nil, locale: .current, button: container.poster, interactionView: container)
         container.poster.prepareArtwork = nil
         container.poster.prepareOverlay = nil
         container.poster.onAvailable = nil
@@ -835,7 +835,8 @@ struct NativeTVPoster<Overlay: View>: UIViewRepresentable {
         configureArtwork(view, context: context)
         view.isEnabled = context.environment.isEnabled
         context.coordinator.menu.update(
-            context.environment.nativeMediaItemMenu, locale: context.environment.locale, button: view
+            context.environment.nativeMediaItemMenu, locale: context.environment.locale,
+            button: view, interactionView: container
         )
         source?.nativeArtworkView = view.artworkView
         context.coordinator.focus.update(focus: focus, action: action, view: view)

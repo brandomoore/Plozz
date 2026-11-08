@@ -385,24 +385,51 @@ extension EnvironmentValues {
 }
 
 @MainActor
-final class NativeMediaItemMenuCoordinator {
+final class NativeMediaItemMenuCoordinator: NSObject, UIContextMenuInteractionDelegate {
     private var configuration: NativeMediaItemMenu?
     private var locale: Locale?
     private var generation = 0
+    private weak var button: UIButton?
+    private(set) var menu: UIMenu?
+    private(set) var interaction: UIContextMenuInteraction?
+    private var isPresented = false
 
-    func update(_ configuration: NativeMediaItemMenu?, locale: Locale, button: UIButton) {
-        let changed = self.configuration?.item != configuration?.item
-            || self.configuration?.actions != configuration?.actions
-            || self.configuration?.context != configuration?.context
+    func update(_ configuration: NativeMediaItemMenu?, locale: Locale, button: UIButton, interactionView: UIView) {
+        let siblingsMatch = (self.configuration?.context.orderedSiblings ?? []).elementsEqual(
+            configuration?.context.orderedSiblings ?? []
+        ) { $0.id == $1.id && $0.sourceAccountID == $1.sourceAccountID }
+        let scopeChanged = self.button !== button
+            || (interaction != nil && interaction?.view !== interactionView)
+            || self.configuration?.item.id != configuration?.item.id
+            || self.configuration?.item.sourceAccountID != configuration?.item.sourceAccountID
+            || !siblingsMatch
+            || self.configuration?.context.precedingContainerIDs != configuration?.context.precedingContainerIDs
             || self.configuration?.handlerIdentity != configuration?.handlerIdentity
-            || self.configuration?.navigator != configuration?.navigator || self.locale != locale
+            || self.configuration?.navigator != configuration?.navigator
+        let changed = scopeChanged || self.configuration?.actions != configuration?.actions || self.locale != locale
+        if let interaction, self.button !== button || interaction.view !== interactionView {
+            interaction.dismissMenu()
+            interaction.view?.removeInteraction(interaction)
+            self.interaction = nil
+            isPresented = false
+        }
+        self.button = button
         self.configuration = configuration
         self.locale = locale
         guard changed else { return }
         generation += 1
         guard let configuration else {
-            button.menu = nil
+            interaction?.dismissMenu()
+            if let interaction { interaction.view?.removeInteraction(interaction) }
+            interaction = nil
+            menu = nil
+            isPresented = false
             return
+        }
+        if interaction == nil {
+            let interaction = UIContextMenuInteraction(delegate: self)
+            interactionView.addInteraction(interaction)
+            self.interaction = interaction
         }
         let generation = generation
         func makeAction(_ action: MediaItemAction) -> UIAction {
@@ -424,9 +451,58 @@ final class NativeMediaItemMenuCoordinator {
         if !separated.isEmpty {
             children.append(UIMenu(options: .displayInline, children: separated.map(makeAction)))
         }
-        // SwiftUI's tvOS context-menu bridge replaces its list during opening.
-        // Keep UIKit's menu instance until its actual content changes.
-        button.menu = UIMenu(children: children)
+        let menu = UIMenu(children: children)
+        self.menu = menu
+        if isPresented {
+            if scopeChanged {
+                interaction?.dismissMenu()
+            } else {
+                interaction?.updateVisibleMenu { _ in menu }
+            }
+        }
+    }
+
+    func contextMenuInteraction(
+        _ interaction: UIContextMenuInteraction, configurationForMenuAtLocation location: CGPoint
+    ) -> UIContextMenuConfiguration? {
+        guard let menu, let button, button.isEnabled, button.window != nil else { return nil }
+        return UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { _ in menu }
+    }
+
+    func contextMenuInteraction(
+        _ interaction: UIContextMenuInteraction, configuration: UIContextMenuConfiguration,
+        highlightPreviewForItemWithIdentifier identifier: any NSCopying
+    ) -> UITargetedPreview? {
+        artworkPreview()
+    }
+
+    func contextMenuInteraction(
+        _ interaction: UIContextMenuInteraction, configuration: UIContextMenuConfiguration,
+        dismissalPreviewForItemWithIdentifier identifier: any NSCopying
+    ) -> UITargetedPreview? {
+        artworkPreview()
+    }
+
+    func contextMenuInteraction(
+        _ interaction: UIContextMenuInteraction, willDisplayMenuFor configuration: UIContextMenuConfiguration,
+        animator: (any UIContextMenuInteractionAnimating)?
+    ) {
+        isPresented = true
+    }
+
+    func contextMenuInteraction(
+        _ interaction: UIContextMenuInteraction, willEndFor configuration: UIContextMenuConfiguration,
+        animator: (any UIContextMenuInteractionAnimating)?
+    ) {
+        isPresented = false
+    }
+
+    private func artworkPreview() -> UITargetedPreview? {
+        guard let button, button.window != nil else { return nil }
+        let artwork = (button as? NativePosterButton)?.artworkView ?? button
+        let parameters = UIPreviewParameters()
+        parameters.backgroundColor = .clear
+        return UITargetedPreview(view: artwork, parameters: parameters)
     }
 }
 #endif
