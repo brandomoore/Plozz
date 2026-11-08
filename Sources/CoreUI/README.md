@@ -476,6 +476,9 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   checkmark groups retain their separate focus-bleed geometry.
   Standalone page links use the `.navigation` row role: idle and focused surfaces
   both read the same 28pt radius, with no focus bleed or corner tightening.
+  `SettingsFocusRow` owns both surfaces, with the idle surface behind the focus
+  fill. Keep navigation labels surface-free so opaque backgrounds cannot cover
+  the highlight when gradients or Liquid Glass are disabled.
   Adjacent page links have an 8pt gap; separate control sections keep their larger gap.
   Page titles and Back belong inside the scrolling content, not in a fixed
   header strip that shortens the viewport. `SettingsPageHeader` supplies their
