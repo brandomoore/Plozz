@@ -29,7 +29,7 @@ struct PlozziOSDownloadedShowView: View {
                         List {
                             ForEach(show.seasons) { season in
                                 PlozziOSDownloadedSeasonSection(
-                                    season: season, model: model,
+                                    season: season, model: model, appModel: appModel,
                                     horizontalInset: max(20, (geometry.size.width - 900) / 2),
                                     openEpisode: { item in
                                         detailNav = PlozziOSDownloadDetailNav(item: item)
@@ -75,6 +75,9 @@ struct PlozziOSDownloadedShowView: View {
                 .toolbar {
                     ToolbarItem(placement: .topBarTrailing) {
                         Menu {
+                            PlozziOSDownloadNavigationAction(
+                                records: show.records, model: model, appModel: appModel
+                            ) { detailNav = PlozziOSDownloadDetailNav(item: $0) }
                             if show.records.contains(where: \.isActiveDownload) {
                                 Button {
                                     Task { await model.pause(show.records) }
@@ -94,8 +97,10 @@ struct PlozziOSDownloadedShowView: View {
                                 Label("Remove Show", systemImage: "trash")
                             }
                         } label: {
-                            Image(systemName: "ellipsis.circle")
+                            Image(systemName: "ellipsis")
                         }
+                        .accessibilityLabel("More actions")
+                        .accessibilityIdentifier("download-show-actions")
                     }
                 }
             } else {
@@ -147,6 +152,7 @@ struct PlozziOSDownloadedShowView: View {
 private struct PlozziOSDownloadedSeasonSection: View {
     let season: PlozziOSDownloadedSeason
     let model: PlozziOSDownloadsModel
+    let appModel: PlozziOSAppModel
     let horizontalInset: CGFloat
     let openEpisode: (MediaItem) -> Void
     let removeSeason: () -> Void
@@ -154,7 +160,9 @@ private struct PlozziOSDownloadedSeasonSection: View {
     var body: some View {
         Section {
             ForEach(season.records) { record in
-                PlozziOSDownloadedEpisodeRow(record: record, model: model, openEpisode: openEpisode)
+                PlozziOSDownloadedEpisodeRow(
+                    record: record, model: model, appModel: appModel, openEpisode: openEpisode
+                )
                     .listRowSeparator(.hidden)
                     .listRowBackground(Color.clear)
                     .listRowInsets(EdgeInsets(
@@ -242,10 +250,14 @@ struct DownloadSeasonHeader: View {
 private struct PlozziOSDownloadedEpisodeRow: View {
     let record: DownloadedMediaRecord
     let model: PlozziOSDownloadsModel
+    let appModel: PlozziOSAppModel
     let openEpisode: (MediaItem) -> Void
 
     var body: some View {
         DownloadCompactCard(menu: {
+            PlozziOSDownloadNavigationAction(
+                records: [record], model: model, appModel: appModel, open: openEpisode
+            )
             if record.isActiveDownload {
                 Button("Pause", systemImage: "pause.fill") {
                     Task { await model.pause(record) }

@@ -12,6 +12,7 @@ struct DownloadsInteractionFixture: View {
     @State private var appModel: PlozziOSAppModel
     @State private var downloads: PlozziOSDownloadsModel
     @State private var trailer = HeroTrailerController()
+    @State private var sidebar = PlozziOSSidebarGeometryModel()
 
     init() {
         let sync = SyncSetupFeatureFlag()
@@ -53,7 +54,8 @@ struct DownloadsInteractionFixture: View {
             records = [
                 DownloadedMediaRecord(
                     identity: .external(source: "plozz-account:fixture", value: "movie"),
-                    sourceKind: .managedHTTP, status: .completed,
+                    sourceKind: .managedHTTP,
+                    status: ProcessInfo.processInfo.arguments.contains("--download-active") ? .downloading : .completed,
                     localFileName: "movie.mkv", bytesDownloaded: 100_000_000,
                     totalBytes: 100_000_000,
                     snapshot: .init(
@@ -84,6 +86,7 @@ struct DownloadsInteractionFixture: View {
         }
         .environment(appModel)
         .environment(trailer)
+        .environment(sidebar)
         .environment(\.locale, Locale(identifier: "en"))
         .environment(\.themePalette, .dark)
         .environment(\.plozzMetrics, .touch(density: .standard))
@@ -116,6 +119,20 @@ private struct DownloadFixtureProvider: MediaProvider {
         MediaPage(items: [], startIndex: 0, totalCount: 0)
     }
     func item(id: String) async throws -> MediaItem {
+        if id == "movie" {
+            return MediaItem(
+                id: id, title: "Downloaded Movie", kind: .movie,
+                overview: "Downloaded movie fixture details.",
+                allowsTitleBasedMetadataMatching: false, sourceAccountID: "fixture"
+            )
+        }
+        if id == "andor" || id.hasPrefix("show-") {
+            return MediaItem(
+                id: id, title: id == "andor" ? "Andor" : "Downloaded Show \(id.dropFirst(5))",
+                kind: .series, overview: "Downloaded show fixture details.",
+                allowsTitleBasedMetadataMatching: false, sourceAccountID: "fixture"
+            )
+        }
         guard id.hasPrefix("episode-"), let index = Int(id.dropFirst("episode-".count)) else {
             throw AppError.notFound
         }

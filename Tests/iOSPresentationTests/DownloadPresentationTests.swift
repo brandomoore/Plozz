@@ -15,6 +15,43 @@ import XCTest
 
 @MainActor
 final class DownloadPresentationTests: XCTestCase {
+    func testDownloadNavigationPreservesExactSourceAndSeasonForEveryTransferState() throws {
+        let model = PlozziOSDownloadsModel(initializationError: "fixture")
+        for status in [DownloadStatus.queued, .preparing, .downloading, .paused, .failed, .completed] {
+            var saved = record()
+            saved.status = status
+            saved.snapshot.sourceAccountID = "selected-account"
+            saved.snapshot.sourceItemID = "selected-episode"
+            saved.snapshot.seriesID = "selected-show"
+            saved.snapshot.seasonID = "selected-season"
+            saved.snapshot.kind = .episode
+            let episode = try XCTUnwrap(model.detailItem(for: saved))
+            let show = try XCTUnwrap(PlozziOSDownloadNavigationAction.navigation(for: episode))
+            XCTAssertEqual(show.action, .goToSeason)
+            XCTAssertEqual(show.item.id, "selected-show")
+            XCTAssertEqual(show.item.kind, .series)
+            XCTAssertEqual(show.item.sourceAccountID, "selected-account")
+            XCTAssertEqual(show.item.seasonID, "selected-season")
+
+            saved.snapshot.kind = .movie
+            let movie = try XCTUnwrap(model.detailItem(for: saved))
+            let target = try XCTUnwrap(PlozziOSDownloadNavigationAction.navigation(for: movie))
+            XCTAssertEqual(target.action, .goToMovie)
+            XCTAssertEqual(target.item, movie)
+        }
+    }
+
+    func testDownloadNavigationDoesNotInventMissingShowIdentity() throws {
+        let episode = MediaItem(id: "episode", title: "Episode", kind: .episode, sourceAccountID: "account")
+        XCTAssertNil(PlozziOSDownloadNavigationAction.navigation(for: episode))
+        var seasonEpisode = episode
+        seasonEpisode.seasonID = "season"
+        let season = try XCTUnwrap(PlozziOSDownloadNavigationAction.navigation(for: seasonEpisode))
+        XCTAssertEqual(season.item.id, "season")
+        XCTAssertEqual(season.item.kind, .season)
+        XCTAssertEqual(season.item.sourceAccountID, "account")
+    }
+
     func testReducedJellyfinAndEmbyDownloadsKeepEmbeddedTextSubtitlesOffline() async throws {
         for kind in [ProviderKind.jellyfin, .emby] {
             let storage = try temporaryStorage()

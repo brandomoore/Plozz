@@ -85,6 +85,13 @@ The notification toggle is labeled **Season or Show Complete**. Active system do
 Live Activities include **Cancel to pause** beside their progress, since the system's
 Cancel action pauses rather than deletes downloads.
 
+## Download navigation
+
+On iPhone and iPad, download row menus offer Go to Movie or Go to Show when the
+saved record identifies a connected source. These actions open the source's
+detail page without interrupting the transfer. Episode menus and the downloaded
+show's plain-ellipsis toolbar menu also offer Go to Show.
+
 ## Download quality and tracks
 
 Track inclusion is automatic, not a universal pair of settings. Original saves

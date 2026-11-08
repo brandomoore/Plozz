@@ -23,6 +23,78 @@ final class DownloadsInteractionTests: XCTestCase {
         try await super.tearDown()
     }
 
+    func testDownloadingShowLongPressOpensShowDetails() {
+        app.terminate()
+        app.launchArguments = ["--downloads-interaction-fixture", "--download-details"]
+        app.launch()
+        let show = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Andor")).firstMatch
+        let list = app.collectionViews.firstMatch
+        XCTAssertTrue(list.waitForExistence(timeout: 10))
+        for _ in 0..<8 {
+            if show.isHittable { break }
+            list.swipeUp()
+        }
+        XCTAssertTrue(show.isHittable, app.debugDescription)
+        show.press(forDuration: 1)
+        let goToShow = app.buttons["Go to Show"]
+        XCTAssertTrue(goToShow.waitForExistence(timeout: 3), app.debugDescription)
+        goToShow.tap()
+        XCTAssertTrue(app.staticTexts["Downloaded show fixture details."].waitForExistence(timeout: 5))
+        backButton(to: "Downloads").tap()
+        let menu = app.buttons["More actions for Andor"]
+        XCTAssertTrue(menu.waitForExistence(timeout: 3))
+        menu.tap()
+        XCTAssertTrue(app.buttons["Pause Show"].waitForExistence(timeout: 3),
+                      "Navigation must not pause the active download.")
+    }
+
+    func testMovieLongPressOpensDetailsDuringAndAfterDownload() {
+        for active in [true, false] {
+            app.terminate()
+            app.launchArguments = ["--downloads-interaction-fixture", "--download-details", "--download-movie"]
+            if active { app.launchArguments.append("--download-active") }
+            app.launch()
+            let movie = app.buttons.matching(NSPredicate(
+                format: "label BEGINSWITH %@", "Downloaded Movie"
+            )).firstMatch
+            XCTAssertTrue(movie.waitForExistence(timeout: 10), app.debugDescription)
+            movie.press(forDuration: 1)
+            let goToMovie = app.buttons["Go to Movie"]
+            XCTAssertTrue(goToMovie.waitForExistence(timeout: 3), app.debugDescription)
+            goToMovie.tap()
+            XCTAssertTrue(app.staticTexts["Downloaded movie fixture details."].waitForExistence(timeout: 5))
+            backButton(to: "Downloads").tap()
+            if active { XCTAssertTrue(app.buttons["Pause All"].exists) }
+        }
+    }
+
+    func testDownloadedShowToolbarAndEpisodeMenusOpenShowDetails() {
+        app.terminate()
+        app.launchArguments = ["--downloads-interaction-fixture", "--download-details"]
+        app.launch()
+        let show = app.buttons.matching(NSPredicate(
+            format: "label BEGINSWITH %@", "Downloaded Show 12"
+        )).firstMatch
+        XCTAssertTrue(show.waitForExistence(timeout: 10), app.debugDescription)
+        show.tap()
+        let toolbar = app.buttons["download-show-actions"]
+        XCTAssertTrue(toolbar.waitForExistence(timeout: 3), app.debugDescription)
+        XCTAssertFalse(toolbar.images["ellipsis.circle"].exists)
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = "downloaded-show-plain-ellipsis"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+        for menu in [toolbar, app.buttons["More actions for Episode 12"]] {
+            menu.tap()
+            let goToShow = app.buttons["Go to Show"]
+            XCTAssertTrue(goToShow.waitForExistence(timeout: 3), app.debugDescription)
+            goToShow.tap()
+            XCTAssertTrue(app.staticTexts["Downloaded show fixture details."].waitForExistence(timeout: 5))
+            backButton(to: "Downloaded Show 12").tap()
+            XCTAssertTrue(app.staticTexts["E12 · Episode 12"].waitForExistence(timeout: 3))
+        }
+    }
+
     func testLibraryMenuAndShowNavigationHaveSeparateTapTargets() {
         XCTAssertTrue(app.buttons["Pause All"].waitForExistence(timeout: 10), app.debugDescription)
         XCTAssertLessThanOrEqual(app.buttons["Pause All"].frame.height, 60)
@@ -42,6 +114,10 @@ final class DownloadsInteractionTests: XCTestCase {
         XCTAssertFalse(app.navigationBars["Andor"].exists, "Opening the menu must not navigate.")
         app.buttons["Pause Show"].tap()
         XCTAssertTrue(app.navigationBars["Downloads"].exists)
+        for _ in 0..<8 {
+            if show.isHittable { break }
+            list.swipeDown()
+        }
         show.tap()
         XCTAssertTrue(app.navigationBars["Andor"].waitForExistence(timeout: 3), app.debugDescription)
         XCTAssertTrue(app.staticTexts["Season 2"].exists)
@@ -152,7 +228,7 @@ final class DownloadsInteractionTests: XCTestCase {
         pause.tap()
         XCTAssertTrue(app.navigationBars["Andor"].exists)
         XCTAssertTrue(app.staticTexts["E2 · Episode 2"].exists)
-        app.buttons["More actions"].tap()
+        app.collectionViews.buttons["More actions"].tap()
         app.buttons["Remove"].tap()
         XCTAssertTrue(app.buttons["Remove 3 Episodes"].waitForExistence(timeout: 3), app.debugDescription)
         if app.buttons["Cancel"].exists {
@@ -161,7 +237,7 @@ final class DownloadsInteractionTests: XCTestCase {
             app.otherElements["PopoverDismissRegion"].tap()
         }
         XCTAssertTrue(app.staticTexts["E2 · Episode 2"].exists)
-        app.buttons["More actions"].tap()
+        app.collectionViews.buttons["More actions"].tap()
         app.buttons["Remove"].tap()
         let confirmation = app.buttons["Remove 3 Episodes"]
         XCTAssertTrue(confirmation.waitForExistence(timeout: 3))
