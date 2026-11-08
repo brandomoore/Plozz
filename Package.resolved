@@ -4,9 +4,9 @@
     {
       "identity" : "aetherengine",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/brandomoore/AetherEngine",
+      "location" : "https://github.com/teymourb/AetherEngine",
       "state" : {
-        "revision" : "55430e28df74ba11b36fea367ad22af0d685a68b"
+        "revision" : "c79649c40de142e42da0d2e85a90113750ad5691"
       }
     },
     {
