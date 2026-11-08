@@ -2,6 +2,47 @@
   "schemaVersion": 1,
   "releases": [
     {
+      "id": "release/071.5",
+      "version": "2026.11.8",
+      "marketingVersion": "2026.11.6",
+      "build": "71.5",
+      "releasedAt": "2026-11-08",
+      "sections": [
+        {
+          "category": "New",
+          "items": [
+            "Spotify and YouTube searches for recognized songs."
+          ]
+        },
+        {
+          "category": "Updated",
+          "items": [
+            {
+              "text": "Episode descriptions stay visible, with an optional focus-only setting.",
+              "platforms": ["tvOS"]
+            },
+            {
+              "text": "Episode card focus and menu previews.",
+              "platforms": ["tvOS"]
+            }
+          ]
+        },
+        {
+          "category": "Fixed",
+          "items": [
+            {
+              "text": "Native sidebar layout and clipped Settings content.",
+              "platforms": ["tvOS"]
+            },
+            {
+              "text": "Selecting Home again not returning to the top.",
+              "platforms": ["tvOS"]
+            }
+          ]
+        }
+      ]
+    },
+    {
       "id": "release/071.4",
       "version": "2026.11.8",
       "marketingVersion": "2026.11.6",
