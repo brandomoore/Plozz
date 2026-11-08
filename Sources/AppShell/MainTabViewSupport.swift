@@ -779,6 +779,7 @@ extension View {
                 "tap RESUME_CHOICE trace=\(request.traceID.uuidString.prefix(8)) "
                     + "item=\(item.id) start=\(Int(startPosition))"
             )
+            resumePrompt.wrappedValue = nil
             playRequest.wrappedValue = request
         }) { request in
             PlayerPresentation(

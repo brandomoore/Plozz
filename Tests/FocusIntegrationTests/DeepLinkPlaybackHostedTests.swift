@@ -81,6 +81,34 @@ final class DeepLinkPlaybackHostedTests: XCTestCase {
         try await waitForPlayback(host.probe, title: "after-dismissal", count: 3)
     }
 
+    func testCoalescedDirectThenResumeIntentKeepsTheLatestPrompt() async throws {
+        let host = try await makeHost()
+        host.probe.play("first")
+        try await waitForPlayback(host.probe, title: "first", count: 1)
+        // No suspension between these writes: SwiftUI observes only the final pair.
+        host.probe.present(host.probe.provider.movie("superseded"))
+        host.probe.present(host.probe.provider.movie("resume"))
+        try await waitUntil {
+            (host.window.rootViewController?.presentedViewController as? UIAlertController)?.title == "resume"
+        }
+        XCTAssertNil(host.probe.playRequest)
+        XCTAssertEqual(host.probe.resumePrompt?.id, "resume")
+        XCTAssertEqual(host.probe.opened, ["first"])
+        XCTAssertEqual(host.probe.engines[0].status, .idle)
+    }
+
+    func testCoalescedResumeThenDirectIntentKeepsTheLatestPlayer() async throws {
+        let host = try await makeHost()
+        host.probe.play("first")
+        try await waitForPlayback(host.probe, title: "first", count: 1)
+        host.probe.present(host.probe.provider.movie("resume"))
+        host.probe.present(host.probe.provider.movie("latest"))
+        try await waitForPlayback(host.probe, title: "latest", count: 2)
+        XCTAssertNil(host.probe.resumePrompt)
+        XCTAssertEqual(host.probe.opened, ["first", "latest"])
+        XCTAssertEqual(host.probe.engines[0].status, .idle)
+    }
+
     func testJellyfinWarmLinksAndParentRendersDoNotRecreatePlayers() async throws {
         let host = try await makeHost(kind: .jellyfin)
         host.probe.play("first")
@@ -211,19 +239,14 @@ private struct DeepLinkPlaybackFixture: View {
                     onResolved: { item, action in
                         probe.path.append(item.id)
                         guard action == .play else { return }
-                        if item.resumePosition != nil {
-                            probe.resumePrompt = item
-                        } else {
-                            probe.playRequest = PlayRequest(
-                                item: item, startPosition: 0, versionPreferences: probe.preferences
-                            )
-                        }
+                        probe.present(item)
                     }
                 )
             }
             .playbackPresentation(
                 playRequest: $probe.playRequest, resumePrompt: $probe.resumePrompt,
                 onResume: { item, position in
+                    probe.resumePrompt = nil
                     probe.playRequest = PlayRequest(item: item, startPosition: position)
                 }
             ) { request in
@@ -296,6 +319,16 @@ private final class DeepLinkPlaybackProbe {
 
     func play(_ id: String) {
         pendingPlay.enqueue(TopShelf.itemReference(from: TopShelf.itemDeepLink(id: id))!)
+    }
+
+    func present(_ item: MediaItem) {
+        if item.resumePosition != nil {
+            playRequest = nil
+            resumePrompt = item
+        } else {
+            resumePrompt = nil
+            playRequest = PlayRequest(item: item, startPosition: 0, versionPreferences: preferences)
+        }
     }
 
     func make(_ request: PlayRequest) throws -> PlayerViewModel {

@@ -39,12 +39,7 @@ private struct PlaybackPresentationHost<Player: View>: ViewModifier {
                 get: { presentedTraceID == nil ? resumePrompt : nil },
                 set: { resumePrompt = $0 }
             ), onChoose: onResume)
-            .onChange(of: Intent(traceID: playRequest?.traceID, resumeItem: resumePrompt), initial: true) { old, new in
-                if new.traceID != old.traceID, new.traceID != nil {
-                    resumePrompt = nil
-                } else if new.resumeItem != nil {
-                    playRequest = nil
-                }
+            .onChange(of: Intent(traceID: playRequest?.traceID, resumeItem: resumePrompt), initial: true) {
                 reconcile()
             }
     }

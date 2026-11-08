@@ -19,6 +19,7 @@ struct DeepLinkResumeFixture: View {
             playRequest: $playRequest,
             resumePrompt: $resumePrompt,
             onResume: { item, position in
+                resumePrompt = nil
                 playRequest = PlayRequest(item: item, startPosition: position)
             }
         ) { request in
@@ -28,6 +29,7 @@ struct DeepLinkResumeFixture: View {
                 Button {
                     var item = MediaItem(id: "resumed", title: "Resumed movie", kind: .movie)
                     item.resumePosition = 3
+                    playRequest = nil
                     resumePrompt = item
                 } label: {
                     Text(verbatim: "Send resumed title")
@@ -43,6 +45,7 @@ struct DeepLinkResumeFixture: View {
     }
 
     private func playFirst() {
+        resumePrompt = nil
         playRequest = PlayRequest(
             item: MediaItem(id: "first", title: "First movie", kind: .movie),
             startPosition: 0

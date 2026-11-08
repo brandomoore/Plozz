@@ -823,11 +823,13 @@ struct HomeTab: View {
                         item, accounts: accounts, identitySources: identitySources
                     )
                     guard target.kind.needsPlaybackTargetResolution else {
+                        resumePrompt = nil
                         playRequest = PlayRequest(item: target, startPosition: seconds)
                         return
                     }
                     Task { @MainActor in
                         guard let episode = await resolveSeriesNextUpEpisode(target) else { return }
+                        resumePrompt = nil
                         playRequest = PlayRequest(
                             item: bestSourcePlayItem(
                                 episode, accounts: accounts, identitySources: identitySources
@@ -1397,6 +1399,7 @@ struct HomeTab: View {
             HandoffDiagnostics.emit(
                 "tap RESUME_PROMPT item=\(target.id) provider=\(target.sourceAccountID ?? "nil")"
             )
+            playRequest = nil
             resumePrompt = target
         } else {
             let playlist: VideoPlaylistPlaybackContext? = playlistOrigin.flatMap { origin in
@@ -1409,6 +1412,7 @@ struct HomeTab: View {
                 "tap PLAY trace=\(request.traceID.uuidString.prefix(8)) item=\(target.id) "
                     + "provider=\(target.sourceAccountID ?? "nil")"
             )
+            resumePrompt = nil
             playRequest = request
         }
     }
