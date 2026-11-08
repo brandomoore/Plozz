@@ -790,6 +790,13 @@ struct MainTabView: View {
         NotificationCenter.default.post(name: LiveTVGuideButton.pressed, object: nil)
     }
 
+    /// Back at the Settings root shows Home before the native sidebar opens.
+    /// Settings pages handle their own Back first, so this only runs at the root.
+    private func returnHomeFromSettings() {
+        nativeSidebarFocus.begin(.home)
+        libraryNavigationSelection.wrappedValue = .home
+    }
+
     private func openWatchlist() {
         retainsExplicitWatchlistEntry = true
         refreshWatchlistNavigation()
@@ -1549,7 +1556,11 @@ struct MainTabView: View {
                             libraryEntry: entriesByDestination[destination],
                             libraries: browsableLibraries
                         )
-                    ).tvNavigationExitProtectionContent())
+                    )
+                    .onExitCommand(
+                        perform: destination == .settings && destinations.contains(.home) ? returnHomeFromSettings : nil
+                    )
+                    .tvNavigationExitProtectionContent())
                 } label: {
                     rootNavigationLabel(
                         for: destination, libraryEntry: entriesByDestination[destination]
