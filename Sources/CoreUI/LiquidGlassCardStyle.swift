@@ -392,8 +392,7 @@ public struct PlozzGlassPanelModifier: ViewModifier {
 
         // Refract-edges-only: skip the full-panel blur (which samples live video
         // every frame and stutters playback) and instead pass the video through a
-        // faint scrim while faking glass with a bright refractive rim. Matches
-        // Infuse's info HUD: crisp video behind, lit edges, zero compositor cost.
+        // faint scrim with a subtle gradient rim, without sampling the backdrop.
         if refractEdgesOnly {
             content
                 .background { shape.fill(scrim) }
@@ -409,12 +408,7 @@ public struct PlozzGlassPanelModifier: ViewModifier {
     }
 }
 
-/// True edge refraction with minimal cost: confine real Liquid Glass to a thin
-/// rim band (genuine backdrop refraction at the edges) while the center stays
-/// crisp — the full-panel blur is what stutters, so masking glass to the border
-/// keeps the look at a fraction of the sample cost. Falls back to a lit gradient
-/// rim below tvOS 26 / under Reduce Transparency, where no backdrop sampling
-/// happens at all.
+/// A subdued glass-like highlight without live-video backdrop sampling.
 private struct RefractiveRimGlass: ViewModifier {
     let cornerRadius: CGFloat
     let palette: ThemePalette
@@ -423,15 +417,15 @@ private struct RefractiveRimGlass: ViewModifier {
         let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
         // Zero backdrop sampling: native glass over moving video forces a per-frame
         // capture pass (stutters even masked to a rim), so fake the refracted edge
-        // with a lit gradient stroke — crisp video, no compositor cost.
-        content.overlay { shape.strokeBorder(fauxRim, lineWidth: 1.5) }
+        // with a lit gradient stroke, leaving the video crisp.
+        content.overlay { shape.strokeBorder(fauxRim, lineWidth: 1) }
     }
 
     /// Top-lit → dark-bottom gradient stroke that reads as a refracted edge with
-    /// zero backdrop sampling (legacy / reduce-transparency path).
+    /// zero backdrop sampling.
     private var fauxRim: LinearGradient {
         LinearGradient(
-            colors: [.white.opacity(0.55), palette.cardBorder.opacity(0.35), .white.opacity(0.15)],
+            colors: [.white.opacity(0.28), palette.cardBorder.opacity(0.18), .white.opacity(0.07)],
             startPoint: .top,
             endPoint: .bottom
         )

@@ -36,6 +36,36 @@ final class PlaybackDiagnosticsHostedTests: XCTestCase {
     }
 
     #if os(tvOS)
+    func testDiagnosticsRimIsSubtleAndPreservesTheBackground() throws {
+        let renderer = ImageRenderer(content:
+            Color.clear.frame(width: 320, height: 180)
+                .plozzGlassPanel(cornerRadius: 24, scrimOpacity: 0.45, refractEdgesOnly: true)
+                .environment(\.themePalette, .dark)
+                .environment(\.colorScheme, .dark)
+                .background(.white)
+        )
+        renderer.scale = 3
+        let image = try XCTUnwrap(renderer.cgImage)
+        let context = try XCTUnwrap(CGContext(
+            data: nil, width: image.width, height: image.height, bitsPerComponent: 8,
+            bytesPerRow: image.width * 4, space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ))
+        context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+        let pixels = try XCTUnwrap(context.data).assumingMemoryBound(to: UInt8.self)
+        let center = Int(pixels[(image.height / 2 * image.width + image.width / 2) * 4])
+        XCTAssertEqual(center, 140, accuracy: 3, "The existing 45% black scrim must stay unchanged")
+        let rim = (0..<image.height).map { y in
+            Int(pixels[(y * image.width + image.width / 2) * 4])
+        }.max() ?? 0
+        XCTAssertGreaterThan(rim - center, 15, "Retain a visible glass-like edge")
+        XCTAssertLessThan(rim - center, 45, "The rim must not become a bright outline")
+        let attachment = XCTAttachment(image: UIImage(cgImage: image))
+        attachment.name = "Subtle diagnostics rim"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
     func testFullDiagnosticsClearRealTransportAndInfoCardWithoutShrinkingText() async throws {
         try await assertControlClearance(diagnostics: fixture, expectedTokens: [
             "AetherEngine", "v7.44.0", "APAC", "7.1.4", "HDMI", "Thermal", "engines 2", "Stalls", "Dropped",

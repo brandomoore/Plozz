@@ -1241,6 +1241,10 @@ memory. These reads add no network requests or second sampling loop. Missing
 measurements disappear rather than retaining a prior route's values or inventing
 zeroes. Real zero counters remain visible.
 
+The TV panel retains its existing background scrim and avoids live-video
+backdrop sampling. Its glass-like edge is a subtle one-point gradient highlight,
+not a full-panel blur or a bright opaque outline.
+
 **Local delivery** is the engine-to-AVPlayer link, never the media server's
 network speed. **Source read rate** measures transfers from the source,
 which can also be a local file. **Read / muxed** lists source bytes then
