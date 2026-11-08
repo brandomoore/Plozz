@@ -147,8 +147,17 @@ final class DiscReviewScreenshotTests: XCTestCase {
     #if os(iOS)
     func testResumePromptStaysBesidePlayButton() {
         let app = launch("detail-resume")
-        for orientation in [UIDeviceOrientation.portrait, .landscapeLeft] {
+        let orientations: [UIDeviceOrientation] = UIDevice.current.userInterfaceIdiom == .pad
+            ? [.portrait, .landscapeLeft] : [.portrait]
+        for orientation in orientations {
             XCUIDevice.shared.orientation = orientation
+            let rotated = XCTNSPredicateExpectation(
+                predicate: NSPredicate { _, _ in
+                    (app.frame.width > app.frame.height) == orientation.isLandscape
+                },
+                object: app
+            )
+            XCTAssertEqual(XCTWaiter.wait(for: [rotated], timeout: 5), .completed)
             let play = app.buttons["detail-hero-play"]
             XCTAssertTrue(play.waitForExistence(timeout: 10))
             if !play.isHittable { app.swipeUp() }

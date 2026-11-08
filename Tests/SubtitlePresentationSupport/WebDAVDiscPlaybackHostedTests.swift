@@ -842,7 +842,7 @@ final class WebDAVDiscPlaybackHostedTests: XCTestCase {
                 var failure = ""
                 for _ in 0..<10 {
                     await engine.load(request: request, startPosition: 0)
-                    failure = try XCTUnwrap(engine.discMenu?.failure)
+                    failure = String(localized: try XCTUnwrap(engine.discMenu?.failure))
                     if failure.contains("Restart Plozz") { break }
                     XCTAssertEqual(failure, "Another disc menu is still closing")
                     engine.stop()
@@ -928,7 +928,7 @@ final class WebDAVDiscPlaybackHostedTests: XCTestCase {
                 XCTAssertEqual(engine.currentTime, paused, accuracy: 0.2)
                 engine.play()
                 try await waitForPlayback(engine, after: paused + 1, before: paused + 8)
-                if let failure = menu.failure { return XCTFail(failure) }
+                if let failure = menu.failure { return XCTFail(String(localized: failure)) }
                 print("WEBDAV_DISC javaFeatureVerified playlist=\(menu.playlist ?? -1) position=\(engine.currentTime)")
                 let featureDuration = engine.duration
                 let featurePlaylist = menu.playlist
