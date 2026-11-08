@@ -17,7 +17,7 @@ struct DiscVideoPicker: View {
                 Text(verbatim: failure)
                     .foregroundStyle(.secondary)
                 Button("Retry") { reloadID = UUID() }
-                    .plozzActionButton(role: .secondary)
+                    .discPlaybackActionButton()
             } else if let videos {
                 ForEach(videos) { video in
                     Button {
@@ -39,7 +39,7 @@ struct DiscVideoPicker: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(8)
                     }
-                    .plozzActionButton(role: .secondary)
+                    .discPlaybackActionButton()
                     .buttonBorderShape(.roundedRectangle(radius: 16))
                     .focused($focusedPlaylist, equals: video.playlist)
                 }
@@ -92,7 +92,7 @@ struct DiscPlaybackDialog<Content: View>: View {
                 .scrollBounceBehavior(.basedOnSize)
             }
             Button("Close", action: close)
-                .plozzActionButton(role: .secondary)
+                .discPlaybackActionButton()
         }
         .padding(32)
         .onExitCommand(perform: close)
@@ -118,6 +118,15 @@ struct DiscPlaybackDialog<Content: View>: View {
 }
 
 extension View {
+    @ViewBuilder
+    func discPlaybackActionButton() -> some View {
+        #if os(tvOS)
+        self.buttonStyle(.bordered)
+        #else
+        self.plozzActionButton(role: .secondary)
+        #endif
+    }
+
     /// Keep the TV playback owner mounted, as with the shared version-choice dialog.
     func discPlaybackSheet<Content: View>(
         isPresented: Binding<Bool>, onDismiss: @escaping () -> Void = {},

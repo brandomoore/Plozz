@@ -40,6 +40,10 @@ final class DiscReviewScreenshotTests: XCTestCase {
         app.buttons["disc-menu-control-opticaldisc"].tap()
         #endif
         XCTAssertTrue(app.buttons["Try another region"].waitForExistence(timeout: 5))
+        #if os(iOS)
+        XCTAssertTrue(app.collectionViews.buttons["Close player"].isHittable,
+                      "All native menu actions must fit on screen")
+        #endif
         capture(app, "Menu actions")
         activate(app.buttons["Disc videos"], in: app)
         let playlist = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Playlist 00800")).firstMatch
@@ -53,7 +57,15 @@ final class DiscReviewScreenshotTests: XCTestCase {
         app.buttons["disc-menu-control-opticaldisc"].tap()
         #endif
         XCTAssertTrue(app.buttons["Try another region"].waitForExistence(timeout: 5))
+        #if os(tvOS)
         activate(app.buttons["Close"].firstMatch, in: app)
+        #else
+        activate(app.collectionViews.buttons["Close player"], in: app)
+        let hidden = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "exists == false"), object: app.buttons["Try another region"]
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [hidden], timeout: 5), .completed)
+        #endif
     }
 
     func testCaptureMenuFailure() {

@@ -15,9 +15,11 @@ Stopping an unidentified menu/playlist also bypasses shell watch-state mutations
 the captured account/profile session is released separately without publishing
 progress. Confirmed disc-authored subtitle choices are reapplied after a load
 clears the live overlay, without changing profile or series defaults.
-Disc actions and playlist selection use the shared dialog surface and native
-action styles. TV dialogs remain in the player hierarchy so presenting one does
-not tear down playback; mobile action-to-picker transitions wait for dismissal.
+Disc actions on mobile use a native menu anchored to the disc control; only
+playlist selection opens a shared sheet. TV dialogs use native bordered rows
+without individual glass highlights and remain in the player hierarchy so
+presenting one does not tear down playback. TV action-to-picker transitions
+wait for dismissal.
 Startup loading follows first-play setup, not an implicit top-menu request:
 authored movie playback returns to normal controls after its first presented frame.
 Nonfatal disc notices use the shared transient status toast across menu and movie

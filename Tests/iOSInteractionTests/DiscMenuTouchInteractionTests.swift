@@ -37,7 +37,9 @@ final class DiscMenuTouchInteractionTests: XCTestCase {
             select.tap()
             keys += 1
             XCTAssertEqual(events.label, "Disc touch fixture: \(taps) taps, \(keys) keys")
-            XCTAssertEqual(app.buttons.count, 6)
+            for symbol in ["arrow.up", "arrow.down", "arrow.left", "arrow.right", "circle", "opticaldisc"] {
+                XCTAssertEqual(app.buttons.matching(identifier: "disc-menu-control-\(symbol)").count, 1)
+            }
             XCTAssertGreaterThanOrEqual(select.frame.width, 44)
             XCTAssertGreaterThanOrEqual(select.frame.height, 44)
             let up = app.buttons["disc-menu-control-arrow.up"]
@@ -49,9 +51,18 @@ final class DiscMenuTouchInteractionTests: XCTestCase {
             add(screenshot)
         }
         menu.tap()
-        XCTAssertTrue(select.exists, "A temporary clear must not remove the navigation controls")
-        XCTAssertFalse(select.isEnabled)
+        XCTAssertTrue(app.buttons["Toggle menu visibility"].waitForExistence(timeout: 5))
+        app.buttons["Toggle menu visibility"].tap()
+        XCTAssertTrue(select.waitForExistence(timeout: 5), "A temporary clear must not remove the navigation controls")
+        XCTAssertEqual(XCTWaiter.wait(for: [
+            XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == false"), object: select)
+        ], timeout: 5), .completed)
+        XCTAssertTrue(menu.waitForExistence(timeout: 5))
         menu.tap()
-        XCTAssertTrue(select.isEnabled)
+        XCTAssertTrue(app.buttons["Toggle menu visibility"].waitForExistence(timeout: 5))
+        app.buttons["Toggle menu visibility"].tap()
+        XCTAssertEqual(XCTWaiter.wait(for: [
+            XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: select)
+        ], timeout: 5), .completed)
     }
 }

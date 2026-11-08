@@ -13,7 +13,7 @@ struct DiscTouchFixture: View {
             Color.black.ignoresSafeArea()
             DiscMenuArtwork(state: state)
             DiscMenuTouchControls(state: state) {
-                state.isMenuVisible.toggle()
+                Button("Toggle menu visibility") { state.isMenuVisible.toggle() }
             }
             if state.showsLoadingIndicator { ProgressView().accessibilityIdentifier("disc-fixture-loading") }
             VStack {
@@ -42,6 +42,7 @@ struct DiscTouchFixture: View {
             }
             state.isMenuVisible = true
             state.isMenuRequestPending = false
+            state.hasPresentedVideoFrame = true
         }
     }
 }

@@ -26,10 +26,10 @@ struct DiscMenuPlayerContent: View {
                     title: "Disc menu unavailable", message: "\(failure)", report: nil
                 ) {
                     Button("Retry") { model.retryDiscMenu() }.plozzActionButton()
-                    Button("Play video") { model.playVideoWithoutMenus() }.plozzActionButton(role: .secondary)
-                    Button("Disc videos", action: showVideos).plozzActionButton(role: .secondary)
-                    Button("Try another region") { tryAnotherRegion() }.plozzActionButton(role: .secondary)
-                    Button("Close", action: dismiss).plozzActionButton(role: .secondary)
+                    Button("Play video") { model.playVideoWithoutMenus() }.discPlaybackActionButton()
+                    Button("Disc videos", action: showVideos).discPlaybackActionButton()
+                    Button("Try another region") { tryAnotherRegion() }.discPlaybackActionButton()
+                    Button("Close", action: dismiss).discPlaybackActionButton()
                 }
                 #if os(tvOS)
                 .onExitCommand(perform: dismiss)
@@ -59,12 +59,23 @@ struct DiscMenuPlayerContent: View {
                     .onAppear { menuFocused = true }
                 }
                 #else
-                DiscMenuTouchControls(
-                    state: state, showActions: { showsActions = true }
-                )
+                DiscMenuTouchControls(state: state) {
+                    Section {
+                        Button("Open disc menu", systemImage: "opticaldisc") { state.openMenu() }
+                        Button("Play video", systemImage: "play") { model.playVideoWithoutMenus() }
+                        Button("Disc videos", systemImage: "list.bullet", action: showVideos)
+                        Button("Try another region", systemImage: "globe", action: tryAnotherRegion)
+                    } header: {
+                        Text("Disc-menu playback does not update watched or resume progress.")
+                    }
+                    Section {
+                        Button("Close player", systemImage: "xmark", action: dismiss)
+                    }
+                }
                 #endif
             }
         }
+        #if os(tvOS)
         .discPlaybackSheet(isPresented: $showsActions, onDismiss: performPendingAction) {
             DiscPlaybackDialog(title: "Disc menu", close: { showsActions = false }) {
                 Text("Disc-menu playback does not update watched or resume progress.")
@@ -77,10 +88,9 @@ struct DiscMenuPlayerContent: View {
                 actionButton("Try another region", action: tryAnotherRegion)
                 actionButton("Close player", action: dismiss)
             }
-            #if os(tvOS)
             .defaultFocus($actionFocused, true, priority: .userInitiated)
-            #endif
         }
+        #endif
     }
 
     #if os(tvOS)
@@ -101,7 +111,7 @@ struct DiscMenuPlayerContent: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(8)
         }
-        .plozzActionButton(role: .secondary)
+        .discPlaybackActionButton()
         .buttonBorderShape(.roundedRectangle(radius: 16))
     }
 
@@ -144,9 +154,9 @@ struct DiscMenuArtwork: View {
 }
 
 #if os(iOS)
-struct DiscMenuTouchControls: View {
+struct DiscMenuTouchControls<Actions: View>: View {
     let state: DiscMenuPlaybackState
-    let showActions: () -> Void
+    @ViewBuilder let menuActions: () -> Actions
     @State private var hasPresentedNavigation = false
 
     var body: some View {
@@ -191,7 +201,17 @@ struct DiscMenuTouchControls: View {
 
     private var actions: some View {
         PlayerGlassControlGroup {
-            DiscMenuTouchButton(title: "Disc menu", symbol: "opticaldisc", action: showActions)
+            Menu(content: menuActions) {
+                Image(systemName: "opticaldisc")
+                    .font(.title3)
+                    .imageScale(.large)
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .menuOrder(.fixed)
+            .buttonStyle(PlayerGlassCircleButtonStyle(diameter: 44))
+            .accessibilityLabel("Disc menu")
+            .accessibilityIdentifier("disc-menu-control-opticaldisc")
         }
     }
 }
