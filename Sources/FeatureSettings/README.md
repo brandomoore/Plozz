@@ -7,6 +7,9 @@ system green appearance instead of inheriting the page's monochrome navigation t
 
 The Settings screen and its detail pages. Profile-aware and integration-aware.
 
+Disc playback uses the shared labeled menu row on TV, showing the setting name
+and current choice rather than an unlabeled segmented picker.
+
 On iPad, selecting a different sidebar category discards the previous category's
 entire pushed detail stack. The reset targets the native detail navigation
 controller, not the split view, preserving sidebar scroll position and search.

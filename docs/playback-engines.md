@@ -40,6 +40,9 @@ is also checked at the native entry point before any menu video starts. Mixed
 discs retain a supported HDMV top menu even when other titles require Java; an
 unsupported Java first-play can be bypassed only to enter that native top menu
 for an explicit menu request.
+Native-only share inventories skip `JAR`, `BDJO`, backup `BDJO`, and
+`CERTIFICATE` traversal. Inaccessible Java resources therefore cannot block
+direct video or HDMV playback; the experimental build retains its bounded scans.
 `DiscNavigation` statically links pinned libbluray 1.5.0 without optional
 decryption loaders. It drives original navigation and graphics while the existing
 Plozzigen adapter plays the selected playlist or its bounded play items. Separate transport cursors

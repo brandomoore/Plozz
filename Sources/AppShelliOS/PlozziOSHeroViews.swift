@@ -2411,6 +2411,7 @@ struct PlozziOSDetailHeroForeground: View {
                     systemImage: opensMenu ? "opticaldisc" : playableItem?.opensExternalSource == true ? "arrow.up.forward.app" : "play.fill"
                 )
             }
+            .accessibilityIdentifier("detail-hero-play")
             .contextMenu {
                 if let playableItem {
                     DiscPlaybackAlternativeAction(item: playableItem) { onPlay($0, false) }

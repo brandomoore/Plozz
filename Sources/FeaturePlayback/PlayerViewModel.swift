@@ -257,6 +257,10 @@ public final class PlayerViewModel {
     @ObservationIgnored private var loadedDiscVideos: (source: PlaybackSource, attempt: UUID, videos: [DiscVideo])?
     public var isDiscMenuPlayback: Bool { request?.discPlayback == .openMenu }
     public var isSelectedDiscVideo: Bool { request?.discPlaylistOverride != nil }
+    public var showsDiscVideos: Bool {
+        get { controls.controlBar.discVideosOpen }
+        set { controls.controlBar.discVideosOpen = newValue }
+    }
     public var hasDiscVideos: Bool {
         if case .networkDisc = request?.playbackSource { return true }
         return false
@@ -619,6 +623,8 @@ public final class PlayerViewModel {
     /// per-report path, which only touches the launch server. Defaults to a no-op so
     /// the player is usable standalone / in tests.
     private let onPlaybackStopped: @Sendable (_ position: TimeInterval, _ watchedPercent: Double) -> Void
+    private let onPlaybackStoppedWithoutProgress: @Sendable () -> Void
+    @ObservationIgnored private var suppressesShellProgress = false
 
     /// Called once the live playback session has actually begun (right after the
     /// first `.start` report). The AppShell wires this to register the streaming
@@ -705,6 +711,7 @@ public final class PlayerViewModel {
         playlistContext: VideoPlaylistPlaybackContext? = nil,
         seriesIDResolver: (@Sendable () async -> [String: String]?)? = nil,
         onPlaybackStopped: @escaping @Sendable (_ position: TimeInterval, _ watchedPercent: Double) -> Void = { _, _ in },
+        onPlaybackStoppedWithoutProgress: @escaping @Sendable () -> Void = {},
         onPlaybackStarted: @escaping @Sendable () -> Void = {},
         onPlaybackCheckpoint: @escaping @Sendable (_ position: TimeInterval, _ watchedPercent: Double) -> Void = { _, _ in },
         checkpointInterval: TimeInterval = 60,
@@ -752,6 +759,7 @@ public final class PlayerViewModel {
         }
         self.seriesIDResolver = seriesIDResolver
         self.onPlaybackStopped = onPlaybackStopped
+        self.onPlaybackStoppedWithoutProgress = onPlaybackStoppedWithoutProgress
         self.onPlaybackStarted = onPlaybackStarted
         self.scrobblesLibraryItem = (offlineItem ?? episodeItem).map {
             !$0.isExtra && !$0.isTrailer && !$0.isYouTubeTrailer
@@ -1299,6 +1307,7 @@ public final class PlayerViewModel {
                 request.item.runtime = nil
             }
             if request.usesUnidentifiedDiscTimeline { request.suppressOrdinaryWatchReporting = true }
+            if request.suppressOrdinaryWatchReporting { suppressesShellProgress = true }
             self.request = request
             if request.usesUnidentifiedDiscTimeline {
                 nextEpisodeCoordinator.cancelPrefetch()
@@ -2000,6 +2009,7 @@ public final class PlayerViewModel {
         if request.discPlayback == .openMenu, engine.discMenu?.failure != nil { return }
         #endif
         recordPlayback(.loaded)
+        suppressesShellProgress = request.suppressOrdinaryWatchReporting
         updateChapters(for: request)
         if engineKind != .native, let facts = engine.probedSourceFacts {
             applyEngineProbedSourceFacts(facts)
@@ -2629,7 +2639,11 @@ public final class PlayerViewModel {
                 durationOverride: finalDuration
             )
             if let request { await releaseStreamingSession(request, reason: .requested) }
-            onPlaybackStopped(finalPosition, percent)
+            if suppressesShellProgress {
+                onPlaybackStoppedWithoutProgress()
+            } else {
+                onPlaybackStopped(finalPosition, percent)
+            }
         }
         stopTask = task
         await task.value

@@ -597,6 +597,11 @@ private func makePlayerViewModel(
             watchBridge: watchBridge,
             identitySources: identitySources
         ),
+        onPlaybackStoppedWithoutProgress: {
+            Task { @MainActor in
+                watchBridge.endWithoutProgress(liveAccountID, liveItemID)
+            }
+        },
         onPlaybackStarted: {
             // Guard the streaming server while it plays: a mid-play drain can't
             // disturb/zero its now-playing session. Deferred, not dropped.

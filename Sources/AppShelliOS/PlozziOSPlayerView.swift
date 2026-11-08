@@ -533,6 +533,14 @@ struct PlozziOSPlayerView: View {
                     )
                 }
             },
+            onPlaybackStoppedWithoutProgress: {
+                Task {
+                    await session.reconciler.finishLiveSession(
+                        accountID: item.sourceAccountID ?? session.primaryAccountID,
+                        itemID: item.id, mutation: nil, serverScope: session.serverScope
+                    )
+                }
+            },
             onPlaybackStarted: { [weak model] in
                 Task { @MainActor in
                     model?.beginPlayback(for: item, session: session)

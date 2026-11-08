@@ -65,7 +65,7 @@ final class ShareProviderLocatorTests: XCTestCase {
             guard case .networkDisc(let disc) = request.playbackSource else {
                 return XCTFail("\(scheme) must use folder playback, never the first clip")
             }
-            XCTAssertEqual(disc.files.count, 11)
+            XCTAssertEqual(disc.files.count, DiscMenuInspection.supportsJavaMenus ? 11 : 7)
             XCTAssertEqual(request.item.title, "Test Pattern")
             XCTAssertEqual(disc.anchor.relativePath, index.relativePath)
             XCTAssertEqual(
@@ -74,10 +74,13 @@ final class ShareProviderLocatorTests: XCTestCase {
             )
             XCTAssertTrue(disc.files.contains { $0.path == "BDMV/MovieObject.bdmv" })
             XCTAssertTrue(disc.files.contains { $0.path == "BDMV/BACKUP/CLIPINF/00002.clpi" })
-            for entry in java {
-                XCTAssertTrue(disc.files.contains { $0.locator.relativePath == entry.relativePath })
+            for entry in java.prefix(3) {
+                XCTAssertEqual(disc.files.contains { $0.locator.relativePath == entry.relativePath },
+                               DiscMenuInspection.supportsJavaMenus)
             }
-            XCTAssertTrue(disc.files.contains { $0.path == "CERTIFICATE/id.bdmv" })
+            XCTAssertTrue(disc.files.contains { $0.locator.relativePath == java[3].relativePath })
+            XCTAssertEqual(disc.files.contains { $0.path == "CERTIFICATE/id.bdmv" },
+                           DiscMenuInspection.supportsJavaMenus)
             XCTAssertNil(request.downloadableOriginalSource)
             let preparation = try await provider.playbackPreparationLocator(
                 for: request.item.id, mediaSourceID: index.relativePath
@@ -86,6 +89,35 @@ final class ShareProviderLocatorTests: XCTestCase {
             let reads = await fileSystem.fileReads
             XCTAssertEqual(reads, 0, "Manifest discovery must not download clips")
         }
+    }
+
+    func testNativeDiscPlaybackDoesNotReadInaccessibleJavaDirectories() async throws {
+        guard !DiscMenuInspection.supportsJavaMenus else { throw XCTSkip("Native-only inventory contract") }
+        let root = "Movie/BDMV"
+        let index = try RemoteFileEntry(
+            relativePath: "\(root)/index.bdmv", kind: .file, size: 40, strongETag: "\"index\""
+        )
+        let directories = try ["JAR", "BDJO", "BACKUP", "STREAM", "PLAYLIST"].map {
+            try RemoteFileEntry(relativePath: "\(root)/\($0)", kind: .directory)
+        }
+        let denied = ["\(root)/JAR", "\(root)/BDJO", "\(root)/BACKUP/BDJO", "Movie/CERTIFICATE"]
+        let fileSystem = LocatorFakeFileSystem(statEntry: index, directoryTree: [
+            root: [index] + directories,
+            "\(root)/BACKUP": [try .init(relativePath: "\(root)/BACKUP/BDJO", kind: .directory)],
+            "\(root)/PLAYLIST": [try .init(
+                relativePath: "\(root)/PLAYLIST/00001.mpls", kind: .file, size: 120, strongETag: "\"playlist\""
+            )],
+            "\(root)/STREAM": [try .init(
+                relativePath: "\(root)/STREAM/00001.m2ts", kind: .file, size: 4096, strongETag: "\"clip\""
+            )]
+        ], deniedDirectories: Set(denied))
+        let provider = makeProvider(stat: index, fileSystem: fileSystem)
+        addTeardownBlock { await provider.teardown() }
+        let request = try await provider.playbackInfo(for: "f:\(index.relativePath)")
+        guard case .networkDisc(let disc) = request.playbackSource else { return XCTFail("Expected disc") }
+        XCTAssertEqual(disc.files.count, 3)
+        let listed = await fileSystem.listedPaths
+        XCTAssertTrue(Set(listed).isDisjoint(with: denied))
     }
 
     func testPreparationDiagnosticCodesNeverIncludeAssociatedErrorText() {
@@ -764,11 +796,14 @@ private actor LocatorFakeFileSystem: MediaTransportFileSystem {
     private(set) var readLimits: [Int] = []
     private let fileContents: Data
     private let directoryTree: [String: [RemoteFileEntry]]?
+    private let deniedDirectories: Set<String>
+    private(set) var listedPaths: [String] = []
 
     init(
         statEntry: RemoteFileEntry, openingEntry: RemoteFileEntry? = nil,
         listedEntries: [RemoteFileEntry] = [], listingError: MediaTransportError? = nil,
-        fileContents: Data = Data(), directoryTree: [String: [RemoteFileEntry]]? = nil
+        fileContents: Data = Data(), directoryTree: [String: [RemoteFileEntry]]? = nil,
+        deniedDirectories: Set<String> = []
     ) {
         self.statEntry = statEntry
         self.openingEntry = openingEntry
@@ -776,6 +811,7 @@ private actor LocatorFakeFileSystem: MediaTransportFileSystem {
         self.listingError = listingError
         self.fileContents = fileContents
         self.directoryTree = directoryTree
+        self.deniedDirectories = deniedDirectories
     }
 
     func replaceStat(_ entry: RemoteFileEntry) { statEntry = entry }
@@ -798,6 +834,8 @@ private actor LocatorFakeFileSystem: MediaTransportFileSystem {
 
     func list(relativePath: String) async throws -> [RemoteFileEntry] {
         listingCalls += 1
+        listedPaths.append(relativePath)
+        if deniedDirectories.contains(relativePath) { throw MediaTransportError.permissionDenied }
         if let listingError { throw listingError }
         if let directoryTree { return directoryTree[relativePath] ?? [] }
         return listedEntries

@@ -51,7 +51,6 @@ public struct PlayerLoadingOverlay: View {
 public struct PlayerView: View {
     @State private var viewModel: PlayerViewModel
     @State private var diagnosticsSampler = PlaybackDiagnosticsSampler()
-    @State private var showsDiscVideos = false
     @State private var discStatus = TransientStatusPresenter(displayDuration: .seconds(5))
     /// Suspends Liquid Glass while demanding video is on screen.
     ///
@@ -112,8 +111,8 @@ public struct PlayerView: View {
                 discStatus.dismiss()
             }
         }
-        .sheet(isPresented: $showsDiscVideos) {
-            DiscVideoPicker(model: viewModel)
+        .discPlaybackSheet(isPresented: $viewModel.showsDiscVideos) {
+            DiscVideoPicker(model: viewModel, close: { viewModel.showsDiscVideos = false })
         }
         #endif
         #if os(iOS)
@@ -321,7 +320,7 @@ public struct PlayerView: View {
            state.presentsMenu {
             DiscMenuPlayerContent(
                 model: viewModel, state: state, dismiss: dismissPlayer,
-                showVideos: { showsDiscVideos = true }
+                showVideos: { viewModel.showsDiscVideos = true }
             )
         } else {
             ordinaryPhaseContent
@@ -369,7 +368,7 @@ public struct PlayerView: View {
                     onDismiss: { dismissPlayer() }
                 )
                 if viewModel.hasDiscVideos {
-                    Button("Disc videos") { showsDiscVideos = true }
+                    Button("Disc videos") { viewModel.showsDiscVideos = true }
                         .contextMenu {
                             if viewModel.isSelectedDiscVideo {
                                 Button("Play video") { viewModel.playVideoWithoutMenus() }

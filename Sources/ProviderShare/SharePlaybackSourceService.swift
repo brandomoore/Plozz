@@ -47,8 +47,10 @@ struct SharePlaybackSourceService: Sendable {
         inventory += disc.entries.filter {
             $0.kind == .file && $0.name.caseInsensitiveCompare("MovieObject.bdmv") == .orderedSame
         }
+        let javaMenus = DiscMenuInspection.supportsJavaMenus
+        let folders = ["playlist", "clipinf", "stream", "auxdata", "backup"] + (javaMenus ? ["bdjo", "jar"] : [])
         for folder in disc.entries where folder.kind == .directory
-            && ["playlist", "clipinf", "stream", "auxdata", "backup", "bdjo", "jar"].contains(folder.name.lowercased()) {
+            && folders.contains(folder.name.lowercased()) {
             try Task.checkCancellation()
             let children = try await store.rawEntries(inDirectory: folder.relativePath)
             guard children.count <= 4_096 - inventory.count else {
@@ -59,7 +61,7 @@ struct SharePlaybackSourceService: Sendable {
                     $0.kind == .file && ["index.bdmv", "movieobject.bdmv"].contains($0.name.lowercased())
                 }
                 for backup in children where backup.kind == .directory &&
-                    ["playlist", "clipinf", "bdjo"].contains(backup.name.lowercased()) {
+                    (["playlist", "clipinf"] + (javaMenus ? ["bdjo"] : [])).contains(backup.name.lowercased()) {
                     let files = try await store.rawEntries(inDirectory: backup.relativePath)
                     guard files.count <= 4_096 - inventory.count else {
                         throw MediaTransportError.unsupportedCapability("Blu-ray folder file limit")
@@ -126,7 +128,7 @@ struct SharePlaybackSourceService: Sendable {
                 locator: locator
             ))
         }
-        if !directory.isEmpty, disc.entries.contains(where: {
+        if javaMenus, !directory.isEmpty, disc.entries.contains(where: {
             $0.kind == .directory && $0.name.caseInsensitiveCompare("BDJO") == .orderedSame
         }) {
             let parent = (directory as NSString).deletingLastPathComponent

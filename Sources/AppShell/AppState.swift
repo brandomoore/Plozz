@@ -713,6 +713,13 @@ public final class AppState {
                     ? self?.identityIndex.identitySnapshotStore.current ?? initialSnapshot
                     : initialSnapshot
                 return snapshot.sourceRefs(for: item)
+            },
+            endWithoutProgress: { accountID, itemID in
+                Task {
+                    await reconciler.finishLiveSession(
+                        accountID: accountID, itemID: itemID, mutation: nil, serverScope: serverScope
+                    )
+                }
             }
         )
     }

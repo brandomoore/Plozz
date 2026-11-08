@@ -6,7 +6,6 @@ public struct PlayerDiscControlsButton: View {
     private let model: PlayerViewModel
     private let onInteraction: () -> Void
     private let onPresentationChanged: (Bool) -> Void
-    @State private var showsVideos = false
 
     public init(
         model: PlayerViewModel,
@@ -37,7 +36,7 @@ public struct PlayerDiscControlsButton: View {
         .accessibilityIdentifier("player-control-opticaldisc")
         .contextMenu {
             if model.isDiscMenuPlayback {
-                Button("Disc videos") { showsVideos = true }
+                Button("Disc videos") { model.showsDiscVideos = true }
                 Button("Play video") { model.playVideoWithoutMenus() }
                 if let state = model.videoEngine.discMenu {
                     Button("Try another region") {
@@ -48,10 +47,10 @@ public struct PlayerDiscControlsButton: View {
                 Button("Play video") { model.playVideoWithoutMenus() }
             }
         }
-        .sheet(isPresented: $showsVideos, onDismiss: onInteraction) {
-            DiscVideoPicker(model: model)
+        .onChange(of: model.showsDiscVideos) { old, presented in
+            onPresentationChanged(presented)
+            if old && !presented { onInteraction() }
         }
-        .onChange(of: showsVideos) { _, presented in onPresentationChanged(presented) }
         .onDisappear { onPresentationChanged(false) }
     }
 
@@ -64,7 +63,7 @@ public struct PlayerDiscControlsButton: View {
         if model.isDiscMenuPlayback, let state = model.videoEngine.discMenu {
             state.openMenu()
         } else {
-            showsVideos = true
+            model.showsDiscVideos = true
         }
     }
 }

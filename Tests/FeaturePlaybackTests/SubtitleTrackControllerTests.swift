@@ -64,6 +64,28 @@ final class SubtitleTrackControllerTests: XCTestCase {
     // MARK: - Subtitle OFF
 
     #if canImport(UIKit)
+    func testDiscAuthoredSubtitleIsRestoredAfterLoadResetsTheLiveOverlay() {
+        for selectedID: Int? in [9, nil] {
+            let (sut, host, engine) = makeSUT(engineKind: .plozzigen)
+            let disc = DiscMenuPlaybackState()
+            engine.discMenu = disc
+            engine.subtitleTracks = [embeddedText(9, language: "ja")]
+            disc.hasSubtitleSelection = true
+            disc.subtitleTrackID = selectedID
+            sut.loadTrackOptions()
+            sut.resetForNewLoad()
+            host.liveSubtitles.clear()
+            let request = PlaybackRequest(
+                item: .init(id: "disc", title: "Disc", kind: .movie),
+                streamURL: URL(fileURLWithPath: "/fixture/index.bdmv")
+            )
+            sut.applyInitialSubtitleForNewLoad(for: request)
+            XCTAssertEqual(sut.selectedSubtitleTrackID, selectedID)
+            XCTAssertEqual(host.liveSubtitles.rendersPrimary, selectedID != nil)
+            XCTAssertTrue(host.recordedSubtitle.isEmpty)
+        }
+    }
+
     func testDiscSelectionsOwnTheOverlayWithoutChangingRememberedPreferences() {
         let (sut, host, engine) = makeSUT(engineKind: .plozzigen)
         let disc = DiscMenuPlaybackState()

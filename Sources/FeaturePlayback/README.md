@@ -11,6 +11,13 @@ explicit local Debug experiment. Unsupported menus retain direct title playback.
 The profile default and transient entry intent keep direct playback separate
 from menu navigation. Menu failures require an explicit retry or direct-play
 choice, and menu clocks never reach ordinary watch reporting.
+Stopping an unidentified menu/playlist also bypasses shell watch-state mutations;
+the captured account/profile session is released separately without publishing
+progress. Confirmed disc-authored subtitle choices are reapplied after a load
+clears the live overlay, without changing profile or series defaults.
+Disc actions and playlist selection use the shared dialog surface and native
+action styles. TV dialogs remain in the player hierarchy so presenting one does
+not tear down playback; mobile action-to-picker transitions wait for dismissal.
 Startup loading follows first-play setup, not an implicit top-menu request:
 authored movie playback returns to normal controls after its first presented frame.
 Nonfatal disc notices use the shared transient status toast across menu and movie

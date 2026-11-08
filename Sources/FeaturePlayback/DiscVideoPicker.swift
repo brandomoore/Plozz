@@ -1,55 +1,60 @@
 #if canImport(UIKit) && canImport(SwiftUI)
 import SwiftUI
 import CoreModels
+import CoreUI
 
 struct DiscVideoPicker: View {
     let model: PlayerViewModel
-    @Environment(\.dismiss) private var dismiss
+    let close: () -> Void
     @State private var videos: [DiscVideo]?
     @State private var failure: String?
     @State private var reloadID = UUID()
+    @FocusState private var focusedPlaylist: Int?
 
     var body: some View {
-        NavigationStack {
-            List {
-                if let failure {
-                    Text(verbatim: failure)
-                    Button("Retry") { reloadID = UUID() }
-                } else if let videos {
-                    Section {
-                        ForEach(videos) { video in
-                            Button {
-                                do {
-                                    try model.playDiscVideo(video)
-                                    dismiss()
-                                } catch {
-                                    failure = error.localizedDescription
-                                }
-                            } label: {
-                                VStack(alignment: .leading) {
-                                    Text("Playlist \(String(format: "%05d", video.playlist))")
-                                    HStack {
-                                        Text(Duration.seconds(video.duration).formatted(.time(pattern: .hourMinuteSecond)))
-                                        Text("\(video.chapterCount) chapters")
-                                    }
-                                    .font(.caption)
-                                }
-                            }
+        DiscPlaybackDialog(title: "Disc videos", close: close) {
+            if let failure {
+                Text(verbatim: failure)
+                    .foregroundStyle(.secondary)
+                Button("Retry") { reloadID = UUID() }
+                    .plozzActionButton(role: .secondary)
+            } else if let videos {
+                ForEach(videos) { video in
+                    Button {
+                        do {
+                            try model.playDiscVideo(video)
+                            close()
+                        } catch {
+                            failure = error.localizedDescription
                         }
-                    } footer: {
-                        Text("These videos may include extras or alternate versions. Playing one does not update watched or resume progress.")
+                    } label: {
+                        VStack(alignment: .leading) {
+                            Text("Playlist \(String(format: "%05d", video.playlist))")
+                            HStack {
+                                Text(Duration.seconds(video.duration).formatted(.time(pattern: .hourMinuteSecond)))
+                                Text("\(video.chapterCount) chapters")
+                            }
+                            .font(.caption)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(8)
                     }
-                } else {
-                    ProgressView("Reading disc")
+                    .plozzActionButton(role: .secondary)
+                    .buttonBorderShape(.roundedRectangle(radius: 16))
+                    .focused($focusedPlaylist, equals: video.playlist)
                 }
-            }
-            .navigationTitle("Disc videos")
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Close") { dismiss() }
-                }
+                Text("These videos may include extras or alternate versions. Playing one does not update watched or resume progress.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                ProgressView("Reading disc")
             }
         }
+        #if os(tvOS)
+        .onChange(of: videos?.first?.playlist) { _, playlist in
+            focusedPlaylist = playlist
+        }
+        #endif
         .task(id: reloadID) {
             videos = nil
             failure = nil
@@ -61,8 +66,87 @@ struct DiscVideoPicker: View {
                 failure = error.localizedDescription
             }
         }
+    }
+}
+
+struct DiscPlaybackDialog<Content: View>: View {
+    let title: LocalizedStringResource
+    let close: () -> Void
+    @ViewBuilder let content: () -> Content
+    @Environment(\.themePalette) private var palette
+
+    var body: some View {
         #if os(tvOS)
-        .onExitCommand { dismiss() }
+        VStack(alignment: .leading, spacing: 24) {
+            Text(title)
+                .font(.title2.bold())
+                .accessibilityAddTraits(.isHeader)
+            ViewThatFits(in: .vertical) {
+                VStack(alignment: .leading, spacing: 16, content: content)
+                    .padding(16)
+                    .fixedSize(horizontal: false, vertical: true)
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16, content: content)
+                        .padding(16)
+                }
+                .scrollBounceBehavior(.basedOnSize)
+            }
+            Button("Close", action: close)
+                .plozzActionButton(role: .secondary)
+        }
+        .padding(32)
+        .onExitCommand(perform: close)
+        #else
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16, content: content)
+                    .padding(24)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .navigationTitle(Text(title))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close", systemImage: "xmark", action: close)
+                        .labelStyle(.iconOnly)
+                }
+            }
+        }
+        .tint(palette.primaryText)
+        #endif
+    }
+}
+
+extension View {
+    /// Keep the TV playback owner mounted, as with the shared version-choice dialog.
+    func discPlaybackSheet<Content: View>(
+        isPresented: Binding<Bool>, onDismiss: @escaping () -> Void = {},
+        @ViewBuilder content: @escaping () -> Content
+    ) -> some View {
+        #if os(tvOS)
+        self
+            .disabled(isPresented.wrappedValue)
+            .accessibilityHidden(isPresented.wrappedValue)
+            .overlay {
+                if isPresented.wrappedValue {
+                    GeometryReader { geometry in
+                        ZStack {
+                            PlozzDialogBackdrop()
+                            content()
+                                .frame(width: min(1_100, max(0, geometry.size.width - 64)))
+                                .plozzSurface(.overlay, cornerRadius: 32)
+                                .accessibilityElement(children: .contain)
+                                .frame(maxHeight: min(860, max(0, geometry.size.height - 64)))
+                        }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    }
+                }
+            }
+            .onChange(of: isPresented.wrappedValue) { old, new in
+                if old && !new { onDismiss() }
+            }
+        #else
+        self.plozzSheet(isPresented: isPresented, onDismiss: onDismiss, content: content)
         #endif
     }
 }

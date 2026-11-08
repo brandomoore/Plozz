@@ -400,7 +400,12 @@ final class SubtitleTrackController {
     func applyInitialSubtitleSelectionIfReady(for request: PlaybackRequest) {
         guard let host, !initialSubtitleApplied else { return }
         #if canImport(UIKit)
-        guard host.trackEngine.discMenu == nil else { return }
+        if let disc = host.trackEngine.discMenu {
+            guard disc.hasSubtitleSelection else { return }
+            initialSubtitleApplied = true
+            selectSubtitleOption(id: disc.subtitleTrackID ?? PlayerTrackOption.offID, userInitiated: false)
+            return
+        }
         #endif
         if let burned = request.burnedInSubtitleTrackID {
             initialSubtitleApplied = true

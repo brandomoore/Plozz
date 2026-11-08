@@ -3,15 +3,18 @@ import CoreUI
 @testable import FeaturePlayback
 import SwiftUI
 import UIKit
+import FeatureHomeCore
 #if os(iOS)
+import FeatureAuth
 @testable import AppShelliOS
+#else
+@testable import FeatureHome
 #endif
 
 /// Real production views with deterministic, local-only disc data for visual review.
 @MainActor
 struct DiscReviewFixture: View {
     @State private var fixture = DiscReviewState()
-    @State private var showsVideos = false
     #if os(iOS)
     @State private var keyboardActions = PlozziOSPlayerKeyboardActions()
     #endif
@@ -19,17 +22,9 @@ struct DiscReviewFixture: View {
     var body: some View {
         Group {
             if fixture.scenario.hasPrefix("detail") {
-                Button {} label: {
-                    Label("Play", systemImage: "play.fill")
-                }
-                .buttonStyle(.borderedProminent)
-                .accessibilityIdentifier("disc-review-play")
-                .contextMenu {
-                    DiscPlaybackAlternativeAction(item: fixture.item, onPlay: { _ in })
-                }
+                DiscReviewDetail(item: fixture.item)
                 .environment(\.discPlaybackDefault,
                               fixture.scenario == "detail-menu-default" ? .openMenu : .playVideo)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 player
             }
@@ -39,6 +34,61 @@ struct DiscReviewFixture: View {
         .environment(\.colorScheme, .dark)
         .environment(\.locale, Locale(identifier: "en_US"))
         .preferredColorScheme(.dark)
+    }
+
+    @MainActor
+    private struct DiscReviewDetail: View {
+        let item: MediaItem
+        @State private var trailer = HeroTrailerController()
+        #if os(tvOS)
+        @State private var background = HeroBackgroundSettingsModel(store: InMemoryHeroBackgroundSettingsStore())
+
+        var body: some View {
+            DetailHeroView(
+                item: item, spoilerSettings: .default, playTitle: "Play", onPlay: {}, onPlayDisc: { _ in }
+            )
+            .environment(trailer)
+            .environment(background)
+        }
+        #else
+        @State private var appModel: PlozziOSAppModel = {
+            SyncSetupFeatureFlag().isEnabled = false
+            let defaults = UserDefaults(suiteName: "DiscReview.\(UUID().uuidString)")!
+            let model = PlozziOSAppModel(
+                accountStore: AccountStore(secureStore: InMemorySecureStore()),
+                profileStore: ProfileStore(defaults: defaults)
+            )
+            model.settings.heroBackground.settings.detailMode = .off
+            return model
+        }()
+        @State private var sidebar = PlozziOSSidebarGeometryModel()
+        @State private var actions = DiscReviewActions()
+
+        var body: some View {
+            NavigationStack {
+                ScrollView {
+                    PlozziOSDetailHeroSection(
+                        item: item, backdropItem: item, playableItem: item, sources: [],
+                        selectedSourceAccountID: nil, versions: item.versions, selectedVersionID: nil,
+                        onSelectSource: { _ in }, onSelectVersion: { _ in }, actionHandler: actions,
+                        onPlay: { _, _ in }
+                    )
+                }
+            }
+            .environment(appModel)
+            .environment(trailer)
+            .environment(sidebar)
+            .environment(\.plozzMetrics, .touch(density: .standard))
+        }
+        #endif
+    }
+
+    @MainActor
+    private final class DiscReviewActions: MediaItemActionHandling {
+        func actions(for item: MediaItem, context: MediaItemActionContext) -> [MediaItemAction] {
+            [.addToWatchlist, .markWatched]
+        }
+        func perform(_ action: MediaItemAction, on item: MediaItem, context: MediaItemActionContext) {}
     }
 
     private var player: some View {
@@ -68,11 +118,8 @@ struct DiscReviewFixture: View {
             PlayerLoadingOverlay(viewModel: fixture.player, discMenuRequested: fixture.opensMenu)
             #endif
         }
-        .sheet(isPresented: $showsVideos) {
-            DiscVideoPicker(model: fixture.player)
-        }
         .onChange(of: fixture.player.phase) { _, phase in
-            if phase == .ready, fixture.scenario == "videos" { showsVideos = true }
+            if phase == .ready, fixture.scenario == "videos" { fixture.player.showsDiscVideos = true }
         }
     }
 }
@@ -93,7 +140,7 @@ private final class DiscReviewState {
         var version = MediaVersion(id: "disc", container: "bdmv")
         version.discMenuAvailability = scenario == "detail-unavailable" ? .unavailable(.unsupportedRuntime) : .unknown
         item = MediaItem(id: "disc-review", title: "Original disc fixture", kind: .movie,
-                         runtime: 7200, versions: [version])
+                         runtime: 7200, allowsTitleBasedMetadataMatching: false, versions: [version])
         engine = DiscReviewEngine(scenario: scenario, opensMenu: opensMenu)
         var settings = PlaybackSettings.default
         settings.discPlayback = opensMenu ? .openMenu : .playVideo

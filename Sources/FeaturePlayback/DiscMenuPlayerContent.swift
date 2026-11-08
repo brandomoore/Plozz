@@ -1,6 +1,7 @@
 #if canImport(UIKit) && canImport(SwiftUI)
 import SwiftUI
 import CoreModels
+import CoreUI
 
 struct DiscMenuPlayerContent: View {
     let model: PlayerViewModel
@@ -8,7 +9,9 @@ struct DiscMenuPlayerContent: View {
     let dismiss: () -> Void
     let showVideos: () -> Void
     @State private var showsActions = false
+    @State private var pendingAction: (() -> Void)?
     @FocusState private var menuFocused: Bool
+    @FocusState private var actionFocused: Bool
 
     var body: some View {
         ZStack {
@@ -19,27 +22,26 @@ struct DiscMenuPlayerContent: View {
             .ignoresSafeArea()
             DiscMenuArtwork(state: state)
             if let failure = state.failure {
-                VStack(spacing: 24) {
-                    Text("Disc menu unavailable").font(.title2)
-                    Text(verbatim: failure).multilineTextAlignment(.center)
-                    Button("Retry") { model.retryDiscMenu() }
-                    Button("Play video") { model.playVideoWithoutMenus() }
-                    Button("Disc videos", action: showVideos)
-                    Button("Try another region") { tryAnotherRegion() }
-                    Button("Close", action: dismiss)
+                PlaybackFailureView(
+                    title: "Disc menu unavailable", message: "\(failure)", report: nil
+                ) {
+                    Button("Retry") { model.retryDiscMenu() }.plozzActionButton()
+                    Button("Play video") { model.playVideoWithoutMenus() }.plozzActionButton(role: .secondary)
+                    Button("Disc videos", action: showVideos).plozzActionButton(role: .secondary)
+                    Button("Try another region") { tryAnotherRegion() }.plozzActionButton(role: .secondary)
+                    Button("Close", action: dismiss).plozzActionButton(role: .secondary)
                 }
-                .padding(40)
-                .frame(maxWidth: 800)
-                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20))
                 #if os(tvOS)
                 .onExitCommand(perform: dismiss)
                 #endif
             } else {
                 #if os(tvOS)
-                Button { state.sendKey(16) } label: {
-                    Color.clear.contentShape(Rectangle())
-                }
-                    .buttonStyle(.plain)
+                if !showsActions && !model.showsDiscVideos {
+                    Button { state.sendKey(16) } label: {
+                        Color.clear.contentShape(Rectangle())
+                    }
+                    .buttonStyle(DiscMenuInputStyle())
+                    .focusEffectDisabled()
                     .accessibilityLabel("Select")
                     .accessibilityIdentifier("disc-menu-select")
                     .focused($menuFocused)
@@ -55,6 +57,7 @@ struct DiscMenuPlayerContent: View {
                     .onPlayPauseCommand { model.togglePlayPause() }
                     .onExitCommand { showsActions = true }
                     .onAppear { menuFocused = true }
+                }
                 #else
                 DiscMenuTouchControls(
                     state: state, showActions: { showsActions = true }
@@ -62,19 +65,56 @@ struct DiscMenuPlayerContent: View {
                 #endif
             }
         }
-        .confirmationDialog("Disc menu", isPresented: $showsActions, titleVisibility: .visible) {
-            Button("Open disc menu") { state.openMenu() }
-            Button("Play video") { model.playVideoWithoutMenus() }
-            Button("Disc videos", action: showVideos)
-            Button("Try another region") { tryAnotherRegion() }
-            Button("Close", role: .destructive, action: dismiss)
-        } message: {
-            Text("Disc-menu playback does not update watched or resume progress.")
+        .discPlaybackSheet(isPresented: $showsActions, onDismiss: performPendingAction) {
+            DiscPlaybackDialog(title: "Disc menu", close: { showsActions = false }) {
+                Text("Disc-menu playback does not update watched or resume progress.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                actionButton("Open disc menu") { state.openMenu() }
+                    .focused($actionFocused)
+                actionButton("Play video") { model.playVideoWithoutMenus() }
+                actionButton("Disc videos", action: showVideos)
+                actionButton("Try another region", action: tryAnotherRegion)
+                actionButton("Close player", action: dismiss)
+            }
+            #if os(tvOS)
+            .defaultFocus($actionFocused, true, priority: .userInitiated)
+            #endif
         }
     }
 
+    #if os(tvOS)
+    private struct DiscMenuInputStyle: ButtonStyle {
+        func makeBody(configuration: Configuration) -> some View {
+            configuration.label
+        }
+    }
+    #endif
+
     private func tryAnotherRegion() {
         model.retryDiscMenu(region: state.region == 1 ? 2 : state.region == 2 ? 4 : 1)
+    }
+
+    private func actionButton(_ title: LocalizedStringResource, action: @escaping () -> Void) -> some View {
+        Button { performAfterDismissal(action) } label: {
+            Text(title)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(8)
+        }
+        .plozzActionButton(role: .secondary)
+        .buttonBorderShape(.roundedRectangle(radius: 16))
+    }
+
+    private func performAfterDismissal(_ action: @escaping () -> Void) {
+        pendingAction = action
+        showsActions = false
+    }
+
+    private func performPendingAction() {
+        let action = pendingAction
+        pendingAction = nil
+        menuFocused = true
+        action?()
     }
 
 }
