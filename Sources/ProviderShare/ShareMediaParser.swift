@@ -21,7 +21,8 @@ enum ShareMediaParser {
     /// year — collapses split/variant folders and fixes same-name matches.
     /// v16: include ISO disc images, including in unchanged existing directories.
     /// v17: discover external title-link files without treating them as video.
-    static let classifierVersion = 17
+    /// v18: treat recognized Blu-ray folders as one title instead of stream clips.
+    static let classifierVersion = 18
 
     /// Bumped when the SIDECAR/explicit-id inventory the scanner records changes
     /// shape (new sidecar kinds recognized, new explicit-id namespaces extracted),
@@ -211,6 +212,7 @@ enum ShareMediaParser {
     ///     (`Movies`, `Films`, `Anime Movies`, …) → movie.
     ///  4. Fallback: filename heuristic (a year ⇒ movie).
     static func classify(relPath: String) -> Kind {
+        let relPath = ShareBluRayFolder.classificationPath(relPath)
         let comps = relPath.split(separator: "/").map(String.init)
         guard let fileName = comps.last else {
             return .movie(Movie(title: relPath, year: nil))
@@ -275,6 +277,7 @@ enum ShareMediaParser {
         relPath: String,
         configuration: MediaShareLibraryConfiguration?
     ) -> Kind? {
+        let relPath = ShareBluRayFolder.classificationPath(relPath)
         guard let configuration else { return classify(relPath: relPath) }
         switch configuration.contentType {
         case .personalVideos:

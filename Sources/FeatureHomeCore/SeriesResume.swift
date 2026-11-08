@@ -126,8 +126,8 @@ public enum SeriesResume {
         return pool.allSatisfy(\.isPlayed)
     }
 
-    /// What the series page should rest on — the subject of the hero, and of the
-    /// Play button, which are always the same thing.
+    /// The series browser's resting selection, used to resolve Play independently
+    /// of the series-level page header.
     ///
     /// The show itself when there is no resume point to offer: either nothing has
     /// been watched, or all of it has and the pointer is stale. A finished series
@@ -208,6 +208,37 @@ public struct SeasonEpisodeRef: Equatable, Sendable {
 /// Resolves an episode-context entry against the active server's season/episode
 /// objects. Provider ids differ across servers, but S/E ordinals remain stable.
 public enum SeriesEpisodeEntry {
+    /// A parent-page seed must never relabel episode/season prose or scores as
+    /// series metadata. Keep only known parent artwork and source-scoped prose.
+    public static func seriesSeed(
+        from child: MediaItem, seriesID: String, sourceAccountID: String?
+    ) -> MediaItem {
+        var series = MediaItem(
+            id: seriesID, title: child.parentTitle ?? "", kind: .series,
+            sourceAccountID: sourceAccountID
+        )
+        if let synopsis = child.seriesSynopsis,
+           synopsis.matches(child), synopsis.seriesID == seriesID,
+           synopsis.sourceAccountID == sourceAccountID {
+            series.overview = synopsis.overview
+            series.taglines = synopsis.tagline.map { [$0] } ?? []
+        }
+        series.posterURL = child.libraryArtworkURL(child.seriesPosterURL)
+        series.backdropURL = child.libraryArtworkURL(child.fallbackArtworkURL)
+        series.logoURL = child.libraryArtworkURL(child.logoURL)
+        series.artworkSelections = [
+            ArtworkSelection(placement: .detailBackdrop, references: child.seriesArtworkReferences()),
+            ArtworkSelection(
+                placement: .logo, references: child.libraryArtworkReferences(child.artworkReferences(for: .logo))
+            )
+        ]
+        series.artworkSourceAccountIDsByURL = child.artworkSourceAccountIDsByURL
+        series.artworkMetadataSourcesByURL = child.artworkMetadataSourcesByURL
+        series.allowsTitleBasedMetadataMatching = child.allowsTitleBasedMetadataMatching
+            && !series.title.isEmpty
+        return series
+    }
+
     /// A loading-slot focus is not a choice of the provisional cached season.
     public static func waitsForResume(
         isResolving: Bool, hasResumeSeed: Bool, hasExplicitSelection: Bool

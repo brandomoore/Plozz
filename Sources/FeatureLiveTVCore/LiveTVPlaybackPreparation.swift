@@ -311,7 +311,7 @@ public final class LiveTVPlaybackPreparation {
                     try requireCurrent(requestID, binding: binding)
                 case .publicURL(let source):
                     url = source.url
-                case .networkFile, .dlnaResource:
+                case .networkFile, .networkDisc, .dlnaResource:
                     throw LiveTVPlaybackPreparationError.unsupportedPlaybackMode
                 }
                 input = .stream(url: url, httpHeaders: [:])

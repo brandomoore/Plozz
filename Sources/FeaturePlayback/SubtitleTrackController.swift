@@ -196,6 +196,14 @@ final class SubtitleTrackController {
         host.trackControls.primarySubtitleIsBurnedIn = host.trackRequest?.burnedInSubtitleTrackID != nil
         registerProviderSidecars()
         let engine = host.trackEngine
+        #if canImport(UIKit)
+        if let disc = engine.discMenu {
+            pendingAudioTrackID = nil
+            if disc.hasSubtitleSelection, selectedSubtitleTrackID != disc.subtitleTrackID {
+                selectSubtitleOption(id: disc.subtitleTrackID ?? PlayerTrackOption.offID, userInitiated: false)
+            }
+        }
+        #endif
         // Enrich the engine's demuxed tracks with the provider's probe of the
         // same file (matched by stream id), filling in any language/codec/title
         // the demuxer dropped. For the native engine the two lists are identical,
@@ -336,6 +344,12 @@ final class SubtitleTrackController {
         let engine = host.trackEngine
         guard let track = engine.audioTracks.first(where: { $0.id == id }) else { return }
         guard host.trackSelectAudioTrack(track) else { return }
+        #if canImport(UIKit)
+        if engine.discMenu != nil {
+            loadTrackOptions()
+            return
+        }
+        #endif
         viewerChangedAudioThisSession = true
         // Remember this language for the series so later episodes start here.
         host.trackRecordAudioSelection(language: track.language)
@@ -353,6 +367,9 @@ final class SubtitleTrackController {
     func applyImportedAudioIfPossible() {
         guard let host, let language = crossServerAudioImportLanguage else { return }
         let engine = host.trackEngine
+        #if canImport(UIKit)
+        guard engine.discMenu == nil else { return }
+        #endif
         guard let track = engine.audioTracks.first(where: {
             LanguageMatch.matches($0.language, language)
         }) else { return }
@@ -383,6 +400,14 @@ final class SubtitleTrackController {
     ///   attribute-matches a manually-picked image subtitle).
     func applyInitialSubtitleSelectionIfReady(for request: PlaybackRequest) {
         guard let host, !initialSubtitleApplied else { return }
+        #if canImport(UIKit)
+        if let disc = host.trackEngine.discMenu {
+            guard disc.hasSubtitleSelection else { return }
+            initialSubtitleApplied = true
+            selectSubtitleOption(id: disc.subtitleTrackID ?? PlayerTrackOption.offID, userInitiated: false)
+            return
+        }
+        #endif
         if let burned = request.burnedInSubtitleTrackID {
             initialSubtitleApplied = true
             selectSubtitleOption(id: burned, userInitiated: false)
@@ -531,6 +556,9 @@ final class SubtitleTrackController {
     func selectSubtitleOption(id: Int, userInitiated: Bool = true) {
         guard let host else { return }
         let engine = host.trackEngine
+        #if canImport(UIKit)
+        let userInitiated = userInitiated && engine.discMenu == nil
+        #endif
         if userInitiated {
             viewerChangedSubtitleThisSession = true
             initialSubtitleApplied = true

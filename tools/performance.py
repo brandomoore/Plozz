@@ -42,6 +42,44 @@ HOME_HOST_FITTING_COUNTERS = [
     "hostFittingMaxNanoseconds", "hostFittingReentrantCalls",
 ]
 SCENARIOS = {
+    **{
+        f"related-{state}-scroll": {
+            "suite": "ui",
+            "test": f"RelatedTitlesPerformanceTests/testPerformance{state.title()}RecommendationsWhileScrolling",
+            "file": "Tests/PerformancePresentationSupport/RelatedTitlesPerformanceTests.swift",
+            "description": "Load the production Related row from 24 recommendations and a Plex/Jellyfin index while traversing its mounted native row; synthetic latency, server metadata preserved.",
+            "counters": ["items", "searchRequests", "detailRequests", "recommendationRequests", "publications",
+                         "batchRequests", "accountCount", "primaryDetailRequests", "maxNativeInFlight",
+                         "firstRowMicroseconds", "fullRowMicroseconds", "finishedMicroseconds", "scrollTargets",
+                         "maxMainActorGapMicroseconds", "scrollCPUTimeMicroseconds"],
+        }
+        for state in ("cached", "cold")
+    },
+    **{
+        f"related-{name}-scroll": {
+            "suite": "ui",
+            "test": f"RelatedTitlesPerformanceTests/testPerformance{test}WhileScrolling",
+            "file": "Tests/PerformancePresentationSupport/RelatedTitlesPerformanceTests.swift",
+            "description": description,
+            "counters": ["items", "searchRequests", "detailRequests", "recommendationRequests", "publications",
+                         "batchRequests", "accountCount", "primaryDetailRequests", "maxNativeInFlight",
+                         "firstRowMicroseconds", "fullRowMicroseconds", "finishedMicroseconds", "scrollTargets",
+                         "maxMainActorGapMicroseconds", "scrollCPUTimeMicroseconds"],
+        }
+        for name, test, description in (
+            ("mixed-servers", "MixedServers",
+             "Related across two Plex accounts, Jellyfin, Emby, Silo and a share, including overlapping native IDs and non-batch providers."),
+            ("detail-open", "DetailOpening",
+             "Production detail model opens a seeded movie with 250-ms initial metadata and 350-ms cold recommendations while the native Related row scrolls."),
+        )
+    },
+    "disc-java-flush": {
+        "suite": "ui",
+        "test": "DiscGraphicsHostedTests/testPerformanceJavaRepeatedFlushes",
+        "file": "Tests/SubtitlePresentationSupport/DiscGraphicsHostedTests.m",
+        "description": "Compose 200 original 960x540 Java menu updates, with 20 changing frames; measure synchronous producer work, not presentation FPS.",
+        "counters": ["frames", "changedFrames", "pixelsPerFrame"],
+    },
     "identity-unchanged-servers": {
         "suite": "core", "target": "AppRuntimeTests",
         "test": "IdentityIndexRefreshTests/testPerformanceRevalidatingTwentyUnchangedServers",

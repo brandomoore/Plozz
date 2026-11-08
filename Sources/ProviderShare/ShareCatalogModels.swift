@@ -72,7 +72,8 @@ struct CatalogAsset: Sendable, Equatable {
     /// The directory a local sidecar (`tvshow.nfo`) authoritatively describing
     /// this item's SERIES lives in — the full relative path of the authoritative
     /// show folder. `nil` for movies (whose own parent directory is used instead,
-    /// computed on demand) and for episodes with no provable show folder.
+    /// computed on demand) and for episodes with no provable show folder. Disc
+    /// movies use their containing movie folder rather than the BDMV directory.
     var metadataRoot: String?
 }
 

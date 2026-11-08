@@ -453,7 +453,7 @@ final class EngineHandoffCoordinator {
         let request = host.handoffRequest
 
         let isNetworkFile: Bool
-        if case .some(.networkFile) = request?.playbackSource {
+        if request?.playbackSource?.requiresNetworkFileResolver == true {
             isNetworkFile = true
         } else {
             isNetworkFile = false
@@ -474,7 +474,8 @@ final class EngineHandoffCoordinator {
             currentEngineKind: currentEngineKind,
             alternateEngineKind: alternateEngineKind,
             resume: resume,
-            allowsCompatibilityFallback: !isAwaitingMediaServicesRecovery && PlayerViewModel.streamingFailure(
+            allowsCompatibilityFallback: request?.usesUnidentifiedDiscTimeline != true
+                && !isAwaitingMediaServicesRecovery && PlayerViewModel.streamingFailure(
                 error, evidence: engine.streamingFailure
             )?.allowsCodecFallback != false,
             mediaServicesReset: mediaServicesReset,

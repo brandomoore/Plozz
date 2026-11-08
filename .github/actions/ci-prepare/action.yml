@@ -52,6 +52,11 @@ runs:
       shell: bash
       run: tools/generate-project.sh
 
+    - name: Build bundled disc interpreter
+      if: ${{ inputs.lane != 'package-tests' }}
+      shell: bash
+      run: tools/with-apple-build-lease.sh plozz/ci-disc-runtime -- python3 tools/build-disc-runtime.py --sdk appletvsimulator
+
     - name: Compute cache compatibility
       id: keys
       shell: bash

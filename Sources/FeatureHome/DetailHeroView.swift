@@ -11,9 +11,7 @@ import UIKit
 /// The top "hero" section of a detail page: a full-bleed backdrop with the
 /// item's title, subtitle, ratings, overview, and an optional Play button.
 ///
-/// Its media presentation is driven by `item`, so a parent can
-/// swap which item it shows (series → focused season → focused episode) and the
-/// whole hero animates to reflect the newly focused context.
+/// `item` is the page's subject; `actionItem` can independently target an episode.
 struct DetailHeroView: View, Equatable {
     /// Compares the hero's INPUTS so callers can wrap it in `.equatable()`.
     ///
@@ -70,6 +68,8 @@ struct DetailHeroView: View, Equatable {
             && lhs.isRequestingSeasons == rhs.isRequestingSeasons
             // Presence, not identity — see above.
             && (lhs.onPlay == nil) == (rhs.onPlay == nil)
+            && (lhs.onPlayDisc == nil) == (rhs.onPlayDisc == nil)
+            && (lhs.onPlayExternal == nil) == (rhs.onPlayExternal == nil)
             && (lhs.onPlayTrailer == nil) == (rhs.onPlayTrailer == nil)
             && lhs.trailerItem == rhs.trailerItem
             && (lhs.onSelectVersion == nil) == (rhs.onSelectVersion == nil)
@@ -87,6 +87,7 @@ struct DetailHeroView: View, Equatable {
     @Environment(HeroTrailerController.self) private var heroTrailerController
     @Environment(HeroBackgroundSettingsModel.self) private var heroBackground
     @Environment(\.detailHeaderSettings) private var detailHeaderSettings
+    @Environment(\.discPlaybackDefault) private var discPlaybackDefault
     @Environment(\.plozzAppTextScale) private var appTextScale
     @Environment(\.plozzArtworkPolicy) private var artworkPolicy
     @Environment(\.scenePhase) private var scenePhase
@@ -97,13 +98,7 @@ struct DetailHeroView: View, Equatable {
     #endif
     /// The item whose artwork fills the backdrop *and* supplies the branded title
     /// logo. Defaults to `item`. A series page pins this to the series itself so
-    /// the background and logo stay a single, stable, show-level identity even as
-    /// `item` (the focused season/episode) drives the title text, overview and
-    /// Play button. The logo is the show's wordmark — identical for every episode
-    /// — so sourcing it here keeps it present no matter which episode is fronted
-    /// (e.g. arriving via "Go to Season"/Continue Watching fronts the next-up
-    /// episode, which has no logo of its own). Swapping the backdrop per focused
-    /// episode reads as distracting flicker, so we don't.
+    /// the background and logo retain the page's identity independently of Play.
     var backdropItem: MediaItem?
     /// Fraction of the screen height the hero backdrop occupies. Defaults to a
     /// full-screen cinematic hero (`1.0`); a TV show shrinks this (e.g. `0.8`) so
@@ -151,6 +146,8 @@ struct DetailHeroView: View, Equatable {
     /// its focusable placeholder visible before a target has resolved.
     let playTitle: LocalizedStringResource?
     let onPlay: (() -> Void)?
+    var onPlayDisc: ((DiscPlaybackBehavior) -> Void)? = nil
+    var onPlayExternal: ((ExternalPlayer) -> Void)? = nil
     var showsPlayPlaceholder: Bool = false
     var onRetryPlaybackInventory: (() -> Void)?
     var isRetryingPlaybackInventory = false
@@ -1443,7 +1440,9 @@ struct DetailHeroView: View, Equatable {
         // resume text (`reservedResumeText`) that survives the watched transition,
         // rather than shrinking after a watched transition. Placeholder dimensions
         // never constrain the ready button.
-        let liveResumeText = resumeText
+        let opensMenu = (actionItem ?? item).selectingVersion(selectedVersionID)
+            .effectiveDiscPlayback(default: discPlaybackDefault) == .openMenu
+        let liveResumeText = opensMenu ? nil : resumeText
         let sizingText = reservedResumeText ?? liveResumeText
         let button = Button {
             guard !isRetryingPlaybackInventory, pendingPrimaryAction == nil else { return }
@@ -1459,7 +1458,7 @@ struct DetailHeroView: View, Equatable {
             }
         } label: {
             ZStack {
-                if let sizingText, onRetryPlaybackInventory == nil {
+                if let sizingText, !opensMenu, onRetryPlaybackInventory == nil {
                     playResumeSizer(remaining: sizingText).hidden()
                 }
                 if onRetryPlaybackInventory != nil {
@@ -1469,15 +1468,15 @@ struct DetailHeroView: View, Equatable {
                     )
                 } else {
                     PlayResumeButtonLabel(
-                        title: title,
-                        progress: playProgress,
-                        remainingText: playRemainingText,
-                        seasonEpisodeText: playSeasonEpisodeText,
+                        title: opensMenu ? "Open disc menu" : title,
+                        progress: opensMenu ? nil : playProgress,
+                        remainingText: opensMenu ? nil : playRemainingText,
+                        seasonEpisodeText: opensMenu ? nil : playSeasonEpisodeText,
                         onLight: playButtonHasFocus || colorScheme == .light,
                         isPlaceholder: action == nil,
                         isLoading: pendingPrimaryAction?.kind == .play,
                         separatesEpisodeText: (actionItem ?? item).startsWatching,
-                        systemImage: (versions.first(where: { $0.id == selectedVersionID })
+                        systemImage: opensMenu ? "opticaldisc" : (versions.first(where: { $0.id == selectedVersionID })
                             ?? (versions.allSatisfy(\.isExternalSource) ? versions.first : nil))?.isExternalSource == true
                             ? "arrow.up.forward.app" : "play.fill"
                     )
@@ -1489,6 +1488,26 @@ struct DetailHeroView: View, Equatable {
         .focused($playButtonHasFocus)
         .focused($heroActionRowFocus, equals: .play)
         .accessibilityIdentifier("detail-hero-play")
+        .contextMenu {
+            if let onPlayDisc {
+                DiscPlaybackAlternativeAction(
+                    item: (actionItem ?? item).selectingVersion(selectedVersionID)
+                ) { selection in
+                    guard let behavior = selection.discPlaybackOverride else { return }
+                    preparePrimaryAction()
+                    heroTrailerController.stop()
+                    onPlayDisc(behavior)
+                }
+            }
+            if let onPlayExternal {
+                ExternalPlaybackActions(item: (actionItem ?? item).selectingVersion(selectedVersionID)) { player in
+                    preparePrimaryAction()
+                    heroTrailerController.stop()
+                    onPlayExternal(player)
+                }
+            }
+            heroContextMenu
+        }
         .accessibilityValue(pendingPrimaryAction?.kind == .play ? Text("Loading") : Text(verbatim: ""))
         .onChange(of: liveResumeText) { _, new in
             if let new { reservedResumeText = new }
@@ -2156,35 +2175,16 @@ private struct DetailHeroFactsRow: View {
 ///
 /// Deliberately a plain reference type rather than `@Observable`: nothing should
 /// re-render when the cache fills. It exists purely so repeated reads within one
-/// body evaluation — and across re-renders of the same item — cost a dictionary
-/// lookup instead of a rebuild.
+/// body evaluation — and across re-renders of the same item — reuse a cached
+/// presentation instead of rebuilding it.
 ///
-/// Keyed on more than the id: the same item is mutated in place as watched state
-/// and enriched badges arrive, and the hero must reflect that immediately.
+/// Compare the complete input: a sparse loading seed must refresh when metadata
+/// arrives, even if its identity, rating values and artwork counts do not change.
 final class HeroPresentationCache {
-    private struct Key: Hashable {
-        let id: String
-        let isPlayed: Bool
-        let playedPercentage: Double?
-        let badgeCount: Int
-        let artworkCount: Int
-        let familyGuidanceAge: Double?
-        let ratings: [ExternalRating]
-    }
-
-    private var entries: [Key: HeroPresentation] = [:]
+    private var entries: [String: (item: MediaItem, presentation: HeroPresentation)] = [:]
 
     func presentation(for item: MediaItem) -> HeroPresentation {
-        let key = Key(
-            id: item.id,
-            isPlayed: item.isPlayed,
-            playedPercentage: item.playedPercentage,
-            badgeCount: item.technicalBadges.count,
-            artworkCount: item.artworkReferences(for: .logo).count,
-            familyGuidanceAge: item.familyGuidance?.recommendedAge,
-            ratings: item.ratings
-        )
-        if let cached = entries[key] { return cached }
+        if let cached = entries[item.id], cached.item == item { return cached.presentation }
         let built = HeroPresentation(
             item: item,
             artworkStyle: .landscape,
@@ -2194,7 +2194,7 @@ final class HeroPresentationCache {
         // per episode passed. The hero only ever shows one item at a time, so a
         // small window is plenty.
         if entries.count > 8 { entries.removeAll(keepingCapacity: true) }
-        entries[key] = built
+        entries[item.id] = (item, built)
         return built
     }
 }

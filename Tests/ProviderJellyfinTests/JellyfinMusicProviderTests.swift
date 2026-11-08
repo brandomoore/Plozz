@@ -206,6 +206,37 @@ final class JellyfinMusicProviderTests: XCTestCase {
         }
     }
 
+    func testFLACMusicPreservesNativeQualityForJellyfinAndEmby() async throws {
+        for kind in [ProviderKind.jellyfin, .emby] {
+            for (sampleRate, bitDepth) in [(44_100, 16), (96_000, 24)] {
+                let stub = StubHTTPClient()
+                stub.stub(pathSuffix: "/Users/u1/Items/flac", json: """
+                {"Id":"flac","Type":"Audio","MediaSources":[{"Id":"source","Container":"flac",
+                 "MediaStreams":[{"Index":0,"Type":"Audio","Codec":"flac","BitRate":1200000,
+                   "SampleRate":\(sampleRate),"BitDepth":\(bitDepth),"Channels":2}]}]}
+                """)
+                let provider = JellyfinProvider(session: makeSession(provider: kind), http: stub)
+                let request = try await provider.audioPlaybackInfo(for: "flac", queueContext: nil)
+                guard case .authenticatedHTTP(let locator) = request.playbackSource else {
+                    return XCTFail("Expected an authenticated FLAC source")
+                }
+                XCTAssertEqual(locator.resource.path, "Audio/flac/universal")
+                XCTAssertEqual(locator.formatHint.container, "flac")
+                XCTAssertEqual(locator.deliveryMode, .directFile)
+                XCTAssertEqual(locator.purpose, .audioStream)
+                XCTAssertFalse(request.isTranscoding)
+                XCTAssertEqual(request.quality?.isDirectPlay, true)
+                XCTAssertEqual(request.quality?.codec, "flac")
+                XCTAssertEqual(request.quality?.sampleRate, sampleRate)
+                XCTAssertEqual(request.quality?.bitDepth, bitDepth)
+                XCTAssertEqual(request.quality?.channels, 2)
+                XCTAssertFalse(locator.resource.queryItems.contains {
+                    $0.name.localizedCaseInsensitiveContains("token")
+                })
+            }
+        }
+    }
+
     func testGenreBrowseMapsFields() async throws {
         let stub = StubHTTPClient()
         stub.stub(pathSuffix: "/MusicGenres", json: """

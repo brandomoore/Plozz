@@ -153,6 +153,7 @@ struct PlayerControls: View {
 
     enum FocusSlot: Hashable {
         case button(Category)
+        case disc
         /// Invisible strip above the Info tab. Focusing it IS the "leave the card"
         /// gesture — see `infoExitGuide`.
         case infoExit
@@ -612,7 +613,12 @@ struct PlayerControls: View {
             // to the surface here also takes the whole controls layer out of the
             // focus order, so the engine can't complete its own move onto the Info
             // tab — Info stays a deliberate Down-from-the-scrubber gesture.
-            guard openPanel == nil, case .button(let category) = focus, category != .info else { return }
+            guard openPanel == nil else { return }
+            if focus == .disc {
+                onExitToSurface()
+                return
+            }
+            guard case .button(let category) = focus, category != .info else { return }
             onExitToSurface()
         case .left, .right:
             break
@@ -893,6 +899,11 @@ struct PlayerControls: View {
     /// screen then), so hiding it never reflows the scrub bar.
     private var trackControlButtons: some View {
         HStack(spacing: 20) {
+            if let player, player.isDiscMenuPlayback || player.hasDiscVideos {
+                PlayerDiscControlsButton(model: player)
+                    .focused($focus, equals: .disc)
+                    .disabled(entryLocksOut(.disc))
+            }
             ForEach(model.trackControlCategories, id: \.self) { category in
                 PlayerControlButton(category.title, systemImage: category.icon, prominent: openPanel == category) {
                     toggle(category)

@@ -549,12 +549,14 @@ struct PlozziOSSeriesLoadingHero: View {
 
     var body: some View {
         let style: HeroArtworkStyle = horizontalSizeClass == .compact ? .compactPortrait : .landscape
-        // Keep the known Home artwork and show synopsis, not the episode's prose.
-        let presentation = HeroPresentation(item: item, artworkStyle: style, surface: .home)
+        let series = SeriesEpisodeEntry.seriesSeed(
+            from: item, seriesID: item.seriesID ?? item.id, sourceAccountID: item.sourceAccountID
+        )
+        let presentation = HeroPresentation(item: series, artworkStyle: style, surface: .detail)
         let settings = appModel.settings.detailPage.settings
         ScrollView {
             PlozziOSHeroStage(
-                item: item, presentation: presentation, style: style,
+                item: series, presentation: presentation, style: style,
                 surfaceRole: .detail, isActive: false,
                 textSize: settings.textSize,
                 trailerController: trailerController,
@@ -1932,6 +1934,8 @@ struct PlozziOSHomeHeroForeground: View {
                 )
             }
             .buttonStyle(PlozziOSHeroActionButtonStyle(kind: .primary))
+            .accessibilityIdentifier("home-hero-play")
+            .resumePromptAnchor(id: item.id)
         }
 
         heroRequestButton
@@ -2005,6 +2009,7 @@ struct PlozziOSDetailHeroForeground: View {
     @State private var isVersionPickerPresented = false
     @State var sourceMenu = PlaybackSourceMenuState()
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.discPlaybackDefault) private var discPlaybackDefault
     @Environment(PlozziOSAppModel.self) private var appModel
 
     let item: MediaItem
@@ -2049,11 +2054,9 @@ struct PlozziOSDetailHeroForeground: View {
     private var actions: [ActionEntry] {
         var seen = Set<MediaItemAction>()
         var entries: [ActionEntry] = []
-        // A series page rests its hero on the episode Play would run, and an
-        // episode is not watchlistable — so the button did not act on the wrong
-        // thing, it vanished. `watchlistSubject` promotes it to its show, the
-        // same way the tvOS heroes already do.
-        for target in [item, watchlistSubject, rootItem] {
+        // Watched-state actions follow Play; Watchlist remains about the show.
+        let actionItem = rootItem.kind == .series ? playableItem ?? item : item
+        for target in [actionItem, watchlistSubject, rootItem] {
             for action in actionHandler.actions(for: target, context: .none)
                 where offersAction(action) && seen.insert(action).inserted {
                 let subject = action == .browseFiles && rootItem.fileBrowserContainerID != nil
@@ -2420,14 +2423,15 @@ struct PlozziOSDetailHeroForeground: View {
             ))
             .disabled(isRetryingPlaybackInventory)
         } else if playableItem != nil || showsPlayPlaceholder {
+            let opensMenu = playableItem?.effectiveDiscPlayback(default: discPlaybackDefault) == .openMenu
             Button {
                 if let playableItem { onPlay(playableItem, false) }
             } label: {
                 PlayResumeButtonLabel(
-                    title: playableItem?.playActionTitle ?? "Play",
-                    progress: playableItem?.resumeProgressFraction,
-                    remainingText: playableItem?.resumeRemainingText,
-                    seasonEpisodeText: playableItem.flatMap { $0.opensExternalSource ? nil : seasonEpisodeText(for: $0) },
+                    title: opensMenu ? "Open disc menu" : playableItem?.playActionTitle ?? "Play",
+                    progress: opensMenu ? nil : playableItem?.resumeProgressFraction,
+                    remainingText: opensMenu ? nil : playableItem?.resumeRemainingText,
+                    seasonEpisodeText: opensMenu ? nil : playableItem.flatMap { $0.opensExternalSource ? nil : seasonEpisodeText(for: $0) },
                     onLight: colorScheme == .dark,
                     spacing: 10,
                     capsuleWidth: 60,
@@ -2435,14 +2439,23 @@ struct PlozziOSDetailHeroForeground: View {
                     isPlaceholder: playableItem == nil,
                     separatesEpisodeText: playableItem?.startsWatching ?? false,
                     wrapsText: wrapsText,
-                    systemImage: playableItem?.opensExternalSource == true ? "arrow.up.forward.app" : "play.fill"
+                    systemImage: opensMenu ? "opticaldisc" : playableItem?.opensExternalSource == true ? "arrow.up.forward.app" : "play.fill"
                 )
+            }
+            .accessibilityIdentifier("detail-hero-play")
+            .contextMenu {
+                if let playableItem {
+                    DiscPlaybackAlternativeAction(item: playableItem) { onPlay($0, false) }
+                    ExternalPlaybackActions(item: playableItem) { onPlay(playableItem.requestingExternalPlayer($0), false) }
+                }
+                detailContextMenu
             }
             .buttonStyle(PlozziOSHeroActionButtonStyle(
                 kind: .primary,
                 minimumWidth: style == .compactPortrait && !wrapsText ? 180 : nil
             ))
             .disabled(playableItem == nil)
+            .resumePromptAnchor()
         }
     }
 

@@ -629,6 +629,9 @@ lane :build do |options|
       xcargs: prov_args,
       **swift_package_build_options(target)
     )
+    apps = Dir[File.join(REPO_ROOT, target[:archive_path], "Products", "Applications", "*.app")]
+    UI.user_error!("Expected one archived app for #{target[:name]}") unless apps.length == 1
+    sh("cd .. && python3 tools/validate-disc-runtime.py --app #{apps.first.shellescape}")
   end
   end
 end

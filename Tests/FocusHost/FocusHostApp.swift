@@ -9,7 +9,9 @@ import FeaturePlayback
 struct FocusHostApp: App {
     var body: some Scene {
         WindowGroup {
-            if ProcessInfo.processInfo.arguments.contains("--detail-information-fixture") {
+            if ProcessInfo.processInfo.arguments.contains("--disc-review-fixture") {
+                DiscReviewFixture()
+            } else if ProcessInfo.processInfo.arguments.contains("--detail-information-fixture") {
                 DetailInformationFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--discover-fixture") {
                 DiscoverBrowseFixture()
@@ -33,6 +35,8 @@ struct FocusHostApp: App {
                 SetupSummaryFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--player-presentation-back-fixture") {
                 PlayerPresentationBackFixture()
+            } else if ProcessInfo.processInfo.arguments.contains("--disc-menu-input-fixture") {
+                DiscMenuInputFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--deep-link-resume-fixture") {
                 DeepLinkResumeFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--server-address-fixture") {
@@ -79,6 +83,8 @@ struct FocusHostApp: App {
                 FamilyGuidanceFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--native-sidebar-handoff-fixture") {
                 NativeSidebarHandoffFixture()
+            } else if ProcessInfo.processInfo.arguments.contains("--empty-pinned-navigation-fixture") {
+                EmptyPinnedNavigationFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--navigation-handoff-fixture") {
                 NavigationDestinationHandoffFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--pinned-back-fixture") {

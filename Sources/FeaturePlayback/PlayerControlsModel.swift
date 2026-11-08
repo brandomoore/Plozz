@@ -142,6 +142,7 @@ public final class ControlBarEntryModel {
     public var infoCardOpen: Bool = false
     /// Episode browsing gets a longer idle window than the other bottom cards.
     public var episodeBrowserOpen: Bool = false
+    public var discVideosOpen: Bool = false
 
     public init() {}
 }

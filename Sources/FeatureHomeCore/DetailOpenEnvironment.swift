@@ -350,8 +350,8 @@ public struct DetailOpenEnvironment {
     }
 
     /// Build the detail view model for a series opened via an episode/season
-    /// context: the fronted page IS the series, and the tapped child seeds the
-    /// hero for instant first paint. No `initialSources` enrichment — the
+    /// context: the page and its first paint describe the series; the tapped
+    /// child remains separate playback/browser context. No `initialSources` enrichment — the
     /// cross-server resolver fills the picker once the page settles, without ever
     /// switching the already-visible page automatically.
     public func makeSeriesContextViewModel(
@@ -360,16 +360,13 @@ public struct DetailOpenEnvironment {
         sourceAccountID: String?,
         originAccountID: String?
     ) throws -> ItemDetailViewModel {
-        let series = MediaItem(
-            id: seriesID,
-            title: seed.parentTitle ?? seed.title,
-            kind: .series,
-            sourceAccountID: sourceAccountID ?? originAccountID
+        let series = SeriesEpisodeEntry.seriesSeed(
+            from: seed, seriesID: seriesID, sourceAccountID: sourceAccountID ?? originAccountID
         )
         return ItemDetailViewModel(
             provider: try resolveProvider(sourceAccountID ?? originAccountID),
             itemID: seriesID,
-            initialItem: seed,
+            initialItem: series,
             initialResumeEpisode: DetailPlaybackSelection.resumeItem(
                 for: series, in: continueWatchingSnapshot()
             ),

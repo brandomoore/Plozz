@@ -46,7 +46,7 @@ struct PersonRoute: Hashable {
 /// A navigation value for opening a *series* page focused on one of its
 /// episodes. Tapping a lone episode (e.g. from "Recently Added") routes through
 /// this instead of pushing the episode itself, so the user always lands on the
-/// rich series/season page — with the tapped episode fronted in the hero, its
+/// rich series/season page — with the tapped episode selected for Play, its
 /// season selected, the episode row pre-scrolled to it, and Play focused at the
 /// top — rather than a dead-end single-episode page.
 struct EpisodeContextRoute: Hashable {
@@ -61,8 +61,7 @@ struct EpisodeContextRoute: Hashable {
 /// A navigation value for opening a *series* page focused on a specific season.
 /// Tapping a season item (e.g. from "Recently Added") routes through this instead
 /// of pushing the season itself, so the user always lands on the rich series page —
-/// with the tapped season selected, and the "next up" episode for that season
-/// fronted in the hero.
+/// with the tapped season selected, and its "next up" episode selected for Play.
 struct SeasonContextRoute: Hashable {
     let season: MediaItem
     let originAccountID: String?

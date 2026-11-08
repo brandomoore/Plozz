@@ -1,4 +1,5 @@
 import CoreModels
+import CoreNetworking
 import Foundation
 import MetadataKit
 
@@ -67,15 +68,22 @@ public final class RelatedTitlesLoader {
     // seam with its durable UUID, but merely browsing Related must never allocate
     // or persist identity records.
     private let indexedLibrarySources: @Sendable (MediaItem) -> [MediaSourceRef]
+    private let loadIndexedItem: (@Sendable (MediaSourceRef) async -> MediaItem?)?
+    private let loadIndexedBatches: [String: @Sendable ([String]) async -> [MediaItem]]
     private let now: @Sendable () -> Date
     private let displayMode: DisplayMode
     private var loadedSeedKey: String?
+    private var activeLoadID: UUID?
+    @ObservationIgnored private nonisolated(unsafe) var preparedRecommendations:
+        (key: String, task: Task<[RelatedTitle], Never>)?
 
     public init(
         resolver: RelatedTitlesResolver,
         store: RelatedTitlesStore = .shared,
         search: @escaping @Sendable (String, Int) async -> [MediaItem],
         indexedLibrarySources: @escaping @Sendable (MediaItem) -> [MediaSourceRef] = { _ in [] },
+        loadIndexedItem: (@Sendable (MediaSourceRef) async -> MediaItem?)? = nil,
+        loadIndexedBatches: [String: @Sendable ([String]) async -> [MediaItem]] = [:],
         displayMode: DisplayMode = .libraryOnly,
         now: @escaping @Sendable () -> Date = Date.init
     ) {
@@ -83,8 +91,36 @@ public final class RelatedTitlesLoader {
         self.store = store
         self.search = search
         self.indexedLibrarySources = indexedLibrarySources
+        self.loadIndexedItem = loadIndexedItem
+        self.loadIndexedBatches = loadIndexedBatches
         self.displayMode = displayMode
         self.now = now
+    }
+
+    deinit {
+        preparedRecommendations?.task.cancel()
+    }
+
+    /// Prepares only public recommendations while the primary detail loads.
+    /// Native library requests and row publication still wait for fresh detail.
+    public func prepareRecommendations(for item: MediaItem) {
+        guard !Task.isCancelled, item.allowsTitleBasedMetadataMatching,
+              item.kind == .movie || item.kind == .series else { return }
+        let query = MetadataQuery(item).seriesScoped
+        let key = query.enrichmentCacheKey
+        guard preparedRecommendations?.key != key else { return }
+        cancelRecommendationPreparation()
+        let resolver = self.resolver
+        let store = self.store
+        let now = self.now
+        preparedRecommendations = (key, Task {
+            await Self.resolveTitles(for: query, key: key, resolver: resolver, store: store, now: now)
+        })
+    }
+
+    public func cancelRecommendationPreparation() {
+        preparedRecommendations?.task.cancel()
+        preparedRecommendations = nil
     }
 
     /// Loads the row for `item`, cache-first.
@@ -92,7 +128,10 @@ public final class RelatedTitlesLoader {
     /// Safe to call on every open: a fresh record skips the provider chain
     /// entirely, and re-entering the same page is a no-op.
     public func load(for item: MediaItem, displayMode override: DisplayMode? = nil) async {
+        guard !Task.isCancelled else { return }
         guard item.allowsTitleBasedMetadataMatching else {
+            cancelRecommendationPreparation()
+            activeLoadID = nil
             loadedSeedKey = nil
             entries = []
             isLoading = false
@@ -103,7 +142,12 @@ public final class RelatedTitlesLoader {
         let query = MetadataQuery(item).seriesScoped
         let seedKey = query.enrichmentCacheKey
         let key = "\(seedKey)#\(mode == .libraryOnly ? "library" : "external")"
-        guard loadedSeedKey != key else { return }
+        guard loadedSeedKey != key else {
+            cancelRecommendationPreparation()
+            return
+        }
+        let loadID = UUID()
+        activeLoadID = loadID
         loadedSeedKey = key
         entries = []
         hasResolved = false
@@ -113,15 +157,17 @@ public final class RelatedTitlesLoader {
         // unconditional finish would then mark the NEW page resolved while it is
         // still working, collapsing its placeholder row to nothing.
         defer {
-            if loadedSeedKey == key {
+            if activeLoadID == loadID {
+                activeLoadID = nil
                 isLoading = false
-                hasResolved = true
+                hasResolved = !Task.isCancelled
+                if Task.isCancelled { loadedSeedKey = nil }
             }
         }
 
         let titles = await resolvedTitles(for: query, key: seedKey)
         guard !titles.isEmpty else { return }
-        guard loadedSeedKey == key else { return }  // page changed while resolving
+        guard !Task.isCancelled, activeLoadID == loadID else { return }
         if mode == .includeExternal {
             // Resolve against the eager identity index before publishing. Destination
             // routing used to do this only after selection, so an owned title wore an
@@ -142,7 +188,18 @@ public final class RelatedTitlesLoader {
                 }
             return
         }
-        await matchToLibrary(titles, seedKey: key, displayMode: mode)
+        await matchToLibrary(titles, loadID: loadID)
+    }
+
+    /// The owner cancels its task and invalidates publication before a page can
+    /// resume the same seed. A late response from the old attempt cannot win.
+    public func cancel() {
+        cancelRecommendationPreparation()
+        guard isLoading else { return }
+        activeLoadID = nil
+        loadedSeedKey = nil
+        isLoading = false
+        hasResolved = false
     }
 
     /// Builds a validated library item from the shared identity index. Related
@@ -180,128 +237,240 @@ public final class RelatedTitlesLoader {
         TitleDedupe.collapsed(titles, policy: .titleAndYear)
     }
 
-
-
-
     private func resolvedTitles(for query: MetadataQuery, key: String) async -> [RelatedTitle] {
+        if let prepared = preparedRecommendations, prepared.key == key {
+            preparedRecommendations = nil
+            return await withTaskCancellationHandler {
+                await prepared.task.value
+            } onCancel: {
+                prepared.task.cancel()
+            }
+        }
+        cancelRecommendationPreparation()
+        return await Self.resolveTitles(for: query, key: key, resolver: resolver, store: store, now: now)
+    }
+
+    private nonisolated static func resolveTitles(
+        for query: MetadataQuery, key: String, resolver: RelatedTitlesResolver,
+        store: RelatedTitlesStore, now: @Sendable () -> Date
+    ) async -> [RelatedTitle] {
+        guard !Task.isCancelled else { return [] }
         if let cached = await store.record(for: key), !cached.isRefreshDue(now: now()) {
             return cached.titles
         }
+        guard !Task.isCancelled else { return [] }
         let resolved = await resolver.relatedTitles(for: query)
+        guard !Task.isCancelled else { return [] }
         // An empty answer is cached too, so a title no provider covers doesn't
         // re-run the whole chain on every open.
         await store.store(RelatedTitlesRecord(seedKey: key, titles: resolved, refreshedAt: now()))
         return resolved
     }
 
-    /// Searches for each title and keeps only the id-verified matches.
-    ///
-    /// Searches run concurrently but are **bounded**: a page opening shouldn't fire
-    /// a dozen simultaneous queries at a server that is also streaming video.
+    /// Fetch known native copies directly; search only when the index cannot
+    /// supply a verified copy. Both paths share the same bounded work budget.
     private func matchToLibrary(
         _ titles: [RelatedTitle],
-        seedKey: String,
-        displayMode: DisplayMode
+        loadID: UUID
     ) async {
         let search = self.search
+        let loadIndexedItem = self.loadIndexedItem
+        let loadIndexedBatches = self.loadIndexedBatches
+        let capabilities = MediaCapabilities.detected()
         let ordered = Array(titles.prefix(Self.maximumLookups))
+        let sources = ordered.map { related -> MediaSourceRef? in
+            guard loadIndexedItem != nil || !loadIndexedBatches.isEmpty,
+                  let item = indexedLibraryItem(for: related, capabilities: capabilities) else { return nil }
+            return item.sources.first { $0.accountID == item.sourceAccountID && $0.itemID == item.id }
+        }
         var matched: [Int: MediaItem] = [:]
-        var seenItemIDs = Set<String>()
         let clock = ContinuousClock()
         var lastPublish = clock.now
-        var completed = 0
 
-        await withTaskGroup(of: (Int, MediaItem?).self) { group in
-            var next = 0
-            func addTask(_ index: Int) {
+        func resolvedEntries() -> (entries: [RelatedEntry], lastIndex: Int?) {
+            var seen = Set<String>()
+            var result: [RelatedEntry] = []
+            var lastIndex: Int?
+            for (index, related) in ordered.enumerated() {
+                guard let item = matched[index] else { continue }
+                let overlap = MediaItemIdentity.overlapKeys(for: item)
+                let keys: Set<String> = overlap.isEmpty
+                    ? ["\(item.sourceAccountID ?? "_"):\(item.id)"] : overlap
+                guard seen.isDisjoint(with: keys) else { continue }
+                seen.formUnion(keys)
+                result.append(RelatedEntry(related: related, libraryItem: item))
+                lastIndex = index
+                if result.count == Self.maximumEntries { break }
+            }
+            return (result, lastIndex)
+        }
+
+        await withTaskGroup(of: LibraryLookupResult.self) { group in
+            var remaining = Array(ordered.indices)
+            var retries: [Int] = []
+            var pending = Set<Int>()
+            var indexedPending = Set<Int>()
+            var activeTasks = 0
+
+            @MainActor func addSingle(_ index: Int) {
                 let related = ordered[index]
+                let source = sources[index]
                 group.addTask {
-                    for query in RelatedTitleMatcher.searchQueries(for: related) {
-                        let hits = await search(query, Self.searchLimit)
-                        if let hit = RelatedTitleMatcher.match(related, in: hits) {
-                            return (index, hit)
+                    var result = LibraryLookupResult(indices: [index])
+                    guard !Task.isCancelled else { return result }
+                    if let source, let loadIndexedItem {
+                        let native = await loadIndexedItem(source)
+                        guard !Task.isCancelled else { return result }
+                        if let native = Self.validatedNativeItem(native, for: related, source: source) {
+                            result.items[index] = native
+                            return result
                         }
                     }
-                    return (index, nil)
+                    for query in RelatedTitleMatcher.searchQueries(for: related) {
+                        guard !Task.isCancelled else { return result }
+                        let hits = await search(query, Self.searchLimit)
+                        guard !Task.isCancelled else { return result }
+                        if let hit = RelatedTitleMatcher.match(related, in: hits) {
+                            result.items[index] = hit
+                            return result
+                        }
+                    }
+                    return result
+                }
+                activeTasks += 1
+                pending.insert(index)
+                if source != nil { indexedPending.insert(index) }
+            }
+
+            @MainActor func schedule(_ resolved: (entries: [RelatedEntry], lastIndex: Int?)) {
+                while activeTasks < Self.concurrentLookups {
+                    if !retries.isEmpty {
+                        addSingle(retries.removeFirst())
+                        continue
+                    }
+                    guard let next = remaining.first else { break }
+                    let capacity = Self.maximumEntries - resolved.entries.count - indexedPending.count
+                    let earlier = resolved.lastIndex.map { next < $0 } ?? false
+                    guard capacity > 0 || earlier else { break }
+                    if let source = sources[next], let fetch = loadIndexedBatches[source.accountID] {
+                        // Only the next potential row participates. Do not fetch
+                        // distant recommendations merely because they share a server.
+                        let indices = remaining.prefix(max(1, capacity)).filter {
+                            sources[$0]?.accountID == source.accountID
+                        }
+                        let selected = Set(indices)
+                        remaining.removeAll { selected.contains($0) }
+                        pending.formUnion(selected)
+                        indexedPending.formUnion(selected)
+                        activeTasks += 1
+                        group.addTask {
+                            var result = LibraryLookupResult(indices: indices)
+                            guard !Task.isCancelled else { return result }
+                            let ids = Array(Set(indices.compactMap { sources[$0]?.itemID })).sorted()
+                            let items = await fetch(ids)
+                            guard !Task.isCancelled else { return result }
+                            for index in indices {
+                                guard let source = sources[index] else { continue }
+                                let item = items.first { $0.id == source.itemID }
+                                if let native = Self.validatedNativeItem(item, for: ordered[index], source: source) {
+                                    result.items[index] = native
+                                } else {
+                                    result.retries.append(index)
+                                }
+                            }
+                            return result
+                        }
+                    } else {
+                        remaining.removeFirst()
+                        addSingle(next)
+                    }
                 }
             }
-            while next < min(Self.concurrentLookups, ordered.count) {
-                addTask(next)
-                next += 1
+            schedule(([], nil))
+            func schedulePublication() {
+                group.addTask {
+                    do { try await Task.sleep(for: Self.publishInterval) }
+                    catch { return LibraryLookupResult(indices: [], isPublicationTick: true) }
+                    return LibraryLookupResult(indices: [], isPublicationTick: true)
+                }
             }
-            for await (index, hit) in group {
-                completed += 1
-                // Navigating away must stop the remaining searches, not just discard
-                // their results: each is a real query against every signed-in server,
-                // and a viewer moving through pages would otherwise leave a growing
-                // pile of them competing with the page actually on screen.
-                guard loadedSeedKey == seedKey else {
+            if activeTasks > 0 { schedulePublication() }
+            for await result in group {
+                if result.isPublicationTick {
+                    guard !Task.isCancelled, activeLoadID == loadID, activeTasks > 0 else {
+                        group.cancelAll()
+                        return
+                    }
+                    let batch = resolvedEntries().entries
+                    if entries != batch { entries = batch }
+                    lastPublish = clock.now
+                    schedulePublication()
+                    continue
+                }
+                activeTasks -= 1
+                pending.subtract(result.indices)
+                indexedPending.subtract(result.indices)
+                guard !Task.isCancelled, activeLoadID == loadID else {
                     group.cancelAll()
                     return
                 }
-                if let hit { matched[index] = hit }
-                if next < ordered.count {
-                    addTask(next)
-                    next += 1
+                matched.merge(result.items, uniquingKeysWith: { _, fresh in fresh })
+                retries.append(contentsOf: result.retries)
+                retries.sort()
+                let resolved = resolvedEntries()
+                let batch = resolved.entries
+                let full = batch.count == Self.maximumEntries
+                if full, let lastIndex = resolved.lastIndex,
+                   !pending.contains(where: { $0 < lastIndex }),
+                   !retries.contains(where: { $0 < lastIndex }),
+                   !remaining.contains(where: { $0 < lastIndex }) {
+                    if entries != batch { entries = batch }
+                    group.cancelAll()
+                    return
                 }
-                // Publish as matches land rather than after the last lookup
-                // returns. Every candidate costs a search against each server with
-                // its own multi-second deadline, so waiting for all of them left the
-                // row blank long after the first result was ready — and the row is
-                // below the fold, so it fills while the viewer is still reading the
-                // synopsis. Rebuilt in candidate order each time, so entries never
-                // reshuffle as later ones arrive.
-                //
-                // But publishing on EVERY match costs a full page layout each time.
-                // Measured on the Apple TV, a freshly opened series re-laid its
-                // detail page six times in a row as this filled in — one per match —
-                // which is a large part of why opening a title looked like it was
-                // still settling seconds after the push animation ended. Matches
-                // arrive in bursts, so coalescing on a short window collapses those
-                // six passes into one or two while keeping the row's early fill.
+                // Known copies reserve slots to avoid speculative tail searches.
+                // Unknown candidates keep bounded lookahead: a slow search must
+                // not prevent faster later matches from filling the row.
+                schedule(resolved)
+                if activeTasks == 0 {
+                    if entries != batch { entries = batch }
+                    group.cancelAll()
+                    return
+                }
                 let now = clock.now
-                let isFinalMatch = completed == ordered.count
-                guard isFinalMatch || lastPublish.duration(to: now) >= Self.publishInterval else {
+                // Fast index-backed rows publish together as soon as complete.
+                // Slow fallback searches retain bounded progressive publication.
+                guard full || pending.isEmpty || lastPublish.duration(to: now) >= Self.publishInterval else {
                     continue
                 }
                 lastPublish = now
-                seenItemIDs.removeAll(keepingCapacity: true)
-                entries = ordered.enumerated()
-                    .compactMap { index, related -> RelatedEntry? in
-                        let item = matched[index]
-                        guard displayMode == .includeExternal || item != nil else {
-                            return nil
-                        }
-                        // Dedupe on identity, not on the server's row id. Two
-                        // candidates ("Blade Runner" and "Blade Runner: The Final
-                        // Cut", or the same film returned by two providers) can match
-                        // to different rows that are the same title, and listing it
-                        // twice in a twelve-slot row is a visible bug. Falls back to
-                        // the row id when nothing was matched, which is the old
-                        // behaviour for unmatched external candidates.
-                        let keys: Set<String>
-                        if let item {
-                            let overlap = MediaItemIdentity.overlapKeys(for: item)
-                            keys = overlap.isEmpty ? [item.id] : overlap
-                        } else {
-                            keys = [related.id]
-                        }
-                        guard seenItemIDs.isDisjoint(with: keys) else { return nil }
-                        seenItemIDs.formUnion(keys)
-                        return RelatedEntry(
-                            related: related,
-                            libraryItem: item
-                        )
-                    }
-                    .prefix(Self.maximumEntries)
-                    .map { $0 }
+                if entries != batch { entries = batch }
             }
         }
-
     }
 
-    /// How many related titles are looked up. Each costs a search per account, so
-    /// this is the row's whole cost.
+    private struct LibraryLookupResult: Sendable {
+        let indices: [Int]
+        var isPublicationTick = false
+        var items: [Int: MediaItem] = [:]
+        var retries: [Int] = []
+    }
+
+    private nonisolated static func validatedNativeItem(
+        _ item: MediaItem?, for related: RelatedTitle, source: MediaSourceRef
+    ) -> MediaItem? {
+        guard let item else { return nil }
+        let expected = RelatedEntry(related: related, libraryItem: nil).item
+        guard item.id == source.itemID, item.sourceAccountID == source.accountID,
+              item.locallyValidatedPlayableSource,
+              HeroDiscoveryIdentityVerification.matches(expected, item) else {
+            PlozzLog.app.error("Related: stale or unverified indexed copy; falling back to library search.")
+            return nil
+        }
+        return item
+    }
+
+    /// Maximum candidate budget, including indexed lookups and search fallbacks.
     ///
     /// Comfortably more than the row shows, because a candidate is only kept when
     /// its ids can be verified against the library — and which candidates those are
@@ -309,16 +478,13 @@ public final class RelatedTitlesLoader {
     /// verifies TMDb ids and not AniList ones, so a budget sized to the visible row
     /// would be spent entirely on candidates that can never match.
     static let maximumLookups = 24
-    /// How long to gather freshly matched related titles before republishing the
-    /// row. Long enough to collapse a burst of matches into one layout pass,
-    /// short enough that the row still fills visibly while the viewer reads the
-    /// synopsis. See the publish site for the measurements.
+    /// Coalesces incomplete fallback matches; a full or finished row publishes
+    /// immediately rather than waiting for this interval.
     private static let publishInterval: Duration = .milliseconds(400)
 
     /// The most entries the row will show, once matching has filtered the rest.
     static let maximumEntries = 12
-    /// Concurrent searches. Enough to fill the row promptly without burying a
-    /// server that may also be streaming.
+    /// Concurrent batch/individual lookups and searches, bounded for busy servers.
     static let concurrentLookups = 6
     /// Hits per search: a handful is plenty to find an exact id match, and a large
     /// page costs the server real work.

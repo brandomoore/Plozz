@@ -39,7 +39,7 @@ enum ShareLocalMetadataAssociationPolicy {
         for member in members where member.isMovie {
             guard let representative = member.genericRepresentativeRelPath,
                   memberPaths.contains(representative) else { continue }
-            let parentDir = (member.relPath as NSString).deletingLastPathComponent
+            let parentDir = ShareBluRayFolder.metadataDirectory(member.relPath)
             lookups.append(.genericMovie(parentDir: parentDir))
         }
         lookups.append(contentsOf: seriesRoots.map(ShareLocalSidecarLookup.series))

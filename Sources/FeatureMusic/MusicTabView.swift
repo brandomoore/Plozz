@@ -173,7 +173,7 @@ func streamURLResolver(
                 return nil
             }
             url = resolved
-        case .networkFile, .dlnaResource:
+        case .networkFile, .networkDisc, .dlnaResource:
             return nil
         }
         return AudioPlaybackController.ResolvedStream(url: url, quality: info.quality)

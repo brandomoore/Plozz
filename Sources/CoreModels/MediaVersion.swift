@@ -79,6 +79,7 @@ public struct MediaVersion: Codable, Hashable, Identifiable, Sendable {
     /// Original container, e.g. `mkv`, `mp4`.
     public var container: String?
     public var externalLink: ExternalMediaLink?
+    public var discMenuAvailability: DiscMenuAvailability?
 
     public var isExternalSource: Bool {
         container?.lowercased() == "strmlnk"

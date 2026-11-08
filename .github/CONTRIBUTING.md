@@ -109,9 +109,16 @@ calling `xcodegen` directly — it also stamps the version and build number:
 
 ```bash
 tools/generate-project.sh
+tools/with-apple-build-lease.sh plozz/disc-runtime -- python3 tools/build-disc-runtime.py --sdk appletvsimulator
 open Plozz.xcodeproj
 # Select the "Plozz" scheme (or "PlozziOS") and a simulator, then Run.
 ```
+
+The bundled disc interpreter must match the destination SDK. Use `appletvos`
+for a TV device build, `iphoneos` for mobile devices, or `iphonesimulator` for a
+mobile simulator. Rebuild when the embed phase reports an outdated receipt.
+See [disc navigation](../docs/playback-engines.md#original-disc-navigation)
+for runtime limits and distribution caveats.
 
 ### Build and deploy to a device
 

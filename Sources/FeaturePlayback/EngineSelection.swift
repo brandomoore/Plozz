@@ -8,7 +8,7 @@ enum EngineSelection {
         request: PlaybackRequest,
         plozzigenAvailable: Bool
     ) -> PlaybackEngineKind {
-        if case .some(.networkFile) = request.playbackSource {
+        if request.playbackSource?.requiresNetworkFileResolver == true {
             // Never hand a credential-scoped transport to a native URL loader.
             return .plozzigen
         }

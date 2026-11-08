@@ -12,6 +12,48 @@ import XCTest
 
 @MainActor
 final class HomeHeroVisibilityPresentationTests: XCTestCase {
+    func testSeriesDetailsKeepSeriesMetadataAcrossEntryRoutesAndSizeClasses() async throws {
+        let app = PlozziOSAppModel()
+        let original = app.profiles.activeProfileID
+        let profile = app.profiles.add(name: "Series header fixture", isAwaitingSetup: false)
+        app.selectProfile(profile.id)
+        app.settings.heroBackground.settings.detailMode = .off
+        app.settings.spoilers.settings = .default
+        defer {
+            app.selectProfile(original)
+            app.profiles.remove(profile.id)
+        }
+        let provider = SeriesHeaderMobileProvider()
+        for sizeClass in [UserInterfaceSizeClass.compact, .regular] {
+            for item in [provider.show, provider.season, provider.episode] {
+                let content = NavigationStack {
+                    PlozziOSItemDetailView(appModel: app, provider: provider, item: item)
+                }
+                .environment(app)
+                .environment(HeroTrailerController())
+                .environment(PlozziOSSidebarGeometryModel())
+                try await withWindow(content, sizeClass: sizeClass) { window in
+                    let deadline = ContinuousClock.now.advanced(by: .seconds(12))
+                    var text = ""
+                    repeat {
+                        try await self.settle(window)
+                        let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+                            window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+                        }
+                        let request = VNRecognizeTextRequest()
+                        request.recognitionLanguages = ["en-US"]
+                        try VNImageRequestHandler(cgImage: XCTUnwrap(image.cgImage)).perform([request])
+                        text = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ")
+                        if text.contains("quiet village") && text.contains("8.7") { break }
+                    } while ContinuousClock.now < deadline
+                    XCTAssertTrue(text.contains("quiet village"), "\(sizeClass), \(item.kind): \(text)")
+                    XCTAssertTrue(text.contains("8.7"), "\(sizeClass), \(item.kind): \(text)")
+                    XCTAssertFalse(text.contains("2.3"), "Episode ratings must not replace the series ratings: \(text)")
+                }
+            }
+        }
+    }
+
     func testHomeLogoWidthExpandsTheReadingColumnWithinTheViewport() async throws {
         let app = PlozziOSAppModel()
         let original = app.profiles.activeProfileID
@@ -21,6 +63,7 @@ final class HomeHeroVisibilityPresentationTests: XCTestCase {
             app.selectProfile(original)
             app.profiles.remove(profile.id)
         }
+
         let item = MediaItem(
             id: "width-fixture", title: "Across the stars", kind: .movie,
             overview: String(repeating: "An expedition beyond the stars. ", count: 20),
@@ -56,6 +99,43 @@ final class HomeHeroVisibilityPresentationTests: XCTestCase {
                 }
             }
         }
+    }
+
+    func testDetailActionsPreservePlaybackAndStandaloneSubjects() async throws {
+        let app = PlozziOSAppModel()
+        let provider = SeriesHeaderMobileProvider()
+        var playable = provider.episode
+        playable.id = "alternate-playback-copy"
+        let movie = MediaItem(id: "movie", title: "Movie", kind: .movie)
+        for sizeClass in [UserInterfaceSizeClass.compact, .regular] {
+            for item in [provider.show, provider.episode, movie] {
+                let actions = RecordingSeriesActions()
+                let content = PlozziOSDetailHeroSection(
+                    item: item, backdropItem: item, playableItem: playable,
+                    sources: [], selectedSourceAccountID: nil, versions: [], selectedVersionID: nil,
+                    onSelectSource: { _ in }, onSelectVersion: { _ in },
+                    actionHandler: actions, onPlay: { _, _ in }
+                )
+                .environment(app)
+                .environment(HeroTrailerController())
+                .environment(PlozziOSSidebarGeometryModel())
+                try await withWindow(content, sizeClass: sizeClass) { window in
+                    try await self.settle(window)
+                    XCTAssertEqual(actions.requestedSubjects.first?.id, item.kind == .series ? playable.id : item.id)
+                    XCTAssertTrue(actions.requestedSubjects.contains(where: { $0.id == item.id }))
+                }
+            }
+        }
+    }
+
+    private final class RecordingSeriesActions: MediaItemActionHandling {
+        var requestedSubjects: [MediaItem] = []
+        func actions(for item: MediaItem, context: MediaItemActionContext) -> [MediaItemAction] {
+            requestedSubjects.append(item)
+            return item.kind == .episode ? [.markWatched] : [.addToWatchlist]
+        }
+
+        func perform(_ action: MediaItemAction, on item: MediaItem, context: MediaItemActionContext) {}
     }
 
     func testHomeAndDetailTextSizingChangesMetadataAndDescriptionButNotActionText() async throws {
@@ -579,6 +659,57 @@ private struct HomeWidthFixture: View {
         .background(FrameProbe(identifier: "reading-column"))
         .plozziOSHeroForegroundPlacement(style: style, logoSize: app.settings.hero.settings.logoSize)
     }
+}
+
+private struct SeriesHeaderMobileProvider: MediaProvider {
+    var kind: ProviderKind { .jellyfin }
+    var session: UserSession {
+        UserSession(
+            server: .init(id: "header-fixture", name: "Fixture", baseURL: URL(string: "https://fixture.invalid")!,
+                          provider: kind),
+            userID: "fixture", userName: "Fixture", deviceID: "fixture", accessToken: ""
+        )
+    }
+    var show: MediaItem {
+        MediaItem(
+            id: "show", title: "Village stories", kind: .series,
+            overview: "A quiet village beside the ocean.",
+            ratings: [.init(source: .imdb, value: 8.7, scale: .outOfTen)],
+            allowsTitleBasedMetadataMatching: false, sourceAccountID: "header-fixture"
+        )
+    }
+    var season: MediaItem {
+        MediaItem(
+            id: "season", title: "Season two", kind: .season, parentTitle: show.title,
+            seasonNumber: 2, seriesID: show.id, allowsTitleBasedMetadataMatching: false,
+            sourceAccountID: "header-fixture"
+        )
+    }
+    var episode: MediaItem {
+        MediaItem(
+            id: "episode", title: "Secret doorway", kind: .episode, overview: "A secret doorway opens.",
+            parentTitle: show.title, seasonNumber: 2, episodeNumber: 4, seriesID: show.id, seasonID: season.id,
+            runtime: 1800, resumePosition: 120, ratings: [.init(source: .imdb, value: 2.3, scale: .outOfTen)],
+            allowsTitleBasedMetadataMatching: false, sourceAccountID: "header-fixture"
+        )
+    }
+    func item(id: String) async throws -> MediaItem {
+        guard let item = [show, season, episode].first(where: { $0.id == id }) else { throw AppError.notFound }
+        return item
+    }
+    func children(of itemID: String) async throws -> [MediaItem] {
+        itemID == show.id ? [season] : itemID == season.id ? [episode] : []
+    }
+    func libraries() async throws -> [MediaLibrary] { [] }
+    func continueWatching(limit: Int) async throws -> [MediaItem] { [episode] }
+    func latest(limit: Int) async throws -> [MediaItem] { [] }
+    func items(in containerID: String, kind: MediaItemKind, page: PageRequest) async throws -> MediaPage {
+        MediaPage(items: [], startIndex: 0, totalCount: 0)
+    }
+    func search(query: String, limit: Int) async throws -> [MediaItem] { [] }
+    func playbackInfo(for itemID: String) async throws -> PlaybackRequest { throw AppError.notFound }
+    func reportPlayback(_ progress: PlaybackProgress, event: PlaybackEvent) async throws {}
+    func imageURL(itemID: String, kind: ImageKind, maxWidth: Int?) -> URL? { nil }
 }
 
 private struct EmptyHeroHomeProvider: MediaProvider {

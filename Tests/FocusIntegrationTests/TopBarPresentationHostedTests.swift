@@ -86,12 +86,20 @@ final class TopBarPresentationHostedTests: XCTestCase {
         let deadline = ContinuousClock.now + .seconds(5)
         repeat {
             window.layoutIfNeeded()
-            window.setNeedsFocusUpdate()
-            window.updateFocusIfNeeded()
             if model.buttons[.home]?.isFocused == true { break }
             try await Task.sleep(for: .milliseconds(20))
         } while ContinuousClock.now < deadline
         XCTAssertTrue(model.buttons[.home]?.isFocused == true)
+        let selectedNavigationItem = try XCTUnwrap(navigationMarkers(in: window).compactMap {
+            NavigationRowFocusRequester.target(for: $0, in: window)
+        }.first)
+        XCTAssertTrue(owner.requestFocus(to: selectedNavigationItem, using: system))
+        let navigationDeadline = ContinuousClock.now + .seconds(5)
+        while navigationMarkers(in: window).compactMap({
+            NavigationRowFocusRequester.target(for: $0, in: window)
+        }).count != model.destinations.count, ContinuousClock.now < navigationDeadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
         func focus(_ index: Int) throws {
             let items = navigationMarkers(in: window).compactMap {
                 NavigationRowFocusRequester.target(for: $0, in: window)

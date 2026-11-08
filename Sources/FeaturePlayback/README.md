@@ -4,6 +4,33 @@ Aether-primary playback coordination, engine-agnostic playback surface, resume
 reporting back to the server, caption style rules, trickplay scrubbing,
 and the diagnostics overlay.
 
+Original HDMV disc navigation shares the existing player through
+`VideoEngine.discMenu`; this module does not import the native runtime.
+Java (BD-J) menus are excluded from distribution builds and retained only as an
+explicit local Debug experiment. Unsupported menus retain direct title playback.
+The profile default and transient entry intent keep direct playback separate
+from menu navigation. Menu failures require an explicit retry or direct-play
+choice, and menu clocks never reach ordinary watch reporting.
+Stopping an unidentified menu/playlist also bypasses shell watch-state mutations;
+the captured account/profile session is released separately without publishing
+progress. Confirmed disc-authored subtitle choices are reapplied after a load
+clears the live overlay, without changing profile or series defaults.
+Disc actions on mobile use a native menu anchored to the disc control; only
+playlist selection opens a shared sheet. TV dialogs use native bordered rows
+without individual glass highlights and remain in the player hierarchy so
+presenting one does not tear down playback. TV action-to-picker transitions
+wait for dismissal.
+Startup loading follows first-play setup, not an implicit top-menu request:
+authored movie playback returns to normal controls after its first presented frame.
+Nonfatal disc notices use the shared transient status toast across menu and movie
+surfaces. Audio warnings require ready playback and a known missing transport PID;
+pending track discovery or a representation switch is not an unavailable track.
+Disc presentation retains localized resources until rendering. Native failures
+keep their diagnostic detail in logs while presenting localized actionable copy
+or the shared menu-unavailable message.
+See [disc navigation](../../docs/playback-engines.md#original-disc-navigation)
+for the initial compatibility and track-selection limits.
+
 ## Responsibility
 
 Automatic on-demand subtitle selection applies the profile's **SDH subtitles**

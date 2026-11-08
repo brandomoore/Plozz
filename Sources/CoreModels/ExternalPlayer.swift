@@ -43,6 +43,22 @@ public struct ExternalPlayerSettings: Codable, Equatable, Sendable {
     }
 }
 
+public extension MediaItem {
+    func requestingExternalPlayer(_ player: ExternalPlayer) -> MediaItem {
+        var selection = self
+        selection.externalPlayerOverride = player
+        selection.discPlaybackOverride = .playVideo
+        selection.explicitSourceSelection = true
+        return selection
+    }
+
+    func effectiveExternalPlayer(default settings: ExternalPlayerSettings) -> ExternalPlayerSettings {
+        var selection = settings
+        if let externalPlayerOverride { selection.player = externalPlayerOverride }
+        return selection
+    }
+}
+
 public enum ExternalPlayerError: Error, Equatable, Sendable {
     case unavailable, unsupportedSource, invalidTemplate, invalidCallback, expiredCallback, persistence, preparationFailed
     case playbackFailed, progressSyncFailed, settingsPersistence

@@ -6,6 +6,43 @@ import XCTest
 
 @MainActor
 final class ExternalPlaybackRuntimeTests: XCTestCase {
+    func testOnePlayOverrideDoesNotChangeTheDefault() async throws {
+        let fixture = ExternalPlaybackFixture()
+        defer { fixture.cleanup() }
+        fixture.selection.player = .builtIn
+        fixture.item = fixture.item.requestingExternalPlayer(.infuse)
+        let opened = try await fixture.launch()
+        XCTAssertTrue(opened)
+        XCTAssertEqual(fixture.selection.player, .builtIn)
+        XCTAssertEqual(fixture.selectedVersion, "version-one")
+        fixture.item = fixture.item.requestingExternalPlayer(.builtIn)
+        fixture.selection.player = .infuse
+        let internalPlayback = try await fixture.launch()
+        XCTAssertFalse(internalPlayback)
+        XCTAssertEqual(fixture.selection.player, .infuse)
+        XCTAssertEqual(fixture.opened.count, 1)
+    }
+
+    func testChooserUsesInstalledPlayersAndAuthorizedSupportedSources() {
+        let fixture = ExternalPlaybackFixture()
+        defer { fixture.cleanup() }
+        func choices() -> [ExternalPlayer] {
+            fixture.runtime.availablePlayers(
+                for: fixture.item, context: fixture.context, selection: fixture.selection
+            )
+        }
+        XCTAssertFalse(choices().contains(.infuse), "The saved default is not an alternative")
+        XCTAssertTrue(choices().contains(.builtIn))
+        XCTAssertTrue(choices().contains(.vlc))
+        fixture.installed = false
+        XCTAssertEqual(choices(), [.builtIn])
+        fixture.authorized = false
+        XCTAssertEqual(choices(), [])
+        fixture.authorized = true
+        fixture.kind = .mediaShare
+        XCTAssertEqual(choices(), [])
+    }
+
     func testDefaultAndNonVideoPlaybackDoNotOpenAnotherApp() async throws {
         let fixture = ExternalPlaybackFixture()
         defer { fixture.cleanup() }

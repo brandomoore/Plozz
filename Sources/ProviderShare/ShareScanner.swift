@@ -1073,10 +1073,12 @@ actor ShareScanner {
     ) async -> DirResult {
         let dir = frontier.relPath
         let entries: [RemoteFileEntry]
+        let disc: ShareBluRayFolder?
         do {
             ShareBackgroundActivity.listStarted()
             defer { ShareBackgroundActivity.listFinished() }
             entries = try await lister.list(dir)
+            disc = try await ShareBluRayFolder.discover(in: dir, entries: entries, list: lister.list)
         } catch {
             return DirResult(
                 lister: lister, dir: dir, subdirectories: [], playablePaths: [],
@@ -1097,10 +1099,29 @@ actor ShareScanner {
         var subdirs: [ScannedSubdirectory] = []
         var playablePaths: [String] = []
         var assets: [CatalogAsset] = []
+        if let disc {
+            playablePaths.append(disc.indexPath)
+            if var asset = asset(
+                relPath: disc.indexPath,
+                entry: disc.index,
+                libraryConfiguration: libraryConfiguration
+            ) {
+                asset.size = 0
+                asset.metadataRoot = ShareBluRayFolder.contentDirectory(disc.indexPath)
+                assets.append(asset)
+            }
+        }
         var extras: [CatalogExtraCandidate] = []
         var movieStemsLower: Set<String> = []
         var episodeStemsLower: Set<String> = []
         var stemToVideoRelPath: [String: String] = [:]
+        if let disc, assets.first?.kind == .movie {
+            let stem = ShareExtraDiscoveryPolicy.stemIdentity(
+                ShareMediaParser.videoStem((ShareBluRayFolder.classificationPath(disc.indexPath) as NSString).lastPathComponent)
+            )
+            movieStemsLower.insert(stem)
+            stemToVideoRelPath[stem] = disc.indexPath
+        }
         var nfoEntries: [(entry: RemoteFileEntry, childPath: String)] = []
         var suffixVideos: [(
             entry: RemoteFileEntry,
@@ -1167,6 +1188,7 @@ actor ShareScanner {
 
         for entry in entries where entry.kind == .directory {
             let childPath = dir.isEmpty ? entry.name : "\(dir)/\(entry.name)"
+            if disc?.excludesDirectory(childPath) == true { continue }
             if excludedDirs.contains(entry.name.lowercased()) { continue }
             if let folder = ShareExtraDiscoveryPolicy.folderKind(entry.name) {
                 guard !dir.isEmpty else { continue }
@@ -1479,7 +1501,10 @@ actor ShareScanner {
         switch classification {
         case .movie(let movie):
             let title = movie.title.isEmpty ? displayTitle(forFileName: name) : movie.title
-            let g = ShareMediaParser.movieGrouping(relPath: relPath, parsedTitle: title, parsedYear: movie.year)
+            let g = ShareMediaParser.movieGrouping(
+                relPath: ShareBluRayFolder.classificationPath(relPath),
+                parsedTitle: title, parsedYear: movie.year
+            )
             var movieKey = ShareCatalogID.movieKey(fromTitle: g.title, year: g.year)
             var movieTitleKey = ShareCatalogID.seriesKey(fromTitle: g.title)
             if let part = g.part {

@@ -101,10 +101,13 @@ struct PlozziOSPlayerView: View {
                     viewModel: viewModel,
                     showDiagnostics: appModel.settings.diagnostics.settings.isEnabled,
                     showsSharedControls: false,
+                    showsLoadingOverlay: false,
                     onDismiss: orientation.close
                 )
                 .id(playerIdentity)
-                if viewModel.phase == .ready, !viewModel.showBringUpSpinner {
+                if viewModel.phase == .ready, !viewModel.showBringUpSpinner,
+                   (!viewModel.isDiscMenuPlayback ||
+                    viewModel.videoEngine.discMenu.map({ !$0.presentsMenu }) ?? true) {
                     PlozziOSPlayerControlsOverlay(
                         viewModel: viewModel,
                         keyboardActions: keyboardActions,
@@ -118,12 +121,10 @@ struct PlozziOSPlayerView: View {
                     closeButton
                 }
             } else {
-                ProgressView()
-                    .tint(.white)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 closeButton
             }
         }
+        .overlay { loadingOverlay }
         .statusBarHidden()
         .playerTouchLevelSession(isActive: viewModel?.externalPlaybackRouteName == nil)
         .overlay(alignment: .top) {
@@ -379,6 +380,17 @@ struct PlozziOSPlayerView: View {
             && viewModel?.controls.diagnosticsEnabled != true
     }
 
+    @ViewBuilder private var loadingOverlay: some View {
+        if versionChoice.prompt == nil {
+            let item = activeItem ?? request.item
+            let behavior = item.effectiveDiscPlayback(default: appModel.settings.playback.settings.discPlayback)
+            PlayerLoadingOverlay(
+                viewModel: viewModel,
+                discMenuRequested: behavior == .openMenu
+            )
+        }
+    }
+
     private var closeButton: some View {
         VStack {
             HStack {
@@ -396,10 +408,13 @@ struct PlozziOSPlayerView: View {
     private func openExternalPlayer(
         item: MediaItem, streamingOptions: StreamingPlaybackOptions? = nil
     ) async -> Bool {
+        guard item.effectiveDiscPlayback(default: appModel.settings.playback.settings.discPlayback) != .openMenu else {
+            return false
+        }
         guard !appModel.isOfflineMode else { return false }
         let deviceSettings = ExternalPlayerSettingsModel.shared
         deviceSettings.migrateIfNeeded(from: appModel.settings.playback.settings.externalPlayer)
-        guard deviceSettings.settings.player != .builtIn else { return false }
+        guard item.effectiveExternalPlayer(default: deviceSettings.settings).player != .builtIn else { return false }
         do {
             let model = appModel
             let opened = try await ExternalPlaybackRuntime.shared.launch(
@@ -425,8 +440,10 @@ struct PlozziOSPlayerView: View {
     ) async throws -> MediaItem {
         let model = appModel
         let snapshot = model.identityIndex.identitySnapshotStore.current
+        let opened = item.effectiveDiscPlayback(default: model.settings.playback.settings.discPlayback) == .openMenu
+            ? item.requestingDiscPlayback(.openMenu) : item
         let selected = try await versionChoice.prepare(
-            item, provider: selectedProvider ?? provider, settings: model.settings.playback,
+            opened, provider: selectedProvider ?? provider, settings: model.settings.playback,
             preferences: model.versionPreferences,
             offlineResolver: model.downloads.offlineResolver,
             sourceResolver: crossServerSourceResolver(
@@ -570,6 +587,14 @@ struct PlozziOSPlayerView: View {
                         session: session,
                         position: position,
                         watchedPercent: watchedPercent
+                    )
+                }
+            },
+            onPlaybackStoppedWithoutProgress: {
+                Task {
+                    await session.reconciler.finishLiveSession(
+                        accountID: item.sourceAccountID ?? session.primaryAccountID,
+                        itemID: item.id, mutation: nil, serverScope: session.serverScope
                     )
                 }
             },

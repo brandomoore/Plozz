@@ -649,7 +649,15 @@ public enum PlaybackSource: Hashable, Sendable {
     case publicURL(SecretFreeURLSource)
     case authenticatedHTTP(AuthenticatedHTTPPlaybackLocator)
     case networkFile(NetworkFileLocator)
+    case networkDisc(NetworkDiscLocator)
     case dlnaResource(DLNAResourceLocator)
+
+    public var requiresNetworkFileResolver: Bool {
+        switch self {
+        case .networkFile, .networkDisc: true
+        default: false
+        }
+    }
 
     public var isManifestStream: Bool {
         switch self {
@@ -658,7 +666,7 @@ public enum PlaybackSource: Hashable, Sendable {
             return extensionName == "m3u8" || extensionName == "mpd"
         case .authenticatedHTTP(let locator):
             return locator.deliveryMode.isManifest
-        case .networkFile:
+        case .networkFile, .networkDisc:
             return false
         case .dlnaResource(let locator):
             return locator.deliveryMode.isManifest
@@ -678,6 +686,8 @@ public enum PlaybackSource: Hashable, Sendable {
             return "AuthenticatedHTTP(provider: \(locator.provider.rawValue), account: \(locator.accountID), item: \(locator.itemID))"
         case .networkFile(let locator):
             return "NetworkFile(account: \(locator.accountID), source: \(locator.sourceID), format: \(locator.formatHint.container ?? "unknown"))"
+        case .networkDisc(let locator):
+            return "NetworkDisc(account: \(locator.anchor.accountID), files: \(locator.files.count))"
         case .dlnaResource(let locator):
             return "DLNA(source: \(locator.sourceID), object: \(locator.objectID), resource: \(locator.resourceID))"
         }

@@ -18,6 +18,48 @@ an empty provider feed from local curation without recording media or account ID
 Home rows, item detail, series/season experience, and the online-trailer
 fallback when the user's server has no attached trailer.
 
+## Related loading
+
+Library-only Related rows use the active profile's identity index to locate a
+native copy, then fetch that item from its owning account instead of searching
+every server by title. The fresh response must agree on item, account, kind and
+strong catalog identity; native titles, artwork and watch state remain intact.
+Missing, stale or unavailable index entries fall back to the existing verified
+search. Index membership alone is not enough to display a synthetic library card.
+
+Plex, Jellyfin and Emby fetch known copies in exact-ID batches scoped to the
+authenticated account, including when several accounts use the same provider.
+Silo, shares and other providers without the optional `LibraryItemBatchProviding`
+transport retain individual lookups. A partial, failed or invalid batch retries
+only the affected candidates individually before falling back to verified search.
+Raw item IDs never identify an account or combine different servers' responses.
+
+At most six batch/individual lookup or search jobs run concurrently, with a 24-candidate budget and
+twelve distinct displayed results. Known indexed copies reserve display slots,
+so a full indexed row does not initiate searches for unused later recommendations.
+Unknown candidates retain bounded lookahead so a slow early search cannot hold
+back a full set of later matches.
+Provider order and continuation priority remain intact. Fast rows publish as a
+batch immediately on completion; slower fallbacks retain 400-ms coalesced progress.
+A cancellable publication timer exposes ready cards even when another server is
+still pending and no further result arrives to trigger publication.
+The detail model owns cancellation, including native lookups, and resumes an
+interrupted row when returning. Cancelled recommendation responses do not enter
+the public cache. Discovery's external-inclusive mode remains network-free after
+recommendations, using the index only.
+
+Seeded movie/series pages prepare public recommendations alongside their initial
+detail fetch, without starting private library reads. Fresh detail consumes that
+work only when the complete recommendation key still matches; identity changes
+cancel it and resolve the new query. Failed/cancelled opens discard unconsumed
+preparation. Series Related loading starts after fresh detail, not after seasons.
+
+Recommendation caching does not cache private library metadata. A new detail
+loader still verifies native copies; cached public recommendations cannot promise
+zero network or immediate cold-provider responses. See the controlled
+[Related loading measurements](../../docs/performance-lab.md#related-loading-while-scrolling)
+for timing scope and scrolling limitations.
+
 ## Continue Watching watch actions
 
 In-progress movies, episodes and videos offer both **Mark as Watched** and
@@ -877,8 +919,16 @@ records on both platforms; error dialogs, playback routing and timeouts are unch
   and hashed trailer ownership so an intermittent failure can be inspected
   without restarting the affected app.
 - **Series** — `SeriesDetailView` + `SeriesResume` provide one stable
-  series backdrop with focus-driven season tabs and an episode rail; the
-  hero text updates as focus moves without distracting backdrop swaps.
+  series header, focus-driven season tabs and an episode rail. On TV and mobile,
+  the header describes and rates the show, not the selected or resume episode;
+  missing series metadata never falls back to episode prose or scores.
+  Home, library, Search, Related, Continue Watching, season/context-menu and
+  deep-link entry retain their episode/season selection without changing that
+  subject, including the first paint while parent metadata is loading.
+  Episode descriptions stay in the browser; explicit Episode Info pages retain
+  their own synopsis, ratings and spoiler rules. Play/Resume, versions and watched
+  actions still target the selected episode, while Watchlist and Trailer target
+  the series. No series-versus-episode setting is needed.
   Season lists publish independently of the server resume lookup on both
   platforms. "Go to Show" retains the episode's season and can load its rail
   while resume is pending; entries without an explicit season still wait for

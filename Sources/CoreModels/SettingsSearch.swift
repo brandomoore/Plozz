@@ -396,6 +396,8 @@ public enum SettingsSearchCatalog {
     }
 
     private static let baseEntries: [SettingsSearchEntry] = [
+        .init("disc-playback", page: .playback, title: "Disc playback",
+              keywords: "blu-ray bdmv menu play video default"),
         .init("ask-before-resuming", page: .playback, title: "Ask to resume or start over",
               keywords: "continue watching restart beginning prompt confirmation resume playback"),
         .init("resume-rewind", page: .playback, title: "Rewind on resume",
