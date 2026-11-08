@@ -674,7 +674,7 @@ private struct SongSurfaceHarness: View {
                 artist: "Electric Light Orchestra and friends", artworkURL: nil,
                 appleMusicURL: linked ? URL(string: "https://music.apple.com/") : nil
             ),
-            focus: $focus
+            focus: $focus, onSelect: {}
         )
         .frame(width: width, height: artSize + metrics.contentPadding * 2)
         .onGeometryChange(for: CGRect.self, of: { $0.frame(in: .global) }) {

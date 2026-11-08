@@ -275,6 +275,12 @@ Title fallbacks, descriptions, metadata, and badge details scale together;
 artwork sizing and action controls remain independent. On Apple TV, Detail Page
 text sizing also scales the episode titles and three-line synopses below episode
 artwork, including loading placeholders; other row/card labels remain independent.
+Episode synopses use the same font size and line spacing as hero descriptions at
+every adjustment, while episode titles stay larger and semibold.
+TV episode descriptions are visible on every labeled card by default. The
+profile-scoped **Descriptions on focus** toggle in the detail-page label settings
+restores the delayed focus-only reveal. Hidden labels and spoiler protection
+still apply; label visibility presets do not reset this independent preference.
 Home's text column can use the same wider budget as an enlarged logo, even at
 default Text size. Smaller logos retain the original reading width; changing
 Text size alone never widens it. Both TV foreground renderers share this rule,
@@ -813,7 +819,8 @@ records on both platforms; error dialogs, playback routing and timeouts are unch
   episodes, extras, and filmography resolve the same policy on iOS and tvOS.
   Explicit episode overrides, including previously persisted ones, are honored.
   On TV, the episode title moves down on focus and back up on exit in every
-  focus style, including System; the synopsis keeps its delayed reveal.
+  focus style, including System; the synopsis uses a delayed reveal only when
+  **Descriptions on focus** is enabled.
   Loading captions use the same motion without changing row geometry, and
   Reduce Motion keeps the caption stationary.
   Collection and playlist contents follow Browse across every library. Library

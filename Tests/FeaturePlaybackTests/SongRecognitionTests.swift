@@ -7,6 +7,22 @@ import CoreModels
 final class SongRecognitionTests: XCTestCase {
     private let start: TimeInterval = 1_000
 
+    func testMusicServiceSearchesPreserveTitleAndArtistWithoutInventingTrackIDs() throws {
+        let song = SongMatch(title: "A/B? & #夏", artist: "Artist + guest", artworkURL: nil,
+                             appleMusicURL: URL(string: "https://music.apple.com/album/example?i=123"))
+        let links = SongServiceLink.links(for: song)
+        XCTAssertEqual(links.map(\.service), [.appleMusic, .spotify, .youtube])
+        XCTAssertEqual(links[0].url, song.appleMusicURL)
+        XCTAssertEqual(links[1].url.host, "open.spotify.com")
+        XCTAssertEqual(links[1].url.lastPathComponent, "A/B? & #夏 Artist + guest")
+        let youtube = try XCTUnwrap(URLComponents(url: links[2].url, resolvingAgainstBaseURL: false))
+        XCTAssertEqual(youtube.host, "www.youtube.com")
+        XCTAssertEqual(youtube.queryItems, [URLQueryItem(name: "search_query", value: "A/B? & #夏 Artist + guest")])
+        XCTAssertTrue(links.allSatisfy { $0.url.scheme == "https" && $0.url.fragment == nil })
+        let withoutApple = SongMatch(title: "Song", artist: nil, artworkURL: nil, appleMusicURL: nil)
+        XCTAssertEqual(SongServiceLink.links(for: withoutApple).map(\.service), [.spotify, .youtube])
+    }
+
     func testOfflineModeDoesNotStartARecognitionSession() async {
         let previous = OfflineMode.shared.isEnabled
         OfflineMode.shared.setEnabled(true)

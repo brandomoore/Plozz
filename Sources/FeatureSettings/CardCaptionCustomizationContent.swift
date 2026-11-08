@@ -99,6 +99,7 @@ struct CardCaptionCustomizationContent: View {
         ViewCustomizationList(
             title: title, initialRowID: initialRowID,
             focusedHelp: { id in
+                guard id != "episode-descriptions-on-focus" else { return nil }
                 let view = views.first { "card-label-view-\($0.rawValue)" == id } ?? selectedPage.firstControl
                 return ViewCustomizationHelp(
                     detail: settings.cardLabelHelp(in: view),
@@ -153,6 +154,15 @@ struct CardCaptionCustomizationContent: View {
         let defaultViews = views.filter { !$0.isRowOverride }
         let controls = ForEach(defaultViews, id: \.self) { view in
             labelControl(view)
+            #if os(tvOS)
+            if view == .episodes {
+                Toggle("Descriptions on focus", isOn: $settings.episodeDescriptionsOnFocus)
+                    .settingsFormRowLayout()
+                    .disabled(!settings.showsLabels(in: .episodes))
+                    .accessibilityIdentifier("episode-descriptions-on-focus")
+                    .modifier(ViewCustomizationRowFocus(id: "episode-descriptions-on-focus"))
+            }
+            #endif
         }
         #if os(tvOS)
         Section {

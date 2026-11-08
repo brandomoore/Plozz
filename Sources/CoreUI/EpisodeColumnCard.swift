@@ -44,11 +44,20 @@ public struct EpisodeColumnCard: View, Equatable {
     @Environment(\.plozzCardFocusStyle) private var focusStyle
     @Environment(\.themePalette) private var palette
     @Environment(\.plozzCardCaptionsHidden) private var captionsHidden
+    @Environment(\.plozzCardCaptionSettings) private var captionSettings
     @Environment(\.plozzArtworkPolicy) private var artworkPolicy
     @Environment(\.detailHeaderSettings) private var detailSettings
     @Environment(\.plozzAppTextScale) private var appTextScale
 
     private let metrics = PlozzMetrics.standard
+    private var descriptionsOnFocus: Bool {
+        #if os(tvOS)
+        captionSettings.episodeDescriptionsOnFocus
+        #else
+        true
+        #endif
+    }
+    private var showsSynopsis: Bool { !descriptionsOnFocus || synopsisVisible }
     private var textScale: CGFloat {
         #if os(tvOS)
         PlozzTypography.scale(local: detailSettings?.settings.textSize.scale ?? 1, app: appTextScale)
@@ -92,7 +101,7 @@ public struct EpisodeColumnCard: View, Equatable {
         .task(id: synopsisTaskID) {
             synopsisVisible = false
             synopsisAtRest = false
-            guard isFocused, !captionsHidden else { return }
+            guard descriptionsOnFocus, isFocused, !captionsHidden else { return }
             if reduceMotion {
                 synopsisVisible = true
                 synopsisAtRest = true
@@ -129,12 +138,12 @@ public struct EpisodeColumnCard: View, Equatable {
                 lineSpacing: PlozzTypography.episodeDescription.scaled(by: textScale).lineSpacing,
                 maxWidth: Self.artworkSize.width
             )
-            .opacity(synopsisVisible ? 1 : 0)
+            .opacity(showsSynopsis ? 1 : 0)
             .animation(
                 reduceMotion ? nil : .easeOut(duration: 0.12),
-                value: synopsisVisible
+                value: showsSynopsis
             )
-            .offset(y: reduceMotion || synopsisAtRest ? 0 : -metrics.focusCaptionPush)
+            .offset(y: reduceMotion || !descriptionsOnFocus || synopsisAtRest ? 0 : -metrics.focusCaptionPush)
             .animation(
                 reduceMotion ? nil : .smooth(duration: 0.28),
                 value: synopsisAtRest
@@ -151,13 +160,17 @@ public struct EpisodeColumnCard: View, Equatable {
     }
 
     private var synopsisTaskID: SynopsisTaskID {
-        SynopsisTaskID(isFocused: isFocused, reduceMotion: reduceMotion, captionsHidden: captionsHidden)
+        SynopsisTaskID(
+            isFocused: isFocused, reduceMotion: reduceMotion,
+            captionsHidden: captionsHidden, descriptionsOnFocus: descriptionsOnFocus
+        )
     }
 
     private struct SynopsisTaskID: Hashable {
         let isFocused: Bool
         let reduceMotion: Bool
         let captionsHidden: Bool
+        let descriptionsOnFocus: Bool
     }
 
     @ViewBuilder

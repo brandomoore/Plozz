@@ -84,12 +84,18 @@ bounded language-match/accessibility flags without track titles or URLs.
   The separate neighboring card (stacked on phones) places a rounded square album cover beside the song
   details, matching the Info thumbnail's height, content insets, and shared media-edge
   treatment on wide layouts.
-  Song links use the native TV glass button with Info's panel corner radius,
-  not an opaque media-card wrapper or a second glass underlay. The label uses
-  the full card bounds so the button's text margins do not add a second inset.
-  Song titles and artists wrap rather than truncating to fixed line counts. Reduced-effects
-  and older-system fallbacks use a native card button around the shared frosted
-  panel. Mobile and non-link cards retain the shared Info panel surface.
+  TV song cards reuse Continue Watching's over-video focus treatment and
+  reduced-effects fallbacks. Info actions receive focus before the song becomes
+  eligible; Right can then continue from Restart through episode actions to the
+  song. The visible panel allows focus lift/shadow overflow, while the parked
+  panel still clips its shadow. Song titles and artists wrap rather than
+  truncating to fixed line counts. Mobile retains the shared Info panel surface.
+  Selecting a song offers its exact Apple Music link (when supplied), a Spotify
+  search, or a YouTube search. Searches use the title and artist, not inferred
+  service track IDs, and need no catalog API or account connection. TV attempts
+  an installed universal-link handler; if unavailable, it shows a locally
+  generated QR code for the selected service. App routing depends on that app's
+  supported links. The chooser retains the selected song if recognition expires.
   Space is used only while a recognized song card is visible. Without a match,
   Info keeps its full width and phone layouts have no empty row or gap. Song
   appearance, expiry and availability changes preserve the Info view's identity;

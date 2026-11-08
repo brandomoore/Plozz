@@ -597,7 +597,13 @@ final class PlayerInputViewController: UIViewController, UIGestureRecognizerDele
             downloadRemoteSubtitle: { [weak self] in self?.actions.downloadRemoteSubtitle($0) },
             playNextEpisode: { [weak self] in self?.actions.playNextEpisode() },
             playPreviousEpisode: { [weak self] in self?.actions.playPreviousEpisode() },
-            restart: { [weak self] in self?.actions.restart() }
+            restart: { [weak self] in self?.actions.restart() },
+            restoreInfoFocus: { [weak self] in
+                guard let self, self.focusContext == .controlBar else { return }
+                self.model.controlBar.entry = .info
+                self.model.controlBar.settled = false
+                self.requestControlBarFocusUpdate()
+            }
         )
         let host = UIHostingController(rootView: themePalette.makeControls(model, actions, exitToSurface))
         host.view.backgroundColor = .clear
