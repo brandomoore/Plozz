@@ -1462,7 +1462,12 @@ both the rows and featured stage. With the native Sidebar, the first Showcase ro
 also includes the hidden hero's distance in its real scroll offset, balanced by
 matching content padding so card placement does not change. Native Home chrome
 therefore disappears on the first Down, not the second row, and reappears only
-when returning to the hero. This padding is a coordinate origin, separate from
+when returning to the hero. Selecting the already-active native Home destination
+resets both the Showcase rows and the featured stage before content focus returns;
+resetting the row offset alone leaves the hero hidden. Right from the sidebar and
+returning from another destination do not issue this explicit reset. With Hero
+disabled, reselection returns to the first row instead.
+This padding is a coordinate origin, separate from
 the row destination and height stops. Changing it rebases the native scroll
 target without adding a spring or restarting the in-flight viewport-height
 path, including when Up reaches the hero before the first row settles.

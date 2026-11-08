@@ -755,9 +755,9 @@ struct MainTabView: View {
                     nativeSidebarFocus.cancel()
                     openProfileSwitcher()
                 case let .content(content):
-                    if content != activeLibraryNavigationDestination(in: destinations) {
-                        nativeSidebarFocus.begin(content)
-                    }
+                    nativeSidebarFocus.beginNativeSelection(
+                        content, current: activeLibraryNavigationDestination(in: destinations)
+                    )
                     libraryNavigationSelection.wrappedValue = content
                 }
             }
