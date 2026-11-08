@@ -278,6 +278,11 @@ Loading regions suspend the request until readiness changes; mounted content
 finishes its native render handoff before the request is retired. Inactive hosts
 cannot block the visible page's entry.
 
+Explicitly selecting Home again resets its root scroll position and enters its
+first content item in every navigation style. Opening or dismissing a sidebar
+without selecting Home does not request that reset; the custom rail preserves
+its prior content focus.
+
 Settings is a normal destination in all three navigation shells. Its root keeps
 app navigation visible and available; categories and nested pages hide it.
 In the custom pinned and top-bar shells, programmatic destination changes

@@ -99,7 +99,14 @@ struct CardCaptionCustomizationContent: View {
         ViewCustomizationList(
             title: title, initialRowID: initialRowID,
             focusedHelp: { id in
-                guard id != "episode-descriptions-on-focus" else { return nil }
+                if id == "episode-descriptions-on-focus" {
+                    return ViewCustomizationHelp(
+                        detail: settings.episodeDescriptionsOnFocus
+                            ? "Only the focused episode shows its description."
+                            : "Every episode shows its description.",
+                        illustration: .pageCaptions(preview(editing: .episodes), style: style)
+                    )
+                }
                 let view = views.first { "card-label-view-\($0.rawValue)" == id } ?? selectedPage.firstControl
                 return ViewCustomizationHelp(
                     detail: settings.cardLabelHelp(in: view),
@@ -156,11 +163,13 @@ struct CardCaptionCustomizationContent: View {
             labelControl(view)
             #if os(tvOS)
             if view == .episodes {
-                Toggle("Descriptions on focus", isOn: $settings.episodeDescriptionsOnFocus)
-                    .settingsFormRowLayout()
-                    .disabled(!settings.showsLabels(in: .episodes))
-                    .accessibilityIdentifier("episode-descriptions-on-focus")
-                    .modifier(ViewCustomizationRowFocus(id: "episode-descriptions-on-focus"))
+                ViewCustomizationRow(
+                    id: "episode-descriptions-on-focus", title: "Descriptions on focus",
+                    value: settings.episodeDescriptionsOnFocus ? "On" : "Off"
+                ) {
+                    settings.episodeDescriptionsOnFocus.toggle()
+                }
+                .disabled(!settings.showsLabels(in: .episodes))
             }
             #endif
         }
@@ -324,6 +333,7 @@ struct CardLabelScopePreview: View {
         let view: CardCaptionView
         let showsLabels: Bool
         let highlighted: Bool
+        var descriptionsOnFocus = false
 
         var isContinueWatching: Bool { view == .continueWatching }
         var title: LocalizedStringResource {
@@ -380,7 +390,8 @@ struct CardLabelScopePreview: View {
                     isContinueWatching: rowView == .continueWatching
                 ),
                 highlighted: rowView == view || (rowView.isRowOverride && view == page.firstControl
-                    && settings.override(for: rowView) == .automatic)
+                    && settings.override(for: rowView) == .automatic),
+                descriptionsOnFocus: rowView == .episodes && settings.episodeDescriptionsOnFocus
             )
         }
         return Snapshot(page: page, rows: rows, layout: layout, seriesArtwork: seriesArtwork)
@@ -436,6 +447,9 @@ private struct CardLabelPreviewRow: View {
                         startPoint: card.artwork.origin,
                         endPoint: CGPoint(x: card.artwork.maxX, y: card.artwork.maxY)
                     ))
+                    if card.isFocused {
+                        context.stroke(artwork, with: .color(palette.accent), lineWidth: 1)
+                    }
                     var icon = context.resolve(Image(systemName: "photo"))
                     icon.shading = .color(palette.tertiaryText)
                     let iconWidth = min(20, card.artwork.width * 0.32)
@@ -481,6 +495,7 @@ struct SettingsIllustrationCardGeometry {
         let artwork: CGRect
         let surface: CGRect
         let captions: [CGRect]
+        var isFocused = false
     }
 
     static let width: CGFloat = 320
@@ -503,6 +518,12 @@ struct SettingsIllustrationCardGeometry {
         if row.isContinueWatching && !landscape {
             size.height = size.width / playbackDetails.cardAspectRatio
         }
+        #if os(tvOS)
+        let isEpisode = row.view == .episodes
+        if isEpisode { size = EpisodeColumnCard.artworkSize }
+        #else
+        let isEpisode = false
+        #endif
         let scale = Self.width / viewportWidth
         let inset = style == .framed ? metrics.cardInset * scale : 0
         let spacing = Self.visibleGap(metrics: metrics, style: style) * scale
@@ -520,6 +541,7 @@ struct SettingsIllustrationCardGeometry {
         }
         let artworkHeight = artworkWidth * size.height / size.width
         let captionBlock = captionGap + captionHeight * 1.75 + captionLineGap
+            + (isEpisode ? 2 * (captionHeight * 0.75 + captionLineGap) : 0)
         let surfaceHeight = artworkHeight + inset * 2 + (row.showsLabels ? captionBlock : 0)
         let rowHeight = artworkHeight + inset * 2 + captionBlock
         let rows = preview.isGrid ? 2 : 1
@@ -530,14 +552,23 @@ struct SettingsIllustrationCardGeometry {
                 let x = CGFloat(column) * (artworkWidth + inset * 2 + spacing)
                 let y = CGFloat(line) * (rowHeight + max(8, metrics.gridSpacing * scale))
                 let artwork = CGRect(x: x + inset, y: y + inset, width: artworkWidth, height: artworkHeight)
+                let title = CGRect(
+                    x: artwork.minX, y: artwork.maxY + captionGap, width: artworkWidth * 0.78, height: captionHeight
+                )
+                let descriptionLines = isEpisode ? (row.descriptionsOnFocus && column != 0 ? 0 : 3) : 1
+                let descriptions = (0..<descriptionLines).map { index in
+                    CGRect(
+                        x: artwork.minX,
+                        y: title.maxY + captionLineGap + CGFloat(index) * (captionHeight * 0.75 + captionLineGap),
+                        width: artworkWidth * (index == descriptionLines - 1 ? 0.52 : 0.9),
+                        height: captionHeight * 0.75
+                    )
+                }
                 return Card(
                     artwork: artwork,
                     surface: CGRect(x: x, y: y, width: artworkWidth + inset * 2, height: surfaceHeight),
-                    captions: [
-                        CGRect(x: artwork.minX, y: artwork.maxY + captionGap, width: artworkWidth * 0.78, height: captionHeight),
-                        CGRect(x: artwork.minX, y: artwork.maxY + captionGap + captionHeight + captionLineGap,
-                               width: artworkWidth * 0.52, height: captionHeight * 0.75)
-                    ]
+                    captions: [title] + descriptions,
+                    isFocused: isEpisode && column == 0
                 )
             }
         }

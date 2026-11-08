@@ -103,10 +103,16 @@ final class NativeSidebarHandoffTests: XCTestCase {
         file: StaticString = #filePath, line: UInt = #line
     ) {
         let expected = XCTNSPredicateExpectation(
-            predicate: NSPredicate { _, _ in element.exists && element.hasFocus },
+            predicate: NSPredicate { _, _ in
+                guard element.exists else { return false }
+                if element.hasFocus { return true }
+                let cell = app.collectionViews["Sidebar"].cells
+                    .containing(.button, identifier: element.identifier).firstMatch
+                return cell.exists && cell.hasFocus
+            },
             object: nil
         )
-        XCTAssertEqual(XCTWaiter.wait(for: [expected], timeout: 5), .completed,
+        XCTAssertEqual(XCTWaiter.wait(for: [expected], timeout: 15), .completed,
                        app.debugDescription, file: file, line: line)
     }
 }

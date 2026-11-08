@@ -286,6 +286,7 @@ private struct TopBarNavigationContent: View {
         HeroFocusDiagnostics.emit("topbar.entry begin")
         navigationRequest = nil
         if destination == current, !destinationFocus.isWaiting {
+            if destination == .home, scroll.scrollToTop() { returnFocus.clear() }
             requestContentFocus()
         } else {
             if destination != current { selection = destination }

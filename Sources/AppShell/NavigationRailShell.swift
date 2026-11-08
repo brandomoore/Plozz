@@ -89,6 +89,7 @@ private struct NavigationRailShellContent<Content: View>: View {
     @State private var restoresPreviousFocus = false
     @State private var hasStarted = false
     @State private var isStartupEntry = true
+    @State private var homeScroll = TopNavigationScroll()
 
     var body: some View {
         let hidden = chrome.isChromeHidden
@@ -149,6 +150,7 @@ private struct NavigationRailShellContent<Content: View>: View {
                 )
                 .environment(\.plozzPinnedSidebarActive, true)
                 .environment(\.plozzPinnedSidebarInteraction, pinnedSidebarInteraction)
+                .environment(\.plozzTopNavigationScroll, contentDestination == .home ? homeScroll : nil)
                 .disabled(destinationFocus.isWaiting)
                 // Content is the scope's preferred focus ONLY while the rail does
                 // not hold focus. Opening the rail changes its focusable subtree;
@@ -342,6 +344,11 @@ private struct NavigationRailShellContent<Content: View>: View {
         isStartupEntry = false
         HeroFocusDiagnostics.emit("sidebar.shell select destination=\(destination.storageValue) previous=\(selection.storageValue) content=\(contentDestination.storageValue)")
         guard destination != selection || destinationFocus.isWaiting else {
+            if destination == .home, homeScroll.scrollToTop() {
+                contentReturnFocus.clear()
+                requestContentFocus(restoringPrevious: false)
+                return
+            }
             returnFocusToPage()
             return
         }

@@ -541,6 +541,7 @@ struct MainTabView: View {
     /// report it without any of them knowing about the chrome.
     @State private var navigationChrome = NavigationChromeModel()
     @State private var nativeSidebarFocus = NavigationDestinationFocusHandoff()
+    @State private var nativeSidebarScroll = TopNavigationScroll()
     private var railLibraries: [AggregatedLibrary] { navigationStyleModel.contentLibraries }
     /// Whether the rail's library list reflects a real answer yet (snapshot or
     /// discovery), as opposed to the empty value it starts at.
@@ -755,7 +756,10 @@ struct MainTabView: View {
                     nativeSidebarFocus.cancel()
                     openProfileSwitcher()
                 case let .content(content):
-                    if content != activeLibraryNavigationDestination(in: destinations) {
+                    let reselectsHome = content == .home
+                        && content == activeLibraryNavigationDestination(in: destinations)
+                    if reselectsHome { nativeSidebarScroll.scrollToTop() }
+                    if reselectsHome || content != activeLibraryNavigationDestination(in: destinations) {
                         nativeSidebarFocus.begin(content)
                     }
                     libraryNavigationSelection.wrappedValue = content
@@ -1549,7 +1553,9 @@ struct MainTabView: View {
                             libraryEntry: entriesByDestination[destination],
                             libraries: browsableLibraries
                         )
-                    ).tvNavigationExitProtectionContent())
+                    )
+                    .environment(\.plozzTopNavigationScroll, destination == .home ? nativeSidebarScroll : nil)
+                    .tvNavigationExitProtectionContent())
                 } label: {
                     rootNavigationLabel(
                         for: destination, libraryEntry: entriesByDestination[destination]

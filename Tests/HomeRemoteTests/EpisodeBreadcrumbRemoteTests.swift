@@ -3,6 +3,47 @@ import XCTest
 
 @MainActor
 final class EpisodeBreadcrumbRemoteTests: XCTestCase {
+    func testEpisodeContextMenuKeepsActionsAndRestoresCardFocus() throws {
+        for style in ["--system", "--highlight", "--outlined"] {
+            for descriptionsOnFocus in [false, true] {
+                try exerciseEpisodeContextMenu(style: style, descriptionsOnFocus: descriptionsOnFocus)
+            }
+        }
+    }
+
+    private func exerciseEpisodeContextMenu(style: String, descriptionsOnFocus: Bool) throws {
+        continueAfterFailure = false
+        let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.FocusHost")
+        app.launchArguments = ["--episode-breadcrumb-fixture", "--series-navigation", "--episode-menu", style]
+            + (descriptionsOnFocus ? ["--descriptions-on-focus"] : [])
+        app.launch()
+        defer { app.terminate() }
+        let play = app.buttons["detail-hero-play"]
+        XCTAssertTrue(play.waitForExistence(timeout: 20))
+        waitFor { play.hasFocus }
+        XCUIRemote.shared.press(.down)
+        if app.buttons["Season 2"].exists && app.buttons["Season 2"].hasFocus { XCUIRemote.shared.press(.down) }
+        let episode = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label BEGINSWITH %@", "E1 · Fixture Episode 1,")).firstMatch
+        XCTAssertTrue(episode.waitForExistence(timeout: 10), app.debugDescription)
+        func episodeHasFocus() -> Bool {
+            episode.exists && (episode.hasFocus || episode.descendants(matching: .any)
+                .matching(NSPredicate(format: "hasFocus == true")).firstMatch.exists)
+        }
+        waitFor { episodeHasFocus() }
+        for iteration in 0..<3 {
+            XCUIRemote.shared.press(.select, forDuration: 1)
+            let navigation = app.descendants(matching: .any)
+                .matching(NSPredicate(format: "label == %@", "Go to Episode")).firstMatch
+            XCTAssertTrue(navigation.waitForExistence(timeout: 5), app.debugDescription)
+            XCTAssertTrue(app.descendants(matching: .any)
+                .matching(NSPredicate(format: "label == %@", "Mark as Watched")).firstMatch.exists)
+            attach(app.screenshot(), name: "episode-menu-\(style)-focus-\(descriptionsOnFocus)-\(iteration)")
+            XCUIRemote.shared.press(.menu)
+            waitFor { episodeHasFocus() }
+        }
+    }
+
     func testLoadingPrimaryQueuesOnePlayWithoutResizing() throws {
         let app = loadingSeriesApp()
         defer { app.terminate() }

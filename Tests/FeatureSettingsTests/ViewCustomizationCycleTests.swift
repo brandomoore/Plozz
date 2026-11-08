@@ -5,6 +5,30 @@ import SwiftUI
 import XCTest
 
 final class ViewCustomizationCycleTests: XCTestCase {
+    func testEpisodeDescriptionPreviewTracksFocusPreferenceWithoutMovingCards() throws {
+        #if os(tvOS)
+        func geometry(onFocus: Bool) throws -> SettingsIllustrationCardGeometry {
+            let preview = CardLabelScopePreview.snapshot(
+                page: .detail, editing: .episodes,
+                settings: CardCaptionSettings(episodeDescriptionsOnFocus: onFocus),
+                isShowcase: false, seriesArtwork: true, layout: .landscape
+            )
+            return SettingsIllustrationCardGeometry(
+                row: try XCTUnwrap(preview.rows.first { $0.view == .episodes }), preview: preview,
+                style: .borderless, metrics: .standard, playbackDetails: .detailed, viewportWidth: 1920
+            )
+        }
+        let always = try geometry(onFocus: false)
+        let focused = try geometry(onFocus: true)
+        XCTAssertGreaterThan(always.cards.count, 1)
+        XCTAssertEqual(always.height, focused.height)
+        XCTAssertEqual(always.cards.map(\.artwork), focused.cards.map(\.artwork))
+        XCTAssertTrue(always.cards.allSatisfy { $0.captions.count == 4 })
+        XCTAssertEqual(focused.cards.first?.captions.count, 4)
+        XCTAssertTrue(focused.cards.dropFirst().allSatisfy { $0.captions.count == 1 })
+        #endif
+    }
+
     func testMixedHelpExplainsBehaviorOnlyWhenSelected() throws {
         var settings = CardCaptionSettings.default
         for view in [CardCaptionView.home, .recommended] {
@@ -202,9 +226,13 @@ final class ViewCustomizationCycleTests: XCTestCase {
                                         playbackDetails: details, viewportWidth: viewport
                                     )
                                     let first = try XCTUnwrap(geometry.cards.first)
-                                    let second = try XCTUnwrap(geometry.cards.dropFirst().first)
                                     XCTAssertEqual(first.surface.minX, 0, accuracy: 0.001)
-                                    XCTAssertEqual(second.surface.minX - first.surface.maxX, geometry.gap, accuracy: 0.001)
+                                    if first.surface.width + geometry.gap < SettingsIllustrationCardGeometry.width {
+                                        let second = try XCTUnwrap(geometry.cards.dropFirst().first)
+                                        XCTAssertEqual(second.surface.minX - first.surface.maxX, geometry.gap, accuracy: 0.001)
+                                    } else {
+                                        XCTAssertEqual(geometry.cards.count, 1)
+                                    }
                                     XCTAssertLessThan(geometry.gap / first.artwork.width, 0.3,
                                                       "A media row must not distribute its cards across empty space.")
                                     let landscape = row.isContinueWatching ? layout == .landscape

@@ -36,10 +36,10 @@ struct NativeSidebarNavigation<Content: View>: View {
             startupDestination = selection
             handoff.begin(selection)
         }
-        .onChange(of: handoff.request) { previous, current in
-            if current == nil, previous?.destination == startupDestination,
-               startupDestination == selection {
-                contentRequest = previous?.generation
+        .onChange(of: handoff.completedRequest) { _, completed in
+            if let completed, completed.destination == selection, completed.focusTarget == .content,
+               startupDestination == selection || selection == .home {
+                contentRequest = completed.generation
             }
         }
         .onChange(of: selection) { _, _ in

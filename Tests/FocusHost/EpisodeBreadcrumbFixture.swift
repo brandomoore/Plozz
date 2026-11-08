@@ -57,6 +57,9 @@ struct EpisodeBreadcrumbFixture: View {
         }
         .environment(\.themePalette, .dark)
         .environment(\.plozzCardFocusStyle, focusStyle)
+        .environment(\.plozzCardCaptionSettings, CardCaptionSettings(
+            episodeDescriptionsOnFocus: ProcessInfo.processInfo.arguments.contains("--descriptions-on-focus")
+        ))
         .preferredColorScheme(.dark)
         .detailNavigationZoom(isEnabled: true)
         .task {
@@ -167,7 +170,12 @@ private final class EpisodeBreadcrumbActions: MediaItemActionHandling {
 
     func actions(for item: MediaItem, context: MediaItemActionContext) -> [MediaItemAction] {
         if ProcessInfo.processInfo.arguments.contains("--delayed-series-entry") { return [.addToWatchlist] }
-        return MediaItemActionCatalog.actions(for: item, supportsWatchState: false, context: context)
+        return MediaItemActionCatalog.actions(
+            for: item, supportsWatchState: ProcessInfo.processInfo.arguments.contains("--episode-menu"),
+            supportsWatchlist: ProcessInfo.processInfo.arguments.contains("--episode-menu"),
+            supportsMetadataRefresh: ProcessInfo.processInfo.arguments.contains("--episode-menu"),
+            context: context
+        )
     }
     func perform(_ action: MediaItemAction, on item: MediaItem, context: MediaItemActionContext) {
         if ProcessInfo.processInfo.arguments.contains("--change-context-on-watchlist") {
