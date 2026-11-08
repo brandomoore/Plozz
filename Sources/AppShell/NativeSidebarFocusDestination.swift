@@ -31,6 +31,8 @@ struct NativeSidebarNavigation<Content: View>: View {
                 )
             }
         }
+        // The native TabView owns overscan insets; its focus host must fill the window.
+        .ignoresSafeArea()
         .onAppear {
             guard !hasStarted else { return }
             hasStarted = true

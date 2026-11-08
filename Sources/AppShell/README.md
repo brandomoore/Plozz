@@ -101,6 +101,13 @@ registry.
   `EmptyPinnedNavigationTests` covers entry, return, cold startup, and retained
   Live TV while switching back to Settings and empty Home.
 
+- **Native Sidebar owns its screen insets.** Its startup focus host fills the
+  window so the native sidebar, scrim, controls and scrolling page viewport do
+  not inherit a second overscan inset. Keep content-first startup and cover
+  dismissal handling without constraining the native `TabView` to the outer
+  SwiftUI safe area. Hosted coverage compares the focus-host and full-bleed page
+  bounds with the unwrapped native sidebar.
+
 - **Signing in does not change the starting page.** TV and mobile navigation
   availability uses the active profile's configured account metadata, not its
   credential-ready playback providers. A pending Plex Home identity or another
