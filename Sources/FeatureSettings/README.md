@@ -433,8 +433,11 @@ The further-nested custom player editor accepts one encoded `{url}` placeholder.
 Unavailable apps, failed handoff preparation, and unsupported sources use Plozz
 automatically without a confirmation prompt or changing the preference.
 Cancellation and profile/authorization changes abort playback, not fall back.
-All IPTV content (including movies/episodes), NAS shares, and Silo bypass external
-negotiation altogether. Silo's session-bound grants need its built-in lifecycle;
+IPTV movies and episodes can use a provider-owned independent handoff: the
+origin HTTP(S) URL is sent directly, without starting Plozz's local proxy.
+Sources requiring custom HTTP headers stay in Plozz; the app-link APIs cannot
+carry those headers. Explicit unknown versions are not replaced with a default.
+NAS shares and Silo bypass external negotiation. Silo's session-bound grants need its built-in lifecycle;
 no speculative external session is opened. Live TV, trailers, and music keep
 their existing runtimes.
 
@@ -442,14 +445,32 @@ On iPhone/iPad, downloaded movies and episodes play inside Plozz. Downloads
 menus do not export files to other apps, regardless of the external-player
 preference. External playback remains available for supported online sources.
 
-External playback requires directly accessible HTTP(S) media: no app-local
-proxy, downloaded file, private share credentials, separate audio stream, or
-server conversion. Mobile quality limits are not bypassed. Links can contain
+External playback requires independently accessible HTTP(S) media: original
+files, remote HLS, and server remux/transcode streams are eligible. App-local
+proxies, downloaded files, private share connections, separate audio streams,
+and DASH manifests remain internal. Mobile quality limits and forced conversion
+are negotiated through the same provider streaming API, not bypassed by handing
+off the original. The external player applies resume to the complete rendition
+timeline; the server is not also asked to trim it to that position. Links can contain
 server tokens, so the settings explain that the chosen app receives them.
 Jellyfin, Emby, and Plex direct-play sources remain eligible. Native Player and
 Infuse receive resume positions and up to eight SRT sidecars;
 VLC receives at most one sidecar and no resume/progress promise. Track selection,
 skip markers, Plozz controls, and Plozz autoplay are not available after handoff.
+
+Server conversion sessions are retained after a successful handoff and released
+on a supported return or the next playback intent. A credential-free session ID
+can restore cleanup after Plozz restarts, only under the original authorized
+profile, account, server user and credential revision. Failed or canceled
+handoffs release their prepared session. VLC/custom players do not report
+completion, so cleanup waits for another playback intent or server expiry.
+Returning to Plozz without a callback is not treated as completion: the other
+app may still be playing in PiP.
+
+Plozz does not run a background keepalive or local relay after handoff. The
+external app's media requests must sustain the server stream; servers may expire
+long-paused conversions. These paths need external-app/device verification and
+do not establish universal playback compatibility.
 
 `AppRuntime.ExternalPlaybackRuntime` correlates returns with a random session,
 bundle-specific callback scheme, and media-URL digest. Its device-local receipt

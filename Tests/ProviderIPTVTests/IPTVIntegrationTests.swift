@@ -271,6 +271,95 @@ final class IPTVIntegrationTests: XCTestCase {
         XCTAssertTrue(IPTVFixture.state.requests.allSatisfy { $0.url?.path.hasPrefix("/prefix/") == true })
     }
 
+    func testExternalXtreamVideosUseOriginWithoutOpeningALocalPlaybackSession() async throws {
+        IPTVFixture.state.handler = Self.xtream
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try FileManager.default.removeItem(at: root) }
+        let credential = try IPTVCredential(
+            mode: .xtream, address: XCTUnwrap(URL(string: "https://provider.test/prefix")),
+            username: "fixture-user", password: "fixture-password"
+        )
+        let session = try await IPTVProvider.signIn(
+            credential: credential, name: "Fixture", deviceID: "device",
+            cacheDirectory: root, configuration: configuration()
+        )
+        let provider = try IPTVProvider(
+            context: .init(
+                session: session, accountID: "account", credentialRevision: .init(),
+                localMediaContext: .init(accountID: "account", profileID: "profile", profileNamespace: nil)
+            ), cacheDirectory: root, configuration: configuration()
+        )
+        addTeardownBlock { await provider.teardown() }
+        _ = try await provider.items(in: "movies", kind: .movie, page: .init(limit: 20))
+        let seasons = try await provider.children(of: "series:30")
+        _ = try await provider.children(of: XCTUnwrap(seasons.first).id)
+        try await provider.setResumePosition(120, itemID: "episode:30:31", capturedAt: Date())
+        for (id, path) in [
+            ("movie:20", "/prefix/movie/fixture-user/fixture-password/20.mkv"),
+            ("episode:30:31", "/prefix/series/fixture-user/fixture-password/31.mp4")
+        ] {
+            let request = try await provider.externalPlaybackInfo(for: id, mediaSourceID: nil)
+            XCTAssertEqual(request.streamURL?.host, "provider.test")
+            XCTAssertEqual(request.streamURL?.path, path)
+            XCTAssertNil(request.playbackSource)
+            XCTAssertNil(request.playSessionID)
+            XCTAssertEqual(request.item.sourceAccountID, "account")
+            if id == "episode:30:31" { XCTAssertEqual(request.startPosition, 120) }
+        }
+        XCTAssertTrue(IPTVFixture.state.requests.allSatisfy { $0.url?.path == "/prefix/player_api.php" })
+        do {
+            _ = try await provider.externalPlaybackInfo(for: "movie:20", mediaSourceID: "wrong-version")
+            XCTFail("An explicit unknown source must not silently play the default")
+        } catch { XCTAssertEqual(error as? ExternalPlayerError, .unsupportedSource) }
+    }
+
+    func testExternalPlaylistKeepsHeaderRequiredAndLiveSourcesInternal() async throws {
+        for header in ["", "#EXTVLCOPT:http-user-agent=RequiredAgent\n", "#EXTVLCOPT:http-referrer=https://provider.test/\n"] {
+            IPTVFixture.state.reset()
+            IPTVFixture.state.handler = { _ in
+                (200, [:], Data("""
+                #EXTM3U
+                #EXTINF:-1,Movie
+                \(header)https://provider.test/movie/one.m3u8
+                #EXTINF:-1,News
+                https://provider.test/live/one.m3u8
+
+                """.utf8))
+            }
+            let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            addTeardownBlock { try FileManager.default.removeItem(at: root) }
+            let credential = try IPTVCredential(
+                mode: .playlist, address: XCTUnwrap(URL(string: "https://provider.test/list"))
+            )
+            let session = try await IPTVProvider.signIn(
+                credential: credential, name: "Fixture", deviceID: "device",
+                cacheDirectory: root, configuration: configuration()
+            )
+            let provider = try IPTVProvider(
+                context: .init(
+                    session: session, accountID: "account", credentialRevision: .init(),
+                    localMediaContext: .init(accountID: "account", profileID: "profile", profileNamespace: nil)
+                ), cacheDirectory: root, configuration: configuration()
+            )
+            addTeardownBlock { await provider.teardown() }
+            let movies = try await provider.items(in: "movies", kind: .movie, page: .init(limit: 20))
+            let movie = try XCTUnwrap(movies.items.first)
+            do {
+                let request = try await provider.externalPlaybackInfo(for: movie.id, mediaSourceID: nil)
+                XCTAssertTrue(header.isEmpty)
+                XCTAssertEqual(request.streamURL?.absoluteString, "https://provider.test/movie/one.m3u8")
+            } catch {
+                XCTAssertFalse(header.isEmpty)
+                XCTAssertEqual(error as? ExternalPlayerError, .unsupportedSource)
+            }
+            let channels = try await provider.liveTVChannels()
+            do {
+                _ = try await provider.externalPlaybackInfo(for: XCTUnwrap(channels.first).id, mediaSourceID: nil)
+                XCTFail("A live source must use the live-session owner")
+            } catch { XCTAssertEqual(error as? ExternalPlayerError, .unsupportedSource) }
+        }
+    }
+
     func testFailedPlaylistRefreshKeepsPriorCatalog() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }

@@ -90,31 +90,28 @@ final class ExternalPlaybackRuntimeTests: XCTestCase {
     }
 
     func testSourceRestrictionsFallBackAndReleaseRejectedStreamingSessions() async throws {
-        for mode in 0..<6 {
+        for mode in 0..<4 {
             let fixture = ExternalPlaybackFixture()
             defer { fixture.cleanup() }
             switch mode {
             case 0: fixture.request.streamURL = URL(fileURLWithPath: "/video.mkv")
             case 1: fixture.request.streamURL = URL(string: "http://127.0.0.1/video")
             case 2: fixture.request.externalAudioURL = fixture.media
-            case 3: fixture.request.isTranscoding = true
-            case 4:
-                fixture.request.streamingSessionID = "converted-session"
-                fixture.request.deliveryMode = .transcode
             default:
+                fixture.request.externalAudioURL = fixture.media
                 fixture.request.playSessionID = "ordinary-conversion"
                 fixture.request.deliveryMode = .remux
             }
             let opened = try await fixture.launch()
             XCTAssertFalse(opened)
             XCTAssertTrue(fixture.opened.isEmpty)
-            XCTAssertEqual(fixture.releasedSessions, mode >= 4 ? 1 : 0)
+            XCTAssertEqual(fixture.releasedSessions, mode == 3 ? 1 : 0)
             XCTAssertNil(fixture.runtime.error)
         }
     }
 
-    func testIPTVNASAndSiloNeverNegotiateOrLaunchExternalPlayback() async throws {
-        for kind in [ProviderKind.iptv, .mediaShare, .silo] {
+    func testNASAndSiloNeverNegotiateOrLaunchExternalPlayback() async throws {
+        for kind in [ProviderKind.mediaShare, .silo] {
             for player in [ExternalPlayer.nativePlayer, .infuse, .vlc, .custom] {
                 for mediaKind in [MediaItemKind.movie, .episode, .video] {
                     let fixture = ExternalPlaybackFixture()
@@ -174,7 +171,7 @@ final class ExternalPlaybackRuntimeTests: XCTestCase {
         XCTAssertNil(fixture.runtime.receipt)
     }
 
-    func testMobileConversionPolicyFallsBackBeforePreparingAStream() async throws {
+    func testMobileConversionPolicyIsNegotiatedWithoutBypassingQualityOrVersion() async throws {
         let fixture = ExternalPlaybackFixture()
         defer { fixture.cleanup() }
         for options in [
@@ -185,10 +182,186 @@ final class ExternalPlaybackRuntimeTests: XCTestCase {
                 item: fixture.item, startPosition: 0, settings: fixture.settings, selection: fixture.selection,
                 streamingOptions: options, context: { fixture.context }, isPresented: { true }
             )
-            XCTAssertFalse(opened)
+            XCTAssertTrue(opened)
+            XCTAssertEqual(fixture.streamingOptions?.quality, options.quality)
+            XCTAssertEqual(fixture.streamingOptions?.forceTranscoding, options.forceTranscoding)
+            XCTAssertEqual(fixture.streamingOptions?.startPosition, 0)
+            XCTAssertEqual(fixture.selectedVersion, "version-one")
         }
-        XCTAssertTrue(fixture.opened.isEmpty)
+        XCTAssertEqual(fixture.opened.count, 2)
+    }
+
+    func testServerHLSRemuxAndTranscodeHandOffWithoutLocalMaintenance() async throws {
+        for kind in [ProviderKind.jellyfin, .emby, .plex] {
+            for mode in [AuthenticatedHTTPDeliveryMode.hls, .serverRemux, .serverTranscode] {
+                let fixture = ExternalPlaybackFixture()
+                defer { fixture.cleanup() }
+                fixture.kind = kind
+                fixture.request.playbackSource = .authenticatedHTTP(try AuthenticatedHTTPPlaybackLocator(
+                    provider: kind, accountID: "account", credentialRevision: .init(),
+                    itemID: "movie", deliveryMode: mode,
+                    resource: .init(pathBase: .configuredBaseURL, path: "stream.m3u8")
+                ))
+                fixture.request.isTranscoding = mode == .serverTranscode
+                fixture.request.deliveryMode = mode == .serverRemux ? .remux
+                    : mode == .serverTranscode ? .transcode : .directPlay
+                fixture.request.playSessionID = "converted-session"
+                let opened = try await fixture.launch()
+                XCTAssertTrue(opened, "\(kind) \(mode)")
+                XCTAssertEqual(fixture.releasedSessions, 0, "Opening another app must not stop its stream")
+                XCTAssertEqual(fixture.runtime.receipt?.streamingSessionID, mode == .hls ? nil : "converted-session")
+                XCTAssertTrue(fixture.runtime.receive(try fixture.callback(position: "300")))
+                var completions = 0
+                await fixture.runtime.processReturn(context: { fixture.context }) { completion in
+                    XCTAssertEqual(completion.position, 300)
+                    completions += 1
+                }
+                XCTAssertEqual(completions, 1)
+                XCTAssertEqual(fixture.releasedSessions, mode == .hls ? 0 : 1)
+            }
+        }
+    }
+
+    func testConvertedSessionCleanupSurvivesRelaunchAndRequiresItsOwner() async throws {
+        let fixture = ExternalPlaybackFixture()
+        defer { fixture.cleanup() }
+        fixture.request.isTranscoding = true
+        fixture.request.playSessionID = "converted-session"
+        _ = try await fixture.launch()
+        let restored = ExternalPlaybackRuntime(defaults: fixture.defaults, callbackScheme: fixture.callbackScheme)
+        XCTAssertTrue(restored.receive(try fixture.callback(position: "300")))
+        fixture.profileID = "different-profile"
+        await restored.processReturn(context: { fixture.context }) { _ in XCTFail("Wrong profile") }
+        XCTAssertEqual(fixture.releasedSessions, 0)
+        fixture.profileID = "profile"
+        await restored.processReturn(context: { fixture.context }) { _ in }
+        XCTAssertEqual(fixture.releasedSessionIDs, ["converted-session"])
+        XCTAssertNil(restored.receipt)
+    }
+
+    func testNextPlaybackReleasesConvertedVLCSessionWithoutInventingProgress() async throws {
+        let fixture = ExternalPlaybackFixture()
+        defer { fixture.cleanup() }
+        fixture.selection.player = .vlc
+        fixture.request.isTranscoding = true
+        fixture.request.playSessionID = "converted-session"
+        _ = try await fixture.launch()
+        XCTAssertEqual(fixture.runtime.receipt?.streamingSessionID, "converted-session")
+        XCTAssertNil(fixture.runtime.returnID)
+        var unsolicited = URLComponents()
+        unsolicited.scheme = fixture.callbackScheme
+        unsolicited.host = "external-player"
+        unsolicited.path = "/success"
+        unsolicited.queryItems = [
+            .init(name: "session", value: try XCTUnwrap(fixture.runtime.receipt).id.uuidString),
+            .init(name: "position", value: "500"),
+            .init(name: "lastPlayedUrl", value: fixture.media.absoluteString)
+        ]
+        XCTAssertTrue(fixture.runtime.receive(try XCTUnwrap(unsolicited.url)))
+        XCTAssertNil(fixture.runtime.returnID)
+        await fixture.runtime.processReturn(context: { fixture.context }) { _ in
+            XCTFail("A cleanup-only receipt must never authorize watch progress")
+        }
+        XCTAssertEqual(fixture.releasedSessions, 0)
+        fixture.selection.player = .builtIn
+        _ = try await fixture.launch()
+        XCTAssertEqual(fixture.releasedSessionIDs, ["converted-session"])
+        XCTAssertNil(fixture.runtime.receipt)
+    }
+
+    func testFailedConvertedHandoffReleasesSessionAndClearsReceipt() async throws {
+        for cancel in [false, true] {
+            let fixture = ExternalPlaybackFixture()
+            defer { fixture.cleanup() }
+            fixture.request.isTranscoding = true
+            fixture.request.playSessionID = "converted-session"
+            if cancel {
+                fixture.beforeRequest = { fixture.profileID = "different" }
+            } else {
+                fixture.openSucceeds = false
+            }
+            do {
+                let opened = try await fixture.launch()
+                XCTAssertFalse(cancel)
+                XCTAssertFalse(opened)
+            } catch { XCTAssertTrue(cancel && error is CancellationError) }
+            XCTAssertEqual(fixture.releasedSessionIDs, ["converted-session"])
+            XCTAssertNil(fixture.runtime.receipt)
+        }
+    }
+
+    func testSupersedingAnInFlightHandoffReleasesItsSessionOnlyOnce() async throws {
+        let fixture = ExternalPlaybackFixture()
+        defer { fixture.cleanup() }
+        fixture.request.isTranscoding = true
+        fixture.request.playSessionID = "converted-session"
+        fixture.beforeOpen = { fixture.runtime.beginPlaybackIntent(context: fixture.context) }
+        do {
+            _ = try await fixture.launch()
+            XCTFail("The old handoff must be canceled")
+        } catch { XCTAssertTrue(error is CancellationError) }
+        fixture.beforeOpen = nil
+        fixture.selection.player = .builtIn
+        _ = try await fixture.launch()
+        XCTAssertEqual(fixture.releasedSessionIDs, ["converted-session"])
+        XCTAssertNil(fixture.runtime.receipt)
+    }
+
+    func testIPTVUsesIndependentDeliveryAndNeverItsOrdinaryLocalProxy() async throws {
+        let fixture = ExternalPlaybackFixture()
+        defer { fixture.cleanup() }
+        fixture.kind = .iptv
+        let opened = try await fixture.launch()
+        XCTAssertTrue(opened)
+        XCTAssertEqual(fixture.externalRequests, 1)
         XCTAssertNil(fixture.selectedVersion)
+        XCTAssertTrue(fixture.runtime.availablePlayers(
+            for: fixture.item, context: fixture.context, selection: fixture.selection
+        ).contains(.vlc))
+        fixture.requestError = ExternalPlayerError.unsupportedSource
+        let unsupported = try await fixture.launch()
+        XCTAssertFalse(unsupported)
+        XCTAssertEqual(fixture.externalRequests, 2)
+        XCTAssertNil(fixture.selectedVersion)
+        XCTAssertEqual(fixture.opened.count, 1)
+    }
+
+    func testDASHAndScheduledPlaybackRemainInternal() async throws {
+        let fixture = ExternalPlaybackFixture()
+        defer { fixture.cleanup() }
+        fixture.request.playbackSource = .authenticatedHTTP(try AuthenticatedHTTPPlaybackLocator(
+            provider: .jellyfin, accountID: "account", credentialRevision: .init(),
+            itemID: "movie", deliveryMode: .dash,
+            resource: .init(pathBase: .configuredBaseURL, path: "manifest")
+        ))
+        let dash = try await fixture.launch()
+        XCTAssertFalse(dash)
+        fixture.request.playbackSource = nil
+        fixture.request.suppressOrdinaryWatchReporting = true
+        let scheduled = try await fixture.launch()
+        XCTAssertFalse(scheduled)
+        XCTAssertTrue(fixture.opened.isEmpty)
+    }
+
+    func testInvalidQualityAndFailedConversionNeverRetryAnUnconstrainedOriginal() async throws {
+        let fixture = ExternalPlaybackFixture()
+        defer { fixture.cleanup() }
+        let invalid = try await fixture.runtime.launch(
+            item: fixture.item, startPosition: nil, settings: fixture.settings, selection: fixture.selection,
+            streamingOptions: .init(quality: .invalid(.bitrateTooLow)),
+            context: { fixture.context }, isPresented: { true }
+        )
+        XCTAssertFalse(invalid)
+        XCTAssertNil(fixture.selectedVersion)
+        fixture.requestError = StreamingQualityError.permissionDenied
+        let refused = try await fixture.runtime.launch(
+            item: fixture.item, startPosition: nil, settings: fixture.settings, selection: fixture.selection,
+            streamingOptions: .init(quality: .hd720, forceTranscoding: true),
+            context: { fixture.context }, isPresented: { true }
+        )
+        XCTAssertFalse(refused)
+        XCTAssertEqual(fixture.streamingOptions?.quality, .hd720)
+        XCTAssertTrue(fixture.opened.isEmpty)
     }
 
     func testDownloadedVideoFallsBackBeforeResolvingRemotePlayback() async throws {
@@ -456,7 +629,7 @@ private final class ExternalPlaybackFixture {
     lazy var runtime = ExternalPlaybackRuntime(
         defaults: defaults, callbackScheme: callbackScheme,
         canOpen: { [unowned self] _ in installationChecks += 1; return installed },
-        open: { [unowned self] url in opened.append(url); return openSucceeds }
+        open: { [unowned self] url in opened.append(url); beforeOpen?(); return openSucceeds }
     )
     var profileID = "profile"
     var userID = "user"
@@ -469,11 +642,15 @@ private final class ExternalPlaybackFixture {
     var opened: [URL] = []
     var selectedVersion: String?
     var releasedSessions = 0
+    var releasedSessionIDs: [String] = []
+    var streamingOptions: StreamingPlaybackOptions?
+    var externalRequests = 0
     var playedWrites: [Bool] = []
     var resumeWrites: [TimeInterval] = []
     var itemReads: [String] = []
     var series: MediaItem?
     var beforeRequest: (@MainActor () -> Void)?
+    var beforeOpen: (@MainActor () -> Void)?
     var beforeItem: (@MainActor () -> Void)?
     var offlineResolver: (any OfflinePlaybackResolving)?
     var item = MediaItem(
@@ -499,7 +676,7 @@ private final class ExternalPlaybackFixture {
         )
     }
     func launch() async throws -> Bool {
-        runtime.beginPlaybackIntent()
+        runtime.beginPlaybackIntent(context: context)
         return try await runtime.launch(
             item: item, startPosition: 120, settings: settings, selection: selection,
             context: { self.context }, isPresented: { true }
@@ -531,7 +708,7 @@ private struct ExternalOfflineResolver: OfflinePlaybackResolving {
     }
 }
 
-private struct ExternalPlaybackProvider: StreamingQualityProviding, WatchStateProviding, ResumeStateWriting {
+private struct ExternalPlaybackProvider: StreamingSessionReleasing, ExternalPlaybackProviding, WatchStateProviding, ResumeStateWriting {
     var kind: ProviderKind { session.server.provider }
     let session: UserSession
     let fixture: ExternalPlaybackFixture
@@ -560,8 +737,27 @@ private struct ExternalPlaybackProvider: StreamingQualityProviding, WatchStatePr
     }
     func playbackInfo(
         for itemID: String, mediaSourceID: String?, forceTranscode: Bool, streaming: StreamingPlaybackOptions
-    ) async throws -> PlaybackRequest { await fixture.request }
-    func releaseStreamingSession(_ request: PlaybackRequest) async { await MainActor.run { fixture.releasedSessions += 1 } }
+    ) async throws -> PlaybackRequest {
+        await MainActor.run { fixture.streamingOptions = streaming }
+        return try await playbackInfo(for: itemID, mediaSourceID: mediaSourceID, forceTranscode: forceTranscode)
+    }
+    func externalPlaybackInfo(for itemID: String, mediaSourceID: String?) async throws -> PlaybackRequest {
+        try await MainActor.run {
+            fixture.externalRequests += 1
+            fixture.beforeRequest?()
+            if let error = fixture.requestError { throw error }
+            return fixture.request
+        }
+    }
+    func releaseStreamingSession(_ request: PlaybackRequest) async {
+        if let id = request.streamingSessionID { await releaseStreamingSession(id: id) }
+    }
+    func releaseStreamingSession(id: String) async {
+        await MainActor.run {
+            fixture.releasedSessions += 1
+            fixture.releasedSessionIDs.append(id)
+        }
+    }
     func reportPlayback(_ progress: PlaybackProgress, event: PlaybackEvent) async throws {}
     func setPlayed(_ played: Bool, itemID: String) async throws {
         await MainActor.run { fixture.playedWrites.append(played) }

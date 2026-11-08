@@ -1,5 +1,11 @@
 import Foundation
 
+/// Providers whose ordinary playback needs an app-local transport can explicitly
+/// prepare a source that remains usable while Plozz is suspended.
+public protocol ExternalPlaybackProviding: MediaProvider {
+    func externalPlaybackInfo(for itemID: String, mediaSourceID: String?) async throws -> PlaybackRequest
+}
+
 public enum ExternalPlayer: String, Codable, CaseIterable, Sendable {
     case builtIn, nativePlayer, infuse, vlc, custom
 
@@ -68,7 +74,7 @@ public enum ExternalPlayerError: Error, Equatable, Sendable {
         case .unavailable:
             "The selected player isn't available on this device. You can play this video in Plozz instead."
         case .unsupportedSource:
-            "This source needs Plozz's built-in player. External players require a directly accessible HTTP or HTTPS video without a separate audio stream or server conversion."
+            "This source needs Plozz's built-in player. The selected app must be able to access the video without Plozz's local connection or a separate audio stream."
         case .invalidTemplate:
             "Enter an app URL with exactly one {url} placeholder, such as myplayer://play?url={url}. Web, file, and Plozz URLs aren't supported."
         case .invalidCallback:

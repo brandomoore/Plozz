@@ -161,7 +161,7 @@ struct PlozziOSPlayerView: View {
 
         }
         .task {
-            ExternalPlaybackRuntime.shared.beginPlaybackIntent()
+            ExternalPlaybackRuntime.shared.beginPlaybackIntent(context: appModel.externalPlaybackContext())
             suspendHeroPlayback()
             let session = playbackSession ?? appModel.makePlaybackSession()
             playbackSession = session

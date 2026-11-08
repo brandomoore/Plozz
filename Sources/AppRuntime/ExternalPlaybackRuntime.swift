@@ -83,6 +83,7 @@ public final class ExternalPlaybackRuntime {
         let mediaURLDigest: String
         let duration: TimeInterval?
         let createdAt: Date
+        var streamingSessionID: String?
         var position: TimeInterval?
         var progress: Double?
         var returnedAt: Date?
@@ -99,6 +100,10 @@ public final class ExternalPlaybackRuntime {
     private var processingTask: Task<Void, Never>?
     private var launchID = UUID()
     @ObservationIgnored private var foregroundDepartureProfileID: String?
+    @ObservationIgnored private var streamingSession: (
+        receiptID: UUID, request: PlaybackRequest, provider: any StreamingQualityProviding
+    )?
+    @ObservationIgnored private var streamingCleanup: Task<Void, Never>?
 
     /// Only the next scene departure belongs to this handoff, not a later browsing session.
     public func consumeForegroundDeparture(forProfile profileID: String) -> Bool {
@@ -107,7 +112,8 @@ public final class ExternalPlaybackRuntime {
     }
 
     public var returnID: UUID? {
-        guard let receipt, receipt.position != nil || receipt.failed else { return nil }
+        guard let receipt, receipt.player.returnsProgress,
+              receipt.position != nil || receipt.failed else { return nil }
         return receipt.id
     }
 
@@ -132,10 +138,11 @@ public final class ExternalPlaybackRuntime {
     }
 
     /// Every new ordinary play intent supersedes an older external return.
-    public func beginPlaybackIntent() {
+    public func beginPlaybackIntent(context: ExternalPlaybackContext? = nil) {
         foregroundDepartureProfileID = nil
         processingTask?.cancel()
         launchID = UUID()
+        releaseStreamingSession(context: context)
         clearReceipt()
     }
 
@@ -150,6 +157,11 @@ public final class ExternalPlaybackRuntime {
         let initial = context()
         let generation = launchID
         do {
+            await streamingCleanup?.value
+            try Task.checkCancellation()
+            guard generation == launchID, initial.identity == context().identity else {
+                throw CancellationError()
+            }
             return try await launchIfSupported(
                 item: item, startPosition: startPosition, settings: settings, selection: selection,
                 streamingOptions: streamingOptions, context: context, isPresented: isPresented
@@ -178,7 +190,8 @@ public final class ExternalPlaybackRuntime {
               !item.opensExternalSource, item.discMenuAvailability == nil,
               let account = context.accounts.first(where: { $0.account.id == item.sourceAccountID })
                 ?? (item.sourceAccountID == nil ? context.accounts.first : nil),
-              [.jellyfin, .emby, .plex].contains(account.provider.kind) else { return [] }
+              [.jellyfin, .emby, .plex].contains(account.provider.kind)
+                || (account.provider.kind == .iptv && account.provider is any ExternalPlaybackProviding) else { return [] }
         return ExternalPlayer.supported.filter { player in
             guard player != selection.player else { return false }
             if player == .builtIn { return true }
@@ -210,11 +223,13 @@ public final class ExternalPlaybackRuntime {
         }
         try checkCurrent()
         switch account.provider.kind {
-        case .iptv, .mediaShare, .silo:
+        case .mediaShare, .silo:
             // These sources need Plozz's transport or session lifecycle. Do not
             // negotiate an external stream or expose credentials speculatively.
             PlozzLog.playback.info("Source requires Plozz playback; skipping external player.")
             return false
+        case .iptv:
+            guard account.provider is any ExternalPlaybackProviding else { return false }
         case .jellyfin, .emby, .plex:
             break
         }
@@ -227,23 +242,44 @@ public final class ExternalPlaybackRuntime {
         if selection.player == .custom {
             try ExternalPlayerURL.validateCustomTemplate(selection.customURLTemplate)
         }
-        guard streamingOptions?.requiresConversionPolicy != true else {
-            throw ExternalPlayerError.unsupportedSource
-        }
         if let offlineResolver = initial.offlineResolver,
            await offlineResolver.localPlaybackURL(for: item, versionID: item.selectedVersionID) != nil {
             throw ExternalPlayerError.unsupportedSource
         }
         try checkCurrent()
         let provider = account.provider
-        let request = try await provider.playbackInfo(
-            for: item.id, mediaSourceID: item.selectedVersionID, forceTranscode: false
-        )
+        var request: PlaybackRequest
+        if provider.kind == .iptv, let external = provider as? any ExternalPlaybackProviding {
+            guard streamingOptions?.requiresConversionPolicy != true else {
+                throw ExternalPlayerError.unsupportedSource
+            }
+            request = try await external.externalPlaybackInfo(for: item.id, mediaSourceID: item.selectedVersionID)
+        } else if let options = streamingOptions {
+            try options.quality.validate()
+            guard let streaming = provider as? any StreamingQualityProviding else {
+                throw ExternalPlayerError.unsupportedSource
+            }
+            // External players seek on the complete source timeline. Do not ask
+            // the server to trim the rendition to a resume offset as well.
+            var options = options
+            options.startPosition = 0
+            request = try await streaming.playbackInfo(
+                for: item.id, mediaSourceID: item.selectedVersionID,
+                forceTranscode: options.forceTranscoding, streaming: options
+            )
+        } else {
+            request = try await provider.playbackInfo(
+                for: item.id, mediaSourceID: item.selectedVersionID, forceTranscode: false
+            )
+        }
+        if request.streamingSessionID == nil, request.isTranscoding || request.deliveryMode != .directPlay {
+            request.streamingSessionID = request.playSessionID
+        }
+        let nonce = UUID()
+        var registeredStreamingSession = false
         do {
             try checkCurrent()
-            guard request.externalAudioURL == nil, !request.isTranscoding,
-                  request.deliveryMode == .directPlay, request.streamingSessionID == nil,
-                  !request.suppressOrdinaryWatchReporting else {
+            guard request.externalAudioURL == nil, !request.suppressOrdinaryWatchReporting else {
                 throw ExternalPlayerError.unsupportedSource
             }
             let mediaURL = try await resolveURL(
@@ -261,7 +297,6 @@ public final class ExternalPlaybackRuntime {
                     if subtitles.count == 8 { break }
                 }
             }
-            let nonce = UUID()
             let link = try ExternalPlayerURL.make(
                 settings: selection, mediaURL: mediaURL,
                 title: request.sourceFileName ?? request.item.title,
@@ -269,17 +304,21 @@ public final class ExternalPlaybackRuntime {
                 subtitles: subtitles, callbackScheme: callbackScheme, nonce: nonce
             )
             try checkCurrent()
-            if selection.player.returnsProgress {
+            if selection.player.returnsProgress || request.streamingSessionID != nil {
                 try save(Receipt(
                     id: nonce, owner: Owner(profileID: initial.profileID, account: account),
                     itemID: item.id, player: selection.player, mediaURLDigest: Self.digest(mediaURL),
                     duration: request.item.runtime.flatMap { $0.isFinite && $0 > 0 ? $0 : nil },
-                    createdAt: Date()
+                    createdAt: Date(), streamingSessionID: request.streamingSessionID
                 ))
+            }
+            if request.streamingSessionID != nil, let streaming = provider as? any StreamingQualityProviding {
+                streamingSession = (nonce, request, streaming)
+                registeredStreamingSession = true
             }
             foregroundDepartureProfileID = initial.profileID
             guard await open(link) else {
-                foregroundDepartureProfileID = nil
+                if generation == launchID { foregroundDepartureProfileID = nil }
                 if receipt?.id == nonce { clearReceipt() }
                 throw ExternalPlayerError.unavailable
             }
@@ -287,15 +326,13 @@ public final class ExternalPlaybackRuntime {
             PlozzLog.playback.info("Opened external player.")
             return true
         } catch {
-            foregroundDepartureProfileID = nil
-            if let streaming = provider as? any StreamingQualityProviding {
-                var cleanupRequest = request
-                if cleanupRequest.streamingSessionID == nil,
-                   request.isTranscoding || request.deliveryMode != .directPlay {
-                    cleanupRequest.streamingSessionID = request.playSessionID
-                }
-                if cleanupRequest.streamingSessionID != nil {
-                    await streaming.releaseStreamingSession(cleanupRequest)
+            if generation == launchID { foregroundDepartureProfileID = nil }
+            let needsRelease = !registeredStreamingSession || streamingSession?.receiptID == nonce
+            if streamingSession?.receiptID == nonce { streamingSession = nil }
+            if receipt?.id == nonce { clearReceipt() }
+            if needsRelease, let streaming = provider as? any StreamingQualityProviding {
+                if request.streamingSessionID != nil {
+                    await streaming.releaseStreamingSession(request)
                 }
             }
             throw error
@@ -308,7 +345,7 @@ public final class ExternalPlaybackRuntime {
         let url: URL
         switch source {
         case .authenticatedHTTP(let locator):
-            guard locator.deliveryMode == .directFile else { throw ExternalPlayerError.unsupportedSource }
+            guard locator.deliveryMode != .dash else { throw ExternalPlayerError.unsupportedSource }
             url = try await resolver.resolve(locator)
         case .publicURL(let source): url = source.url
         case .networkFile, .networkDisc, .dlnaResource: throw ExternalPlayerError.unsupportedSource
@@ -329,7 +366,7 @@ public final class ExternalPlaybackRuntime {
               values.filter({ $0.name == "session" }).count == 1,
               let token = values.first(where: { $0.name == "session" })?.value,
               var pending = receipt, UUID(uuidString: token) == pending.id,
-              pending.position == nil, !pending.failed else {
+              pending.player.returnsProgress, pending.position == nil, !pending.failed else {
             PlozzLog.playback.info("Ignored an unmatched external player callback.")
             return true
         }
@@ -409,6 +446,9 @@ public final class ExternalPlaybackRuntime {
         func current() -> Bool {
             !Task.isCancelled && receipt?.id == pending.id && context().identity == initial.identity
         }
+        releaseStreamingSession(context: initial)
+        await streamingCleanup?.value
+        guard current() else { return }
         if pending.failed {
             clearReceipt()
             error = .playbackFailed
@@ -450,6 +490,30 @@ public final class ExternalPlaybackRuntime {
         } catch {
             PlozzLog.playback.error("Unable to reconcile external playback progress.")
             if current() { self.error = .progressSyncFailed }
+        }
+    }
+
+    private func releaseStreamingSession(context: ExternalPlaybackContext?) {
+        let release: @Sendable () async -> Void
+        if let session = streamingSession {
+            release = { await session.provider.releaseStreamingSession(session.request) }
+            streamingSession = nil
+        } else if let pending = receipt, let id = pending.streamingSessionID,
+                  let context, context.isAuthorized,
+                  let account = context.accounts.first(where: {
+                      Owner(profileID: context.profileID, account: $0) == pending.owner
+                  }), let streaming = account.provider as? any StreamingSessionReleasing {
+            release = { await streaming.releaseStreamingSession(id: id) }
+        } else { return }
+        if var pending = receipt {
+            pending.streamingSessionID = nil
+            do { try save(pending) }
+            catch { self.error = .persistence }
+        }
+        let previous = streamingCleanup
+        streamingCleanup = Task {
+            await previous?.value
+            await release()
         }
     }
 
