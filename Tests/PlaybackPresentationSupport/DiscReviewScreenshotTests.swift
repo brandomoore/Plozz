@@ -158,7 +158,7 @@ final class DiscReviewScreenshotTests: XCTestCase {
         let picker = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Disc playback")).firstMatch
         let notice = app.staticTexts.matching(NSPredicate(
             format: "label == %@",
-            "HDMV menus only. BD-J plays video.\nDisc menus and videos selected from \"Disc videos\" don't update watched status or resume position."
+            "HDMV menus only. BD-J plays video.\nVideos played from disc menus don't update watch progress."
         )).firstMatch
         #if os(iOS)
         let contentTop = app.navigationBars.firstMatch.frame.maxY + 24

@@ -10,7 +10,7 @@ The Settings screen and its detail pages. Profile-aware and integration-aware.
 Disc playback uses the shared labeled menu row on TV, showing the setting name
 and current choice rather than an unlabeled segmented picker.
 Its helper note explains HDMV-only menus, automatic video playback for BD-J,
-and the watched/resume limitation once on both platforms; disc action menus
+and the watch-progress limitation once on both platforms; disc action menus
 and video pickers do not repeat it.
 
 On iPad, selecting a different sidebar category discards the previous category's

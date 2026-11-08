@@ -14,7 +14,7 @@ public enum DiscPlaybackBehavior: String, Codable, CaseIterable, Sendable {
     public var alternative: Self { self == .playVideo ? .openMenu : .playVideo }
 
     public static var settingsNotice: LocalizedStringResource {
-        "HDMV menus only. BD-J plays video.\nDisc menus and videos selected from \"Disc videos\" don't update watched status or resume position."
+        "HDMV menus only. BD-J plays video.\nVideos played from disc menus don't update watch progress."
     }
 }
 
