@@ -10,6 +10,7 @@ final class PerformanceDiagnosticsTests: XCTestCase {
             XCTAssertNil(diagnostics.begin(.homeLoad, metrics: .init(items: Int.max)))
         }
         XCTAssertNil(diagnostics.snapshot())
+        XCTAssertNil(diagnostics.beginHomeObservation())
         XCTAssertEqual(clock.reads, 0)
     }
 
@@ -137,7 +138,10 @@ final class PerformanceDiagnosticsTests: XCTestCase {
         let json = try XCTUnwrap(
             JSONSerialization.jsonObject(with: JSONEncoder().encode(snapshot)) as? [String: Any]
         )
-        XCTAssertEqual(Set(json.keys), ["schema", "elapsedMilliseconds", "maxActive", "dropped", "active", "recent", "slow"])
+        XCTAssertEqual(Set(json.keys), [
+            "schema", "elapsedMilliseconds", "maxActive", "dropped", "active", "recent", "slow",
+            "homeRecent", "homeSlow", "homeDropped", "homeUI", "homeUIDropped"
+        ])
         diagnostics.stop()
         XCTAssertFalse(diagnostics.isCurrent(snapshot))
         diagnostics.start()
@@ -259,6 +263,112 @@ final class PerformanceDiagnosticsTests: XCTestCase {
         XCTAssertEqual(diagnostics.snapshot()?.recent.count, 0)
         XCTAssertEqual(diagnostics.snapshot()?.slow.count, 0)
         XCTAssertEqual(diagnostics.snapshot()?.dropped, 0)
+    }
+
+    func testHomeAdmissionAndCompletionEvidenceSurviveFastAndSlowNetworkFloods() throws {
+        let clock = DiagnosticsClock()
+        let diagnostics = PerformanceDiagnostics(uptime: { clock.now() })
+        diagnostics.start()
+        let requests = (0..<32).compactMap { _ in diagnostics.begin(.serverRequest) }
+        XCTAssertEqual(requests.count, 28)
+        let load = try XCTUnwrap(diagnostics.begin(.homeLoad))
+        let publish = try XCTUnwrap(diagnostics.begin(.homePublish, metrics: .init(items: 800, rows: 40)))
+        publish.finish(.succeeded)
+        clock.advance(milliseconds: 300)
+        load.finish(.succeeded)
+        requests.forEach { $0.finish(.succeeded) }
+        for _ in 0..<1_000 {
+            diagnostics.begin(.serverDecode)?.finish(.succeeded)
+            let request = diagnostics.begin(.serverRequest)
+            clock.advance(milliseconds: 300)
+            request?.finish(.succeeded)
+        }
+        let snapshot = try XCTUnwrap(diagnostics.snapshot())
+        XCTAssertEqual(snapshot.homeRecent.map(\.operation), [.homePublish])
+        XCTAssertEqual(snapshot.homeRecent.first?.metrics.rows, 40)
+        XCTAssertEqual(snapshot.homeSlow.map(\.operation), [.homeLoad])
+        XCTAssertFalse((snapshot.recent + snapshot.slow).contains { $0.operation.isHomePresentation })
+        XCTAssertEqual(snapshot.homeDropped, 0)
+    }
+
+    func testReservedHomeHistoryIsBoundedAndClearedOnOptOut() throws {
+        let clock = DiagnosticsClock()
+        let diagnostics = PerformanceDiagnostics(uptime: { clock.now() })
+        diagnostics.start()
+        for _ in 0..<100 {
+            diagnostics.begin(.homePublish)?.finish(.succeeded)
+            let merge = diagnostics.begin(.homeMerge)
+            clock.advance(milliseconds: 300)
+            merge?.finish(.succeeded)
+        }
+        let snapshot = try XCTUnwrap(diagnostics.snapshot())
+        XCTAssertEqual(snapshot.homeRecent.count, 16)
+        XCTAssertEqual(snapshot.homeSlow.count, 16)
+        XCTAssertEqual(snapshot.homeDropped, 168)
+        diagnostics.stop()
+        diagnostics.start()
+        XCTAssertEqual(diagnostics.snapshot()?.homeRecent.count, 0)
+        XCTAssertEqual(diagnostics.snapshot()?.homeSlow.count, 0)
+        XCTAssertEqual(diagnostics.snapshot()?.homeDropped, 0)
+    }
+
+    func testHomeWindowsAreBoundedSeparateFromNetworkTrafficAndFencedByOwnerAndConsent() throws {
+        let clock = DiagnosticsClock()
+        let diagnostics = PerformanceDiagnostics(uptime: { clock.now() })
+        diagnostics.start()
+        let observation = try XCTUnwrap(diagnostics.beginHomeObservation())
+        var metrics = PerformanceDiagnostics.HomeUIMetrics()
+        metrics.samples = 10
+        metrics.loadingSamples = 10
+        for _ in 0..<100 {
+            clock.advance(milliseconds: 1_000)
+            XCTAssertTrue(observation.record(metrics))
+        }
+        for _ in 0..<1_000 { diagnostics.begin(.serverDecode)?.finish(.succeeded) }
+        let snapshot = try XCTUnwrap(diagnostics.snapshot())
+        XCTAssertEqual(snapshot.homeUI.count, 60)
+        XCTAssertEqual(snapshot.homeUIDropped, 40)
+        XCTAssertEqual(snapshot.homeUI.first?.startedMilliseconds, 40_000)
+        XCTAssertEqual(snapshot.homeUI.last?.elapsedMilliseconds, 1_000)
+        XCTAssertEqual(snapshot.homeUI.last?.metrics, metrics)
+        let replacement = try XCTUnwrap(diagnostics.beginHomeObservation())
+        XCTAssertFalse(observation.isCurrent)
+        XCTAssertFalse(observation.record(metrics))
+        observation.stop()
+        XCTAssertTrue(replacement.isCurrent)
+        replacement.stop()
+        XCTAssertFalse(replacement.record(metrics))
+        let oldConsent = try XCTUnwrap(diagnostics.beginHomeObservation())
+        diagnostics.stop()
+        diagnostics.start()
+        let newConsent = try XCTUnwrap(diagnostics.beginHomeObservation())
+        XCTAssertFalse(oldConsent.isCurrent)
+        XCTAssertFalse(oldConsent.record(metrics))
+        oldConsent.stop()
+        XCTAssertTrue(newConsent.isCurrent)
+        XCTAssertEqual(diagnostics.snapshot()?.homeUI.count, 0)
+        XCTAssertEqual(diagnostics.snapshot()?.homeUIDropped, 0)
+    }
+
+    func testInvalidHomeWindowsAreRejectedWithoutReadingTheClock() throws {
+        let clock = DiagnosticsClock()
+        let diagnostics = PerformanceDiagnostics(uptime: { clock.now() })
+        diagnostics.start()
+        let observation = try XCTUnwrap(diagnostics.beginHomeObservation())
+        var metrics = PerformanceDiagnostics.HomeUIMetrics()
+        let reads = clock.reads
+        XCTAssertFalse(observation.record(metrics))
+        metrics.samples = 1
+        metrics.scrollingSamples = 2
+        XCTAssertFalse(observation.record(metrics))
+        metrics.scrollingSamples = 0
+        metrics.heightChanges = Int.max
+        XCTAssertFalse(observation.record(metrics))
+        XCTAssertEqual(clock.reads, reads)
+        metrics.heightChanges = 0
+        metrics.maximumDelayMilliseconds = 10
+        XCTAssertFalse(observation.record(metrics), "Delay cannot exceed the observation window")
+        XCTAssertTrue(try XCTUnwrap(diagnostics.snapshot()).homeUI.isEmpty)
     }
 }
 

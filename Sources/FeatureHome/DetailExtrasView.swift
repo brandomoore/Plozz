@@ -163,9 +163,10 @@ struct DetailExtrasView: View {
                     ))
                     .id("detail-extras-related")
                 }
-                if !item.cast.isEmpty {
+                if !item.detailCredits.isEmpty {
                     CastRowView(
-                        people: item.cast,
+                        title: item.detailCredits.contains { !$0.crewRoles.isEmpty } ? "Cast & Crew" : "Cast",
+                        people: item.people,
                         leadingInset: leadingInset,
                         onFocusEntered: onCastFocusEntered
                     )

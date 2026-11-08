@@ -319,15 +319,27 @@ public final class SiloProvider: MediaProvider, CapabilityReporting, MediaSortFi
             URLQueryItem(name: "sort", value: sort)
         ])
         guard response.total >= 0 else { throw AppError.invalidResponse }
-        return MediaPage(items: response.items.map { map($0, libraryID: libraryID) },
+        return MediaPage(items: response.items.map { mapCatalogItem($0, libraryID: libraryID) },
                          startIndex: page.startIndex, totalCount: response.total)
     }
 
     func catalogItems(_ query: [URLQueryItem], limit: Int, libraryID: String? = nil) async throws -> [MediaItem] {
-        try await catalogDTOs(query, limit: limit).map { map($0, libraryID: libraryID) }
+        try await catalogDTOs(query, limit: limit).map { mapCatalogItem($0, libraryID: libraryID) }
     }
 
-    func catalogDTOs(_ query: [URLQueryItem], limit: Int) async throws -> [SiloItem] {
+    private func mapCatalogItem(_ dto: SiloItem, libraryID: String?) -> MediaItem {
+        var item = map(dto, libraryID: libraryID)
+        // Native catalog ID fields carry the same available IDs as detail.
+        // An encoded content-ID anchor alone still needs the legacy fallback.
+        item.catalogIdentityIsComplete = [dto.imdb_id, dto.tmdb_id, dto.tvdb_id].contains {
+            $0?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+        }
+        return item
+    }
+
+    func catalogDTOs(
+        _ query: [URLQueryItem], limit: Int, stoppingAtID: String? = nil
+    ) async throws -> [SiloItem] {
         guard limit > 0 else { return [] }
         // Silo binds the page size into its cursor scope, including the final page.
         let pageLimit = min(200, limit)
@@ -342,7 +354,8 @@ public final class SiloProvider: MediaProvider, CapabilityReporting, MediaSortFi
             diagnostic?.beginPage(limit: pageLimit, usedCursor: cursor != nil)
             let page: SiloCatalogPage = try await client.request("/catalog", query: parameters)
             result += page.items
-            let needsMore = page.page?.has_more == true && result.count < limit
+            let found = stoppingAtID.map { id in page.items.contains { $0.content_id == id } } ?? false
+            let needsMore = page.page?.has_more == true && result.count < limit && !found
             let next = page.page?.next_cursor
             let failure: SearchDiagnosticJournal.PagingFailure?
             if needsMore && page.items.isEmpty { failure = .emptyPage }
@@ -351,7 +364,7 @@ public final class SiloProvider: MediaProvider, CapabilityReporting, MediaSortFi
             else { failure = nil }
             diagnostic?.finishPage(rows: page.items.count, hasMore: page.page?.has_more == true,
                                    hasNextCursor: next?.isEmpty == false, failure: failure)
-            guard page.page?.has_more == true, result.count < limit else { break }
+            guard needsMore else { break }
             guard !page.items.isEmpty, let next = page.page?.next_cursor, !next.isEmpty,
                   seen.insert(next).inserted else { throw AppError.invalidResponse }
             cursor = next

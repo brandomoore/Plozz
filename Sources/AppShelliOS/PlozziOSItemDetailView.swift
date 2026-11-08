@@ -1,6 +1,7 @@
 #if os(iOS)
 import AppRuntime
 import CoreModels
+import CoreNetworking
 import CoreUI
 import FeatureHomeCore
 import FeaturePlayback
@@ -301,13 +302,18 @@ private struct PlozziOSCanonicalItemDetailView: View {
                 isDiscoveryItem: isDiscoveryItem,
                 discoveryStatusRefresh: discoveryStatusRefresh,
                 loadSeasonEpisodeRoster: { [seer = appModel.seerService] item, number in
-                    await seer.seasonEpisodeRoster(for: item, seasonNumber: number)
+                    guard !OfflineMode.shared.isEnabled else { return .unavailable }
+                    return await seer.seasonEpisodeRoster(for: item, seasonNumber: number)
                 },
                 ratingsProvider: RatingsServiceFactory.make(),
                 detailMetadataResolver: { await DetailMetadataResolver.household.resolve($0) },
                 sourceAccountID: selectedSource?.accountID ?? item.sourceAccountID,
                 originSourceAccountID: originSourceAccountID,
-                onlineTrailerResolver: { await DetailMetadataResolver.household.trailers(for: $0) },
+                onlineTrailerResolver: {
+                    guard !OfflineMode.shared.isEnabled else { return [] }
+                    return await DetailMetadataResolver.household.trailers(for: $0)
+                },
+                trailerSettings: appModel.settings.heroBackground,
                 initialSources: initialSources,
                 alternateProviderResolver: { accountID in
                     appModel.accountsProviders.provider(forAccountID: accountID)
@@ -318,7 +324,7 @@ private struct PlozziOSCanonicalItemDetailView: View {
                 ),
                 identitySources: identitySources,
                 relatedTitlesLoader:
-                    relatedTitleLibrarySearch(in: accounts).map { search in
+                    appModel.isOfflineMode ? nil : relatedTitleLibrarySearch(in: accounts).map { search in
                         RelatedTitlesLoader(
                             resolver: .production(traktClientID: TraktConfig.resolved().clientID),
                             search: search,
@@ -358,6 +364,9 @@ private struct PlozziOSCanonicalItemDetailView: View {
             }
         }
         .artworkGradientBackground(scope: ObjectIdentifier(viewModel), isVisible: isPageVisible)
+        .task(id: appModel.settings.heroBackground.settings.trailerSources) {
+            await viewModel.refreshTrailerPolicy()
+        }
         .background(palette.backgroundBase.ignoresSafeArea())
         .onAppear {
             isPageVisible = true
@@ -653,9 +662,9 @@ private struct PlozziOSCanonicalItemDetailView: View {
                     )
                 }
 
-                if !detail.item.people.filter(\.isCast).isEmpty {
+                if !detail.item.detailCredits.isEmpty {
                     PlozziOSCastSection(
-                        people: detail.item.people.filter(\.isCast),
+                        people: detail.item.people,
                         sourceAccountID: detail.item.sourceAccountID
                     )
                 }
@@ -690,7 +699,7 @@ private struct PlozziOSCanonicalItemDetailView: View {
         .onScrollGeometryChange(for: Bool.self) { geometry in
             geometry.contentOffset.y > trailerPauseThreshold
         } action: { _, isPastHalfHero in
-            trailerController.setPaused(isPastHalfHero)
+            trailerController.setPaused(isPastHalfHero, surfaceRole: .detail)
         }
         .onScrollGeometryChange(for: CGFloat.self) { geometry in
             let topOffset = geometry.contentOffset.y
@@ -1008,6 +1017,11 @@ private struct PlozziOSCanonicalItemDetailView: View {
     }
 
     private func play(_ item: MediaItem, fromBeginning: Bool = false) {
+        guard !appModel.isOfflineMode || !item.isTrailer else { return }
+        guard !item.isTrailer || appModel.settings.heroBackground.settings.trailerSources.allows(item) else {
+            PlozzLog.app.info("Trailer action suppressed by profile settings")
+            return
+        }
         if !item.opensExternalSource { playbackPreparation.handoff(item) }
         if item.isYouTubeTrailer {
             Task { await trailerOpening.open(item) }
@@ -4049,6 +4063,7 @@ struct PlozziOSInlineEpisodeEntry: View {
 /// down-arrow** when complete (a settled status, not an action). Hidden when the
 /// episode isn't downloaded — download itself is started from the ⋯ menu.
 private struct PlozziOSCastSection: View {
+    @Environment(\.locale) private var locale
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.plozzMetrics) private var metrics
     @Environment(\.themePalette) private var palette
@@ -4065,14 +4080,20 @@ private struct PlozziOSCastSection: View {
     /// list holds.
     let sourceAccountID: String?
 
+    private var credits: [MediaPersonCredit] { MediaPersonCredit.ordered(people) }
+
     var body: some View {
-        PlozziOSMediaSection(title: Text("Cast"), horizontalInset: pageInset) {
+        PlozziOSMediaSection(
+            title: credits.contains { !$0.crewRoles.isEmpty } ? Text("Cast & Crew") : Text("Cast"),
+            horizontalInset: pageInset
+        ) {
             ScrollView(.horizontal) {
                 LazyHStack(
                     alignment: .top,
                     spacing: PlozziOSMediaRailLayout.visibleGap(metrics: metrics)
                 ) {
-                    ForEach(people.prefix(20)) { person in
+                    ForEach(credits) { credit in
+                        let person = credit.person
                         Button {
                             openPerson?(person, sourceAccountID)
                         } label: {
@@ -4100,7 +4121,7 @@ private struct PlozziOSCastSection: View {
                                     maxWidth: .infinity,
                                     alignment: .top
                                 )
-                            if let role = person.role {
+                            if let role = credit.caption(locale: locale) {
                                 Text(role)
                                     .font(.caption)
                                     .plozzForeground(.secondary)
@@ -4132,6 +4153,7 @@ private struct PlozziOSCastSection: View {
                 for: .scrollContent
             )
             .scrollIndicators(.hidden)
+            .accessibilityIdentifier("detail-cast-rail")
         }
         // Symmetric scaled whitespace above and below the cast rail so it sits with
         // balanced breathing room between the hero and the info band — and the gap

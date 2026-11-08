@@ -107,11 +107,14 @@ public struct WatchMutation: Codable, Hashable, Sendable, Identifiable {
     public var resumePosition: TimeInterval?
     /// Desired played flag to converge on every target, or `nil` to leave it.
     public var played: Bool?
-    /// When `true`, finishing also clears the resume point everywhere (a finished
-    /// title shouldn't keep a stale resume on any server).
+    /// When `true`, clear the resume point everywhere, including when explicitly
+    /// marking a title unwatched to reset it to unstarted.
     /// With no `played` flag or `resumePosition`, this instead represents the
     /// user's explicit "Remove from Continue Watching" action.
     public var clearResume: Bool
+    /// Server playback timestamps already visible when the user requested a reset,
+    /// keyed by target id. Server clocks can run ahead of `capturedAt`.
+    public var observedLastPlayedAt: [String: Date]
 
     /// Servers still needing this write. The reconciler removes a target as it
     /// succeeds, so a partial fan-out resumes exactly where it left off.
@@ -231,7 +234,8 @@ public struct WatchMutation: Codable, Hashable, Sendable, Identifiable {
         wetrakrPending: Bool? = nil,
         anilistPending: Bool? = nil,
         malPending: Bool? = nil,
-        rejectedSourceIDs: Set<String> = []
+        rejectedSourceIDs: Set<String> = [],
+        observedLastPlayedAt: [String: Date] = [:]
     ) {
         self.id = id
         self.authorization = nil
@@ -243,6 +247,7 @@ public struct WatchMutation: Codable, Hashable, Sendable, Identifiable {
         self.resumePosition = resumePosition
         self.played = played
         self.clearResume = clearResume
+        self.observedLastPlayedAt = observedLastPlayedAt
         self.targets = targets
         self.optimisticTargets = targets
         self.trakt = trakt
@@ -275,6 +280,7 @@ public struct WatchMutation: Codable, Hashable, Sendable, Identifiable {
         case wetrakrPending, wetrakrAccountIdentity, wetrakrCapturedAt, wetrakrIdempotencyKey
         case attempts, targetRetries, episodeOrigin, expansionPending, appliedTargetIDs, expansionStartedAt, identities, kind
         case anchorTitle, anchorYear, authorization, serverScope, rejectedSourceIDs
+        case observedLastPlayedAt
     }
 
     private struct AuthorizedIdentity: Codable {
@@ -350,6 +356,7 @@ public struct WatchMutation: Codable, Hashable, Sendable, Identifiable {
         resumePosition = try container.decodeIfPresent(TimeInterval.self, forKey: .resumePosition)
         played = try container.decodeIfPresent(Bool.self, forKey: .played)
         clearResume = try container.decodeIfPresent(Bool.self, forKey: .clearResume) ?? false
+        observedLastPlayedAt = try container.decodeIfPresent([String: Date].self, forKey: .observedLastPlayedAt) ?? [:]
         targets = try container.decodeIfPresent([WatchMutationTarget].self, forKey: .targets) ?? []
         optimisticTargets = try container.decodeIfPresent(
             [WatchMutationTarget].self,
@@ -421,6 +428,9 @@ public struct WatchMutation: Codable, Hashable, Sendable, Identifiable {
         try container.encodeIfPresent(resumePosition, forKey: .resumePosition)
         try container.encodeIfPresent(played, forKey: .played)
         try container.encode(clearResume, forKey: .clearResume)
+        if !observedLastPlayedAt.isEmpty {
+            try container.encode(observedLastPlayedAt, forKey: .observedLastPlayedAt)
+        }
         try container.encode(targets, forKey: .targets)
         try container.encode(optimisticTargets, forKey: .optimisticTargets)
         try container.encodeIfPresent(trakt, forKey: .trakt)

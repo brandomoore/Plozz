@@ -39,6 +39,7 @@ struct PlozziOSLibrarySelectionView: View {
             model: appModel.guidePreparation, presenter: appModel.transientStatusPresenter,
             palette: palette, isEnabled: hostsGuideProgress
         )
+        .offlineStatusOverlay(appModel: appModel, palette: palette, isEnabled: hostsGuideProgress)
         .task(id: loadID) {
             guard appModel.plexHomeUsers.pendingPlexPINRequest == nil else { return }
             await loadLibraries()

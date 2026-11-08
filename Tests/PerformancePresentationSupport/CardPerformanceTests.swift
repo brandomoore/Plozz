@@ -40,11 +40,19 @@ final class CardPerformanceTests: XCTestCase {
     }
 
     func testPerformanceLifecycle() async throws {
+        try await measureLifecycle(scenario: "cards-lifecycle", cycles: 3)
+    }
+
+    func testPerformanceLifecycleSoak() async throws {
+        try await measureLifecycle(scenario: "cards-lifecycle-soak", cycles: 30)
+    }
+
+    private func measureLifecycle(scenario: String, cycles: Int) async throws {
         try PerformanceProbe.requireEnabled()
         let fixture = try await Fixture()
         defer { fixture.close() }
-        try await PerformanceProbe.measure(self, scenario: "cards-lifecycle") {
-            for _ in 0..<3 {
+        try await PerformanceProbe.measure(self, scenario: scenario) {
+            for _ in 0..<cycles {
                 try await fixture.mount()
                 weak var host = fixture.host
                 weak var view = fixture.host?.view
@@ -53,8 +61,9 @@ final class CardPerformanceTests: XCTestCase {
                 XCTAssertNil(host)
                 XCTAssertNil(view)
             }
-            return ["cycles": 3, "survivingHosts": 0]
+            return ["cycles": cycles, "survivingHosts": 0]
         }
+        try await PerformanceProbe.attachMemoryAfterOneSecond(self, scenario: scenario)
     }
 
     private static func waitUntil(_ condition: () -> Bool) async throws {

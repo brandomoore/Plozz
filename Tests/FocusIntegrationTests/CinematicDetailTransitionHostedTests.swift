@@ -841,6 +841,34 @@ final class CinematicDetailTransitionHostedTests: XCTestCase {
         XCTAssertEqual(session.stage, .artwork)
     }
 
+    func testLandscapeHeroNeverSeedsACachedPortraitBeforeItsBackdrop() async throws {
+        let (poster, _) = try await cachedPreview(size: CGSize(width: 180, height: 320))
+        let (backdrop, _) = try await cachedPreview()
+        _ = await ArtworkImageCache.shared.image(for: poster, variant: .heroBackdrop)
+        _ = await ArtworkImageCache.shared.image(for: backdrop, variant: .heroBackdrop)
+        for preference in [ArtworkPreference.library, .online] {
+            let fixture = try await makeFixture()
+            defer { fixture.close() }
+            var displayed: [ArtworkReference] = []
+            let host = UIHostingController(rootView:
+                FallbackAsyncImage(
+                    references: [.remote(poster), .remote(backdrop)],
+                    prefersLandscape: true, maxAspectRatio: 3,
+                    variant: .heroBackdrop, previewVariant: .heroPreview,
+                    asyncFallbackURL: { poster },
+                    onResolveReference: { if let reference = $0 { displayed.append(reference) } },
+                    pinIdentity: UUID().uuidString,
+                    content: { $0.resizable() }, placeholder: { Color.clear }
+                )
+                .environment(\.plozzArtworkSettings, .init(preference: preference))
+            )
+            fixture.window.rootViewController = host
+            host.view.layoutIfNeeded()
+            try await waitUntil { !displayed.isEmpty }
+            XCTAssertTrue(displayed.allSatisfy { $0 == .remote(backdrop) })
+        }
+    }
+
     func testBackdropRequestStartsBeforeDestinationAndIsAdoptedByThePage() async throws {
         let store = MetadataProviderSettingsStore()
         let original = store.load()
@@ -856,7 +884,8 @@ final class CinematicDetailTransitionHostedTests: XCTestCase {
             references: item.artworkReferences(for: .detailBackdrop),
             variant: .heroBackdrop, maxAspectRatio: 3,
             pinIdentity: "detail:\(item.id)",
-            providerPolicyIdentity: ArtworkResolveKey.policyIdentity(settings)
+            providerPolicyIdentity: ArtworkResolveKey.policyIdentity(settings),
+            prefersLandscape: true
         )
         fixture.model.source.itemKey = item.stablePresentationID
         DetailTransitionNavigation.prepare(for: item, in: fixture.window, source: fixture.model.source)
@@ -1026,11 +1055,13 @@ final class CinematicDetailTransitionHostedTests: XCTestCase {
         XCTAssertNil(overlay.destination.image)
     }
 
-    private func cachedPreview(decode: Bool = true) async throws -> (URL, UIImage) {
+    private func cachedPreview(
+        decode: Bool = true, size: CGSize = CGSize(width: 320, height: 180)
+    ) async throws -> (URL, UIImage) {
         let url = try XCTUnwrap(URL(string: "https://backdrop-fixture.example.test/\(UUID()).png"))
-        let image = UIGraphicsImageRenderer(size: CGSize(width: 320, height: 180)).image {
+        let image = UIGraphicsImageRenderer(size: size).image {
             UIColor.blue.setFill()
-            $0.fill(CGRect(x: 0, y: 0, width: 320, height: 180))
+            $0.fill(CGRect(origin: .zero, size: size))
         }
         let response = try XCTUnwrap(HTTPURLResponse(
             url: url, statusCode: 200, httpVersion: nil,

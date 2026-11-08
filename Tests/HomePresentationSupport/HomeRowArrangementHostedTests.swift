@@ -1241,6 +1241,7 @@ final class HomeRowArrangementHostedTests: XCTestCase {
                     VStack(alignment: .leading, spacing: 28) {
                         MediaRowView(title: Text("Collection row"), items: [item], onSelect: { _ in })
                         HomeSectionStatusRow(issue: issue, onRetry: {})
+                            .environment(\.openHomeCustomization, {})
                     }
                 }
                 .environment(\.plozzPinnedSidebarActive, pinned)
@@ -1269,13 +1270,16 @@ final class HomeRowArrangementHostedTests: XCTestCase {
                 XCTAssertTrue(text.contains("No titles to show"), text)
                 XCTAssertTrue(text.contains("Collection server"), text)
                 for title in ["Details", "Retry"] {
-                    let label = try XCTUnwrap(lines.first { $0.0.contains(title) }, text).1
-                    let point = CGPoint(x: label.midX * window.bounds.width, y: (1 - label.midY) * window.bounds.height)
-                    let target = try XCTUnwrap(self.focusableItem(at: point, in: window))
-                    XCTAssertTrue(target.canBecomeFocused)
-                    try await self.focus(target, in: window)
-                    XCTAssertTrue(UIFocusSystem.focusSystem(for: window)?.focusedItem === target)
+                    XCTAssertFalse(text.contains(title), "Empty content is not a failed request: \(text)")
                 }
+                let customize = try XCTUnwrap(lines.first { $0.0.contains("Customize Home") }, text).1
+                let point = CGPoint(
+                    x: customize.midX * window.bounds.width, y: (1 - customize.midY) * window.bounds.height
+                )
+                let target = try XCTUnwrap(self.focusableItem(at: point, in: window))
+                XCTAssertTrue(target.canBecomeFocused)
+                try await self.focus(target, in: window)
+                XCTAssertTrue(UIFocusSystem.focusSystem(for: window)?.focusedItem === target)
             }
         }
     }
@@ -1418,7 +1422,7 @@ final class HomeRowArrangementHostedTests: XCTestCase {
     }
     #endif
 
-    func testCollectionEditorPreviewsActualTitlesBesidePresentationChoices() async throws {
+    func testCollectionEditorPreviewsActualTitlesAboveSettingsMenus() async throws {
         for style in CollectionSection.CardStyle.allCases {
             let requested = expectation(description: "Collection preview requested")
             let provider = HomeSettingsLibraryProvider(
@@ -1454,7 +1458,18 @@ final class HomeRowArrangementHostedTests: XCTestCase {
                 let text = lines.map(\.0).joined(separator: " ")
                 XCTAssertTrue(text.contains("Weekend picks"), text)
                 XCTAssertTrue(text.contains("Orbit"), "Preview must display the provider's title: \(text)")
-                XCTAssertGreaterThan(try self.y("Posters", in: lines), try self.y("Orbit", in: lines))
+                XCTAssertTrue(text.contains(String(localized: style.title)), text)
+                let layoutY = try self.y("Layout", in: lines)
+                XCTAssertGreaterThan(try self.y("Orbit", in: lines), layoutY)
+                if style == .landscape {
+                    XCTAssertTrue(text.contains("Off"), text)
+                    XCTAssertFalse(text.contains("Automatic"), text)
+                    let logoY = try self.y("Logo", in: lines)
+                    XCTAssertGreaterThan(layoutY, logoY)
+                    XCTAssertGreaterThan(logoY, try self.y("Content", in: lines))
+                } else {
+                    XCTAssertFalse(text.contains("Logo"), text)
+                }
                 XCTAssertTrue(visibility.visibility.collectionSections.isEmpty, "Previewing does not save a section.")
             }
         }

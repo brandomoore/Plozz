@@ -135,6 +135,7 @@ final class PINRequirementPresentationTests: XCTestCase {
                 accountsProviders: hub, profilesModel: profiles,
                 plexHomeUserTokenCache: PlexHomeUserTokenCache(store: InMemorySecureStore()),
                 automaticSignInStore: AutomaticSignInStore(defaults: defaults, secureStore: InMemorySecureStore()),
+                offlineSignInStore: .init(secureStore: InMemorySecureStore()),
                 switchProfile: { _ in }
             ),
             profiles

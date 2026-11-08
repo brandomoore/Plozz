@@ -101,14 +101,18 @@ PLOZZ_RELEASE_ID=release/045 fastlane release --env fastlane
 
 ### Queued App Store screenshots
 
-`fastlane/pending-store-screenshots.json` pins the approved Asset Library images,
-their hashes, order, device groups and the existing versions that must remain
-untouched. The `release` lane applies this one-time set after both platform
+`fastlane/pending-store-screenshots.json` pins the original 17 approved Asset Library
+images. `fastlane/pending-duo-screenshots.json` independently pins ten Duo images:
+five outer and five unfolded, in their shared placement group. Each image keeps
+its own native dimensions and specification; there is no resizing during release.
+The manifests record hashes, order, device groups and the existing versions that
+must remain untouched. The `release` lane applies these one-time sets after both platform
 uploads and before tagging. It does not submit review, change build selection,
-or run during `beta`. The current queue targets the first versions after
-`2026.10.30`; it cannot replace the build-70 screenshots.
-Only the three pinned device groups in `en-US` are changed. Separate device
-groups, including iPhone Duo, and other localizations are preserved.
+or run during `beta`. The queues target the first versions after
+`2026.10.30`; they cannot replace the build-70 screenshots.
+Only the four pinned device groups in `en-US` are changed. Other device groups
+and localizations are preserved. Duo uses a separate queue ID and receipt so
+adding it cannot reset or replay the original 17-image queue.
 
 Consumption and partial-progress receipts are shared across worktrees in
 `${XDG_STATE_HOME:-~/.local/state}/plozz/app-store-screenshots/`, under a

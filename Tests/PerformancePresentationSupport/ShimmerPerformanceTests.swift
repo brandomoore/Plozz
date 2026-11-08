@@ -1,5 +1,6 @@
 import CoreModels
 import CoreUI
+import Observation
 import SwiftUI
 import UIKit
 import XCTest
@@ -25,6 +26,59 @@ final class ShimmerPerformanceTests: XCTestCase {
         let first = try fixture.snapshot()
         try await Task.sleep(for: .milliseconds(600))
         XCTAssertEqual(try fixture.snapshot(), first)
+    }
+
+    func testEnvironmentPausesAndRestartsShimmer() async throws {
+        let state = ShimmerState()
+        let fixture = try await Fixture(content: ControlledShimmer(state: state))
+        defer { fixture.close() }
+        for _ in 0..<2 {
+            let paused = try fixture.snapshot()
+            try await Task.sleep(for: .milliseconds(600))
+            XCTAssertEqual(try fixture.snapshot(), paused)
+            state.enabled = true
+            try await Task.sleep(for: .milliseconds(100))
+            let first = try fixture.snapshot()
+            var changed = false
+            for _ in 0..<8 {
+                try await Task.sleep(for: .milliseconds(300))
+                let next = try fixture.snapshot()
+                changed = changed || first != next
+            }
+            XCTAssertTrue(changed, "Visible placeholders must resume their loading animation.")
+            state.enabled = false
+            try await Task.sleep(for: .milliseconds(200))
+        }
+    }
+
+    func testVisibilityDoesNotChangeReduceMotionAppearance() async throws {
+        let state = ShimmerState()
+        state.reduceMotion = true
+        let fixture = try await Fixture(content: ControlledShimmer(state: state))
+        defer { fixture.close() }
+        let paused = try fixture.snapshot()
+        state.enabled = true
+        try await Task.sleep(for: .milliseconds(600))
+        XCTAssertEqual(try fixture.snapshot(), paused)
+    }
+
+    @MainActor @Observable
+    final class ShimmerState {
+        var enabled = false
+        var reduceMotion = false
+    }
+
+    private struct ControlledShimmer: View {
+        let state: ShimmerState
+
+        var body: some View {
+            RoundedRectangle(cornerRadius: 18)
+                .fill(Color.gray)
+                .frame(width: 200, height: 300)
+                .shimmering()
+                .environment(\.plozzShimmerEnabled, state.enabled)
+                .environment(\._accessibilityReduceMotion, state.reduceMotion)
+        }
     }
 
     private func measure(disableAnimations: Bool, scenario: String) async throws {

@@ -172,7 +172,9 @@ public final class NavigationStyleSettingsModel {
     ) {
         let libraries = NavigationContentAvailability.reconcileLibraries(
             discovered: discovered,
-            unreachableAccountIDs: unreachableAccountIDs,
+            unreachableAccountIDs: unreachableAccountIDs.filter {
+                failures[$0]?.requiresSignIn != true && failures[$0] != .accessRestricted
+            },
             remembered: contentLibraries
         ).filter { accountIDs.contains($0.accountID) }
         if contentLibraries != libraries { contentLibraries = libraries }

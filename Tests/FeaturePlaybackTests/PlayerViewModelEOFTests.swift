@@ -119,6 +119,76 @@ final class PlayerViewModelEOFTests: XCTestCase {
     }
     #endif
 
+    func testSongTapStopsOnPauseSeekAndStopAcrossProviders() async throws {
+        for kind in [ProviderKind.jellyfin, .plex] {
+            let item = MediaItem(id: "song", title: "Song fixture", kind: .movie)
+            let provider = RecordingPlaybackProvider(
+                request: .init(item: item, streamURL: URL(string: "https://fixture.invalid/video.mp4")!),
+                kind: kind
+            )
+            let engine = SpyVideoEngine()
+            engine.providesSongTap = true
+            engine.duration = 120
+            let model = PlayerViewModel(provider: provider, itemID: item.id, engineFactory: .init(makeNative: { _ in engine }))
+            await model.load()
+            try await Task.sleep(for: .milliseconds(50))
+            XCTAssertTrue(engine.songTapActive)
+            XCTAssertTrue(model.controls.songRecognition.isAvailable)
+            model.controls.songRecognition.state = .found(.init(title: "Current", artist: nil, artworkURL: nil, appleMusicURL: nil))
+            model.setPaused(true)
+            XCTAssertFalse(engine.songTapActive)
+            XCTAssertNotEqual(model.controls.songRecognition.state, .idle, "Pause retains the current card without processing audio.")
+            model.requestSeek(to: 20, origin: "song-test")
+            XCTAssertEqual(model.controls.songRecognition.state, .idle)
+            XCTAssertTrue(model.controls.songRecognition.isAvailable, "A seek must preserve the song slot's geometry.")
+            XCTAssertFalse(engine.songTapActive)
+            model.setPaused(false)
+            XCTAssertFalse(engine.songTapActive, "Resuming during a pending seek must not analyze pre-seek audio.")
+            let deadline = ContinuousClock.now + .seconds(2)
+            while !engine.songTapActive, ContinuousClock.now < deadline {
+                try await Task.sleep(for: .milliseconds(10))
+            }
+            XCTAssertTrue(engine.songTapActive)
+            let installs = engine.songTapInstalls
+            await model.handoffPlayResolved(
+                .init(item: item, streamURL: URL(string: "https://fixture.invalid/reloaded.mp4")!),
+                engineKind: .native, startPosition: 20
+            )
+            try await Task.sleep(for: .milliseconds(50))
+            XCTAssertGreaterThan(engine.songTapInstalls, installs, "Engine handoffs must replace the old recognition owner.")
+            XCTAssertTrue(engine.songTapActive)
+            engine.onEnded?()
+            XCTAssertFalse(engine.songTapActive, "Natural EOF must immediately stop recognition.")
+            await model.stop()
+            XCTAssertFalse(engine.songTapActive)
+            try await Task.sleep(for: .milliseconds(50))
+            XCTAssertFalse(engine.songTapActive, "Cancelled recognition must not resurrect after stop.")
+        }
+    }
+
+    func testDisabledSongRecognitionNeverInstallsATap() async throws {
+        let item = MediaItem(id: "song-off", title: "Song fixture", kind: .movie)
+        let provider = RecordingPlaybackProvider(request: .init(
+            item: item, streamURL: URL(string: "https://fixture.invalid/video.mp4")!
+        ))
+        let engine = SpyVideoEngine()
+        engine.providesSongTap = true
+        var settings = PlaybackSettings()
+        settings.identifySongs = false
+        let model = PlayerViewModel(
+            provider: provider, itemID: item.id, playbackSettings: settings,
+            engineFactory: .init(makeNative: { _ in engine })
+        )
+        await model.load()
+        model.setPaused(true)
+        model.setPaused(false)
+        model.requestSeek(to: 10, origin: "song-off-test")
+        try await Task.sleep(for: .milliseconds(50))
+        XCTAssertEqual(engine.songTapInstalls, 0)
+        XCTAssertFalse(model.controls.songRecognition.isAvailable)
+        await model.stop()
+    }
+
     func testLocalPlaybackBypassesServerResolutionAcrossProviders() async {
         let item = MediaItem(id: "movie", title: "Movie", kind: .movie)
         let localURL = URL(fileURLWithPath: "/fixture/download.mp4")
@@ -2932,6 +3002,21 @@ private final class SpyVideoEngine: VideoEngine {
     var discVideoCatalog: [DiscVideo] = []
     func discVideos() async throws -> [DiscVideo] { discVideoCatalog }
     #endif
+    var providesSongTap = false
+    var songTapActive = false
+    var songTapInstalls = 0
+    private var songContinuation: AsyncStream<SongTapChunk>.Continuation?
+    func installSongTap() -> AsyncStream<SongTapChunk>? {
+        songTapInstalls += 1
+        guard providesSongTap else { return nil }
+        songTapActive = true
+        return AsyncStream { songContinuation = $0 }
+    }
+    func removeSongTap() {
+        songTapActive = false
+        songContinuation?.finish()
+        songContinuation = nil
+    }
     var maximumPlaybackSpeed = 4.0
     var backgroundAudioEnabled = false
     func setBackgroundAudioEnabled(_ enabled: Bool) { backgroundAudioEnabled = enabled }

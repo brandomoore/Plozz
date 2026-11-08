@@ -52,14 +52,23 @@ public struct PosterCardView: View {
     private let focusRequest: UUID?
     private let onFocusRequestHandled: (() -> Void)?
     private let action: () -> Void
+    private var artworkOnlyConfiguration: ArtworkOnlyConfiguration?
+    @State private var artworkOnlyPlaybackHeight: CGFloat = 0
+
+    private struct ArtworkOnlyConfiguration {
+        let cornerRadius: CGFloat
+        let playbackTextSize: CGFloat
+        let playbackInset: CGFloat
+        let showsPlaybackIndicators: Bool
+    }
 
     @PlozzCardFocus private var isFocused: Bool
     #if os(tvOS)
     @State private var detailTransitionSource = DetailTransitionSourceReference()
     #endif
-    /// Whether the artwork this card ended up with already has the show's name
-    /// printed on it, in which case the card must not print it again.
+    /// Source-role hint used by Continue Watching's duplicate-title protection.
     @State private var artworkAlreadyCarriesTitle = false
+    @State private var resolvedLogoArtworkIdentity: String?
     #if os(tvOS)
     @State private var nativeArtworkDimming = ContinueWatchingCardShape.artworkDim(logo: nil, background: nil)
     #endif
@@ -78,6 +87,14 @@ public struct PosterCardView: View {
     @Environment(\.plozzCardFocusStyle) private var focusStyle
     @Environment(\.plozzArtworkPolicy) private var inheritedArtworkPolicy
     @Environment(\.plozzContinueWatchingPlaybackDetails) private var playbackDetails
+    @Environment(\.plozzLandscapeTitleLogo) private var landscapeTitleLogo
+
+    private var usesLandscapeTitleLogo: Bool {
+        landscapeTitleLogo == .on && !showsSeriesArtwork
+            && artworkPolicy.usesLandscapeKeyArt(for: item, style: style)
+    }
+
+    private var usesLogoArtwork: Bool { showsSeriesArtwork || usesLandscapeTitleLogo }
 
     private var usesProgressOnly: Bool {
         presentationArtworkPolicy.area == .continueWatching && playbackDetails == .progressOnly
@@ -85,6 +102,10 @@ public struct PosterCardView: View {
 
     private var usesProgressOnlyPortrait: Bool {
         showsSeriesArtwork && style == .poster && usesProgressOnly
+    }
+
+    private var needsPortraitReflection: Bool {
+        !usesProgressOnlyPortrait && artworkOnlyConfiguration?.showsPlaybackIndicators != false
     }
 
     private var presentationArtworkPolicy: ArtworkPresentationPolicy {
@@ -201,7 +222,40 @@ public struct PosterCardView: View {
         metrics.artworkSize(for: style, showsSeriesArtwork: showsSeriesArtwork, playbackDetails: playbackDetails)
     }
 
+    /// Reuses Home's artwork and playback chrome inside a caller-owned button,
+    /// without installing a second focus target, context menu, or detail transition.
+    public func artworkOnly(
+        cornerRadius: CGFloat, playbackTextSize: CGFloat, playbackInset: CGFloat,
+        showsPlaybackIndicators: Bool = true
+    ) -> Self {
+        var result = self
+        result.artworkOnlyConfiguration = ArtworkOnlyConfiguration(
+            cornerRadius: cornerRadius, playbackTextSize: playbackTextSize,
+            playbackInset: playbackInset, showsPlaybackIndicators: showsPlaybackIndicators
+        )
+        return result
+    }
+
     public var body: some View {
+        if let configuration = artworkOnlyConfiguration {
+            artworkSurface(
+                cornerRadius: configuration.cornerRadius,
+                badgeInset: configuration.playbackInset,
+                progressInset: configuration.playbackInset,
+                showsIndicators: configuration.showsPlaybackIndicators
+            )
+            .fittingPortraitPlaybackReflection(
+                configuration.showsPlaybackIndicators && showsSeriesArtwork && style == .poster && showsResumeChip
+            )
+            .environment(\.plozzArtworkArea, presentationArtworkPolicy.area)
+            .onPreferenceChange(PortraitPlaybackHeightKey.self) { artworkOnlyPlaybackHeight = $0 }
+            .allowsHitTesting(false)
+        } else {
+            interactiveCard
+        }
+    }
+
+    private var interactiveCard: some View {
         cardBody
             .fittingPortraitPlaybackReflection(showsSeriesArtwork && style == .poster && showsResumeChip)
             .environment(\.plozzArtworkArea, presentationArtworkPolicy.area)
@@ -285,12 +339,12 @@ public struct PosterCardView: View {
     }
 
     private var nativePosterReferences: [ArtworkReference] {
-        if showsSeriesArtwork { return seriesArtworkReferences }
+        if usesLogoArtwork { return seriesArtworkReferences }
         return nativeUsesProtectedArtwork ? placeholderArtworkReferences : artworkReferences
     }
 
     private var nativePosterFallback: (@Sendable () async -> URL?)? {
-        if showsSeriesArtwork { return seriesArtworkFallback }
+        if usesLogoArtwork { return seriesArtworkFallback }
         return nativeUsesProtectedArtwork ? placeholderArtworkFallback : asyncArtworkFallback
     }
 
@@ -298,23 +352,27 @@ public struct PosterCardView: View {
         VStack(spacing: metrics.nativePosterCaptionSpacing) {
             FallbackAsyncImage(
                 references: nativeArtworkReady ? nativePosterReferences : [],
-                prefersPrimaryReference: preferredSeriesArtwork != nil,
+                prefersPrimaryReference: preferredSeriesArtwork != nil || prefersLandscapeKeyArtReference,
                 maxAspectRatio: posterAspectGuard,
                 variant: artworkVariant,
                 previewVariant: style == .poster ? .posterPreview : nil,
+                artworkPolicy: cardArtworkPresentationPolicy,
                 asyncFallbackURL: nativeArtworkReady ? nativePosterFallback : nil,
                 onResolveReference: { reference in
                     artworkAlreadyCarriesTitle = reference.map(titleBearingArtwork.contains) ?? false
+                    resolvedLogoArtworkIdentity = reference == nil ? nil : seriesSource.identity
                 },
                 // An artless library has empty references both before and after
                 // settling; readiness must still restart its metadata fallback.
-                pinIdentity: artworkPolicy.pinIdentity(for: item) + (nativeArtworkReady ? "" : "|pending-textless"),
+                pinIdentity: (usesLogoArtwork ? seriesSource.pinIdentity : artworkPolicy.pinIdentity(for: item))
+                    + (nativeArtworkReady ? "" : "|pending-textless"),
                 content: { _ in Color.clear },
                 placeholder: { Color.clear }
             )
-            .resolvedBitmap { image in
+            .resolvedBitmap { image, identity in
                 NativeTVPoster(
                     image: image,
+                    artworkIdentity: identity,
                     treatment: nativePosterTreatment,
                     aspectRatio: borderlessAspectRatio,
                     fallbackWidth: size.width,
@@ -323,7 +381,7 @@ public struct PosterCardView: View {
                     overlay: nativePosterOverlay(hasArtwork: image != nil),
                     indicators: hidesPlaybackStatus ? nil : .media(nativePlaybackIndicators.statusOnly),
                     artworkBackground: NativePosterArtworkBackground(
-                        dimming: showsSeriesArtwork && !suppressesSeriesLogo ? nativeArtworkDimming : 0,
+                        dimming: usesLogoArtwork && !suppressesSeriesLogo ? nativeArtworkDimming : 0,
                         scrim: showsResumeChip ? resumeChipOverlay.artworkScrim
                             : nativePlaybackIndicators.withoutStatus.artworkScrim
                     ),
@@ -348,7 +406,7 @@ public struct PosterCardView: View {
         .task(id: textlessResolutionIdentity) { await prepareTextlessArtwork() }
     }
 
-    private var nativeArtworkReady: Bool { !showsSeriesArtwork || textlessAnswerReady }
+    private var nativeArtworkReady: Bool { !usesLogoArtwork || textlessAnswerReady }
 
     private func nativePosterOverlay(hasArtwork: Bool) -> some View {
         PosterFocusReader(focus: $isFocused) { focused in
@@ -366,7 +424,7 @@ public struct PosterCardView: View {
                     neutralPlaceholder
                 }
             }
-            if showsSeriesArtwork && !suppressesSeriesLogo {
+            if hasArtwork && usesLogoArtwork && !suppressesSeriesLogo {
                 seriesLogo.attachingArtworkDimming { nativeArtworkDimming = $0 }
             }
             nativePlaybackIndicators.withoutStatus.withoutScrim
@@ -393,33 +451,42 @@ public struct PosterCardView: View {
 
     // MARK: Poster
 
+    private func artworkSurface(
+        cornerRadius: CGFloat, badgeInset: CGFloat, progressInset: CGFloat,
+        showsIndicators: Bool = true
+    ) -> some View {
+        Color.clear
+            .overlay { artwork }
+            .overlay(alignment: .topLeading) { statusCue(inset: badgeInset) }
+            .overlay {
+                if showsIndicators {
+                    MediaCardPlaybackIndicators(
+                        item: item, hidesStatus: hidesPlaybackStatus,
+                        showsProgressBar: !showsResumeChip && showsProgressBars,
+                        badgeInset: badgeInset, progressHeight: metrics.progressBarHeight,
+                        progressHorizontalInset: progressInset, progressBottomInset: progressInset,
+                        downloadState: showsResumeChip ? nil : downloadState,
+                        artworkCornerRadius: cornerRadius
+                    )
+                }
+            }
+            .overlay { if showsIndicators { resumeChip } }
+            .overlay { pendingRemovalOverlay }
+            .plozzCardArtworkClip(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+            .plozzMediaEdge(
+                cornerRadius: cornerRadius,
+                isEnabled: MediaArtworkPlaceholder.Symbol(for: item) == .playback
+            )
+    }
+
     private var posterCard: some View {
         VStack(alignment: .leading, spacing: metrics.posterCaptionTopSpacing) {
             Color.clear
                 .aspectRatio(borderlessAspectRatio, contentMode: .fit)
                 .frame(maxWidth: .infinity)
-                .overlay { artwork }
-                .overlay(alignment: .topLeading) { statusCue(inset: 8) }
                 .overlay {
-                    MediaCardPlaybackIndicators(
-                        item: item,
-                        hidesStatus: hidesPlaybackStatus,
-                        showsProgressBar: !showsResumeChip && showsProgressBars,
-                        badgeInset: 8,
-                        progressHeight: metrics.progressBarHeight,
-                        progressHorizontalInset: 16,
-                        progressBottomInset: 16,
-                        downloadState: showsResumeChip ? nil : downloadState,
-                        artworkCornerRadius: metrics.posterArtworkCornerRadius
-                    )
+                    artworkSurface(cornerRadius: metrics.posterArtworkCornerRadius, badgeInset: 8, progressInset: 16)
                 }
-                .overlay { resumeChip }
-                .overlay { pendingRemovalOverlay }
-                .plozzCardArtworkClip(RoundedRectangle(cornerRadius: metrics.posterArtworkCornerRadius, style: .continuous))
-                .plozzMediaEdge(
-                    cornerRadius: metrics.posterArtworkCornerRadius,
-                    isEnabled: MediaArtworkPlaceholder.Symbol(for: item) == .playback
-                )
                 #if os(tvOS)
                 .recordDetailTransitionArtwork(detailTransitionSource)
                 #elseif os(iOS)
@@ -489,28 +556,9 @@ public struct PosterCardView: View {
             Color.clear
                 .aspectRatio(borderlessAspectRatio, contentMode: .fit)
                 .frame(maxWidth: .infinity)
-                .overlay { artwork }
-                .overlay(alignment: .topLeading) { statusCue(inset: 8) }
                 .overlay {
-                    MediaCardPlaybackIndicators(
-                        item: item,
-                        hidesStatus: hidesPlaybackStatus,
-                        showsProgressBar: !showsResumeChip && showsProgressBars,
-                        badgeInset: 8,
-                        progressHeight: metrics.progressBarHeight,
-                        progressHorizontalInset: 16,
-                        progressBottomInset: 16,
-                        downloadState: showsResumeChip ? nil : downloadState,
-                        artworkCornerRadius: metrics.landscapeArtworkCornerRadius
-                    )
+                    artworkSurface(cornerRadius: metrics.landscapeArtworkCornerRadius, badgeInset: 8, progressInset: 16)
                 }
-                .overlay { resumeChip }
-                .overlay { pendingRemovalOverlay }
-                .plozzCardArtworkClip(RoundedRectangle(cornerRadius: metrics.landscapeArtworkCornerRadius, style: .continuous))
-                .plozzMediaEdge(
-                    cornerRadius: metrics.landscapeArtworkCornerRadius,
-                    isEnabled: MediaArtworkPlaceholder.Symbol(for: item) == .playback
-                )
                 #if os(tvOS)
                 .recordDetailTransitionArtwork(detailTransitionSource)
                 #elseif os(iOS)
@@ -780,11 +828,7 @@ public struct PosterCardView: View {
     /// (content) media titles rendered verbatim — mixing them into one `String`
     /// first would hide the copy from the catalog.
     private var primaryText: Text {
-        if item.kind == .episode, let series = item.parentTitle, !series.isEmpty {
-            return Text(verbatim: series)
-        }
-        if hideText { return Text(spoilerSettings.maskedTitle(for: item)) }
-        return Text(verbatim: item.title)
+        item.posterCaptionText(spoilerSettings: spoilerSettings)
     }
 
     /// Secondary line — subtitle facts plus card runtime/remaining when available.
@@ -874,11 +918,26 @@ public struct PosterCardView: View {
             bottomScrimDepth: showsSeriesArtwork ? ContinueWatchingCardShape.scrimDepth : nil,
             compactHorizontalLayout: showsSeriesArtwork && style == .poster
         )
+        .fittingPlaybackText(
+            size: artworkOnlyConfiguration?.playbackTextSize,
+            inset: artworkOnlyConfiguration?.playbackInset
+        )
     }
 
     // MARK: Artwork
     private var artworkReferences: [ArtworkReference] {
         artworkPolicy.references(for: item, style: style)
+    }
+
+    private var cardArtworkPresentationPolicy: ArtworkPresentationPolicy {
+        guard !usesLogoArtwork else { return seriesSource.policy }
+        return artworkPolicy.presentationPolicy(for: item, style: style, inheriting: presentationArtworkPolicy)
+    }
+
+    private var prefersLandscapeKeyArtReference: Bool {
+        !usesLogoArtwork && artworkPolicy.prefersPrimaryReference(
+            for: item, style: style, policy: presentationArtworkPolicy
+        )
     }
 
     @ViewBuilder
@@ -904,7 +963,7 @@ public struct PosterCardView: View {
     private var resolvedArtwork: some View {
         if PosterCardPresentation.usesFolderArtwork(for: item.kind) {
             folderArtwork
-        } else if showsSeriesArtwork {
+        } else if usesLogoArtwork {
             seriesArtwork
         } else if showsSpoilerSafePoster {
             // Series art, unblurred — see `showsSpoilerSafePoster`. Both spoiler
@@ -957,10 +1016,12 @@ public struct PosterCardView: View {
     var realArtwork: some View {
         FallbackAsyncImage(
             references: artworkReferences,
+            prefersPrimaryReference: prefersLandscapeKeyArtReference,
             maxAspectRatio: posterAspectGuard,
             variant: artworkVariant,
             previewVariant:
                 style == .poster ? .posterPreview : nil,
+            artworkPolicy: cardArtworkPresentationPolicy,
             asyncFallbackURL: asyncArtworkFallback,
             // Required even when `artworkReferences` is empty: the async fallback
             // is title-specific, so its task/memo identity has to be too.
@@ -1003,7 +1064,9 @@ public struct PosterCardView: View {
     /// Shoko/AniDB usually ship no per-episode image, so TMDb supplies it.
     var asyncArtworkFallback: (@Sendable () async -> URL?)? {
         guard enablesAsyncArtworkFallback else { return nil }
-        guard let inner = artworkPolicy.artworkFallback(for: item, style: style) else { return nil }
+        guard let inner = artworkPolicy.artworkFallback(
+            for: item, style: style, policy: presentationArtworkPolicy
+        ) else { return nil }
         // Bound concurrent grid-card resolutions so a large un-enriched library
         // (SMB) can't flood the metadata network + ArtworkRouter actor while
         // scrolling. Skip the network call entirely if this card scrolled away
@@ -1140,9 +1203,9 @@ public struct PosterCardView: View {
     }
 
     private var textlessResolutionIdentity: String? {
-        guard showsSeriesArtwork, style == .landscape, enablesAsyncArtworkFallback,
-              presentationArtworkPolicy.prefersTextlessArtwork else { return nil }
-        return "\(TextlessBackdropStore.key(for: item))|\(presentationArtworkPolicy.identity)"
+        guard usesLogoArtwork, style == .landscape, enablesAsyncArtworkFallback,
+              seriesSource.prefersTextlessBackdrop else { return nil }
+        return "\(TextlessBackdropStore.key(for: item))|\(seriesSource.identity)"
     }
 
     private func prepareTextlessArtwork() async {
@@ -1177,7 +1240,7 @@ public struct PosterCardView: View {
 
     /// A prior show's or profile's completed wait cannot release this lookup early.
     private var textlessAnswerReady: Bool {
-        style == .poster || !enablesAsyncArtworkFallback || !presentationArtworkPolicy.prefersTextlessArtwork
+        style == .poster || !enablesAsyncArtworkFallback || !seriesSource.prefersTextlessBackdrop
             || settledTextlessIdentity == textlessResolutionIdentity || textlessBackdropStore.hasAnswer(for: item)
     }
 
@@ -1187,13 +1250,11 @@ public struct PosterCardView: View {
             prefersPrimaryReference: preferredSeriesArtwork != nil,
             maxAspectRatio: posterAspectGuard,
             variant: artworkVariant,
+            artworkPolicy: seriesSource.policy,
             asyncFallbackURL: seriesArtworkFallback,
             onResolveReference: { reference in
-                // A `nil` reference means the metadata router supplied the art
-                // late, from outside the ordered list. That path asks TMDb first
-                // and TMDb is ranked textless-backdrop-first, so it is the least
-                // likely candidate of all to carry a title — treat it as clean.
                 artworkAlreadyCarriesTitle = reference.map(titleBearingArtwork.contains) ?? false
+                resolvedLogoArtworkIdentity = reference == nil ? nil : seriesSource.identity
             },
             pinIdentity: seriesSource.pinIdentity,
             // The card is taller than the picture, so the picture is laid in at
@@ -1203,12 +1264,14 @@ public struct PosterCardView: View {
             // frame off, and never by the blurred blow-up that costs the picture
             // its whole lower half.
             content: { image in
-                if style == .poster {
+                if usesLandscapeTitleLogo {
+                    image.resizable().aspectRatio(contentMode: .fill)
+                } else if style == .poster {
                     ExtendedArtworkFill(
                         image: image, artworkAspectRatio: 2.0 / 3.0, sideCrop: 0,
-                        minimumReflectionShare: usesProgressOnlyPortrait
-                            ? 0 : PlozzTheme.Metrics.continueWatchingPortraitReflectionShare,
-                        progressivelyBlursReflection: !reduceTransparency && !usesProgressOnlyPortrait
+                        minimumReflectionShare: needsPortraitReflection
+                            ? PlozzTheme.Metrics.continueWatchingPortraitReflectionShare : 0,
+                        progressivelyBlursReflection: !reduceTransparency && needsPortraitReflection
                     )
                 } else {
                     ExtendedArtworkFill(image: image)
@@ -1217,8 +1280,6 @@ public struct PosterCardView: View {
         ) {
             neutralPlaceholder
         }
-        // A logo drawn over art that already shows the title says it twice — see
-        // ``titleBearingArtwork`` and ``TextlessBackdropStore/suppressesLogo(for:)``.
         .overlay { if !suppressesSeriesLogo { seriesLogo } }
     }
 
@@ -1226,13 +1287,13 @@ public struct PosterCardView: View {
         PosterCardPresentation.titleBearingArtwork(for: item)
     }
 
-    /// Whether to leave the logo off entirely, for either reason: the winning
-    /// candidate is a slot that names itself, or no textless art exists anywhere
-    /// for a show whose only art is titled promotional key art.
     private var suppressesSeriesLogo: Bool {
-        style == .poster || artworkAlreadyCarriesTitle
-            || (presentationArtworkPolicy.prefersTextlessArtwork
-                && textlessBackdropStore.suppressesLogo(for: item))
+        seriesSource.suppressesLogo(
+            artworkAlreadyCarriesTitle: artworkAlreadyCarriesTitle,
+            hasCurrentArtwork: !usesLandscapeTitleLogo || resolvedLogoArtworkIdentity == seriesSource.identity,
+            textlessBackdropSuppressesLogo: seriesSource.prefersTextlessBackdrop
+                && textlessBackdropStore.suppressesLogo(for: item)
+        )
     }
 
     /// For an episode this is the spoiler-safe series ladder (never the episode's
@@ -1251,12 +1312,13 @@ public struct PosterCardView: View {
     private var seriesSource: ContinueWatchingArtworkSource {
         ContinueWatchingArtworkSource(
             item: item, style: style, policy: presentationArtworkPolicy,
-            cardPolicy: artworkPolicy, enablesAsyncArtworkFallback: enablesAsyncArtworkFallback
+            cardPolicy: artworkPolicy, enablesAsyncArtworkFallback: enablesAsyncArtworkFallback,
+            titleLogo: usesLandscapeTitleLogo ? landscapeTitleLogo : nil
         )
     }
 
     private var preferredSeriesArtwork: ArtworkReference? {
-        guard showsSeriesArtwork else { return nil }
+        guard usesLogoArtwork else { return nil }
         return seriesSource.primaryReference(textlessBackdrop: textlessBackdropStore.backdrop(for: item))
     }
 
@@ -1270,7 +1332,9 @@ public struct PosterCardView: View {
             logoReferences: seriesSource.logoReferences,
             artworkReferences: seriesArtworkReferences,
             artworkVariant: artworkVariant,
-            asyncFallbackURL: seriesLogoFallback
+            asyncFallbackURL: seriesLogoFallback,
+            bottomContentInset: artworkOnlyConfiguration?.showsPlaybackIndicators == true && showsResumeChip
+                ? artworkOnlyPlaybackHeight : 0
         )
     }
 
@@ -1328,6 +1392,7 @@ struct ContinueWatchingSeriesLogo: View {
     let artworkReferences: [ArtworkReference]
     let artworkVariant: ArtworkImageVariant
     let asyncFallbackURL: HeroLogoFallback?
+    var bottomContentInset: CGFloat = 0
     var onArtworkDimming: ((CGFloat) -> Void)?
 
     @Environment(\.plozzMetrics) private var metrics
@@ -1338,7 +1403,8 @@ struct ContinueWatchingSeriesLogo: View {
         GeometryReader { geometry in
             let width = geometry.size.width
             let height = geometry.size.height
-            let stage = height * ContinueWatchingCardShape.mirrorLine
+            let logoStageHeight = max(0, height - bottomContentInset)
+            let stage = logoStageHeight * ContinueWatchingCardShape.mirrorLine
             let box = ContinueWatchingCardShape.logoBox(
                 cardWidth: width, stage: stage, edgeInset: metrics.resumeChipInset
             )
@@ -1371,7 +1437,7 @@ struct ContinueWatchingSeriesLogo: View {
                 // The card's artwork is darkened independently of the page theme.
                 .environment(\.colorScheme, .dark)
                 .frame(width: width, height: box.height)
-                .offset(y: height * ContinueWatchingCardShape.logoCenter - box.height / 2)
+                .offset(y: logoStageHeight * ContinueWatchingCardShape.logoCenter - box.height / 2)
             }
             .frame(width: width, height: height, alignment: .top)
         }
@@ -1410,33 +1476,17 @@ enum PosterCardPresentation {
         kind == .collection || kind == .playlist || kind == .folder
     }
 
-    /// The candidates that are **key art** rather than a clean backdrop, and so
-    /// almost certainly have the show's name set into them already.
-    ///
-    /// A poster is designed to be seen alone, which means it is designed to name
-    /// itself. Laying our own wordmark over one prints the title twice.
-    ///
-    /// Deliberately decided by *provenance* rather than by looking at the picture,
-    /// and only for the poster slots — the one place where "this art names itself"
-    /// is a property of the slot rather than a guess about the show.
-    ///
-    /// Widening it to "every backdrop belonging to an anime" was tried and
-    /// reverted. Whether a given backdrop has the title burned into it is a fact
-    /// about the *pixels*, and no metadata field stands in for it: the genre/id
-    /// test it was keyed on ("Anime") was wrong in both directions at once —
-    /// Arcane matched and lost a logo it should have kept, while "Let's go
-    /// KAIKIGUMI" and "Black Cat and a Witch", the two shows the rule existed to
-    /// fix, did not match and went on doubling. A test that mislabels both the
-    /// cases it was aimed at and the cases it wasn't is not a signal, so the card
-    /// keeps its logo unless the art came from a slot that is titled by
-    /// definition.
+    /// Roles that commonly carry title text, not pixel-level text detection.
+    /// This hint prefers cleaner backgrounds and protects Continue Watching from
+    /// duplicate titles; it must not veto an explicit row-logo choice.
+    /// Genre or provider identity cannot establish whether an image contains text.
     static func titleBearingArtwork(for item: MediaItem) -> Set<ArtworkReference> {
         var titled: Set<ArtworkReference> = []
         if let poster = item.seriesPosterURL { titled.insert(.remote(poster)) }
         // A movie or series shows its own art, where `posterURL` is the poster.
         if item.kind != .episode, let poster = item.posterURL { titled.insert(.remote(poster)) }
         item.artworkSelections
-            .filter { $0.placement == .seriesPoster || $0.placement == .poster }
+            .filter { [.seriesPoster, .poster, .landscapeCard].contains($0.placement) }
             .flatMap(\.references)
             .forEach { titled.insert($0) }
         return titled
@@ -1683,6 +1733,16 @@ private struct CardAccessibilityMetadata: ViewModifier {
 #endif
 
 public extension MediaItem {
+    func posterCaptionText(spoilerSettings: SpoilerSettings) -> Text {
+        if kind == .episode, let parentTitle, !parentTitle.isEmpty {
+            return Text(verbatim: parentTitle)
+        }
+        if spoilerSettings.shouldHideText(for: self) {
+            return Text(spoilerSettings.maskedTitle(for: self))
+        }
+        return Text(verbatim: title)
+    }
+
     /// Shared provider metadata for SwiftUI cards and native library cells.
     func posterCaptionSubtitle(showsSubtitle: Bool = true, showsRuntime: Bool = true) -> String? { // l10n:content
         var parts: [String] = []
@@ -1722,7 +1782,10 @@ public extension MediaItem {
                 // display ladder may use show artwork only as a late fallback.
                 return [posterURL, backdropURL].compactMap(libraryArtworkURL)
             }
-            return [backdropURL, posterURL, fallbackArtworkURL].compactMap(libraryArtworkURL)
+            return artworkPolicy.references(for: self, style: style).compactMap {
+                if case .remote(let url) = $0 { return url }
+                return nil
+            }
         }
     }
 }
@@ -1741,7 +1804,7 @@ public extension PosterCardView {
         guard showsSeriesArtwork else { return policy.references(for: item, style: .landscape) }
         let ladder = item.kind == .episode
             ? item.seriesArtworkReferences(prefersPortrait: false)
-            : policy.references(for: item, style: .landscape)
+            : policy.references(for: item, style: .landscape, prefersLandscapeKeyArt: false)
         guard prefersTextlessArtwork else { return ladder }
         return PosterCardPresentation.preferringTextless(
             TextlessBackdropStore.shared.backdrop(for: item),

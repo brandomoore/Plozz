@@ -12,6 +12,66 @@ import XCTest
 
 @MainActor
 final class NativeSettingsToggleTests: XCTestCase {
+    func testPlayerTabsUseFiveIndependentNativeSwitchesAtPhoneAndTabletWidths() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        let suite = "PlayerTabsMobile-\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        let store = PlaybackSettingsStore(defaults: defaults, namespace: "viewer")
+        let model = PlaybackSettingsModel(store: store)
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+            defaults.removePersistentDomain(forName: suite)
+        }
+        for width: CGFloat in [390, 834] {
+            model.settings = .default
+            window.frame = CGRect(x: 0, y: 0, width: width, height: 844)
+            window.rootViewController = UIHostingController(rootView:
+                NavigationStack {
+                    SettingsPageList {
+                        PlayerTabSettingsControls(model: model)
+                    }
+                    .navigationTitle("Playback")
+                }
+                .environment(\.themePalette, .dark)
+                .environment(\.colorScheme, .dark)
+                .environment(\.locale, Locale(identifier: "en_US"))
+            )
+            window.makeKeyAndVisible()
+            try await settle(window)
+            let controls = listedSwitches(in: window).sorted {
+                $0.convert($0.bounds, to: window).minY < $1.convert($1.bounds, to: window).minY
+            }
+            XCTAssertEqual(controls.count, 5)
+            let text = try captureText(window, name: "Player-tabs-settings-mobile-\(Int(width))")
+            for label in ["Player tabs", "Chapters", "Cast", "Episodes", "Playlist", "Continue Watching"] {
+                XCTAssertTrue(text.localizedCaseInsensitiveContains(label), text)
+            }
+            XCTAssertFalse(text.contains("Info"), text)
+            for (index, control) in controls.enumerated() {
+                XCTAssertTrue(control.isOn)
+                try assertGreenOnState(control, in: window)
+                control.setOn(false, animated: false)
+                control.sendActions(for: .valueChanged)
+                try await settle(window)
+                for (otherIndex, tab) in PlayerOptionalTab.allCases.enumerated() {
+                    XCTAssertEqual(
+                        model.settings[keyPath: tab.visibilityKeyPath], otherIndex > index,
+                        "Changing one native switch must not toggle a sibling."
+                    )
+                }
+                XCTAssertEqual(store.load(), model.settings)
+            }
+            XCTAssertTrue(model.settings.autoPlayNextEpisode)
+            XCTAssertTrue(model.settings.autoPlayNextPlaylistItem)
+            XCTAssertTrue(model.settings.showUpNextCard)
+        }
+    }
+
     @Observable
     final class Model {
         var isOn = false

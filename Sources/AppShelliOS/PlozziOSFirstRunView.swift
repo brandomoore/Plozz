@@ -71,6 +71,7 @@ struct PlozziOSFirstRunView: View {
             model: appModel.guidePreparation, presenter: appModel.transientStatusPresenter,
             palette: palette
         )
+        .offlineStatusOverlay(appModel: appModel, palette: palette)
         .environment(\.themePalette, palette)
         .environment(\.colorScheme, palette.isLight ? .light : .dark)
         .toolbarBackground(.hidden, for: .navigationBar)

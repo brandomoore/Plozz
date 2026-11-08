@@ -178,11 +178,15 @@ struct PlozziOSDetailDownloadButton: View {
         let size = selectedVersion?.sizeBytes.map {
             Text(verbatim: $0.formatted(.byteCount(style: .file)))
         } ?? Text("Size unavailable")
-        return source
-            + Text(verbatim: " • ")
-            + size
-            + Text(verbatim: ". ")
-            + Text("Reduced qualities are transcoded by your media server.")
+        let quality: Text
+        if appModel.downloads.supportsReducedQuality(for: downloadItem) {
+            quality = Text("Smaller copies require server conversion and may include fewer tracks.")
+        } else {
+            quality = Text("Only Original is available for this source.")
+        }
+        let subtitles = Text("Available external text subtitles are saved too.")
+        return source + Text(verbatim: " • ") + size + Text(verbatim: "\n")
+            + quality + Text(verbatim: "\n") + subtitles
     }
 
     private func pauseDownload() async {

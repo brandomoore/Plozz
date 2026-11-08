@@ -4,6 +4,7 @@ import AVFoundation
 import notify
 @testable import FeatureHome
 import FeatureHomeCore
+import FeaturePlayback
 import FeatureSearch
 import MetadataKit
 import Observation
@@ -75,7 +76,9 @@ struct ProductionHomeFixture: View {
                             contentDestination: selection
                         )
                     } else if isNativeSidebar {
-                        TabView(selection: Binding(
+                        NativeSidebarNavigation(
+                            selection: selection, handoff: nativeSidebarFocus,
+                            content: TabView(selection: Binding(
                             get: { selection },
                             set: { destination in
                                 if destination != selection { nativeSidebarFocus.begin(destination) }
@@ -115,6 +118,7 @@ struct ProductionHomeFixture: View {
                         }
                         .tabViewStyle(.sidebarAdaptable)
                         .tvNavigationExitProtection(isEnabled: true)
+                        )
                         .onPlayPauseCommand {
                             expectedNativeDestination = .settings
                             prematureNativeHomeFocusCount = 0
@@ -168,6 +172,10 @@ struct ProductionHomeFixture: View {
                     }
                 }
                 .environment(\.openWatchlist, { selection = .watchlist })
+                .task {
+                    guard ProcessInfo.processInfo.arguments.contains("--startup-focus-probe") else { return }
+                    await Self.probeStartupFocus()
+                }
                 .task {
                     guard ProcessInfo.processInfo.arguments.contains("--top-bar-entry-probe") else { return }
                     do { try await Task.sleep(for: .seconds(3)) }
@@ -254,6 +262,10 @@ struct ProductionHomeFixture: View {
                             Text(verbatim: fixture.trailer.currentItemID ?? "none")
                                 .accessibilityIdentifier("detail-sequence-trailer-owner")
                         }
+                        if ProcessInfo.processInfo.arguments.contains("--hero-trailer-controls") {
+                            Text(verbatim: fixture.trailer.isPlaying ? "playing" : "waiting")
+                                .accessibilityIdentifier("hero-trailer-state")
+                        }
                         if ProcessInfo.processInfo.arguments.contains("--progressive-home-load") {
                             Text(verbatim: fixture.model.loadingRows.contains(.continueWatching) ? "pending" : "ready")
                                 .accessibilityIdentifier("home-fixture-resume-state")
@@ -273,6 +285,9 @@ struct ProductionHomeFixture: View {
             }
         }
         .environment(\.plozzCardFocusStyle, Self.focusStyle)
+        .environment(\.heroTrailerPlayerFactory, HeroTrailerPlayerFactory { player, surface, title, dismiss in
+            BorrowedTrailerPlayer(player: player, surface: surface, title: title, onDismiss: dismiss)
+        })
         .environment(\.gradientBackgroundsEnabled, !ProcessInfo.processInfo.arguments.contains("--gradient-off"))
         .environment(\.themePalette, ProcessInfo.processInfo.arguments.contains("--gradient-black") ? .pureBlack : .dark)
         .environment(\.plozzCardStyle, ProcessInfo.processInfo.arguments.contains("--framed-cards") ? .framed : .borderless)
@@ -327,6 +342,87 @@ struct ProductionHomeFixture: View {
     }
 
     @MainActor
+    private static func probeStartupFocus() async {
+        let arguments = ProcessInfo.processInfo.arguments
+        let expectsHero = !arguments.contains("--hero-disabled-home") && !arguments.contains("--immersive-home")
+        let cancels = arguments.contains("--cancel-startup-focus")
+        let started = ContinuousClock.now
+        let deadline = ContinuousClock.now + .seconds(25)
+        var cancellationSent = false
+        var cancelledSource: (any UIFocusItem)?
+        func report(_ message: String) {
+            FileHandle.standardOutput.write(Data(("STARTUP_FOCUS_PROBE \(message)\n").utf8))
+        }
+        func views(in view: UIView) -> [UIView] {
+            [view] + view.subviews.flatMap { views(in: $0) }
+        }
+        do {
+            while ContinuousClock.now < deadline {
+                if let window = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene })
+                    .flatMap(\.windows).first(where: \.isKeyWindow),
+                   let system = UIFocusSystem.focusSystem(for: window) {
+                    let allViews = views(in: window)
+                    if cancels, !cancellationSent,
+                       let request = allViews.compactMap({ $0 as? NavigationContentFocusRequester.RequestView })
+                        .first(where: { $0.request != nil }),
+                       let recognizer = window.gestureRecognizers?.first(where: { $0.delegate === request }),
+                       let source = system.focusedItem {
+                        cancelledSource = source
+                        cancellationSent = true
+                        _ = request.gestureRecognizer(recognizer, shouldReceive: HeroBoundaryProbePress(.rightArrow))
+                    }
+                    let focused = system.focusedItem
+                    let identifier = (focused as? any UIAccessibilityIdentification)?.accessibilityIdentifier ?? ""
+                    let label = (focused as? NSObject)?.accessibilityLabel ?? ""
+                    let focusedFrame = focused.flatMap {
+                        NavigationRowFocusRequester.frame(of: $0, relativeTo: window)
+                    }
+                    let primaryPill = allViews.first { view in
+                        guard view is HeroForegroundPillView else { return false }
+                        var ancestor: UIView? = view
+                        while let current = ancestor {
+                            if current.isHidden || current.alpha < 0.9 { return false }
+                            ancestor = current.superview
+                        }
+                        return true
+                    }
+                    let primaryCenter = primaryPill.map {
+                        $0.convert(CGPoint(x: $0.bounds.midX, y: $0.bounds.midY), to: window)
+                    }
+                    let hasExpectedFocus = expectsHero
+                        ? primaryCenter.map { focusedFrame?.contains($0) == true } == true
+                        : label == "Fixture movie 0"
+                    if cancels, cancellationSent {
+                        let hasContent = allViews.contains {
+                            ($0 as? UIButton)?.accessibilityLabel == "Fixture movie 0"
+                        } || allViews.contains { $0 is HeroForegroundPillView }
+                        if hasContent {
+                            try await Task.sleep(for: .seconds(1))
+                            report("passed=\(system.focusedItem === cancelledSource) cancelled=true")
+                            return
+                        }
+                    } else if hasExpectedFocus, let frame = focusedFrame,
+                              window.bounds.contains(CGPoint(x: frame.midX, y: frame.midY)) {
+                        try await Task.sleep(for: .milliseconds(500))
+                        let highlight = !expectsHero || (primaryPill?.layer.presentation()?.transform.m11 ?? 0) > 1.04
+                        let enteredBeforeRowsLoad = !arguments.contains("--cached-home-hero")
+                            || started.duration(to: .now) < .seconds(5)
+                        report("passed=\(highlight && enteredBeforeRowsLoad) focused=\(identifier) label=\(label) highlight=\(highlight) elapsed=\(started.duration(to: .now))")
+                        return
+                    }
+                }
+                try await Task.sleep(for: .milliseconds(25))
+            }
+            let window = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene })
+                .flatMap(\.windows).first(where: \.isKeyWindow)
+            let focused = window.flatMap { UIFocusSystem.focusSystem(for: $0)?.focusedItem }
+            report("passed=false timeout focused=\(String(describing: focused)) identifier=\((focused as? any UIAccessibilityIdentification)?.accessibilityIdentifier ?? "") label=\((focused as? NSObject)?.accessibilityLabel ?? "")")
+        } catch {
+            report("passed=false cancelled=\(error)")
+        }
+    }
+
+    @MainActor
     private static func probeTopBarEntry() async {
         guard let window = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene })
             .flatMap(\.windows).first(where: \.isKeyWindow),
@@ -342,7 +438,7 @@ struct ProductionHomeFixture: View {
             if let found = controller as? HeroShowcaseStage.Controller { stage = found }
             controllers.append(contentsOf: controller.children)
         }
-        guard let stage, let owner, let target = system.focusedItem else {
+        guard let stage, let owner else {
             print("TOP_BAR_ENTRY complete passed=false missingHeroOrNavigation"); return
         }
         let diagnosticsWereEnabled = HeroFocusDiagnostics.isEnabled
@@ -360,16 +456,26 @@ struct ProductionHomeFixture: View {
             return false
         }
         var views = [window as UIView]
+        var navigationRows: [NavigationRowFocusRequester.RequestView] = []
         var entry: TopBarEntryProbe.Marker?
         var down: TopBarDownPressRecognizer?
         while let view = views.popLast() {
             if let found = view as? TopBarEntryProbe.Marker { entry = found }
+            if let row = view as? NavigationRowFocusRequester.RequestView { navigationRows.append(row) }
             if let found = view.gestureRecognizers?.compactMap({ $0 as? TopBarDownPressRecognizer }).first { down = found }
             views.append(contentsOf: view.subviews)
         }
         guard let entry, let enter = entry.enter, let down else {
             print("TOP_BAR_ENTRY complete passed=false missingAction"); return
         }
+        guard let row = navigationRows.min(by: {
+            $0.convert($0.bounds, to: window).minX < $1.convert($1.bounds, to: window).minX
+        }), let target = NavigationRowFocusRequester.target(for: row, in: window),
+              owner.requestFocus(to: target, using: system) else {
+            print("TOP_BAR_ENTRY complete passed=false missingNavigationTarget"); return
+        }
+        do { try await Task.sleep(for: .milliseconds(500)) }
+        catch { print("TOP_BAR_ENTRY cancelled: \(error)"); return }
         guard let directionalEntry = owner.directionalContentEntry,
               let directionalAction = directionalEntry.onDirectionalEntry else {
             print("TOP_BAR_ENTRY complete passed=false missingDirectionalEntry"); return
@@ -953,6 +1059,16 @@ private struct ProductionHomeContent: View {
                         heroFeaturedProvider: { limit in await fixture.featuredContent(limit: limit) },
                         heroArtworkProvider: { $0.backdropURL },
                         heroArtworkValidator: { _ in true },
+                        heroTrailerResolver: { [url = fixture.trailerURL] item in
+                            url.map {
+                                HeroTrailerSource(
+                                    ownerItemID: item.id, trailerItemID: "clip",
+                                    url: ProcessInfo.processInfo.arguments.contains("--hero-trailer-failure")
+                                        ? $0.appendingPathExtension("missing") : $0,
+                                    duration: ProcessInfo.processInfo.arguments.contains("--hero-trailer-failure") ? 140 : 60
+                                )
+                            }
+                        },
                         navigationStyle: isPinned
                             ? .rail
                             : (ProcessInfo.processInfo.arguments.contains("--native-sidebar-home")
@@ -1030,7 +1146,10 @@ private struct ProductionHomeContent: View {
         let isEpisodeContext = item.kind == .episode && lastDetailRoute == "browse"
         return ItemDetailView(
             viewModel: fixture.detail(for: item, asSeriesContext: isEpisodeContext),
-            onPlay: { _ in },
+            onPlay: { item in
+                playbackCount += 1
+                lastPlayedID = item.id
+            },
             onSelectChild: { next in
                 withCinematicDetailNavigation(for: next) {
                     if isLibrarySequence {
@@ -1194,6 +1313,10 @@ private final class ProductionHomeState {
             settings.setEnabled(.featured, enabled: true)
         }
         settings.autoAdvance = false
+        if ProcessInfo.processInfo.arguments.contains("--hero-trailer-failure") {
+            settings.autoAdvance = true
+            settings.autoAdvanceSeconds = 8
+        }
         settings.trailersEnabled = false
         // Settings persist between launches, so every launch picks its layout.
         settings.style = ProcessInfo.processInfo.arguments.contains("--hero-showcase-home")
@@ -1201,8 +1324,12 @@ private final class ProductionHomeState {
             : ProcessInfo.processInfo.arguments.contains("--immersive-home") ? .followsFocus : .carousel
         settings.showsDiscoverRow = ProcessInfo.processInfo.arguments.contains("--showcase-discover-fixture")
         heroSettings.settings = settings
-        background.settings.homeTrailerEnabled = false
+        background.settings.homeTrailerEnabled = ProcessInfo.processInfo.arguments.contains("--hero-trailer-controls")
         if trailerURL != nil { background.settings.detailMode = .trailer }
+        if ProcessInfo.processInfo.arguments.contains("--ambient-trailers-off") {
+            background.settings.homeTrailerEnabled = false
+            background.settings.detailMode = .off
+        }
     }
 
     func detail(for item: MediaItem, asSeriesContext: Bool = false) -> ItemDetailViewModel {
@@ -1242,7 +1369,8 @@ private final class ProductionHomeState {
             color: .white
         )
         let trailerURL: URL?
-        if ProcessInfo.processInfo.arguments.contains("--library-detail-sequence") {
+        if ProcessInfo.processInfo.arguments.contains("--library-detail-sequence")
+            || ProcessInfo.processInfo.arguments.contains("--hero-trailer-controls") {
             do {
                 trailerURL = try await makeTrailerVideo()
             } catch {
@@ -1393,6 +1521,11 @@ private struct ProductionHomeProvider: MediaProvider, WatchlistProviding {
         ProcessInfo.processInfo.arguments.contains("--home-performance-fixture") ? 75 : 24
     }
     var heroSeed: MediaItem { movie(rowCount + 10) }
+
+    func trailers(for itemID: String) async throws -> [MediaItem] {
+        guard ProcessInfo.processInfo.arguments.contains("--hero-trailer-controls") else { return [] }
+        return [MediaItem(id: "trailer-\(itemID)", title: "Fixture trailer", kind: .movie).markingAsTrailer()]
+    }
 
     func watchlist() async throws -> [MediaItem] {
         ProcessInfo.processInfo.arguments.contains("--real-root-pages") ? (0..<48).map(movie) : []

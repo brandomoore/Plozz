@@ -1075,7 +1075,7 @@ final class ShareScannerTests: XCTestCase {
         XCTAssertNil(stale)
     }
 
-    func testPacerEngagesOnlyForRecentActivityAndIsPerShare() async {
+    func testPacerEngagesOnlyForRecentActivityAndIndependentInstancesStayIsolated() async {
         let firstShare = ShareScanPacer(
             activeWindow: .milliseconds(15),
             activeDelay: .milliseconds(1)
@@ -1092,7 +1092,7 @@ final class ShareScannerTests: XCTestCase {
         let active = await firstShare.paceIfBrowsing()
         let unrelated = await secondShare.paceIfBrowsing()
         XCTAssertTrue(active, "recent activity must engage bounded pacing")
-        XCTAssertFalse(unrelated, "browsing one share must not throttle another")
+        XCTAssertFalse(unrelated, "separate coordinators must not share pacing state")
 
         try? await Task.sleep(for: .milliseconds(20))
         let expired = await firstShare.paceIfBrowsing()

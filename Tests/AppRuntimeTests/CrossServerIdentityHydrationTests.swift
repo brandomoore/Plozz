@@ -347,6 +347,45 @@ final class CrossServerIdentityHydrationTests: XCTestCase {
         matches.first?.libraryID, "shows", "Hydration must preserve the search's library scope")
     }
   }
+
+  func testCompleteCatalogSourceAndRelatedLookupKeepOwnershipWithoutDetails() async throws {
+    for kind in [MediaItemKind.movie, .series] {
+      let primary = MediaItem(
+        id: "discovery", title: "Title", kind: kind,
+        providerIDs: ["Tmdb": "123"], availability: .unknown
+      )
+      var catalog = MediaItem(
+        id: "owned", title: primary.title, kind: kind,
+        providerIDs: ["Tmdb": "123", "Tvdb": "456"], libraryID: "library"
+      )
+      catalog.catalogIdentityIsComplete = true
+      let requests = IdentityDetailRequests()
+      let session = sourceLookupSession()
+      let provider = PartialIdentityProvider(
+        session: session, sparse: catalog, full: catalog, detailRequests: requests
+      )
+      let accounts = [
+        ResolvedAccount(account: Account(id: "server", from: session), provider: provider)
+      ]
+      let resolve = try XCTUnwrap(crossServerSourceResolver(in: accounts, identitySources: { _ in [] }))
+      let sources = await resolve(primary).sources
+      XCTAssertEqual(sources.map(\.itemID), ["owned"])
+      XCTAssertEqual(sources.map(\.accountID), ["server"])
+      let search = try XCTUnwrap(relatedTitleLibrarySearch(in: accounts))
+      let matches = await search(primary.title, 25)
+      XCTAssertEqual(matches.map(\.id), ["owned"])
+      XCTAssertEqual(matches.first?.libraryID, "library")
+      XCTAssertEqual(matches.first?.sourceAccountID, "server")
+      XCTAssertEqual(matches.first?.providerIDs, catalog.providerIDs)
+      let requested = await requests.ids
+      XCTAssertTrue(requested.isEmpty)
+    }
+  }
+}
+
+private actor IdentityDetailRequests {
+  private(set) var ids: [String] = []
+  func record(_ id: String) { ids.append(id) }
 }
 
 private struct PartialIdentityProvider: MediaProvider {
@@ -357,11 +396,13 @@ private struct PartialIdentityProvider: MediaProvider {
   let full: MediaItem
   var additionalItems: [MediaItem] = []
   var searchEnabled = true
+  var detailRequests: IdentityDetailRequests?
 
   func libraries() async throws -> [MediaLibrary] { [] }
   func continueWatching(limit: Int) async throws -> [MediaItem] { [] }
   func latest(limit: Int) async throws -> [MediaItem] { [] }
   func item(id: String) async throws -> MediaItem {
+    await detailRequests?.record(id)
     if id == sparse.id { return full }
     if let item = additionalItems.first(where: { $0.id == id }) { return item }
     throw AppError.notFound

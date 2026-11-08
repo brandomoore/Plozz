@@ -7,11 +7,25 @@ system green appearance instead of inheriting the page's monochrome navigation t
 
 The Settings screen and its detail pages. Profile-aware and integration-aware.
 
-Disc playback uses the shared labeled menu row on TV, showing the setting name
+Disc playback lives in a dedicated Discs section near the bottom of Playback,
+just before Advanced, on TV and mobile. It uses the shared labeled menu row on TV, showing the setting name
 and current choice rather than an unlabeled segmented picker.
 Its helper note explains HDMV-only menus, automatic video playback for BD-J,
 and the watch-progress limitation once on both platforms; disc action menus
 and video pickers do not repeat it.
+
+Playback groups its five optional **Player tabs** in one shared control surface
+on TV and mobile. Labels match the player tabs, Info stays always available, and
+visibility preferences are independent of autoplay and Up Next behavior.
+
+Movie & show details → Trailers & music is the shared destination for trailer
+availability, independent Home autoplay and detail background playback. Home →
+Hero links to the same controls. Off suppresses trailer lookups, manual actions,
+and autoplay without erasing surface preferences or disabling theme music.
+Server only permits local/server trailers, excluding YouTube links even when
+supplied by a server or already cached. Server + YouTube preserves background
+preparation of manual links; YouTube never autoplays. Each surface retains its
+own mute default, and detail theme music retains its profile-scoped volume.
 
 On iPad, selecting a different sidebar category discards the previous category's
 entire pushed detail stack. The reset targets the native detail navigation
@@ -571,8 +585,19 @@ watch history and planning-list behavior are documented in
   errors and Retry instead of claiming no rows are available. Creation starts with
   a library collection; the editor identifies that source as Content and its
   presentation as Layout (see [Home terminology](../../CONTEXT.md)). Choose a source collection first,
-  then edit its name and Posters, Landscape or Featured presentation with the layout control immediately above a real-title
-  preview. The preview uses the existing artwork preferences and spoiler protection.
+  then edit its name and Posters, Landscape or Featured presentation. A live
+  real-title preview leads the editor, with compact native **Layout** and **Logo**
+  menu rows underneath rather than controls inside the preview.
+  The preview uses the existing artwork preferences and spoiler protection.
+  Landscape exposes **Logo: On / Off** for movie/show cards on all platforms,
+  defaulting to Off. Older Automatic values migrate to Off; saved On/Off choices
+  remain intact. On uses the shared background/logo treatment and is never
+  suppressed by an artwork-type guess. It prefers clean backgrounds when allowed
+  by the artwork settings, but still overlays the available artwork when none is
+  found. Off adds no overlay; it cannot remove a logo embedded in the image.
+  The preference persists
+  with each row, survives layout changes and profile transfer, and previews
+  without saving until the user applies the edit. Episode stills are unchanged.
   Each navigation destination explicitly forwards the active profile's card settings,
   including Add row's nested creation destination; iOS navigation does not
   inherit dependencies injected only into the preceding page.
@@ -970,6 +995,40 @@ watch history and planning-list behavior are documented in
 - `ServerDetailView` + `ServersAndLibrariesDetailView` — manage stored
   household servers / accounts (`AccountStore`) and remove accounts.
   `MyLibrariesDetailView` owns the active profile's server-user and library choices.
+  Membership-only edits retain unrelated providers and retire disabled sources;
+  credential/account reloads still invalidate their existing provider scope.
+  Mobile switches commit each choice immediately rather than queuing delayed
+  writes. Both presentations avoid regrouping servers for each row, and mobile
+  library rows observe visibility separately from the server list. During new
+  profile setup, library-name discovery remains available, but full cross-server
+  identity indexing waits until setup finishes and uses the final membership.
+  Mobile also leaves the hidden tab catalogue unmounted beneath the opaque setup
+  cover, without removing its presentation owner. Home content loading pauses
+  during setup and ordinary Settings visits, then resumes with the final choices.
+  Account/profile replacement explicitly retires the previous Home model rather
+  than leaving its asynchronous fan-out running behind the selection controls.
+  On mobile, enabling Plex verifies its user (and requests a PIN when required)
+  inside the existing Settings presentation rather than replacing it with the
+  launch profile picker. This presentation ownership applies only to the same
+  active profile; source authorization remains withheld until verification.
+  Settings and new-profile setup immediately reuse `LibraryInventoryStore`
+  names from currently authorized accounts, while bounded live discovery refreshes
+  them. Normal Home library discovery warms the same cache. Its scope includes
+  the account, server connection, credential revision, and verified Plex Home
+  viewer, never the Plozz profile's selection. Reissued Plex activation tokens
+  can share names only for the same verified viewer and persisted login revision.
+  Pending PINs and unresolved providers cannot read inventories. Offline refreshes
+  retain names with an explicit failure/Retry; authentication or access refusals
+  remove them, and successful empty inventories replace old names. Canceled or
+  superseded answers cannot overwrite a newer completed inventory.
+  This local cache is a disposable paint hint, not authorization or content:
+  no artwork URLs, tokens, merged-account routes, or profile preferences are saved.
+  It keeps at most 128 identities, 512 libraries per identity and 2 MiB on disk;
+  larger inventories still arrive from live discovery. Unchanged inventories do
+  not rewrite the disk cache on every refresh. Loading indicators belong
+  only to cache misses; a successfully cached empty inventory is not a miss.
+  Both Libraries presentations show one scrolling "Saved for" profile chip,
+  shared with Seerr setup, rather than a fixed introduction or per-server footers.
   On TV, each enabled media-share section shows its own compact update phase,
   progress bar and known percentage. Only accounts included in the current
   profile contribute; idle, excluded and removed shares show no status. Progress

@@ -18,6 +18,7 @@ import SwiftUI
 struct PlozziOSHomeSkeletonRail: View {
     @Environment(\.plozzCardStyle) private var cardStyle
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @State private var isVisible = false
 
     let title: Text
     let style: PosterCardView.Style
@@ -31,15 +32,19 @@ struct PlozziOSHomeSkeletonRail: View {
 
     var body: some View {
         PlozziOSHomeRailLayout { rail(metrics: $0) }
+            .environment(\.plozzShimmerEnabled, isVisible)
+            .onScrollVisibilityChange(threshold: 0.01) { isVisible = $0 }
     }
 
     private func rail(metrics: PlozzMetrics) -> some View {
-        PlozziOSMediaSection(title: title, artworkInset: !isLibraryRow && cardStyle == .framed ? metrics.cardInset : 0) {
+        PlozziOSMediaSection(
+            title: title, artworkInset: !isLibraryRow && cardStyle == .framed ? metrics.cardInset : 0,
+            reservesBrowseSpace: !isLibraryRow
+        ) {
             ScrollView(.horizontal) {
-                // Deliberately NOT lazy: the placeholders are cheap, and a lazy
-                // stack would only materialise the ones already on screen — the
-                // opposite of what a "never show a blank row" placeholder is for.
-                HStack(
+                // Match loaded rails: retain eager vertical sizing, but don't
+                // construct cards clipped beyond each horizontal viewport.
+                LazyHStack(
                     alignment: .top,
                     spacing: isLibraryRow ? PlozziOSMediaRailLayout.visibleGap(metrics: metrics) : PlozziOSMediaRailLayout.stackSpacing(
                         metrics: metrics,

@@ -4,6 +4,39 @@ import XCTest
 @testable import MediaDownloads
 
 final class ManagedDownloadLifecycleTests: XCTestCase {
+    func testNewManagedDownloadsDefaultToPreferredAudioAndAvailableTextSubtitles() throws {
+        for provider: ProviderKind in [.plex, .jellyfin, .emby, .silo] {
+            for quality: DownloadQuality in [.original, .hd720] {
+                let source = ManagedHTTPDownloadSource(
+                    provider: provider, accountID: "account", itemID: "movie",
+                    quality: quality, preferredAudioLanguages: ["fr"]
+                )
+                XCTAssertFalse(source.includesAllAudioTracks)
+                XCTAssertTrue(source.includesTextSubtitleTracks)
+                XCTAssertEqual(source.preferredAudioLanguages, ["fr"])
+                XCTAssertEqual(source.quality, quality)
+                XCTAssertEqual(try JSONDecoder().decode(
+                    ManagedHTTPDownloadSource.self, from: JSONEncoder().encode(source)
+                ), source)
+            }
+        }
+    }
+
+    func testExistingDownloadTrackSelectionsSurviveReload() throws {
+        var download = try record()
+        download.managedHTTPSource = .init(
+            provider: .jellyfin, accountID: "account", itemID: "movie",
+            quality: .hd720, includesAllAudioTracks: true, includesTextSubtitleTracks: false,
+            preferredAudioLanguages: ["de"]
+        )
+        let restored = try JSONDecoder().decode(
+            DownloadedMediaRecord.self, from: JSONEncoder().encode(download)
+        )
+        XCTAssertEqual(restored, download)
+        XCTAssertTrue(try XCTUnwrap(restored.managedHTTPSource).includesAllAudioTracks)
+        XCTAssertFalse(try XCTUnwrap(restored.managedHTTPSource).includesTextSubtitleTracks)
+    }
+
     private func record() throws -> DownloadedMediaRecord {
         var record = try DownloadTestFactory.record(status: .completed)
         record.sourceKind = .managedHTTP

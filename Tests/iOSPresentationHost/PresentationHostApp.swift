@@ -223,7 +223,27 @@ struct PresentationHostApp: App {
 
     var body: some Scene {
         WindowGroup {
-            if let page = ProcessInfo.processInfo.arguments.first(where: { $0.hasPrefix("--onboarding-page=") }) {
+            if ProcessInfo.processInfo.arguments.contains("--offline-review-fixture") {
+                OfflineModeReviewFixture()
+            } else if ProcessInfo.processInfo.arguments.contains("--home-empty-fixture") {
+                let palette = ProcessInfo.processInfo.arguments.contains("--light") ? ThemePalette.light : .dark
+                ScrollView {
+                    HomeSectionStatusView(
+                        issue: .init(
+                            choice: .init(
+                                id: .server(accountID: "fixture", section: "seasonal"),
+                                title: "Seasonal picks", isProviderDefault: true
+                            ),
+                            reason: .empty, serverName: "Media server", providerKind: .silo
+                        ),
+                        onCustomizeHome: {}, onDismissEmpty: {}, onRetry: {}
+                    )
+                    .padding(24)
+                }
+                .environment(\.themePalette, palette)
+                .preferredColorScheme(palette.isLight ? .light : .dark)
+                .background(palette.backgroundBase.ignoresSafeArea())
+            } else if let page = ProcessInfo.processInfo.arguments.first(where: { $0.hasPrefix("--onboarding-page=") }) {
                 MobileServerOnboardingFixture(
                     page: String(page.dropFirst("--onboarding-page=".count)), presentsAsSheet: true
                 )
@@ -231,6 +251,8 @@ struct PresentationHostApp: App {
                                  ? ThemePalette.light : .dark)
                     .preferredColorScheme(ProcessInfo.processInfo.arguments.contains("--light") ? .light : .dark)
                     .dynamicTypeSize(ProcessInfo.processInfo.arguments.contains("--large-text") ? .accessibility5 : .large)
+            } else if ProcessInfo.processInfo.arguments.contains("--detail-information-fixture") {
+                DetailInformationFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--continue-watching-details-fixture") {
                 ContinueWatchingDetailsFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--search-keyboard-fixture") {

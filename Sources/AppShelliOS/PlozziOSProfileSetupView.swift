@@ -41,22 +41,12 @@ struct PlozziOSProfileSetupView: View {
                     Button("Done", action: onDone)
                 }
             }
-            .safeAreaInset(edge: .top) {
-                Text(
-                    "Pick the servers \(appModel.profiles.activeProfile.name) watches with, and who they are on each."
-                )
-                .font(.subheadline)
-                .plozzForeground(.secondary)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: .infinity)
-                .padding(.horizontal)
-                .padding(.bottom, 8)
-            }
         }
         .guidePreparationOverlay(
             model: appModel.guidePreparation, presenter: appModel.transientStatusPresenter,
             palette: palette
         )
+        .offlineStatusOverlay(appModel: appModel, palette: palette)
         // Setup has to finish deliberately: the model releases the watchlist
         // import when it does, so a swipe-away is handled as an explicit cancel
         // rather than being allowed to strand the profile mid-flow.

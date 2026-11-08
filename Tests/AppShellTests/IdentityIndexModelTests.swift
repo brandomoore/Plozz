@@ -47,6 +47,52 @@ final class IdentityIndexModelTests: XCTestCase {
         XCTAssertTrue(model.identitySnapshot.isEmpty)
     }
 
+    func testSetupDefersEvenForcedWarmUntilSelectionFinishes() async {
+        var allowed = false
+        var resolutions = 0
+        let source = resolved("a", movies: [movie("a1", account: "a", tmdb: "100")])
+        var selection = [source]
+        let model = IdentityIndexModel(
+            activeAccounts: { resolutions += 1; return selection },
+            namespace: { "setup-\(source.account.id)" },
+            onPublish: {},
+            isWarmingAllowed: { allowed },
+            persistenceStore: InMemoryIdentityIndexStore()
+        )
+        for _ in 0..<20 { model.warmIdentityIndex(force: true) }
+        await model.waitForIdentityWarm()
+        XCTAssertEqual(resolutions, 0)
+        XCTAssertTrue(model.identitySnapshot.isEmpty)
+        selection = [resolved("b", movies: [movie("b1", account: "b", tmdb: "200")])]
+        allowed = true
+        model.warmIdentityIndex()
+        await model.waitForIdentityWarm()
+        XCTAssertEqual(resolutions, 1)
+        XCTAssertEqual(model.identitySnapshot.indexedAccountIDs, ["b"])
+    }
+
+    func testBlockedWarmCannotPublishItsPreviousSelection() async {
+        var allowed = true
+        let gate = IdentityWarmGate()
+        let source = resolved("a", movies: [movie("a1", account: "a", tmdb: "100")], gate: gate)
+        let model = IdentityIndexModel(
+            activeAccounts: { [source] }, namespace: { "setup-cancellation" }, onPublish: {},
+            isWarmingAllowed: { allowed }, persistenceStore: InMemoryIdentityIndexStore()
+        )
+        model.warmIdentityIndex()
+        let started = await waitUntil { await gate.entered() }
+        XCTAssertTrue(started)
+        allowed = false
+        model.warmIdentityIndex()
+        await gate.release()
+        await model.waitForIdentityWarm()
+        XCTAssertTrue(model.identitySnapshot.isEmpty)
+        allowed = true
+        model.warmIdentityIndex()
+        await model.waitForIdentityWarm()
+        XCTAssertEqual(model.identitySnapshot.indexedAccountIDs, ["a"])
+    }
+
     func testResetFromEmptyIsSafeAndLeavesEmptySnapshot() {
         let (model, publishCount) = makeModel()
         model.reset()
@@ -67,7 +113,7 @@ final class IdentityIndexModelTests: XCTestCase {
     // MARK: - Concurrency-guard coverage (warm lifecycle)
     //
     // These drive the real `warmIdentityIndex` async lifecycle through a controllable
-    // fake `MediaProvider`, so the facet's *whole point* — the generation / high-water
+    // fake `MediaProvider`, so the facet's *whole point* — the generation / revision
     // supersession that keeps a stale or superseded scan from clobbering the live
     // snapshot — is exercised against observable outcomes (`identitySnapshot` /
     // `identitySnapshotStore`), not private state. Persistence uses the model's real
@@ -141,7 +187,8 @@ final class IdentityIndexModelTests: XCTestCase {
         _ accountID: String,
         kind: ProviderKind = .jellyfin,
         movies: [MediaItem],
-        gate: IdentityWarmGate? = nil
+        gate: IdentityWarmGate? = nil,
+        librariesUnavailable: Bool = false
     ) -> ResolvedAccount {
         let userSession = session(accountID, kind: kind)
         let account = Account(
@@ -153,7 +200,10 @@ final class IdentityIndexModelTests: XCTestCase {
         )
         return ResolvedAccount(
             account: account,
-            provider: FakeIndexProvider(kind: kind, session: userSession, movies: movies, gate: gate)
+            provider: FakeIndexProvider(
+                kind: kind, session: userSession, movies: movies, gate: gate,
+                librariesUnavailable: librariesUnavailable
+            )
         )
     }
 
@@ -243,7 +293,7 @@ final class IdentityIndexModelTests: XCTestCase {
 
     /// The first warm of a fresh model restores persisted membership (the B2 seed) and
     /// prunes it to the still-active accounts (B3): model A warms {a,b} and persists;
-    /// model B — active set narrowed to {a}, with a provider that scans NOTHING — can
+    /// model B — active set narrowed to {a}, with an unavailable provider — can
     /// only end up with an indexed account via the persisted restore, and "b" must not
     /// be resurrected.
     func testFirstWarmRestoresPersistedMembershipPrunedToActiveAccounts() async {
@@ -263,10 +313,10 @@ final class IdentityIndexModelTests: XCTestCase {
         let persisted = await waitUntil { FileManager.default.fileExists(atPath: fileURL.path) }
         XCTAssertTrue(persisted, "the warm wave should persist membership to disk")
 
-        // Fresh model, active set narrowed to {a}; its provider returns no libraries,
-        // so any indexed account can ONLY have come from the persisted restore.
+        // Failed discovery preserves restored membership. A successful empty
+        // inventory would instead authoritatively remove it.
         let modelB = makeWarmModel(namespace: namespace, accounts: {
-            [self.resolved("a", movies: [])]
+            [self.resolved("a", movies: [], librariesUnavailable: true)]
         })
         modelB.warmIdentityIndex()
         let restored = await waitUntil { modelB.identitySnapshot.indexedAccountIDs == ["a"] }
@@ -278,9 +328,8 @@ final class IdentityIndexModelTests: XCTestCase {
         )
     }
 
-    /// A warm wave grows the index to include every active account (the invariant the
-    /// per-wave high-water guard protects — the index only grows within a wave). Two
-    /// accounts warm concurrently; the published snapshot must end up carrying both.
+    /// Concurrent account completions must not publish an older snapshot over a
+    /// newer one. The final snapshot must carry both accounts.
     func testWarmGrowsIndexToIncludeAllActiveAccounts() async {
         let namespace = uniqueNamespace()
         let model = makeWarmModel(namespace: namespace, accounts: {
@@ -390,7 +439,7 @@ final class IdentityIndexModelTests: XCTestCase {
     func testReplacementWarmSharesPendingRestoreAndPrunesToNewAccounts() async {
         let store = GatedIdentityStore(snapshot: persisted(["a", "b"]), blockLoad: true)
         defer { store.releaseLoad() }
-        var active = [resolved("a", movies: [])]
+        var active = [resolved("a", movies: [], librariesUnavailable: true)]
         let model = IdentityIndexModel(
             activeAccounts: { active }, namespace: { "profile" }, onPublish: {},
             persistenceStore: store
@@ -398,7 +447,7 @@ final class IdentityIndexModelTests: XCTestCase {
         model.warmIdentityIndex()
         let entered = await waitUntil { store.loadCount == 1 }
         XCTAssertTrue(entered)
-        active = [resolved("b", kind: .plex, movies: [])]
+        active = [resolved("b", kind: .plex, movies: [], librariesUnavailable: true)]
         model.warmIdentityIndex()
         store.releaseLoad()
         await model.waitForIdentityWarm()
@@ -411,7 +460,7 @@ final class IdentityIndexModelTests: XCTestCase {
     func testResetDuringDiskLoadCannotPublishOldProfile() async {
         let store = GatedIdentityStore(snapshot: persisted(["a", "b"]), blockLoad: true)
         defer { store.releaseLoad() }
-        var active = [resolved("a", movies: [])]
+        var active = [resolved("a", movies: [], librariesUnavailable: true)]
         var namespace = "a"
         weak var observedModel: IdentityIndexModel?
         var published: [Set<String>] = []
@@ -430,7 +479,7 @@ final class IdentityIndexModelTests: XCTestCase {
         XCTAssertTrue(entered)
         model.reset()
         namespace = "b"
-        active = [resolved("b", kind: .plex, movies: [])]
+        active = [resolved("b", kind: .plex, movies: [], librariesUnavailable: true)]
         model.warmIdentityIndex()
         store.releaseLoad()
         await model.waitForIdentityWarm()
@@ -561,16 +610,22 @@ private final class FakeIndexProvider: MediaProvider, @unchecked Sendable {
     let session: UserSession
     private let movies: [MediaItem]
     private let gate: IdentityWarmGate?
+    private let librariesUnavailable: Bool
 
-    init(kind: ProviderKind, session: UserSession, movies: [MediaItem], gate: IdentityWarmGate?) {
+    init(
+        kind: ProviderKind, session: UserSession, movies: [MediaItem],
+        gate: IdentityWarmGate?, librariesUnavailable: Bool
+    ) {
         self.kind = kind
         self.session = session
         self.movies = movies
         self.gate = gate
+        self.librariesUnavailable = librariesUnavailable
     }
 
     func libraries() async throws -> [MediaLibrary] {
         if let gate { await gate.wait() }
+        if librariesUnavailable { throw AppError.invalidResponse }
         return movies.isEmpty ? [] : [MediaLibrary(id: "lib", title: "Movies", kind: .movie)]
     }
 

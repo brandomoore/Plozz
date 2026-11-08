@@ -56,6 +56,12 @@ bounded language-match/accessibility flags without track titles or URLs.
     The adapter loads the server-selected source, never a preview-only original.
     See [playback engines](../../docs/playback-engines.md#routing-logic).
 - **View model / view** —
+  - `BorrowedTrailerPlayer` hosts the same TV transport and seek coordinator over
+    the hero's existing AVPlayer and persistent video surface. The app shell
+    injects this presentation into Home, keeping feature modules independent.
+    It does not resolve a source, start provider reporting, change display mode,
+    or stop the borrowed player on dismissal. Only available transport capabilities
+    are exposed; the hero owner restores ambient playback and mute state.
   - `PlayerViewModel` orchestrates engine lifecycle, audio/subtitle
     selection, scrub state, resume, and progress reporting.
   - Resume progress is saved independently of Continue Watching eligibility:
@@ -71,6 +77,57 @@ bounded language-match/accessibility flags without track titles or URLs.
     episodes remain server-managed. See ProviderPlex's extra resume contract.
   - `PlayerView` + `CustomPlayerContainer` host the engine's vended
     bare video surface and overlay the shared transport chrome.
+  - `PlayerCardMetrics` scales touch-player typography to a wide-tablet maximum
+    of 24-point titles, 17-point body text, and 14-point metadata. Card geometry,
+    weights, and controls retain their existing styling; TV keeps its separate
+    across-the-room type scale.
+- **Song identification** (#351) — `SongRecognizer` feeds the engine's
+  decoded-audio tap (not the microphone) to ShazamKit's streaming matcher while
+  a title plays, when the profile's **Identify songs** setting is on. A song is
+  shown beside the Info card only after a second match whose offset advances
+  consistently with rendered source-time progress; sound-effect albums and genre-less uploads are ignored. A skip clears
+  the song. Errors (offline, service unavailable) show nothing and rest the
+  matcher for 30 seconds with the audio tap removed. Pausing also removes the tap
+  while retaining the displayed song; seeks clear it and restart analysis only
+  after the seek settles. Engine handoffs replace the recognition owner. A generation-scoped owner
+  rejects late results and teardown from superseded sessions. The adapter pulls
+  directly from the engine's bounded PCM stream without a second queue or a
+  per-buffer main-actor forwarding task. A cancellable pacer holds decoded-ahead
+  audio until its end is within 50 ms of `audioTapPresentationTime` (the engine's
+  rendered source PTS, not a normalized scrub position). Pending chunks wait in
+  cancellable 100 ms intervals; chunks covered by the sampled clock reuse it.
+  No additional PCM queue is introduced. Upstream overflow remains bounded and
+  marks a discontinuity instead of blocking playback. Audio discontinuities restart matching
+  rather than stitching unrelated samples. Only supported Plozzigen routes take
+  part; standalone native playback and remote-HLS/server-transcode bypass
+  return no tap. `SongRecognitionModel` independently expires the card after
+  25 seconds without an accepted match. Pausing preserves the remaining lifetime;
+  resuming restarts it even if the new matcher never returns a result. Repeated
+  accepted sightings renew expiry without changing equal observable state, and
+  cancelled timers cannot clear a newer song.
+  The separate neighboring card (stacked on phones) places a rounded square album cover beside the song
+  details, matching the Info thumbnail's height, content insets, and shared media-edge
+  treatment on wide layouts.
+  Song links use the native TV glass button with Info's panel corner radius,
+  not an opaque media-card wrapper or a second glass underlay. The label uses
+  the full card bounds so the button's text margins do not add a second inset.
+  Song titles and artists wrap rather than truncating to fixed line counts. Reduced-effects
+  and older-system fallbacks use a native card button around the shared frosted
+  panel. Mobile and non-link cards retain the shared Info panel surface.
+  Space is used only while a recognized song card is visible. Without a match,
+  Info keeps its full width and phone layouts have no empty row or gap. Song
+  appearance, expiry and availability changes preserve the Info view's identity;
+  disappearing song focus returns to Playback Info. `PlayerSongLayoutPreviewTests`
+  captures the production controls over native video with a seeded song match.
+  Opt in with `TEST_RUNNER_PLOZZ_SONG_PREVIEW_DIRECTORY` pointing to an owned
+  directory containing `film.mp4`, `still.jpg`, and `album.jpg`; these captures
+  are layout evidence, not evidence of a live Shazam result.
+  The [performance lab](../../docs/performance-lab.md#song-recognition) exercises
+  real local-catalog recognition separately. Fingerprinting is not free, and
+  simulator measurements do not establish device energy or native-route cost.
+  Matching Apple's music catalog also requires enabling ShazamKit under the
+  app identifier's **App Services** in the Apple Developer portal. Local custom
+  catalog tests do not verify that service authorization.
 - **Subtitle rendering** — `SubtitleOverlayView` draws in-app captions from
   sidecars, Plozzigen decoders, and `NativeSubtitleCueOutput` for native legible
   tracks. `SubtitleStyleRules` remains the reduced AVPlayer styling adapter
@@ -227,6 +284,52 @@ watchdog, periodic reload or engine-phase inference is added. See
 
 ## Player appearance
 
+**Continue Watching** uses Home's visible row and profile-scoped artwork, label,
+and playback-detail preferences. Artwork + logo, thumbnails and portrait posters
+reuse Home's artwork renderer, including spoiler protection and fallback rules.
+The player owns geometry: every horizontal card fills the same fixed-height
+stage as Chapters, fitting its artwork width to the measured caption and chosen
+aspect ratio. Hiding labels returns that space to the artwork. Framed cards use
+Chapters' surface and focus clearance, with the same `contentPadding` inset as
+Info. Captions add only a four-point horizontal inset; top and bottom padding stay
+equal, with no extra footer or reduction in artwork size. Hidden labels keep the
+full artwork area. Borderless cards retain their own caption padding and omit the
+glass. Reduced-transparency fallbacks remain available.
+Phone portrait keeps the existing bounded, compact vertical-list layout, with
+the same row height and natural content sizing as Chapters. Playback details
+and progress-only bars sit beside the small artwork rather than shrinking Home's overlays.
+Home's Showcase background and absolute card sizing are not copied into playback.
+Narrow artwork keeps detailed playback indicators on one line. It uses the same
+fitting order as mobile Home: drop the play glyph, then the progress bar, before
+reducing text. The fixed-height player additionally prioritizes remaining time
+over an episode qualifier rather than stacking the decorations or wrapping text.
+
+Settings > Playback > **Player tabs** controls Chapters, Cast, Episodes, Playlist,
+and Continue Watching independently on TV, iPhone, and iPad. All five default on;
+existing Continue Watching choices are preserved. Info is always available.
+The profile-scoped preferences filter the shared tab list without changing its
+order or fixed panel height. Enabled tabs still require relevant content.
+Hiding Episodes or Playlist does not disable their playback contexts, autoplay,
+or the Up Next card. If an open tab loses its content, its panel closes and a
+later TV card entry falls back to Info when the remembered tab is unavailable.
+
+The current title and other episodes from its series are excluded within their
+source account, not by raw IDs across servers. Selection uses the normal version
+preparation and authorized playback handoff, saves the outgoing position, and
+resumes the chosen title on its own provider. Missing/failed preparation is
+reported without swapping the outgoing provider. The tab remains part of the
+existing fixed-height horizontal player stage and follows the other media tabs' idle fade.
+Current-title filtering retains the playback origin account when a provider's
+fresh playback metadata has no app-owned account tag; matching IDs on other
+accounts remain available.
+`PlayerContinueWatchingModel` observes the shell's cached Home snapshot and
+playback identity, deriving the filtered row only when those inputs change.
+Controls reveal, playback-clock updates and native focus moves read the cached
+array; they do not reaggregate Home or request provider data. Replacing the source
+invalidates pending observations, and stopping releases the source and clears the
+row. Disabled playback settings never read Home. Artwork remains asynchronous
+and is mounted only with the selected, lazy Continue Watching panel.
+
 On tvOS, iPhone, and iPad, **Chapters** joins the bottom player tabs only when the
 server metadata or the playing file supplies usable chapter positions. Individual
 chapter cards use Cast's shared over-video glass, focus treatment, and reduced-effects
@@ -236,11 +339,13 @@ have thumbnails, portrait rows show left-aligned text without an artwork placeho
 and wide layouts vertically center that text in narrow, full-height glass cards.
 Text-only cards use Cast's width with a minimum text allowance on small screens;
 cards with thumbnails retain their wider artwork layout. Mixed-thumbnail lists
-retain aligned artwork slots. On tvOS, artwork cards size their width from the
-measured caption so thumbnails have equal top and side insets; the thumbnail's
+retain aligned artwork slots. All horizontal artwork cards size their width from the
+measured caption so thumbnails have equal top and side insets, using Info's
+`contentPadding` rather than a separate corner-based allowance; the thumbnail's
 continuous corner radius is the outer glass radius minus that inset.
-Chapter titles and start times share one leading text
-edge with corner-aware inner padding. They show titles (or numbered chapter labels),
+Artwork captions share one leading text edge, inset four points from the artwork.
+Their bottom inset matches the artwork's top inset.
+Cards show titles (or numbered chapter labels),
 start times, available server thumbnails, and the current chapter. On portrait iOS,
 Cast and Chapters use the same tab-to-content gap as Info, with directional scroll
 fades only at edges where more content remains.
@@ -346,7 +451,7 @@ Native and tvOS track menus share `TrackLabeling` and `TrackMenuBuilder`.
 Bare language titles no longer suppress known codec/channel facts, for example
 `English (Opus 5.1)`. Custom names and commentary are retained, existing format
 facts are not duplicated, and unknown formats are not invented.
-Explicit French audio-version tags (`VFQ`, `VFF`, `VFI`, `VFB`, `VQ`, `VOF`,
+Explicit French audio/subtitle version tags (`VFQ`, `VFF`, `VFI`, `VFB`, `VQ`, `VOF`,
 `VOQ`) survive generated server titles, matching-track provider enrichment, and
 app-locale changes. These are source-authored community conventions, rendered
 verbatim, not codec names or proof of a particular dub inferred from `fr`.
@@ -355,16 +460,23 @@ For example, `fr` plus `VFQ` and DTS six-channel metadata becomes
 conflicting provider hints. Release-wide counts such as `VF2`, subtitle labels
 such as `VOSTFR`, and encoder-name substrings do not identify an audio version.
 
-Audio display preserves explicit BCP 47 details, including Brazilian/European
+Audio and subtitle display preserve explicit BCP 47 details, including Brazilian/European
 Portuguese (`pt-BR`/`pt-PT`), Latin American/Spain Spanish (`es-419`/`es-ES`),
 Canadian/France French (`fr-CA`/`fr-FR`), and Cantonese (`yue`/`zh-yue`).
 If the OS collapses an explicit tag such as Mandarin `cmn` to a macrolanguage
 name, the supplied tag remains visible. Script subtags describe writing, not
 proof of an audio dialect; generic `zh`, `fr`, `es`, or `pt` never acquires an
 inferred regional version. Language matching, preferred ordering, selection IDs,
-and subtitle formatting are unchanged. Locale extensions such as calendar
-preferences are not audio-language details. This preserves metadata actually
+and automatic track selection are unchanged. Locale extensions such as calendar
+preferences are not track-language details. This preserves metadata actually
 supplied by the provider/engine, not distinctions missing from that metadata.
+Primary and secondary subtitle menus retain these distinctions together with
+localized Forced, SDH, Commentary, and auto-detection qualifiers and bitmap format
+hints. For example, two forced French tracks titled `French (VFF)` and
+`French (VFQ)` remain distinct as `French (VFF, Forced)` and `French (VFQ, Forced)`.
+Plex and Jellyfin/Emby preserve version tags from raw titles when their generated
+display titles omit them; matching provider tags also fill engine-label gaps.
+The secondary menu enriches only its presentation, without changing eligibility.
 
 Conventions: [French version tags](https://github.com/TRaSH-Guides/Guides/blob/master/includes/cf-descriptions/french-vfq.md),
 [BCP 47 language tags](https://www.w3.org/International/articles/language-tags/),
@@ -1784,6 +1896,17 @@ and stale seek completions cannot finish a newer target. A failed/cancelled load
 cannot report playback started while its failure callback is still queued.
 Terminal managed-stream failures stop the decoder so audio cannot continue
 behind the error screen and immediately release the owned server rendition.
+An AVFoundation media-services reset (`-11819`) rebuilds the same engine once,
+without changing codecs, renegotiating the source, or releasing its server
+rendition. Recovery keeps the actual playhead (or pending seek), pause, speed and
+track choices. Stop, a newer load, duplicate callbacks and a second reset cannot
+resurrect or repeatedly rebuild playback. Until the replacement presents video,
+another failure is terminal rather than a codec/transcode cascade; a recovered
+session retains its normal compatibility handling. Audio-session setup failures retain
+their OSStatus domain/code and the specific audio-session error message.
+Native media-selection reads run off the UI actor with two reader lanes per
+library and a half-second waiter deadline. Timeout is not an empty selection,
+and blocked native workers keep their lane until they actually return.
 Retry/dismiss joins that same cleanup instead of issuing duplicate stop requests.
 Retry copy names the codec requested, not an encoder we cannot prove ran; the
 negotiated codec is shown separately and all attempts are journaled.

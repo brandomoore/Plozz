@@ -531,6 +531,12 @@ public actor CloudConfigSyncService {
         PlozzLog.sync.info("CloudSync: deactivated")
     }
 
+    public func deactivateAndCancel() async {
+        let current = engine
+        deactivate()
+        await current?.cancelOperations()
+    }
+
     private func recordFirstRunCloudFetch() {
         guard let id = config.installation.firstRunCaseID else { return }
         let url = stateFileURL.deletingLastPathComponent().appendingPathComponent("first-run-cloud.json")

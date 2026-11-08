@@ -183,6 +183,7 @@ final class PlexPINPresentationTests: XCTestCase {
             accountsProviders: hub, profilesModel: profiles,
             plexHomeUserTokenCache: PlexHomeUserTokenCache(store: InMemorySecureStore()),
             automaticSignInStore: AutomaticSignInStore(defaults: defaults, secureStore: InMemorySecureStore()),
+            offlineSignInStore: .init(secureStore: InMemorySecureStore()),
             switchProfile: { _ in XCTFail("The default profile has no alternate fallback.") }
         )
         model.plexHomeUsersFetch = { _, _ in

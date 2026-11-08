@@ -22,10 +22,19 @@ import CoreUI
 /// (The type + `.myLibraries` route keep their earlier names.)
 public struct MyLibrariesDetailView: View {
     public let scope: ProfileLibrariesScope
-    @Environment(\.managedProviderSetupRouter) private var providerSetupRouter
-    @Environment(SettingsSearchRequest.self) private var searchRequest: SettingsSearchRequest?
 
     public init(scope: ProfileLibrariesScope) { self.scope = scope }
+
+    public var body: some View {
+        MyLibrariesContentView(scope: scope, allGroups: serverGroups(from: scope.accounts))
+    }
+}
+
+private struct MyLibrariesContentView: View {
+    let scope: ProfileLibrariesScope
+    let allGroups: [ServerAccountGroup]
+    @Environment(\.managedProviderSetupRouter) private var providerSetupRouter
+    @Environment(SettingsSearchRequest.self) private var searchRequest: SettingsSearchRequest?
 
     /// Bumped on every server/identity mutation so the pushed view re-renders
     /// immediately and re-reads live state through `context`'s closures. This is
@@ -38,8 +47,6 @@ public struct MyLibrariesDetailView: View {
     #if os(tvOS)
     @Environment(\.settingsInWorkspace) private var inWorkspace
     #endif
-
-    private var allGroups: [ServerAccountGroup] { serverGroups(from: scope.accounts) }
 
     private func searchGroup(for target: String) -> ServerAccountGroup? {
         let candidates = allGroups.filter {
@@ -73,23 +80,8 @@ public struct MyLibrariesDetailView: View {
         ScrollViewReader { scrollProxy in
             ScrollView {
                 VStack(alignment: .leading, spacing: 28) {
-                    switch scope.presentation {
-                    case .settings:
-                        SettingsPageHeader(
-                            SettingsCopy.libraries,
-                            subtitle: "Turn servers and libraries on or off, and pick who you watch as."
-                        )
-                    case .profileSetup:
-                        // Same controls, different moment: this is a question
-                        // being answered, not a setting being adjusted.
-                        SettingsPageHeader(
-                            "What does this profile watch?",
-                            // Says the two things the screen can't show you: the
-                            // choices are scoped to this profile, and the identity
-                            // picker decides whose watchlist comes with it.
-                            subtitle: "Only this profile is affected. Who you watch as sets whose watchlist it uses."
-                        )
-                    }
+                    SettingsPageHeader(SettingsCopy.libraries)
+                    ProfileLibrariesSummary(profile: scope.activeProfile)
                     if searchRequest?.targetID == "watcher-plex-user",
                        searchGroup(for: "watcher-plex-user") == nil {
                         Text("Add a Plex server to choose a Plex user.")
@@ -399,13 +391,12 @@ public struct MyLibrariesDetailView: View {
     @ViewBuilder
     private func librarySection(for group: ServerAccountGroup) -> some View {
         switch scope.discoveredLibraries {
-        case .idle, .loading:
-            HStack(spacing: 12) {
-                ProgressView()
-                Text("Discovering libraries…").font(.footnote).plozzForeground(.secondary)
+        case .idle, .loading, .empty:
+            if isRefreshingLibraries(for: group) {
+                discoveringLibraries
+            } else {
+                libraryStatusMessage(for: group)
             }
-        case .empty:
-            libraryStatusMessage(for: group)
         case .failed:
             HStack {
                 Text("Couldn't load libraries.").font(.footnote).plozzForeground(.secondary)
@@ -442,6 +433,7 @@ public struct MyLibrariesDetailView: View {
                     group.serverKey == searchGroup(for: "profile-library-inclusion")?.serverKey
                         ? "profile-library-inclusion" : "profile-libraries-\(group.serverKey)"
                 )
+                if isUnreachable(group) { libraryStatusMessage(for: group) }
             }
         }
     }

@@ -564,6 +564,37 @@ final class SubtitleTrackControllerTests: XCTestCase {
 
     // MARK: - Dual (secondary) subtitle
 
+    func testProviderVersionTagsReachPrimaryAndEngineDecodedSecondaryMenus() {
+        let (sut, host, engine) = makeSUT(engineKind: .plozzigen, capabilities: [.dualSubtitleDecode])
+        engine.subtitleTracks = [10, 11].map {
+            MediaTrack(id: $0, kind: .subtitle, displayTitle: "French", language: "fr",
+                       codec: "subrip", isForced: true)
+        }
+        host.request = PlaybackRequest(
+            item: MediaItem(id: "movie", title: "Movie", kind: .movie),
+            streamURL: URL(string: "https://fixture.test/movie.mkv")!,
+            subtitleTracks: ["VFF", "VFQ"].enumerated().map {
+                MediaTrack(id: $0.offset + 10, kind: .subtitle, displayTitle: "French (\($0.element))",
+                           language: "fr", codec: "subrip", isForced: true)
+            }
+        )
+        sut.loadTrackOptions()
+        for options in [host.controls.subtitleOptions, host.controls.secondarySubtitleOptions] {
+            XCTAssertEqual(options.map(\.id), [-1, 10, 11])
+            XCTAssertEqual(options.dropFirst().map(\.nativeTitle), ["French (VFF, Forced)", "French (VFQ, Forced)"])
+            XCTAssertEqual(options.filter(\.isSelected).map(\.id), [-1])
+        }
+        sut.selectSubtitleOption(id: 10)
+        sut.selectSecondarySubtitleOption(id: 11)
+        sut.loadTrackOptions()
+        XCTAssertEqual(engine.lastSelectedSubtitleID, 10)
+        XCTAssertEqual(engine.secondarySelections.last.flatMap { $0 }?.id, 11)
+        XCTAssertEqual(host.controls.subtitleOptions.filter(\.isSelected).map(\.nativeTitle), ["French (VFF, Forced)"])
+        XCTAssertEqual(host.controls.secondarySubtitleOptions.map(\.id), [-1, 11])
+        XCTAssertEqual(host.controls.secondarySubtitleOptions.filter(\.isSelected).map(\.nativeTitle), ["French (VFQ, Forced)"])
+        XCTAssertEqual(engine.subtitleTracks.map(\.displayTitle), ["French", "French"])
+    }
+
     func testSelectSecondaryEnablesStylingAndLoadingStatus() {
         let (sut, host, engine) = makeSUT(engineKind: .native)   // non-dual engine → sidecar overlay
         let secondary = textSidecar(8, language: "ja")

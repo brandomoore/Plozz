@@ -32,10 +32,12 @@ struct PlozziOSSearchView: View {
                         ?? []
                 },
                 seerSearch: { [seer = appModel.seerService] query in
-                    (try? await seer.search(query)) ?? []
+                    guard !OfflineMode.shared.isEnabled else { return [] }
+                    return (try? await seer.search(query)) ?? []
                 },
                 seerRequestAvailability: { [seer = appModel.seerService] item in
-                    await seer.requestAvailability(for: item)
+                    guard !OfflineMode.shared.isEnabled else { return nil }
+                    return await seer.requestAvailability(for: item)
                 }
             )
         )

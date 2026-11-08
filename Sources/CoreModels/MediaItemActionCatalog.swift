@@ -72,7 +72,11 @@ public enum MediaItemActionCatalog {
         // Watched-state actions: only when the provider can mutate them and the
         // item is a kind that carries a watched state.
         if supportsWatchState, isWatchStateEligible(item) {
-            actions.append(item.isPlayed ? .markUnwatched : .markWatched)
+            if hasResumePoint(item) {
+                actions.append(contentsOf: [.markWatched, .markUnwatched])
+            } else {
+                actions.append(item.isPlayed ? .markUnwatched : .markWatched)
+            }
 
             // "Up to here" only makes sense for an episode whose position in its
             // list is known and where something up to that point is still

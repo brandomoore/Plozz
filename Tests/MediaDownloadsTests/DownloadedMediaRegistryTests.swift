@@ -3,6 +3,41 @@ import XCTest
 @testable import MediaDownloads
 
 final class DownloadedMediaRegistryTests: XCTestCase {
+    func testSubtitleWarningAcknowledgementIsDurableAndCannotConsumeANewerFailure() async throws {
+        let store = InMemoryDownloadedMediaStore()
+        let registry = DownloadedMediaRegistry(store: store)
+        let record = try await registry.beginDownload(DownloadTestFactory.record())
+        try await registry.markCompleted(identityKey: record.identityKey, totalBytes: 10, subtitleStatus: .unavailable)
+        let first = await registry.record(forKey: record.identityKey)
+        let firstWarning = try XCTUnwrap(first?.subtitleWarningID)
+        let decoded = try JSONDecoder().decode(
+            DownloadedMediaRegistryState.self, from: JSONEncoder().encode(store.load())
+        )
+        XCTAssertEqual(decoded.records[record.identityKey]?.subtitleWarningID, firstWarning)
+        try await registry.setSubtitleStatus(identityKey: record.identityKey, .unavailable)
+        try await registry.acknowledgeSubtitleWarning(identityKey: record.identityKey, warningID: firstWarning)
+        let second = await registry.record(forKey: record.identityKey)
+        let secondWarning = try XCTUnwrap(second?.subtitleWarningID)
+        XCTAssertNotEqual(secondWarning, firstWarning)
+        try await registry.acknowledgeSubtitleWarning(identityKey: record.identityKey, warningID: secondWarning)
+        let acknowledged = await DownloadedMediaRegistry(store: store).record(forKey: record.identityKey)
+        XCTAssertNil(acknowledged?.subtitleWarningID)
+        XCTAssertEqual(acknowledged?.subtitleStatus, .unavailable)
+        try await registry.setSubtitleStatus(identityKey: record.identityKey, .unavailable)
+        try await registry.setSubtitleStatus(identityKey: record.identityKey, .saved)
+        let recovered = await registry.record(forKey: record.identityKey)
+        XCTAssertNil(recovered?.subtitleWarningID)
+    }
+
+    func testLegacyDownloadDoesNotInventASubtitleWarning() throws {
+        let record = try DownloadTestFactory.record(status: .completed)
+        let data = try JSONEncoder().encode(record)
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        XCTAssertNil(json["subtitleWarningID"])
+        let decoded = try JSONDecoder().decode(DownloadedMediaRecord.self, from: data)
+        XCTAssertNil(decoded.subtitleWarningID)
+    }
+
     func testCancelledArtworkCannotAttach() async throws {
         let registry = DownloadedMediaRegistry(store: InMemoryDownloadedMediaStore())
         let original = try DownloadTestFactory.record(status: .completed)
@@ -58,6 +93,56 @@ final class DownloadedMediaRegistryTests: XCTestCase {
         XCTAssertEqual(reloaded?.status, .completed)
         XCTAssertEqual(reloaded?.bytesDownloaded, 100)
         XCTAssertEqual(reloaded?.totalBytes, 100)
+    }
+
+    func testPosterAttachmentSurvivesEnrichmentAndRejectsStaleOrCancelledWork() async throws {
+        let store = InMemoryDownloadedMediaStore()
+        let registry = DownloadedMediaRegistry(store: store)
+        var original = try DownloadTestFactory.record(status: .completed)
+        original.snapshot.artworkFileName = "landscape.jpg"
+        _ = try await registry.beginDownload(original)
+        let attached = try await registry.setArtworkFileName(
+            identityKey: original.identityKey, fileName: "poster.jpg", role: .poster,
+            expectedCreatedAt: original.createdAt
+        )
+        XCTAssertTrue(attached)
+        try await registry.enrichSnapshot(
+            identityKey: original.identityKey, expectedCreatedAt: original.createdAt,
+            snapshot: .init(title: "Updated", kind: .movie)
+        )
+        let cancelled = Task {
+            withUnsafeCurrentTask { $0?.cancel() }
+            return try await registry.setArtworkFileName(
+                identityKey: original.identityKey, fileName: "cancelled.jpg", role: .poster
+            )
+        }
+        do {
+            _ = try await cancelled.value
+            XCTFail("Cancelled posters must not attach.")
+        } catch is CancellationError {}
+        let stale = try await registry.setArtworkFileName(
+            identityKey: original.identityKey, fileName: "stale.jpg", role: .poster,
+            expectedCreatedAt: original.createdAt.addingTimeInterval(-1)
+        )
+        XCTAssertFalse(stale)
+        let reloaded = await DownloadedMediaRegistry(store: store).record(forKey: original.identityKey)
+        XCTAssertEqual(reloaded?.snapshot.artworkFileName, "landscape.jpg")
+        XCTAssertEqual(reloaded?.snapshot.posterArtworkFileName, "poster.jpg")
+        XCTAssertEqual(reloaded?.snapshot.title, "Updated")
+        XCTAssertEqual(reloaded?.status, .completed)
+    }
+
+    func testPinnedPosterSchemaReadsLegacySnapshotsAndRoundTripsNewOnes() throws {
+        var snapshot = PinnedMediaSnapshot(title: "Movie", kind: .movie, artworkFileName: "landscape.jpg")
+        let legacy = try JSONEncoder().encode(snapshot)
+        let decodedLegacy = try JSONDecoder().decode(PinnedMediaSnapshot.self, from: legacy)
+        XCTAssertNil(decodedLegacy.posterArtworkFileName)
+        XCTAssertEqual(decodedLegacy.artworkFileName, "landscape.jpg")
+        snapshot.posterArtworkFileName = "poster.jpg"
+        XCTAssertEqual(
+            try JSONDecoder().decode(PinnedMediaSnapshot.self, from: JSONEncoder().encode(snapshot)),
+            snapshot
+        )
     }
 
     func testBeginDownloadRoundTripsThroughStore() async throws {

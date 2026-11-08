@@ -32,6 +32,9 @@ household multi-user UI on top of `CoreModels.ProfileStore`.
   iOS toolbar buttons when the iPad app runs on Mac; framing a resizable photo
   alone does not constrain the extracted image. Keep the native button style
   and hit target. Palette resolution lives here, not in Foundation-only `CoreModels`.
+- `ProfileChip` — the shared avatar/name chip used by Seerr setup and Libraries'
+  scrolling profile context. Its name wraps at accessibility sizes; the avatar
+  is decorative to avoid repeating the name in VoiceOver.
 - `ProfileTileColor` — the colour palette and the deterministic
   `colorIndex → Color` resolution used by avatar / tile / picker.
   Avatar choices reuse CoreUI's `ColorSwatchButton`, also used by watch-indicator

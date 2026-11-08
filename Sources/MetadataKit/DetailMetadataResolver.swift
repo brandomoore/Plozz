@@ -72,10 +72,22 @@ public actor DetailMetadataResolver {
         }
         var missing = Set<MetadataField>()
         if item.cast.isEmpty { missing.insert(.cast) }
-        if !item.people.contains(where: { $0.kind?.lowercased() == "director" }) { missing.insert(.directors) }
-        if !item.people.contains(where: { $0.kind?.lowercased() == "writer" }) { missing.insert(.writers) }
+        let roles = Set(item.people.compactMap { MediaCrewRole(kind: $0.kind) })
+        if !roles.contains(.director) { missing.insert(.directors) }
+        if !roles.contains(.writer) { missing.insert(.writers) }
+        if roles.isDisjoint(with: [.producer, .executiveProducer]) { missing.insert(.producers) }
+        if roles.isDisjoint(with: [.composer, .music]) { missing.insert(.composers) }
         if item.studios.isEmpty { missing.insert(.studios) }
         if item.genres.isEmpty { missing.insert(.genres) }
+        if item.kind == .movie || item.kind == .series,
+           item.originalLanguage?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false {
+            missing.insert(.originalLanguage)
+        }
+        if item.kind == .series {
+            if item.seriesStatus == nil { missing.insert(.seriesStatus) }
+            if (item.catalogSeasonCount ?? 0) <= 0 { missing.insert(.catalogSeasonCount) }
+            if (item.catalogEpisodeCount ?? 0) <= 0 { missing.insert(.catalogEpisodeCount) }
+        }
         return missing
     }
 
@@ -85,11 +97,16 @@ public actor DetailMetadataResolver {
         for (field, people) in [
             (MetadataField.cast, enrichment.cast),
             (.directors, enrichment.directors),
-            (.writers, enrichment.writers)
+            (.writers, enrichment.writers),
+            (.producers, enrichment.producers),
+            (.composers, enrichment.composers)
         ] {
             guard missing.contains(field), let people, !people.value.isEmpty else { continue }
             copy.people.append(contentsOf: people.value)
             copy.metadataProvenance.set(people, for: field)
+        }
+        if let references = enrichment.creditReferences, references.source == .tmdb {
+            copy.people = reconcilingCredits(copy.people, references: references.value)
         }
         if missing.contains(.studios), let studios = enrichment.studios, !studios.value.isEmpty {
             copy.studios = studios.value
@@ -99,6 +116,56 @@ public actor DetailMetadataResolver {
             copy.genres = genres.value
             copy.metadataProvenance.set(genres, for: .genres)
         }
+        if missing.contains(.originalLanguage), let language = enrichment.originalLanguage,
+           !language.value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            copy.originalLanguage = language.value
+            copy.metadataProvenance.set(language, for: .originalLanguage)
+        }
+        if missing.contains(.seriesStatus), let status = enrichment.seriesStatus {
+            copy.seriesStatus = status.value
+            copy.metadataProvenance.set(status, for: .seriesStatus)
+        }
+        if missing.contains(.catalogSeasonCount), let count = enrichment.catalogSeasonCount, count.value > 0 {
+            copy.catalogSeasonCount = count.value
+            copy.metadataProvenance.set(count, for: .catalogSeasonCount)
+        }
+        if missing.contains(.catalogEpisodeCount), let count = enrichment.catalogEpisodeCount, count.value > 0 {
+            copy.catalogEpisodeCount = count.value
+            copy.metadataProvenance.set(count, for: .catalogEpisodeCount)
+        }
         return copy
+    }
+
+    private static func reconcilingCredits(_ people: [MediaPerson], references: [MediaPerson]) -> [MediaPerson] {
+        func name(_ person: MediaPerson) -> String {
+            person.name.precomposedStringWithCanonicalMapping
+                .split(whereSeparator: \.isWhitespace).joined(separator: " ").lowercased()
+        }
+        func role(_ person: MediaPerson) -> String? {
+            person.isCast ? "actor" : MediaCrewRole(kind: person.kind).map { "crew.\($0.rawValue)" }
+        }
+        let referenceGroups = Dictionary(grouping: references, by: name)
+        let nativeGroups = Dictionary(grouping: people.indices.filter {
+            !people[$0].id.hasPrefix("tmdb:person:")
+        }, by: { name(people[$0]) })
+        var result = people
+        for (name, indices) in nativeGroups {
+            guard !name.isEmpty, let candidates = referenceGroups[name],
+                  let identity = candidates.first?.id, identity.hasPrefix("tmdb:person:"),
+                  Set(candidates.map(\.id)).count == 1 else { continue }
+            let nativeIdentities = Set(indices.map {
+                let person = people[$0]
+                let external = person.externalID?.trimmingCharacters(in: .whitespacesAndNewlines)
+                return external.flatMap { $0.isEmpty ? nil : $0 } ?? person.id
+            })
+            guard nativeIdentities.count == 1,
+                  indices.allSatisfy({ people[$0].creditIdentity == nil || people[$0].creditIdentity == identity }),
+                  indices.contains(where: { index in
+                      guard let nativeRole = role(people[index]) else { return false }
+                      return candidates.contains { role($0) == nativeRole }
+                  }) else { continue }
+            for index in indices { result[index].creditIdentity = identity }
+        }
+        return result
     }
 }

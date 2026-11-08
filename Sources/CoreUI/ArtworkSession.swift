@@ -62,7 +62,7 @@ public enum ArtworkSession {
         // re-decode from cached bytes instantly instead — no network, no gray flash.
         config.urlCache = byteCache
         config.requestCachePolicy = .returnCacheDataElseLoad
-        return URLSession(configuration: config)
+        return OfflineNetworkSession.make(configuration: config)
     }()
 
     public static func cacheUsage() -> CacheUsage {

@@ -123,6 +123,7 @@ extension PlozziOSAppModel {
     /// published (the private key must never leave the device) — `buildSecretsBundle`
     /// already omits those, so they still require a manual re-add on each device.
     func publishPortableCredentials() {
+        guard !isOfflineMode else { return }
         guard SyncSetupFeatureFlag().isEnabled else { return }
         let accounts = accountsProviders.accounts
         let accountStore = accountStore
@@ -201,6 +202,7 @@ extension PlozziOSAppModel {
     /// only acts on pending (not-yet-local) servers, and `accountStore.add` replaces any
     /// existing entry rather than duplicating.
     func autoConnectFromSyncedCredentials() {
+        guard !isOfflineMode else { return }
         guard SyncSetupFeatureFlag().isEnabled else { return }
         let store = portableCredStore
         adoptSyncedSeerrConnection(from: store)

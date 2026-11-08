@@ -15,6 +15,7 @@ public struct JellyfinProvider: MediaProvider, ServerRatingsProviding, SeriesRes
     public let accountID: String
     public let credentialRevision: CredentialRevision
     let client: JellyfinClient
+    let libraryRequests = JellyfinDiscoveryRequests<[MediaLibrary]>()
     let collectionLibraryCache = MediaBrowserCollectionLibraryCache()
     let videoPlaylistCache = VideoPlaylistSnapshotCache()
     let liveTVLeases = JellyfinLiveTVLeaseStore()
@@ -86,6 +87,12 @@ public struct JellyfinProvider: MediaProvider, ServerRatingsProviding, SeriesRes
     }
 
     public func libraries() async throws -> [MediaLibrary] {
+        try await libraryRequests.run(key: session.userID) {
+            try await loadLibraries()
+        }
+    }
+
+    private func loadLibraries() async throws -> [MediaLibrary] {
         var libraries = try await client.userViews(userID: session.userID).map { dto in
             MediaLibrary(
                 id: dto.Id,
@@ -2159,13 +2166,25 @@ public struct JellyfinProvider: MediaProvider, ServerRatingsProviding, SeriesRes
     /// fetched via a plain item lookup — no `PlaybackInfo`/transcode. Used to
     /// observe a just-downloaded subtitle so it can be hot-loaded.
     public func subtitleTracks(forItemID itemID: String) async throws -> [MediaTrack] {
-        let dto = try await client.item(userID: session.userID, id: itemID)
-        let source = dto.MediaSources?.first
-        let sourceID = source?.Id ?? itemID
-        let streams = source?.MediaStreams ?? dto.MediaStreams ?? []
+        try await subtitleTracks(context: .init(itemID: itemID))
+    }
+
+    public func subtitleTracks(context: RemoteSubtitleContext) async throws -> [MediaTrack] {
+        let dto = try await client.item(userID: session.userID, id: context.itemID)
+        let source: MediaSourceInfo?
+        if let sourceID = context.mediaSourceID {
+            guard let selected = dto.MediaSources?.first(where: { $0.Id == sourceID }) else {
+                throw AppError.notFound
+            }
+            source = selected
+        } else {
+            source = dto.MediaSources?.first
+        }
+        let sourceID = source?.Id ?? context.itemID
+        let streams = source?.MediaStreams ?? (context.mediaSourceID == nil ? dto.MediaStreams : nil) ?? []
         return try streams
             .filter { $0.`Type` == "Subtitle" }
-            .map { try map(subtitleStream: $0, itemID: itemID, sourceID: sourceID) }
+            .map { try map(subtitleStream: $0, itemID: context.itemID, sourceID: sourceID) }
     }
 
     // MARK: - Mapping
@@ -2377,6 +2396,7 @@ public struct JellyfinProvider: MediaProvider, ServerRatingsProviding, SeriesRes
             id: dto.Id,
             title: dto.Name ?? "Untitled",
             originalTitle: dto.OriginalTitle,
+            seriesStatus: kind == .series ? dto.Status.flatMap(MediaSeriesStatus.init(providerValue:)) : nil,
             kind: kind,
             isTrailer: dto.Type == "Trailer" || MediaExtraKind(rawProviderValue: dto.ExtraType) == .trailer,
             overview: dto.Overview,
@@ -2653,6 +2673,13 @@ public struct JellyfinProvider: MediaProvider, ServerRatingsProviding, SeriesRes
         for dto: BaseItemDto,
         client: JellyfinClient
     ) -> [ArtworkSelection] {
+        let landscape: [ArtworkSelection]
+        if dto.Type == "Movie" || dto.Type == "Series",
+           let thumb = imageURL(for: dto, kind: .thumb, maxWidth: 3840, client: client) {
+            landscape = [.init(placement: .landscapeCard, references: [.remote(thumb)])]
+        } else {
+            landscape = []
+        }
         var candidates: [HeroArtworkCandidate] = []
         for (index, tag) in (dto.BackdropImageTags ?? []).enumerated() {
             guard let url = client.imageURL(
@@ -2687,13 +2714,13 @@ public struct JellyfinProvider: MediaProvider, ServerRatingsProviding, SeriesRes
                 "jellyfin pool=\(candidates.count) backdropTags=\((dto.BackdropImageTags ?? []).count) "
                 + "thumb=\(dto.ImageTags?["Thumb"] != nil) title=\(dto.Name ?? "?") — NO SELECTION"
             }
-            return []
+            return landscape
         }
         HeroArtDiagnostics.emitOnce(stage: "jf-pool", key: dto.Id) {
             "jellyfin pool=\(candidates.count) backdropTags=\((dto.BackdropImageTags ?? []).count) "
             + "thumb=\(dto.ImageTags?["Thumb"] != nil) title=\(dto.Name ?? "?")"
         }
-        return HeroArtworkPlanner.selections(for: candidates)
+        return HeroArtworkPlanner.selections(for: candidates) + landscape
     }
 
     /// Builds an *item-owned* image URL only when the DTO actually advertises
@@ -2768,7 +2795,7 @@ public struct JellyfinProvider: MediaProvider, ServerRatingsProviding, SeriesRes
         return MediaTrack(
             id: dto.Index,
             kind: isSubtitle ? .subtitle : .audio,
-            displayTitle: isSubtitle ? title : TrackLabeling.audioDisplayTitle(title, sourceTitles: [dto.Title]),
+            displayTitle: TrackLabeling.trackDisplayTitle(title, sourceTitles: [dto.Title]),
             language: dto.Language,
             codec: dto.Codec,
             profile: isSubtitle ? nil : MediaSourceMetadata.audioProfile(
@@ -2806,7 +2833,9 @@ public struct JellyfinProvider: MediaProvider, ServerRatingsProviding, SeriesRes
         return MediaTrack(
             id: dto.Index,
             kind: .subtitle,
-            displayTitle: dto.DisplayTitle ?? dto.Language ?? dto.Codec ?? "Track \(dto.Index)",
+            displayTitle: TrackLabeling.trackDisplayTitle(
+                dto.DisplayTitle ?? dto.Language ?? dto.Codec ?? "Track \(dto.Index)", sourceTitles: [dto.Title]
+            ),
             language: dto.Language,
             codec: dto.Codec,
             isDefault: dto.IsDefault ?? false,

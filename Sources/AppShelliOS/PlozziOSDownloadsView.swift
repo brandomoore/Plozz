@@ -20,7 +20,7 @@ struct PlozziOSDownloadsView: View {
     @State private var detailNav: PlozziOSDownloadDetailNav?
 
     var body: some View {
-        let library = model.library
+        let library = appModel.isOfflineMode ? model.offlineLibrary : model.library
         Group {
             if let error = model.initializationError {
                 ContentUnavailableView(
@@ -80,7 +80,7 @@ struct PlozziOSDownloadsView: View {
             }
             ToolbarItem(id: "download-settings", placement: .topBarTrailing) {
                 NavigationLink {
-                    PlozziOSDownloadSettingsView(model: model)
+                    PlozziOSDownloadSettingsView(model: model, appModel: appModel)
                 } label: {
                     Label("Download Settings", systemImage: "gearshape")
                 }
@@ -127,7 +127,8 @@ struct PlozziOSDownloadsView: View {
                 showID: id, model: model, appModel: appModel, initialSeasonID: seasonID
             )
         case let .item(identityKey, createdAt):
-            if let record = model.records.first(where: {
+            let records = appModel.isOfflineMode ? model.playableRecords : model.records
+            if let record = records.first(where: {
                 $0.identityKey == identityKey && $0.createdAt == createdAt && $0.status == .completed
             }), let item = model.playbackItem(for: record) {
                 if let provider = appModel.provider(for: item) {
@@ -163,7 +164,7 @@ struct PlozziOSDownloadsView: View {
     private func libraryList(_ library: PlozziOSDownloadLibrary) -> some View {
         GeometryReader { proxy in
             List {
-                if model.hasActiveTransfers {
+                if model.hasActiveTransfers && !appModel.isOfflineMode {
                     activeTransfersHeader
                         .labelStyle(.titleAndIcon)
                         .listRowSeparator(.hidden)
@@ -293,7 +294,27 @@ struct PlozziOSDownloadsView: View {
                 Task { await model.resume(record) }
             }
         case .completed:
-            EmptyView()
+            PlozziOSDownloadSubtitleAction(record: record, model: model)
+        }
+    }
+}
+
+struct PlozziOSDownloadSubtitleAction: View {
+    let record: DownloadedMediaRecord
+    let model: PlozziOSDownloadsModel
+
+    var body: some View {
+        if record.status == .completed, record.managedHTTPSource?.includesTextSubtitleTracks != false {
+            Button {
+                Task { await model.refreshSubtitles(record) }
+            } label: {
+                if record.subtitleStatus == .unavailable {
+                    Label("Retry Subtitles", systemImage: "captions.bubble")
+                } else {
+                    Label("Update Subtitles", systemImage: "captions.bubble")
+                }
+            }
+            .disabled(model.subtitleState.refreshing.contains(record.identityKey))
         }
     }
 }
@@ -748,33 +769,27 @@ private struct PlozziOSDownloadManagementSettings: View {
 
 struct PlozziOSDownloadSettingsView: View {
     @Bindable var model: PlozziOSDownloadsModel
+    let appModel: PlozziOSAppModel
     @State private var pendingBulkDeletion: PlozziOSDownloadsBulkDeletion?
 
     var body: some View {
         List {
+            if appModel.isOfflineModeAvailable {
+                SettingsSectionGroup {
+                    PlozziOSOfflineModeToggle(appModel: appModel)
+                        .settingsSearchAnchor("offline-mode")
+                }
+            }
             SettingsSectionGroup("Network") {
-                Toggle("Allow Cellular Downloads", isOn: $model.allowsCellular).settingsSearchAnchor("downloads-cellular")
+                Toggle("Use Cellular", isOn: $model.allowsCellular).settingsSearchAnchor("downloads-cellular")
                 Toggle(
                     "Pause in Low Data Mode",
                     isOn: $model.pausesOnLowDataMode
                 ).settingsSearchAnchor("downloads-low-data")
-            } footer: {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(
-                        "These settings affect offline downloads only. Playback is never throttled."
-                    )
-                    if #available(iOS 26.0, *) {
-                        Text(
-                            "Live Activities show download progress when background processing is available. Cancel in the Live Activity to pause its downloads. You can resume them in Plozz.",
-                            comment: "iOS/iPadOS 26+ download-settings footer. Live Activities is Apple's system feature. Cancelling its task pauses, rather than deletes, the downloads."
-                        )
-                    }
-                }
             }
-
             .settingsSearchGroup(["downloads-cellular", "downloads-low-data"])
 
-            SettingsSectionGroup("Download Speed") {
+            SettingsSectionGroup("Speed") {
                 Picker(
                     "Limit",
                     selection: Binding(
@@ -817,7 +832,7 @@ struct PlozziOSDownloadSettingsView: View {
                 }
                 if model.maximumDownloadMegabitsPerSecond != nil {
                     Picker(
-                        "When Plozz Is in the Background",
+                        "In Background",
                         selection: $model.cappedBackgroundBehavior
                     ) {
                         Text("Pause Downloads")
@@ -830,19 +845,14 @@ struct PlozziOSDownloadSettingsView: View {
                     }.settingsSearchAnchor("downloads-background")
                 }
             } footer: {
-                if model.maximumDownloadMegabitsPerSecond == nil {
-                    Text("Downloads use the full available connection speed.")
-                } else {
-                    Text(
-                        "Choose whether speed-limited downloads pause or continue at full speed while Plozz is in the background.",
-                        comment: "Download speed settings footer explaining the two background choices: pause, or temporarily remove the speed limit."
-                    )
+                if model.maximumDownloadMegabitsPerSecond != nil {
+                    Text("Background downloads pause or run at full speed.")
                 }
             }
             .settingsSearchGroup(["downloads-speed", "downloads-custom-speed", "downloads-background"])
 
-            SettingsSectionGroup("Download Quality") {
-                Picker("Default Quality", selection: $model.downloadQuality) {
+            SettingsSectionGroup("Quality") {
+                Picker("Default", selection: $model.downloadQuality) {
                     Text("Original").tag(DownloadQuality.original)
                     Text("1080p • 20 Mbps")
                         .tag(DownloadQuality.hd1080)
@@ -867,17 +877,9 @@ struct PlozziOSDownloadSettingsView: View {
                     fallbackFor: model.downloadQuality == .original ? ["downloads-resolution", "downloads-bitrate"] : []
                 )
                 Toggle(
-                    "Ask Before Downloading",
+                    "Ask Each Time",
                     isOn: $model.asksBeforeDownloading
                 ).settingsSearchAnchor("downloads-confirm")
-                Toggle(
-                    "Include All Audio Tracks",
-                    isOn: $model.includesAllAudioTracks
-                ).settingsSearchAnchor("downloads-audio")
-                Toggle(
-                    "Include Text Subtitles When Supported",
-                    isOn: $model.includesTextSubtitleTracks
-                ).settingsSearchAnchor("downloads-subtitles")
                 if case .constrained(let constraint) = model.downloadQuality {
                     Stepper(
                         "Maximum Resolution: \(constraint.maximumHeight)p",
@@ -893,38 +895,26 @@ struct PlozziOSDownloadSettingsView: View {
                     ).settingsSearchAnchor("downloads-bitrate")
                 }
             } footer: {
-                if model.downloadQuality == .original {
-                    Text(
-                        "Original downloads the server’s existing file without transcoding."
-                    )
-                } else {
-                    Text(
-                        "Reduced quality asks Plex, Jellyfin, or Emby to transcode a separate offline copy using your profile’s preferred audio language. Plex keeps one audio track and at most one text subtitle; choose Original to keep every embedded track. External subtitle sidecars remain on the server. Preparation can take time and use significant server CPU. Network shares support Original only."
-                    )
-                }
+                PlozziOSDownloadQualityDescription(quality: model.downloadQuality)
             }
             .settingsSearchGroup([
-                "downloads-quality", "downloads-confirm", "downloads-audio", "downloads-subtitles",
+                "downloads-quality", "downloads-confirm",
                 "downloads-resolution", "downloads-bitrate"
             ])
 
             SettingsSectionGroup("Notifications") {
                 Toggle(
-                    "Standalone Download Completed",
+                    "Download Complete",
                     isOn: $model.notifiesOnStandaloneCompletion
                 ).settingsSearchAnchor("downloads-notify-one")
                 Toggle(
-                    "Batch Completed",
+                    "Season or Show Complete",
                     isOn: $model.notifiesOnBatchCompletion
                 ).settingsSearchAnchor("downloads-notify-batch")
                 Toggle(
                     "Download Failed",
                     isOn: $model.notifiesOnFailure
                 ).settingsSearchAnchor("downloads-notify-failure")
-            } footer: {
-                Text(
-                    "Batch notifications summarize a season or show instead of notifying for every episode."
-                )
             }
             .settingsSearchGroup(["downloads-notify-one", "downloads-notify-batch", "downloads-notify-failure"])
 

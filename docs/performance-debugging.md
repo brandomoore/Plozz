@@ -150,8 +150,29 @@ The `performance_operations` context holds at most 32 active operations, 16
 recent fast completions and 16 slow completions (at least 250 ms), plus bounded
 drop/overlap counters. Home's optional credit count is omitted above 2,048 media
 entries; item/row counts remain available without walking the larger metadata feed.
+Four of the existing active slots are reserved for Home load, merge and publication
+timings. These operations also have independent 16-fast/16-slow histories
+(`homeRecent`, `homeSlow`, `homeDropped`), so HTTP/decode traffic cannot erase them.
+This only changes diagnostic admission, not request concurrency. Drop counters
+combine rejected diagnostic admission and overwritten history, not concurrent
+requests or failed app work.
 
-This adds no automatic tracing, timer, polling task, file logging, or additional
+On Debug/TestFlight mobile builds, visible, active Home additionally samples
+main-actor wake-up delay at a 100 ms cadence while reporting consent is enabled.
+It retains up to 60 approximately one-second windows (`homeUI`, `homeUIDropped`),
+including a final partial window, independently of operation history. Each window
+contains sample counts, the worst scheduling overshoot, overshoots of at least
+50 ms, sampled scrolling/loading counts, content-height change count and largest
+absolute change (rounded up to points), and sampled peak active share scans/listings.
+Initial document height is not a change. The observer never moves the scroll
+offset, measures individual rows, requests data, or publishes observable UI state.
+It stops when Home is covered, replaced or removed, the scene becomes inactive,
+or reporting is disabled. A replaced owner or consent generation cannot append
+late measurements. Off-screen time is not measured as a scheduling stall.
+App Store builds do not run this extra sampler.
+
+The operation recorder itself adds no polling task. The scoped mobile observer
+uses cancellable sleeps; neither adds automatic tracing, file logging, or extra
 Sentry events. Serialization happens only when an existing report is captured.
 The event timestamp must fall within the current reporting-consent session.
 Native crashes or watchdog reports recovered on a later launch do not receive
@@ -160,7 +181,7 @@ Fatal reports omit this context even when the SDK falls back to a current timest
 Missing or future timestamps also omit this context without dropping the report.
 Wall-clock boundaries used for this check remain local and are not serialized.
 Opting out clears the buffer and invalidates old spans, including across a later
-opt-in. The final scrub accepts only the typed schema and bounded numeric values;
+opt-in, and clears the Home windows. The final scrub accepts only the typed schema and bounded numeric values;
 URLs, request paths, server/profile names, credentials, media identities/titles,
 and response bodies are never part of the snapshot.
 
@@ -171,6 +192,12 @@ an isolated parser or socket benchmark. Correlate active operations and slow
 records with the hang stack and screen history rather than assigning the whole
 hang to the last operation. Missing records can reflect disabled reporting or
 the bounded buffer; inspect its drop/retention counters before drawing conclusions.
+The Home observer's scheduling overshoot is not presented-frame timing or an
+exact blocked-main-thread duration; executor scheduling and system contention
+can also delay it. Its 100 ms samples can miss short interactions or background
+activity between samples. Height changes can reflect legitimate structural
+changes, including confirmed-empty rows, newly discovered inventory and Auto
+collection-cover shapes. Correlation is evidence to investigate, not attribution.
 
 Playlist import limit warnings contain only a closed limit category and numeric
 observed/maximum counts. Header size, received bytes, parser input, header-line
@@ -318,6 +345,29 @@ Opening a connection installs the existing busy timeout before WAL/schema
 pragmas, so an immediate reopen tolerates a previous connection's checkpoint.
 Committed imports are unchanged, and closing still rolls back unfinished work;
 do not disable journaling or skip closing to avoid a teardown hang.
+
+For `RUNNINGBOARD / 0xdead10cc`, inspect file-lock lifetime rather than the idle
+event-loop frame. An idle WAL connection can retain a main-file SHARED lock even
+when `sqlite3_get_autocommit` is true, `sqlite3_txn_state` is `SQLITE_TXN_NONE`,
+every statement is reset, and another connection can checkpoint the WAL.
+`StorageSuspensionTests` probes exclusive access before and after the real
+connections close; a checkpoint-only test does not establish suspension safety.
+
+The iOS scene lifecycle includes `ApplicationStorageLifecycle` in its existing
+finite suspension lease. IPTV clients, indexed Live TV caches and generated
+channel snapshot stores register before opening SQLite, fence inactive access,
+and close on their owning actors without waiting for network cancellation.
+Running guide parsing and SQLite bulk work also observe the admission fence;
+queued actor cleanup alone cannot interrupt an import that already holds a
+transaction. Cancellation rolls back before close, even if the suspension task
+has been cancelled. Interrupted IPTV staging is removed or closed before the next
+import, including rapid background/foreground transitions.
+Foreground access lazily reopens committed data; stale import identities cannot
+publish or discard a newer staging table. Connection-local change counters are
+invalidated on reopen. In-memory snapshot fixtures keep their data because they
+have no file locks. This complements the existing share/artwork/download
+lifecycle; it does not identify which store owned every historical Apple crash.
+Confirm recurrence separately on the affected Mac runtime and distributed build.
 
 Xtream catalogue entries require a usable source ID, but a missing or empty
 display name does not invalidate an otherwise addressable entry. Such entries
@@ -812,8 +862,8 @@ of 32 entries and 24 MB; weak source references avoid pinning decoded artwork,
 and an identity check rejects recycled object identifiers. Recreated lazy cards
 can reuse completed pixels instead of rendering the reflection again.
 On tvOS these are concrete, unrounded pixels. Adaptive logo dimming and the
-resume/progress scrim are composited with the picture before its one final
-rounded mask, not hosted on UIKit's nearer overlay plane. That avoids the
+resume/progress scrim are composited with the opaque picture before UIKit applies
+its native outer shape, not hosted on UIKit's nearer overlay plane. That avoids the
 focused dark outline without rerendering the reflection when legibility changes.
 The logo and resume controls stay live, and Continue Watching has no top watch
 mark. Hosted coverage compares pixels just outside all four artwork edges with
@@ -822,8 +872,8 @@ and without the live overlay, and checks the unchanged logo and resume positions
 Focus-only caption movement changes transforms and colors, not intrinsic row
 geometry. Native focus presentation and artwork clipping are separate:
 `TVCardView` still needs clips around artwork nested above captions, while
-shared native posters bake rounded alpha into their normalized artwork and
-clip live overlays to the same shape. The hosted framed/landscape return
+shared native posters use opaque normalized artwork and UIKit-owned corners.
+The hosted framed/landscape return
 regression checks the actual painted artwork bounds.
 
 For corner artifacts, check fractional raster dimensions at 2x first.
@@ -848,18 +898,20 @@ configuration did not preserve both the no-crop composition and clean highlight.
 The `TVCardView` trial removed the desired moving sheen and was rejected.
 Do not modify private UIKit layers or compensate with per-frame transforms.
 
-Portrait row posters and native Browse cells retain the native image effect with its rectangular
+Portrait, landscape, square, Continue Watching and native Browse cards retain the native image effect with its rectangular
 focus mask and the explicitly accepted small internal crop. Hosted measurements
 at 200-320pt widths show about 1-2% extra enlargement inside the visible frame.
 Their source bitmaps and placeholders are fully opaque rectangles, as required
 by UIKit's non-content-masked mode. UIKit owns the only outer corner shape.
 Retaining baked rounded-alpha corners underneath that surface left competing
-artwork/highlight silhouettes; transparent portrait sources now receive a dark
+artwork/highlight silhouettes; transparent sources now receive a dark
 backing before composition. No clipping view or per-frame mask is added.
-Continue Watching and landscape/square artwork keep their alpha-masked
-no-internal-zoom path. Rows and Browse share `NativePosterImageView`; the existing
+Rows and Browse share `NativePosterImageView`; the existing
 UIButton or collection cell remains the sole focus owner. There is no card
 ancestor or custom animation.
+Home library covers use the same rectangular focus surface. Server artwork with
+transparent reflections is flattened onto the shared opaque backing for native TV
+presentation only; cached source pixels and mobile/custom focus styles are unchanged.
 Count-tile backgrounds stay flush. The original 2pt trailing/aspect-scaled top
 padding adjustment was baked into the whole image. Applying it permanently made
 resting digits uneven. Switching images at focus changes fixed the padding but
@@ -868,7 +920,7 @@ motion but caused the reported late number jump; that delay was deliberately
 introduced by the completion callback, not evidence of slow rendering.
 
 The current path never changes the artwork image for focus. Count backgrounds
-and corner flags stay baked, while portrait count digits and floating badges use
+and corner flags stay baked, while count digits and floating badges at every aspect use
 a separate cached foreground on the public `UIImageView.overlayContentView`.
 Only that foreground's geometry is normalized against the public artwork viewport
 and overlay projection. Model/destination transforms are used, not presentation
@@ -882,8 +934,7 @@ Background and foreground pixels reuse the same 24 MiB/64-entry indicator cache.
 The layer role, rather than focus, participates in the key. Environment overrides
 stay inside the full environment injection. Stable layouts and focus changes
 reuse both images; data/size/environment changes invalidate the appropriate pixels.
-Continue Watching, landscape/square artwork and mobile stay on the
-combined rendering path.
+Mobile stays on the combined rendering path.
 
 The library header retains its scrolling offset while another page covers the
 library. Disappearance is not a scroll-to-top event; resetting then overlays
@@ -925,7 +976,10 @@ a surrounding band of tile background at every offset.
 highlight's spatial brightness to move left/right on gray artwork: differing
 screenshots alone would also pass when only the card moves, as the trial did.
 Shared aspect-ratio checks retain a 1-point landmark tolerance and explicitly
-allow only the small portrait crop. Actual Siri Remote feel still needs physical
+allow only the small native crop across all shapes.
+`testNativeLandscapeAndSquareCardsKeepMovingHighlightAndContainedCounts` covers
+moving native sheen and badge containment for Continue Watching, 16:9 and square
+artwork with the same public motion-effect fixture. Actual Siri Remote feel still needs physical
 acceptance; a simulator render is not that acceptance.
 
 For horizontal cards disappearing early, inspect actual rendered pixels as
@@ -945,7 +999,7 @@ published through a second observable state after construction, so even warmed
 cards first created placeholder artwork and then updated the native view.
 The direct bitmap path keeps one native view identity across loading and loaded
 states, using the same source ordering, provider policy, and progressive loading.
-Creation now shares rounded loading masks; artwork and attached status are
+Creation now shares opaque loading surfaces; artwork and attached status are
 prepared in mounted UIKit layout at the committed size, inside a per-poster
 autorelease pool. `sizeThatFits` only answers measurements. Rendering during
 SwiftUI lazy-row estimation previously generated fallback-width and proposed-width
@@ -962,6 +1016,18 @@ concrete Core Graphics pixels from a bounded shared cache (24 MiB, 64 entries),
 instead of constructing and reading a new deferred SwiftUI image per card.
 The cache stores value keys and pixels, not the inherited environment or its
 view graph. Protected/extended artwork keeps its existing treatment.
+
+Do not blank completed artwork for a chrome-only update. Late logo dimming or
+changed episode counts previously replaced the picture with a gray placeholder
+until composition finished. The native poster coordinator now retains the last
+completed composition for unchanged artwork, treatment and geometry, and publishes
+the new picture with its matching badge foreground. Progressive preview-to-full
+upgrades retain pixels only within the resolver's displayed source/policy key,
+including the account-qualified artwork identity. New subjects, protected-treatment
+changes, missing sources and geometry changes still clear immediately.
+Composition regressions exercise retention, superseded requests, atomic badge
+publication and source/protection boundaries. This addresses those reproduced
+placeholder flashes, not every possible physical-device loading artifact.
 
 For startup recovery, verify the same process remains alive and responds to
 remote input on the populated page before collecting its app-data-container

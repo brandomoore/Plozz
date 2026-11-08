@@ -2,6 +2,30 @@ import XCTest
 
 @MainActor
 final class ProductionHomeNavigationTests: XCTestCase {
+    func testColdLaunchEntersFirstItemAcrossNavigationStylesAndHomeLayouts() throws {
+        #if targetEnvironment(simulator)
+        continueAfterFailure = false
+        for navigation in ["--top-bar-home", "--pinned-home", "--native-sidebar-home"] {
+            for layout in [[], ["--hero-showcase-home"], ["--immersive-home"], ["--hero-disabled-home"]] {
+                for delayed in [false, true] {
+                    let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.FocusHost")
+                    app.launchArguments = ["--production-home-fixture", navigation] + layout
+                        + (delayed ? ["--slow-home-load"] : [])
+                    app.launch()
+                    defer { app.terminate() }
+                    let first = app.buttons[layout.contains("--immersive-home") || layout.contains("--hero-disabled-home")
+                        ? "Fixture movie 0" : "home-hero-action-row"]
+                    XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(
+                        predicate: NSPredicate { _, _ in first.exists && first.hasFocus }, object: nil
+                    )], timeout: 30), .completed, "\(navigation) \(layout) delayed=\(delayed)\n\(app.debugDescription)")
+                }
+            }
+        }
+        #else
+        throw XCTSkip("Uses an owned simulator with local fixture data.")
+        #endif
+    }
+
     func testShowAllPagesStayNestedAcrossNavigationStyles() throws {
         #if targetEnvironment(simulator)
         continueAfterFailure = false
@@ -18,8 +42,6 @@ final class ProductionHomeNavigationTests: XCTestCase {
                 XCTAssertTrue(app.buttons[navigation == "--top-bar-home" ? "top-navigation-home" : "Home"].exists,
                               app.debugDescription)
                 let action = app.buttons["See all"].firstMatch
-                if navigation == "--top-bar-home" { XCUIRemote.shared.press(.down) }
-                if navigation == "--native-sidebar-home" { XCUIRemote.shared.press(.right) }
                 for _ in 0..<30 {
                     if action.exists && action.hasFocus { break }
                     XCUIRemote.shared.press(.right)
@@ -74,7 +96,6 @@ final class ProductionHomeNavigationTests: XCTestCase {
                 XCUIRemote.shared.press(.menu)
                 waitForLabel("1", on: depth)
                 XCTAssertTrue(title.exists, "Back dismisses a native menu before popping the browser")
-                XCUIRemote.shared.press(.down)
 
                 XCUIRemote.shared.press(.menu)
                 waitForLabel("0", on: depth)
@@ -117,7 +138,6 @@ final class ProductionHomeNavigationTests: XCTestCase {
             defer { app.terminate() }
             XCTAssertTrue(app.staticTexts["Production Home ready"].waitForExistence(timeout: 30))
             let action = app.buttons["See all"].firstMatch
-            XCUIRemote.shared.press(.down)
             for _ in 0..<30 {
                 if action.exists && action.hasFocus { break }
                 XCUIRemote.shared.press(.right)
@@ -151,8 +171,12 @@ final class ProductionHomeNavigationTests: XCTestCase {
         let bar = app.descendants(matching: .any)["top-navigation"]
         let hero = app.buttons["home-hero-action-row"]
         XCTAssertTrue(hero.waitForExistence(timeout: 15))
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(
+            predicate: NSPredicate { _, _ in hero.hasFocus }, object: nil
+        )], timeout: 5), .completed, app.debugDescription)
         XCTAssertGreaterThanOrEqual(hero.frame.minY, bar.frame.maxY + 16)
         captureNavigation("Compact navigation over Home", app: app)
+        XCUIRemote.shared.press(.menu)
         XCUIRemote.shared.press(.right)
         let title = app.staticTexts["watchlist-title"]
         XCTAssertFalse(title.exists, "Highlighting Watchlist must leave Home open.")

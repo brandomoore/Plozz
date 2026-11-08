@@ -801,6 +801,16 @@ struct MainTabView: View {
         }
     }
 
+    private func openHomeCustomization() {
+        settingsNavigation.openHomeCustomization()
+        if navigationStyle == .tabBar {
+            selectedTab.wrappedValue = .settings
+        } else {
+            if navigationStyle == .sidebar { nativeSidebarFocus.begin(.settings) }
+            libraryNavigationSelection.wrappedValue = .settings
+        }
+    }
+
     private func destination(for tab: MainTab) -> NavigationRailDestination {
         switch tab {
         case .home: return .home
@@ -1243,6 +1253,7 @@ struct MainTabView: View {
             // rebuilds the stack instead of re-using the previous library's grid.
             .id(id ?? homeScopeKey)
             .environment(\.openWatchlist, openWatchlist)
+            .environment(\.openHomeCustomization, openHomeCustomization)
     }
 
     /// The Music destination.
@@ -1513,7 +1524,7 @@ struct MainTabView: View {
             uniqueKeysWithValues: entries.map { ($0.destination, $0) }
         )
         let browsableLibraries = NavigationRailPlan.browsableLibraries(libraries)
-        return TabView(selection: nativeSidebarSelection(in: destinations)) {
+        let tabs = TabView(selection: nativeSidebarSelection(in: destinations)) {
             Tab(value: NativeSidebarDestination.profile) {
                 // Selection immediately raises RootView's existing profile page.
                 AnyView(Color.clear.tvNavigationExitProtectionContent())
@@ -1548,6 +1559,7 @@ struct MainTabView: View {
         }
         .tabViewStyle(.sidebarAdaptable)
         .tvNavigationExitProtection(isEnabled: navigationStyleModel.preventsAccidentalExit)
+        return NativeSidebarNavigation(selection: selection, handoff: nativeSidebarFocus, content: tabs)
         .onChange(of: selection) { _, destination in
             if let request = nativeSidebarFocus.request, request.destination != destination {
                 nativeSidebarFocus.cancel()
@@ -1918,7 +1930,8 @@ struct MainTabView: View {
             // navigation stacks live inside the tabs, so this is the only place
             // that can see both.
             onOpenPerson: openPersonFromPlayer,
-            onOpenTitle: openTitleFromPlayer
+            onOpenTitle: openTitleFromPlayer,
+            continueWatching: { [homeRuntime] in homeRuntime.continueWatchingRow }
         )
     }
 
@@ -1962,6 +1975,12 @@ struct MainTabView: View {
             "\(seer.connectionRevision)|\(activeProfile.id)|\(activeProfile.seerrUserID.map(String.init) ?? "admin")|\(activeProfile.seerrServerIdentity?.canonicalURL ?? "")"
         )
         .environment(heroTrailerController)
+        .environment(\.heroTrailerPlayerFactory, HeroTrailerPlayerFactory { player, surface, title, dismiss in
+            BorrowedTrailerPlayer(
+                player: player, surface: surface, title: title,
+                settings: playbackModel.settings, palette: resolvedPalette, onDismiss: dismiss
+            )
+        })
         .onChange(of: isLiveTVProfileAuthorized(), initial: true) { _, authorized in
             if authorized {
                 heroTrailerController.resumeAfterPlayback(owner: profileTrailerSuppressionID)
@@ -1982,7 +2001,7 @@ struct MainTabView: View {
             // Stop the shared trailer player only when NEITHER surface wants a
             // trailer; otherwise leave it to the active hero view. Mute is a live
             // session state on the controller, so it isn't touched here.
-            if !settings.homeTrailerEnabled && !settings.detailTrailerEnabled {
+            if !settings.homeTrailerPlaybackEnabled && !settings.detailTrailerEnabled {
                 heroTrailerController.stop()
             }
         }
@@ -2039,7 +2058,8 @@ struct MainTabView: View {
         let scopedAccounts = currentAccounts()
         if !railLibraries.isEmpty { railLibrariesLoaded = true }
         let loaded = await discovery.refreshNavigationLibraries(
-            from: scopedAccounts, navigation: navigation, settings: librariesStore,
+            from: scopedAccounts, expectedAccountIDs: Set(accountsProviders.navigationAccounts.map(\.id)),
+            navigation: navigation, settings: librariesStore,
             changedAccountID: changedAccountID,
             isCurrent: {
                 navigationStyleModel === navigation

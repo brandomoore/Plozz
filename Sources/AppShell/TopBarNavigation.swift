@@ -83,6 +83,8 @@ private struct TopBarNavigationContent: View {
     @State private var navigationGeneration = 0
     @State private var contentRequest: UInt64?
     @State private var contentGeneration: UInt64 = 0
+    @State private var hasStarted = false
+    @State private var isStartupEntry = true
     @State private var returnFocus = NavigationContentFocusRequester.ReturnFocus()
     @State private var destinationFocus = NavigationDestinationFocusHandoff()
     @State private var scroll = TopNavigationScroll()
@@ -115,7 +117,12 @@ private struct TopBarNavigationContent: View {
                         returnFocus: returnFocus, restoresPreviousFocus: true,
                         onDirectionalEntry: isShellActive && isNavigating
                             && !chrome.isChromeHidden && !chrome.transitionSuppressesFocus
-                            ? { enterContent(current) } : nil
+                            ? { enterContent(current) } : nil,
+                        isStartupRequest: isStartupEntry,
+                        onStartupCancelled: {
+                            isStartupEntry = false
+                            destinationFocus.cancel()
+                        }
                     )
                     .padding(.top, TopBarNavigationMetrics.foregroundTop)
                 }
@@ -171,11 +178,10 @@ private struct TopBarNavigationContent: View {
         )
         .onExitCommand(perform: !isNavigating && !chrome.isChromeHidden ? openNavigation : nil)
         .onAppear {
-            if current == .settings {
-                enterContent(.settings)
-            } else if isNavigating {
-                openNavigation()
-            }
+            guard !hasStarted else { return }
+            hasStarted = true
+            navigationRequest = nil
+            destinationFocus.begin(current)
         }
         .onChange(of: isNavigating && isShellActive, initial: true) { _, value in
             onNavigationFocusChanged(value)
@@ -184,12 +190,14 @@ private struct TopBarNavigationContent: View {
             if active {
                 openNavigation()
             } else {
+                isStartupEntry = false
                 navigationRequest = nil
                 contentRequest = nil
                 destinationFocus.cancel()
             }
         }
         .onChange(of: current) { _, _ in
+            isStartupEntry = false
             chrome.resetForDestinationChange()
             hasEnteredContent = false
             if destinationFocus.request?.destination != current { destinationFocus.cancel() }
@@ -202,6 +210,7 @@ private struct TopBarNavigationContent: View {
             }
         }
         .onChange(of: profile?.id) { _, _ in
+            isStartupEntry = false
             hasEnteredContent = false
             returnFocus.clear()
             destinationFocus.cancel()
@@ -209,6 +218,7 @@ private struct TopBarNavigationContent: View {
         }
         .onChange(of: chrome.isChromeHidden) { _, hidden in
             if hidden {
+                isStartupEntry = false
                 navigationRequest = nil
                 contentRequest = nil
                 destinationFocus.cancel()
@@ -216,6 +226,7 @@ private struct TopBarNavigationContent: View {
             }
         }
         .onDisappear {
+            isStartupEntry = false
             navigationRequest = nil
             contentRequest = nil
             destinationFocus.cancel()
@@ -245,7 +256,7 @@ private struct TopBarNavigationContent: View {
 
     private func navigationFocusChanged(_ hasFocus: Bool) {
         navigationHasFocus = hasFocus
-        guard hasFocus, isShellActive, !destinationFocus.isWaiting else { return }
+        guard hasFocus, isShellActive, !destinationFocus.isWaiting, !isStartupEntry else { return }
         isNavigating = true
         contentRequest = nil
         destinationFocus.cancel()
@@ -253,6 +264,7 @@ private struct TopBarNavigationContent: View {
 
     private func openNavigation() {
         guard isShellActive, !chrome.isChromeHidden, !chrome.transitionSuppressesFocus else { return }
+        isStartupEntry = false
         contentRequest = nil
         destinationFocus.cancel()
         isNavigating = true
@@ -297,9 +309,17 @@ private struct TopBarNavigationContent: View {
 
     private func contentFocused(_ request: UInt64, didFocus: Bool) {
         guard isShellActive, contentRequest == request else { return }
+        let wasStartup = isStartupEntry
+        isStartupEntry = false
         if didFocus { hasEnteredContent = true }
         contentRequest = nil
-        if !didFocus, navigationHasFocus { openNavigation() }
+        if !didFocus, navigationHasFocus {
+            if wasStartup {
+                isNavigating = true
+            } else {
+                openNavigation()
+            }
+        }
     }
 }
 

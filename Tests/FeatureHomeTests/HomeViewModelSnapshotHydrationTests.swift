@@ -57,6 +57,38 @@ final class HomeViewModelSnapshotHydrationTests: XCTestCase {
         XCTAssertEqual(provider.librariesCallCount, 1, "Publishing a row must not restart the launch load.")
     }
 
+    func testUnwatchedResetDuringLoadSurvivesLateContinueWatchingPublication() async {
+        let resumeGate = HomeRefreshGate()
+        defer { resumeGate.open() }
+        let item = MediaItem(
+            id: "resume", title: "Resume", kind: .episode,
+            resumePosition: 600, playedPercentage: 0.5, sourceAccountID: "a"
+        )
+        let provider = FakeMediaProvider(allItems: [])
+        provider.continueWatchingItems = [item]
+        provider.continueWatchingGate = { await resumeGate.wait() }
+        provider.latestItems = [item]
+        let home = makeViewModel(provider: provider, contentStore: InMemoryHomeContentStore())
+        let load = Task { await home.load() }
+        let deadline = ContinuousClock.now + .seconds(2)
+        while ContinuousClock.now < deadline, home.state.value?.latest.first?.id != item.id {
+            try? await Task.sleep(for: .milliseconds(2))
+        }
+        XCTAssertEqual(home.state.value?.latest.first?.id, item.id)
+        XCTAssertTrue(home.isRefreshing)
+        home.applyWatchedState(.init(
+            itemIDs: [item.id], scopedItemIDs: ["a:\(item.id)"],
+            played: false, resumePosition: 0, playedPercentage: 0, item: item
+        ))
+        resumeGate.open()
+        await load.value
+        XCTAssertTrue(home.state.value?.continueWatching.isEmpty == true)
+        XCTAssertTrue(home.continueWatchingForDetail.isEmpty,
+                      "The late native resume feed must not restore the reset item's progress.")
+        XCTAssertNil(home.state.value?.latest.first?.resumePosition)
+        XCTAssertEqual(home.state.value?.latest.first?.playedPercentage, 0)
+    }
+
     func testUnmergedRowsPublishBeforeSlowResumeAndRemainingLibraryRequests() async {
         let resumeGate = HomeRefreshGate()
         let libraryGate = HomeRefreshGate()
@@ -770,6 +802,448 @@ final class HomeViewModelSnapshotHydrationTests: XCTestCase {
             1,
             "Reappearance must not repeat the already-completed fan-out"
         )
+    }
+
+    func testCoveredHomeDefersLoadsUntilItsOwnerAllowsThem() async {
+        let provider = FakeMediaProvider(allItems: [])
+        var allowed = false
+        let home = HomeViewModel(
+            accounts: [resolved(provider, accountID: "a")],
+            layoutStore: InMemoryHomeLayoutStore(),
+            isLoadingAllowed: { allowed }
+        )
+        await home.load()
+        await home.loadIfNeeded(for: .default)
+        XCTAssertEqual(provider.librariesCallCount, 0)
+        allowed = true
+        await home.loadIfNeeded(for: .default)
+        XCTAssertEqual(provider.librariesCallCount, 1)
+    }
+
+    func testPauseResumptionKeepsLiveGlobalLibraryAndCollectionCards() async throws {
+        for kind in [ProviderKind.jellyfin, .plex] {
+            for becomesEmpty in [false, true] {
+                let pending = HomeRefreshGate()
+                let refresh = HomeRefreshGate()
+                defer { pending.open(); refresh.open() }
+                let old = MediaItem(id: "old", title: "Old", kind: .movie)
+                let provider = FakeMediaProvider(allItems: [old], kind: kind)
+                provider.libraryItems = [
+                    MediaLibrary(id: "ready", title: "Ready", kind: .movie),
+                    MediaLibrary(id: "pending", title: "Pending", kind: .movie)
+                ]
+                provider.latestItems = [old]
+                provider.continueWatchingItems = [old]
+                provider.containerGates["pending"] = { await pending.wait() }
+                let collection = CollectionSection(source: .init(
+                    accountID: "a", collectionID: "collection", title: "Collection",
+                    serverUserID: provider.session.userID
+                ))
+                var visibility = HomeLibraryVisibility(
+                    mergeLibrariesOnHome: false,
+                    rowCustomization: .init(defaults: .legacy, shown: [collection.rowID]),
+                    collectionSections: [collection]
+                )
+                for id in ["ready", "pending"] {
+                    visibility.setLibraryRowEnabled(true, libraryKey: "a:\(id)", kind: .recentlyAdded)
+                }
+                var allowed = true
+                let home = HomeViewModel(
+                    accounts: [resolved(provider, accountID: "a")],
+                    layoutStore: InMemoryHomeLayoutStore(), contentStore: InMemoryHomeContentStore(),
+                    currentVisibility: { visibility }, isLoadingAllowed: { allowed }
+                )
+                defer { home.invalidate() }
+                let initial = Task { await home.load() }
+                let deadline = ContinuousClock.now + .seconds(3)
+                while (home.state.value?.librarySections.first?.cardCount != 1
+                       || home.state.value?.collectionRows.first?.items.isEmpty != false
+                       || home.loadingRows.contains(.continueWatching)
+                       || home.loadingRows.contains(.recentlyAdded)), ContinuousClock.now < deadline {
+                    try await Task.sleep(for: .milliseconds(5))
+                }
+                let shown = try XCTUnwrap(home.state.value)
+                XCTAssertEqual(shown.librarySections.first?.sections.first?.items.first?.id, "old")
+                XCTAssertEqual(shown.collectionRows.first?.items.first?.id, "old")
+                XCTAssertEqual(shown.latest.first?.id, "old")
+                XCTAssertEqual(shown.continueWatching.first?.id, "old")
+                XCTAssertTrue(home.isRefreshing)
+                allowed = false
+                home.cancelPendingLoad()
+                pending.open()
+                await initial.value
+                let pages = provider.requestedPages.count
+                provider.containerGates = ["ready": { await refresh.wait() }, "pending": { await refresh.wait() }]
+                provider.latestGate = { await refresh.wait() }
+                provider.continueWatchingGate = { await refresh.wait() }
+                provider.childrenGate = ["collection": { _ in await refresh.wait() }]
+                allowed = true
+                let resumed = Task { await home.loadIfNeeded(for: visibility) }
+                let resumedDeadline = ContinuousClock.now + .seconds(3)
+                while provider.requestedPages.count == pages, ContinuousClock.now < resumedDeadline {
+                    try await Task.sleep(for: .milliseconds(5))
+                }
+                XCTAssertGreaterThan(provider.requestedPages.count, pages)
+                for _ in 0..<20 {
+                    let current = try XCTUnwrap(home.state.value)
+                    XCTAssertEqual(current.librarySections.first?.sections, shown.librarySections.first?.sections)
+                    XCTAssertEqual(current.collectionRows.first?.items, shown.collectionRows.first?.items)
+                    XCTAssertEqual(current.collectionRows.first?.row.isLoading, false)
+                    XCTAssertEqual(current.latest, shown.latest)
+                    XCTAssertEqual(current.continueWatching, shown.continueWatching)
+                    XCTAssertFalse(home.loadingRows.contains(.recentlyAdded))
+                    XCTAssertFalse(home.loadingRows.contains(.continueWatching))
+                    try await Task.sleep(for: .milliseconds(5))
+                }
+                let fresh = becomesEmpty ? [] : [MediaItem(id: "new", title: "New", kind: .movie)]
+                provider.allItems = fresh
+                provider.latestItems = fresh
+                provider.continueWatchingItems = fresh
+                refresh.open()
+                await resumed.value
+                let finished = try XCTUnwrap(home.state.value)
+                XCTAssertEqual(finished.librarySections.flatMap(\.sections).flatMap(\.items).map(\.id),
+                               becomesEmpty ? [] : ["new", "new"])
+                XCTAssertEqual(finished.collectionRows.first?.items.map(\.id), fresh.map(\.id))
+                XCTAssertEqual(finished.latest.map(\.id), fresh.map(\.id))
+                XCTAssertEqual(finished.continueWatching.map(\.id), fresh.map(\.id))
+                XCTAssertFalse(home.isRefreshing)
+            }
+        }
+    }
+
+    func testRetryReservesFailedEmptyGlobalRowsButNotConfirmedEmptyRows() async throws {
+        for merged in [true, false] {
+            for interrupted in [true, false] {
+                for failed in [true, false] {
+                    let pending = HomeRefreshGate()
+                    let retryGate = HomeRefreshGate()
+                    defer { pending.open(); retryGate.open() }
+                    let provider = FakeMediaProvider(allItems: [])
+                    provider.latestItems = [MediaItem(id: "latest", title: "Latest", kind: .movie)]
+                    provider.continueWatchingError = failed ? .serverUnreachable : nil
+                    if interrupted { provider.latestGate = { await pending.wait() } }
+                    let visibility = HomeLibraryVisibility(mergeLibrariesOnHome: merged)
+                    var allowed = true
+                    let home = HomeViewModel(
+                        accounts: [resolved(provider, accountID: "a")],
+                        layoutStore: InMemoryHomeLayoutStore(), contentStore: InMemoryHomeContentStore(),
+                        currentVisibility: { visibility }, isLoadingAllowed: { allowed }
+                    )
+                    defer { home.invalidate() }
+                    func resumeRow() -> HomeRow? {
+                        guard let content = home.state.value else { return nil }
+                        return HomeRow.rows(
+                            for: content, isLibraryVisible: { _ in true },
+                            loadingRows: home.loadingRows, failures: home.rowFailures
+                        ).first { $0.kind == .continueWatching }
+                    }
+                    let initial = Task { await home.load() }
+                    if interrupted {
+                        let deadline = ContinuousClock.now + .seconds(3)
+                        while (provider.librariesCallCount == 0 || home.loadingRows.contains(.continueWatching)),
+                              ContinuousClock.now < deadline {
+                            try await Task.sleep(for: .milliseconds(5))
+                        }
+                        XCTAssertTrue(home.isRefreshing)
+                    } else {
+                        await initial.value
+                    }
+                    XCTAssertFalse(home.loadingRows.contains(.continueWatching))
+                    XCTAssertEqual(home.rowFailures[.continueWatching], failed ? .serverUnreachable : nil)
+                    XCTAssertEqual(resumeRow() != nil, failed)
+                    allowed = false
+                    home.cancelPendingLoad()
+                    pending.open()
+                    await initial.value
+                    provider.continueWatchingError = nil
+                    let started = expectation(description: "Replacement Continue Watching request")
+                    provider.continueWatchingGate = { started.fulfill(); await retryGate.wait() }
+                    allowed = true
+                    let retry = Task {
+                        if interrupted {
+                            await home.loadIfNeeded(for: visibility)
+                        } else {
+                            await home.load()
+                        }
+                    }
+                    await fulfillment(of: [started], timeout: 3)
+                    for _ in 0..<10 {
+                        XCTAssertNil(home.rowFailures[.continueWatching])
+                        XCTAssertEqual(home.loadingRows.contains(.continueWatching), failed)
+                        XCTAssertEqual(resumeRow() != nil, failed)
+                        if failed { XCTAssertGreaterThan(resumeRow()?.loadingPlaceholderCount ?? 0, 0) }
+                        try await Task.sleep(for: .milliseconds(5))
+                    }
+                    retryGate.open()
+                    await retry.value
+                    XCTAssertNil(home.rowFailures[.continueWatching])
+                    XCTAssertNil(resumeRow(), "Only a successful empty retry can remove the failed row")
+                    XCTAssertFalse(home.isRefreshing)
+                }
+            }
+        }
+    }
+
+    func testPauseResumptionKeepsGlobalCardsWhenAnotherSourceFailed() async throws {
+        let pending = HomeRefreshGate()
+        let retryGate = HomeRefreshGate()
+        defer { pending.open(); retryGate.open() }
+        let good = FakeMediaProvider(allItems: [])
+        let bad = FakeMediaProvider(allItems: [])
+        good.continueWatchingItems = [MediaItem(id: "resume", title: "Resume", kind: .movie)]
+        bad.continueWatchingError = .serverUnreachable
+        good.latestGate = { await pending.wait() }
+        var allowed = true
+        let home = HomeViewModel(
+            accounts: [resolved(good, accountID: "good"), resolved(bad, accountID: "bad")],
+            layoutStore: InMemoryHomeLayoutStore(), contentStore: InMemoryHomeContentStore(),
+            isLoadingAllowed: { allowed }
+        )
+        defer { home.invalidate() }
+        let initial = Task { await home.load() }
+        let deadline = ContinuousClock.now + .seconds(3)
+        while (home.rowFailures[.continueWatching] == nil || home.state.value?.continueWatching.isEmpty != false),
+              ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        XCTAssertEqual(home.rowFailures[.continueWatching], .serverUnreachable)
+        let cards = try XCTUnwrap(home.state.value?.continueWatching)
+        XCTAssertFalse(cards.isEmpty)
+        allowed = false
+        home.cancelPendingLoad()
+        pending.open()
+        await initial.value
+        let started = expectation(description: "Populated row refresh started")
+        good.continueWatchingGate = { started.fulfill(); await retryGate.wait() }
+        bad.continueWatchingGate = { await retryGate.wait() }
+        allowed = true
+        let retry = Task { await home.loadIfNeeded(for: .default) }
+        await fulfillment(of: [started], timeout: 3)
+        XCTAssertFalse(home.loadingRows.contains(.continueWatching))
+        XCTAssertEqual(home.state.value?.continueWatching, cards)
+        retryGate.open()
+        await retry.value
+        XCTAssertEqual(home.state.value?.continueWatching, cards)
+    }
+
+    func testRetryReservesGlobalRowsWhoseOnlyContentIsFilteredOut() async throws {
+        for (kind, collection, hideWatched): (HomeRowKind, Bool, Bool) in [
+            (.libraries, false, false), (.libraries, true, false),
+            (.recentlyAdded, false, false), (.recentlyAdded, false, true)
+        ] {
+            for interrupted in [true, false] {
+                let pending = HomeRefreshGate()
+                let retryGate = HomeRefreshGate()
+                defer { pending.open(); retryGate.open() }
+                let good = FakeMediaProvider(allItems: [])
+                let bad = FakeMediaProvider(allItems: [])
+                good.libraryItems = [MediaLibrary(
+                    id: "hidden", title: "Hidden", kind: collection ? .collection : .movie,
+                    hasCollections: collection ? false : nil
+                )]
+                var latest = MediaItem(id: "latest", title: "Latest", kind: .movie)
+                latest.libraryID = "hidden"
+                latest.isPlayed = hideWatched
+                good.latestItems = [latest]
+                if kind == .libraries {
+                    bad.librariesError = .serverUnreachable
+                } else {
+                    bad.latestError = .serverUnreachable
+                }
+                if interrupted { good.continueWatchingGate = { await pending.wait() } }
+                var visibility = HomeLibraryVisibility(hideWatchedRecentlyAdded: hideWatched)
+                if !collection && !hideWatched {
+                    visibility.setEnabled(false, for: "good:hidden")
+                }
+                var allowed = true
+                let home = HomeViewModel(
+                    accounts: [resolved(good, accountID: "good"), resolved(bad, accountID: "bad")],
+                    layoutStore: InMemoryHomeLayoutStore(), contentStore: InMemoryHomeContentStore(),
+                    currentVisibility: { visibility }, isLoadingAllowed: { allowed }
+                )
+                defer { home.invalidate() }
+                let rowID: HomeRowID = kind == .libraries ? .libraries : .global(.recentlyAdded)
+                func visibleRow() -> HomePresentationRow? {
+                    guard let content = home.state.value else { return nil }
+                    let rows = HomeRow.rows(
+                        for: content, isLibraryVisible: visibility.isEnabled,
+                        isLibraryTileVisible: visibility.isVisibleOnHome,
+                        loadingRows: home.loadingRows, failures: home.rowFailures
+                    )
+                    return HomePresentationRow.resolve(rows: rows, content: content, visibility: visibility)
+                        .first { $0.id == rowID }
+                }
+                let initial = Task { await home.load() }
+                if interrupted {
+                    let deadline = ContinuousClock.now + .seconds(3)
+                    while (home.rowFailures[kind] == nil || home.loadingRows.contains(kind)),
+                          ContinuousClock.now < deadline {
+                        try await Task.sleep(for: .milliseconds(5))
+                    }
+                    XCTAssertTrue(home.isRefreshing)
+                } else {
+                    await initial.value
+                }
+                XCTAssertEqual(home.rowFailures[kind], .serverUnreachable)
+                let content = try XCTUnwrap(home.state.value)
+                if kind == .libraries {
+                    XCTAssertFalse(content.libraries.isEmpty)
+                } else {
+                    XCTAssertFalse((content.recentlyAddedCandidates ?? content.latest).isEmpty)
+                }
+                switch try XCTUnwrap(visibleRow()).source {
+                case let .home(row):
+                    XCTAssertTrue(row.items.isEmpty && row.libraries.isEmpty)
+                    XCTAssertEqual(row.failure, .serverUnreachable)
+                case let .library(row):
+                    XCTAssertTrue(row.section.items.isEmpty)
+                    XCTAssertNotNil(row.issue)
+                case .liveTV:
+                    XCTFail("Unexpected Live TV row")
+                }
+                allowed = false
+                home.cancelPendingLoad()
+                pending.open()
+                await initial.value
+                bad.librariesError = nil
+                bad.latestError = nil
+                let started = expectation(description: "Filtered row retry started")
+                if kind == .libraries {
+                    bad.librariesGate = { started.fulfill(); await retryGate.wait() }
+                } else {
+                    bad.latestGate = { started.fulfill(); await retryGate.wait() }
+                }
+                allowed = true
+                let retry = Task {
+                    if interrupted {
+                        await home.loadIfNeeded(for: visibility)
+                    } else {
+                        await home.load()
+                    }
+                }
+                await fulfillment(of: [started], timeout: 3)
+                for _ in 0..<10 {
+                    XCTAssertNil(home.rowFailures[kind])
+                    XCTAssertTrue(home.loadingRows.contains(kind))
+                    if case let .home(row)? = visibleRow()?.source {
+                        XCTAssertGreaterThan(row.loadingPlaceholderCount, 0)
+                    } else {
+                        XCTFail("A failed row without visible cards must reserve its retry footprint")
+                    }
+                    try await Task.sleep(for: .milliseconds(5))
+                }
+                retryGate.open()
+                await retry.value
+                XCTAssertNil(home.rowFailures[kind])
+                XCTAssertNil(visibleRow())
+            }
+        }
+    }
+
+    func testPauseResumptionBeforeCancelledWorkReturnsKeepsFinalVisibility() async {
+        for merged in [true, false] {
+            let gate = HomeRefreshGate()
+            defer { gate.open() }
+            let provider = FakeMediaProvider(allItems: [])
+            provider.librariesGate = { await gate.wait() }
+            var allowed = true
+            var visibility = HomeLibraryVisibility(mergeLibrariesOnHome: merged)
+            let home = HomeViewModel(
+                accounts: [resolved(provider, accountID: "a")],
+                layoutStore: InMemoryHomeLayoutStore(),
+                currentVisibility: { visibility },
+                isLoadingAllowed: { allowed }
+            )
+            let first = Task { await home.loadIfNeeded(for: visibility) }
+            let deadline = ContinuousClock.now + .seconds(2)
+            while provider.librariesCallCount == 0, ContinuousClock.now < deadline {
+                await Task.yield()
+            }
+            XCTAssertEqual(provider.librariesCallCount, 1)
+            allowed = false
+            home.cancelPendingLoad()
+            visibility.setGlobalRowEnabled(false, for: .watchlist)
+            await home.loadIfNeeded(for: visibility)
+            XCTAssertEqual(provider.librariesCallCount, 1)
+            let pausedContent = home.state.value
+            allowed = true
+            await home.loadIfNeeded(for: visibility)
+            XCTAssertEqual(home.state.value, pausedContent)
+            gate.open()
+            await first.value
+            let resumedDeadline = ContinuousClock.now + .seconds(2)
+            while (provider.librariesCallCount < 2 || home.isRefreshing),
+                  ContinuousClock.now < resumedDeadline {
+                await Task.yield()
+            }
+            XCTAssertEqual(provider.librariesCallCount, 2)
+            XCTAssertFalse(home.isRefreshing)
+            await home.loadIfNeeded(for: visibility)
+            XCTAssertEqual(provider.librariesCallCount, 2, "The resumed load must use the final choices.")
+        }
+    }
+
+    func testCoveringOrRetiringHomeDuringPreparationDoesNotStartRequests() async {
+        for retiring in [false, true] {
+            let gate = HomeRefreshGate()
+            defer { gate.open() }
+            let preparing = expectation(description: "Home is preparing visibility")
+            var preparations = 0
+            var allowed = true
+            let provider = FakeMediaProvider(allItems: [])
+            let home = HomeViewModel(
+                accounts: [resolved(provider, accountID: "a")],
+                layoutStore: InMemoryHomeLayoutStore(),
+                prepareVisibility: {
+                    preparations += 1
+                    if preparations == 1 { preparing.fulfill() }
+                    await gate.wait()
+                },
+                isLoadingAllowed: { allowed }
+            )
+            let first = Task { await home.load() }
+            await fulfillment(of: [preparing], timeout: 2)
+            allowed = false
+            if retiring { home.invalidate() } else { home.cancelPendingLoad() }
+            gate.open()
+            await first.value
+            await home.loadIfNeeded(for: .default)
+            XCTAssertEqual(provider.librariesCallCount, 0)
+            XCTAssertFalse(home.isRefreshing)
+            allowed = true
+            await home.loadIfNeeded(for: .default)
+            XCTAssertEqual(provider.librariesCallCount, retiring ? 0 : 1)
+        }
+    }
+
+    func testInvalidatedHomeCannotPublishLateResultsOrRestart() async {
+        for merged in [true, false] {
+            let gate = HomeRefreshGate()
+            defer { gate.open() }
+            let provider = FakeMediaProvider(allItems: [])
+            provider.librariesGate = { await gate.wait() }
+            let visibility = HomeLibraryVisibility(mergeLibrariesOnHome: merged)
+            let home = HomeViewModel(
+                accounts: [resolved(provider, accountID: "a")],
+                layoutStore: InMemoryHomeLayoutStore(),
+                currentVisibility: { visibility }
+            )
+            let load = Task { await home.load() }
+            let deadline = ContinuousClock.now + .seconds(2)
+            while provider.librariesCallCount == 0, ContinuousClock.now < deadline {
+                await Task.yield()
+            }
+            home.invalidate()
+            let retiredContent = home.state.value
+            gate.open()
+            await load.value
+            await home.load()
+            await home.loadIfNeeded(for: visibility)
+            XCTAssertEqual(home.state.value, retiredContent)
+            XCTAssertEqual(provider.librariesCallCount, 1)
+            XCTAssertFalse(home.isRefreshing)
+        }
     }
 
     func testViewTaskReplacementDuringPreparationStillLoadsRowsWithoutAnotherAppearance() async {

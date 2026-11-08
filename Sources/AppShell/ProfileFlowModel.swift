@@ -851,6 +851,10 @@ public final class ProfileFlowModel {
         let current = accountsProviders.activeAccountIDs
         var next = current
         if included { next.insert(accountID) } else { next.remove(accountID) }
+        guard next != current
+            || profilesModel.storedActiveAccountIDs(for: profileID) == nil
+            || profilesModel.unconfirmedAccountSelectionProfileIDs.contains(profileID)
+        else { return }
         profilesModel.setActiveAccountIDs(Array(next), for: profileID)
         // Noted BEFORE the reload, which schedules a watchlist import: the whole
         // point is that the import waits for the answer, and a note taken after
@@ -862,7 +866,7 @@ public final class ProfileFlowModel {
             // unanswerable question would gate the import forever.
             resolveIdentityPrompt(for: accountID)
         }
-        accountsProviders.reloadAccounts()
+        accountsProviders.refreshActiveAccountSelection()
     }
 
     /// The server this profile has just enabled and not yet chosen an identity

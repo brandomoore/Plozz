@@ -117,6 +117,13 @@ The Plex fixture explicitly covers its observed refusal to retain stopped resume
 offsets at 60 seconds or less. That native policy is separate from Plozz's adaptive
 row threshold; accepting the write is not evidence that the server saved it.
 
+The unwatched-reset cases exercise movies and episodes through the shared action
+coordinator, durable outbox and actual Home loads, including previously completed
+items, queued resets, fresh provider/store/model instances and an untouched control
+item. The broker may supply two explicit `resetEpisodeIDs` from a bounded approved
+sample. These cases verify persisted zero progress and an unplayed flag, not just
+successful HTTP writes. They restore the sampled item's watched/resume values.
+
 ## The two speed wins
 
 ### 1. Build once, run many (`tools/run-tests.sh`)

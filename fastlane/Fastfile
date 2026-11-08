@@ -346,13 +346,15 @@ def create_app_store_version(app_id:, platform:, version:)
 end
 
 def apply_queued_store_screenshots
-  queue = PlozzScreenshotQueue::Queue.new(
-    client: PlozzScreenshotQueue::Client.new(Spaceship::ConnectAPI.tunes_request_client),
-    manifest_path: File.join(__dir__, "pending-store-screenshots.json"),
-    state_directory: File.join(ENV.fetch("XDG_STATE_HOME", File.join(Dir.home, ".local", "state")),
-                               "plozz", "app-store-screenshots")
-  )
-  UI.success(queue.apply(marketing_version))
+  %w[pending-store-screenshots.json pending-duo-screenshots.json].each do |manifest|
+    queue = PlozzScreenshotQueue::Queue.new(
+      client: PlozzScreenshotQueue::Client.new(Spaceship::ConnectAPI.tunes_request_client),
+      manifest_path: File.join(__dir__, manifest),
+      state_directory: File.join(ENV.fetch("XDG_STATE_HOME", File.join(Dir.home, ".local", "state")),
+                                 "plozz", "app-store-screenshots")
+    )
+    UI.success(queue.apply(marketing_version))
+  end
 rescue PlozzScreenshotQueue::Failure => error
   UI.user_error!("App Store screenshot queue: #{error.message}. Uploaded binaries are retained; do not reupload them.")
 end

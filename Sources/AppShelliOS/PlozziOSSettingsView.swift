@@ -66,6 +66,7 @@ struct PlozziOSSettingsView: View {
             }
         }
         .environment(appModel.profiles)
+        .environment(appModel.settings.themeMusic)
         .environment(\.managedProviderSetupRouter, providerSetupRouter)
         .plozzSheet(item: $providerSetupRouter.addressAccount) { account in
             let profileID = appModel.profiles.activeProfileID
@@ -105,6 +106,7 @@ struct PlozziOSSettingsView: View {
             model: appModel.guidePreparation, presenter: appModel.transientStatusPresenter,
             palette: palette
         )
+        .offlineStatusOverlay(appModel: appModel, palette: palette)
         .environment(appModel.guidePreparation)
         .environment(\.themePalette, palette)
         .environment(\.colorScheme, palette.isLight ? .light : .dark)
@@ -156,6 +158,10 @@ struct PlozziOSSettingsView: View {
     }
 
     private func showAddServer() {
+        guard !appModel.isOfflineMode else {
+            appModel.transientStatusPresenter.present(icon: "wifi.slash", text: "Unavailable in Offline Mode.")
+            return
+        }
         appModel.beginManagedServerPresentation()
         showingAddServer = true
     }
@@ -865,7 +871,7 @@ private struct PlozziOSSettingsSplitView: View {
                 isPresented: selection == .profile(category)
             )
         case .downloads:
-            PlozziOSDownloadSettingsView(model: appModel.downloads)
+            PlozziOSDownloadSettingsView(model: appModel.downloads, appModel: appModel)
         case .syncSetup:
             PlozziOSSyncSetupSettingsView(appModel: appModel)
         case .metadata:
@@ -1249,7 +1255,7 @@ private struct PlozziOSSettingsCompactMenu: View {
                         }
                         .settingsActionRow()
                         SettingsPageLink {
-                            PlozziOSDownloadSettingsView(model: appModel.downloads)
+                            PlozziOSDownloadSettingsView(model: appModel.downloads, appModel: appModel)
                         } label: {
                             Label("Downloads", systemImage: "arrow.down.circle")
                         }
@@ -1406,7 +1412,8 @@ private struct PlozziOSSettingsSearch: ViewModifier {
                     SettingsSearchResults(
                         query: query,
                         platform: UIDevice.current.userInterfaceIdiom == .phone ? .phone : .tablet,
-                        isKids: appModel.profiles.activeProfile.isKids
+                        isKids: appModel.profiles.activeProfile.isKids,
+                        featureFlags: appModel.runtimeFeatureFlags
                     ) { entry, _ in
                         isFocused = false
                         onSelect(entry)
@@ -1571,7 +1578,11 @@ private struct PlozziOSSettingsSearchDestination: View {
                 contentRatings: appModel.settings.contentRatings, spoilers: appModel.settings.spoilers
             )
         case .navigation: PlozziOSNavigationSettingsView(appModel: appModel)
-        case .home, .hero, .heroContent, .heroRatings, .heroTrailers, .heroDiscovery,
+        case .heroTrailers:
+            TrailersAndMusicSettingsView(
+                background: appModel.settings.heroBackground, themeMusic: appModel.settings.themeMusic
+            )
+        case .home, .hero, .heroContent, .heroRatings, .heroDiscovery,
              .heroLibraries, .heroCollections, .homeRows, .homeRowStyle, .homeFiltering, .homeLabels, .continueWatching:
             PlozziOSHomeSettingsView(
                 hero: appModel.settings.hero, heroBackground: appModel.settings.heroBackground,
@@ -1600,7 +1611,7 @@ private struct PlozziOSSettingsSearchDestination: View {
         case .liveTV, .liveTVSources, .liveTVGuide, .liveTVVisibility: profilePage(.liveTV)
         case .language: profilePage(.language)
         case .trackers: profilePage(.trackers)
-        case .downloads: PlozziOSDownloadSettingsView(model: appModel.downloads)
+        case .downloads: PlozziOSDownloadSettingsView(model: appModel.downloads, appModel: appModel)
         case .profiles:
             List {
                 SettingsSectionGroup {
@@ -2445,33 +2456,15 @@ private struct PlozziOSDetailPageSettingsView: View {
                     .settingsSearchAnchor("detail-age")
             }
             .settingsSearchGroup(["detail-age"])
-            SettingsSectionGroup("Behind the hero") {
-                Picker(
-                    "Background",
-                    selection: $heroBackground.settings.detailMode
-                ) {
-                    ForEach(HeroBackgroundMode.allCases, id: \.self) {
-                        Text($0.displayName).tag($0)
-                    }
+            SettingsSectionGroup {
+                SettingsPageLink {
+                    TrailersAndMusicSettingsView(background: heroBackground, themeMusic: themeMusic)
+                } label: {
+                    SettingsDisclosureLabel { Text("Trailers & music") }
                 }
-                .settingsSearchAnchor(
-                    "detail-background",
-                    fallbackFor: (heroBackground.settings.detailMode == .trailer ? [] : ["detail-trailer-muted"])
-                        + (heroBackground.settings.detailMode == .themeMusic ? [] : ["theme-music-volume"])
-                )
-                if heroBackground.settings.detailMode == .trailer {
-                    Toggle(
-                        "Start muted",
-                        isOn: $heroBackground.settings.detailTrailerMuted
-                    ).settingsSearchAnchor("detail-trailer-muted")
-                }
-                if heroBackground.settings.detailMode == .themeMusic {
-                    ThemeMusicVolumeControl(model: themeMusic)
-                }
-            } footer: {
-                Text("Choose what plays behind the hero on a movie or show's details screen. Trailer and theme music never play together.")
+                .settingsActionRow()
+                .accessibilityIdentifier("detail-trailers-music")
             }
-            .settingsSearchGroup(["detail-background", "detail-trailer-muted", "theme-music-volume"])
             SettingsSectionGroup("Cards") {
                 CardCaptionSettingsLink(cards: cards, scope: .detail)
             }
@@ -2590,18 +2583,6 @@ struct PlozziOSPlaybackSettingsView: View {
             .settingsSearchGroup(["skip-backward", "skip-forward", "resume-rewind"])
 
             SettingsSectionGroup("Playback") {
-                VStack(alignment: .leading, spacing: 6) {
-                    Picker("Disc playback", selection: $model.settings.discPlayback) {
-                        ForEach(DiscPlaybackBehavior.allCases, id: \.self) {
-                            Text($0.title).tag($0)
-                        }
-                    }
-                    Text(DiscPlaybackBehavior.settingsNotice)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                .settingsSearchAnchor("disc-playback")
                 Toggle("Ask to resume or start over", isOn: $model.settings.askBeforeResuming)
                     .accessibilityIdentifier("playback-ask-before-resuming")
                     .settingsSearchAnchor("ask-before-resuming")
@@ -2648,10 +2629,13 @@ struct PlozziOSPlaybackSettingsView: View {
                 ).settingsSearchAnchor("cross-server-watch-sync")
             }
             .settingsSearchGroup([
-                "disc-playback", "ask-before-resuming", "version-selection", "remember-series-version", "background-audio",
+                "ask-before-resuming", "version-selection", "remember-series-version", "background-audio",
                 "volume-brightness", "seek-without-pausing", "autoplay-next-episode",
-                "autoplay-next-playlist", "show-up-next-card", "up-next-lead", "cross-server-watch-sync"
+                "autoplay-next-playlist", "show-up-next-card", "up-next-lead",
+                "cross-server-watch-sync"
             ])
+
+            PlayerTabSettingsControls(model: model)
 
             SettingsSectionGroup(LocalizedStringResource(
                 "settings.section.tracks",
@@ -2707,8 +2691,28 @@ struct PlozziOSPlaybackSettingsView: View {
             SettingsSectionGroup("Audio") {
                 LosslessAudioControl()
                     .settingsSearchAnchor("lossless-audio")
+                Toggle("Identify songs", isOn: $model.settings.identifySongs)
+                    .settingsSearchAnchor("identify-songs")
+                Text("Shows the song playing in a movie or show in the player’s Info, using Shazam. Needs an internet connection.")
+                    .settingsHelperText()
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            .settingsSearchGroup(["lossless-audio"])
+            .settingsSearchGroup(["lossless-audio", "identify-songs"])
+            SettingsSectionGroup("Discs") {
+                VStack(alignment: .leading, spacing: 6) {
+                    Picker("Disc playback", selection: $model.settings.discPlayback) {
+                        ForEach(DiscPlaybackBehavior.allCases, id: \.self) {
+                            Text($0.title).tag($0)
+                        }
+                    }
+                    Text(DiscPlaybackBehavior.settingsNotice)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .settingsSearchAnchor("disc-playback")
+            }
+            .settingsSearchGroup(["disc-playback"])
             SettingsSectionGroup {
                 Button { showsAdvancedPlayback = true } label: {
                     SettingsDisclosureLabel { Text("Advanced") }

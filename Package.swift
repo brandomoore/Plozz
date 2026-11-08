@@ -255,9 +255,11 @@ let package = Package(
         // availability. FFmpegBuild 3.11.1 adds AV1 forward-keyframe detection.
         // Audio shaping and low-resolution upscaling remain opt-in and disabled.
         // Resume preroll backfill no longer opens a false native-scrub landing watch.
+        // Native media-selection IPC uses bounded off-main readers during media-service stalls.
+        // Profile 7-only HDR10 fallback preserves other Dolby Vision routes.
         .package(
             url: "https://github.com/brandomoore/AetherEngine",
-            revision: "debf03170d23e0781ed5b667af6f974deac46449",
+            revision: "55430e28df74ba11b36fea367ad22af0d685a68b",
             traits: []
         ),
         // NOTE: FFmpegBuild (FFmpeg n8.1.x media libraries) and LibDovi (Dolby Vision
@@ -606,7 +608,7 @@ let package = Package(
         // stricter bar from day one.
         .target(
             name: "MediaTransportHTTP",
-            dependencies: ["CoreModels", "MediaTransportCore"],
+            dependencies: ["CoreModels", "CoreNetworking", "MediaTransportCore"],
             swiftSettings: [.unsafeFlags(["-strict-concurrency=complete"])]
         ),
 
@@ -632,6 +634,7 @@ let package = Package(
             name: "MediaTransportWebDAV",
             dependencies: [
                 "CoreModels",
+                "CoreNetworking",
                 "MediaTransportCore",
                 "MediaTransportHTTP",
             ],
@@ -1051,7 +1054,7 @@ let package = Package(
         ),
         .testTarget(
             name: "ProviderSiloTests",
-            dependencies: ["ProviderSilo", "CoreModels", "CoreNetworking"]
+            dependencies: ["ProviderSilo", "CoreModels", "CoreNetworking", "TestSupportPerformance"]
         ),
         .testTarget(
             name: "ProviderIPTVTests",
@@ -1105,7 +1108,8 @@ let package = Package(
         ),
         .testTarget(
             name: "FeatureHomeCoreTests",
-            dependencies: ["FeatureHomeCore", "CoreModels", "MetadataKit"]
+            dependencies: ["FeatureHomeCore", "CoreModels", "MetadataKit", "ProviderJellyfin",
+                           "CoreNetworking", "TestSupportPerformance"]
         ),
         .testTarget(
             name: "FeatureSearchCoreTests",

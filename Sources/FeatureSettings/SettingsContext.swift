@@ -259,6 +259,15 @@ public final class SettingsNavigationModel {
         reveal(.metadata)
     }
 
+    public func openHomeCustomization() {
+        #if os(tvOS)
+        searchQuery = ""
+        isSearching = false
+        #endif
+        resetPages()
+        reveal(.customizeHome)
+    }
+
     private func reveal(_ route: SettingsRoute) {
         select(route)
         enterDetail()

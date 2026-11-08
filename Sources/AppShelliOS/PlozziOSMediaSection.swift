@@ -44,6 +44,7 @@ struct PlozziOSMediaSection<Content: View>: View {
     let title: Text
     var horizontalInset: CGFloat?
     var artworkInset: CGFloat = 0
+    var reservesBrowseSpace = false
     var onSeeAll: (() -> Void)? = nil
     var onBrowse: (() -> Void)? = nil
     @ViewBuilder var content: Content
@@ -52,7 +53,7 @@ struct PlozziOSMediaSection<Content: View>: View {
         VStack(alignment: .leading, spacing: PlozziOSMediaRailLayout.headingSpacing) {
             HStack {
                 Group {
-                    if let onBrowse { BrowseRowHeading(title: title, action: onBrowse) }
+                    if onBrowse != nil || reservesBrowseSpace { BrowseRowHeading(title: title, action: onBrowse) }
                     else { title }
                 }
                     .font(.title3.weight(.semibold))

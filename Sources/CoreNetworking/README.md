@@ -45,6 +45,12 @@ and every provider/feature that talks to a remote server.
   provider marks. It strips user information, paths, query strings and fragments,
   uses no credential/cookie storage, rejects redirects and authentication,
   and bounds response bytes/time with a memory-only HTTP cache.
+- `OfflineNetworkSession`: app-owned HTTP sessions share the explicit device
+  offline policy. Foreground sessions reject new HTTP(S) work while it is
+  enabled; mode transitions cancel existing requests. Background download
+  sessions are paused by their download owner rather than a URL protocol.
+  This is not an internet-reachability heuristic: normal mode still permits
+  saved LAN routes when the public internet is unavailable.
 - `PlozzLog` (and the `PlozzLogger` category facade): the **single** logging
   entry point. Backed by `OSLog` on Apple platforms, no-op on non-Apple
   hosts. Must never log tokens, Quick Connect secrets, or full

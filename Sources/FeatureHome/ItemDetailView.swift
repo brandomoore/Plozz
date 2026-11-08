@@ -322,18 +322,25 @@ public struct ItemDetailView: View {
         .task(id: seasonRequestRefreshKey) {
             await refreshVisibleSeasonRequests()
         }
+        .task(id: heroBackground.settings.trailerSources) {
+            await viewModel.refreshTrailerPolicy()
+        }
         .task(id: heroTrailerTaskID) {
             guard let item = viewModel.state.value?.item else { return }
-            guard isTrailerOwner,
-                  heroBackground.settings.detailMode == .trailer else {
+            guard isTrailerOwner else {
                 if isPageVisible || !preservesHeroTrailerOnDisappear(item.id) {
                     heroTrailerController.stop(ifShowing: item.id, ownedBy: trailerHandlerOwnerID)
                 }
                 heroTrailerController.clearEndHandler(ownerID: trailerHandlerOwnerID)
                 return
             }
-            if let currentID = heroTrailerController.currentItemID,
-               currentID != item.id {
+            guard heroBackground.settings.detailTrailerEnabled else {
+                heroTrailerController.stop(ifShowing: item.id)
+                heroTrailerController.clearEndHandler(ownerID: trailerHandlerOwnerID)
+                return
+            }
+            if heroTrailerController.currentItemID != nil,
+               !heroTrailerController.isShowing(item.id) {
                 heroTrailerController.stop()
             }
             // Detail owns end-of-item while it is frontmost. This replaces Home's
@@ -347,7 +354,9 @@ public struct ItemDetailView: View {
             // item, do nothing — the picture keeps rolling (and keeps its live
             // session mute) while metadata swaps.
             guard !heroTrailerController.isShowing(item.id) else {
-                heroTrailerController.setPaused(false)
+                heroTrailerController.claimSurface(.detail, itemID: item.id)
+                heroTrailerController.setPaused(false, surfaceRole: .detail)
+                heroTrailerController.startPrepared()
                 return
             }
             try? await Task.sleep(for: .seconds(3))
@@ -355,13 +364,14 @@ public struct ItemDetailView: View {
             guard let source = await heroTrailerResolver(item),
                   !Task.isCancelled,
                   isTrailerOwner,
-                  heroBackground.settings.detailMode == .trailer,
+                  heroBackground.settings.detailTrailerEnabled,
                   viewModel.state.value?.item.id == item.id else { return }
             heroTrailerController.play(
                 itemID: item.id,
                 resolvedURL: source.url,
                 muted: heroBackground.settings.detailTrailerMuted
             )
+            heroTrailerController.claimSurface(.detail, itemID: item.id)
         }
         .confirmationDialog(
             "Request as Admin?",
@@ -430,7 +440,7 @@ public struct ItemDetailView: View {
 
     private var heroTrailerTaskID: String {
         let itemID = viewModel.state.value?.item.id ?? "-"
-        return "\(itemID)|\(heroBackground.settings.detailMode.rawValue)|\(isTrailerOwner)"
+        return "\(itemID)|\(heroBackground.settings.detailTrailerEnabled)|\(isTrailerOwner)"
     }
 
     private var isTrailerOwner: Bool {
@@ -715,7 +725,9 @@ public struct ItemDetailView: View {
                         playProgress: canPlay ? selectedPlayItem.resumeProgressFraction : nil,
                         playRemainingText: canPlay ? selectedPlayItem.resumeRemainingText : nil,
                         playSeasonEpisodeText: canPlay && !selectedPlayItem.opensExternalSource ? HeroForegroundModelBuilder.seasonEpisodeButtonText(for: detail.item) : nil,
-                        onPlayTrailer: viewModel.trailers.first.map { trailer in { onPlay(trailer) } },
+                        onPlayTrailer: viewModel.trailers.first.map { trailer in {
+                            if viewModel.canPlayTrailer(trailer) { onPlay(trailer) }
+                        } },
                         trailerItem: viewModel.trailers.first,
                         versions: usesExternalDetail ? [] : effectiveVersions,
                         selectedVersionID: effectiveVersionID,

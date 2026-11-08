@@ -7,15 +7,18 @@ public struct TVFocusActivityObserver: UIViewRepresentable {
     let onActivity: () -> Void
     let observesPlaybackPresses: Bool
     let onFocusedFrame: ((CGRect) -> Void)?
+    let onUp: (() -> Void)?
 
     public init(
         onActivity: @escaping () -> Void,
         observesPlaybackPresses: Bool = false,
-        onFocusedFrame: ((CGRect) -> Void)? = nil
+        onFocusedFrame: ((CGRect) -> Void)? = nil,
+        onUp: (() -> Void)? = nil
     ) {
         self.onActivity = onActivity
         self.observesPlaybackPresses = observesPlaybackPresses
         self.onFocusedFrame = onFocusedFrame
+        self.onUp = onUp
     }
 
     public func makeUIView(context: Context) -> ObserverView {
@@ -24,6 +27,7 @@ public struct TVFocusActivityObserver: UIViewRepresentable {
         view.isUserInteractionEnabled = false
         view.onActivity = onActivity
         view.onFocusedFrame = onFocusedFrame
+        view.onUp = onUp
         view.observesPlaybackPresses = observesPlaybackPresses
         return view
     }
@@ -31,6 +35,7 @@ public struct TVFocusActivityObserver: UIViewRepresentable {
     public func updateUIView(_ uiView: ObserverView, context: Context) {
         uiView.onActivity = onActivity
         uiView.onFocusedFrame = onFocusedFrame
+        uiView.onUp = onUp
         uiView.observesPlaybackPresses = observesPlaybackPresses
     }
 
@@ -41,6 +46,7 @@ public struct TVFocusActivityObserver: UIViewRepresentable {
     public final class ObserverView: UIView, UIGestureRecognizerDelegate {
         var onActivity: (() -> Void)?
         var onFocusedFrame: ((CGRect) -> Void)?
+        var onUp: (() -> Void)?
         var observesPlaybackPresses = false {
             didSet {
                 guard oldValue != observesPlaybackPresses else { return }
@@ -49,6 +55,7 @@ public struct TVFocusActivityObserver: UIViewRepresentable {
         }
         private weak var observedWindow: UIWindow?
         private var pressObserver: UITapGestureRecognizer?
+        private var upSwipeObserver: UISwipeGestureRecognizer?
 
         private var allowedPressTypes: [NSNumber] {
             var types: [UIPress.PressType] = [.leftArrow, .rightArrow, .upArrow, .downArrow]
@@ -76,18 +83,31 @@ public struct TVFocusActivityObserver: UIViewRepresentable {
             presses.delegate = self
             window.addGestureRecognizer(presses)
             pressObserver = presses
+            if onUp != nil {
+                let swipe = UISwipeGestureRecognizer(target: self, action: #selector(swipedUp(_:)))
+                swipe.direction = .up
+                swipe.allowedPressTypes = []
+                swipe.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.indirect.rawValue)]
+                swipe.cancelsTouchesInView = false
+                swipe.delegate = self
+                window.addGestureRecognizer(swipe)
+                upSwipeObserver = swipe
+            }
         }
 
         func stop() {
             detachObservers()
             onActivity = nil
             onFocusedFrame = nil
+            onUp = nil
         }
 
         private func detachObservers() {
             NotificationCenter.default.removeObserver(self)
             if let pressObserver { observedWindow?.removeGestureRecognizer(pressObserver) }
+            if let upSwipeObserver { observedWindow?.removeGestureRecognizer(upSwipeObserver) }
             pressObserver = nil
+            upSwipeObserver = nil
             observedWindow = nil
         }
 
@@ -104,6 +124,7 @@ public struct TVFocusActivityObserver: UIViewRepresentable {
         }
 
         func observePress(_ type: UIPress.PressType, focusedItem: (any UIFocusItem)?) -> Bool {
+            if type == .upArrow, contains(focusedItem) { onUp?() }
             switch type {
             case .leftArrow, .rightArrow, .upArrow, .downArrow:
                 reportActivity(for: focusedItem)
@@ -114,6 +135,20 @@ public struct TVFocusActivityObserver: UIViewRepresentable {
             // Receiving an arrow at the end of a row is still activity. Reject
             // recognition so UIKit alone performs navigation and press replay.
             return false
+        }
+
+        public override func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+            guard gestureRecognizer === upSwipeObserver else { return super.gestureRecognizerShouldBegin(gestureRecognizer) }
+            return contains(window.flatMap { UIFocusSystem.focusSystem(for: $0)?.focusedItem })
+        }
+
+        public func gestureRecognizer(
+            _ gestureRecognizer: UIGestureRecognizer,
+            shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
+        ) -> Bool { true }
+
+        @objc private func swipedUp(_ recognizer: UISwipeGestureRecognizer) {
+            if recognizer.state == .ended { onUp?() }
         }
 
         func reportActivity(for item: (any UIFocusItem)?) {
@@ -167,6 +202,10 @@ public struct TVFocusActivityObserver: UIViewRepresentable {
             if let pressObserver {
                 let window = observedWindow
                 Task { @MainActor in window?.removeGestureRecognizer(pressObserver) }
+            }
+            if let upSwipeObserver {
+                let window = observedWindow
+                Task { @MainActor in window?.removeGestureRecognizer(upSwipeObserver) }
             }
         }
     }

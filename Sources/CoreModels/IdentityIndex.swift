@@ -90,7 +90,7 @@ public struct IndexedSource: Hashable, Sendable, Codable {
 /// An immutable, value-typed view of the ``IdentityIndex`` at a point in time —
 /// the **single shared source of truth** every synchronous surface reads.
 ///
-/// `AppState` publishes a fresh snapshot whenever the index rebuilds; Home rows,
+/// `IdentityIndexModel` publishes a fresh snapshot when membership changes; Home rows,
 /// aggregated Library browse, Search, the detail server-picker and the watch
 /// fan-out all resolve a title's full cross-server/cross-account source set by an
 /// O(1) lookup here instead of recomputing it per entry path. Being a plain
@@ -474,14 +474,15 @@ public actor IdentityIndex {
     /// When each account's catalogue was last (re)built, for staleness checks.
     private var builtAtByAccount: [String: Date] = [:]
     /// Memoized fold of `byAccount` into one identity → sources snapshot. Cleared
-    /// by every content mutation that changes the **live** index (`ingest` into a
-    /// non-rebuilding account, `finishRebuild`'s shadow swap, `removeAccount`,
+    /// by content mutations that change the **live** index (`ingest` into a
+    /// non-rebuilding account, a changed `finishRebuild` shadow swap, `removeAccount`,
     /// `restore`) so a stale merge is never served, and repopulated lazily on the
     /// next ``snapshot()``. A rebuild in flight does NOT clear it — the live view is
     /// unchanged until the atomic swap. Lets repeated reads with no intervening live
     /// mutation — the post-warm steady state, diagnostics, and the skip-warm restore
     /// path — reuse the built value instead of re-deriving the full map each time.
     private var cachedSnapshot: IdentityIndexSnapshot?
+    private var membershipRevision: UInt64 = 0
     private let now: @Sendable () -> Date
 
     public init(now: @Sendable @escaping () -> Date = { Date() }) {
@@ -504,6 +505,18 @@ public actor IdentityIndex {
         return built
     }
 
+    /// Revision belongs to this index instance and excludes scan freshness.
+    /// Unchanged verification needs neither another graph fold nor a UI update.
+    public func snapshot(ifChangedSince revision: UInt64) -> (revision: UInt64, snapshot: IdentityIndexSnapshot)? {
+        guard membershipRevision > revision else { return nil }
+        return (membershipRevision, snapshot())
+    }
+
+    private func invalidateSnapshot() {
+        membershipRevision &+= 1
+        cachedSnapshot = nil
+    }
+
     /// Indexes a freshly fetched page of catalogue `items` for `accountID`,
     /// labelling each source with the account's server/user info. Only
     /// **movies and series** carry a stable cross-server identity; seasons,
@@ -519,6 +532,7 @@ public actor IdentityIndex {
         // sources keep serving fan-out untouched until the swap at finishRebuild.
         let intoShadow = rebuilding.contains(accountID)
         var bucket = (intoShadow ? pendingRebuild[accountID] : byAccount[accountID]) ?? [:]
+        var changed = false
         for item in items {
             guard item.kind == .movie || item.kind == .series else { continue }
             let identities = MediaItemIdentity.identities(for: item)
@@ -536,6 +550,7 @@ public actor IdentityIndex {
                 year: item.productionYear
             )
             for identity in identities {
+                if bucket[identity]?[source.id] != source { changed = true }
                 bucket[identity, default: [:]][source.id] = source
             }
         }
@@ -544,7 +559,7 @@ public actor IdentityIndex {
             pendingRebuild[accountID] = bucket
         } else {
             byAccount[accountID] = bucket
-            cachedSnapshot = nil
+            if changed { invalidateSnapshot() }
         }
     }
 
@@ -564,10 +579,12 @@ public actor IdentityIndex {
     /// timestamp.
     public func finishRebuild(for accountID: String) {
         if rebuilding.contains(accountID) {
-            byAccount[accountID] = pendingRebuild[accountID] ?? [:]
+            let replacement = pendingRebuild[accountID] ?? [:]
+            let changed = (byAccount[accountID] ?? [:]) != replacement
+            byAccount[accountID] = replacement
             pendingRebuild[accountID] = nil
             rebuilding.remove(accountID)
-            cachedSnapshot = nil
+            if changed { invalidateSnapshot() }
         }
         warmAccounts.insert(accountID)
         builtAtByAccount[accountID] = now()
@@ -576,12 +593,12 @@ public actor IdentityIndex {
     /// Drops an account entirely (sign-out / profile switch), so its sources stop
     /// appearing in the snapshot immediately.
     public func removeAccount(_ accountID: String) {
-        byAccount[accountID] = nil
+        let removed = byAccount.removeValue(forKey: accountID)
         pendingRebuild[accountID] = nil
         rebuilding.remove(accountID)
         warmAccounts.remove(accountID)
         builtAtByAccount[accountID] = nil
-        cachedSnapshot = nil
+        if let removed, !removed.isEmpty { invalidateSnapshot() }
     }
 
     /// Prunes any indexed account not in `accountIDs` (e.g. after a profile switch
@@ -670,7 +687,7 @@ public actor IdentityIndex {
             builtAtByAccount[accountID] = .distantPast
             restoredAny = true
         }
-        if restoredAny { cachedSnapshot = nil }
+        if restoredAny { invalidateSnapshot() }
         return restoredAny
     }
 
@@ -719,10 +736,13 @@ public enum IdentityEnrichment {
         /// `true` when at least one enrichment fetch failed, so the caller should
         /// retry the account on a later warm rather than mark it conclusively built.
         public var inconclusive: Bool
+        /// A provider-wide refusal or cancellation stops the rest of this scan.
+        public var interruption: AppError?
 
-        public init(indexable: [MediaItem], inconclusive: Bool) {
+        public init(indexable: [MediaItem], inconclusive: Bool, interruption: AppError? = nil) {
             self.indexable = indexable
             self.inconclusive = inconclusive
+            self.interruption = interruption
         }
     }
 
@@ -738,16 +758,21 @@ public enum IdentityEnrichment {
     ///     cost. Bounded so it speeds up the scan without flooding the connection
     ///     pool or the small tvOS cooperative thread pool.
     ///   - enrichIdentifiedItems: also hydrate cards whose one ID is only a partial
-    ///     identity. Silo's catalog anchor omits the cross-namespace links in detail.
+    ///     identity, unless the provider marks the fresh card's identity complete.
     ///   - fetchFull: fetches the fuller per-item record for an item that lacks a
     ///     strong id. Return `nil` to signal the fetch **failed** (inconclusive);
     ///     return the enriched item (ideally now carrying external ids) on success.
+    ///     Throw rate limits, authorization failures and cancellation unchanged
+    ///     so the caller can stop the scan rather than draining its remaining pages.
     public static func prepare(
         _ items: [MediaItem],
         concurrency: Int = 5,
         enrichIdentifiedItems: Bool = false,
-        fetchFull: @Sendable @escaping (MediaItem) async -> MediaItem?
+        fetchFull: @Sendable @escaping (MediaItem) async throws -> MediaItem?
     ) async -> Result {
+        guard !Task.isCancelled else {
+            return Result(indexable: [], inconclusive: true, interruption: .cancelled)
+        }
         // Partition without any network work: movies/series that already carry a
         // strong identity are ingestable as-is; the rest each need one enrichment
         // round-trip. Order is irrelevant downstream (the index keys by identity /
@@ -755,7 +780,8 @@ public enum IdentityEnrichment {
         var indexable: [MediaItem] = []
         var needsFetch: [MediaItem] = []
         for item in items where item.kind == .movie || item.kind == .series {
-            if enrichIdentifiedItems || MediaItemIdentity.identities(for: item).isEmpty {
+            if (enrichIdentifiedItems && !item.catalogIdentityIsComplete)
+                || MediaItemIdentity.identities(for: item).isEmpty {
                 needsFetch.append(item)
             } else {
                 indexable.append(item)
@@ -763,35 +789,62 @@ public enum IdentityEnrichment {
         }
         guard !needsFetch.isEmpty else { return Result(indexable: indexable, inconclusive: false) }
 
-        // Enrich the guid-less items concurrently, capped by a permit gate. Each
-        // result carries (enrichedItem?, inconclusive): a nil fetch ⇒ inconclusive
-        // (retry the account on a later warm); a fetch that returns but still lacks
-        // a strong id ⇒ skipped conclusively (don't re-scan it forever).
-        let limiter = ConcurrencyLimiter(limit: concurrency)
-        let results: [(item: MediaItem?, inconclusive: Bool)] = await withTaskGroup(
-            of: (MediaItem?, Bool).self
-        ) { group in
-            for item in needsFetch {
+        // Refill a bounded window instead of queueing the whole page behind a
+        // permit gate, so a rate limit can stop work that has not started yet.
+        return await withTaskGroup(of: Result.self) { group in
+            func enqueue(_ item: MediaItem) {
                 group.addTask {
-                    guard let full = await limiter.run({ await fetchFull(item) }),
-                          full.id == item.id, full.kind == item.kind else {
-                        return (nil, true)
+                    do {
+                        try Task.checkCancellation()
+                        guard let full = try await fetchFull(item),
+                              full.id == item.id, full.kind == item.kind else {
+                            return Result(indexable: [], inconclusive: true)
+                        }
+                        try Task.checkCancellation()
+                        return Result(
+                            indexable: MediaItemIdentity.identities(for: full).isEmpty ? [] : [full],
+                            inconclusive: false
+                        )
+                    } catch is CancellationError {
+                        return Result(indexable: [], inconclusive: true, interruption: .cancelled)
+                    } catch let error as AppError {
+                        switch error {
+                        case .rateLimited, .unauthorized, .cancelled:
+                            return Result(indexable: [], inconclusive: true, interruption: error)
+                        default:
+                            return Result(indexable: [], inconclusive: true)
+                        }
+                    } catch {
+                        return Result(indexable: [], inconclusive: true)
                     }
-                    if MediaItemIdentity.identities(for: full).isEmpty { return (nil, false) }
-                    return (full, false)
                 }
             }
-            var collected: [(MediaItem?, Bool)] = []
-            for await result in group { collected.append(result) }
-            return collected
+            var next = 0
+            while next < min(max(1, concurrency), needsFetch.count) {
+                enqueue(needsFetch[next])
+                next += 1
+            }
+            var result = Result(indexable: indexable, inconclusive: false)
+            for await completed in group {
+                result.indexable += completed.indexable
+                result.inconclusive = result.inconclusive || completed.inconclusive
+                if let interruption = completed.interruption,
+                   result.interruption == nil || result.interruption == .cancelled {
+                    result.interruption = interruption
+                    group.cancelAll()
+                }
+                if Task.isCancelled {
+                    result.inconclusive = true
+                    result.interruption = result.interruption ?? .cancelled
+                    group.cancelAll()
+                }
+                if result.interruption == nil, next < needsFetch.count {
+                    enqueue(needsFetch[next])
+                    next += 1
+                }
+            }
+            return result
         }
-
-        var inconclusive = false
-        for result in results {
-            if let item = result.item { indexable.append(item) }
-            if result.inconclusive { inconclusive = true }
-        }
-        return Result(indexable: indexable, inconclusive: inconclusive)
     }
 }
 

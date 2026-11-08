@@ -52,7 +52,6 @@ final class NativeGradientCardSurface {
             let renderer = ImageRenderer(content:
                 AmbientGradientBackground.mesh(colors: style.colors)
                     .overlay(style.palette.informationSurface.opacity(style.informationSurfaceOpacity))
-                    .overlay(style.palette.gradientSurface.fill)
                     .frame(width: size.width, height: size.height)
                     .environment(\.colorScheme, style.palette.isLight ? .light : .dark)
             )
@@ -115,15 +114,16 @@ struct NativeGradientViewport: UIViewRepresentable {
 
 struct NativeGradientCardFill: UIViewRepresentable {
     let surface: NativeGradientCardSurface?
+    let fill: Color
 
     func makeUIView(context: Context) -> View { View() }
 
     func updateUIView(_ view: View, context: Context) {
-        view.configure(surface: surface)
+        view.configure(surface: surface, fill: UIColor(fill))
     }
 
     static func dismantleUIView(_ view: View, coordinator: ()) {
-        view.configure(surface: nil)
+        view.configure(surface: nil, fill: .clear)
     }
 
     final class View: UIView {
@@ -131,17 +131,23 @@ struct NativeGradientCardFill: UIViewRepresentable {
         private var image: CGImage?
         private var scrollIDs: [ObjectIdentifier] = []
         private var observations: [NSKeyValueObservation] = []
+        private let fillLayer = CALayer()
 
         override init(frame: CGRect) {
             super.init(frame: frame)
             isUserInteractionEnabled = false
             isAccessibilityElement = false
             layer.contentsGravity = .resize
+            layer.addSublayer(fillLayer)
         }
 
         required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
-        func configure(surface: NativeGradientCardSurface?) {
+        func configure(surface: NativeGradientCardSurface?, fill: UIColor) {
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            fillLayer.backgroundColor = fill.cgColor
+            CATransaction.commit()
             if self.surface !== surface {
                 self.surface?.unregister(self)
                 self.surface = surface
@@ -172,6 +178,10 @@ struct NativeGradientCardFill: UIViewRepresentable {
 
         override func layoutSubviews() {
             super.layoutSubviews()
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            fillLayer.frame = bounds
+            CATransaction.commit()
             observeScrolling()
             refresh()
         }

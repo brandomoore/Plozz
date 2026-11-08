@@ -34,6 +34,7 @@ enum PerformanceProbe {
                 cpuMilliseconds: after.cpuMilliseconds - before.cpuMilliseconds,
                 residentBytes: after.residentBytes,
                 residentDeltaBytes: after.residentBytes - before.residentBytes,
+                memory: try memoryUsage(),
                 counters: counters
             ))
         }
@@ -50,6 +51,7 @@ enum PerformanceProbe {
         let cpuMilliseconds: Double
         let residentBytes: Int64
         let residentDeltaBytes: Int64
+        let memory: [String: Int64]
         let counters: [String: Int]
     }
 
@@ -60,7 +62,48 @@ enum PerformanceProbe {
         let samples: [Sample]
     }
 
-    private static func usage() throws -> (cpuMilliseconds: Double, residentBytes: Int64) {
+    // Let queued work and autoreleases drain outside timing; the caller still owns its fixture.
+    static func attachMemoryAfterOneSecond(_ test: XCTestCase, scenario: String) async throws {
+        try await Task.sleep(for: .seconds(1))
+        let data = try JSONEncoder().encode(memoryUsage())
+        let attachment = XCTAttachment(data: data, uniformTypeIdentifier: "public.json")
+        attachment.name = "plozz-memory-after-one-second-\(scenario).json"
+        attachment.lifetime = .keepAlways
+        test.add(attachment)
+    }
+
+    static func memoryUsage() throws -> [String: Int64] {
+        var statistics = malloc_statistics_t()
+        malloc_zone_statistics(nil, &statistics)
+        var info = task_vm_info_data_t()
+        var count = mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<integer_t>.size)
+        let status = withUnsafeMutablePointer(to: &info) {
+            $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
+                task_info(mach_task_self_, task_flavor_t(TASK_VM_INFO), $0, &count)
+            }
+        }
+        guard status == KERN_SUCCESS else {
+            throw NSError(domain: NSMachErrorDomain, code: Int(status))
+        }
+        return [
+            "residentBytes": Int64(info.resident_size),
+            "physicalFootprintBytes": Int64(info.phys_footprint),
+            "internalBytes": Int64(info.internal),
+            "externalBytes": Int64(info.external),
+            "compressedBytes": Int64(info.compressed),
+            "reusableBytes": Int64(info.reusable),
+            "mallocInUseBytes": Int64(statistics.size_in_use),
+            "mallocAllocatedBytes": Int64(statistics.size_allocated),
+            "mallocBlocksInUse": Int64(statistics.blocks_in_use),
+        ]
+    }
+
+    // Test-only attribution after teardown; never a production memory-management strategy.
+    static func releaseUnusedHeapForDiagnosis() -> Int64 {
+        Int64(malloc_zone_pressure_relief(nil, 0))
+    }
+
+    static func usage() throws -> (cpuMilliseconds: Double, residentBytes: Int64) {
         var resources = rusage()
         guard getrusage(RUSAGE_SELF, &resources) == 0 else {
             throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno))

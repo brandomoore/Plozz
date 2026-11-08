@@ -82,7 +82,7 @@ public extension SpoilerSettings {
     /// Whether `item` is partially watched but not finished — the user is
     /// actively in the middle of it.
     private static func isInProgress(_ item: MediaItem) -> Bool {
-        guard !item.isPlayed else { return false }
+        guard !item.isPlayed, item.hasVisiblePlaybackProgress else { return false }
         if let percentage = item.playedPercentage, percentage > 0.01 { return true }
         if let resume = item.resumePosition, resume > 0 { return true }
         return false

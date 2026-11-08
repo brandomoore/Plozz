@@ -7,9 +7,21 @@ language every other module speaks.
 
 - Domain value types: `MediaItem`, `MediaLibrary`, `MediaServer`,
   `UserSession`, `Account`, `Profile`, `MusicTrack`, `Person`, etc.
+- `MediaItem` retains optional confirmed original language, series production
+  status and whole-title catalog season/episode totals. These are independent
+  of local ownership, unwatched counts, schedules and playable audio languages.
 - The dual-provider abstraction: `MediaProvider` protocol, `ProviderKind`,
   `ProviderRegistry` / `ProviderResolving`, `ResolvedAccount`.
 - Cross-cutting UI state: `LoadState`, `AppError`.
+- `ApplicationStorageLifecycle` fences process-wide storage admission before
+  asynchronously closing registered actor-owned stores. Owners register before
+  opening files, reject inactive access, and ignore stale cleanup after resume.
+  Registration is weak, so the registry does not retain retired stores.
+- `PerformanceDiagnostics` owns consent-scoped, bounded operation histories and
+  numeric Home responsiveness windows. Home load/merge/publication retention is
+  independent of HTTP/decode traffic. UI observers must hold a current Home
+  observation token; replacement and opt-out reject late samples. The recorder
+  does not schedule sampling or emit events.
 - `ThemeMusicVolume` persists a bounded 0–1 gain per profile. Legacy named levels
   decode to their original gain; only the old `"off"` token triggers the paired
   background-mode migration, not a new numeric zero.
@@ -17,6 +29,8 @@ language every other module speaks.
   network/storage preferences, not profile settings. Both default to Automatic
   and are excluded from profile transfer. `EngineSessionCache` carries active
   temporary-cache usage and the engine's effective playback-safe budget.
+- `PlaybackSettings.identifySongs` (#351) is a profile preference, on by
+  default; payloads written before it existed decode as on.
 - `LosslessAudioSettingsStore` defaults on and remains device-local across
   profile changes and transfers. The audio bridge reads it for each new load;
   missing source-channel metadata does not downgrade the chosen output mode.
@@ -232,6 +246,15 @@ curated sections and new appearances need explicit configuration and capability
 contracts before they can become templates in this editor. Do not overload an
 existing `HomeRowID` to represent independent instances or change provider IDs
 to make them unique in the UI.
+
+`LibraryInventoryStore` is a bounded, local names/IDs cache for already authorized
+server viewers, separate from profile choices and navigation's per-profile
+snapshot. Home and Settings warm it through live library discovery. It never
+resolves credentials or authorizes a profile; callers supply currently resolved
+accounts. Profile-local providers, including downloaded-media projections, bypass
+both cache reads and writes so they cannot replace the server's full inventory.
+See [Libraries behavior](../FeatureSettings/README.md#responsibility) for
+refresh, error, and storage limits.
 
 ## Profile deletion and namespace ownership
 

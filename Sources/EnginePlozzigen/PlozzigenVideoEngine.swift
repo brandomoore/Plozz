@@ -86,6 +86,7 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
     private var liveSourceResetCancellable: AnyCancellable?
 
     public var currentTime: TimeInterval { engine.currentTime }
+    public var audioTapPresentationTime: TimeInterval { engine.sourceTime }
     public var subtitlePresentationTime: TimeInterval {
         if usesNativeSubtitleCues, let time = engine.currentAVPlayer?.currentTime().seconds, time.isFinite {
             return time
@@ -838,10 +839,11 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
                 "Plozzigen load failed at \(stage): "
                     + HandoffDiagnostics.redactedDetail(detail)
             )
-            streamingFailure = PlozzigenPlaybackFailure.classify(
-                stage == "resolve" || stage == "audioSession" ? nil : engine.errorInfo,
-                fallbackError: error
-            )
+            streamingFailure = stage == "audioSession"
+                ? NativePlaybackFailure.audioSessionFailure(error)
+                : PlozzigenPlaybackFailure.classify(
+                    stage == "resolve" ? nil : engine.errorInfo, fallbackError: error
+                )
             let err: AppError = error as? AppError ?? .unknown(detail)
             #if canImport(DiscNavigation) && canImport(UIKit)
             if request.discPlayback == .openMenu {
@@ -1072,6 +1074,7 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
         )
         options.objectAudioRendering = .off
         options.preferDualLayerDolbyVision = false
+        options.dolbyVisionHandling = .profile7BaseLayer
         // Aether uses approximately four-second segments and clamps the maximum
         // to 2,700, retaining its free-space budget and producer backpressure.
         switch readAhead {
@@ -1112,7 +1115,7 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
         // Aether 6.66 gives nativeRemoteHLS its AVPlayer-backed live window
         // without a host-selected DVR duration. Keep nil so an ingest reroute
         // does not silently opt the app into an arbitrary disk timeshift policy.
-        return LoadOptions(
+        var options = LoadOptions(
             httpHeaders: httpHeaders,
             audioBridgeMode: losslessAudioEnabled ? .lossless : .surroundCompat,
             isLive: true,
@@ -1124,6 +1127,8 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
             nativeRemoteHLS: format == .hls,
             nativeRemoteHLSIngestFallback: true
         )
+        options.dolbyVisionHandling = .profile7BaseLayer
+        return options
     }
 
     nonisolated static func applyLiveOutputPolicy(_ policy: LiveChannelOutputPolicy, to options: inout LoadOptions) {
@@ -1584,7 +1589,9 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
                                           },
                                           channels: singleAudio?.channels)
                 }
-                let selected = item.currentMediaSelection.selectedMediaOption(in: group)
+                guard let reading = await NativeMediaSelectionReader.shared.read(item: item, group: group),
+                      !Task.isCancelled, self.engine.currentAVPlayer?.currentItem === item else { return }
+                let selected = reading.option
                 next.selectedID = options.firstIndex { $0 == selected }.map { Self.bypassAudioIDBase + $0 }
             } else if !muxed.isEmpty {
                 next.source = .muxed(muxed)
@@ -2512,3 +2519,47 @@ public enum PlozzigenVideoEngineFactory {
 #if os(iOS)
 extension PlozzigenVideoEngine: PictureInPicturePresentingEngine {}
 #endif
+
+// MARK: - Song identification (#351)
+
+extension PlozzigenVideoEngine {
+    /// The engine's opt-in decoded-audio tap (mono Float32 48 kHz, source PTS),
+    /// which is exactly what ShazamKit's streaming matcher accepts.
+    @MainActor
+    public func installSongTap() -> AsyncStream<SongTapChunk>? {
+        // A server-transcoded HLS stream plays on the remote-HLS route, where the
+        // tap fetches the server's segments a second time. On Plex transcodes it
+        // could not decode them ("no tfhd") and a long seek then stalled playback
+        // with HTTP 404, so song identification stays off on that route.
+        guard engine.videoRoute != .remoteBypass else { return nil }
+        let tap = engine.installAudioTap(channels: .downmix)
+        guard engine.audioTapHasDeliverySource else {
+            engine.removeAudioTap()
+            return nil
+        }
+        let iterator = SongTapIterator(tap)
+        return AsyncStream(unfolding: { await iterator.next() })
+    }
+
+    /// One consumer pulls directly from Aether's bounded stream. No forwarding task,
+    /// second PCM queue, or main-actor hop is needed for each audio buffer.
+    private final class SongTapIterator: @unchecked Sendable {
+        private var iterator: AsyncStream<AudioTapBuffer>.Iterator
+
+        init(_ stream: AsyncStream<AudioTapBuffer>) {
+            iterator = stream.makeAsyncIterator()
+        }
+
+        func next() async -> SongTapChunk? {
+            guard let chunk = await iterator.next() else { return nil }
+            return SongTapChunk(
+                buffer: chunk.buffer, sourceTime: chunk.sourceTime, discontinuity: chunk.discontinuity
+            )
+        }
+    }
+
+    @MainActor
+    public func removeSongTap() {
+        engine.removeAudioTap()
+    }
+}

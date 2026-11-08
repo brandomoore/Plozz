@@ -114,7 +114,7 @@ extension PlozziOSAppModel {
         return CloudConfigSyncService(.init(
             containerIdentifier: cloudContainerIdentifier,
             stateFileURL: configStateURL,
-            isEnabled: { SyncSetupFeatureFlag().isEnabled },
+            isEnabled: { SyncSetupFeatureFlag().isEnabled && !OfflineMode.shared.isEnabled },
             captureRecords: { [weak model] fallback in
                 guard let model else { return [:] }
                 return await model.captureSyncRecords(fallback: fallback)
@@ -492,6 +492,7 @@ extension PlozziOSAppModel {
 
     /// Record this device in the household presence registry (so peers know it exists).
     func heartbeatHouseholdPresence() {
+        guard !isOfflineMode else { return }
         guard SyncSetupFeatureFlag().isEnabled else { return }
         HouseholdDevicesStore().heartbeat(
             deviceID: deviceID,
@@ -531,12 +532,14 @@ extension PlozziOSAppModel {
     // MARK: Lifecycle + change observation
 
     func startCloudSyncIfEnabled() {
+        guard !isOfflineMode else { return }
         TraktSharedRefreshBootstrap.install(containerIdentifier: Self.cloudContainerIdentifier)
         guard SyncSetupFeatureFlag().isEnabled else { return }
         guard !Self.isRunningUnitTests else { return }
         let config = cloudSync
         guard let config else { return }
         Task {
+            guard !isOfflineMode else { return }
             await config.activate()
         }
         armCloudConfigObservation()
@@ -560,6 +563,7 @@ extension PlozziOSAppModel {
     }
 
     func scheduleCloudPublish() {
+        guard !isOfflineMode else { return }
         guard SyncSetupFeatureFlag().isEnabled,
               cloudSync != nil else {
             return
@@ -585,6 +589,7 @@ extension PlozziOSAppModel {
             return
         }
         syncSetup.setEnabled(on)
+        guard !isOfflineMode else { return }
         if !on {
             cloudPublishTask?.cancel()
             portableCredentialPublisher.cancelPendingPublication()
@@ -593,6 +598,7 @@ extension PlozziOSAppModel {
         guard let config else { return }
         if on {
             Task {
+                guard !isOfflineMode else { return }
                 await config.activate()
             }
             armCloudConfigObservation()
@@ -608,6 +614,7 @@ extension PlozziOSAppModel {
 
     /// Lightweight foreground pull (iOS). Same effect as tapping Sync Now's fetch.
     func syncCloudOnForeground() {
+        guard !isOfflineMode else { return }
         guard SyncSetupFeatureFlag().isEnabled else { return }
         let config = cloudSync
         Task {

@@ -243,13 +243,18 @@ public struct ThemePalette: Equatable, Sendable {
 
 public extension ThemePalette {
     static let gradientSurfaceFillOpacity = 0.05
+    static let detailGradientSurfaceFillOpacity = 0.12
 
     var gradientSurfaceTint: Color { isLight ? .black : .white }
 
     var gradientSurface: SurfaceStyle {
+        gradientSurface(fillOpacity: Self.gradientSurfaceFillOpacity)
+    }
+
+    func gradientSurface(fillOpacity: Double) -> SurfaceStyle {
         SurfaceStyle(
-            fill: gradientSurfaceTint.opacity(Self.gradientSurfaceFillOpacity),
-            border: gradientSurfaceTint.opacity(Self.gradientSurfaceFillOpacity),
+            fill: gradientSurfaceTint.opacity(fillOpacity),
+            border: gradientSurfaceTint.opacity(fillOpacity),
             shadow: raised.shadow
         )
     }

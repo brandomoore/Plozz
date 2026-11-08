@@ -164,7 +164,7 @@ final class DiscReviewScreenshotTests: XCTestCase {
         let contentTop = app.navigationBars.firstMatch.frame.maxY + 24
         let visibleFrame = CGRect(x: app.frame.minX, y: contentTop,
                                   width: app.frame.width, height: app.frame.maxY - contentTop - 24)
-        for _ in 0..<5 {
+        for _ in 0..<20 {
             if picker.exists && picker.isHittable && notice.exists && notice.isHittable
                 && visibleFrame.contains(picker.frame.union(notice.frame)) { break }
             app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.75))

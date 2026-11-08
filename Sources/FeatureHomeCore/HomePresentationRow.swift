@@ -50,7 +50,8 @@ public struct HomePresentationRow: Identifiable, Equatable, Sendable {
     public static func resolve(
         rows: [HomeRow], content: HomeViewModel.Content, visibility: HomeLibraryVisibility,
         liveTV: HomeLiveTVSnapshot = .empty,
-        presentation: LibraryPresentationSettings = .default
+        presentation: LibraryPresentationSettings = .default,
+        showsEmptySectionMessages: Bool = true
     ) -> [Self] {
         let shared = HomeRowChoice.shared
         func entry(_ row: HomeRow) -> Self? {
@@ -170,23 +171,35 @@ public struct HomePresentationRow: Identifiable, Equatable, Sendable {
             }
             // Keep usable cached/partial content visible; its diagnostic remains in the editor.
             var browseItem: MediaItem?
+            var style: LibrarySection.Style = issue.choice.collectionSection?.cardStyle == .landscape
+                || issue.choice.collectionSection?.cardStyle == .featured
+                || issue.choice.serverRow?.section.kind == .nextUp
+                || issue.choice.id.libraryKind == .nextUp ? .landscape : .poster
+            var collectionCardStyle = issue.choice.collectionSection?.cardStyle
             if let existing = available.first(where: { $0.id == issue.id }) {
                 switch existing.source {
                 case let .home(row):
-                    if !row.items.isEmpty || !row.libraries.isEmpty { continue }
+                    if !row.items.isEmpty || !row.libraries.isEmpty || row.loadingPlaceholderCount > 0 { continue }
                 case let .library(row):
                     if !row.section.items.isEmpty || row.isLoading { continue }
                     browseItem = row.browseItem
+                    style = row.section.style
+                    collectionCardStyle = row.collectionCardStyle
                 case .liveTV: continue
                 }
             }
             available.removeAll { $0.id == issue.id }
+            if issue.reason == .empty,
+               !showsEmptySectionMessages || visibility.dismissedEmptyHomeRows.contains(issue.id) {
+                continue
+            }
             available.append(Self(choice: issue.choice, source: .library(.init(
                 section: LibrarySection(
                     id: issue.id.presentationID, title: issue.choice.title,
-                    localizedTitle: issue.choice.localizedTitle, items: []
+                    localizedTitle: issue.choice.localizedTitle, style: style, items: []
                 ),
-                isLoading: false, failure: nil, browseItem: browseItem, issue: issue
+                isLoading: false, failure: nil, browseItem: browseItem, issue: issue,
+                collectionCardStyle: collectionCardStyle
             ))))
         }
         let byID = Dictionary(available.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })

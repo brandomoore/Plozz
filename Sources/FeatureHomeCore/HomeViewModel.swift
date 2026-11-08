@@ -359,6 +359,8 @@ public final class HomeViewModel {
     public var hasLiveContinueWatching: Bool { hasReceivedLiveContent }
     @ObservationIgnored private var loadGeneration: UInt64 = 0
     @ObservationIgnored private var publishedLoadRows: Set<HomeRowKind> = []
+    @ObservationIgnored private var receivedLiveRows: Set<HomeRowKind> = []
+    @ObservationIgnored private var receivedLiveRowsVisibility: HomeLibraryVisibility?
     @ObservationIgnored private var mutationsDuringLoad: [MediaItemMutation] = []
     @ObservationIgnored private var loadFailures: [HomeRowKind: AppError] = [:]
     @ObservationIgnored private var loadContinueWatchingDiagnostic: LibraryLoadDiagnostic?
@@ -511,6 +513,10 @@ public final class HomeViewModel {
     @ObservationIgnored private var retryCancelledPreparation = false
     /// A load was requested while one was already running; run once more after.
     @ObservationIgnored private var wantsReloadAfterCurrent = false
+    @ObservationIgnored private var isInvalidated = false
+    @ObservationIgnored private var needsReenrichmentAfterPause = false
+    private let isLoadingAllowed: @MainActor () -> Bool
+    private var canLoadContent: Bool { !isInvalidated && isLoadingAllowed() }
 
     public init(
         accounts: [ResolvedAccount],
@@ -521,6 +527,7 @@ public final class HomeViewModel {
         identitySources: @escaping @Sendable (MediaItem) -> [MediaSourceRef] = { _ in [] },
         currentVisibility: @escaping () -> HomeLibraryVisibility = { .default },
         prepareVisibility: @escaping @MainActor () async -> Void = {},
+        isLoadingAllowed: @escaping @MainActor () -> Bool = { true },
         sectionDiagnostics: HomeSectionDiagnosticsModel? = nil,
         pendingWatchMutations: @escaping @Sendable () async -> [WatchMutation] = { [] },
         recentlyAppliedRecency: @escaping @Sendable () async -> [String: AppliedResumeRecord] = { [:] },
@@ -540,6 +547,7 @@ public final class HomeViewModel {
         self.identitySources = identitySources
         self.currentVisibility = currentVisibility
         self.prepareVisibility = prepareVisibility
+        self.isLoadingAllowed = isLoadingAllowed
         self.sectionDiagnostics = sectionDiagnostics
         self.pendingWatchMutations = pendingWatchMutations
         self.recentlyAppliedRecency = recentlyAppliedRecency
@@ -681,6 +689,34 @@ public final class HomeViewModel {
         layoutStore.save(layout)
     }
 
+    /// Settings/setup can pause the retained model without cancelling a valid
+    /// load merely because SwiftUI re-hosted Home or pushed a detail page.
+    public func cancelPendingLoad() {
+        loadGeneration &+= 1
+        loadingVisibility = nil
+        wantsReloadAfterCurrent = false
+        retryCancelledPreparation = false
+        aggregationTask?.cancel()
+        unmergedTask?.cancel()
+        collectionRefreshTask?.cancel()
+        collectionRefreshTask = nil
+        collectionRefreshWorkerGeneration &+= 1
+        collectionRefreshWaitingForDeadline = false
+        reenrichTask?.cancel()
+        reenrichGeneration &+= 1
+        needsReenrichmentAfterPause = !isInvalidated
+        if isLoading { lastLoadedVisibility = nil }
+    }
+
+    /// A replaced account/profile scope must retire its model-owned work now,
+    /// not wait for deinit while an outstanding load still retains the model.
+    public func invalidate() {
+        isInvalidated = true
+        cancelPendingLoad()
+        topShelfPublishTask?.cancel()
+        durableWatchlistRefreshTask?.cancel()
+    }
+
     /// Loads on first appearance and re-aggregates only when the visibility
     /// snapshot actually changed since the last successful load. tvOS cancels and
     /// restarts a `.task(id:)` every time Home reappears (returning from a pushed
@@ -690,6 +726,7 @@ public final class HomeViewModel {
     /// This guard makes the reappearance a no-op while still reacting to a genuine
     /// change: hiding/showing/disabling a library, or flipping the merge switch.
     public func loadIfNeeded(for visibility: HomeLibraryVisibility) async {
+        guard canLoadContent else { return }
         if isLoading {
             if !Task.isCancelled { retryCancelledPreparation = true }
             if loadingVisibility?.intent != visibility.intent {
@@ -731,7 +768,14 @@ public final class HomeViewModel {
                         ? "stale age=\(age.map { String(format: "%.0fs", $0) } ?? "never") > \(Int(policy.refreshAfter))s"
                         : "fresh age=\(age.map { String(format: "%.0fs", $0) } ?? "never")"
                 ))
-                guard isStale else { return }
+                guard isStale else {
+                    armCollectionRefresh()
+                    if needsReenrichmentAfterPause {
+                        needsReenrichmentAfterPause = false
+                        await reenrich()
+                    }
+                    return
+                }
                 await load(showLoadingState: false)
                 return
             }
@@ -755,6 +799,7 @@ public final class HomeViewModel {
     /// loaded rows stay on screen until the fresh content swaps in, so there's no
     /// skeleton flash or focus reset for a background update.
     public func load(showLoadingState: Bool) async {
+        guard canLoadContent else { return }
         // Coalesce concurrent loads. A load is a fan-out across every signed-in
         // account — measured at ~2.5s per account on a cold launch — so two
         // overlapping ones cost double the network and CPU for one result. They
@@ -774,6 +819,7 @@ public final class HomeViewModel {
         var diagnosticMetrics = PerformanceDiagnostics.Metrics()
         defer { diagnostic?.finish(diagnosticOutcome, metrics: diagnosticMetrics) }
         isLoading = true
+        needsReenrichmentAfterPause = false
         retryCancelledPreparation = false
         collectionRefreshTask?.cancel()
         collectionRefreshTask = nil
@@ -790,16 +836,17 @@ public final class HomeViewModel {
         defer {
             // The view may be covered when settings change, so a discarded load
             // must arrange its own replacement instead of leaving loading rows.
-            if let loadingVisibility, loadingVisibility != currentVisibility() {
+            if canLoadContent, let loadingVisibility, loadingVisibility != currentVisibility() {
                 wantsReloadAfterCurrent = true
             }
             isLoading = false
             loadingVisibility = nil
             retryCancelledPreparation = false
-            if wantsReloadAfterCurrent {
+            if wantsReloadAfterCurrent, canLoadContent {
                 wantsReloadAfterCurrent = false
                 Task { await load(showLoadingState: false) }
             } else {
+                wantsReloadAfterCurrent = false
                 isRefreshing = false
                 armCollectionRefresh()
             }
@@ -807,6 +854,7 @@ public final class HomeViewModel {
         PlozzLog.boot("HomeVM.load START vm=\(UInt(bitPattern: ObjectIdentifier(self).hashValue)) accounts=\(accounts.count) state=\(state.diagnosticName) silent=\(!showLoadingState)")
         loadingVisibility = currentVisibility()
         await prepareVisibility()
+        guard canLoadContent, generation == loadGeneration else { return }
         guard !Task.isCancelled else {
             // A replacement view task may already have coalesced into this load.
             // No aggregation started, so do not lose its request when we exit.
@@ -820,6 +868,10 @@ public final class HomeViewModel {
         let onScreenContinueWatching = previousContent?.continueWatching ?? []
         let visibility = currentVisibility()
         loadingVisibility = visibility
+        if receivedLiveRowsVisibility?.intent != visibility.intent {
+            receivedLiveRows = []
+            receivedLiveRowsVisibility = visibility
+        }
         let sectionDiagnosticGeneration = sectionDiagnostics?.begin(accounts: accounts, visibility: visibility)
         defer {
             if let sectionDiagnosticGeneration { sectionDiagnostics?.cancel(sectionDiagnosticGeneration) }
@@ -828,13 +880,27 @@ public final class HomeViewModel {
         if publishesProgress, !accounts.isEmpty {
             rowFailures = [:]
             continueWatchingDiagnostic = nil
-            loadingRows = Set(HomeRowKind.allCases)
+            loadingRows = Set(HomeRowKind.allCases).subtracting(receivedLiveRows)
             var initial = previousContent ?? Content()
             initial.sectionIssues = []
             initial.mergeLibraries = !visibility.usesIndividualHomeRows
-            initial.librarySections = !visibility.usesIndividualHomeRows ? [] : Self.plannedLibrarySections(
-                libraries: initial.libraries, visibility: visibility
+            initial.librarySections = !visibility.usesIndividualHomeRows ? [] : retainingLibraryRowContent(
+                Self.plannedLibrarySections(libraries: initial.libraries, visibility: visibility),
+                previous: initial.librarySections
             )
+            initial.serverRows = retainingServerRowContent(
+                HomeServerRow.plannedDefinitions(accounts: accounts, visibility: visibility)
+                    .map { HomeServerRow(definition: $0, isLoading: true) },
+                previous: initial.serverRows
+            )
+            initial.collectionRows = HomeCollectionRow.plannedDefinitions(accounts: accounts, visibility: visibility)
+                .map { definition in
+                    var row = initial.collectionRows.first { $0.definition == definition }
+                        ?? HomeCollectionRow(definition: definition)
+                    row.isLoading = true
+                    row.failure = nil
+                    return row
+                }
             state = .loaded(initial)
         } else if showLoadingState {
             state = .loading
@@ -891,10 +957,12 @@ public final class HomeViewModel {
             // unless the model explicitly cancelled the aggregation task itself;
             // checking the caller here discarded an 8-second five-server result and
             // forced a second full fan-out before Continue Watching appeared.
-            guard !aggregationTask.isCancelled, currentVisibility() == visibility else { return }
+            guard !aggregationTask.isCancelled, canLoadContent,
+                  generation == loadGeneration, currentVisibility() == visibility else { return }
             let pending = await pendingWatchMutations()
             let appliedRecency = await recentlyAppliedRecency()
-            guard !aggregationTask.isCancelled, currentVisibility() == visibility else { return }
+            guard !aggregationTask.isCancelled, canLoadContent,
+                  generation == loadGeneration, currentVisibility() == visibility else { return }
             noteServerConfirmed(merged.continueWatching)
             let reconciledCW = Self.reconcileContinueWatching(
                 merged.continueWatching,
@@ -942,10 +1010,12 @@ public final class HomeViewModel {
             }
             self.unmergedTask = unmergedTask
             let unmerged = await unmergedTask.value
-            guard !unmergedTask.isCancelled, currentVisibility() == visibility else { return }
+            guard !unmergedTask.isCancelled, canLoadContent,
+                  generation == loadGeneration, currentVisibility() == visibility else { return }
             let pending = await pendingWatchMutations()
             let appliedRecency = await recentlyAppliedRecency()
-            guard !unmergedTask.isCancelled, currentVisibility() == visibility else { return }
+            guard !unmergedTask.isCancelled, canLoadContent,
+                  generation == loadGeneration, currentVisibility() == visibility else { return }
             noteServerConfirmed(unmerged.continueWatching)
             let reconciledCW = Self.reconcileContinueWatching(
                 unmerged.continueWatching,
@@ -1022,6 +1092,12 @@ public final class HomeViewModel {
         content.serverRows = retainingServerRowContent(
             content.serverRows, previous: previousContent?.serverRows ?? []
         )
+        content.librarySections = retainingLibraryRowContent(
+            content.librarySections, previous: previousContent?.librarySections ?? []
+        )
+        content.collectionRows = retainingCollectionRowContent(
+            content.collectionRows, previous: previousContent?.collectionRows ?? []
+        )
         content = applyingLoadMutations(to: content)
         loadingRows = []
         rowFailures = loadFailures
@@ -1045,6 +1121,9 @@ public final class HomeViewModel {
         }
         hasReceivedLiveContent = true
         hasCompletedHomeLoad = true
+        receivedLiveRows = Self.retainedReadyRows(
+            Set(HomeRowKind.allCases), content: content, failures: loadFailures, visibility: visibility
+        )
         isShowingCachedSnapshot = false
         let publication = PerformanceDiagnostics.shared.begin(.homePublish)
         state = content.isEmpty && watchlistLoadingPlaceholderCount == 0 && rowFailures.isEmpty
@@ -1141,7 +1220,8 @@ public final class HomeViewModel {
         visibility: HomeLibraryVisibility,
         publishesProgress: Bool
     ) async {
-        guard !Task.isCancelled, generation == loadGeneration, currentVisibility() == visibility else { return }
+        guard !Task.isCancelled, canLoadContent,
+              generation == loadGeneration, currentVisibility() == visibility else { return }
         loadFailures = progress.failures
         loadContinueWatchingDiagnostic = progress.continueWatchingDiagnostic
         guard publishesProgress else { return }
@@ -1151,7 +1231,8 @@ public final class HomeViewModel {
         if newlyReady.contains(.continueWatching) {
             let pending = await pendingWatchMutations()
             let recency = await recentlyAppliedRecency()
-            guard !Task.isCancelled, generation == loadGeneration, currentVisibility() == visibility else { return }
+            guard !Task.isCancelled, canLoadContent,
+                  generation == loadGeneration, currentVisibility() == visibility else { return }
             noteServerConfirmed(progress.content.continueWatching)
             resume = Self.reconcileContinueWatching(
                 progress.content.continueWatching, pending: pending, appliedRecency: recency,
@@ -1170,7 +1251,9 @@ public final class HomeViewModel {
         content.serverRows = retainingServerRowContent(
             progress.content.serverRows, previous: content.serverRows
         )
-        content.collectionRows = progress.content.collectionRows
+        content.collectionRows = retainingCollectionRowContent(
+            progress.content.collectionRows, previous: content.collectionRows
+        )
         if let resume { content.continueWatching = resume }
         if newlyReady.contains(.recentlyAdded) {
             content.latest = progress.content.latest
@@ -1200,7 +1283,7 @@ public final class HomeViewModel {
                 : content.libraries + progress.content.libraries.filter { library in
                     !content.libraries.contains { $0.key == library.key }
                 }
-            content.librarySections = Self.plannedLibrarySections(
+            let planned = Self.plannedLibrarySections(
                 libraries: inventory, visibility: visibility
             ).compactMap { planned in
                 if let fresh = arrived[planned.id] { return fresh }
@@ -1208,14 +1291,18 @@ public final class HomeViewModel {
                 if ready.contains(.libraries) { return nil }
                 return planned
             }
+            content.librarySections = retainingLibraryRowContent(planned, previous: content.librarySections)
         }
         content = applyingLoadMutations(to: content)
         publishedLoadRows.formUnion(ready)
+        receivedLiveRows = Self.retainedReadyRows(
+            receivedLiveRows.union(ready), content: content, failures: progress.failures, visibility: visibility
+        )
         // Publish failures with reconciled content, never across an await that
         // could replace a focused loading row before its usable cards arrive.
         rowFailures = progress.failures
         continueWatchingDiagnostic = progress.continueWatchingDiagnostic
-        loadingRows = progress.loadingRows
+        loadingRows = progress.loadingRows.subtracting(receivedLiveRows)
         let publication = PerformanceDiagnostics.shared.begin(.homePublish)
         if state.value != content { state = .loaded(content) }
         publication?.finish(.succeeded)
@@ -1228,16 +1315,41 @@ public final class HomeViewModel {
         }
     }
 
+    private func applying(
+        _ mutation: MediaItemMutation, toContinueWatching items: [MediaItem]
+    ) -> [MediaItem] {
+        items.compactMap { item in
+            if mutation.targets(item),
+               mutation.played == true || mutation.resumePosition == 0 {
+                return nil
+            }
+            return apply(mutation, to: item)
+        }
+    }
+
+    private static func retainedReadyRows(
+        _ ready: Set<HomeRowKind>, content: Content, failures: [HomeRowKind: AppError],
+        visibility: HomeLibraryVisibility
+    ) -> Set<HomeRowKind> {
+        ready.filter { row in
+            guard failures[row] != nil else { return true }
+            switch row {
+            case .continueWatching: return !content.continueWatching.isEmpty
+            case .recentlyAdded:
+                return (content.recentlyAddedCandidates ?? content.latest).contains {
+                    $0.isVisibleOnHome(isLibraryVisible: visibility.isEnabled)
+                        && (!visibility.hideWatchedRecentlyAdded || !HomeRecentlyAddedPolicy.isWatched($0))
+                }
+            case .watchlist: return !content.watchlist.isEmpty
+            case .libraries: return content.libraries.contains(where: visibility.isVisibleOnHome)
+            }
+        }
+    }
+
     private func applyingLoadMutations(to content: Content) -> Content {
         var content = content
         for mutation in mutationsDuringLoad {
-            content.continueWatching = content.continueWatching.compactMap { item in
-                if mutation.targets(item),
-                   mutation.played == true || (mutation.resumePosition == 0 && mutation.played != false) {
-                    return nil
-                }
-                return apply(mutation, to: item)
-            }
+            content.continueWatching = applying(mutation, toContinueWatching: content.continueWatching)
             content.latest = content.latest.map { apply(mutation, to: $0) }
             content.recentlyAddedCandidates = content.recentlyAddedCandidates?.map { apply(mutation, to: $0) }
             content.serverRows = applying(mutation, to: content.serverRows)
@@ -1261,12 +1373,15 @@ public final class HomeViewModel {
     ) async {
         let pending = await pendingWatchMutations()
         let recency = await recentlyAppliedRecency()
-        guard !Task.isCancelled,
+        guard !Task.isCancelled, canLoadContent,
               generation == loadGeneration, currentVisibility() == visibility,
               accounts.contains(where: { $0.account.id == accountID }) else { return }
-        detailResumeByAccount[accountID] = Self.reconcileContinueWatching(
+        let reconciled = Self.reconcileContinueWatching(
             items, pending: pending, appliedRecency: recency
         ).filter { $0.sourceAccountID == accountID }
+        detailResumeByAccount[accountID] = mutationsDuringLoad.reduce(reconciled) { items, mutation in
+            applying(mutation, toContinueWatching: items)
+        }
     }
 
     /// Applies a watched-state or watchlist mutation to the loaded rows **in
@@ -1312,13 +1427,7 @@ public final class HomeViewModel {
             if completedEpisode { schedulePlaybackReload() }
         }
         for (accountID, items) in detailResumeByAccount {
-            detailResumeByAccount[accountID] = items.compactMap { item in
-                if mutation.targets(item),
-                   mutation.played == true || (mutation.resumePosition == 0 && mutation.played != false) {
-                    return nil
-                }
-                return apply(mutation, to: item)
-            }
+            detailResumeByAccount[accountID] = applying(mutation, toContinueWatching: items)
         }
         guard case var .loaded(content) = state else {
             // There may be no card to update yet, but a completed episode still
@@ -1403,7 +1512,7 @@ public final class HomeViewModel {
         // viewer taking it off deliberately. Distinguished from "unchanged" by the
         // value being explicitly 0 rather than absent: `nil` means this mutation
         // says nothing about position, while 0 says there is no longer one.
-        let clearedResume = mutation.resumePosition == 0 && mutation.played != false
+        let clearedResume = mutation.resumePosition == 0
         if mutation.played == true || clearedResume {
             content.continueWatching.removeAll { mutation.targets($0) }
             unconfirmedContinueWatchingIDs.subtract(
@@ -1487,10 +1596,43 @@ public final class HomeViewModel {
         }
     }
 
+    private func retainingLibraryRowContent(
+        _ groups: [HomeLibrarySectionGroup], previous: [HomeLibrarySectionGroup]
+    ) -> [HomeLibrarySectionGroup] {
+        let cached = Dictionary(previous.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        return groups.map { group in
+            guard let previous = cached[group.id] else { return group }
+            var group = group
+            let pending = group.loadingRows.union(group.failures.keys)
+            let freshIDs = Set(group.sections.map(\.id))
+            group.sections += previous.sections.filter {
+                pending.contains(LibraryHomeRowKind(rawValue: $0.id) ?? .hubs) && !freshIDs.contains($0.id)
+            }
+            return group
+        }
+    }
+
+    private func retainingCollectionRowContent(
+        _ rows: [HomeCollectionRow], previous: [HomeCollectionRow]
+    ) -> [HomeCollectionRow] {
+        rows.map { row in
+            guard row.isLoading || row.failure != nil,
+                  let cached = previous.first(where: { $0.definition == row.definition }) else { return row }
+            var row = row
+            row.items = cached.items
+            row.hasMore = cached.hasMore
+            return row
+        }
+    }
+
     private func applying(_ mutation: MediaItemMutation, to rows: [HomeServerRow]) -> [HomeServerRow] {
         rows.map { row in
             var row = row
             row.items = row.items.compactMap { item in
+                if row.definition.section.kind == .continueWatching, mutation.targets(item),
+                   mutation.played == true || mutation.resumePosition == 0 {
+                    return nil
+                }
                 if row.definition.section.kind == .nextUp, mutation.targets(item),
                    mutation.played == true || (mutation.resumePosition ?? 0) > 0 {
                     return nil
@@ -1514,6 +1656,10 @@ public final class HomeViewModel {
 
     private func applying(_ mutation: MediaItemMutation, to section: LibrarySection) -> [MediaItem] {
         let items: [MediaItem] = section.items.compactMap { item in
+            if section.id == "continueWatching", mutation.targets(item),
+               mutation.played == true || mutation.resumePosition == 0 {
+                return nil
+            }
             if section.id == "nextUp", mutation.targets(item),
                mutation.played == true || (mutation.resumePosition ?? 0) > 0 {
                 return nil
@@ -2230,7 +2376,8 @@ public final class HomeViewModel {
     }
 
     private func armCollectionRefresh() {
-        guard !isLoading, state.value != nil, collectionRefreshTask == nil, !collectionRefreshQueue.isEmpty else { return }
+        guard canLoadContent, !isLoading, state.value != nil,
+              collectionRefreshTask == nil, !collectionRefreshQueue.isEmpty else { return }
         collectionRefreshWorkerGeneration &+= 1
         let workerGeneration = collectionRefreshWorkerGeneration
         collectionRefreshTask = Task(priority: .utility) { [weak self] in
@@ -2396,7 +2543,7 @@ public final class HomeViewModel {
 
         func targetKey(_ accountID: String, _ itemID: String) -> String { accountID + "\u{1}" + itemID }
         let pendingByTarget: [String: [WatchMutation]] = pending.reduce(into: [:]) { acc, m in
-            for t in m.targets { acc[targetKey(t.accountID, t.itemID), default: []].append(m) }
+            for t in m.optimisticTargets { acc[targetKey(t.accountID, t.itemID), default: []].append(m) }
         }
 
         func newestMatch(for item: MediaItem) -> WatchMutation? {
@@ -2412,9 +2559,18 @@ public final class HomeViewModel {
             return best
         }
 
+        let candidates = items + carriedForward(
+            carryForward,
+            fetched: items,
+            pending: pending,
+            appliedRecency: appliedRecency,
+            serverConfirmed: serverConfirmed,
+            now: now,
+            window: carryForwardWindow
+        )
         var overlaid: [MediaItem] = []
-        overlaid.reserveCapacity(items.count)
-        for rawItem in items {
+        overlaid.reserveCapacity(candidates.count)
+        for rawItem in candidates {
             // Undo any server drain-time timestamp inflation before the pending
             // overlay reads the card's recency, so an offline-drained Plex resume
             // can't leave a stale play floating at the top.
@@ -2423,10 +2579,15 @@ public final class HomeViewModel {
                 : clampInflatedRecency(rawItem, appliedRecency: appliedRecency, now: now, clampFreshness: clampFreshness)
             guard let m = newestMatch(for: item) else { overlaid.append(item); continue }
             // Ignore a pending write the server has already superseded with a newer play.
-            guard m.capturedAt >= (item.lastPlayedAt ?? .distantPast) else { overlaid.append(item); continue }
+            let observedReset = m.played == false && m.clearResume
+                && hasObservedPlayback(item, in: m)
+            guard m.capturedAt >= (item.lastPlayedAt ?? .distantPast) || observedReset else {
+                overlaid.append(item)
+                continue
+            }
 
-            if m.played == true {
-                // Finished / marked-watched: the title leaves Continue Watching.
+            if m.played == true || m.clearResume || m.resumePosition == 0 {
+                // Finished, reset or dismissed: the stale resume must not return.
                 continue
             }
             guard let resume = m.resumePosition, resume > 0 else {
@@ -2447,16 +2608,23 @@ public final class HomeViewModel {
             }
             overlaid.append(updated)
         }
-        overlaid.append(contentsOf: carriedForward(
-            carryForward,
-            fetched: items,
-            pending: pending,
-            appliedRecency: appliedRecency,
-            serverConfirmed: serverConfirmed,
-            now: now,
-            window: carryForwardWindow
-        ))
         return HomeAggregator.sortedByRecency(overlaid.filter(ContinueWatchingPolicy.admits))
+    }
+
+    private nonisolated static func hasObservedPlayback(_ item: MediaItem, in mutation: WatchMutation) -> Bool {
+        if item.sources.isEmpty {
+            guard let account = item.sourceAccountID,
+                  let observed = mutation.observedLastPlayedAt["\(account):\(item.id)"] else { return false }
+            return (item.lastPlayedAt ?? .distantPast) <= observed
+        }
+        var latestObserved = mutation.capturedAt
+        for source in item.sources {
+            guard let playedAt = source.lastPlayedAt else { continue }
+            let observed = mutation.observedLastPlayedAt["\(source.accountID):\(source.itemID)"] ?? mutation.capturedAt
+            guard playedAt <= max(mutation.capturedAt, observed) else { return false }
+            latestObserved = max(latestObserved, playedAt)
+        }
+        return (item.lastPlayedAt ?? .distantPast) <= latestObserved
     }
 
     /// Cards on screen that the fresh feed left out, kept only while a write for
@@ -2673,12 +2841,13 @@ public final class HomeViewModel {
     /// The merge and equality check run off MainActor. A content revision protects
     /// newer reloads and watch mutations while that immutable snapshot is processed.
     public func reenrich() async {
+        guard canLoadContent else { return }
         reenrichGeneration &+= 1
         let generation = reenrichGeneration
         let serverInfoMap = accounts.sourceServerInfo()
         let sources = identitySources
 
-        while !Task.isCancelled, generation == reenrichGeneration {
+        while !Task.isCancelled, canLoadContent, generation == reenrichGeneration {
             guard case let .loaded(current) = state else { return }
             let revision = stateRevision
             // Identity graph traversal and title normalization can take seconds
@@ -2710,7 +2879,7 @@ public final class HomeViewModel {
                 merge.cancel()
             }
 
-            guard !Task.isCancelled, generation == reenrichGeneration else { return }
+            guard !Task.isCancelled, canLoadContent, generation == reenrichGeneration else { return }
             // A reload or watch mutation can land while the merge is running.
             // Re-fold that newer content instead of restoring stale cards or progress.
             guard stateRevision == revision else { continue }
@@ -2729,6 +2898,7 @@ public final class HomeViewModel {
     public func scheduleReenrich(
         onSettled: @escaping @MainActor () -> Void = {}
     ) {
+        guard canLoadContent else { return }
         reenrichTask?.cancel()
         reenrichTask = Task { [weak self] in
             try? await Task.sleep(for: Self.reenrichDebounce)

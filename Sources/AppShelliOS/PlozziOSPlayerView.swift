@@ -65,14 +65,19 @@ struct PlozziOSPlayerView: View {
     /// See the bisect note in `body`.
 
     let request: PlozziOSPlaybackRequest
-    let provider: any MediaProvider
+    let initialProvider: any MediaProvider
+    /// A title from the Continue Watching tab can live on
+    /// another server, so the player follows it there.
+    @State private var switchedProvider: (any MediaProvider)?
+    @Environment(HomeViewModel.self) private var homeViewModel: HomeViewModel?
+    private var provider: any MediaProvider { switchedProvider ?? initialProvider }
 
     init(
         request: PlozziOSPlaybackRequest, provider: any MediaProvider,
         orientation: PlozziOSPlayerOrientation
     ) {
         self.request = request
-        self.provider = provider
+        self.initialProvider = provider
         self.orientation = orientation
         _activePlaylist = State(initialValue: request.playlist)
     }
@@ -283,6 +288,56 @@ struct PlozziOSPlayerView: View {
                 handoffTask = nil
             }
         }
+        // A title picked in the player's Continue Watching tab.
+        // Stopping the current title saves its position; the picked one starts
+        // at its own resume point, on its own server.
+        .onChange(of: viewModel?.pendingContinueWatching?.stablePresentationID) { _, nextID in
+            guard nextID != nil,
+                  let outgoing = viewModel,
+                  let candidate = outgoing.pendingContinueWatching,
+                  handoffTask == nil else { return }
+            handoffTask = Task { @MainActor in
+                let next: MediaItem
+                let nextProvider: any MediaProvider
+                do {
+                    guard let session = playbackSession else { throw CancellationError() }
+                    guard let candidateProvider = appModel.provider(for: candidate) else {
+                        throw AppError.invalidResponse
+                    }
+                    next = try await prepareVersion(candidate, session: session, using: candidateProvider)
+                    guard let resolvedProvider = appModel.provider(for: next) else {
+                        throw AppError.invalidResponse
+                    }
+                    nextProvider = resolvedProvider
+                } catch is CancellationError {
+                    handoffTask = nil
+                    if isPresented { dismiss() }
+                    return
+                } catch {
+                    outgoing.cancelContinueWatchingSelection()
+                    handoffTask = nil
+                    showVersionChoiceFailure(error)
+                    return
+                }
+                await outgoing.stop()
+                guard !Task.isCancelled, isPresented, viewModel === outgoing,
+                      isCurrentPlaybackSession else {
+                    handoffTask = nil
+                    return
+                }
+                activePlaylist = nil
+                switchedProvider = nextProvider
+                let incoming = makeViewModel(item: next, startPosition: next.resumePosition ?? 0)
+                guard !Task.isCancelled, isPresented else {
+                    await incoming.stop()
+                    return
+                }
+                viewModel = incoming
+                activeItem = next
+                playerIdentity = UUID()
+                handoffTask = nil
+            }
+        }
         .onChange(of: viewModel?.pendingPlaylistSelection?.index) { _, index in
             guard let index, let playlist = activePlaylist,
                   let outgoing = viewModel,
@@ -356,6 +411,7 @@ struct PlozziOSPlayerView: View {
         guard item.effectiveDiscPlayback(default: appModel.settings.playback.settings.discPlayback) != .openMenu else {
             return false
         }
+        guard !appModel.isOfflineMode else { return false }
         let deviceSettings = ExternalPlayerSettingsModel.shared
         deviceSettings.migrateIfNeeded(from: appModel.settings.playback.settings.externalPlayer)
         guard item.effectiveExternalPlayer(default: deviceSettings.settings).player != .builtIn else { return false }
@@ -379,14 +435,15 @@ struct PlozziOSPlayerView: View {
     }
 
     private func prepareVersion(
-        _ item: MediaItem, session: PlozziOSAppModel.PlaybackSession
+        _ item: MediaItem, session: PlozziOSAppModel.PlaybackSession,
+        using selectedProvider: (any MediaProvider)? = nil
     ) async throws -> MediaItem {
         let model = appModel
         let snapshot = model.identityIndex.identitySnapshotStore.current
         let opened = item.effectiveDiscPlayback(default: model.settings.playback.settings.discPlayback) == .openMenu
             ? item.requestingDiscPlayback(.openMenu) : item
         let selected = try await versionChoice.prepare(
-            opened, provider: provider, settings: model.settings.playback,
+            opened, provider: selectedProvider ?? provider, settings: model.settings.playback,
             preferences: model.versionPreferences,
             offlineResolver: model.downloads.offlineResolver,
             sourceResolver: crossServerSourceResolver(
@@ -603,6 +660,9 @@ struct PlozziOSPlayerView: View {
                 // item's server, so that is whose person ids it holds.
                 navigateToPerson(person, item.sourceAccountID)
             }
+        }
+        viewModel.continueWatchingSnapshot = { [homeViewModel] in
+            homeViewModel?.state.value?.continueWatching ?? []
         }
         return viewModel
     }

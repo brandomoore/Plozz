@@ -48,12 +48,32 @@ final class DownloadNetworkPolicyTests: XCTestCase {
             storageBudgetBytes: 5_000,
             maxConcurrentDownloads: 2,
             maximumBytesPerSecond: 1_250_000,
-            cappedBackgroundBehavior: .continueAtFullSpeed,
-            includesAllAudioTracks: true,
-            includesTextSubtitleTracks: false
+            cappedBackgroundBehavior: .continueAtFullSpeed
         )
         let data = try JSONEncoder().encode(policy)
         XCTAssertEqual(try JSONDecoder().decode(DownloadNetworkPolicy.self, from: data), policy)
+    }
+
+    func testRetiredTrackPreferencesDoNotAffectTheRemainingProfilePolicy() throws {
+        let expected = DownloadNetworkPolicy(
+            allowsExpensiveNetwork: true, pausesOnConstrainedNetwork: false,
+            quality: .hd720, storageBudgetBytes: 5_000, maxConcurrentDownloads: 2,
+            maximumBytesPerSecond: 1_250_000, cappedBackgroundBehavior: .continueAtFullSpeed
+        )
+        var legacy = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: JSONEncoder().encode(expected)) as? [String: Any]
+        )
+        legacy["includesAllAudioTracks"] = true
+        legacy["includesTextSubtitleTracks"] = false
+        let restored = try JSONDecoder().decode(
+            DownloadNetworkPolicy.self, from: JSONSerialization.data(withJSONObject: legacy)
+        )
+        XCTAssertEqual(restored, expected)
+        let saved = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: JSONEncoder().encode(restored)) as? [String: Any]
+        )
+        XCTAssertNil(saved["includesAllAudioTracks"])
+        XCTAssertNil(saved["includesTextSubtitleTracks"])
     }
 
     func testLegacyDataSaverDecodesAsStandardDefinition() throws {

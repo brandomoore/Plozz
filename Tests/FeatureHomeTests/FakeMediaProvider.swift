@@ -68,6 +68,9 @@ class FakeMediaProvider: MediaProvider, InteractiveBrowseActivityReporting,
     /// Optional per-item trailers for `trailers(of:)`. Inherits the protocol's
     /// empty default when `nil`.
     var trailersByItem: [String: [MediaItem]]?
+    var trailersHandler: (@Sendable (String) async throws -> [MediaItem])?
+    private var _trailerCallCount: [String: Int] = [:]
+    var trailerCallCount: [String: Int] { withLock { _trailerCallCount } }
     var extrasByItem: [String: [MediaExtra]]?
     var extrasErrorsByItem: [String: AppError]?
     private var _extrasCallCount: [String: Int] = [:]
@@ -99,6 +102,7 @@ class FakeMediaProvider: MediaProvider, InteractiveBrowseActivityReporting,
     var supplementalFactsByItem: [String: ProbedStreamFacts] = [:]
     var supplementalFactsGate: (@Sendable () async -> Void)?
     var librariesGate: (@Sendable () async -> Void)?
+    var librariesError: AppError?
     var libraryItems: [MediaLibrary] = []
     var latestItems: [MediaItem] = []
     var containerGates: [String: @Sendable () async -> Void] = [:]
@@ -143,6 +147,7 @@ class FakeMediaProvider: MediaProvider, InteractiveBrowseActivityReporting,
     func libraries() async throws -> [MediaLibrary] {
         withLock { _librariesCallCount += 1 }
         await librariesGate?()
+        if let librariesError { throw librariesError }
         return libraryItems
     }
     /// How many times `libraries()` was called — lets a test prove whether the
@@ -223,6 +228,8 @@ class FakeMediaProvider: MediaProvider, InteractiveBrowseActivityReporting,
     }
 
     func trailers(for itemID: String) async throws -> [MediaItem] {
+        withLock { _trailerCallCount[itemID, default: 0] += 1 }
+        if let trailersHandler { return try await trailersHandler(itemID) }
         guard let trailersByItem else { return [] }
         return trailersByItem[itemID] ?? []
     }

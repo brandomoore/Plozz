@@ -27,7 +27,7 @@ final class IPTVHTTP: Sendable {
         configuration.timeoutIntervalForRequest = 45
         configuration.timeoutIntervalForResource = resourceTimeout
         redirects = IPTVRedirects(sensitiveValues: sensitiveValues, scope: redirectScope)
-        session = URLSession(configuration: configuration, delegate: redirects, delegateQueue: nil)
+        session = OfflineNetworkSession.make(configuration: configuration, delegate: redirects, delegateQueue: nil)
     }
 
     deinit { session.invalidateAndCancel() }

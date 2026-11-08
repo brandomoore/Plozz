@@ -20,6 +20,8 @@ public protocol MediaProvider: Sendable {
     /// Catalog/search cards may expose one external ID but omit the other
     /// namespaces needed to match a title across providers. Fetch full details
     /// before publishing those cards as complete identity-index/search evidence.
+    /// Fresh cards with a complete provider-supplied identity can opt out via
+    /// `MediaItem.catalogIdentityIsComplete`; inferred IDs alone cannot.
     var catalogIdentityRequiresEnrichment: Bool { get }
 
     /// Browsing metadata may omit lazily resolved files. Offer explicit source
@@ -27,6 +29,10 @@ public protocol MediaProvider: Sendable {
     var playbackInventoryRequiresEnrichment: Bool { get }
 
     // MARK: Library browsing
+
+    /// False for profile-local projections such as downloaded media, whose
+    /// libraries must not read or replace the shared server-viewer inventory.
+    var sharesLibraryInventoryAcrossProfiles: Bool { get }
 
     /// Top-level libraries/views available to the user.
     func libraries() async throws -> [MediaLibrary]
@@ -505,6 +511,7 @@ public extension MediaProvider {
     }
     var catalogIdentityRequiresEnrichment: Bool { false }
     var playbackInventoryRequiresEnrichment: Bool { false }
+    var sharesLibraryInventoryAcrossProfiles: Bool { true }
 
     func playbackItem(id: String) async throws -> MediaItem {
         try await item(id: id)

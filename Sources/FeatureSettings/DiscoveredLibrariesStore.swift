@@ -38,13 +38,25 @@ public final class DiscoveredLibrariesStore {
 
     public init() {}
 
+    public func seed(
+        libraries: [AggregatedLibrary], cachedAccountIDs: Set<String>, accountIDs: Set<String>
+    ) {
+        let current = libraries.filter { accountIDs.contains($0.accountID) }
+        state = current.isEmpty
+            ? (accountIDs.isSubset(of: cachedAccountIDs) ? .empty : .idle)
+            : .loaded(current)
+        stateBeforeRefresh = state
+        unreachableAccountIDs = []
+        failures = [:]
+    }
+
     @discardableResult
     public func beginRefresh(accountIDs: Set<String>) -> UUID {
         let request = UUID()
         if refreshes.isEmpty { stateBeforeRefresh = state }
         refreshes[request] = accountIDs
         refreshingAccountIDs.formUnion(accountIDs)
-        if state.value == nil {
+        if state.value == nil, state != .empty, !accountIDs.isEmpty {
             state = .loading
         }
         return request

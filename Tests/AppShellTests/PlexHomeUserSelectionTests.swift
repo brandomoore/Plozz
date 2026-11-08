@@ -38,6 +38,7 @@ final class PlexHomeUserSelectionTests: XCTestCase {
             accountsProviders: hub, profilesModel: profiles,
             plexHomeUserTokenCache: PlexHomeUserTokenCache(store: InMemorySecureStore()),
             automaticSignInStore: startup,
+            offlineSignInStore: .init(secureStore: InMemorySecureStore()),
             switchProfile: { _ in XCTFail("Cancelling a proposed user must not switch Plozz profiles.") }
         )
         model.plexHomeUsersFetch = { _, _ in

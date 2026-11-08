@@ -3,6 +3,20 @@ import XCTest
 @testable import FeatureHomeCore
 
 final class HeroSeriesSynopsisTests: XCTestCase {
+    func testHeroResumePresentationUsesTheSharedThreshold() {
+        for surface in [HeroPresentationSurface.home, .detail] {
+            for position in [2.0, 59, 60, 120] {
+                let episode = MediaItem(
+                    id: "episode", title: "Episode", kind: .episode,
+                    runtime: 3600, resumePosition: position
+                )
+                let presentation = HeroPresentation(item: episode, artworkStyle: .landscape, surface: surface)
+                XCTAssertEqual(presentation.isResumable, position >= 60)
+                XCTAssertEqual(episode.resumePosition, position)
+            }
+        }
+    }
+
     func testHomeUsesSeriesTextButDetailKeepsEpisodeTextAndSpoilerRules() throws {
         let series = MediaItem(
             id: "series", title: "La serie", kind: .series,

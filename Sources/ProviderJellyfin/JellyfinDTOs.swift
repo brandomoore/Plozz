@@ -150,6 +150,7 @@ struct BaseItemDto: Decodable {
     /// The original-language title (Jellyfin's `OriginalTitle`), present when it
     /// differs from the localised `Name`. Requested via `Fields=OriginalTitle`.
     let OriginalTitle: String?
+    let Status: String?
     let `Type`: String?
     /// Open-ended server classification for local bonus material.
     let ExtraType: String?

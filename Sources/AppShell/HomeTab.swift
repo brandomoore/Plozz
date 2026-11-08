@@ -208,8 +208,13 @@ struct HomeTab: View {
     private func preservesHeroTrailerOnReturn(itemID: String) -> Bool {
         guard case .home = root else { return false }
         return isActiveTab && path.isEmpty && playRequest == nil && resumePrompt == nil
-            && heroBackground.settings.homeTrailerEnabled
-            && heroRuntime.trailerReturnItemID == itemID
+            && heroBackground.settings.homeTrailerPlaybackEnabled
+            && heroRuntime.trailerReturnItemID.map {
+                $0 == itemID || (
+                    heroTrailerController.isShowing($0)
+                        && heroTrailerController.isShowing(itemID)
+                )
+            } == true
     }
 
     /// The stack's root screen, chosen by ``root``. Home, Watchlist, one library's
@@ -264,7 +269,7 @@ struct HomeTab: View {
     }
 
     private var sharedHomeViewModel: HomeViewModel {
-        runtime.homeViewModel.value(forKey: runtime.scopeKey) {
+        runtime.homeViewModel.value(forKey: runtime.scopeKey, onDiscard: { $0.invalidate() }) {
             HomeViewModel(
                 accounts: accounts,
                 profileNamespace: libraryPreferencesNamespace,
@@ -379,12 +384,24 @@ struct HomeTab: View {
                     // server picker), so best-source selection still happens there and
                     // at play time (requestPlay).
                     let item = $0
-                    let handsOffTrailer = heroTrailerController.isShowing(item.id)
+                    if heroBackground.settings.detailTrailerEnabled,
+                       heroTrailerController.isShowing(item.id) {
+                        do {
+                            let destination = try titleDetailViewModel(for: item, libraryOrigin: nil)
+                            heroTrailerController.handoffToDetail(
+                                itemID: item.id,
+                                destinationItemID: destination.state.value?.item.id
+                            )
+                        } catch {
+                            PlozzLog.app.error("Could not prepare hero trailer detail handoff: \(String(describing: error))")
+                        }
+                    }
+                    let handsOffTrailer = heroTrailerController.isClaimed(by: .detail, itemID: item.id)
                         && heroTrailerController.isPlaying
                     #if os(tvOS)
                     DetailTransitionNavigation.prepare(
                         for: item,
-                        artworkSnapshot: handsOffTrailer ? heroTrailerController.handoffImage : nil
+                        preservingVideo: handsOffTrailer
                     )
                     #endif
                     if handsOffTrailer {
@@ -860,8 +877,11 @@ struct HomeTab: View {
         private func perform() async {
             guard isActive else { return }
             guard let request = director.request else { return }
+            // Clearing the task's identity before awaiting cancels network-backed lookups.
+            let outcome = await reach(request)
+            guard !Task.isCancelled, director.request == request else { return }
+            director.finish(outcome)
             director.request = nil
-            director.finish(await reach(request))
         }
 
         /// Reaches the requested screen and answers with what the capture script
@@ -1201,6 +1221,7 @@ struct HomeTab: View {
             ratingsProvider: ratingsProvider,
             detailMetadataResolver: { await DetailMetadataResolver.household.resolve($0) },
             onlineTrailerResolver: { await DetailMetadataResolver.household.trailers(for: $0) },
+            trailerSettings: heroBackground,
             discoveryStatusRefresh: { await seer.requestAvailability(for: $0) },
             loadSeasonEpisodeRoster: { await seer.seasonEpisodeRoster(for: $0, seasonNumber: $1) },
             makeRelatedTitlesLoader: {
@@ -1257,6 +1278,14 @@ struct HomeTab: View {
         }
     }
 
+    private func titleDetailViewModel(
+        for item: MediaItem, libraryOrigin: String?
+    ) throws -> ItemDetailViewModel {
+        try detailViewModels.value(forKey: .title(for: item, libraryOrigin: libraryOrigin)) {
+            try detailEnvironment.makeViewModel(for: item, libraryOrigin: libraryOrigin)
+        }
+    }
+
     @ViewBuilder
     private func titleDetail(
         for item: MediaItem, libraryOrigin: String?,
@@ -1268,12 +1297,7 @@ struct HomeTab: View {
         // titles (available/partiallyAvailable) are NOT discovery: they resolve to
         // a real library copy via the identity index, so they keep the normal
         // playable detail page.
-        if let model = try? detailViewModels.value(
-            forKey: .title(for: item, libraryOrigin: libraryOrigin),
-            {
-                try detailEnvironment.makeViewModel(for: item, libraryOrigin: libraryOrigin)
-            })
-        {
+        if let model = try? titleDetailViewModel(for: item, libraryOrigin: libraryOrigin) {
             ItemDetailView(
                 viewModel: model,
                 spoilerSettings: spoilerSettings,
@@ -1313,6 +1337,10 @@ struct HomeTab: View {
     private func requestPlay(
         _ item: MediaItem, playlistOrigin: VideoPlaylistPlaybackOrigin? = nil
     ) {
+        guard !item.isTrailer || heroBackground.settings.trailerSources.allows(item) else {
+            PlozzLog.app.info("Trailer action suppressed by profile settings")
+            return
+        }
         if item.isYouTubeTrailer {
             Task { await trailerOpening.open(item) }
             return

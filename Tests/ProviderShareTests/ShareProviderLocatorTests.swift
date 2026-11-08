@@ -120,6 +120,34 @@ final class ShareProviderLocatorTests: XCTestCase {
         XCTAssertTrue(Set(listed).isDisjoint(with: denied))
     }
 
+    func testOfflineSubtitlesMatchExactVideoAndPreserveFlags() async throws {
+        let video = try RemoteFileEntry(relativePath: "movie.mkv", kind: .file, size: 100, strongETag: "\"a\"")
+        let own = try RemoteFileEntry(relativePath: "movie.en.forced.sdh.srt", kind: .file, size: 40)
+        let other = try RemoteFileEntry(relativePath: "movie-extended.fr.srt", kind: .file, size: 40)
+        let filesystem = LocatorFakeFileSystem(statEntry: video, listedEntries: [video, own, other],
+                                              fileContents: Data("1\n00:00:01,000 --> 00:00:02,000\nHello\n".utf8))
+        let provider = makeProvider(stat: video, fileSystem: filesystem)
+        addTeardownBlock { await provider.teardown() }
+        let tracks = try await provider.subtitleTracks(context: .init(itemID: "f:movie.mkv", mediaSourceID: "movie.mkv"))
+        XCTAssertEqual(tracks.count, 1)
+        XCTAssertTrue(tracks[0].isForced)
+        XCTAssertTrue(tracks[0].isHearingImpaired)
+        XCTAssertEqual(tracks[0].language, "en")
+        guard case .localFile(let file)? = tracks[0].deliverySource else { return XCTFail("Expected bounded local asset") }
+        XCTAssertFalse(try Data(contentsOf: file).isEmpty)
+    }
+
+    func testOfflineSubtitleListingFailureIsNotAnEmptySuccess() async throws {
+        let video = try RemoteFileEntry(relativePath: "movie.mkv", kind: .file, size: 100)
+        let filesystem = LocatorFakeFileSystem(statEntry: video, listingError: .authentication(reason: "test"))
+        let provider = makeProvider(stat: video, fileSystem: filesystem)
+        addTeardownBlock { await provider.teardown() }
+        do {
+            _ = try await provider.subtitleTracks(context: .init(itemID: "f:movie.mkv", mediaSourceID: "movie.mkv"))
+            XCTFail("The downloader needs the failure to report a warning")
+        } catch { XCTAssertEqual(error as? MediaTransportError, .authentication(reason: "test")) }
+    }
+
     func testPreparationDiagnosticCodesNeverIncludeAssociatedErrorText() {
         let secret = "https://private.example/file?token=private-secret"
         let cases: [(Error, String)] = [

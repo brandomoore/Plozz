@@ -865,6 +865,13 @@ public struct ShareProvider: MediaLibraryQueryProviding, MediaFileBrowsing {
         )
     }
 
+    public func subtitleTracks(context: RemoteSubtitleContext) async throws -> [MediaTrack] {
+        guard let path = context.mediaSourceID, !path.isEmpty else { throw AppError.notFound }
+        return try await playbackSource.discoverSidecarSubtitles(
+            forVideoRelPath: path, exactStemOnly: true, requiresCompleteResult: true
+        )
+    }
+
     public static func exactFileRelativePath(for item: MediaItem) -> String? {
         ShareCatalogID.relPath(forFileID: item.id)
     }

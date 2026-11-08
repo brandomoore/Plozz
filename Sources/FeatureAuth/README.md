@@ -159,6 +159,21 @@ in the default suite.
   than invalidating every provider and losing active Silo grants.
 - **Tokens NEVER leave the Keychain.** Never written to `UserDefaults`,
   never logged. `AccountStore` is split-storage by design.
+- **Offline entry retains normal profile and PIN authorization.** An online Plex
+  Home sign-in can establish a non-synchronizing, device-local Keychain proof for
+  that profile, account credential revision, device, and selected server user.
+  Protected users retain a salted `ProfileLock` verifier, not their PIN. Offline
+  entry restores only that user's server token; it does not install an owner or
+  cloud-discovery token, establish a new binding, or enable automatic sign-in.
+  A connection outage may use this proof in normal mode, so a saved, reachable
+  LAN server remains usable without plex.tv. Explicit credential rejection,
+  changed identity, cancellation, and TLS/protocol failures cannot authorize
+  cached entry. First-time sign-in still requires the provider to be reachable.
+  `RuntimeFeatureFlag.offlineMode` gates this fallback on both platforms.
+  Disabling it retains the proof but cannot use it to authorize entry or create
+  new offline proofs; ordinary online authentication is unchanged.
+  As with other offline authorization, remote PIN/account changes cannot be
+  learned until connectivity returns; an observed rejection revokes the proof.
 - **One Plex Home authorization across servers.** During one profile activation,
   a successful Home-user PIN authenticates that Plex login/user once. Other enabled
   servers with the same Plex account user ID and Home-user UUID reuse its in-memory

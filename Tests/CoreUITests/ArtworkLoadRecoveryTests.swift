@@ -7,6 +7,33 @@ import XCTest
 
 @MainActor
 final class ArtworkLoadRecoveryTests: XCTestCase {
+    func testCompletedDistinctLoadsReleaseTheirCacheAndDecodedImages() async throws {
+        let data = try imageData(.red)
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        var cache: ArtworkImageCache? = ArtworkImageCache(
+            derivedCache: LocalArtworkDerivedCache(directory: directory),
+            remoteDataLoader: { _ in data }
+        )
+        weak var observedCache = cache
+        var images: [WeakImage] = []
+        for index in 0..<64 {
+            let url = try XCTUnwrap(URL(string: "https://artwork.example.test/distinct-\(index).jpg"))
+            let image = await cache?.image(for: url, variant: .posterCard)
+            XCTAssertNotNil(image)
+            images.append(WeakImage(image))
+            XCTAssertEqual(cache?.pendingWaiterCount, 0)
+            XCTAssertNil(cache?.inFlightTaskForTesting(reference: .remote(url), variant: .posterCard))
+        }
+        cache = nil
+        try await waitUntil { observedCache == nil && images.allSatisfy { $0.image == nil } }
+    }
+
+    private final class WeakImage {
+        weak var image: UIImage?
+        init(_ image: UIImage?) { self.image = image }
+    }
+
     func testWindowRequestsKeepVariantAndBackgroundGenerationIdentity() async throws {
         let data = try imageData(.red)
         let loader = ControlledArtworkLoader(first: data, subsequent: data)

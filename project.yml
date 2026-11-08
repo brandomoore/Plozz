@@ -491,6 +491,7 @@ targets:
         basedOnDependencyAnalysis: false
     sources:
       - path: Tests/FocusHost
+      - path: Tests/iOSPresentationHost/DetailInformationFixture.swift
       - path: Tests/DiscoverPresentationSupport/DiscoverBrowseFixture.swift
       - path: Tests/PlaybackPresentationSupport/PlaybackFailureFixture.swift
       - path: Tests/PlaybackPresentationSupport/DiscReviewFixture.swift
@@ -587,6 +588,11 @@ targets:
     platform: iOS
     sources:
       - path: Tests/iOSPresentationTests
+      - path: Tests/PlaybackPresentationSupport/PlayerSongLayoutPreviewTests.swift
+      - path: Tests/PlaybackPresentationSupport/PlayerContinueWatchingPresentationTests.swift
+      - path: Tests/CoreModelsTests/ContinueWatchingInPlayerSettingsTests.swift
+      - path: Tests/FeaturePlaybackTests/ContinueWatchingSelectionTests.swift
+      - path: Tests/CoreUITests/DetailInformationPreviewTests.swift
       - path: Tests/EnginePlozzigenTests/SpatialAudioLayoutPreferenceTests.swift
       - path: Tests/FeaturePlaybackTests/NativePlaybackLifecycleTests.swift
       - path: Tests/FeatureLiveTVCoreTests/LiveTVPlaybackCoordinatorTests.swift
@@ -669,6 +675,11 @@ targets:
     platform: tvOS
     sources:
       - path: Tests/FocusIntegrationTests
+      - path: Tests/PlaybackPresentationSupport/PlayerSongLayoutPreviewTests.swift
+      - path: Tests/PlaybackPresentationSupport/PlayerContinueWatchingPresentationTests.swift
+      - path: Tests/CoreModelsTests/ContinueWatchingInPlayerSettingsTests.swift
+      - path: Tests/FeaturePlaybackTests/ContinueWatchingSelectionTests.swift
+      - path: Tests/CoreUITests/DetailInformationPreviewTests.swift
       - path: Tests/EnginePlozzigenTests/SpatialAudioLayoutPreferenceTests.swift
       - path: Tests/HomePresentationSupport
       - path: Tests/TestSupportPerformance

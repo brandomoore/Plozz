@@ -15,6 +15,7 @@ import MetadataKit
 /// owns none of the panel morph/focus-restore choreography — that stays in
 /// `PlayerControls` — so this is a pure content extraction.
 struct InfoPanelView: View {
+
     /// The regular-size numbers, for the tvOS transport's parking offset.
     ///
     /// `PlayerControls` needs a card height before the first frame — measuring
@@ -116,30 +117,32 @@ struct InfoPanelView: View {
         let thumbRadius = PlozzTheme.Metrics.mediumMediaCornerRadius
         let contentPad = metrics.contentPadding
 
-        return Group {
-            if metrics.showsThumbnail {
-                regularBody(thumbRadius: thumbRadius, thumbHeight: metrics.contentHeight)
-                    .padding(contentPad)
-            } else {
-                compactBody
-                    .padding(contentPad)
-                    // Hugs its content rather than filling to the ceiling: a
-                    // three-line synopsis should not leave a well of empty glass
-                    // under it. The natural copy is the NON-scrolling column —
-                    // see the modifier.
-                    .playerCardNaturalHeight(cap: metrics.cardHeight) {
-                        compactNaturalBody.padding(contentPad)
-                    }
+        return PlayerSongLayout(enabled: model.songRecognition.isAvailable, state: model.songRecognition.state, focus: $focus) {
+            Group {
+                if metrics.showsThumbnail {
+                    regularBody(thumbRadius: thumbRadius, thumbHeight: metrics.contentHeight)
+                        .padding(contentPad)
+                } else {
+                    compactBody
+                        .padding(contentPad)
+                        // Hugs its content rather than filling to the ceiling: a
+                        // three-line synopsis should not leave a well of empty glass
+                        // under it. The natural copy is the NON-scrolling column —
+                        // see the modifier.
+                        .playerCardNaturalHeight(cap: metrics.cardHeight) {
+                            compactNaturalBody.padding(contentPad)
+                        }
+                }
             }
+            // Pinned in the horizontal layout, where `cardHeight` is a promise the
+            // transport's parking offset depends on. The vertical card takes its
+            // content's height instead and stops at the ceiling: a column of text
+            // has no business holding a fixed height, and a short synopsis would
+            // leave a well of empty glass under it.
+            .modifier(PlayerCardHeight(metrics: metrics))
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .modifier(PanelGlassBackground(cornerRadius: metrics.panelCornerRadius, mediaGlass: true))
         }
-        // Pinned in the horizontal layout, where `cardHeight` is a promise the
-        // transport's parking offset depends on. The vertical card takes its
-        // content's height instead and stops at the ceiling: a column of text
-        // has no business holding a fixed height, and a short synopsis would
-        // leave a well of empty glass under it.
-        .modifier(PlayerCardHeight(metrics: metrics))
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .modifier(PanelGlassBackground(cornerRadius: metrics.panelCornerRadius, mediaGlass: true))
     }
 
     /// The phone card: no thumbnail, and the three columns folded into rows.
@@ -369,6 +372,9 @@ struct InfoPanelView: View {
             .frame(maxWidth: metrics.textColumnMaxWidth, alignment: .leading)
             .frame(maxWidth: .infinity, alignment: .leading)
             .frame(height: thumbHeight, alignment: .topLeading)
+            // The whole column is a focus section, so Left from the
+            // action buttons lands on the song row whatever its height.
+            .plozzFocusSection()
 
             // NO Spacer here. A Spacer is flexible and so is the text column, so
             // the two split the width left over by the thumbnail and the action
@@ -497,6 +503,14 @@ private struct PlayerInfoArtwork: View {
         }
         Color.clear
             .frame(width: height * 16.0 / 9.0, height: height)
+            .background {
+                GeometryReader { geometry in
+                    Color.clear.preference(
+                        key: PlayerSongArtworkBounds.self,
+                        value: [.info: geometry.frame(in: .global)]
+                    )
+                }
+            }
             .overlay {
                 FallbackAsyncImage(
                     references: references,

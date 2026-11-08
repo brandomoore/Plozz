@@ -763,7 +763,9 @@ extension View {
         /// Leave the film for a person's own page (in-player Cast card).
         onOpenPerson: @escaping (MediaPerson, String?) -> Void,
         /// Leave the film for one of a person's credits (in-player Cast card).
-        onOpenTitle: @escaping (MediaItem) -> Void
+        onOpenTitle: @escaping (MediaItem) -> Void,
+        /// Home's Continue Watching row, for the player's tab.
+        continueWatching: @escaping @MainActor () -> [MediaItem] = { [] }
     ) -> some View {
         fullScreenCover(item: playRequest) { request in
             PlayerPresentation(
@@ -798,6 +800,7 @@ extension View {
                         onOpenPerson(person, request.item.sourceAccountID)
                     }
                     model.controls.infoCard.openTitlePage = onOpenTitle
+                    model.continueWatchingSnapshot = continueWatching
                     return model
                 },
                 makeFailover: { failedItem, tried in

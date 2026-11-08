@@ -32,13 +32,22 @@ load-bearing.
   library is enriched with a one-time burst of calls, then effectively
   none.
 - `MetadataHTTP` — internal lightweight `URLSession` transport for enrichment.
-- `DetailMetadataResolver` — fills missing cast, directors, writers, studios and
-  genres after a provider's full detail response, using the same pipeline on
+- `DetailMetadataResolver` — fills missing cast, directors, writers, producers, composers, studios,
+  genres and confirmed title facts after a provider's full detail response, using the same pipeline on
   tvOS and iOS/iPadOS. Cast and crew are separate gaps: an existing cast does not
   hide missing directors, and adding cast never erases server crew. Source
   changes and cancellation discard stale results. Household source preferences
   and the current TMDB credential still apply.
   TMDB credits use the movie, series, season or episode endpoint as appropriate;
+  cast uses explicit billing order before deduplication and the upstream limit,
+  retaining response order for ties or absent billing and placing guest stars last.
+  Producer/executive-producer and composer gaps use the same scoped credits request
+  and preserve server-supplied groups; general department credits are not promoted.
+  The response retains scoped credits as matching evidence, including
+  roles already supplied by the server. A unique name plus an overlapping role on
+  that same title can join native and TMDB portraits through `creditIdentity`;
+  ambiguous names and conflicting identities stay separate. This display-only
+  link never replaces native person IDs, biography handles, or server role data.
   an episode never inherits a whole show's directing/writing credits. Exact
   external IDs take precedence and a failed ID lookup never falls back to a
   different title. A title-only match must agree on title and any supplied year.
@@ -54,6 +63,12 @@ load-bearing.
   less-identified query, even when a provider returns no IDs with its fields.
   TMDB transport failures report provider health, rather than caching an outage
   or revoked credential as an authoritative absence of credits.
+  Movie/series original language and series production status/catalog totals
+  use the existing identity-checked TMDB detail response, with sourced-field
+  provenance and gap-only merging. Discover requests the same fields. Unknown
+  statuses and nonpositive totals remain absent; local episode counts, empty
+  schedules and audio-selection heuristics are not evidence for these facts.
+  Series facts never propagate to seasons/episodes or personal-video mode.
   Artwork, playable identity, file/stream facts and Common Sense are not filled
   by this resolver.
 - `HeroDiscoveryProviding` — separate candidate-feed seam for TMDB,
@@ -179,6 +194,15 @@ Already identified, owned, unsupported, and personal-media items skip this work.
   Dedicated server square backgrounds take precedence on compact Home and detail
   heroes under Recommended or Library artwork preferences. They are not poster
   substitutes; an explicit online preference still uses this portrait lookup first.
+- **Landscape title artwork is a separate capability.** Artwork-only landscape
+  cards may request `landscapeCardURL` when native title art is absent. TMDB
+  selects language-tagged backdrops from its existing images response, preferring
+  the requested language, then English, then vote order. Untagged backgrounds
+  are not title-art candidates. Language metadata is a signal, not OCR.
+  Unsupported providers return no title-art result; ordinary hero ranking and
+  logos are unchanged. Cache keys isolate this role and language, and live
+  provider enablement/order still apply. Logo-composited cards request clean
+  backgrounds instead, avoiding an intentional second title over this artwork.
 - **No required user subscription or user-supplied key.** App credentials and
   keyless endpoints coexist; missing credentials disable only their provider.
 - **No UI imports.** Provider and composition logic stay outside the shells.

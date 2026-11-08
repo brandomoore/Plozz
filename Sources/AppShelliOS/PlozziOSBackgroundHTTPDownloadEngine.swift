@@ -264,7 +264,7 @@ struct PlozziOSBackgroundHTTPDownloadEngine:
             timeoutInterval: 20
         )
         request.httpMethod = "DELETE"
-        _ = try? await URLSession.shared.data(for: request)
+        _ = try? await OfflineNetworkSession.shared.data(for: request)
     }
 }
 
@@ -999,7 +999,7 @@ private final class BackgroundDownloadCoordinator:
         configuration.sessionSendsLaunchEvents = true
         configuration.isDiscretionary = false
         configuration.allowsCellularAccess = true
-        return URLSession(
+        return OfflineNetworkSession.make(
             configuration: configuration,
             delegate: self,
             delegateQueue: nil
@@ -1363,7 +1363,7 @@ private actor ForegroundManagedDownloadCoordinator {
             }
         }
 
-        let (stream, response) = try await URLSession.shared.bytes(
+        let (stream, response) = try await OfflineNetworkSession.shared.bytes(
             for: request, delegate: headers["X-Silo-Device-Id"] == nil ? nil : SiloDownloadRedirectDelegate(origin: url))
         try Task.checkCancellation()
         guard let response = response as? HTTPURLResponse else {

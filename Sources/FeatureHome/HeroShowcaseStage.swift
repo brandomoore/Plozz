@@ -271,7 +271,7 @@ struct HeroShowcaseReturnCue: UIViewRepresentable {
     static func dismantleUIView(_ view: CueView, coordinator: ()) { view.update(rowID: nil, index: nil) }
 
     final class CueView: UIView {
-        let arrow = UIView()
+        let arrow = HeroUpChevronView()
         var top: CGFloat = 48 {
             didSet { if oldValue != top { setNeedsLayout() } }
         }
@@ -284,18 +284,6 @@ struct HeroShowcaseReturnCue: UIViewRepresentable {
             isUserInteractionEnabled = false
             accessibilityElementsHidden = true
             accessibilityIdentifier = "hero-showcase-return-cue"
-            let stroke = CAShapeLayer()
-            let path = UIBezierPath()
-            path.move(to: CGPoint(x: 2, y: 11))
-            path.addLine(to: CGPoint(x: 22, y: 3))
-            path.addLine(to: CGPoint(x: 42, y: 11))
-            stroke.path = path.cgPath
-            stroke.strokeColor = UIColor.white.withAlphaComponent(0.6).cgColor
-            stroke.fillColor = UIColor.clear.cgColor
-            stroke.lineWidth = 5
-            stroke.lineCap = .round
-            stroke.lineJoin = .round
-            arrow.layer.addSublayer(stroke)
             arrow.alpha = 0
             addSubview(arrow)
         }
@@ -361,6 +349,27 @@ struct HeroShowcaseReturnCue: UIViewRepresentable {
             }
         }
     }
+}
+
+final class HeroUpChevronView: UIView {
+    init() {
+        super.init(frame: .zero)
+        isUserInteractionEnabled = false
+        let stroke = CAShapeLayer()
+        let path = UIBezierPath()
+        path.move(to: CGPoint(x: 2, y: 11))
+        path.addLine(to: CGPoint(x: 22, y: 3))
+        path.addLine(to: CGPoint(x: 42, y: 11))
+        stroke.path = path.cgPath
+        stroke.strokeColor = UIColor.white.withAlphaComponent(0.6).cgColor
+        stroke.fillColor = UIColor.clear.cgColor
+        stroke.lineWidth = 5
+        stroke.lineCap = .round
+        stroke.lineJoin = .round
+        layer.addSublayer(stroke)
+    }
+
+    required init?(coder: NSCoder) { nil }
 }
 
 /// Stable scene hosts scroll foregrounds together, with coordinated slower backdrops.
