@@ -7,6 +7,79 @@ import os
 
 @MainActor
 final class PlaybackDiagnosticsSamplerTests: XCTestCase {
+    func testRealtimeStatisticsRefreshAndClearAcrossMissingSamplesRouteChangesAndStop() {
+        let sampler = PlaybackDiagnosticsSampler()
+        defer { sampler.stop() }
+        var stats: EnginePlaybackStatistics? = .init(
+            recentBitrate: 40_000_000, averageBitrate: 30_000_000,
+            delivery: .local, deliveryBitrate: 600_000_000, sourceBytes: 9_000_000
+        )
+        var route = LiveChannelEngineRoute.localHLS
+        sampler.start(
+            player: nil, mode: .plozzigen, engineTelemetry: { .init(statistics: stats) },
+            liveRoute: { route }, includesSystemMetrics: false
+        )
+        sampler.sampleTick()
+        XCTAssertEqual(sampler.latest?.engineStatistics, stats)
+        XCTAssertNil(sampler.latest?.observedBitrate, "Local transfers are not the source's network rate")
+        stats = .init(recentBitrate: 12_000_000, sourceBytes: 10_000_000)
+        sampler.sampleTick()
+        XCTAssertEqual(sampler.latest?.engineStatistics, stats)
+        XCTAssertNil(sampler.latest?.engineStatistics?.deliveryBitrate)
+        stats = nil
+        sampler.sampleTick()
+        XCTAssertNil(sampler.latest?.engineStatistics)
+        stats = .init(recentBitrate: 15_000_000)
+        route = .nativeHLS
+        sampler.sampleTick()
+        XCTAssertNil(sampler.latest?.engineStatistics)
+        route = .software
+        sampler.sampleTick()
+        XCTAssertEqual(sampler.latest?.engineStatistics, stats)
+        sampler.stop()
+        XCTAssertNil(sampler.latest?.engineStatistics)
+        sampler.start(player: nil, mode: .plozzigen, includesSystemMetrics: false)
+        sampler.sampleTick()
+        XCTAssertNil(sampler.latest?.engineStatistics)
+    }
+
+    func testEngineSessionDropsTakePrecedenceOverInternalItemTotals() async throws {
+        let sampler = PlaybackDiagnosticsSampler(logReader: { _ in .init(droppedFrames: 2, stalls: 0) })
+        let player = AVPlayer(playerItem: AVPlayerItem(asset: AVMutableComposition()))
+        defer { sampler.stop() }
+        sampler.start(
+            player: player, mode: .plozzigen,
+            engineTelemetry: { .init(droppedFrameCount: 14) }, includesSystemMetrics: false
+        )
+        try await wait { sampler.sampleTick(); return sampler.latest?.stallCount == 0 }
+        XCTAssertEqual(sampler.latest?.droppedVideoFrames, 14)
+    }
+
+    func testNativeTransferredBytesFollowCurrentItemAndNeverLabelLocalTransfersAsNetwork() async throws {
+        for mode: PlaybackDiagnostics.PlaybackMode in [.directPlay, .remux, .transcode, .plozzigen] {
+            let sampler = PlaybackDiagnosticsSampler(logReader: { _ in
+                .init(transferredBytes: 123_456, stalls: 0)
+            })
+            let player = AVPlayer(playerItem: AVPlayerItem(asset: AVMutableComposition()))
+            defer { sampler.stop() }
+            sampler.start(player: player, mode: mode, includesSystemMetrics: false)
+            try await wait { sampler.sampleTick(); return sampler.latest?.stallCount == 0 }
+            XCTAssertEqual(sampler.latest?.transferredBytes, mode == .plozzigen ? nil : 123_456)
+            player.replaceCurrentItem(with: nil)
+            sampler.sampleTick()
+            XCTAssertNil(sampler.latest?.transferredBytes)
+        }
+    }
+
+    func testAccessLogCountersSumAllEntriesWithoutTreatingUnknownAsZeroOrOverflowing() {
+        XCTAssertEqual(PlaybackLogSnapshot.total([2, 0, 7]), 9)
+        XCTAssertEqual(PlaybackLogSnapshot.total([Int64(10_000), 20_000]), 30_000)
+        XCTAssertEqual(PlaybackLogSnapshot.total([0, 0]), 0)
+        XCTAssertNil(PlaybackLogSnapshot.total([Int]()))
+        XCTAssertNil(PlaybackLogSnapshot.total([2, -1]))
+        XCTAssertNil(PlaybackLogSnapshot.total([Int.max, 1]))
+    }
+
     func testConfirmedAudioTrackReplacesProviderSnapshotAndClearsMissingProperties() {
         let sampler = PlaybackDiagnosticsSampler()
         defer { sampler.stop() }

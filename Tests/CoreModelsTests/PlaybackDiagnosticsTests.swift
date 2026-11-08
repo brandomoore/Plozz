@@ -1,6 +1,32 @@
 import XCTest
 @testable import CoreModels
 
+final class EnginePlaybackStatisticsTests: XCTestCase {
+    func testUnavailableRatesAreNotZeroButRealZeroCountersAndSignedGapsSurvive() {
+        let value = EnginePlaybackStatistics(
+            recentBitrate: .nan, averageBitrate: .infinity, audioBridgeBitrate: -1,
+            deliveryBitrate: 0, deliveredBytes: 0, muxAVGapMilliseconds: -23.5,
+            cachedBytes: -1, sourceBytes: 0, producerRestarts: 0, muxedBytes: 0,
+            servedBytes: 0, serverRequests: 0, audioBridgeBytes: 0
+        )
+        XCTAssertNil(value.recentBitrate)
+        XCTAssertNil(value.averageBitrate)
+        XCTAssertNil(value.audioBridgeBitrate)
+        XCTAssertNil(value.deliveryBitrate)
+        XCTAssertNil(value.cachedBytes)
+        XCTAssertEqual(value.deliveredBytes, 0)
+        XCTAssertEqual(value.sourceBytes, 0)
+        XCTAssertEqual(value.producerRestarts, 0)
+        XCTAssertEqual(value.muxedBytes, 0)
+        XCTAssertEqual(value.servedBytes, 0)
+        XCTAssertEqual(value.serverRequests, 0)
+        XCTAssertEqual(value.audioBridgeBytes, 0)
+        XCTAssertEqual(value.muxAVGapMilliseconds, -23.5)
+        XCTAssertNil(EnginePlaybackStatistics(muxAVGapMilliseconds: .infinity).muxAVGapMilliseconds)
+        XCTAssertNil(EnginePlaybackStatistics().deliveredBytes)
+    }
+}
+
 final class PlaybackDiagnosticsAudioEncodingTests: XCTestCase {
     func testEncodingDescribesTheActiveEncoderRatherThanTheSourceCodecOrChannelCount() {
         let cases: [(String, LocalizedStringResource)] = [

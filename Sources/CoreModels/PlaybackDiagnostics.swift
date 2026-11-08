@@ -147,6 +147,9 @@ public struct PlaybackDiagnostics: Equatable, Sendable {
     public var indicatedBitrate: Double?
     /// Bitrate actually *observed* over the network, in bits/sec.
     public var observedBitrate: Double?
+    /// AVPlayer access-log bytes for the current item, summed across its entries.
+    public var transferredBytes: Int64?
+    public var engineStatistics: EnginePlaybackStatistics?
     public var videoCodec: String?
     /// Video codec profile, e.g. `Main 10`.
     public var videoProfile: String?

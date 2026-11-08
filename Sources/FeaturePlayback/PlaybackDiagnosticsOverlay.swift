@@ -106,6 +106,7 @@ struct PlaybackDiagnosticsOverlay: View {
                     subtitleSection(diagnostics)
                     if let live = diagnostics.liveStream { liveSection(live) }
                     playbackSection(diagnostics)
+                    engineSection(diagnostics.engineStatistics)
                     systemSection(diagnostics)
                 }
             } else {
@@ -153,6 +154,7 @@ struct PlaybackDiagnosticsOverlay: View {
         HStack(alignment: .top, spacing: 24) {
             VStack(alignment: .leading, spacing: 12) {
                 sourceSection(d)
+                engineSection(d.engineStatistics)
                 if let live = d.liveStream {
                     liveSection(live)
                 } else {
@@ -213,6 +215,9 @@ struct PlaybackDiagnosticsOverlay: View {
             }
             optionalRow(d.mode == .transcode ? Text("Stream") : Text("Source"), d.videoFormatText)
             optionalRow(LocalizedStringResource("Codec Tag", comment: "Playback diagnostics label for the technical codec identifier stored in the media container."), d.videoCodecTagText)
+            if let decoder = d.engineStatistics?.decoder {
+                row(LocalizedStringResource("Decoder", comment: "Playback diagnostics: the active video decoder reported by the engine."), decoder)
+            }
         }
     }
 
@@ -228,6 +233,8 @@ struct PlaybackDiagnosticsOverlay: View {
             }
             optionalRow(LocalizedStringResource("Sample Rate", comment: "Playback diagnostics label for the audio sampling frequency."), d.audioSampleRateText)
             optionalRow("Bitrate", d.audioBitrateText)
+            optionalRow(LocalizedStringResource("Bridge bitrate", comment: "Playback diagnostics: measured bitrate of locally converted audio, not the original audio track."),
+                        PlaybackDiagnostics.formatBitrate(d.engineStatistics?.audioBridgeBitrate))
             if d.mode == .plozzigen {
                 optionalRow(LocalizedStringResource("Encoding", comment: "Playback diagnostics: the active engine's audio encoding step, not the original recording's quality or the receiver's output."),
                             d.audioEncodingDescription)
@@ -298,6 +305,16 @@ struct PlaybackDiagnosticsOverlay: View {
                 ? .init("AVPlayer window", comment: "Playback diagnostics label for the internal AVPlayer seekable time range. Keep AVPlayer unchanged.")
                 : .init("Seekable", comment: "Playback diagnostics label for the time range available for seeking."), seekWindowText(d.seekWindowFacts))
             optionalRow(LocalizedStringResource("State", comment: "Playback diagnostics label for the current player state."), d.playbackStateText)
+            if presentation == .television, let recent = d.engineStatistics?.recentBitrate,
+               let average = d.engineStatistics?.averageBitrate {
+                row(LocalizedStringResource("Recent / avg", comment: "Playback diagnostics: combined audio and video bitrate, recent (~10 seconds) then session average, not download speed."),
+                    "\(PlaybackDiagnostics.formatBitrate(recent)) / \(PlaybackDiagnostics.formatBitrate(average))")
+            } else {
+                optionalRow(LocalizedStringResource("Recent bitrate", comment: "Playback diagnostics: combined video and audio bitrate over roughly the last ten seconds of played media, not download speed."),
+                            PlaybackDiagnostics.formatBitrate(d.engineStatistics?.recentBitrate))
+                optionalRow(LocalizedStringResource("Average bitrate", comment: "Playback diagnostics: combined video and audio bitrate averaged over media played in this session."),
+                            PlaybackDiagnostics.formatBitrate(d.engineStatistics?.averageBitrate))
+            }
             if presentation == .television {
                 row(LocalizedStringResource("Buffer", comment: "Playback diagnostics label for the player's buffered media and buffer health."), compactBufferText(d))
             } else {
@@ -325,12 +342,69 @@ struct PlaybackDiagnosticsOverlay: View {
                             ? Text(LocalizedStringResource("Memory limit reached", comment: "The playback read-ahead memory budget is full, not the device's total RAM."))
                             : Text(LocalizedStringResource("Cache limit reached", comment: "The playback read-ahead cache budget is full, not necessarily the device's disk.")))
                 }
+            } else if let bytes = d.engineStatistics?.cachedBytes {
+                row("Playback cache", bytesText(bytes))
             }
             optionalRow(LocalizedStringResource("Stalls", comment: "Playback diagnostics label for the count of playback stalls."), d.stallCount.map(String.init) ?? PlaybackDiagnostics.placeholder)
             row(LocalizedStringResource("Dropped", comment: "Playback diagnostics label for dropped video frames."), "\(d.droppedFramesText) frames")
             optionalRow("Declared stream bitrate", d.indicatedBitrateText)
             optionalRow(LocalizedStringResource("Network throughput", comment: "Playback diagnostics label for measured network data transfer rate, not encoded media bitrate."), d.observedBitrateText)
+            if let stats = d.engineStatistics {
+                if presentation == .television, let rate = stats.deliveryBitrate, let bytes = stats.deliveredBytes {
+                    row(stats.delivery == .local
+                        ? LocalizedStringResource("Local delivery", comment: "Playback diagnostics: transfer rate and, on TV, received bytes from the engine's local server to AVPlayer, not the media server's network rate.")
+                        : LocalizedStringResource("Source delivery", comment: "Playback diagnostics: source transfer rate followed by cumulative received bytes. The source can be a network stream or local file."),
+                        "\(PlaybackDiagnostics.formatBitrate(rate)) · \(bytesText(bytes))")
+                } else {
+                    optionalRow(stats.delivery == .local
+                        ? LocalizedStringResource("Local delivery", comment: "Playback diagnostics: transfer rate and, on TV, received bytes from the engine's local server to AVPlayer, not the media server's network rate.")
+                        : LocalizedStringResource("Source read rate", comment: "Playback diagnostics: measured delivery rate from the source, which can be a network stream or local file."),
+                        PlaybackDiagnostics.formatBitrate(stats.deliveryBitrate))
+                    if let bytes = stats.deliveredBytes {
+                        row(stats.delivery == .local
+                            ? LocalizedStringResource("Local transferred", comment: "Playback diagnostics: cumulative bytes received by AVPlayer from the engine's local server.")
+                            : LocalizedStringResource("Transferred", comment: "Playback diagnostics: cumulative bytes received from the source."),
+                            bytesText(bytes))
+                    }
+                }
+            } else if let bytes = d.transferredBytes {
+                row(LocalizedStringResource("Transferred", comment: "Playback diagnostics: cumulative bytes received from the source."), bytesText(bytes))
+            }
         }
+    }
+
+    @ViewBuilder
+    private func engineSection(_ stats: EnginePlaybackStatistics?) -> some View {
+        if let stats, stats.sourceBytes != nil || stats.producerRestarts != nil {
+            section("ENGINE") {
+                if let source = stats.sourceBytes {
+                    if let muxed = stats.muxedBytes {
+                        row(LocalizedStringResource("Read / muxed", comment: "Playback diagnostics: source bytes read, followed by bytes emitted by the local muxer. Values appear in that order."),
+                            "\(bytesText(source)) / \(bytesText(muxed))")
+                    } else {
+                        row(LocalizedStringResource("Source read", comment: "Playback diagnostics: cumulative bytes fetched from the original source."), bytesText(source))
+                    }
+                }
+                if let served = stats.servedBytes, let requests = stats.serverRequests {
+                    row(LocalizedStringResource("Local server", comment: "Playback diagnostics: bytes sent and request count for the engine's local media server."),
+                        Text("\(bytesText(served)) · \(requests) requests"))
+                }
+                if let restarts = stats.producerRestarts {
+                    row(LocalizedStringResource("Restarts", comment: "Playback diagnostics: cumulative local media-producer restarts, including seeks."), restarts.formatted(.number.locale(locale)))
+                }
+                if let bytes = stats.audioBridgeBytes {
+                    row(LocalizedStringResource("Bridge buffer", comment: "Playback diagnostics: currently retained bytes in the audio conversion bridge."), bytesText(bytes))
+                }
+                if let gap = stats.muxAVGapMilliseconds, gap.isFinite {
+                    row(LocalizedStringResource("Mux A/V gap", comment: "Playback diagnostics: the signed difference between the producer's audio and video timestamps, not measured output lip sync."),
+                        "\(gap.formatted(.number.precision(.fractionLength(1)).locale(locale))) ms")
+                }
+            }
+        }
+    }
+
+    private func bytesText(_ bytes: Int64) -> String {
+        bytes.formatted(ByteCountFormatStyle(style: .binary, allowedUnits: [.kb, .mb, .gb], spellsOutZero: false).locale(locale))
     }
 
     @ViewBuilder
@@ -339,6 +413,9 @@ struct PlaybackDiagnosticsOverlay: View {
             optionalRow(LocalizedStringResource("playback.diagnostics.device", defaultValue: "Device", comment: "Playback diagnostics label for the hardware model and operating system. Not the audio-language option that follows device settings."), d.deviceText)
             optionalRow(LocalizedStringResource("Disk", comment: "Playback diagnostics label for free and total device storage."), diskSpaceText(d.diskSpaceFacts))
             optionalRow(LocalizedStringResource("Memory", comment: "Playback diagnostics label for app memory usage."), d.memoryText)
+            if let bytes = d.engineStatistics?.residentMemoryBytes {
+                row(LocalizedStringResource("Resident memory", comment: "Playback diagnostics: process resident set size reported by the engine, distinct from physical memory footprint."), bytesText(bytes))
+            }
             optionalRow(LocalizedStringResource("Thermal", comment: "Playback diagnostics label for the device's thermal condition."), d.thermalResource)
             optionalRow(LocalizedStringResource("Instances", comment: "Playback diagnostics label for live playback object counts."), d.liveInstancesText)
         }
@@ -357,7 +434,7 @@ struct PlaybackDiagnosticsOverlay: View {
                 VStack(alignment: .leading, spacing: 12) { rows() }
                     .frame(maxWidth: .infinity, alignment: .leading)
             } else {
-                VStack(alignment: .leading, spacing: 3) { rows() }
+                VStack(alignment: .leading, spacing: 2) { rows() }
             }
         }
     }

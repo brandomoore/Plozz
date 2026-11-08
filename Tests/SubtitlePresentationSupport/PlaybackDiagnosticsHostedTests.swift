@@ -40,7 +40,10 @@ final class PlaybackDiagnosticsHostedTests: XCTestCase {
         try await assertControlClearance(diagnostics: fixture, expectedTokens: [
             "AetherEngine", "v7.44.0", "APAC", "7.1.4", "HDMI", "Thermal", "engines 2", "Stalls", "Dropped",
             "33.2", "82.0", "45.0", "10.0", "24.00", "23 fps live", "P8", "10-bit", "DOVIWITHHDR10",
-            "Playback cache", "512 MB", "Encoding", "Lossy encoding"
+            "Playback cache", "512 MB", "Encoding", "Lossy encoding",
+            "Recent / avg", "Bridge bitrate", "Local delivery", "1.86 GB", "Read-ahead target", "10 min",
+            "Read / muxed", "Local server", "Restarts", "Bridge buffer", "Resident memory", "Mux A/V gap",
+            "51.5", "42.7", "650.0", "7.4", "-23.5", "Decoder"
         ])
     }
 
@@ -57,7 +60,7 @@ final class PlaybackDiagnosticsHostedTests: XCTestCase {
         diagnostics.liveStream?.variantBitrate = 8_000_000
         try await assertControlClearance(diagnostics: diagnostics, expectedTokens: [
             "Native HLS", "Rewind", "Segments", "123 req", "503", "1080", "HDMI",
-            "Thermal", "engines 2", "Stalls", "Dropped", "82.0"
+            "Thermal", "engines 2", "Stalls", "Dropped", "82.0", "Recent / avg", "Read / muxed", "Local delivery", "10 min"
         ])
     }
 
@@ -182,7 +185,7 @@ final class PlaybackDiagnosticsHostedTests: XCTestCase {
             audioOutput: .init(renderingMode: .format("Dolby Atmos"), connections: [.format("HDMI")]),
             subtitleDescription: "SubRip · English", container: "mkv", mode: .plozzigen,
             hdr: .dolbyVision, engineName: "AetherEngine v7.44.0", bufferedSecondsAhead: 10, engineBufferedSecondsAhead: 45,
-            sessionCache: .init(residentBytes: 536_870_912, effectiveBudgetBytes: 2_147_483_648),
+            sessionCache: .init(residentBytes: 536_870_912, effectiveBudgetBytes: 2_147_483_648, targetSeconds: 600),
             stallCount: 0, droppedVideoFrames: 0, frameRate: 24, observedFps: 23,
             deviceModel: "Apple TV 4K (2nd gen)", deviceMemoryBytes: 3_000_000_000,
             freeDiskBytes: 600_000_000, totalDiskBytes: 32_000_000_000,
@@ -194,6 +197,14 @@ final class PlaybackDiagnosticsHostedTests: XCTestCase {
             seekableStartSeconds: 0, seekableEndSeconds: 7488, playbackState: "Ready · Playing"
         )
         value.sourceProvider = .plex
+        value.engineStatistics = .init(
+            decoder: "AVPlayer", recentBitrate: 51_500_000, averageBitrate: 42_700_000,
+            audioBridgeBitrate: 7_400_000, delivery: .local, deliveryBitrate: 650_000_000,
+            deliveredBytes: 2_000_000_000, muxAVGapMilliseconds: -23.5, cachedBytes: 536_870_912,
+            sourceBytes: 3_000_000_000, producerRestarts: 2, muxedBytes: 2_500_000_000,
+            servedBytes: 2_000_000_000, serverRequests: 153, audioBridgeBytes: 1_048_576,
+            residentMemoryBytes: 700_000_000
+        )
         value.serverName = "Fixture server"
         value.streamTransport = PlaybackDiagnostics.streamTransportFacts(url: URL(string: "http://127.0.0.1:12345/master.m3u8"))
         return value

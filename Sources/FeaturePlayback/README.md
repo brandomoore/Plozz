@@ -1233,6 +1233,25 @@ The instance counter labels native adapters rather than claiming to count every
 AVPlayer hidden inside third-party engines. New stall records retain measured
 player/engine buffer context in the existing playback journal.
 
+The existing TV overlay and mobile sheet also expose the engine's cached 1 Hz
+statistics: recent (~10 seconds) and session-average **played audio + video**
+bitrate, audio-bridge output bitrate, active video decoder, transferred bytes,
+producer restarts, source/mux/server byte counters, bridge buffer, and resident
+memory. These reads add no network requests or second sampling loop. Missing
+measurements disappear rather than retaining a prior route's values or inventing
+zeroes. Real zero counters remain visible.
+
+**Local delivery** is the engine-to-AVPlayer link, never the media server's
+network speed. **Source read rate** measures transfers from the source,
+which can also be a local file. **Read / muxed** lists source bytes then
+mux output bytes; **Local server** lists served bytes and requests. **Mux A/V gap**
+is the producer's audio/video timestamp gap, not measured display/speaker lip sync.
+The remote-HLS bypass does not relabel declared playlist bandwidth as measured
+played bitrate. Native AVPlayer transfers, dropped frames, and stalls sum all
+access-log entries for the current item; the engine's session-wide dropped-frame
+counter takes precedence across its internal item replacements. Engine RSS and
+the app's physical memory footprint are distinct measurements.
+
 Playback diagnostics row labels use the shared app localization catalog on TV
 and mobile. Media filenames, server names, codec identifiers, and the HDR format
 label remain verbatim; do not mark app-owned field labels as developer content.
