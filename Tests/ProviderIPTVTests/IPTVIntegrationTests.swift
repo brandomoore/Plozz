@@ -307,13 +307,21 @@ final class IPTVIntegrationTests: XCTestCase {
             if id == "episode:30:31" { XCTAssertEqual(request.startPosition, 120) }
         }
         XCTAssertTrue(IPTVFixture.state.requests.allSatisfy { $0.url?.path == "/prefix/player_api.php" })
+        let liveURL = try await provider.externalLivePlaybackURL(for: "live:10")
+        XCTAssertEqual(liveURL.host, "provider.test")
+        XCTAssertEqual(liveURL.path, "/prefix/live/fixture-user/fixture-password/10.m3u8")
+        XCTAssertTrue(IPTVFixture.state.requests.allSatisfy { $0.url?.path == "/prefix/player_api.php" })
+        do {
+            _ = try await provider.externalLivePlaybackURL(for: "movie:20")
+            XCTFail("VOD cannot be handed off as live without progress ownership")
+        } catch { XCTAssertEqual(error as? ExternalPlayerError, .unsupportedSource) }
         do {
             _ = try await provider.externalPlaybackInfo(for: "movie:20", mediaSourceID: "wrong-version")
             XCTFail("An explicit unknown source must not silently play the default")
         } catch { XCTAssertEqual(error as? ExternalPlayerError, .unsupportedSource) }
     }
 
-    func testExternalPlaylistKeepsHeaderRequiredAndLiveSourcesInternal() async throws {
+    func testExternalPlaylistPreservesHeadersAndSeparatesLiveFromVOD() async throws {
         for header in ["", "#EXTVLCOPT:http-user-agent=RequiredAgent\n", "#EXTVLCOPT:http-referrer=https://provider.test/\n"] {
             IPTVFixture.state.reset()
             IPTVFixture.state.handler = { _ in
@@ -322,7 +330,7 @@ final class IPTVIntegrationTests: XCTestCase {
                 #EXTINF:-1,Movie
                 \(header)https://provider.test/movie/one.m3u8
                 #EXTINF:-1,News
-                https://provider.test/live/one.m3u8
+                \(header)https://provider.test/live/one.m3u8
 
                 """.utf8))
             }
@@ -353,10 +361,19 @@ final class IPTVIntegrationTests: XCTestCase {
                 XCTAssertEqual(error as? ExternalPlayerError, .unsupportedSource)
             }
             let channels = try await provider.liveTVChannels()
+            let channelID = try XCTUnwrap(channels.first).id
             do {
-                _ = try await provider.externalPlaybackInfo(for: XCTUnwrap(channels.first).id, mediaSourceID: nil)
+                _ = try await provider.externalPlaybackInfo(for: channelID, mediaSourceID: nil)
                 XCTFail("A live source must use the live-session owner")
             } catch { XCTAssertEqual(error as? ExternalPlayerError, .unsupportedSource) }
+            do {
+                let url = try await provider.externalLivePlaybackURL(for: channelID)
+                XCTAssertTrue(header.isEmpty)
+                XCTAssertEqual(url.absoluteString, "https://provider.test/live/one.m3u8")
+            } catch {
+                XCTAssertFalse(header.isEmpty)
+                XCTAssertEqual(error as? ExternalPlayerError, .unsupportedSource)
+            }
         }
     }
 

@@ -576,25 +576,37 @@ public final class IPTVProvider: MediaProvider, CapabilityReporting, MediaSortFi
     }
 }
 
-extension IPTVProvider: ExternalPlaybackProviding {
+extension IPTVProvider: ExternalPlaybackProviding, ExternalLivePlaybackProviding {
     public func externalPlaybackInfo(for itemID: String, mediaSourceID: String?) async throws -> PlaybackRequest {
         let record = try await client.record(itemID, details: true)
         guard !record.isLive, record.item.kind == .movie || record.item.kind == .episode,
               mediaSourceID == nil else {
             throw ExternalPlayerError.unsupportedSource
         }
+        let url = try await independentPlaybackURL(for: itemID)
+        let item = await applyingWatch([record.item])[0]
+        try Task.checkCancellation()
+        return PlaybackRequest(
+            item: item, streamURL: url, startPosition: item.resumePosition ?? 0,
+            sourceProvider: .iptv, serverName: session.server.name
+        )
+    }
+
+    public func externalLivePlaybackURL(for channelID: String) async throws -> URL {
+        let record = try await client.record(channelID, details: false)
+        guard record.isLive else { throw ExternalPlayerError.unsupportedSource }
+        return try await independentPlaybackURL(for: channelID)
+    }
+
+    private func independentPlaybackURL(for itemID: String) async throws -> URL {
         let delivery = try await client.delivery(itemID)
         // App-link APIs do not carry arbitrary HTTP headers. Never silently drop
         // authentication, referer or user-agent requirements, or export the proxy.
         guard delivery.headers.isEmpty, ExternalPlayerURL.isSupportedMediaURL(delivery.url) else {
             throw ExternalPlayerError.unsupportedSource
         }
-        let item = await applyingWatch([record.item])[0]
         try Task.checkCancellation()
-        return PlaybackRequest(
-            item: item, streamURL: delivery.url, startPosition: item.resumePosition ?? 0,
-            sourceProvider: .iptv, serverName: session.server.name
-        )
+        return delivery.url
     }
 }
 

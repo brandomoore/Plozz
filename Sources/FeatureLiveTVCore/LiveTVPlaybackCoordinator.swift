@@ -1,4 +1,5 @@
 import CoreModels
+import CoreNetworking
 import Foundation
 import Observation
 
@@ -40,6 +41,7 @@ public final class LiveTVPlaybackCoordinator {
     public private(set) var watchFailure: LiveTVWatchFailure?
     public private(set) var isActive = true
     public private(set) var isInteractionActive = true
+    public private(set) var isOpeningExternalPlayer = false
     public private(set) var acceptedWatchID: UUID?
     public private(set) var presentationID = UUID()
     private var cleanupCount = 0
@@ -79,6 +81,7 @@ public final class LiveTVPlaybackCoordinator {
         let reference: LiveTVServerChannelReference?
         let origin: LiveTVGuideRowID?
         let expandsPlayer: Bool
+        let externalPlayback: ExternalLivePlaybackHandler?
     }
 
     public init(
@@ -152,7 +155,8 @@ public final class LiveTVPlaybackCoordinator {
     public func watch(
         _ channelID: String,
         origin: LiveTVGuideRowID? = nil,
-        expandsPlayer: Bool = true
+        expandsPlayer: Bool = true,
+        externalPlayback: ExternalLivePlaybackHandler? = nil
     ) -> Task<Bool, Never> {
         cancelWatch()
         guard isActive, isInteractionActive, let channel = model.channel(id: channelID) else {
@@ -161,7 +165,8 @@ public final class LiveTVPlaybackCoordinator {
         cancelPreviewPreparation()
         suppressedPreviewChannelID = nil
         return beginWatch(Target(
-            channel: channel, reference: reference(channelID), origin: origin, expandsPlayer: expandsPlayer
+            channel: channel, reference: reference(channelID), origin: origin, expandsPlayer: expandsPlayer,
+            externalPlayback: externalPlayback
         ))
     }
 
@@ -200,6 +205,7 @@ public final class LiveTVPlaybackCoordinator {
     }
 
     public func cancelWatch() {
+        isOpeningExternalPlayer = false
         suppressPreview(of: pendingWatchChannelID)
         watchID = nil
         pendingWatchChannelID = nil
@@ -229,7 +235,8 @@ public final class LiveTVPlaybackCoordinator {
         interactionRevision = UUID()
         if !active {
             suppressPreview(of: pendingWatchChannelID ?? previewTaskChannelID ?? preview.pendingRequest?.channelID)
-            cancelWatch()
+            // Opening another app deactivates the scene before its completion callback.
+            if !isOpeningExternalPlayer { cancelWatch() }
             cancelPreviewPreparation()
             preview.setBrowsingActive(false)
         }
@@ -382,6 +389,38 @@ public final class LiveTVPlaybackCoordinator {
             let authorized = self.authorization(
                 for: target.channel, reference: target.reference, boundary: boundary
             )
+            let acceptsExternal: @MainActor @Sendable () -> Bool = { [weak self] in
+                guard let self, self.watchID == id, authorized(), !Task.isCancelled else { return false }
+                return self.isOpeningExternalPlayer
+                    || (self.isInteractionActive && self.interactionRevision == interaction)
+            }
+            if let external = target.externalPlayback, let source = self.externalSource(for: target) {
+                do {
+                    guard acceptsExternal() else { return false }
+                    let opened = try await external(source, target.channel.name, acceptsExternal) {
+                        guard acceptsExternal() else { throw CancellationError() }
+                        self.cleanupCount += 1
+                        await self.preparation.close()
+                        self.cleanupCount -= 1
+                        guard acceptsExternal() else { throw CancellationError() }
+                        self.preview.stop()
+                        self.retirePresentation()
+                        self.isOpeningExternalPlayer = true
+                    }
+                    guard acceptsExternal() else { return false }
+                    if opened {
+                        self.suppressPreview(of: target.channel.id)
+                        return true
+                    }
+                    self.isOpeningExternalPlayer = false
+                } catch is CancellationError {
+                    return false
+                } catch {
+                    guard acceptsExternal() else { return false }
+                    self.isOpeningExternalPlayer = false
+                    PlozzLog.playback.error("External live playback preparation failed; using Plozz.")
+                }
+            }
             if let currentID {
                 guard self.preparation.current?.id == currentID,
                       let accountID = target.reference?.accountID, authorized() else {
@@ -451,10 +490,20 @@ public final class LiveTVPlaybackCoordinator {
 
     private func finishWatch(_ id: UUID) {
         guard watchID == id else { return }
+        isOpeningExternalPlayer = false
         watchID = nil
         pendingWatchChannelID = nil
         pendingTarget = nil
         watchTask = nil
+    }
+
+    private func externalSource(for target: Target) -> ExternalLivePlaybackSource? {
+        guard target.channel.source != .plozz else { return nil }
+        if let reference = target.reference {
+            return .channel(accountID: reference.accountID, channelID: reference.channelID)
+        }
+        guard target.channel.source == .iptv, let url = target.channel.streamURL else { return nil }
+        return .stream(url: url, httpHeaders: target.channel.httpHeaders)
     }
 
     private func authorization(

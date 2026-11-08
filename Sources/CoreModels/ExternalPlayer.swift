@@ -6,6 +6,23 @@ public protocol ExternalPlaybackProviding: MediaProvider {
     func externalPlaybackInfo(for itemID: String, mediaSourceID: String?) async throws -> PlaybackRequest
 }
 
+/// Opt in only when the channel needs neither an app-local proxy nor an owned
+/// tuner/heartbeat session after Plozz is suspended.
+public protocol ExternalLivePlaybackProviding: MediaProvider {
+    func externalLivePlaybackURL(for channelID: String) async throws -> URL
+}
+
+public enum ExternalLivePlaybackSource: Sendable {
+    case channel(accountID: String, channelID: String)
+    case stream(url: URL, httpHeaders: [String: String])
+}
+
+public typealias ExternalLivePlaybackHandler = @MainActor (
+    ExternalLivePlaybackSource, String,
+    @escaping @MainActor @Sendable () -> Bool,
+    @escaping @MainActor () async throws -> Void
+) async throws -> Bool
+
 public enum ExternalPlayer: String, Codable, CaseIterable, Sendable {
     case builtIn, nativePlayer, infuse, vlc, custom
 
@@ -128,10 +145,14 @@ public enum ExternalPlayerURL {
 
     public static func make(
         settings: ExternalPlayerSettings, mediaURL: URL, title: String,
-        position: TimeInterval, subtitles: [URL] = [], callbackScheme: String, nonce: UUID
+        position: TimeInterval?, subtitles: [URL] = [], callbackScheme: String, nonce: UUID
     ) throws -> URL {
-        guard isSupportedMediaURL(mediaURL), position.isFinite, position >= 0,
-              position < Double(Int.max) else { throw ExternalPlayerError.unsupportedSource }
+        guard isSupportedMediaURL(mediaURL) else { throw ExternalPlayerError.unsupportedSource }
+        if let position {
+            guard position.isFinite, position >= 0, position < Double(Int.max) else {
+                throw ExternalPlayerError.unsupportedSource
+            }
+        }
         if settings.player == .custom {
             try validateCustomTemplate(settings.customURLTemplate)
             let unreserved = CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~")
@@ -150,7 +171,7 @@ public enum ExternalPlayerURL {
             URLQueryItem(name: "filename", value: title)
         ]
         if settings.player.returnsProgress {
-            query.append(URLQueryItem(name: "position", value: String(Int(position))))
+            if let position { query.append(URLQueryItem(name: "position", value: String(Int(position)))) }
             for outcome in ["success", "error"] {
                 var callback = URLComponents()
                 callback.scheme = callbackScheme

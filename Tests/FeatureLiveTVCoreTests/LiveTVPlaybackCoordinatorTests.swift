@@ -5,6 +5,122 @@ import XCTest
 
 @MainActor
 final class LiveTVPlaybackCoordinatorTests: XCTestCase {
+    func testExternalWatchDrainsPreviewBeforeOpeningAndDoesNotReopenOnReturn() async throws {
+        let lease = try CoordinatorFixtureLease("one", iptv: true)
+        let fixture = CoordinatorFixture(kind: .iptv, replies: ["one": [.init(lease: lease)]])
+        fixture.coordinator.focus("one")
+        let previewed = await fixture.coordinator.preparePreview(try XCTUnwrap(fixture.preview.pendingRequest))
+        XCTAssertTrue(previewed)
+        let opened = await fixture.coordinator.watch("one", externalPlayback: { source, title, isCurrent, prepare in
+            guard case .channel(let accountID, let channelID) = source else { XCTFail(); return false }
+            XCTAssertEqual(accountID, "account")
+            XCTAssertEqual(channelID, "one")
+            XCTAssertEqual(title, "one")
+            XCTAssertTrue(isCurrent())
+            try await prepare()
+            let closes = await lease.closeCalls
+            XCTAssertEqual(closes, 1)
+            XCTAssertNil(fixture.preparation.current)
+            XCTAssertTrue(fixture.coordinator.isOpeningExternalPlayer)
+            // Opening an app normally makes the scene inactive before open returns.
+            fixture.coordinator.setInteractionActive(false)
+            XCTAssertTrue(isCurrent())
+            return true
+        }).value
+        XCTAssertTrue(opened)
+        XCTAssertNil(fixture.coordinator.watchFailure)
+        XCTAssertFalse(fixture.coordinator.isOpeningExternalPlayer)
+        XCTAssertFalse(fixture.preview.isExpanded)
+        XCTAssertNil(fixture.model.playingChannelID)
+        fixture.coordinator.setInteractionActive(true)
+        fixture.coordinator.focus("one")
+        XCTAssertFalse(fixture.coordinator.canAutoPreview)
+        let opens = await fixture.provider.opens
+        XCTAssertEqual(opens, ["one"])
+        await fixture.preparation.close()
+    }
+
+    func testIndependentPlaylistWatchPassesHeadersAndFallsBackWithoutReplacingPreview() async throws {
+        let fixture = CoordinatorFixture()
+        _ = await fixture.coordinator.watch("iptv", expandsPlayer: false).value
+        let original = fixture.preparation.current?.id
+        let accepted = await fixture.coordinator.watch("iptv", externalPlayback: { source, _, isCurrent, _ in
+            guard case .stream(let url, let headers) = source else { XCTFail(); return false }
+            XCTAssertEqual(url.absoluteString, "https://fixture.invalid/public.m3u8")
+            XCTAssertTrue(headers.isEmpty)
+            XCTAssertTrue(isCurrent())
+            return false
+        }).value
+        XCTAssertTrue(accepted)
+        XCTAssertEqual(fixture.preparation.current?.id, original)
+        XCTAssertTrue(fixture.preview.isExpanded)
+        await fixture.preparation.close()
+    }
+
+    func testExternalOpenFailureAfterDrainRestartsInternalPlayback() async throws {
+        let fixture = CoordinatorFixture()
+        _ = await fixture.coordinator.watch("iptv", expandsPlayer: false).value
+        let original = fixture.preparation.current?.id
+        let accepted = await fixture.coordinator.watch("iptv", externalPlayback: { _, _, _, prepare in
+            try await prepare()
+            return false
+        }).value
+        XCTAssertTrue(accepted)
+        XCTAssertNotEqual(fixture.preparation.current?.id, original)
+        XCTAssertTrue(fixture.preview.isExpanded)
+        XCTAssertFalse(fixture.coordinator.isOpeningExternalPlayer)
+        await fixture.preparation.close()
+    }
+
+    func testNewWatchDuringExternalDrainFencesTheOldHandoff() async throws {
+        let closing = expectation(description: "Preview drains for external app")
+        let gate = CoordinatorFixtureGate()
+        defer { Task { await gate.release() } }
+        let lease = try CoordinatorFixtureLease("one", closeEntered: closing, closeGate: gate, iptv: true)
+        let fixture = CoordinatorFixture(kind: .iptv, replies: ["one": [.init(lease: lease)]])
+        _ = await fixture.coordinator.watch("one", expandsPlayer: false).value
+        let old = fixture.coordinator.watch("one", externalPlayback: { _, _, _, prepare in
+            try await prepare()
+            XCTFail("Superseded Watch must not open another app")
+            return true
+        })
+        await fulfillment(of: [closing], timeout: 2)
+        let next = fixture.coordinator.watch("iptv")
+        await gate.release()
+        let oldAccepted = await old.value
+        let nextAccepted = await next.value
+        XCTAssertFalse(oldAccepted)
+        XCTAssertTrue(nextAccepted)
+        XCTAssertEqual(fixture.preparation.current?.channel.id, "iptv")
+        XCTAssertFalse(fixture.coordinator.isOpeningExternalPlayer)
+        await fixture.preparation.close()
+    }
+
+    func testExternalHandoffCannotOutliveSourceAuthorization() async throws {
+        let fixture = CoordinatorFixture()
+        let opened = await fixture.coordinator.watch("iptv", externalPlayback: { _, _, isCurrent, prepare in
+            try await prepare()
+            fixture.scope.enabledSources.remove("playlist")
+            XCTAssertFalse(isCurrent())
+            return true
+        }).value
+        XCTAssertFalse(opened)
+        XCTAssertNil(fixture.preparation.current)
+        XCTAssertNil(fixture.coordinator.watchFailure)
+        XCTAssertFalse(fixture.coordinator.isOpeningExternalPlayer)
+        await fixture.preparation.close()
+    }
+
+    func testScheduledLibraryChannelsNeverAttemptExternalHandoff() async throws {
+        let fixture = CoordinatorFixture(kind: .plozz)
+        _ = await fixture.coordinator.watch("one", externalPlayback: { _, _, _, _ in
+            XCTFail("Library schedules must retain their runtime")
+            return true
+        }).value
+        XCTAssertFalse(fixture.coordinator.isOpeningExternalPlayer)
+        await fixture.preparation.close()
+    }
+
     func testExplicitInlineWatchStartsWithoutAutoPreviewAndExpandsWithoutReplacingPlayback() async throws {
         let fixture = CoordinatorFixture()
         fixture.preview.setFollowsFocus(false)

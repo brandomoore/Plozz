@@ -77,12 +77,15 @@ public final class ExternalPlaybackRuntime {
     /// Media URLs, tokens, subtitle URLs and provider metadata never enter this record.
     struct Receipt: Codable {
         let id: UUID
-        let owner: Owner
-        let itemID: String
+        let owner: Owner?
+        let itemID: String?
         let player: ExternalPlayer
         let mediaURLDigest: String
         let duration: TimeInterval?
         let createdAt: Date
+        var liveAuthorizationID: String?
+        var isTrailer: Bool?
+        var isExtra: Bool?
         var streamingSessionID: String?
         var position: TimeInterval?
         var progress: Double?
@@ -186,8 +189,8 @@ public final class ExternalPlaybackRuntime {
     public func availablePlayers(
         for item: MediaItem, context: ExternalPlaybackContext, selection: ExternalPlayerSettings
     ) -> [ExternalPlayer] {
-        guard context.isAuthorized, item.kind == .movie || item.kind == .episode,
-              !item.opensExternalSource, item.discMenuAvailability == nil,
+        guard context.isAuthorized, Self.supportsOnDemand(item),
+              item.discMenuAvailability == nil,
               let account = context.accounts.first(where: { $0.account.id == item.sourceAccountID })
                 ?? (item.sourceAccountID == nil ? context.accounts.first : nil),
               [.jellyfin, .emby, .plex].contains(account.provider.kind)
@@ -200,6 +203,92 @@ public final class ExternalPlaybackRuntime {
         }
     }
 
+    private static func supportsOnDemand(_ item: MediaItem) -> Bool {
+        !item.opensExternalSource && (item.kind == .movie || item.kind == .episode || item.kind == .video)
+    }
+
+    private func validateSelection(_ selection: ExternalPlayerSettings) throws {
+        guard selection.player == .custom || ExternalPlayer.supported.contains(selection.player) else {
+            throw ExternalPlayerError.unavailable
+        }
+        if let scheme = selection.player.scheme, let url = URL(string: scheme + "://"), !canOpen(url) {
+            throw ExternalPlayerError.unavailable
+        }
+        if selection.player == .custom {
+            try ExternalPlayerURL.validateCustomTemplate(selection.customURLTemplate)
+        }
+    }
+
+    /// Independent live sources have return/error correlation, never VOD progress.
+    public func launchLive(
+        source: ExternalLivePlaybackSource, title: String, selection: ExternalPlayerSettings,
+        context: @escaping @MainActor () -> ExternalPlaybackContext,
+        isPresented: @escaping @MainActor () -> Bool,
+        prepareToOpen: @escaping @MainActor () async throws -> Void
+    ) async throws -> Bool {
+        guard selection.player != .builtIn else { return false }
+        let initial = context()
+        let generation = launchID
+        let nonce = UUID()
+        func checkCurrent() throws {
+            try Task.checkCancellation()
+            guard initial.isAuthorized, isPresented(), generation == launchID,
+                  initial.identity == context().identity else { throw CancellationError() }
+        }
+        do {
+            try checkCurrent()
+            try validateSelection(selection)
+            let mediaURL: URL
+            switch source {
+            case .channel(let accountID, let channelID):
+                guard let account = initial.accounts.first(where: { $0.account.id == accountID }) else {
+                    throw CancellationError()
+                }
+                guard let provider = account.provider as? any ExternalLivePlaybackProviding else {
+                    throw ExternalPlayerError.unsupportedSource
+                }
+                mediaURL = try await provider.externalLivePlaybackURL(for: channelID)
+            case .stream(let url, let headers):
+                guard headers.isEmpty else { throw ExternalPlayerError.unsupportedSource }
+                mediaURL = url
+            }
+            try checkCurrent()
+            let link = try ExternalPlayerURL.make(
+                settings: selection, mediaURL: mediaURL, title: title, position: nil,
+                subtitles: [], callbackScheme: callbackScheme, nonce: nonce
+            )
+            // Drain the local preview before opening another provider connection.
+            await streamingCleanup?.value
+            try checkCurrent()
+            try await prepareToOpen()
+            try checkCurrent()
+            if selection.player.returnsProgress {
+                try save(Receipt(
+                    id: nonce, owner: nil, itemID: nil, player: selection.player,
+                    mediaURLDigest: Self.digest(mediaURL), duration: nil, createdAt: Date(),
+                    liveAuthorizationID: initial.identity
+                ))
+            }
+            foregroundDepartureProfileID = initial.profileID
+            guard await open(link) else { throw ExternalPlayerError.unavailable }
+            try checkCurrent()
+            PlozzLog.playback.info("Opened live channel in external player.")
+            return true
+        } catch {
+            if generation == launchID { foregroundDepartureProfileID = nil }
+            if receipt?.id == nonce { clearReceipt() }
+            try checkCurrent()
+            if error is CancellationError { throw CancellationError() }
+            if let failure = error as? ExternalPlayerError,
+               failure == .unsupportedSource || failure == .unavailable {
+                PlozzLog.playback.info("Independent live handoff unavailable; using Plozz.")
+            } else {
+                PlozzLog.playback.error("Independent live handoff preparation failed; using Plozz.")
+            }
+            return false
+        }
+    }
+
     private func launchIfSupported(
         item: MediaItem, startPosition: TimeInterval?, settings: PlaybackSettings,
         selection: ExternalPlayerSettings, streamingOptions: StreamingPlaybackOptions?,
@@ -207,8 +296,7 @@ public final class ExternalPlaybackRuntime {
         isPresented: @escaping @MainActor () -> Bool
     ) async throws -> Bool {
         guard selection.player != .builtIn else { return false }
-        // Trailer, live-channel and music sessions remain owned by their existing runtimes.
-        guard item.kind == .movie || item.kind == .episode else { return false }
+        guard Self.supportsOnDemand(item) else { return false }
         let generation = launchID
         let initial = context()
         guard initial.isAuthorized,
@@ -233,15 +321,7 @@ public final class ExternalPlaybackRuntime {
         case .jellyfin, .emby, .plex:
             break
         }
-        guard selection.player == .custom || ExternalPlayer.supported.contains(selection.player) else {
-            throw ExternalPlayerError.unavailable
-        }
-        if let scheme = selection.player.scheme, let url = URL(string: scheme + "://"), !canOpen(url) {
-            throw ExternalPlayerError.unavailable
-        }
-        if selection.player == .custom {
-            try ExternalPlayerURL.validateCustomTemplate(selection.customURLTemplate)
-        }
+        try validateSelection(selection)
         if let offlineResolver = initial.offlineResolver,
            await offlineResolver.localPlaybackURL(for: item, versionID: item.selectedVersionID) != nil {
             throw ExternalPlayerError.unsupportedSource
@@ -309,7 +389,8 @@ public final class ExternalPlaybackRuntime {
                     id: nonce, owner: Owner(profileID: initial.profileID, account: account),
                     itemID: item.id, player: selection.player, mediaURLDigest: Self.digest(mediaURL),
                     duration: request.item.runtime.flatMap { $0.isFinite && $0 > 0 ? $0 : nil },
-                    createdAt: Date(), streamingSessionID: request.streamingSessionID
+                    createdAt: Date(), isTrailer: item.isTrailer, isExtra: item.isExtra,
+                    streamingSessionID: request.streamingSessionID
                 ))
             }
             if request.streamingSessionID != nil, let streaming = provider as? any StreamingQualityProviding {
@@ -439,7 +520,14 @@ public final class ExternalPlaybackRuntime {
     ) async {
         guard let pending = receipt else { return }
         let initial = context()
+        if let authorizationID = pending.liveAuthorizationID {
+            guard initial.isAuthorized, initial.identity == authorizationID else { return }
+            clearReceipt()
+            if pending.failed { error = .playbackFailed }
+            return
+        }
         guard initial.isAuthorized,
+              let itemID = pending.itemID,
               let account = initial.accounts.first(where: {
                   Owner(profileID: initial.profileID, account: $0) == pending.owner
               }) else { return }
@@ -455,13 +543,15 @@ public final class ExternalPlaybackRuntime {
             return
         }
         do {
-            var item = try await account.provider.item(id: pending.itemID)
+            var item = try await account.provider.item(id: itemID)
             guard current(), let position = pending.position else { return }
-            guard item.id == pending.itemID, item.kind == .movie || item.kind == .episode,
+            guard item.id == itemID, Self.supportsOnDemand(item),
                   item.sourceAccountID == nil || item.sourceAccountID == account.account.id else {
                 throw ExternalPlayerError.invalidCallback
             }
             item = item.taggingSource(account.account.id)
+            item.isTrailer = item.isTrailer || pending.isTrailer == true
+            item.isExtra = item.isExtra || item.isTrailer || pending.isExtra == true
             let duration = pending.duration ?? item.runtime.flatMap { $0.isFinite && $0 > 0 ? $0 : nil }
             if pending.progress == nil, let duration, position > duration + 5 {
                 throw ExternalPlayerError.invalidCallback

@@ -143,6 +143,7 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
     @Environment(\.plozzReduceTransparency) private var reduceTransparency
     @Environment(\.dynamicTypeSize) private var typeSize
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.externalLivePlayback) private var externalLivePlayback
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.layoutDirection) private var layoutDirection
     @Environment(\.locale) private var locale
@@ -610,8 +611,14 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
             isExpanded: preview.isExpanded && !multiview.isEnabled,
             isPreviewVisible: isPreviewVisible && !multiview.isEnabled,
             expandPreview: {
-                guard activity.acceptsInteraction, !multiview.isEnabled else { return }
-                playback.expandPreview(presentationID: presentationID, preparedID: prepared.id)
+                guard activity.acceptsInteraction, !multiview.isEnabled,
+                      playback.ownsPlayerPresentation(presentationID),
+                      playback.preparation.current?.id == prepared.id else { return }
+                if externalLivePlayback != nil {
+                    tune(prepared.channel.id, origin: preview.watchOrigin)
+                } else {
+                    playback.expandPreview(presentationID: presentationID, preparedID: prepared.id)
+                }
             },
             previewReflectionHeight: reflectionHeight,
             previewTopReflectionHeight: topReflectionHeight,
@@ -995,6 +1002,9 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
         .onChange(of: playback.acceptedWatchID) { _, _ in
             handleWatchAcceptance()
         }
+        .onChange(of: playback.isOpeningExternalPlayer) { _, _ in
+            updatePlaybackAvailability()
+        }
         .onChange(of: model.channels) { _, _ in
             playback.validateAuthorization()
             multiview.validateAuthorization()
@@ -1129,7 +1139,7 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
 
     private func handleDisappearance() {
         let preservesFullscreen = isActive && isProfileAuthorized() && usesNativeFullscreen && preview.isExpanded
-        guard !preservesFullscreen, !hasAuthorizedExternalPlayback else { return }
+        guard !preservesFullscreen, !hasAuthorizedExternalPlayback, !playback.isOpeningExternalPlayer else { return }
         enrollment.invalidate()
         leaveMultiview()
         multiview.setActive(false)
@@ -1995,7 +2005,7 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
             isInBackground: scenePhase == .background,
             isAuthorized: isProfileAuthorized() && !sourceApplicationFailed && (sources?.hasLoaded ?? true),
             allowsPlayback: allowsPlayback,
-            hasAuthorizedExternalPresentation: hasAuthorizedExternalPlayback
+            hasAuthorizedExternalPresentation: hasAuthorizedExternalPlayback || playback.isOpeningExternalPlayer
         )
     }
 
@@ -2294,7 +2304,10 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
             channelSequence = LiveTVChannelSequence(channels: channels)
         }
         let selectedOrigin = !preview.isExpanded && selectedRowID?.channelID == id ? selectedRowID : nil
-        playback.watch(id, origin: origin ?? selectedOrigin, expandsPlayer: expandsPlayer)
+        playback.watch(
+            id, origin: origin ?? selectedOrigin, expandsPlayer: expandsPlayer,
+            externalPlayback: externalLivePlayback
+        )
     }
 
     private func handleWatchAcceptance() {

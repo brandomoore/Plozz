@@ -427,7 +427,8 @@ Playback > Advanced > External player is a device-only, default-off preference
 shared by all profiles on that device. It stays inside Playback rather than
 adding an Everyone category. The picker has one short scope label; About external
 playback and custom configuration are separate drill-ins.
-Choosing an installed player redirects compatible movies and episodes:
+Choosing an installed player redirects compatible movies, episodes, server videos,
+trailers and extras:
 Native Player on tvOS, Infuse 8.4.7+ on both platforms, and VLC on both platforms.
 The further-nested custom player editor accepts one encoded `{url}` placeholder.
 Unavailable apps, failed handoff preparation, and unsupported sources use Plozz
@@ -438,8 +439,16 @@ origin HTTP(S) URL is sent directly, without starting Plozz's local proxy.
 Sources requiring custom HTTP headers stay in Plozz; the app-link APIs cannot
 carry those headers. Explicit unknown versions are not replaced with a default.
 NAS shares and Silo bypass external negotiation. Silo's session-bound grants need its built-in lifecycle;
-no speculative external session is opened. Live TV, trailers, and music keep
-their existing runtimes.
+no speculative external session is opened. YouTube trailers keep their existing
+source-opening behavior, and background trailers/music never launch another app.
+
+Explicit Live TV Watch actions (including expanding a preview) can hand off
+header-free IPTV channels from accounts or standalone playlists. The provider
+must opt into independent delivery; server tuner leases are not exported.
+Plozz drains its current preview before opening the external app and suppresses
+automatic reopening on return. Focus-triggered previews, Multiview and scheduled
+Plozz channels remain internal. Live returns correlate errors without creating
+movie/episode progress or claiming the channel actually played.
 
 On iPhone/iPad, downloaded movies and episodes play inside Plozz. Downloads
 menus do not export files to other apps, regardless of the external-player
@@ -485,6 +494,8 @@ Native Player's optional `progress` fraction must be finite and within 0...1.
 When present, it determines completion and its returned position is not clamped
 to a possibly missing or inaccurate catalog runtime. Without that fraction,
 existing runtime-based validation/calculation remains, including for Infuse.
+Server videos, trailers and extras retain their exact item identity and extra
+classification on return; playing an extra must not mark its parent movie watched.
 The fraction survives receipt restoration; malformed or duplicate values are
 rejected before watch state changes.
 Supported partial returns also queue their percentage to Trakt as paused
