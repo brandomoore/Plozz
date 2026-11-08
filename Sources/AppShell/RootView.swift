@@ -242,6 +242,11 @@ public struct RootView: View {
             && nextFeatureIntroduction == nil
     }
 
+    private var allowsStartupContentFocus: Bool {
+        releaseNotesStartupReady && startupNotesPrepared
+            && rootPresentation.active == nil && presentationRequests.isEmpty
+    }
+
     private func completeAppearanceIntroductions() {
         featureIntroductionStore.markCompleted(.navigationStyles)
         featureIntroductionStore.markCompleted(.homeLayout)
@@ -914,6 +919,7 @@ public struct RootView: View {
         .environment(displayVeil)
         #if os(tvOS)
         .environment(\.tvProfileForegroundState, foregroundProtection)
+        .environment(\.navigationStartupFocusAllowed, allowsStartupContentFocus)
         .background(
             TVProfileForegroundShield(flow: appState.profileFlow) { dismiss in
                 foregroundProfileGate(onUnlock: dismiss)

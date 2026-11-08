@@ -270,6 +270,10 @@ navigation; later content refreshes must not pull focus back to the first item.
 Loading regions suspend the request until readiness changes; mounted content
 finishes its native render handoff before the request is retired. Inactive hosts
 cannot block the visible page's entry.
+The root holds startup entry until introductions, release notes, and queued root
+covers finish dismissing. Input in those covers must not cancel the pending page
+entry. Covered shells retain the unconsumed request; dismissal starts a fresh
+native presentation handoff, without restarting entry after normal navigation.
 
 Settings is a normal destination in all three navigation shells. Its root keeps
 app navigation visible and available; categories and nested pages hide it.

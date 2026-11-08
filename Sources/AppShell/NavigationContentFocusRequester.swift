@@ -5,6 +5,17 @@ import FeatureHome
 import SwiftUI
 import UIKit
 
+private struct NavigationStartupFocusAllowedKey: EnvironmentKey {
+    static let defaultValue = true
+}
+
+extension EnvironmentValues {
+    var navigationStartupFocusAllowed: Bool {
+        get { self[NavigationStartupFocusAllowedKey.self] }
+        set { self[NavigationStartupFocusAllowedKey.self] = newValue }
+    }
+}
+
 /// New destinations honor the page's content-first entry preference.
 struct NavigationContentFocusRequester: UIViewRepresentable {
     let request: UInt64?
