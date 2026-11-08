@@ -49,6 +49,13 @@ registry.
 
 ## Invariants
 
+- **TV guide progress stays with setup and its source.** Playlist setup reserves
+  inline space above Continue; leaving setup never cancels guide preparation.
+  Settings shows progress and the resulting status beside the playlist and in
+  its details, without a persistent TV overlay. iPhone/iPad retain their toast.
+  Live-only IPTV profiles default to Live TV, including when discovery is
+  configured; actual movie/show libraries retain the normal Home default.
+
 - **Discover is optional and adult-profile-only.** Every navigation style uses
   the shared navigation policy: Seerr configuration enables Discover by default,
   while explicit Show/Hide choices survive connection changes. Child profiles

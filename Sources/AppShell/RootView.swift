@@ -938,10 +938,6 @@ public struct RootView: View {
             presenter: appState.transientStatusPresenter,
             palette: resolvedPalette
         )
-        .guidePreparationOverlay(
-            model: appState.guidePreparation, presenter: appState.transientStatusPresenter,
-            palette: resolvedPalette
-        )
         // Resumes setup that was abandoned part-way — quit mid-flow, or synced
         // from a device where it was never finished. The gate is persisted, so a
         // profile left behind it would otherwise never import a watchlist at all.
@@ -968,10 +964,6 @@ public struct RootView: View {
             onDismiss: rootPresentationDidDismiss
         ) {
             rootPresentationContent
-                .guidePreparationOverlay(
-                    model: appState.guidePreparation, presenter: appState.transientStatusPresenter,
-                    palette: resolvedPalette
-                )
                 .environment(\.themePalette, resolvedPalette)
                 .environment(\.gradientBackgroundsEnabled, appState.profileSettings.themeModel.gradientEnabled)
                 .environment(\.colorScheme, resolvedPalette.isLight ? .light : .dark)

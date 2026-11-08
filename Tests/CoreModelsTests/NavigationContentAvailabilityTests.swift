@@ -45,6 +45,31 @@ final class NavigationContentAvailabilityTests: XCTestCase {
         }
     }
 
+    func testLiveOnlyIPTVStartsInLiveTVEvenWithDiscoveryConfigured() {
+        for discovery in [false, true] {
+            let facts = availability(accounts: [account("iptv", provider: .iptv)], discovery: discovery)
+            XCTAssertTrue(facts.prefersLiveTV)
+            XCTAssertEqual(facts.hasHomeContent, discovery)
+            XCTAssertEqual(AppAdmissionNavigation.initialSelection(
+                current: "home", visible: ["home", "liveTV", "settings"],
+                liveTV: "liveTV", fallback: "settings",
+                admission: AppAdmissionContext(hasMediaAccounts: true),
+                hasPendingLiveTVEntry: false, prefersLiveTV: facts.prefersLiveTV
+            ), "liveTV")
+        }
+        for kind in [MediaItemKind.movie, .series] {
+            XCTAssertFalse(availability(
+                accounts: [account("iptv", provider: .iptv)],
+                libraries: [library("iptv", kind: kind)], discovery: true
+            ).prefersLiveTV)
+        }
+        XCTAssertFalse(availability(
+            accounts: [account("iptv", provider: .iptv), account("media", provider: .jellyfin)],
+            discovery: true
+        ).prefersLiveTV)
+        XCTAssertFalse(availability(discovery: true).prefersLiveTV)
+    }
+
     func testUnresolvedMediaServerKeepsNavigationDuringLoadingAndOfflineStartup() {
         for provider in [ProviderKind.jellyfin, .plex, .emby] {
             let facts = availability(accounts: [account("server", provider: provider)])
