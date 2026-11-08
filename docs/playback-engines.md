@@ -739,12 +739,20 @@ headers when updating the vendored sources, and update sources, public headers,
 binary checksums, and bundled notices together.
 
 Plozz pins the playback-corrected
-[AetherEngine fork](https://github.com/brandomoore/AetherEngine/tree/55430e28df74ba11b36fea367ad22af0d685a68b)
-at commit `55430e28df74ba11b36fea367ad22af0d685a68b`, integrating upstream
-**7.53.1** (`0839aeee18dd0818c5c307a3c5ecba8ea3161b22`).
-Playback diagnostics show `AetherEngine v7.53.1`, read from the linked engine
+[AetherEngine fork](https://github.com/brandomoore/AetherEngine/tree/568120847b64029c4e7948f7492d5d210d62305f)
+at commit `568120847b64029c4e7948f7492d5d210d62305f`, integrating upstream
+**7.61.0** (`d612bedb3e60f8bc403c646fe44c0a852ee8a995`).
+Playback diagnostics show `AetherEngine v7.61.0`, read from the linked engine
 rather than a duplicated version constant. The exact fork commit remains in
 attributions because the upstream version does not identify Plozz's patches.
+The 7.61.0 integration advances FFmpegBuild to **3.13.0** and LibDovi to
+**2.2.0**, retaining FFmpeg n8.1.3 and the existing deployment targets.
+It includes startup/display-gate, stop, AirPlay subtitle, sequential-origin seek,
+and live ad-seam fixes. Upstream now defaults live joins to `fastZap`; Plozz's
+explicit join and buffering options still apply. The new `DolbyVisionFelCurves`
+trait remains disabled, as do the other optional components. The fork preserves
+authored disc intervals and combines upstream's live packet polling with the
+existing foreground-video service wake during slow VOD reads.
 Native audio readback and subtitle selection use bounded off-main media-selection
 reads, so an unresponsive media service does not block the UI actor. Plozz treats
 AVFoundation's media-services reset as one fresh same-engine recovery, not a
@@ -857,8 +865,8 @@ LibDTSX **1.0.1**. Upstream 7.36.0 added another object-audio rendering path, co
 spatial speaker positions and a tvOS spatial-output activator for receivers that need it.
 It also includes live-replay recovery, software-video recovery after a screen lock,
 and the intervening 7.35.x playback fixes; these are upstream changes, not new
-Plozz-specific implementations. The current pin uses FFmpegBuild **3.11.1**
-and LibDovi **2.1.x**. LibTrueHD and LibDTSX are no longer linked in Plozz. It also includes
+Plozz-specific implementations. The current pin uses FFmpegBuild **3.13.0**
+and LibDovi **2.2.x**. LibTrueHD and LibDTSX are no longer linked in Plozz. It also includes
 single-connection spatial-audio probe safeguards and system-composited Dolby Vision
 held pictures. The fork retains the persistent HTTP body-reader isolation
 correction from its previous integration.

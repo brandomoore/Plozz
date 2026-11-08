@@ -22,7 +22,7 @@ final class AetherReleaseIntegrationTests: XCTestCase {
     }
 
     func testResolvedEngineAndSourceCreditIdentifyPinnedReleaseIntegration() throws {
-        XCTAssertEqual(AetherEngine.version, "7.53.1")
+        XCTAssertEqual(AetherEngine.version, "7.61.0")
         let credit = try XCTUnwrap(PlozzAttributions.entries.first { $0.title == "AetherEngine" })
         // The metadata guard compares the exact revision with Package.resolved.
         XCTAssertNotNil(credit.detail.range(
@@ -45,6 +45,9 @@ final class AetherReleaseIntegrationTests: XCTestCase {
     }
 
     func testUpstreamDefaultsRemainOptIn() {
+        for component in AetherEngine.OptionalComponent.allCases {
+            XCTAssertFalse(component.isBuiltIn, component.traitName)
+        }
         let options = LoadOptions()
         XCTAssertEqual(options.stereoPresentation, .automatic)
         XCTAssertEqual(options.objectAudioRendering, .off)

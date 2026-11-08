@@ -97,7 +97,7 @@ public enum PlozzAttributions {
                 "Playback is powered by AetherEngine by Vincent Herbst, under "
                 + "LGPL-3.0 with an Apple Store exception. "
                 + "Upstream: https://github.com/superuser404notfound/AetherEngine. "
-                + "Source: https://github.com/brandomoore/AetherEngine/tree/55430e28df74ba11b36fea367ad22af0d685a68b",
+                + "Source: https://github.com/brandomoore/AetherEngine/tree/568120847b64029c4e7948f7492d5d210d62305f",
             licenses: [.init("LGPL-3.0", family: .lgpl)]
         ),
         PlozzAttribution(
@@ -105,17 +105,17 @@ public enum PlozzAttributions {
             detail:
                 "FFmpeg n8.1.3 provides libavcodec, libavformat, libavutil, "
                 + "libswresample, libswscale and libavfilter for media decoding "
-                + "and the playback bridge. Packaged by FFmpegBuild 3.11.1. "
+                + "and the playback bridge. Packaged by FFmpegBuild 3.13.0. "
                 + "Source and component notices: "
-                + "https://github.com/superuser404notfound/FFmpegBuild/tree/3.11.1. "
+                + "https://github.com/superuser404notfound/FFmpegBuild/tree/3.13.0. "
                 + "Upstream: https://ffmpeg.org.",
             licenses: [.init("LGPL-2.1+", family: .lgpl)]
         ),
         PlozzAttribution(
             title: "libdovi",
             detail:
-                "Dolby Vision metadata parsing uses libdovi, packaged by LibDovi 2.1.0. "
-                + "Source: https://github.com/superuser404notfound/LibDovi/tree/2.1.0.",
+                "Dolby Vision metadata parsing uses libdovi, packaged by LibDovi 2.2.0. "
+                + "Source: https://github.com/superuser404notfound/LibDovi/tree/2.2.0.",
             licenses: [.init("MIT", family: .mit)]
         ),
         PlozzAttribution(
