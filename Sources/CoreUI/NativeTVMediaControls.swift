@@ -525,6 +525,7 @@ struct NativeTVPoster<Overlay: View>: UIViewRepresentable {
     var indicators: NativePosterIndicators? = nil
     var artworkBackground: NativePosterArtworkBackground = .init()
     var caption: AnyView? = nil
+    var captionFocusOffset: CGFloat = 0
     let focus: PlozzCardFocus.Binding
     var source: DetailTransitionSourceReference? = nil
     let action: () -> Void
@@ -797,7 +798,11 @@ struct NativeTVPoster<Overlay: View>: UIViewRepresentable {
         }
         view.addAction(UIAction { [weak coordinator = context.coordinator] _ in coordinator?.focus.activate() },
                        for: .primaryActionTriggered)
-        return Container(poster: view)
+        let container = Container(poster: view)
+        context.coordinator.menu.onPresentationChanged = { [weak container] in
+            container?.setMenuPresented($0)
+        }
+        return container
     }
 
     static func dismantleUIView(_ container: Container, coordinator: Coordinator) {
@@ -833,6 +838,7 @@ struct NativeTVPoster<Overlay: View>: UIViewRepresentable {
         view.hostedOverlay?.layer.shouldRasterize = rasterizesOverlay
         view.hostedOverlay?.layer.rasterizationScale = context.environment.displayScale
         container.aspectRatio = aspectRatio
+        container.captionFocusOffset = captionFocusOffset
         container.updateCaption(caption.map { caption in
             UIHostingConfiguration {
                 caption.environment(\.self, context.environment)
@@ -894,6 +900,12 @@ struct NativeTVPoster<Overlay: View>: UIViewRepresentable {
     final class Container: UIView {
         let poster: NativePosterButton
         private(set) var caption: (UIView & UIContentView)?
+        private var menuPresented = false
+        var captionFocusOffset: CGFloat = 0 {
+            didSet {
+                if captionFocusOffset != oldValue { updateCaptionPosition() }
+            }
+        }
         var aspectRatio: CGFloat {
             didSet {
                 if aspectRatio != oldValue { setNeedsLayout() }
@@ -917,6 +929,24 @@ struct NativeTVPoster<Overlay: View>: UIViewRepresentable {
 
         override var preferredFocusEnvironments: [any UIFocusEnvironment] { [poster] }
 
+        override func didUpdateFocus(in context: UIFocusUpdateContext, with coordinator: UIFocusAnimationCoordinator) {
+            super.didUpdateFocus(in: context, with: coordinator)
+            coordinator.addCoordinatedAnimations { [weak self] in
+                self?.updateCaptionPosition()
+            }
+        }
+
+        func setMenuPresented(_ presented: Bool) {
+            menuPresented = presented
+            updateCaptionPosition()
+        }
+
+        private func updateCaptionPosition() {
+            let offset = poster.isFocused || menuPresented ? 0 : -captionFocusOffset
+            let transform = CGAffineTransform(translationX: 0, y: offset)
+            if caption?.transform != transform { caption?.transform = transform }
+        }
+
         func updateCaption(_ configuration: (any UIContentConfiguration)?) {
             if let configuration {
                 if let caption {
@@ -936,6 +966,7 @@ struct NativeTVPoster<Overlay: View>: UIViewRepresentable {
             }
             invalidateIntrinsicContentSize()
             setNeedsLayout()
+            updateCaptionPosition()
         }
 
         func captionHeight(for width: CGFloat) -> CGFloat {
@@ -959,8 +990,11 @@ struct NativeTVPoster<Overlay: View>: UIViewRepresentable {
                                width: size.width, height: size.height)
             if poster.frame != frame { poster.frame = frame }
             if let caption {
-                caption.frame = CGRect(x: 0, y: frame.maxY, width: bounds.width,
-                                       height: captionHeight(for: bounds.width))
+                let height = captionHeight(for: bounds.width)
+                let bounds = CGRect(x: 0, y: 0, width: bounds.width, height: height)
+                let center = CGPoint(x: bounds.midX, y: frame.maxY + height / 2)
+                if caption.bounds != bounds { caption.bounds = bounds }
+                if caption.center != center { caption.center = center }
             }
         }
     }

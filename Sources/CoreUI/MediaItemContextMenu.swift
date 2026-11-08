@@ -406,6 +406,7 @@ final class NativeMediaItemMenuCoordinator: NSObject, UIContextMenuInteractionDe
     private(set) var interaction: UIContextMenuInteraction?
     private var isPresented = false
     private var presentationRevision = 0
+    var onPresentationChanged: ((Bool) -> Void)?
 
     func update(_ configuration: NativeMediaItemMenu?, locale: Locale, button: UIButton, interactionView: UIView) {
         let siblingsMatch = (self.configuration?.context.orderedSiblings ?? []).elementsEqual(
@@ -422,7 +423,7 @@ final class NativeMediaItemMenuCoordinator: NSObject, UIContextMenuInteractionDe
         let changed = scopeChanged || self.configuration?.actions != configuration?.actions || self.locale != locale
         if scopeChanged {
             presentationRevision += 1
-            self.configuration?.onPresentationChanged?(false)
+            notifyPresentationChanged(false)
         }
         if let interaction, self.button !== button || interaction.view !== interactionView {
             interaction.dismissMenu()
@@ -506,7 +507,7 @@ final class NativeMediaItemMenuCoordinator: NSObject, UIContextMenuInteractionDe
     ) {
         isPresented = true
         presentationRevision += 1
-        self.configuration?.onPresentationChanged?(true)
+        notifyPresentationChanged(true)
     }
 
     func contextMenuInteraction(
@@ -517,13 +518,18 @@ final class NativeMediaItemMenuCoordinator: NSObject, UIContextMenuInteractionDe
         let revision = presentationRevision
         let complete: @MainActor () -> Void = { [weak self] in
             guard let self, self.presentationRevision == revision else { return }
-            self.configuration?.onPresentationChanged?(false)
+            self.notifyPresentationChanged(false)
         }
         if let animator {
             animator.addCompletion(complete)
         } else {
             complete()
         }
+    }
+
+    private func notifyPresentationChanged(_ presented: Bool) {
+        onPresentationChanged?(presented)
+        configuration?.onPresentationChanged?(presented)
     }
 
     private func cardPreview() -> UITargetedPreview? {

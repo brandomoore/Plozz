@@ -143,20 +143,28 @@ public struct EpisodeColumnCard: View, Equatable {
                 reduceMotion ? nil : .easeOut(duration: 0.12),
                 value: showsSynopsis
             )
-            .offset(y: reduceMotion || !descriptionsOnFocus || synopsisAtRest ? 0 : -metrics.focusCaptionPush)
+            .offset(y: usesNativeCaptionMotion || reduceMotion || !descriptionsOnFocus || synopsisAtRest ? 0 : -metrics.focusCaptionPush)
             .animation(
-                reduceMotion ? nil : .smooth(duration: 0.28),
+                usesNativeCaptionMotion || reduceMotion ? nil : .smooth(duration: 0.28),
                 value: synopsisAtRest
             )
             .padding(.top, 10)
         }
-        .offset(y: reduceMotion || captionIsFocused ? 0 : -metrics.focusCaptionPush)
+        .offset(y: usesNativeCaptionMotion || reduceMotion || captionIsFocused ? 0 : -metrics.focusCaptionPush)
         .animation(
-            reduceMotion ? nil : PlozzTheme.Metrics.cardFocusAnimation(
+            usesNativeCaptionMotion || reduceMotion ? nil : PlozzTheme.Metrics.cardFocusAnimation(
                 isFocused: captionIsFocused, focusStyle: focusStyle, reduceMotion: reduceMotion
             ),
             value: captionIsFocused
         )
+    }
+
+    private var usesNativeCaptionMotion: Bool {
+        #if os(tvOS)
+        focusStyle.usesSystemEffect
+        #else
+        false
+        #endif
     }
 
     private var synopsisTaskID: SynopsisTaskID {
@@ -263,6 +271,7 @@ public struct EpisodeColumnCard: View, Equatable {
             clipsOverlayToArtwork: false,
             indicators: nativeStatusIndicator,
             caption: captionsHidden ? nil : AnyView(episodeCaption),
+            captionFocusOffset: reduceMotion ? 0 : metrics.focusCaptionPush,
             focus: $isFocused, action: action
         )
         .focused($isFocused.focusState)

@@ -133,8 +133,8 @@ final class NativeFocusRequestHostedTests: XCTestCase {
         XCTAssertEqual(button.bounds.width, EpisodeColumnCard.artworkSize.width, accuracy: 1)
         XCTAssertEqual(button.bounds.height, EpisodeColumnCard.artworkSize.height, accuracy: 1)
         XCTAssertGreaterThan(caption.bounds.height, 80)
-        XCTAssertEqual(caption.frame.minY, button.frame.maxY, accuracy: 1)
-        XCTAssertEqual(container.bounds.height, caption.frame.maxY, accuracy: 1)
+        XCTAssertEqual(caption.center.y - caption.bounds.height / 2, button.frame.maxY, accuracy: 1)
+        XCTAssertEqual(container.bounds.height, caption.center.y + caption.bounds.height / 2, accuracy: 1)
         let coordinator = NativeMediaItemMenuCoordinator()
         coordinator.update(
             .init(item: MediaItem(id: "episode", title: "Episode", kind: .episode),
@@ -156,6 +156,60 @@ final class NativeFocusRequestHostedTests: XCTestCase {
         XCTAssertTrue(highlight.view === container)
         XCTAssertTrue(dismissal.view === container)
         XCTAssertFalse(highlight.view.bounds.isEmpty)
+    }
+
+    func testNativeCaptionMovesInTheSameFocusUpdateAsItsArtwork() async throws {
+        let fixture = try await makeFixture()
+        defer { fixture.close() }
+        let host = CaptionFocusHost()
+        fixture.window.rootViewController = host
+        let poster = NativePosterButton(
+            image: UIGraphicsImageRenderer(size: CGSize(width: 480, height: 270)).image { _ in
+                UIColor.gray.setFill()
+                UIRectFill(CGRect(x: 0, y: 0, width: 480, height: 270))
+            },
+            masksFocusEffectToContents: false
+        )
+        poster.contentSize = CGSize(width: 480, height: 270)
+        let container = NativeTVPoster<EmptyView>.Container(poster: poster)
+        container.captionFocusOffset = 16
+        container.updateCaption(UIHostingConfiguration { Text("Episode caption") }.margins(.all, 0))
+        container.frame = CGRect(x: 80, y: 300, width: 480, height: 320)
+        let other = UIButton(type: .system)
+        other.setTitle("Other", for: .normal)
+        other.frame = CGRect(x: 700, y: 300, width: 200, height: 80)
+        host.view.addSubview(container)
+        host.view.addSubview(other)
+        fixture.window.layoutIfNeeded()
+        let caption = try XCTUnwrap(container.caption)
+        let system = try XCTUnwrap(UIFocusSystem(for: poster))
+        host.target = other
+        system.requestFocusUpdate(to: host)
+        system.updateFocusIfNeeded()
+        try await waitUntil { other.isFocused }
+        XCTAssertEqual(caption.transform.ty, -16)
+        host.target = poster
+        system.requestFocusUpdate(to: host)
+        system.updateFocusIfNeeded()
+        try await waitUntil { poster.isFocused }
+        XCTAssertEqual(caption.transform.ty, 0, "The native focus update must move the caption without a SwiftUI render.")
+        container.setMenuPresented(true)
+        host.target = other
+        system.requestFocusUpdate(to: host)
+        system.updateFocusIfNeeded()
+        try await waitUntil { other.isFocused }
+        XCTAssertEqual(caption.transform.ty, 0, "Menu focus must not collapse the lifted caption.")
+        container.setMenuPresented(false)
+        XCTAssertEqual(caption.transform.ty, -16)
+        container.captionFocusOffset = 0
+        XCTAssertEqual(caption.transform.ty, 0, "Reduced motion removes caption travel.")
+    }
+
+    private final class CaptionFocusHost: UIViewController {
+        weak var target: UIView?
+        override var preferredFocusEnvironments: [any UIFocusEnvironment] {
+            target.map { [$0] } ?? super.preferredFocusEnvironments
+        }
     }
 
     func testNativeMenuRetainsCaptionPresentationUntilDismissalCompletes() throws {
