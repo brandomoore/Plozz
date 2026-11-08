@@ -92,6 +92,15 @@ registry.
   presentation fence and native content-focus request as selecting a rail
   destination, rather than relying on automatic focus after the overlay disappears.
 
+- **Pinned navigation can enter pages without media.** Live TV setup cards and
+  Settings categories remain reachable by Select and Right. The page has its own
+  native focus section so SwiftUI keeps its controls discoverable while the rail
+  owns focus, including scroll-contained controls. A declared entry region awaiting
+  native layout keeps its render handoff for explicit navigation as well as startup; actual
+  data-loading regions wait for their existing readiness notification.
+  `EmptyPinnedNavigationTests` covers entry, return, cold startup, and retained
+  Live TV while switching back to Settings and empty Home.
+
 - **Signing in does not change the starting page.** TV and mobile navigation
   availability uses the active profile's configured account metadata, not its
   credential-ready playback providers. A pending Plex Home identity or another

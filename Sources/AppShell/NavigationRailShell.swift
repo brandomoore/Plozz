@@ -153,6 +153,8 @@ private struct NavigationRailShellContent<Content: View>: View {
                 .environment(\.plozzPinnedSidebarActive, true)
                 .environment(\.plozzPinnedSidebarInteraction, pinnedSidebarInteraction)
                 .disabled(destinationFocus.isWaiting)
+                // Keep page controls discoverable while the rail's section owns focus.
+                .focusSection()
                 // Content is the scope's preferred focus ONLY while the rail does
                 // not hold focus. Opening the rail changes its focusable subtree;
                 // leaving this unconditional can re-assert content focus in the
