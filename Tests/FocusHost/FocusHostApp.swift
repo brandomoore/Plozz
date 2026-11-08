@@ -33,6 +33,8 @@ struct FocusHostApp: App {
                 SetupSummaryFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--player-presentation-back-fixture") {
                 PlayerPresentationBackFixture()
+            } else if ProcessInfo.processInfo.arguments.contains("--deep-link-resume-fixture") {
+                DeepLinkResumeFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--server-address-fixture") {
                 ServerAddressNavigationFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--read-ahead-settings-fixture") {

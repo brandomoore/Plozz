@@ -762,7 +762,25 @@ extension View {
         /// Home's Continue Watching row, for the player's tab.
         continueWatching: @escaping @MainActor () -> [MediaItem] = { [] }
     ) -> some View {
-        fullScreenCover(item: playRequest) { request in
+        playbackPresentation(playRequest: playRequest, resumePrompt: resumePrompt, onResume: { item, startPosition in
+            let origin = pendingPlaylistOrigin.wrappedValue
+                .flatMap { $0.containsSelection(item) ? $0 : nil }
+            let playlist: VideoPlaylistPlaybackContext? = origin.flatMap { origin in
+                guard let provider = try? resolveProvider(origin.accountID, in: accounts) else { return nil }
+                return VideoPlaylistPlaybackContext(origin: origin, provider: provider)
+            }
+            pendingPlaylistOrigin.wrappedValue = nil
+            let request = PlayRequest(
+                item: item,
+                startPosition: startPosition,
+                playlist: playlist
+            )
+            HandoffDiagnostics.emit(
+                "tap RESUME_CHOICE trace=\(request.traceID.uuidString.prefix(8)) "
+                    + "item=\(item.id) start=\(Int(startPosition))"
+            )
+            playRequest.wrappedValue = request
+        }) { request in
             PlayerPresentation(
                 request: request,
                 make: { request, adopted, continuation in
@@ -828,25 +846,6 @@ extension View {
                 },
                 playbackSettings: playbackSettingsModel.settings
             )
-        }
-        .resumePrompt(item: resumePrompt) { item, startPosition in
-            let origin = pendingPlaylistOrigin.wrappedValue
-                .flatMap { $0.containsSelection(item) ? $0 : nil }
-            let playlist: VideoPlaylistPlaybackContext? = origin.flatMap { origin in
-                guard let provider = try? resolveProvider(origin.accountID, in: accounts) else { return nil }
-                return VideoPlaylistPlaybackContext(origin: origin, provider: provider)
-            }
-            pendingPlaylistOrigin.wrappedValue = nil
-            let request = PlayRequest(
-                item: item,
-                startPosition: startPosition,
-                playlist: playlist
-            )
-            HandoffDiagnostics.emit(
-                "tap RESUME_CHOICE trace=\(request.traceID.uuidString.prefix(8)) "
-                    + "item=\(item.id) start=\(Int(startPosition))"
-            )
-            playRequest.wrappedValue = request
         }
     }
 }

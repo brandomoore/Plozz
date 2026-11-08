@@ -1081,7 +1081,7 @@ struct HomeTab: View {
     ///
     /// Lives on ``DeepLinkPlayRouter`` rather than on the tab so that watching
     /// the pending id cannot invalidate the tab's body.
-    private struct DeepLinkPlayRouter: View {
+    struct DeepLinkPlayRouter: View {
         let pendingPlay: PendingPlayRequest
         let accounts: [ResolvedAccount]
         let scopeKey: String
