@@ -443,12 +443,20 @@ no speculative external session is opened. YouTube trailers keep their existing
 source-opening behavior, and background trailers/music never launch another app.
 
 Explicit Live TV Watch actions (including expanding a preview) can hand off
-header-free IPTV channels from accounts or standalone playlists. The provider
-must opt into independent delivery; server tuner leases are not exported.
-Plozz drains its current preview before opening the external app and suppresses
+header-free IPTV channels from accounts or standalone playlists, and Jellyfin/
+Emby live streams whose HTTP(S) delivery needs no app-driven heartbeat.
+Plozz drains its current preview before allocating a server tuner or opening the external app and suppresses
 automatic reopening on return. Focus-triggered previews, Multiview and scheduled
 Plozz channels remain internal. Live returns correlate errors without creating
 movie/episode progress or claiming the channel actually played.
+For managed live streams, Plozz retains the original lease and persists only
+scoped live-stream/play-session cleanup handles. A matched return, failed handoff,
+or new playback intent releases those resources; foreground activation alone
+does not, because the external player may still be playing in PiP.
+Restart cleanup requires the original authorized profile, server user, account
+and credential revision. Players without callbacks retain cleanup until a new
+playback intent; if Plozz never returns, server-side expiry remains necessary.
+Plex's heartbeat-backed live sessions stay internal.
 
 On iPhone/iPad, downloaded movies and episodes play inside Plozz. Downloads
 menus do not export files to other apps, regardless of the external-player

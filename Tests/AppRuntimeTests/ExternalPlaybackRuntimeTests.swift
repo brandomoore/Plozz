@@ -6,6 +6,180 @@ import XCTest
 
 @MainActor
 final class ExternalPlaybackRuntimeTests: XCTestCase {
+    func testManagedLiveDrainsBeforeTuningAndClosesOnReturnWithoutVODProgress() async throws {
+        let fixture = ExternalPlaybackFixture()
+        defer { fixture.cleanup() }
+        fixture.managedLive = true
+        var drained = false
+        var ready = false
+        fixture.beforeRequest = {
+            XCTAssertTrue(drained)
+            XCTAssertFalse(ready)
+        }
+        let opened = try await fixture.runtime.launchLive(
+            source: .channel(accountID: "account", channelID: "channel"), title: "Channel",
+            selection: fixture.selection, context: { fixture.context }, isPresented: { true },
+            prepareToOpen: { drained = true }, willOpen: { ready = true }
+        )
+        XCTAssertTrue(opened)
+        XCTAssertTrue(ready)
+        XCTAssertEqual(fixture.externalLiveRequests, ["channel"])
+        XCTAssertEqual(fixture.liveCloses, 0)
+        XCTAssertEqual(fixture.runtime.receipt?.liveCleanup, fixture.liveCleanup)
+        XCTAssertNotNil(fixture.runtime.receipt?.owner)
+        let persisted = String(decoding: try XCTUnwrap(
+            fixture.defaults.data(forKey: "com.plozz.externalPlaybackReceipt")
+        ), as: UTF8.self)
+        XCTAssertFalse(persisted.contains("synthetic-token"))
+        XCTAssertFalse(persisted.contains("https://"))
+        await fixture.runtime.processReturn(context: { fixture.context }) { _ in XCTFail() }
+        XCTAssertEqual(fixture.liveCloses, 0, "Foreground/PiP is not a completion signal")
+        fixture.runtime.receive(try fixture.callback(position: "900"))
+        await fixture.runtime.processReturn(context: { fixture.context }) { _ in XCTFail("No live VOD progress") }
+        XCTAssertEqual(fixture.liveCloses, 1)
+        XCTAssertNil(fixture.runtime.receipt)
+        XCTAssertTrue(fixture.itemReads.isEmpty)
+    }
+
+    func testManagedLiveFailuresReleaseOnlyTheirOwnLease() async throws {
+        for mode in 0..<4 {
+            let fixture = ExternalPlaybackFixture()
+            defer { fixture.cleanup() }
+            fixture.managedLive = true
+            switch mode {
+            case 0: fixture.openSucceeds = false
+            case 1: fixture.liveWrongOwner = true
+            case 2: fixture.beforeRequest = { fixture.authorized = false }
+            default: fixture.beforeOpen = { fixture.runtime.beginPlaybackIntent(context: fixture.context) }
+            }
+            do {
+                let opened = try await fixture.launchLive(source: .channel(accountID: "account", channelID: "channel"))
+                XCTAssertLessThan(mode, 2)
+                XCTAssertFalse(opened)
+            } catch {
+                XCTAssertGreaterThanOrEqual(mode, 2)
+                XCTAssertTrue(error is CancellationError)
+            }
+            fixture.beforeOpen = nil
+            // Wait for serialized cleanup scheduled by a superseding intent.
+            _ = try await fixture.runtime.launch(
+                item: fixture.item, startPosition: nil, settings: fixture.settings,
+                selection: .init(player: .builtIn), context: { fixture.context }, isPresented: { true }
+            )
+            XCTAssertEqual(fixture.liveCloses, 1)
+            XCTAssertNil(fixture.runtime.receipt)
+            XCTAssertFalse(fixture.runtime.consumeForegroundDeparture(forProfile: fixture.profileID))
+            XCTAssertEqual(fixture.opened.count, mode == 0 || mode == 3 ? 1 : 0)
+        }
+    }
+
+    func testManagedLiveVLCReceiptRestoresCleanupButNeverAcceptsProgress() async throws {
+        let fixture = ExternalPlaybackFixture()
+        defer { fixture.cleanup() }
+        fixture.managedLive = true
+        fixture.selection.player = .vlc
+        let opened = try await fixture.launchLive(source: .channel(accountID: "account", channelID: "channel"))
+        XCTAssertTrue(opened)
+        XCTAssertNil(fixture.runtime.returnID)
+        let restored = ExternalPlaybackRuntime(defaults: fixture.defaults, callbackScheme: fixture.callbackScheme)
+        restored.beginPlaybackIntent(context: fixture.context)
+        _ = try await restored.launch(
+            item: fixture.item, startPosition: nil, settings: fixture.settings,
+            selection: .init(player: .builtIn), context: { fixture.context }, isPresented: { true }
+        )
+        XCTAssertEqual(fixture.restoredLiveCleanups, [fixture.liveCleanup])
+        XCTAssertEqual(fixture.liveCloses, 0, "Restart cleanup uses saved handles, not a fabricated lease")
+        XCTAssertNil(restored.receipt)
+    }
+
+    func testNewLiveIntentWaitsForCancelledTunerPreparationAndCleanup() async throws {
+        let fixture = ExternalPlaybackFixture()
+        defer { fixture.cleanup() }
+        fixture.managedLive = true
+        let started = expectation(description: "First tuner allocation entered")
+        let superseded = expectation(description: "New intent supersedes pending allocation")
+        var resume: CheckedContinuation<Void, Never>?
+        fixture.beforeLiveOpen = {
+            if fixture.externalLiveRequests.count == 1 {
+                await withCheckedContinuation {
+                    resume = $0
+                    started.fulfill()
+                }
+            } else {
+                XCTAssertEqual(fixture.liveCloses, 1, "Late old lease must close before another tuner opens")
+            }
+        }
+        let first = Task {
+            try await fixture.launchLive(source: .channel(accountID: "account", channelID: "first"))
+        }
+        await fulfillment(of: [started], timeout: 2)
+        let next = Task {
+            fixture.runtime.beginPlaybackIntent(context: fixture.context)
+            superseded.fulfill()
+            return try await fixture.runtime.launchLive(
+                source: .channel(accountID: "account", channelID: "next"), title: "Next",
+                selection: fixture.selection, context: { fixture.context }, isPresented: { true },
+                prepareToOpen: {}
+            )
+        }
+        await fulfillment(of: [superseded], timeout: 2)
+        resume?.resume()
+        do {
+            _ = try await first.value
+            XCTFail("Superseded allocation must not open the external player")
+        } catch { XCTAssertTrue(error is CancellationError) }
+        let opened = try await next.value
+        XCTAssertTrue(opened)
+        XCTAssertEqual(fixture.externalLiveRequests, ["first", "next"])
+        XCTAssertEqual(fixture.opened.count, 1)
+        XCTAssertEqual(fixture.liveCloses, 1)
+        fixture.runtime.receive(try fixture.callback(position: "0"))
+        await fixture.runtime.processReturn(context: { fixture.context }) { _ in XCTFail() }
+        XCTAssertEqual(fixture.liveCloses, 2)
+    }
+
+    func testManagedLiveRejectedURLClosesBeforeFallbackWithoutOpeningMarker() async throws {
+        let fixture = ExternalPlaybackFixture()
+        defer { fixture.cleanup() }
+        fixture.managedLive = true
+        fixture.resolvedMediaURL = URL(string: "http://127.0.0.1/local-proxy")!
+        let opened = try await fixture.runtime.launchLive(
+            source: .channel(accountID: "account", channelID: "channel"), title: "Channel",
+            selection: fixture.selection, context: { fixture.context }, isPresented: { true },
+            prepareToOpen: {}, willOpen: { XCTFail("Rejected source must not enter app-opening state") }
+        )
+        XCTAssertFalse(opened)
+        XCTAssertEqual(fixture.liveCloses, 1)
+        XCTAssertTrue(fixture.opened.isEmpty)
+        XCTAssertNil(fixture.runtime.receipt)
+    }
+
+    func testRestoredLiveReturnNeedsTheOriginalProfileUserAndCredentials() async throws {
+        for changed in 0..<3 {
+            let fixture = ExternalPlaybackFixture()
+            defer { fixture.cleanup() }
+            fixture.managedLive = true
+            _ = try await fixture.launchLive(source: .channel(accountID: "account", channelID: "channel"))
+            let revision = fixture.account.credentialRevision
+            let restored = ExternalPlaybackRuntime(defaults: fixture.defaults, callbackScheme: fixture.callbackScheme)
+            restored.receive(try fixture.callback(position: "20"))
+            switch changed {
+            case 0: fixture.profileID = "another-profile"
+            case 1: fixture.userID = "another-user"
+            default: fixture.account.credentialRevision = CredentialRevision()
+            }
+            await restored.processReturn(context: { fixture.context }) { _ in XCTFail() }
+            XCTAssertTrue(fixture.restoredLiveCleanups.isEmpty)
+            XCTAssertNotNil(restored.receipt)
+            fixture.profileID = "profile"
+            fixture.userID = "user"
+            fixture.account.credentialRevision = revision
+            await restored.processReturn(context: { fixture.context }) { _ in XCTFail() }
+            XCTAssertEqual(fixture.restoredLiveCleanups, [fixture.liveCleanup])
+            XCTAssertNil(restored.receipt)
+        }
+    }
+
     func testOnePlayOverrideDoesNotChangeTheDefault() async throws {
         let fixture = ExternalPlaybackFixture()
         defer { fixture.cleanup() }
@@ -765,6 +939,13 @@ private final class ExternalPlaybackFixture {
     var streamingOptions: StreamingPlaybackOptions?
     var externalRequests = 0
     var externalLiveRequests: [String] = []
+    var managedLive = false
+    var liveWrongOwner = false
+    var liveCloses = 0
+    var beforeLiveOpen: (@MainActor @Sendable () async -> Void)?
+    var resolvedMediaURL: URL?
+    let liveCleanup = ExternalLivePlaybackCleanup(liveStreamIDs: ["owned-live-handle"], playSessionID: "owned-play-session")
+    var restoredLiveCleanups: [ExternalLivePlaybackCleanup] = []
     var playedWrites: [Bool] = []
     var resumeWrites: [TimeInterval] = []
     var itemReads: [String] = []
@@ -788,10 +969,13 @@ private final class ExternalPlaybackFixture {
         )
     }
     var context: ExternalPlaybackContext {
-        ExternalPlaybackContext(
+        let provider: any MediaProvider = managedLive
+            ? ManagedExternalLiveProvider(session: session, fixture: self)
+            : ExternalPlaybackProvider(session: session, fixture: self)
+        return ExternalPlaybackContext(
             profileID: profileID, authorizationID: "authorization", accounts: [
-                ResolvedAccount(account: account, provider: ExternalPlaybackProvider(session: session, fixture: self))
-            ], isAuthorized: authorized, resolver: ExternalPlaybackResolver(url: media),
+                ResolvedAccount(account: account, provider: provider)
+            ], isAuthorized: authorized, resolver: ExternalPlaybackResolver(url: resolvedMediaURL ?? media),
             offlineResolver: offlineResolver
         )
     }
@@ -827,6 +1011,50 @@ private final class ExternalPlaybackFixture {
 private struct ExternalPlaybackResolver: AuthenticatedHTTPResourceResolving {
     let url: URL
     func resolve(_ locator: AuthenticatedHTTPPlaybackLocator) async throws -> URL { url }
+}
+
+private struct ManagedExternalLiveProvider: ExternalLivePlaybackSessionProviding {
+    let session: UserSession
+    let fixture: ExternalPlaybackFixture
+    var kind: ProviderKind { session.server.provider }
+    func libraries() async throws -> [MediaLibrary] { [] }
+    func continueWatching(limit: Int) async throws -> [MediaItem] { [] }
+    func latest(limit: Int) async throws -> [MediaItem] { [] }
+    func item(id: String) async throws -> MediaItem { throw AppError.notFound }
+    func children(of itemID: String) async throws -> [MediaItem] { [] }
+    func items(in containerID: String, kind: MediaItemKind, page: PageRequest) async throws -> MediaPage {
+        throw AppError.notFound
+    }
+    func search(query: String, limit: Int) async throws -> [MediaItem] { [] }
+    func playbackInfo(for itemID: String) async throws -> PlaybackRequest { throw AppError.notFound }
+    func reportPlayback(_ progress: PlaybackProgress, event: PlaybackEvent) async throws {}
+    func imageURL(itemID: String, kind: ImageKind, maxWidth: Int?) -> URL? { nil }
+    func openExternalLiveTVChannel(id: String) async throws -> ExternalLivePlaybackSession {
+        await MainActor.run { fixture.externalLiveRequests.append(id) }
+        await fixture.beforeLiveOpen?()
+        return try await MainActor.run {
+            let source = PlaybackSource.authenticatedHTTP(try AuthenticatedHTTPPlaybackLocator(
+                provider: kind, accountID: fixture.liveWrongOwner ? "someone-else" : "account",
+                credentialRevision: fixture.account.credentialRevision, itemID: id, deliveryMode: .hls,
+                resource: try AuthenticatedHTTPResource(pathBase: .serverRoot, path: "/Videos/channel/master.m3u8")
+            ))
+            fixture.beforeRequest?()
+            return ExternalLivePlaybackSession(
+                lease: ManagedExternalLiveLease(playbackSource: source, fixture: fixture),
+                cleanup: fixture.liveCleanup
+            )
+        }
+    }
+    func releaseExternalLiveTVSession(_ cleanup: ExternalLivePlaybackCleanup) async {
+        await MainActor.run { fixture.restoredLiveCleanups.append(cleanup) }
+    }
+}
+
+private struct ManagedExternalLiveLease: LiveTVStreamLease {
+    let playbackSource: PlaybackSource
+    let fixture: ExternalPlaybackFixture
+    func close() async { await MainActor.run { fixture.liveCloses += 1 } }
+    func report(_ update: LiveTVPlaybackUpdate) async { XCTFail("Do not invent external live playback reports") }
 }
 
 private struct ExternalOfflineResolver: OfflinePlaybackResolving {

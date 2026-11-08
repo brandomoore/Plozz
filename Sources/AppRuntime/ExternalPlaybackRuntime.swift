@@ -84,6 +84,7 @@ public final class ExternalPlaybackRuntime {
         let duration: TimeInterval?
         let createdAt: Date
         var liveAuthorizationID: String?
+        var liveCleanup: ExternalLivePlaybackCleanup?
         var isTrailer: Bool?
         var isExtra: Bool?
         var streamingSessionID: String?
@@ -106,7 +107,11 @@ public final class ExternalPlaybackRuntime {
     @ObservationIgnored private var streamingSession: (
         receiptID: UUID, request: PlaybackRequest, provider: any StreamingQualityProviding
     )?
-    @ObservationIgnored private var streamingCleanup: Task<Void, Never>?
+    @ObservationIgnored private var liveSession: (receiptID: UUID, lease: any LiveTVStreamLease)?
+    @ObservationIgnored private var pendingLiveSession: (
+        receiptID: UUID, task: Task<ExternalLivePlaybackSession, Error>
+    )?
+    @ObservationIgnored private var sessionCleanup: Task<Void, Never>?
 
     /// Only the next scene departure belongs to this handoff, not a later browsing session.
     public func consumeForegroundDeparture(forProfile profileID: String) -> Bool {
@@ -145,7 +150,7 @@ public final class ExternalPlaybackRuntime {
         foregroundDepartureProfileID = nil
         processingTask?.cancel()
         launchID = UUID()
-        releaseStreamingSession(context: context)
+        releaseSession(context: context)
         clearReceipt()
     }
 
@@ -160,7 +165,7 @@ public final class ExternalPlaybackRuntime {
         let initial = context()
         let generation = launchID
         do {
-            await streamingCleanup?.value
+            await sessionCleanup?.value
             try Task.checkCancellation()
             guard generation == launchID, initial.identity == context().identity else {
                 throw CancellationError()
@@ -219,17 +224,18 @@ public final class ExternalPlaybackRuntime {
         }
     }
 
-    /// Independent live sources have return/error correlation, never VOD progress.
+    /// Live sources have return/error correlation and scoped cleanup, never VOD progress.
     public func launchLive(
         source: ExternalLivePlaybackSource, title: String, selection: ExternalPlayerSettings,
         context: @escaping @MainActor () -> ExternalPlaybackContext,
         isPresented: @escaping @MainActor () -> Bool,
-        prepareToOpen: @escaping @MainActor () async throws -> Void
+        prepareToOpen: @escaping @MainActor () async throws -> Void,
+        willOpen: @escaping @MainActor () throws -> Void = {}
     ) async throws -> Bool {
-        guard selection.player != .builtIn else { return false }
         let initial = context()
         let generation = launchID
         let nonce = UUID()
+        var preparedSession: ExternalLivePlaybackSession?
         func checkCurrent() throws {
             try Task.checkCancellation()
             guard initial.isAuthorized, isPresented(), generation == launchID,
@@ -237,17 +243,52 @@ public final class ExternalPlaybackRuntime {
         }
         do {
             try checkCurrent()
+            await sessionCleanup?.value
+            try checkCurrent()
+            guard selection.player != .builtIn else { return false }
             try validateSelection(selection)
             let mediaURL: URL
+            var owner: Owner?
+            var drainedLocalPlayback = false
             switch source {
             case .channel(let accountID, let channelID):
                 guard let account = initial.accounts.first(where: { $0.account.id == accountID }) else {
                     throw CancellationError()
                 }
-                guard let provider = account.provider as? any ExternalLivePlaybackProviding else {
+                if let provider = account.provider as? any ExternalLivePlaybackProviding {
+                    mediaURL = try await provider.externalLivePlaybackURL(for: channelID)
+                } else if let provider = account.provider as? any ExternalLivePlaybackSessionProviding {
+                    // Release our preview before allocating another tuner. This
+                    // is still preparation, not permission to open an app while inactive.
+                    try await prepareToOpen()
+                    try checkCurrent()
+                    drainedLocalPlayback = true
+                    let preparation = Task { try await provider.openExternalLiveTVChannel(id: channelID) }
+                    pendingLiveSession = (nonce, preparation)
+                    let session = try await withTaskCancellationHandler {
+                        try await preparation.value
+                    } onCancel: {
+                        preparation.cancel()
+                    }
+                    guard pendingLiveSession?.receiptID == nonce else { throw CancellationError() }
+                    pendingLiveSession = nil
+                    liveSession = (nonce, session.lease)
+                    preparedSession = session
+                    try checkCurrent()
+                    if case .authenticatedHTTP(let locator) = session.lease.playbackSource {
+                        guard locator.accountID == accountID, locator.itemID == channelID,
+                              locator.provider == provider.kind,
+                              locator.credentialRevision == account.credentialRevision else {
+                            throw ExternalPlayerError.unsupportedSource
+                        }
+                    }
+                    mediaURL = try await resolveURL(
+                        source: session.lease.playbackSource, fallback: nil, resolver: initial.resolver
+                    )
+                    owner = Owner(profileID: initial.profileID, account: account)
+                } else {
                     throw ExternalPlayerError.unsupportedSource
                 }
-                mediaURL = try await provider.externalLivePlaybackURL(for: channelID)
             case .stream(let url, let headers):
                 guard headers.isEmpty else { throw ExternalPlayerError.unsupportedSource }
                 mediaURL = url
@@ -257,18 +298,17 @@ public final class ExternalPlaybackRuntime {
                 settings: selection, mediaURL: mediaURL, title: title, position: nil,
                 subtitles: [], callbackScheme: callbackScheme, nonce: nonce
             )
-            // Drain the local preview before opening another provider connection.
-            await streamingCleanup?.value
+            if !drainedLocalPlayback { try await prepareToOpen() }
             try checkCurrent()
-            try await prepareToOpen()
-            try checkCurrent()
-            if selection.player.returnsProgress {
+            if selection.player.returnsProgress || preparedSession != nil {
                 try save(Receipt(
-                    id: nonce, owner: nil, itemID: nil, player: selection.player,
+                    id: nonce, owner: owner, itemID: nil, player: selection.player,
                     mediaURLDigest: Self.digest(mediaURL), duration: nil, createdAt: Date(),
-                    liveAuthorizationID: initial.identity
+                    liveAuthorizationID: initial.identity, liveCleanup: preparedSession?.cleanup
                 ))
             }
+            try willOpen()
+            try checkCurrent()
             foregroundDepartureProfileID = initial.profileID
             guard await open(link) else { throw ExternalPlayerError.unavailable }
             try checkCurrent()
@@ -276,14 +316,18 @@ public final class ExternalPlaybackRuntime {
             return true
         } catch {
             if generation == launchID { foregroundDepartureProfileID = nil }
+            if liveSession?.receiptID == nonce || pendingLiveSession?.receiptID == nonce {
+                releaseSession(context: initial)
+            }
             if receipt?.id == nonce { clearReceipt() }
+            await sessionCleanup?.value
             try checkCurrent()
             if error is CancellationError { throw CancellationError() }
             if let failure = error as? ExternalPlayerError,
                failure == .unsupportedSource || failure == .unavailable {
-                PlozzLog.playback.info("Independent live handoff unavailable; using Plozz.")
+                PlozzLog.playback.info("External live handoff unavailable; using Plozz.")
             } else {
-                PlozzLog.playback.error("Independent live handoff preparation failed; using Plozz.")
+                PlozzLog.playback.error("External live handoff preparation failed; using Plozz.")
             }
             return false
         }
@@ -522,6 +566,9 @@ public final class ExternalPlaybackRuntime {
         let initial = context()
         if let authorizationID = pending.liveAuthorizationID {
             guard initial.isAuthorized, initial.identity == authorizationID else { return }
+            releaseSession(context: initial)
+            await sessionCleanup?.value
+            guard !Task.isCancelled, receipt?.id == pending.id, context().identity == initial.identity else { return }
             clearReceipt()
             if pending.failed { error = .playbackFailed }
             return
@@ -534,8 +581,8 @@ public final class ExternalPlaybackRuntime {
         func current() -> Bool {
             !Task.isCancelled && receipt?.id == pending.id && context().identity == initial.identity
         }
-        releaseStreamingSession(context: initial)
-        await streamingCleanup?.value
+        releaseSession(context: initial)
+        await sessionCleanup?.value
         guard current() else { return }
         if pending.failed {
             clearReceipt()
@@ -583,9 +630,29 @@ public final class ExternalPlaybackRuntime {
         }
     }
 
-    private func releaseStreamingSession(context: ExternalPlaybackContext?) {
+    private func releaseSession(context: ExternalPlaybackContext?) {
         let release: @Sendable () async -> Void
-        if let session = streamingSession {
+        if let pending = pendingLiveSession {
+            pendingLiveSession = nil
+            pending.task.cancel()
+            release = {
+                switch await pending.task.result {
+                case .success(let session): await session.lease.close()
+                case .failure:
+                    // The provider cleans up failed preparations before throwing.
+                    break
+                }
+            }
+        } else if let session = liveSession {
+            release = { await session.lease.close() }
+            liveSession = nil
+        } else if let pending = receipt, let cleanup = pending.liveCleanup,
+                  let context, context.isAuthorized,
+                  let account = context.accounts.first(where: {
+                      Owner(profileID: context.profileID, account: $0) == pending.owner
+                  }), let live = account.provider as? any ExternalLivePlaybackSessionProviding {
+            release = { await live.releaseExternalLiveTVSession(cleanup) }
+        } else if let session = streamingSession {
             release = { await session.provider.releaseStreamingSession(session.request) }
             streamingSession = nil
         } else if let pending = receipt, let id = pending.streamingSessionID,
@@ -597,11 +664,12 @@ public final class ExternalPlaybackRuntime {
         } else { return }
         if var pending = receipt {
             pending.streamingSessionID = nil
+            pending.liveCleanup = nil
             do { try save(pending) }
             catch { self.error = .persistence }
         }
-        let previous = streamingCleanup
-        streamingCleanup = Task {
+        let previous = sessionCleanup
+        sessionCleanup = Task {
             await previous?.value
             await release()
         }

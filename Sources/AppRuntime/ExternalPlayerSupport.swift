@@ -23,11 +23,11 @@ private struct ExternalPlayerSupport: ViewModifier {
     func body(content: Content) -> some View {
         content
             .environment(\.externalPlaybackContext, context)
-            .environment(\.externalLivePlayback, { source, title, isCurrent, prepareToOpen in
+            .environment(\.externalLivePlayback, { source, title, isCurrent, prepareToOpen, willOpen in
                 runtime.beginPlaybackIntent(context: context())
                 return try await runtime.launchLive(
                     source: source, title: title, selection: ExternalPlayerSettingsModel.shared.settings,
-                    context: context, isPresented: isCurrent, prepareToOpen: prepareToOpen
+                    context: context, isPresented: isCurrent, prepareToOpen: prepareToOpen, willOpen: willOpen
                 )
             })
             .environment(\.externalPlaybackChoices, { item in

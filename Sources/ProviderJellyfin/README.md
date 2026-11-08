@@ -48,6 +48,10 @@ supported capability remains at parity.
   why the resulting stream failed.
 - `JellyfinMusicProvider` — music-library queries (artists, albums, tracks)
   surfaced through the shared provider abstraction.
+- `JellyfinLiveTV` — tuner preparation and scoped live-stream/encoding cleanup.
+  External playback reuses that lease owner without inventing playback reports;
+  only cleanup handles survive a restart. See the shared
+  [external playback lifecycle](../FeatureSettings/README.md).
 
 ## Invariants
 

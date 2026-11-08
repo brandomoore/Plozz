@@ -11,7 +11,7 @@ final class LiveTVPlaybackCoordinatorTests: XCTestCase {
         fixture.coordinator.focus("one")
         let previewed = await fixture.coordinator.preparePreview(try XCTUnwrap(fixture.preview.pendingRequest))
         XCTAssertTrue(previewed)
-        let opened = await fixture.coordinator.watch("one", externalPlayback: { source, title, isCurrent, prepare in
+        let opened = await fixture.coordinator.watch("one", externalPlayback: { source, title, isCurrent, prepare, willOpen in
             guard case .channel(let accountID, let channelID) = source else { XCTFail(); return false }
             XCTAssertEqual(accountID, "account")
             XCTAssertEqual(channelID, "one")
@@ -21,6 +21,8 @@ final class LiveTVPlaybackCoordinatorTests: XCTestCase {
             let closes = await lease.closeCalls
             XCTAssertEqual(closes, 1)
             XCTAssertNil(fixture.preparation.current)
+            XCTAssertFalse(fixture.coordinator.isOpeningExternalPlayer)
+            try willOpen()
             XCTAssertTrue(fixture.coordinator.isOpeningExternalPlayer)
             // Opening an app normally makes the scene inactive before open returns.
             fixture.coordinator.setInteractionActive(false)
@@ -40,11 +42,28 @@ final class LiveTVPlaybackCoordinatorTests: XCTestCase {
         await fixture.preparation.close()
     }
 
+    func testSceneDeactivationDuringServerPreparationCancelsBeforeAppOpening() async throws {
+        let fixture = CoordinatorFixture()
+        let opened = await fixture.coordinator.watch("iptv", externalPlayback: { _, _, isCurrent, prepare, willOpen in
+            try await prepare()
+            XCTAssertFalse(fixture.coordinator.isOpeningExternalPlayer)
+            fixture.coordinator.setInteractionActive(false)
+            XCTAssertFalse(isCurrent())
+            try willOpen()
+            XCTFail("Backgrounding during server negotiation must not launch another app")
+            return true
+        }).value
+        XCTAssertFalse(opened)
+        XCTAssertFalse(fixture.coordinator.isOpeningExternalPlayer)
+        XCTAssertNil(fixture.preparation.current)
+        await fixture.preparation.close()
+    }
+
     func testIndependentPlaylistWatchPassesHeadersAndFallsBackWithoutReplacingPreview() async throws {
         let fixture = CoordinatorFixture()
         _ = await fixture.coordinator.watch("iptv", expandsPlayer: false).value
         let original = fixture.preparation.current?.id
-        let accepted = await fixture.coordinator.watch("iptv", externalPlayback: { source, _, isCurrent, _ in
+        let accepted = await fixture.coordinator.watch("iptv", externalPlayback: { source, _, isCurrent, _, _ in
             guard case .stream(let url, let headers) = source else { XCTFail(); return false }
             XCTAssertEqual(url.absoluteString, "https://fixture.invalid/public.m3u8")
             XCTAssertTrue(headers.isEmpty)
@@ -61,8 +80,9 @@ final class LiveTVPlaybackCoordinatorTests: XCTestCase {
         let fixture = CoordinatorFixture()
         _ = await fixture.coordinator.watch("iptv", expandsPlayer: false).value
         let original = fixture.preparation.current?.id
-        let accepted = await fixture.coordinator.watch("iptv", externalPlayback: { _, _, _, prepare in
+        let accepted = await fixture.coordinator.watch("iptv", externalPlayback: { _, _, _, prepare, willOpen in
             try await prepare()
+            try willOpen()
             return false
         }).value
         XCTAssertTrue(accepted)
@@ -79,7 +99,7 @@ final class LiveTVPlaybackCoordinatorTests: XCTestCase {
         let lease = try CoordinatorFixtureLease("one", closeEntered: closing, closeGate: gate, iptv: true)
         let fixture = CoordinatorFixture(kind: .iptv, replies: ["one": [.init(lease: lease)]])
         _ = await fixture.coordinator.watch("one", expandsPlayer: false).value
-        let old = fixture.coordinator.watch("one", externalPlayback: { _, _, _, prepare in
+        let old = fixture.coordinator.watch("one", externalPlayback: { _, _, _, prepare, _ in
             try await prepare()
             XCTFail("Superseded Watch must not open another app")
             return true
@@ -98,7 +118,7 @@ final class LiveTVPlaybackCoordinatorTests: XCTestCase {
 
     func testExternalHandoffCannotOutliveSourceAuthorization() async throws {
         let fixture = CoordinatorFixture()
-        let opened = await fixture.coordinator.watch("iptv", externalPlayback: { _, _, isCurrent, prepare in
+        let opened = await fixture.coordinator.watch("iptv", externalPlayback: { _, _, isCurrent, prepare, _ in
             try await prepare()
             fixture.scope.enabledSources.remove("playlist")
             XCTAssertFalse(isCurrent())
@@ -113,7 +133,7 @@ final class LiveTVPlaybackCoordinatorTests: XCTestCase {
 
     func testScheduledLibraryChannelsNeverAttemptExternalHandoff() async throws {
         let fixture = CoordinatorFixture(kind: .plozz)
-        _ = await fixture.coordinator.watch("one", externalPlayback: { _, _, _, _ in
+        _ = await fixture.coordinator.watch("one", externalPlayback: { _, _, _, _, _ in
             XCTFail("Library schedules must retain their runtime")
             return true
         }).value
@@ -881,6 +901,27 @@ final class LiveTVPlaybackCoordinatorTests: XCTestCase {
         let retried = await fixture.coordinator.stopCurrentAndRetry(failure).value
         XCTAssertFalse(retried)
         XCTAssertEqual(fixture.preparation.current?.id, oldID)
+        await fixture.preparation.close()
+    }
+
+    func testRecoveryFallsBackInternallyAfterExternalPreparationAlreadyDrainedTheTuner() async throws {
+        let fixture = CoordinatorFixture(replies: [
+            "one": [.init(lease: try CoordinatorFixtureLease("one"))],
+            "two": [.init(error: .tunerUnavailable), .init(lease: try CoordinatorFixtureLease("two"))]
+        ])
+        _ = await fixture.coordinator.watch("one").value
+        var attempts = 0
+        _ = await fixture.coordinator.watch("two", externalPlayback: { _, _, _, prepare, _ in
+            attempts += 1
+            if attempts == 2 { try await prepare() }
+            return false
+        }).value
+        let failure = try XCTUnwrap(fixture.coordinator.watchFailure)
+        XCTAssertNotNil(failure.currentToStop)
+        let recovered = await fixture.coordinator.stopCurrentAndRetry(failure).value
+        XCTAssertTrue(recovered)
+        XCTAssertEqual(attempts, 2)
+        XCTAssertEqual(fixture.preparation.current?.channel.id, "two")
         await fixture.preparation.close()
     }
 

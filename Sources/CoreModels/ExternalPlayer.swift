@@ -12,6 +12,34 @@ public protocol ExternalLivePlaybackProviding: MediaProvider {
     func externalLivePlaybackURL(for channelID: String) async throws -> URL
 }
 
+/// Server-owned live streams that remain usable without app-driven maintenance.
+/// The caller retains the lease, or restores scoped cleanup after termination.
+public protocol ExternalLivePlaybackSessionProviding: MediaProvider {
+    func openExternalLiveTVChannel(id: String) async throws -> ExternalLivePlaybackSession
+    func releaseExternalLiveTVSession(_ cleanup: ExternalLivePlaybackCleanup) async
+}
+
+public struct ExternalLivePlaybackCleanup: Codable, Equatable, Sendable {
+    public let liveStreamIDs: [String]
+    public let playSessionID: String?
+
+    public init(liveStreamIDs: [String], playSessionID: String?) {
+        self.liveStreamIDs = liveStreamIDs
+        self.playSessionID = playSessionID
+    }
+}
+
+public struct ExternalLivePlaybackSession: Sendable {
+    public let lease: any LiveTVStreamLease
+    /// Only server-issued cleanup handles, never credentials or media URLs.
+    public let cleanup: ExternalLivePlaybackCleanup
+
+    public init(lease: any LiveTVStreamLease, cleanup: ExternalLivePlaybackCleanup) {
+        self.lease = lease
+        self.cleanup = cleanup
+    }
+}
+
 public enum ExternalLivePlaybackSource: Sendable {
     case channel(accountID: String, channelID: String)
     case stream(url: URL, httpHeaders: [String: String])
@@ -20,7 +48,8 @@ public enum ExternalLivePlaybackSource: Sendable {
 public typealias ExternalLivePlaybackHandler = @MainActor (
     ExternalLivePlaybackSource, String,
     @escaping @MainActor @Sendable () -> Bool,
-    @escaping @MainActor () async throws -> Void
+    @escaping @MainActor () async throws -> Void,
+    @escaping @MainActor () throws -> Void
 ) async throws -> Bool
 
 public enum ExternalPlayer: String, Codable, CaseIterable, Sendable {

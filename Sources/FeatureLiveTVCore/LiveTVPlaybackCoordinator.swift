@@ -394,10 +394,11 @@ public final class LiveTVPlaybackCoordinator {
                 return self.isOpeningExternalPlayer
                     || (self.isInteractionActive && self.interactionRevision == interaction)
             }
+            var drainedForExternal = false
             if let external = target.externalPlayback, let source = self.externalSource(for: target) {
                 do {
                     guard acceptsExternal() else { return false }
-                    let opened = try await external(source, target.channel.name, acceptsExternal) {
+                    let opened = try await external(source, target.channel.name, acceptsExternal, {
                         guard acceptsExternal() else { throw CancellationError() }
                         self.cleanupCount += 1
                         await self.preparation.close()
@@ -405,8 +406,11 @@ public final class LiveTVPlaybackCoordinator {
                         guard acceptsExternal() else { throw CancellationError() }
                         self.preview.stop()
                         self.retirePresentation()
+                        drainedForExternal = true
+                    }, {
+                        guard acceptsExternal() else { throw CancellationError() }
                         self.isOpeningExternalPlayer = true
-                    }
+                    })
                     guard acceptsExternal() else { return false }
                     if opened {
                         self.suppressPreview(of: target.channel.id)
@@ -421,7 +425,7 @@ public final class LiveTVPlaybackCoordinator {
                     PlozzLog.playback.error("External live playback preparation failed; using Plozz.")
                 }
             }
-            if let currentID {
+            if let currentID, !drainedForExternal {
                 guard self.preparation.current?.id == currentID,
                       let accountID = target.reference?.accountID, authorized() else {
                     self.finishWatch(id)

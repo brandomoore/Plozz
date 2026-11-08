@@ -126,6 +126,10 @@ extension JellyfinProvider: ServerLiveTVProviding {
     }
 
     public func openLiveTVChannel(id: String) async throws -> any LiveTVStreamLease {
+        try await prepareLiveTVChannel(id: id)
+    }
+
+    fileprivate func prepareLiveTVChannel(id: String) async throws -> JellyfinLiveTVLease {
         guard Self.validLiveTVItemID(id) else { throw ServerLiveTVError.invalidChannel }
         try Task.checkCancellation()
         guard await !liveTVLeases.isRetired else { throw CancellationError() }
@@ -393,6 +397,24 @@ extension JellyfinProvider: ServerLiveTVProviding {
     }
 }
 
+extension JellyfinProvider: ExternalLivePlaybackSessionProviding {
+    public func openExternalLiveTVChannel(id: String) async throws -> ExternalLivePlaybackSession {
+        let lease = try await prepareLiveTVChannel(id: id)
+        do {
+            let cleanup = await lease.resources.externalCleanup
+            try Task.checkCancellation()
+            return ExternalLivePlaybackSession(lease: lease, cleanup: cleanup)
+        } catch {
+            await lease.close()
+            throw error
+        }
+    }
+
+    public func releaseExternalLiveTVSession(_ cleanup: ExternalLivePlaybackCleanup) async {
+        await JellyfinLiveTVResources.release(cleanup, client: client)
+    }
+}
+
 extension JellyfinProvider: ProviderTeardown {
     public func teardown() async {
         await liveTVLeases.closeAll()
@@ -405,7 +427,7 @@ private extension String {
     }
 }
 
-private struct JellyfinLiveTVLease: LiveTVStreamLease {
+fileprivate struct JellyfinLiveTVLease: LiveTVStreamLease {
     let playbackSource: PlaybackSource
     let resources: JellyfinLiveTVResources
 
@@ -453,6 +475,10 @@ actor JellyfinLiveTVResources {
     private var lastPosition: TimeInterval = 0
     private var lastReport: Task<Void, Never>?
     private var cleanup: Task<Void, Never>?
+
+    var externalCleanup: ExternalLivePlaybackCleanup {
+        ExternalLivePlaybackCleanup(liveStreamIDs: ownedLiveStreamIDs.sorted(), playSessionID: playSessionID)
+    }
 
     init(
         client: JellyfinClient, itemID: String, playSessionID: String?,
@@ -505,8 +531,7 @@ actor JellyfinLiveTVResources {
         let previous = lastReport
         let client = client
         let stopped = started ? progressBody(position: lastPosition, paused: false) : nil
-        let liveIDs = ownedLiveStreamIDs.sorted()
-        let playSessionID = playSessionID
+        let handles = externalCleanup
         let store = store
         let id = id
         let task = Task.detached {
@@ -518,24 +543,28 @@ actor JellyfinLiveTVResources {
                     PlozzLog.playback.error("Live TV playback-stop report could not be confirmed.")
                 }
             }
-            for liveID in liveIDs {
-                do {
-                    try await client.liveTVClose(liveStreamID: liveID)
-                } catch {
-                    PlozzLog.playback.error("Live TV stream release could not be confirmed.")
-                }
-            }
-            if let playSessionID {
-                do {
-                    try await client.liveTVStopEncoding(playSessionID: playSessionID)
-                } catch {
-                    PlozzLog.playback.error("Live TV session-scoped encoding stop could not be confirmed.")
-                }
-            }
+            await Self.release(handles, client: client)
             await store.remove(id)
         }
         cleanup = task
         await task.value
+    }
+
+    static func release(_ cleanup: ExternalLivePlaybackCleanup, client: JellyfinClient) async {
+        for liveID in cleanup.liveStreamIDs {
+            do {
+                try await client.liveTVClose(liveStreamID: liveID)
+            } catch {
+                PlozzLog.playback.error("Live TV stream release could not be confirmed.")
+            }
+        }
+        if let playSessionID = cleanup.playSessionID {
+            do {
+                try await client.liveTVStopEncoding(playSessionID: playSessionID)
+            } catch {
+                PlozzLog.playback.error("Live TV session-scoped encoding stop could not be confirmed.")
+            }
+        }
     }
 
     private func progressBody(position: TimeInterval, paused: Bool) -> JellyfinLiveTVProgressBody {
