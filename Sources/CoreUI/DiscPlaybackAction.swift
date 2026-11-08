@@ -10,16 +10,7 @@ private struct ExternalPlaybackChoicesKey: EnvironmentKey {
     static let defaultValue: @MainActor (MediaItem) -> [ExternalPlayer] = { _ in [] }
 }
 
-private struct ExternalLivePlaybackKey: EnvironmentKey {
-    static let defaultValue: ExternalLivePlaybackHandler? = nil
-}
-
 public extension EnvironmentValues {
-    var externalLivePlayback: ExternalLivePlaybackHandler? {
-        get { self[ExternalLivePlaybackKey.self] }
-        set { self[ExternalLivePlaybackKey.self] = newValue }
-    }
-
     var externalPlaybackChoices: @MainActor (MediaItem) -> [ExternalPlayer] {
         get { self[ExternalPlaybackChoicesKey.self] }
         set { self[ExternalPlaybackChoicesKey.self] = newValue }

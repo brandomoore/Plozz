@@ -6,52 +6,6 @@ public protocol ExternalPlaybackProviding: MediaProvider {
     func externalPlaybackInfo(for itemID: String, mediaSourceID: String?) async throws -> PlaybackRequest
 }
 
-/// Opt in only when the channel needs neither an app-local proxy nor an owned
-/// tuner/heartbeat session after Plozz is suspended.
-public protocol ExternalLivePlaybackProviding: MediaProvider {
-    func externalLivePlaybackURL(for channelID: String) async throws -> URL
-}
-
-/// Server-owned live streams that remain usable without app-driven maintenance.
-/// The caller retains the lease, or restores scoped cleanup after termination.
-public protocol ExternalLivePlaybackSessionProviding: MediaProvider {
-    func openExternalLiveTVChannel(id: String) async throws -> ExternalLivePlaybackSession
-    func releaseExternalLiveTVSession(_ cleanup: ExternalLivePlaybackCleanup) async
-}
-
-public struct ExternalLivePlaybackCleanup: Codable, Equatable, Sendable {
-    public let liveStreamIDs: [String]
-    public let playSessionID: String?
-
-    public init(liveStreamIDs: [String], playSessionID: String?) {
-        self.liveStreamIDs = liveStreamIDs
-        self.playSessionID = playSessionID
-    }
-}
-
-public struct ExternalLivePlaybackSession: Sendable {
-    public let lease: any LiveTVStreamLease
-    /// Only server-issued cleanup handles, never credentials or media URLs.
-    public let cleanup: ExternalLivePlaybackCleanup
-
-    public init(lease: any LiveTVStreamLease, cleanup: ExternalLivePlaybackCleanup) {
-        self.lease = lease
-        self.cleanup = cleanup
-    }
-}
-
-public enum ExternalLivePlaybackSource: Sendable {
-    case channel(accountID: String, channelID: String)
-    case stream(url: URL, httpHeaders: [String: String])
-}
-
-public typealias ExternalLivePlaybackHandler = @MainActor (
-    ExternalLivePlaybackSource, String,
-    @escaping @MainActor @Sendable () -> Bool,
-    @escaping @MainActor () async throws -> Void,
-    @escaping @MainActor () throws -> Void
-) async throws -> Bool
-
 public enum ExternalPlayer: String, Codable, CaseIterable, Sendable {
     case builtIn, nativePlayer, infuse, vlc, custom
 
@@ -174,14 +128,10 @@ public enum ExternalPlayerURL {
 
     public static func make(
         settings: ExternalPlayerSettings, mediaURL: URL, title: String,
-        position: TimeInterval?, subtitles: [URL] = [], callbackScheme: String, nonce: UUID
+        position: TimeInterval, subtitles: [URL] = [], callbackScheme: String, nonce: UUID
     ) throws -> URL {
-        guard isSupportedMediaURL(mediaURL) else { throw ExternalPlayerError.unsupportedSource }
-        if let position {
-            guard position.isFinite, position >= 0, position < Double(Int.max) else {
-                throw ExternalPlayerError.unsupportedSource
-            }
-        }
+        guard isSupportedMediaURL(mediaURL), position.isFinite, position >= 0,
+              position < Double(Int.max) else { throw ExternalPlayerError.unsupportedSource }
         if settings.player == .custom {
             try validateCustomTemplate(settings.customURLTemplate)
             let unreserved = CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~")
@@ -200,7 +150,7 @@ public enum ExternalPlayerURL {
             URLQueryItem(name: "filename", value: title)
         ]
         if settings.player.returnsProgress {
-            if let position { query.append(URLQueryItem(name: "position", value: String(Int(position)))) }
+            query.append(URLQueryItem(name: "position", value: String(Int(position))))
             for outcome in ["success", "error"] {
                 var callback = URLComponents()
                 callback.scheme = callbackScheme

@@ -215,7 +215,7 @@ private struct ExternalPlayerChoices: View {
 private struct ExternalPlayerHelp: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Compatible videos and Live TV open in the selected app, including server-converted streams. Unsupported sources play in Plozz.")
+            Text("Compatible library videos open in the selected app, including server-converted streams. Unsupported sources and Live TV play in Plozz.")
             Text("Playable links, including server access tokens when required, are shared with the selected app. Only choose an app you trust.")
             Text("Native Player and Infuse 8.4.7 or later can return progress when their player closes. Plozz's controls, skip markers, and autoplay aren't available in another app.")
             Text("This choice stays on this device. Watch progress still belongs to the active viewer.")

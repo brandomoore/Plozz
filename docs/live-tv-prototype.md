@@ -11,21 +11,6 @@ management, guide/search, Multiview, playback and profile-scoped iCloud sync. Ex
 profile authorization, parental approval, account, source and persistence gates
 remain in force.
 
-When an external player is selected, explicit Watch actions can hand off
-independently accessible, header-free IPTV channels and Jellyfin/Emby live streams
-with owned cleanup handles and no app-driven maintenance requirement. This includes expanding an
-existing preview, but never passive focus previews, Multiview, or scheduled Plozz
-channels. The shared playback coordinator drains its owned preview before allocating
-a managed tuner or opening
-another app, rechecks source/profile authorization after asynchronous work, and
-does not automatically restart the channel on return. Managed live leases close
-on a matched callback, failed handoff, or subsequent playback intent, not simply
-when Plozz becomes active. Only non-secret scoped cleanup handles survive restart,
-and their release requires the original authorized account/profile identity.
-Plex's heartbeat-backed tuner leases and header-dependent streams stay internal. See
-[external playback guidance](../Sources/FeatureSettings/README.md) for
-callback, credential, and compatibility limits.
-
 Successful playlist setup (including free channels), adding an IPTV account,
 or explicitly adding a media server's Live TV source shows Live TV in the active
 profile's navigation. Other destinations, their order, and other profiles are
