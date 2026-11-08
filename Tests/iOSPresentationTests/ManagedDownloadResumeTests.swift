@@ -82,7 +82,7 @@ final class ManagedDownloadResumeTests: XCTestCase {
         let registry = DownloadedMediaRegistry(store: InMemoryDownloadedMediaStore())
         let engine = PlozziOSBackgroundHTTPDownloadEngine(
             profileID: profile, registry: registry,
-            resolveURL: { _, _, _ in
+            resolveURL: { _, _, _, _ in
                 .init(url: url, expectedDuration: nil, cleanupURL: nil, expectedBytes: Int64(bytes.count))
             }
         )

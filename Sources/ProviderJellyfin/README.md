@@ -51,6 +51,14 @@ supported capability remains at parity.
 
 ## Invariants
 
+New reduced Emby offline downloads use `EmbyOfflineDownloadURLBuilder`: one
+progressive H.264 MP4 plus independent raw AAC requests for additional soundtracks.
+Each request names the exact media source and audio index, preserves the approved
+proxy prefix and authentication, and owns its encoding session. The client
+packages alternate tracks without another video encode. This is Emby-specific:
+Jellyfin's audio-only endpoint does not honor the selected index. Original and
+legacy HLS downloads are unchanged; see [MediaDownloads](../MediaDownloads/README.md).
+
 - Approved alternate addresses share one resolver across ordinary and interactive
   API requests. Artwork and newly resolved playback resources use the selected
   origin, including its reverse-proxy prefix. Public identity probes carry no

@@ -89,11 +89,42 @@ Cancel action pauses rather than deletes downloads.
 
 Track inclusion is automatic, not a universal pair of settings. Original saves
 the existing file unchanged, retaining its embedded audio and subtitle tracks.
-Reduced copies use the existing server download/conversion paths: Plex keeps one
-audio track and at most one text subtitle; Jellyfin/Emby keep the primary audio
-and text subtitles exposed in the downloadable HLS presentation; Silo follows its
-native download artifact and subtitle manifest. Preferred audio languages are
-requested where supported. Network shares remain Original-only.
+New reduced Plex, Emby and Silo downloads retain all reported audio tracks
+automatically. Playback applies the existing preferred-language policy to the
+local tracks, without changing the server's saved soundtrack selection.
+
+Plex prepares one H.264/AAC MP4 through its native download queue. Its offline
+client profile enables `DirectPlayStreamSelection`; no individual audio selection
+is sent and no extra video conversion or original-file transfer is needed.
+Before completion, Plozz checks the actual languages, audio count, requested
+resolution and end-of-file samples. Older single-audio requests retain their
+existing behavior on retry; already saved files are not changed.
+
+Emby converts video once to H.264
+MP4 and each additional soundtrack separately to stereo AAC at 192 kbps. Native
+AVFoundation packaging copies those compressed samples into one MP4 with mutually
+exclusive audio choices; it does not encode the video again. This needs temporary
+space for the downloaded inputs and the finished file.
+
+Reduced Silo downloads require a native artifact whose audio inventory matches
+the exact catalog file. Missing, incomplete or changed inventories fail rather
+than silently dropping languages; the downloaded file's audio count is checked
+along with its languages, resolution and end samples. Server-advertised quality presets still determine whether reduced downloads
+are available. Original-only Silo servers are not treated as conversion-capable.
+
+Jellyfin's tested audio-only endpoint ignores the requested index, so Jellyfin
+retains its existing HLS behavior and may include only one audio track. Use
+Original to retain every embedded track on Jellyfin. Network shares remain Original-only.
+Existing reduced Emby downloads retain their original HLS behavior on retry.
+Silent Emby videos also retain that transport rather than requiring an audio package.
+
+`OfflineAudioDownload` persists credential-free source fingerprints, track plans
+and completed-artifact receipts. A failed extra soundtrack does not re-download
+completed video. Source changes fail closed, each artifact is checked for its
+expected streams and complete duration, authorization is rechecked across
+asynchronous work, and the final MP4 is published atomically. Per-track server
+preparation references survive retries. Packaging preserves compressed content;
+it is not a full-original download fallback.
 
 External text subtitles are saved beside new downloads, for both Original and reduced
 quality. Plex and Jellyfin/Emby discovery uses the exact downloaded media source, not
@@ -128,10 +159,12 @@ background execution grant until the tracked downloads' subtitle saving finishes
 including the last video and downloads added while completion is pending. This waits
 for the actual work, not a fixed delay; subtitle failures remain nonfatal.
 
-New requests use `ManagedHTTPDownloadSource`'s defaults (one preferred audio
-rendition, available text subtitles). The retired global track flags are ignored
+The request builder opts new reduced Plex, Emby and Silo downloads into all-audio
+delivery; `ManagedHTTPDownloadSource` keeps its legacy decoding defaults.
+Available text subtitles remain enabled. The retired global track flags are ignored
 when decoding `DownloadNetworkPolicy`; they cannot invisibly block new Plex/Silo
 downloads or disable subtitles. Existing per-download flags remain decodable and
 are preserved when retrying, including explicit unsupported-track errors. Saved
 files are not rewritten. There is no full-original fallback for reduced quality,
-client-side repackaging, custom server requirement, or dependency upgrade.
+custom server requirement, or dependency upgrade. Progressive Emby packages use
+the existing HTTP speed limit; Jellyfin and legacy Emby HLS still require Full Speed.

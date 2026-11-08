@@ -2044,6 +2044,32 @@ final class PlexProviderMappingTests: XCTestCase {
         )
     }
 
+    func testOfflineTranscodeAllAudioRemovesInheritedSelectionWithoutChangingSourceOrQuality() throws {
+        let hls = try XCTUnwrap(URL(string:
+            "https://example.test/plex/video/:/transcode/universal/start.m3u8?path=%2Flibrary%2Fmetadata%2F7&mediaIndex=2&partIndex=1&AudioStreamID=99&X-Plex-Token=secret"))
+        let url = try XCTUnwrap(PlexOfflineTranscodeURLBuilder.makeURL(
+            from: hls, maximumVideoBitrateBps: 1_000_000, maximumHeight: 360,
+            audioStreamID: 11, textSubtitleStreamID: nil, includesTextSubtitle: false,
+            includesAllAudioTracks: true))
+        let query = try XCTUnwrap(URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems)
+        func value(_ name: String) -> String? { query.first { $0.name == name }?.value }
+        XCTAssertFalse(query.contains { $0.name.lowercased() == "audiostreamid" })
+        XCTAssertEqual(value("path"), "/library/metadata/7")
+        XCTAssertEqual(value("mediaIndex"), "2")
+        XCTAssertEqual(value("partIndex"), "1")
+        XCTAssertEqual(value("X-Plex-Token"), "secret")
+        XCTAssertEqual(value("maxVideoBitrate"), "1000")
+        XCTAssertEqual(value("videoResolution"), "640x360")
+        XCTAssertTrue(try XCTUnwrap(value("X-Plex-Client-Profile-Extra"))
+            .hasSuffix("+add-settings(DirectPlayStreamSelection=true)"))
+        XCTAssertEqual(
+            PlexOfflineTranscodeURLBuilder.downloadQueueProfile(includesAllAudioTracks: true),
+            "add-transcode-target(type=videoProfile&context=all&protocol=http&container=mp4&videoCodec=h264&audioCodec=aac&subtitleCodec=mov_text&replace=true)+add-settings(DirectPlayStreamSelection=true)"
+        )
+        XCTAssertFalse(PlexOfflineTranscodeURLBuilder.downloadQueueProfile(includesAllAudioTracks: false)
+            .contains("DirectPlayStreamSelection"))
+    }
+
     func testOfflineTranscodeDownloadQueueURLPreservesProxyAndAuth() throws {
         let progressiveURL = try XCTUnwrap(
             URL(

@@ -16,6 +16,8 @@ public struct SiloDownloadResolution: Sendable {
     public let duration: Double
     public let manifest: Data
     public let metadata: MediaSourceMetadata
+    public let expectedAudioLanguages: [String?]?
+    public var expectedAudioTrackCount: Int? { expectedAudioLanguages?.count }
 }
 
 public struct SiloOfflineAsset: Sendable {
@@ -48,6 +50,12 @@ struct SiloDownloadEntry: Decodable, Sendable {
 
 struct SiloDownloadManifest: Decodable, Sendable {
     struct Integrity: Decodable, Sendable { let expected_bytes: Int64; let metadata_etag: String }
+    struct Audio: Decodable, Sendable, Equatable {
+        let index: Int
+        let language: String?
+        let codec: String?
+        let channels: Int?
+    }
     let download_id: String
     let media_file_id: String
     let revision: Int
@@ -58,6 +66,7 @@ struct SiloDownloadManifest: Decodable, Sendable {
     let codec_audio: String?
     let hdr: Bool?
     let integrity: Integrity?
+    let audio_tracks: [Audio]?
 }
 
 extension SiloProvider {
@@ -175,9 +184,6 @@ extension SiloProvider {
                   updated.revision == reference.revision else { throw AppError.conflict }
             current = updated
         }
-        guard !requiresAllAudioTracks || current.delivery_format == "original" else {
-            throw AppError.invalidResponse
-        }
         let manifestPath = "/downloads/\(try SiloAPI.pathComponent(reference.id))/manifest"
         let (manifestData, _) = try await client.send(manifestPath, deviceID: deviceID)
         guard manifestData.count <= 1_048_576 else { throw AppError.invalidResponse }
@@ -188,6 +194,22 @@ extension SiloProvider {
               manifest.media_file_id == fileID, manifest.file_size > 0 else { throw AppError.invalidResponse }
         guard manifest.integrity.map({ $0.expected_bytes == manifest.file_size }) != false else {
             throw AppError.invalidResponse
+        }
+        var expectedAudioLanguages: [String?]?
+        if requiresAllAudioTracks, current.delivery_format != "original" {
+            let catalog: SiloItem = try await client.request("/catalog/items/\(try SiloAPI.pathComponent(itemID))")
+            guard let source = catalog.versions?.first(where: { $0.file_id == fileID }),
+                  let sourceTracks = source.audio_tracks, !sourceTracks.isEmpty,
+                  let preparedTracks = manifest.audio_tracks,
+                  preparedTracks.count == sourceTracks.count,
+                  preparedTracks.map(\.index) == Array(sourceTracks.indices),
+                  zip(sourceTracks, preparedTracks).allSatisfy({ source, prepared in
+                      source.language == prepared.language
+                          || LanguageMatch.matches(source.language ?? "", prepared.language)
+                  }) else {
+                throw AppError.invalidResponse
+            }
+            expectedAudioLanguages = sourceTracks.map(\.language)
         }
         try await reportDownload(reference, status: "downloading", at: Date())
         let fileRoute = capability.proxy_delivery == true ? "file-proxy" : "file"
@@ -206,7 +228,9 @@ extension SiloProvider {
                                         container: manifest.container, fileSizeBytes: manifest.file_size,
                                         sourceRevision: "silo-download:\(reference.id):\(reference.revision)",
                                         video: .init(codec: manifest.codec_video, videoRange: manifest.hdr.map { $0 ? "HDR" : "SDR" }),
-                                        audio: .init(codec: manifest.codec_audio)))
+                                        audio: .init(codec: manifest.codec_audio),
+                                        audioLanguages: manifest.audio_tracks?.compactMap(\.language)),
+                                      expectedAudioLanguages: expectedAudioLanguages)
     }
 
     public func reportDownload(_ reference: SiloDownloadReference, status: String, at date: Date) async throws {
@@ -225,6 +249,7 @@ extension SiloProvider {
             "/downloads/\(try SiloAPI.pathComponent(reference.id))/manifest", deviceID: session.deviceID)
         guard current.download_id == reference.id, current.revision == reference.revision,
               current.media_file_id == expected.media_file_id, current.file_size == expected.file_size,
+              current.audio_tracks == expected.audio_tracks,
               current.integrity?.metadata_etag == expected.integrity?.metadata_etag else {
             throw AppError.conflict
         }

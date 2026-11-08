@@ -52,13 +52,48 @@ struct PlozziOSBackgroundHTTPDownloadEngine:
     DownloadPersistentWorkCancelling
 {
     struct Resolution: Sendable {
-        let url: URL
+        enum Resource: Sendable {
+            case file(URL)
+            case audioPackage(AudioPackage)
+        }
+        let resource: Resource
         let expectedDuration: TimeInterval?
         let cleanupURL: URL?
         var headers: [String: String] = [:]
         var singleFile: Bool = false
         var expectedBytes: Int64? = nil
+        var expectedAudioLanguages: [String?]? = nil
         var didComplete: (@Sendable (URL) async throws -> Void)? = nil
+
+        init(
+            url: URL, expectedDuration: TimeInterval?, cleanupURL: URL?,
+            headers: [String: String] = [:], singleFile: Bool = false,
+            expectedBytes: Int64? = nil,
+            expectedAudioLanguages: [String?]? = nil,
+            didComplete: (@Sendable (URL) async throws -> Void)? = nil
+        ) {
+            resource = .file(url)
+            self.expectedDuration = expectedDuration
+            self.cleanupURL = cleanupURL
+            self.headers = headers
+            self.singleFile = singleFile
+            self.expectedBytes = expectedBytes
+            self.expectedAudioLanguages = expectedAudioLanguages
+            self.didComplete = didComplete
+        }
+
+        init(audioPackage: AudioPackage, expectedDuration: TimeInterval?) {
+            resource = .audioPackage(audioPackage)
+            self.expectedDuration = expectedDuration
+            cleanupURL = nil
+        }
+    }
+
+    struct AudioPackage: Sendable {
+        let plan: OfflineAudioDownload.Plan
+        let authorize: @Sendable () async throws -> Void
+        let prepare: @Sendable (Int?) async throws -> Resolution
+        let finishPreparation: @Sendable (Int?) async throws -> Void
     }
 
     typealias SourceUpdater =
@@ -68,6 +103,7 @@ struct PlozziOSBackgroundHTTPDownloadEngine:
     typealias URLResolver =
         @Sendable (
             ManagedHTTPDownloadSource,
+            String?,
             @escaping SourceUpdater,
             @escaping PreparationProgressUpdater
         ) async throws -> Resolution
@@ -131,6 +167,7 @@ struct PlozziOSBackgroundHTTPDownloadEngine:
         )
         let resolution = try await resolveURL(
             source,
+            record.snapshot.sourceUserID,
             { updatedSource in
                 try Task.checkCancellation()
                 try await registry.setManagedHTTPSource(
@@ -147,7 +184,39 @@ struct PlozziOSBackgroundHTTPDownloadEngine:
             }
         )
         try Task.checkCancellation()
-        let url = resolution.url
+        if case .audioPackage(let package) = resolution.resource {
+            return try await OfflineAudioDownload.download(
+                plan: package.plan, to: destination, authorize: package.authorize,
+                transfer: { trackID, file, progress in
+                    try await package.authorize()
+                    let artifact = try await package.prepare(trackID)
+                    try await package.authorize()
+                    var artifactRecord = record
+                    artifactRecord.localFileName = file.lastPathComponent
+                    return try await transfer(
+                        resolution: artifact, record: artifactRecord, to: file,
+                        audioOnly: trackID != nil, onProgress: progress
+                    )
+                },
+                finishPreparation: package.finishPreparation, onProgress: onProgress
+            )
+        }
+        return try await transfer(
+            resolution: resolution, record: record, to: destination, onProgress: onProgress
+        )
+    }
+
+    private func transfer(
+        resolution: Resolution, record: DownloadedMediaRecord, to destination: URL,
+        audioOnly: Bool = false,
+        onProgress: @escaping @Sendable (Int64, Int64) async -> Void
+    ) async throws -> Int64 {
+        guard let source = record.managedHTTPSource,
+              case .file(let url) = resolution.resource else {
+            throw BackgroundDownloadError.missingSource
+        }
+        let diagnosticKey = HandoffDiagnostics.isEnabled
+            ? HandoffDiagnostics.correlationID(record.identityKey) : "disabled"
         if let expectedDuration = resolution.expectedDuration,
            expectedDuration > 0 {
             try? await registry.setRuntime(
@@ -226,14 +295,29 @@ struct PlozziOSBackgroundHTTPDownloadEngine:
                 onProgress: onProgress
             )
         }
-        if usesProgressiveRendition {
-            HandoffDiagnostics.emit("download VALIDATE key=\(diagnosticKey) mode=plexRendition")
+        if (usesProgressiveRendition && !audioOnly) || resolution.expectedAudioLanguages != nil {
+            HandoffDiagnostics.emit("download VALIDATE key=\(diagnosticKey) mode=serverRendition")
             do {
-                try await PlexRenditionValidator.validate(
-                    fileURL: destination,
-                    expectedDuration:
-                        resolution.expectedDuration ?? record.snapshot.runtime
-                )
+                if usesProgressiveRendition && !audioOnly {
+                    try await PlexRenditionValidator.validate(
+                        fileURL: destination,
+                        expectedDuration:
+                            resolution.expectedDuration ?? record.snapshot.runtime
+                    )
+                }
+                if let languages = resolution.expectedAudioLanguages {
+                    let maximumHeight: Int?
+                    if case .constrained(let constraint) = source.quality {
+                        maximumHeight = constraint.maximumHeight
+                    } else {
+                        maximumHeight = nil
+                    }
+                    try await OfflineAudioRenditionValidator.validate(
+                        fileURL: destination, expectedLanguages: languages,
+                        expectedDuration: resolution.expectedDuration ?? record.snapshot.runtime,
+                        maximumHeight: maximumHeight
+                    )
+                }
             } catch {
                 try? FileManager.default.removeItem(at: destination)
                 try? FileManager.default.removeItem(

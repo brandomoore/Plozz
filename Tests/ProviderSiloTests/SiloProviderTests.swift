@@ -365,6 +365,68 @@ extension SiloProviderTests {
     } catch { XCTAssertEqual(error as? AppError, .conflict) }
   }
 
+  func testAllAudioRequiresPreparedInventoryMatchingTheExactSource() async throws {
+    let entry = #"{"id":"download1","content_id":"movie:1","media_file_id":"42","file_size":100,"status":"ready","quality":"2mbps","delivery_format":"transcode","revision":2}"#
+    for (preparedCount, secondLanguage, sourceID) in [
+      (2, "ja", "42"), (1, "ja", "42"), (0, "ja", "42"),
+      (2, "fr", "42"), (2, "ja", "other"),
+    ] {
+      let raw = try credential().encoded()
+      let inventory = preparedCount == 0 ? "" : """
+      ,"audio_tracks":[{"index":0,"language":"en","codec":"aac","channels":2}
+      \(preparedCount == 2 ? #",{"index":1,"language":"\#(secondLanguage)","codec":"aac","channels":2}"# : "")]
+      """
+      let http = SiloHTTPStub([
+        "/api/v2/capabilities/downloads": """
+        {"state":"available","allowed":true,"quality_presets":["2mbps"],"file_delivery":true,
+        "bounded_creation":true,"bounded_manifests":true,"ordered_status":true}
+        """,
+        "/api/v2/downloads": "{\"items\":[\(entry)]}",
+        "/api/v2/downloads/download1/manifest": """
+        {"download_id":"download1","media_file_id":"42","revision":2,"file_size":100,
+         "duration_seconds":600,"container":"mp4","codec_audio":"aac"\(inventory)}
+        """,
+        "/api/v2/catalog/items/movie:1": """
+        {"content_id":"movie:1","title":"Fixture","versions":[
+          {"file_id":"\(sourceID)","resolution":"1080p","codec_video":"h264","codec_audio":"dts",
+           "container":"mkv","file_size":200,"duration":600,"bitrate":10000000,
+           "audio_tracks":[{"language":"en","default":true},{"language":"ja","default":false}]}]}
+        """,
+        "/api/v2/downloads/download1": entry,
+      ])
+      let provider = try SiloProvider(context: context(raw), credentials: SiloCredentialStub(raw), http: http)
+      do {
+        let result = try await provider.prepareDownload(
+          itemID: "movie:1", fileID: "42", quality: "2mbps", maximumHeight: 720,
+          reference: nil, requiresAllAudioTracks: true, persistReference: { _ in })
+        XCTAssertTrue(preparedCount == 2 && secondLanguage == "ja" && sourceID == "42")
+        XCTAssertEqual(result.expectedAudioTrackCount, 2)
+        XCTAssertEqual(result.metadata.audioLanguages, ["en", "ja"])
+      } catch {
+        XCTAssertFalse(preparedCount == 2 && secondLanguage == "ja" && sourceID == "42",
+                       "A complete native artifact must be accepted: \(error)")
+        XCTAssertEqual(error as? AppError, .invalidResponse)
+      }
+
+    }
+  }
+
+  func testCompletionRejectsChangedAudioInventory() async throws {
+    let raw = try credential().encoded()
+    let original = """
+    {"download_id":"download1","media_file_id":"42","revision":2,"file_size":100,
+     "duration_seconds":600,"container":"mp4","audio_tracks":[{"index":0,"language":"en"}]}
+    """
+    let http = SiloHTTPStub([
+      "/api/v2/downloads/download1/manifest": original.replacingOccurrences(of: "\"en\"", with: "\"ja\"")
+    ])
+    let provider = try SiloProvider(context: context(raw), credentials: SiloCredentialStub(raw), http: http)
+    do {
+      try await provider.validateDownloadCompletion(.init(id: "download1", revision: 2), manifest: Data(original.utf8))
+      XCTFail("Changed audio inventory must not validate against a saved manifest.")
+    } catch { XCTAssertEqual(error as? AppError, .conflict) }
+  }
+
   func testCredentialRefreshDoesNotInvalidateSameLoginProviderContext() throws {
     let raw = try credential().encoded()
     let original = context(raw)

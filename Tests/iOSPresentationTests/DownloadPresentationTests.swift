@@ -1092,6 +1092,7 @@ final class DownloadPresentationTests: XCTestCase {
             )
             defer { model.beginProfileTransition() }
             XCTAssertEqual(model.downloadQuality, .hd720)
+            if kind == .emby { model.maximumDownloadMegabitsPerSecond = 25 }
             for quality: DownloadQuality in [.original, .hd720] {
                 let item = MediaItem(
                     id: quality == .original ? "original" : "reduced", title: "Movie", kind: .movie,
@@ -1105,10 +1106,30 @@ final class DownloadPresentationTests: XCTestCase {
                 XCTAssertEqual(source.quality, quality)
                 XCTAssertEqual(source.provider, kind)
                 XCTAssertEqual(source.preferredAudioLanguages, ["fr"])
-                XCTAssertFalse(source.includesAllAudioTracks)
+                XCTAssertEqual(source.includesAllAudioTracks, (kind == .plex || kind == .emby) && quality != .original)
                 XCTAssertTrue(source.includesTextSubtitleTracks)
+                if kind == .plex || kind == .emby, quality != .original {
+                    XCTAssertEqual((record.localFileName as NSString).pathExtension, "mp4")
+                    XCTAssertFalse(source.requiresUncappedRenditionTransfer)
+                }
             }
         }
+    }
+
+    func testSilentEmbyVideoKeepsItsExistingDownloadTransport() async throws {
+        let model = makeModel(
+            registry: DownloadedMediaRegistry(store: InMemoryDownloadedMediaStore()),
+            storage: try temporaryStorage(), probe: ArtworkProbe(data: imageData()),
+            observer: StaticDownloadNetworkObserver(.unsatisfied), providerKind: .emby
+        )
+        defer { model.beginProfileTransition() }
+        let record = try await model.enqueue(
+            item: MediaItem(id: "silent", title: "Silent", kind: .movie, sourceAccountID: "account"),
+            provider: DownloadTrackProvider(kind: .emby, audioTracks: []), quality: .hd720)
+        let source = try XCTUnwrap(record.managedHTTPSource)
+        XCTAssertFalse(source.includesAllAudioTracks)
+        XCTAssertTrue(source.requiresUncappedRenditionTransfer)
+        XCTAssertEqual((record.localFileName as NSString).pathExtension, "movpkg")
     }
 
     func testActiveDownloadSummaryKeepsMetricsAndActionStableAsValuesChange() throws {
@@ -2003,7 +2024,7 @@ final class DownloadPresentationTests: XCTestCase {
                 if let posterProbe { return try await posterProbe.load(item) }
                 return poster
             },
-            managedURLResolver: { _, _, _ in throw CancellationError() },
+            managedURLResolver: { _, _, _, _ in throw CancellationError() },
             saveSubtitles: saveSubtitles
         )
     }
@@ -2062,6 +2083,10 @@ final class DownloadPresentationTests: XCTestCase {
 private struct DownloadTrackProvider: MediaProvider {
     let kind: ProviderKind
     var sidecars: [MediaTrack] = []
+    var audioTracks: [MediaTrack] = [
+        .init(id: 1, kind: .audio, displayTitle: "English", language: "en"),
+        .init(id: 2, kind: .audio, displayTitle: "French", language: "fr")
+    ]
     var session: UserSession {
         .init(
             server: .init(id: "fixture", name: "Fixture", baseURL: URL(string: "https://fixture.invalid")!, provider: kind),
@@ -2092,7 +2117,8 @@ private struct DownloadTrackProvider: MediaProvider {
         )
         return PlaybackRequest(
             item: MediaItem(id: itemID, title: "Movie", kind: .movie, sourceAccountID: "account"),
-            playbackSource: .authenticatedHTTP(locator), isTranscoding: forceTranscode,
+            playbackSource: .authenticatedHTTP(locator), audioTracks: audioTracks,
+            isTranscoding: forceTranscode,
             sourceFileName: "movie.mkv"
         )
     }

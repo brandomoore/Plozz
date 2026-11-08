@@ -910,6 +910,7 @@ final class PlozziOSDownloadsModel {
                 source: ManagedHTTPDownloadSource(
                     provider: .silo, accountID: silo.accountID, itemID: item.id, mediaSourceID: selected.id,
                     quality: quality,
+                    includesAllAudioTracks: quality != .original,
                     preferredAudioLanguages: preferredAudioLanguages(item)),
                 snapshot: snapshot(for: detail.taggingSource(item.sourceAccountID ?? silo.accountID)),
                 versionID: selected.id, versionLabel: selected.displayLabel,
@@ -968,21 +969,21 @@ final class PlozziOSDownloadsModel {
                     provider: provider
                 )
             }
-            if quality != .original,
-               policy.maximumBytesPerSecond != nil,
-               kind != .plex {
-                throw PlozziOSDownloadError.unavailable(
-                    "Reduced-quality Jellyfin and Emby downloads cannot be speed-limited. Choose Original or set Download Speed to Full Speed."
-                )
-            }
             let source = ManagedHTTPDownloadSource(
                 provider: kind,
                 accountID: accountID,
                 itemID: item.id,
                 mediaSourceID: locator.mediaSourceID ?? item.selectedVersionID,
                 quality: quality,
+                includesAllAudioTracks: quality != .original
+                    && (kind == .plex || (kind == .emby && !playback.audioTracks.isEmpty)),
                 preferredAudioLanguages: preferredAudioLanguages(item)
             )
+            if policy.maximumBytesPerSecond != nil, source.requiresUncappedRenditionTransfer {
+                throw PlozziOSDownloadError.unavailable(
+                    "This converted download cannot be speed-limited. Choose Original or set Download Speed to Full Speed."
+                )
+            }
             let fileExtension = playback.sourceFileName.map {
                 ($0 as NSString).pathExtension
             }
@@ -1005,7 +1006,7 @@ final class PlozziOSDownloadsModel {
                     ),
                 fileExtension: quality == .original
                     ? fileExtension
-                    : (kind == .plex ? "mp4" : "movpkg"),
+                    : (source.requiresUncappedRenditionTransfer ? "movpkg" : "mp4"),
                 quality: quality
             )
         case .publicURL, .networkDisc, .dlnaResource, nil:
@@ -1861,12 +1862,8 @@ final class PlozziOSDownloadsModel {
     private func mustRemainPausedForSpeedLimit(
         _ record: DownloadedMediaRecord
     ) -> Bool {
-        guard policy.maximumBytesPerSecond != nil,
-              record.quality != .original,
-              let provider = record.managedHTTPSource?.provider else {
-            return false
-        }
-        return provider == .jellyfin || provider == .emby
+        policy.maximumBytesPerSecond != nil
+            && record.managedHTTPSource?.requiresUncappedRenditionTransfer == true
     }
 
     private func enforceSpeedLimitPausePolicy() async {
@@ -2144,9 +2141,7 @@ final class PlozziOSDownloadsModel {
             }
             if restartActiveManagedDownloads {
                 if policy.maximumBytesPerSecond != nil {
-                    for record in active where
-                        record.quality != .original
-                            && record.managedHTTPSource?.provider != .plex {
+                    for record in active where mustRemainPausedForSpeedLimit(record) {
                         await queue.pause(
                             identityKey: record.identityKey,
                             reason: .speedLimitPolicy
