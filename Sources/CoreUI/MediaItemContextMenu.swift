@@ -1,6 +1,10 @@
 #if canImport(SwiftUI)
 import SwiftUI
 import CoreModels
+#if os(tvOS)
+import CoreNetworking
+import UIKit
+#endif
 
 // MARK: - Environment plumbing
 //
@@ -113,8 +117,9 @@ public extension View {
     /// Attaches the native tvOS press-and-hold menu for `item`, populated from
     /// the environment's action handler. A no-op when no handler is installed or
     /// the item has no available actions.
-    func mediaItemContextMenu(for item: MediaItem) -> some View {
-        modifier(MediaItemContextMenu(item: item))
+    /// Set `nativeControl` only when the content owns a `NativeTVPoster` button.
+    func mediaItemContextMenu(for item: MediaItem, nativeControl: Bool = false) -> some View {
+        modifier(MediaItemContextMenu(item: item, nativeControl: nativeControl))
     }
 
     /// Waits for the native menu to dismiss before using this card's navigation origin.
@@ -263,6 +268,7 @@ public struct SeasonWatchStateMenu<MenuLabel: View>: View {
 /// `MediaItem`, driven entirely by the injected `MediaItemActionHandling`.
 public struct MediaItemContextMenu: ViewModifier {
     private let item: MediaItem
+    private let nativeControl: Bool
     @Environment(\.mediaItemActionHandler) private var handler
     @Environment(\.mediaItemActionContext) private var context
     @Environment(\.mediaItemNavigator) private var navigator
@@ -273,36 +279,50 @@ public struct MediaItemContextMenu: ViewModifier {
     /// the menu dismiss first, then the task below pushes after a small safety margin.
     @State private var pendingNavigationTarget: MediaItem?
 
-    public init(item: MediaItem) {
+    public init(item: MediaItem, nativeControl: Bool = false) {
         self.item = item
+        self.nativeControl = nativeControl
     }
 
     public func body(content: Content) -> some View {
         let actions = availableActions()
         if !actions.isEmpty {
-            let setApart = actions.filter(\.isSetApartInMenu)
-            let main = actions.filter { !$0.isSetApartInMenu }
-            content.contextMenu {
-                menuButtons(for: main)
-                #if os(iOS)
-                if let url = item.metadataProvenance.wetrakrWatchlistURL {
-                    WetrakrWatchlistLink(url: url)
-                }
-                #endif
-                // A `Section` is how a menu is told two groups are not the same
-                // kind of thing; platforms that draw a separator draw one, and
-                // those that don't simply keep the grouping. Either way the set-
-                // apart actions stay at the bottom, which is the part that matters
-                // — they are easy to hit by accident while reaching for the action
-                // above them.
-                if !setApart.isEmpty {
-                    Section { menuButtons(for: setApart) }
-                }
+            #if os(tvOS)
+            if nativeControl {
+                content
+                    .environment(\.nativeMediaItemMenu, NativeMediaItemMenu(
+                        item: item, actions: actions, context: context,
+                        handlerIdentity: handler.map(ObjectIdentifier.init),
+                        navigator: navigator, perform: perform
+                    ))
+                    .mediaItemMenuNavigation(target: $pendingNavigationTarget)
+            } else {
+                swiftUIMenu(content: content, actions: actions)
             }
-            .mediaItemMenuNavigation(target: $pendingNavigationTarget)
+            #else
+            swiftUIMenu(content: content, actions: actions)
+            #endif
         } else {
             content
         }
+    }
+
+    private func swiftUIMenu(content: Content, actions: [MediaItemAction]) -> some View {
+        let setApart = actions.filter(\.isSetApartInMenu)
+        let main = actions.filter { !$0.isSetApartInMenu }
+        return content.contextMenu {
+            menuButtons(for: main)
+            #if os(iOS)
+            if let url = item.metadataProvenance.wetrakrWatchlistURL {
+                WetrakrWatchlistLink(url: url)
+            }
+            #endif
+            // Platforms that draw menu separators keep these actions apart.
+            if !setApart.isEmpty {
+                Section { menuButtons(for: setApart) }
+            }
+        }
+        .mediaItemMenuNavigation(target: $pendingNavigationTarget)
     }
 
     @ViewBuilder
@@ -342,6 +362,74 @@ public struct MediaItemContextMenu: ViewModifier {
         pendingNavigationTarget = item.navigationTarget(for: action)
     }
 }
+
+#if os(tvOS)
+struct NativeMediaItemMenu {
+    let item: MediaItem
+    let actions: [MediaItemAction]
+    var context: MediaItemActionContext = .none
+    var handlerIdentity: ObjectIdentifier?
+    var navigator: MediaItemNavigator?
+    let perform: (MediaItemAction) -> Void
+}
+
+private struct NativeMediaItemMenuKey: EnvironmentKey {
+    static var defaultValue: NativeMediaItemMenu? { nil }
+}
+
+extension EnvironmentValues {
+    var nativeMediaItemMenu: NativeMediaItemMenu? {
+        get { self[NativeMediaItemMenuKey.self] }
+        set { self[NativeMediaItemMenuKey.self] = newValue }
+    }
+}
+
+@MainActor
+final class NativeMediaItemMenuCoordinator {
+    private var configuration: NativeMediaItemMenu?
+    private var locale: Locale?
+    private var generation = 0
+
+    func update(_ configuration: NativeMediaItemMenu?, locale: Locale, button: UIButton) {
+        let changed = self.configuration?.item != configuration?.item
+            || self.configuration?.actions != configuration?.actions
+            || self.configuration?.context != configuration?.context
+            || self.configuration?.handlerIdentity != configuration?.handlerIdentity
+            || self.configuration?.navigator != configuration?.navigator || self.locale != locale
+        self.configuration = configuration
+        self.locale = locale
+        guard changed else { return }
+        generation += 1
+        guard let configuration else {
+            button.menu = nil
+            return
+        }
+        let generation = generation
+        func makeAction(_ action: MediaItemAction) -> UIAction {
+            UIAction(
+                title: NativePosterText.localized(action.title).resolve(locale: locale),
+                image: UIImage(systemName: action.systemImage),
+                attributes: action.isDestructive ? .destructive : []
+            ) { [weak self] _ in
+                guard let self else { return }
+                guard self.generation == generation else {
+                    PlozzLog.app.debug("Ignoring an obsolete media menu action after its context changed")
+                    return
+                }
+                self.configuration?.perform(action)
+            }
+        }
+        var children: [UIMenuElement] = configuration.actions.filter { !$0.isSetApartInMenu }.map(makeAction)
+        let separated = configuration.actions.filter(\.isSetApartInMenu)
+        if !separated.isEmpty {
+            children.append(UIMenu(options: .displayInline, children: separated.map(makeAction)))
+        }
+        // SwiftUI's tvOS context-menu bridge replaces its list during opening.
+        // Keep UIKit's menu instance until its actual content changes.
+        button.menu = UIMenu(children: children)
+    }
+}
+#endif
 
 extension MediaItem {
     /// The destination a navigation action leads to, or `nil` when this item

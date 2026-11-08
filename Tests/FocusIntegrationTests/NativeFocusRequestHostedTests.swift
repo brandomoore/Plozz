@@ -9,6 +9,63 @@ import CoreModels
 
 @MainActor
 final class NativeFocusRequestHostedTests: XCTestCase {
+    func testNativeMenuRetainsItsListAndUsesFreshActions() throws {
+        let coordinator = NativeMediaItemMenuCoordinator()
+        let button = UIButton(type: .custom)
+        let locale = Locale(identifier: "en_US")
+        var item = MediaItem(id: "episode", title: "Episode", kind: .episode, sourceAccountID: "first")
+        var received = 0
+        coordinator.update(.init(item: item, actions: [.markWatched], perform: { _ in received = 1 }),
+                           locale: locale, button: button)
+        let menu = try XCTUnwrap(button.menu)
+        let originalAction = try XCTUnwrap(menu.children.first as? UIAction)
+        coordinator.update(.init(item: item, actions: [.markWatched], perform: { _ in received = 2 }),
+                           locale: locale, button: button)
+        XCTAssertTrue(button.menu === menu, "Callback refresh must not replace the visible menu.")
+        let activation = UIButton(type: .custom)
+        activation.addAction(originalAction, for: .primaryActionTriggered)
+        activation.sendActions(for: .primaryActionTriggered)
+        XCTAssertEqual(received, 2)
+
+        item.sourceAccountID = "second"
+        coordinator.update(.init(item: item, actions: [.markWatched], perform: { _ in received = 3 }),
+                           locale: locale, button: button)
+        XCTAssertFalse(button.menu === menu)
+        activation.sendActions(for: .primaryActionTriggered)
+        XCTAssertEqual(received, 2, "An old menu must not act in a replacement account context.")
+        let currentAction = try XCTUnwrap(button.menu?.children.first as? UIAction)
+        activation.removeAction(originalAction, for: .primaryActionTriggered)
+        activation.addAction(currentAction, for: .primaryActionTriggered)
+        activation.sendActions(for: .primaryActionTriggered)
+        XCTAssertEqual(received, 3)
+        coordinator.update(nil, locale: locale, button: button)
+        XCTAssertNil(button.menu)
+        received = 0
+        activation.sendActions(for: .primaryActionTriggered)
+        XCTAssertEqual(received, 0)
+    }
+
+    func testNativeMenuPreservesGroupingRolesAndLocaleUpdates() throws {
+        let coordinator = NativeMediaItemMenuCoordinator()
+        let button = UIButton(type: .custom)
+        let configuration = NativeMediaItemMenu(
+            item: MediaItem(id: "episode", title: "Episode", kind: .episode),
+            actions: [.markWatched, .removeDownload, .removeFromContinueWatching], perform: { _ in }
+        )
+        coordinator.update(configuration, locale: Locale(identifier: "en_US"), button: button)
+        let menu = try XCTUnwrap(button.menu)
+        let destructive = try XCTUnwrap(menu.children[1] as? UIAction)
+        XCTAssertTrue(destructive.attributes.contains(.destructive))
+        let separated = try XCTUnwrap(menu.children.last as? UIMenu)
+        XCTAssertTrue(separated.options.contains(.displayInline))
+        XCTAssertEqual(separated.children.count, 1)
+        let locale = Locale(identifier: "de")
+        coordinator.update(configuration, locale: locale, button: button)
+        XCTAssertFalse(button.menu === menu)
+        XCTAssertEqual(button.menu?.children.first?.title,
+                       NativePosterText.localized(MediaItemAction.markWatched.title).resolve(locale: locale))
+    }
+
     func testCinematicGuardBlocksNativeDirectionsButAllowsSourceRestoration() async throws {
         let fixture = try await makeFixture()
         defer { fixture.close() }

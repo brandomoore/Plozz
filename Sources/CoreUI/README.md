@@ -752,6 +752,15 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   Native card focus observation is separate from explicit focus requests.
   Caption, overlay and transition-anchor readers update without rebuilding
   the poster's artwork loader or context menu.
+  Detail episode cards using system focus install their media menu directly on
+  the native poster button. The SwiftUI context-menu bridge replaced its action
+  list during opening even with unchanged actions; the native menu keeps one
+  list and does not fade its contents after presentation begins. Keep its menu
+  instance stable across callback-only updates, but rebuild for changed items,
+  actions, ordered context, handler/router identity, or locale. Obsolete actions
+  are invalidated when that context changes or the poster is dismantled.
+  Custom-focus episode cards and other SwiftUI-owned controls retain their
+  existing menu path; mobile menus and their artwork routing are unchanged.
 - **QR images** — `QRCodeView` renders on a worker actor, including Core Image
   initialization. Settings, account authorization and device pairing share it.
   Payload/correction/mask changes replace the request; cancelled work cannot

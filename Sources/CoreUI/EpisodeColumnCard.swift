@@ -112,7 +112,7 @@ public struct EpisodeColumnCard: View, Equatable {
             synopsisVisible = true
             synopsisAtRest = true
         }
-        .mediaItemContextMenu(for: item)
+        .mediaItemContextMenu(for: item, nativeControl: focusStyle.usesSystemEffect)
         .environment(\.plozzCardStyle, .borderless)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(presentation.accessibilityLabel)

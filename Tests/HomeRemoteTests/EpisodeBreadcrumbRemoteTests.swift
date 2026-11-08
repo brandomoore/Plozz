@@ -3,6 +3,12 @@ import XCTest
 
 @MainActor
 final class EpisodeBreadcrumbRemoteTests: XCTestCase {
+    func testNativeEpisodeMenuDoesNotReplaceOrFadeItsContentsOnOpening() throws {
+        for descriptionsOnFocus in [false, true] {
+            try exerciseEpisodeContextMenu(style: "--system", descriptionsOnFocus: descriptionsOnFocus, trace: true)
+        }
+    }
+
     func testEpisodeContextMenuKeepsActionsAndRestoresCardFocus() throws {
         for style in ["--system", "--highlight", "--outlined"] {
             for descriptionsOnFocus in [false, true] {
@@ -11,11 +17,12 @@ final class EpisodeBreadcrumbRemoteTests: XCTestCase {
         }
     }
 
-    private func exerciseEpisodeContextMenu(style: String, descriptionsOnFocus: Bool) throws {
+    private func exerciseEpisodeContextMenu(style: String, descriptionsOnFocus: Bool, trace: Bool = false) throws {
         continueAfterFailure = false
         let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.FocusHost")
         app.launchArguments = ["--episode-breadcrumb-fixture", "--series-navigation", "--episode-menu", style]
             + (descriptionsOnFocus ? ["--descriptions-on-focus"] : [])
+            + (trace ? ["--trace-menu-appearance"] : [])
         app.launch()
         defer { app.terminate() }
         let play = app.buttons["detail-hero-play"]
@@ -23,7 +30,7 @@ final class EpisodeBreadcrumbRemoteTests: XCTestCase {
         waitFor { play.hasFocus }
         XCUIRemote.shared.press(.down)
         if app.buttons["Season 2"].exists && app.buttons["Season 2"].hasFocus { XCUIRemote.shared.press(.down) }
-        let episode = app.descendants(matching: .any)
+        var episode = app.descendants(matching: .any)
             .matching(NSPredicate(format: "label BEGINSWITH %@", "E1 · Fixture Episode 1,")).firstMatch
         XCTAssertTrue(episode.waitForExistence(timeout: 10), app.debugDescription)
         func episodeHasFocus() -> Bool {
@@ -31,6 +38,15 @@ final class EpisodeBreadcrumbRemoteTests: XCTestCase {
                 .matching(NSPredicate(format: "hasFocus == true")).firstMatch.exists)
         }
         waitFor { episodeHasFocus() }
+        if trace {
+            for number in 2...3 {
+                XCUIRemote.shared.press(.right)
+                episode = app.descendants(matching: .any).matching(NSPredicate(
+                    format: "label BEGINSWITH %@", "E\(number) · Fixture Episode \(number),"
+                )).firstMatch
+                waitFor { episodeHasFocus() }
+            }
+        }
         for iteration in 0..<3 {
             XCUIRemote.shared.press(.select, forDuration: 1)
             let navigation = app.descendants(matching: .any)
@@ -38,6 +54,29 @@ final class EpisodeBreadcrumbRemoteTests: XCTestCase {
             XCTAssertTrue(navigation.waitForExistence(timeout: 5), app.debugDescription)
             XCTAssertTrue(app.descendants(matching: .any)
                 .matching(NSPredicate(format: "label == %@", "Mark as Watched")).firstMatch.exists)
+            if trace {
+                Thread.sleep(forTimeInterval: 3)
+                XCUIRemote.shared.press(.menu)
+                waitFor { episodeHasFocus() }
+                let result = app.descendants(matching: .any)["episode-menu-appearance-result"]
+                waitFor { result.exists && result.value as? String != "pending" }
+                let json = try XCTUnwrap(result.value as? String)
+                let summary = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any])
+                XCTAssertGreaterThan(try XCTUnwrap(summary["samples"] as? Int), 30, json)
+                XCTAssertEqual(summary["lists"] as? Int, 1, "The presented native list must not be replaced: \(json)")
+                XCTAssertEqual(summary["labels"] as? Int, 4, "All four menu labels must retain their identities: \(json)")
+                XCTAssertGreaterThan(try XCTUnwrap(summary["minimumOpacity"] as? Double), 0.99,
+                                     "Menu contents must not fade independently of the opening presentation: \(json)")
+                XCUIRemote.shared.press(.select, forDuration: 1)
+                XCTAssertTrue(navigation.waitForExistence(timeout: 5))
+                XCUIRemote.shared.press(.down)
+                XCUIRemote.shared.press(.down)
+                XCUIRemote.shared.press(.select)
+                XCTAssertTrue(app.staticTexts.matching(identifier: "breadcrumb-route")
+                    .matching(NSPredicate(format: "label BEGINSWITH %@", "episode-3|"))
+                    .firstMatch.waitForExistence(timeout: 8), app.debugDescription)
+                return
+            }
             attach(app.screenshot(), name: "episode-menu-\(style)-focus-\(descriptionsOnFocus)-\(iteration)")
             XCUIRemote.shared.press(.menu)
             waitFor { episodeHasFocus() }

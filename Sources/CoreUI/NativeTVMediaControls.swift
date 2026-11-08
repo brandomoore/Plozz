@@ -531,6 +531,7 @@ struct NativeTVPoster<Overlay: View>: UIViewRepresentable {
     @MainActor
     final class Coordinator {
         let focus: NativeTVMediaCoordinator
+        let menu = NativeMediaItemMenuCoordinator()
         var original: UIImage?
         var treatment = NativePosterImageTreatment.original
         var imageSize = CGSize.zero
@@ -800,6 +801,7 @@ struct NativeTVPoster<Overlay: View>: UIViewRepresentable {
 
     static func dismantleUIView(_ container: Container, coordinator: Coordinator) {
         coordinator.cancelPresentation()
+        coordinator.menu.update(nil, locale: .current, button: container.poster)
         container.poster.prepareArtwork = nil
         container.poster.prepareOverlay = nil
         container.poster.onAvailable = nil
@@ -832,6 +834,9 @@ struct NativeTVPoster<Overlay: View>: UIViewRepresentable {
         container.aspectRatio = aspectRatio
         configureArtwork(view, context: context)
         view.isEnabled = context.environment.isEnabled
+        context.coordinator.menu.update(
+            context.environment.nativeMediaItemMenu, locale: context.environment.locale, button: view
+        )
         source?.nativeArtworkView = view.artworkView
         context.coordinator.focus.update(focus: focus, action: action, view: view)
     }
