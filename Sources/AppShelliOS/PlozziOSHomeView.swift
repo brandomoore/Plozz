@@ -621,7 +621,7 @@ struct PlozziOSHomeView: View {
             case .content:
                 PlozziOSHomeHeroCarousel(
                     items: displayHeroItems,
-                    autoAdvance: appModel.settings.hero.effectiveSettings.autoAdvance,
+                    autoAdvance: appModel.settings.hero.effectiveSettings.autoAdvance && pendingResumeRequest == nil,
                     autoAdvanceSeconds:
                         appModel.settings.hero.effectiveSettings.autoAdvanceSeconds,
                     onPlay: { play($0, resumeAnchorID: $0.id) },
