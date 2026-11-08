@@ -59,6 +59,12 @@ packages alternate tracks without another video encode. This is Emby-specific:
 Jellyfin's audio-only endpoint does not honor the selected index. Original and
 legacy HLS downloads are unchanged; see [MediaDownloads](../MediaDownloads/README.md).
 
+Subtitle inventory preserves the source's external/embedded distinction while
+providing exact-source extraction locators for text tracks on both Jellyfin and
+Emby. Reduced offline downloads save those extractable embedded tracks as sidecars;
+Original retains them in the source file. Image tracks have no text extraction
+locator. Extraction uses the subtitle endpoint, not another video conversion.
+
 - Approved alternate addresses share one resolver across ordinary and interactive
   API requests. Artwork and newly resolved playback resources use the selected
   origin, including its reverse-proxy prefix. Public identity probes carry no

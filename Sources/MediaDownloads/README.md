@@ -129,11 +129,21 @@ it is not a full-original download fallback.
 External text subtitles are saved beside new downloads, for both Original and reduced
 quality. Plex and Jellyfin/Emby discovery uses the exact downloaded media source, not
 the first version of the title, and never starts another playback/transcode session.
+Reduced Jellyfin/Emby downloads also save extractable embedded text tracks as local
+sidecars, sequentially through the same bounded, authenticated subtitle loader.
+Embedded extraction has a 120-second per-track budget for the server's first scan;
+ordinary external sidecar timeouts remain unchanged.
+Language, title, forced, and hearing-impaired labels remain available offline.
+Original downloads keep their embedded tracks in the original file without extracting
+duplicate sidecars. Existing reduced downloads can acquire these tracks with
+**Update Subtitles**, without downloading or converting the video again.
 Network shares save exact-stem sidecars from the video's folder or its Subs/Subtitles
 folder. Silo retains its native download manifest, permissions, and asset endpoint.
 SRT, WebVTT, ASS, and SSA delivery is supported; image subtitles and unavailable or
 unreadable files are not advertised as saved. Jellyfin/Emby retain their existing
-subtitle delivery format (SRT for SubRip, WebVTT for other text formats).
+subtitle delivery format (SRT for SubRip, WebVTT for other text formats); WebVTT
+conversion does not preserve all ASS/SSA styling. Embedded image subtitles remain
+outside the sidecar-saving path.
 
 A video is marked complete before optional subtitle saving starts, so cancelling
 that work cannot hide it offline or restart the video transfer. An interrupted initial

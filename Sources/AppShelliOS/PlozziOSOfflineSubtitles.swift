@@ -40,15 +40,21 @@ enum PlozziOSOfflineSubtitles {
               let sourceID = record.managedHTTPSource?.mediaSourceID ?? record.directShareSource?.relativePath else {
             throw AppError.notFound
         }
+        let source = record.managedHTTPSource
+        let extractsEmbeddedText = source.map {
+            $0.quality != .original && ($0.provider == .jellyfin || $0.provider == .emby)
+        } ?? false
         let tracks = try await provider.subtitleTracks(context: .init(itemID: itemID, mediaSourceID: sourceID))
-            .filter { $0.kind == .subtitle && $0.isExternal }
+            .filter {
+                $0.kind == .subtitle
+                    && ($0.isExternal || (extractsEmbeddedText && !$0.isImageBasedSubtitle && $0.deliverySource != nil))
+            }
         try await authorize()
         var unavailable = tracks.count > OfflineSubtitleStore.maximumTracks
         var assets: [OfflineSubtitleAsset] = []
         var bytes = 0
         let limiter = TransportCursorDownloadEngine.DownloadRateLimiter()
         await limiter.update(maximumBytesPerSecond: policy.maximumBytesPerSecond)
-        let loader = SubtitleFileLoader()
         for track in tracks.prefix(OfflineSubtitleStore.maximumTracks) {
             try Task.checkCancellation()
             try await authorize()
@@ -69,6 +75,7 @@ enum PlozziOSOfflineSubtitles {
                     throw AppError.invalidResponse
                 }
                 guard !track.isImageBasedSubtitle, let format else { throw AppError.invalidResponse }
+                let loader = SubtitleFileLoader(allowsExtractionDelay: extractsEmbeddedText && !track.isExternal)
                 let data = try await loader.load(
                     url,
                     maximumBytes: min(OfflineSubtitleStore.maximumFileBytes, OfflineSubtitleStore.maximumTotalBytes - bytes),
