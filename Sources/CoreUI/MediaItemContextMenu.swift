@@ -90,8 +90,12 @@ public extension View {
 
     /// Installs the router that navigation context-menu actions (e.g. "Go to
     /// Season") use to push a destination for this subtree's navigation stack.
-    func mediaItemNavigator(_ navigate: ((MediaItem) -> Void)?) -> some View {
-        modifier(MediaItemNavigatorScope(navigate: navigate))
+    /// With `preservingInherited`, a nil callback retains the ancestor's router.
+    func mediaItemNavigator(
+        _ navigate: ((MediaItem) -> Void)?,
+        preservingInherited: Bool = false
+    ) -> some View {
+        modifier(MediaItemNavigatorScope(navigate: navigate, preservingInherited: preservingInherited))
     }
 
     /// Installs the router that cast tiles in this subtree use to open a person.
@@ -155,10 +159,15 @@ private struct MediaItemMenuNavigation: ViewModifier {
 
 private struct MediaItemNavigatorScope: ViewModifier {
     let navigate: ((MediaItem) -> Void)?
+    let preservingInherited: Bool
+    @Environment(\.mediaItemNavigator) private var inheritedNavigator
     @State private var relay = MediaItemNavigationRelay()
 
     func body(content: Content) -> some View {
-        content.environment(\.mediaItemNavigator, relay.update(navigate))
+        content.environment(
+            \.mediaItemNavigator,
+            relay.update(navigate) ?? (preservingInherited ? inheritedNavigator : nil)
+        )
     }
 }
 

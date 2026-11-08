@@ -87,14 +87,94 @@ final class NativeFocusRequestHostedTests: XCTestCase {
         @ObservationIgnored var receivedRevision: Int?
     }
 
+    func testNavigatorOverridePreservesInheritanceAndDisablesReplacedRoute() async throws {
+        let fixture = try await makeFixture()
+        let parent = NavigatorRefreshState()
+        let child = NavigatorRefreshState()
+        child.enabled = false
+        defer {
+            child.navigator = nil
+            fixture.close()
+        }
+        fixture.window.rootViewController = UIHostingController(
+            rootView: InheritedNavigatorFixture(parent: parent, child: child)
+        )
+        fixture.window.layoutIfNeeded()
+        try await waitUntil { child.navigator != nil }
+        let inherited = child.navigator
+        child.navigator?(child.item)
+        XCTAssertEqual(parent.receivedRevision, 0)
+        XCTAssertNil(child.receivedRevision)
+
+        child.enabled = true
+        try await waitUntil { child.navigator != nil && child.navigator != inherited }
+        let override = child.navigator
+        child.revision = 1
+        try await Task.sleep(for: .milliseconds(100))
+        child.navigator?(child.item)
+        XCTAssertEqual(child.receivedRevision, 1)
+        XCTAssertEqual(parent.receivedRevision, 0, "The child override must not replace its ancestor's callback.")
+        XCTAssertEqual(child.navigator, override)
+
+        child.enabled = false
+        try await waitUntil { child.navigator == inherited }
+        child.receivedRevision = nil
+        override?(child.item)
+        XCTAssertNil(child.receivedRevision, "A removed override must not retain an actionable stale route.")
+        parent.revision = 2
+        try await Task.sleep(for: .milliseconds(100))
+        child.navigator?(child.item)
+        XCTAssertEqual(parent.receivedRevision, 2)
+
+        parent.enabled = false
+        try await waitUntil { child.navigator == nil }
+        parent.receivedRevision = nil
+        inherited?(child.item)
+        XCTAssertNil(parent.receivedRevision)
+    }
+
+    func testNilNavigatorClearsInheritedRouteByDefault() async throws {
+        let fixture = try await makeFixture()
+        let parent = NavigatorRefreshState()
+        let child = NavigatorRefreshState()
+        defer {
+            child.navigator = nil
+            fixture.close()
+        }
+        fixture.window.rootViewController = UIHostingController(
+            rootView: InheritedNavigatorFixture(parent: parent, child: child, preservingInherited: false)
+        )
+        fixture.window.layoutIfNeeded()
+        try await waitUntil { child.navigator != nil }
+        child.enabled = false
+        try await waitUntil { child.navigator == nil }
+        XCTAssertTrue(parent.enabled, "An active ancestor must not override explicit navigation removal.")
+    }
+
+    private struct InheritedNavigatorFixture: View {
+        let parent: NavigatorRefreshState
+        let child: NavigatorRefreshState
+        var preservingInherited = true
+
+        var body: some View {
+            NavigatorRefreshFixture(
+                state: child, preservingInherited: preservingInherited, content: NavigatorProbe(state: child)
+            )
+            .mediaItemNavigator(parent.enabled ? { [revision = parent.revision] _ in
+                parent.receivedRevision = revision
+            } : nil)
+        }
+    }
+
     private struct NavigatorRefreshFixture<Content: View>: View {
         let state: NavigatorRefreshState
+        var preservingInherited = false
         let content: Content
         var body: some View {
             content
                 .mediaItemNavigator(state.enabled ? { [revision = state.revision] _ in
                     state.receivedRevision = revision
-                } : nil)
+                } : nil, preservingInherited: preservingInherited)
         }
     }
 

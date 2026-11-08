@@ -1579,6 +1579,13 @@ from the parent hosting tree and hides the hosted content from accessibility.
 The media-item router retains a comparable identity within its navigation scope.
 Refreshing its callback uses the latest route without invalidating every realized
 card's context menu; enabling or disabling navigation still updates the menus.
+Detail pages install their optional override with
+`mediaItemNavigator(_:preservingInherited: true)`, retaining the inherited route
+when no override is supplied. Do not construct a fresh `MediaItemNavigator`
+inside an environment transform: its new identity rebuilds unchanged episode
+menus whenever the page's callback refreshes. Hosted detail coverage counts
+episode action-list builds across callback changes; shared-router coverage
+checks fresh callbacks, inheritance, explicit removal, and released captures.
 Native-host coverage changes the route callback during upward navigation and
 asserts that already-realized cards do not rebuild their action lists.
 Vertical row owners remain in a `VStack`: the native model offset reaches its
