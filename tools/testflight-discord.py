@@ -31,6 +31,7 @@ CHANNEL = "1560139816757235762"
 BUNDLE = "com.thatcube.Plozz"
 GROUP = "Plozz External"
 TESTFLIGHT = "https://testflight.apple.com/join/EKfReNMu"
+ROADMAP = "https://plozz.app/roadmap/"
 PLATFORMS = {"TV_OS": "Apple TV", "IOS": "iPhone and iPad"}
 NOTE_PLATFORMS = {"TV_OS": "tvOS", "IOS": "iOS"}
 DESCRIPTION_LIMIT = 4096
@@ -231,7 +232,7 @@ def with_release_notes(description, entry, platforms, url):
     return description + notice
 
 
-def announcement(release, catalog, github_releases):
+def announcement(release, catalog, github_releases, *, roadmap_enabled=False):
     build, marketing = release["build"], release["marketing"]
     entries = [
         entry for entry in catalog["releases"]
@@ -242,6 +243,8 @@ def announcement(release, catalog, github_releases):
     tag = NOTES.release_tag(build)
     platforms = " and ".join(f"**{label}**" for platform, label in PLATFORMS.items() if platform in release["platforms"])
     description = f"Available now for {platforms}.\n\n[Update in TestFlight]({TESTFLIGHT})"
+    if roadmap_enabled:
+        description += f" | [Roadmap]({ROADMAP})"
     if published_release(build, github_releases) is not None:
         url = f"https://github.com/{BRIDGE.REPO}/releases/tag/{tag}"
         description += f" | [Full release notes]({url})"
@@ -257,14 +260,14 @@ def announcement(release, catalog, github_releases):
     }
 
 
-def synchronize(discord, apple, github, catalog, minimum, *, publish=False):
+def synchronize(discord, apple, github, catalog, minimum, *, publish=False, roadmap_enabled=False):
     channel = inspect_channel(discord)
     releases = available_builds(apple, minimum)
     github_releases = github.pages(f"/repos/{BRIDGE.REPO}/releases")
     messages = BRIDGE.thread_messages(discord, CHANNEL)
     for release in releases:
         selected_catalog = announcement_catalog(release, catalog, github_releases, github)
-        embed = announcement(release, selected_catalog, github_releases)
+        embed = announcement(release, selected_catalog, github_releases, roadmap_enabled=roadmap_enabled)
         key = f"testflight:{release['marketing']}:{'.'.join(map(str, NOTES.build_parts(release['build'])))}"
         if publish:
             BRIDGE.discord_upsert(discord, channel, messages, key, embed)
@@ -285,6 +288,7 @@ def main():
             BRIDGE.API("App Store Connect", apple_token()),
             BRIDGE.API("GitHub", os.environ.get("GITHUB_TOKEN")),
             NOTES.load_catalog(NOTES.DEFAULT_CATALOG), minimum, publish=args.mode == "sync",
+            roadmap_enabled=os.environ.get("DISCORD_ROADMAP_LINK_ENABLED") == "true",
         )
     except (Error, ValueError, KeyError, TypeError) as error:
         if isinstance(error, Error):

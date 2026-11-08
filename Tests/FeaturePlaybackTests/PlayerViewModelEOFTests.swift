@@ -11,6 +11,114 @@ import UIKit
 
 @MainActor
 final class PlayerViewModelEOFTests: XCTestCase {
+    #if canImport(UIKit)
+    func testDiscPlaylistSelectionIsBoundToCatalogAndSuppressesLibraryProgress() async throws {
+        let request = try discRequest()
+        let item = request.item
+        let provider = RecordingPlaybackProvider(request: request)
+        let engine = SpyVideoEngine()
+        let video = DiscVideo(playlist: 2, duration: 6, chapterCount: 1)
+        engine.discVideoCatalog = [video]
+        let stopped = PlaybackStoppedRecorder()
+        let discarded = PlaybackStoppedRecorder()
+        let model = PlayerViewModel(
+            provider: provider, itemID: item.id,
+            engineFactory: .init(makeNative: { _ in SpyVideoEngine() }, makePlozzigen: { engine }),
+            onPlaybackStopped: { stopped.record(position: $0, percent: $1) },
+            onPlaybackStoppedWithoutProgress: { discarded.record(position: 0, percent: 0) }
+        )
+        await model.load()
+        XCTAssertTrue(model.hasDiscVideos)
+        XCTAssertThrowsError(try model.playDiscVideo(video))
+        let catalog = try await model.loadDiscVideos()
+        XCTAssertEqual(catalog, [video])
+        XCTAssertThrowsError(try model.playDiscVideo(.init(playlist: 3, duration: 6, chapterCount: 1)))
+        engine.currentTime = 8
+        try model.playDiscVideo(video)
+        for _ in 0..<1000 where engine.lastLoadedRequest?.discPlaylistOverride != 2 || model.phase != .ready {
+            await Task.yield()
+        }
+        let selected = try XCTUnwrap(engine.lastLoadedRequest)
+        XCTAssertEqual(selected.discPlaylistOverride, 2)
+        XCTAssertTrue(selected.suppressOrdinaryWatchReporting)
+        XCTAssertNil(selected.item.runtime)
+        XCTAssertEqual(engine.currentTime, 0)
+        XCTAssertThrowsError(try model.playDiscVideo(video), "Old catalogs cannot control a replacement attempt")
+        let before = await provider.reports
+        XCTAssertEqual(before.last?.event, .stop)
+        XCTAssertEqual(before.last?.progress.positionSeconds, 8)
+        engine.currentTime = 5
+        engine.onProgress?()
+        model.playVideoWithoutMenus()
+        for _ in 0..<1000 where engine.lastLoadedRequest?.discPlaylistOverride != nil || model.phase != .ready {
+            await Task.yield()
+        }
+        XCTAssertNil(engine.lastLoadedRequest?.discPlaylistOverride)
+        XCTAssertEqual(engine.lastLoadedRequest?.suppressOrdinaryWatchReporting, false)
+        XCTAssertEqual(engine.currentTime, 8, "Returning to the feature restores its own timeline")
+        _ = try await model.loadDiscVideos()
+        try model.playDiscVideo(video)
+        for _ in 0..<1000 where engine.lastLoadedRequest?.discPlaylistOverride != 2 || model.phase != .ready {
+            await Task.yield()
+        }
+        let beforeEnd = await provider.reports
+        engine.onEnded?()
+        XCTAssertTrue(model.shouldDismiss)
+        XCTAssertNil(model.pendingNextEpisode)
+        await model.stop()
+        let after = await provider.reports
+        XCTAssertEqual(after.count, beforeEnd.count)
+        XCTAssertEqual(stopped.count, 0, "A disc extra must not update the shell's movie progress")
+        XCTAssertNotNil(discarded.onlyCall, "Release the previously registered feature session without a mutation")
+        await model.stop()
+        XCTAssertEqual(discarded.count, 1)
+    }
+
+    private func discRequest() throws -> PlaybackRequest {
+        let item = MediaItem(id: "disc", title: "Disc", kind: .movie, runtime: 120)
+        let anchor = try NetworkFileLocator(
+            accountID: "fixture", sourceID: "fixture", credentialRevision: CredentialRevision(),
+            relativePath: "Movie/BDMV/index.bdmv",
+            representation: .init(
+                size: 40, identity: .init(kind: .strongETag, value: "\"index\""), consistency: .changeDetecting
+            ), formatHint: .init(container: "bdmv")
+        )
+        let disc = try NetworkDiscLocator(anchor: anchor, files: [.init(path: "BDMV/index.bdmv", locator: anchor)])
+        var request = PlaybackRequest(item: item, streamURL: URL(fileURLWithPath: "/fixture/index.bdmv"))
+        request.playbackSource = .networkDisc(disc)
+        return request
+    }
+
+    func testFailedDiscRetryKeepsShellProgressSuppressedWithoutARequest() async throws {
+        var request = try discRequest()
+        request.discPlaylistOverride = 2
+        let provider = RecordingPlaybackProvider(request: request)
+        let engine = SpyVideoEngine()
+        let stopped = PlaybackStoppedRecorder()
+        let discarded = PlaybackStoppedRecorder()
+        let model = PlayerViewModel(
+            provider: provider, itemID: request.item.id,
+            engineFactory: .init(makeNative: { _ in SpyVideoEngine() }, makePlozzigen: { engine }),
+            onPlaybackStopped: { stopped.record(position: $0, percent: $1) },
+            onPlaybackStoppedWithoutProgress: { discarded.record(position: 0, percent: 0) }
+        )
+        await model.load()
+        engine.currentTime = 45
+        engine.onProgress?()
+        model.handoffSetPhase(.failed(.unknown("Fixture disc failure")))
+        await provider.setPlaybackInfoError(.notFound)
+        model.retryPlayback()
+        let deadline = ContinuousClock.now + .seconds(5)
+        while model.phase == .loading, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        guard case .failed = model.phase else { return XCTFail("Expected failed resolution") }
+        await model.stop()
+        XCTAssertEqual(stopped.count, 0)
+        XCTAssertEqual(discarded.count, 1)
+    }
+    #endif
+
     func testSongTapStopsOnPauseSeekAndStopAcrossProviders() async throws {
         for kind in [ProviderKind.jellyfin, .plex] {
             let item = MediaItem(id: "song", title: "Song fixture", kind: .movie)
@@ -2710,6 +2818,7 @@ private actor RecordingPlaybackProvider: MediaProvider {
     private var childErrors: [String: any Error] = [:]
     private var itemError: (any Error)?
     private var playbackInfoGate: PreCommitYieldGate?
+    private var playbackInfoError: AppError?
     private var childGates: [String: PreCommitYieldGate] = [:]
     private var childIDs: [String] = []
     private var playlistMemberError: AppError?
@@ -2778,15 +2887,18 @@ private actor RecordingPlaybackProvider: MediaProvider {
     func search(query: String, limit: Int) async throws -> [MediaItem] { [] }
     func playbackInfo(for itemID: String) async throws -> PlaybackRequest {
         playbackInfoCallCount += 1
+        if let playbackInfoError { throw playbackInfoError }
         return requestsByItemID[itemID] ?? request
     }
     func playbackInfo(for itemID: String, mediaSourceID: String?, forceTranscode: Bool) async throws -> PlaybackRequest {
         playbackInfoCallCount += 1
         await playbackInfoGate?.suspend()
+        if let playbackInfoError { throw playbackInfoError }
         return requestsByItemID[itemID] ?? request
     }
 
     func setPlaybackInfoGate(_ gate: PreCommitYieldGate) { playbackInfoGate = gate }
+    func setPlaybackInfoError(_ error: AppError) { playbackInfoError = error }
     func itemCallCountValue() -> Int { itemCallCount }
     func playbackInfoCallCountValue() -> Int { playbackInfoCallCount }
     func hasReport(itemID: String, event: PlaybackEvent) -> Bool {
@@ -2886,6 +2998,10 @@ private struct LocalPlaybackFixture: OfflinePlaybackResolving {
 
 @MainActor
 private final class SpyVideoEngine: VideoEngine {
+    #if canImport(UIKit)
+    var discVideoCatalog: [DiscVideo] = []
+    func discVideos() async throws -> [DiscVideo] { discVideoCatalog }
+    #endif
     var providesSongTap = false
     var songTapActive = false
     var songTapInstalls = 0
@@ -2980,6 +3096,12 @@ private final class PlaybackStoppedRecorder: @unchecked Sendable {
 
     private let lock = NSLock()
     private var calls: [Call] = []
+
+    var count: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return calls.count
+    }
 
     var onlyCall: Call? {
         lock.lock()

@@ -15,6 +15,7 @@ settings:
     CODE_SIGN_STYLE: Automatic
     TARGETED_DEVICE_FAMILY: "3" # Apple TV
     SWIFT_STRICT_CONCURRENCY: complete
+    LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/Frameworks"
     # Build number (CFBundleVersion) fallback. tools/generate-project.sh bakes the
     # real value into the generated project on every regenerate — from the git
     # commit count (local/device/simulator builds) or PLOZZ_BUILD_NUMBER (the
@@ -63,6 +64,10 @@ targets:
   Plozz:
     type: application
     platform: tvOS
+    postBuildScripts:
+      - name: Embed disc runtime
+        script: python3 "$SRCROOT/tools/embed-disc-runtime.py"
+        basedOnDependencyAnalysis: false
     deploymentTarget: "18.0"
     sources:
       - path: App/Plozz
@@ -83,6 +88,7 @@ targets:
       - path: App/Resources/InfoPlist.xcstrings
       - path: App/Resources/ReleaseNotes.json
       - path: App/Resources/LibassNotices.txt
+      - path: App/Resources/LibblurayNotices.txt
       - path: App/Resources/LibTrueHDNotices.txt
       - path: App/Resources/LibTrueHDLicense.txt
       - path: App/Resources/LibTrueHDApacheLicense.txt
@@ -334,6 +340,10 @@ targets:
   PlozziOS:
     type: application
     platform: iOS
+    postBuildScripts:
+      - name: Embed disc runtime
+        script: python3 "$SRCROOT/tools/embed-disc-runtime.py"
+        basedOnDependencyAnalysis: false
     deploymentTarget: "18.0"
     sources:
       - path: App/PlozziOS
@@ -345,6 +355,7 @@ targets:
       - path: App/Resources/Localizable.xcstrings
       - path: App/Resources/ReleaseNotes.json
       - path: App/Resources/LibassNotices.txt
+      - path: App/Resources/LibblurayNotices.txt
       - path: App/Resources/LibTrueHDNotices.txt
       - path: App/Resources/LibTrueHDLicense.txt
       - path: App/Resources/LibTrueHDApacheLicense.txt
@@ -474,11 +485,16 @@ targets:
   PlozzFocusHost:
     type: application
     platform: tvOS
+    postBuildScripts:
+      - name: Embed disc runtime
+        script: python3 "$SRCROOT/tools/embed-disc-runtime.py"
+        basedOnDependencyAnalysis: false
     sources:
       - path: Tests/FocusHost
       - path: Tests/iOSPresentationHost/DetailInformationFixture.swift
       - path: Tests/DiscoverPresentationSupport/DiscoverBrowseFixture.swift
       - path: Tests/PlaybackPresentationSupport/PlaybackFailureFixture.swift
+      - path: Tests/PlaybackPresentationSupport/DiscReviewFixture.swift
       - path: Tests/LiveTVPresentationSupport/IPTVOrganizationFixture.swift
       - path: Tests/LiveTVPresentationSupport/LiveTVCategorySearchFixture.swift
       - path: Tests/AuthPresentationSupport/IPTVSetupFixture.swift
@@ -505,6 +521,10 @@ targets:
   PlozziOSPresentationHost:
     type: application
     platform: iOS
+    postBuildScripts:
+      - name: Embed disc runtime
+        script: python3 "$SRCROOT/tools/embed-disc-runtime.py"
+        basedOnDependencyAnalysis: false
     sources:
       - path: Tests/iOSPresentationHost
       - path: Tests/DiscoverPresentationSupport/DiscoverBrowseFixture.swift
@@ -512,6 +532,7 @@ targets:
       - path: Tests/AuthPresentationSupport/OnboardingPreviewHTTP.swift
       - path: Tests/FeatureLiveTVRemoteTests/SourceOnboardingFixture.swift
       - path: Tests/PlaybackPresentationSupport/PlaybackFailureFixture.swift
+      - path: Tests/PlaybackPresentationSupport/DiscReviewFixture.swift
       - path: Tests/LiveTVPresentationSupport/IPTVOrganizationFixture.swift
       - path: Tests/LiveTVPresentationSupport/LiveTVCategorySearchFixture.swift
       - path: Tests/ProviderIPTVTests/IPTVTestHTTPServer.swift
@@ -577,6 +598,7 @@ targets:
       - path: Tests/FeatureLiveTVCoreTests/LiveTVPlaybackCoordinatorTests.swift
       - path: Tests/FeatureLiveTVTests/LiveTVGuideRowLayoutTests.swift
       - path: Tests/CoreModelsTests/SettingsHydrationTests.swift
+      - path: Tests/CoreModelsTests/DiscPlaybackTests.swift
       - path: Tests/CoreModelsTests/PlaybackOrientationSettingsTests.swift
       - path: Tests/CoreModelsTests/ResumeRewindSettingsTests.swift
       - path: Tests/CoreModelsTests/SubtitleStylePreferencesTests.swift
@@ -611,6 +633,7 @@ targets:
       - target: PlozziOSPresentationHost
       - package: Plozz
         product: AppShelliOS
+        link: false
 
   PlozziOSInteractionTests:
     type: bundle.ui-testing
@@ -618,6 +641,7 @@ targets:
     sources:
       - path: Tests/iOSInteractionTests
       - path: Tests/PlaybackPresentationSupport/PlaybackFailureInteractionTests.swift
+      - path: Tests/PlaybackPresentationSupport/DiscReviewScreenshotTests.swift
       - path: Tests/LiveTVPresentationSupport/IPTVOrganizationInteractionTests.swift
       - path: Tests/LiveTVPresentationSupport/LiveTVCategorySearchInteractionTests.swift
       - path: Tests/HomeRemoteTests/ServerAddressNavigationInteractionTests.swift
@@ -637,6 +661,7 @@ targets:
     sources:
       - path: Tests/HomeRemoteTests
       - path: Tests/PlaybackPresentationSupport/PlaybackFailureInteractionTests.swift
+      - path: Tests/PlaybackPresentationSupport/DiscReviewScreenshotTests.swift
       - path: Tests/LiveTVPresentationSupport/IPTVOrganizationInteractionTests.swift
       - path: Tests/LiveTVPresentationSupport/LiveTVCategorySearchInteractionTests.swift
       - path: Sources/FeatureHomeCore/LibraryTraversalEvidence.swift
@@ -678,9 +703,10 @@ targets:
         BUNDLE_LOADER: "$(TEST_HOST)"
     dependencies:
       - target: PlozzFocusHost
-      # Share one umbrella package product instead of duplicating its module code.
+      # Resolve package symbols from the host, without duplicating Objective-C classes.
       - package: Plozz
         product: AppShell
+        link: false
 
 schemes:
   PlozziOSInteractionTests:

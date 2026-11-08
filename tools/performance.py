@@ -73,6 +73,13 @@ SCENARIOS = {
              "Production detail model opens a seeded movie with 250-ms initial metadata and 350-ms cold recommendations while the native Related row scrolls."),
         )
     },
+    "disc-java-flush": {
+        "suite": "ui",
+        "test": "DiscGraphicsHostedTests/testPerformanceJavaRepeatedFlushes",
+        "file": "Tests/SubtitlePresentationSupport/DiscGraphicsHostedTests.m",
+        "description": "Compose 200 original 960x540 Java menu updates, with 20 changing frames; measure synchronous producer work, not presentation FPS.",
+        "counters": ["frames", "changedFrames", "pixelsPerFrame"],
+    },
     "identity-unchanged-servers": {
         "suite": "core", "target": "AppRuntimeTests",
         "test": "IdentityIndexRefreshTests/testPerformanceRevalidatingTwentyUnchangedServers",

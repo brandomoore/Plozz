@@ -4,6 +4,331 @@ Plozz uses two playback engines, automatically selected per-item based on
 container, codecs, and subtitle requirements. The goal is maximum format coverage
 with the best possible quality (Dolby Vision, spatial audio, full-timeline seek).
 
+## Media-share Blu-ray folders
+
+Recognized `BDMV` folders appear as one movie in indexed libraries and normal
+folder browsing, rather than one movie per `.m2ts` clip. Recognition requires an
+`index.bdmv` file and `PLAYLIST`/`STREAM` directories, matched case-insensitively.
+The containing movie folder supplies the title and local metadata. A source
+root inside `BDMV` is supported. Standalone transport-stream files and explicit
+**Browse Files** navigation retain their ordinary behavior.
+
+All share transports use the same discovery and playback path: SMB, SFTP, FTP,
+FTPS, HTTP and HTTPS/WebDAV. Play builds a bounded, credential-free manifest
+(at most 4,096 files), preserving each file's representation identity. Plozzigen
+selects the main playlist and plays its ordered clips; it does not select the
+largest stream or concatenate every file. Files open lazily through the existing
+transport resolver. One admission lease spans playback, independent readers
+share teardown ownership, and cancellation interrupts pending file opens.
+
+Folder downloads, external-player handoff and index-file warming are unsupported;
+the index is never treated as an original video. This adds no decryption or
+multi-angle playback. Missing, changed or unsupported disc
+contents follow the playback error path.
+
+### Original disc navigation
+
+The profile's **Disc playback** setting chooses **Play video** (the migration
+default) or **Open disc menu**. The detail Play button follows that preference;
+its hold menu offers the opposite action for this play only. Direct playback
+does not create a navigation session and keeps its normal resume/watch behavior.
+
+Distribution and default local builds support native HDMV menus in media-share
+BDMV folders, not Java (BD-J) menus. Java-only menus are marked unsupported, with
+direct video/title playback still available. A stale or unknown menu declaration
+is also checked at the native entry point before any menu video starts. Mixed
+discs retain a supported HDMV top menu even when other titles require Java; an
+unsupported Java first-play can be bypassed only to enter that native top menu
+for an explicit menu request.
+Native-only share inventories skip `JAR`, `BDJO`, backup `BDJO`, and
+`CERTIFICATE` traversal. Inaccessible Java resources therefore cannot block
+direct video or HDMV playback; the experimental build retains its bounded scans.
+`DiscNavigation` statically links pinned libbluray 1.5.0 without optional
+decryption loaders. It drives original navigation and graphics while the existing
+Plozzigen adapter plays the selected playlist or its bounded play items. Separate transport cursors
+retain the same account, credential revision, file identity and root allowlist.
+The normal app uses the production transport resolver, not the lab's HTTP relay.
+The experimental local-only BD-J implementation uses the pinned OpenJDK Zero
+interpreter and libbluray's offscreen AWT.
+Java graphics can open before any video is selected; authored playback then uses
+the same playlist and renderer path as HDMV. Java callbacks copy and composite
+their graphics before publishing on the main thread. Only one Java disc session
+can own the process-wide JVM, including while an old session is closing.
+
+Detail inspection recognizes 0100, 0200, 0240 and 0300 index layouts, including
+declared BD-J top menus. An explicitly absent or unsupported menu is replaced by
+its existing explanation in the Play context menu.
+Unfamiliar, damaged or temporarily unreadable metadata stays unknown,
+not permanently unsupported. A conservative MovieObject inspection recognizes
+the tested region-register/warning-loop pattern and selects A, B or C before
+first play; other programs use the device-region fallback. Manual region retries
+affect only the current session, not the profile preference.
+
+Missing opening clips permit one top-menu attempt, respecting disc restrictions.
+Opening disc navigation follows the disc's authored first-play program, including
+language/region setup, timed menu transitions and automatic feature playback.
+Plozz does not freeze authored timers or redirect supported startup programs into the top menu.
+The player's explicit menu action requests the top menu when the disc permits it;
+reaching that title completes the request.
+Transition diagnostics correlate directional/activation keys, playlist generations,
+native navigation events and reader owners. Transport-open failures record the
+error type and case without associated credential or path details, distinguishing
+superseded-load cancellation from failure in the current selection.
+Identical playlist, position and play-item requests share an in-flight load rather
+than cancelling and reopening it. The newest native generation owns the result;
+different selections and replays after completion still start a fresh load.
+Startup and playlist transitions have bounded deadlines. Menu failures remain
+visible with Retry, Play video, region retry and Close actions; they never trigger
+automatic main-title playback, cross-source failover or server transcoding.
+Directional input is ignored when there is no active authored menu.
+Finite and infinite stills at the end of a playlist retain the rendered frame.
+User pause suspends a finite still's timer; play resumes that timer rather than
+bypassing the authored hold. Infinite stills wait for navigation input.
+Playlists with stills between play items use individually opened clips and their
+authored source-time intervals. Native playback establishes the actual consumer
+timeline before seeking and starting, and AVPlayer's renderer-owned endpoint
+holds the frame without a sampled-clock pause. If timeline correction maps an
+endpoint at or beyond the finite native item duration, playback uses natural EOF
+instead of scheduling an invalid out-of-item endpoint. Earlier boundaries remain
+renderer-owned, with endpoints and seeks rounded to the nearest 90 kHz tick.
+Repeated clips retain separate
+play-item identities. Software-rendered formats cannot yet use these intervals;
+that limitation is reported instead of skipping the pause or playing outside it.
+Stopping a session cancels its transport and waits up to five seconds for its
+native navigation queue. If shutdown is still pending, the queue keeps its
+native owner alive while the player can leave or start direct playback. In the
+Java experiment, this deadline does not terminate Java threads or free objects
+beneath an active call.
+
+For this initial integration, menu sessions deliberately do not update watched
+or resume state: a menu's playlist clock does not identify a library movie,
+especially on multi-feature discs. Direct playback retains normal tracking.
+Authored primary audio/subtitle selections map playlist stream identities to
+the engine's actual MPEG-TS PIDs, never its track-list order. Player selections
+also update the disc VM and respect its operation restrictions. Missing,
+ambiguous or separate-subpath tracks remain explicitly unavailable. When two
+decoder representations share a PID (such as TrueHD and its AC-3 companion),
+the already-active matching representation satisfies the disc selection.
+Recovered track warnings clear independently of other track or navigation notices.
+Disc choices drive the subtitle overlay without changing remembered series preferences.
+The engine exposes menu state only for an active menu request; ordinary playback
+must still apply its normal subtitle defaults and remembered track selections.
+Arbitrary-disc compatibility and distribution readiness are not established.
+Menu graphics cannot end an in-flight video-load state; authored video transitions
+retain a loading indicator until their load completes. Returning from a disc menu
+creates a fresh transport focus owner and re-arms the controls' idle timeout;
+retired hosts cannot keep their previous focus/panel state or idle timer.
+Disc menu / Disc videos lives in the existing transport button row on TV and
+mobile, not in a separate floating action. It follows the row's focus and
+visibility lifecycle, so it cannot take the video surface's initial focus.
+The TV disc navigation surface uses a native Select button; directional input
+only sends the corresponding disc arrow key, not an activation.
+Mobile menu navigation centers its glass arrow/Select group separately from the
+disc action and keeps the shell's single Close action. Select uses a circle.
+During loading, the disc action and navigation are hidden. One loading indicator
+stays mounted across mobile request resolution and native playlist transitions,
+without loading messages. A background video's first frame does not finish initial
+menu loading; visible menu graphics do, including an interactive language prompt.
+Outside loading, navigation controls retain their layout across temporary graphics clears and
+disable input until the menu is visible again. Pending menu requests keep normal
+transport chrome hidden, and disc transport does not reveal itself merely because
+its view was recreated during a scene change.
+Taps inside the aspect-fitted menu image are mapped
+to disc pixels and sent as native pointer selection/activation; taps in the
+letterbox area never activate a previously selected button. Arrow and Select
+controls remain available for discs that do not implement pointer input.
+
+#### Experimental Java resource ownership
+
+Java graphics callbacks drain temporary Cocoa objects after each event, including
+on long-lived Java drawing threads. Unchanged draw/flush sequences retain the
+existing composed frame instead of copying and composing all planes again.
+Changed pixels, plane replacement, transparent clears and Close still update
+composition; queued publications are discarded after Stop. Composition failures record the failing stage,
+canvas dimensions, plane count and measured process footprint in the playback
+trace; these diagnostics do not by themselves establish the allocation's cause.
+BD-J networking and durable disc storage are disabled. libbluray still creates
+temporary binding-unit and persistent-storage directories for disc applications.
+The experimental runtime applies a shared 256 MiB **cumulative operation budget**
+per disc, plus 4,096 distinct canonical write destinations. Stream, random-access,
+NIO/vector/async writes, writable positions, resizing, mapping ranges, buffered
+copies and extended-attribute values reserve their cost before the native operation.
+Native cloning/direct-copy fast paths use the accounted buffered fallback.
+Positions/ranges are conservatively charged in full, with no refunds for overwrites,
+partial failures or deletion; this avoids concurrent seek/write growth bypasses.
+This is not a measurement of live files or a 256 MiB physical-filesystem quota:
+filesystem metadata, allocation granularity and diagnostics are outside that metric.
+Write-heavy discs can exhaust the budget even with little live data. Failure
+throws an exception with a one-time path-free diagnostic; authorized deletion
+remains possible. Canonical permissions match path components, not sibling prefixes.
+Accounting resets only before a new disc policy is installed, after successful
+prior shutdown; disc code cannot reset it. The JVM has bounded
+heap, metaspace and direct-memory allocations; source resource inventories and
+expanded JAR entries/bytes are bounded, and archive paths cannot escape their
+mount. These limits are not process isolation: Java CPU use, thread creation and
+uncooperative Xlet shutdown are not hard-bounded. Incomplete Java shutdown
+quarantines the runtime until app restart rather than allowing surviving disc
+threads to access a later session. A quarantined native disc and its callback,
+graphics and transport owners are retained for in-flight JNI calls; its Java
+admission slot is not released. The disc policy stays installed while those
+threads remain. This deliberately retains resources until restart rather than
+risk a use-after-free; it is not bounded termination. Bundled LGPL notices are
+attribution, not a conclusion that App Store distribution requirements are met.
+At the next runtime initialization, cache cleanup removes only marked,
+UUID-named disc caches whose process-held lease can be acquired exclusively.
+Active/quarantined process caches and unmarked legacy directories are retained.
+The cleanup does not inspect or remove developer build caches.
+
+#### Native-only distribution and experimental local builds
+
+`Package.swift` selects native-only sources by default, with no JNI implementation
+or JVM loader. `PLOZZ_EXPERIMENTAL_BDJ=1` opts into the retained Java implementation
+for local Debug builds only. Pass it in the environment of **both** package
+resolution/build and the runtime embed phase, not just as an Xcode build-setting
+argument. For command-line work, prefix the generation and `xcodebuild` commands
+with that environment value; use a separate entrypoint-private package workspace
+and DerivedData for experimental builds. Normal Xcode launches without that
+environment remain native-only.
+
+Release compilation rejects an experimental package graph, even if it was cached
+from Debug. The embed phase also rejects experimental Release, archive/install
+actions and release-channel builds. Native-only embedding does not require a
+runtime receipt and removes only its own stale `DiscRuntime` and `PlozzBDJ*.framework`
+outputs from the current app bundle. No runtime setting or remote flag enables
+Java. Do not distribute an experimental Debug build through TestFlight.
+
+The distribution validator rejects Java runtime resources/frameworks and JNI/JVM
+entry points, including in extensions, while retaining platform, dependency and
+signature checks. These are engineering guards, not legal or App Review approval.
+Native libraries still require their applicable licensing obligations to be met.
+
+#### Experimental runtime packaging
+
+For an explicitly opted-in local experiment, build the matching runtime first:
+`tools/with-apple-build-lease.sh plozz/disc-runtime -- python3 tools/build-disc-runtime.py --sdk appletvsimulator`.
+Use `appletvos`, `iphoneos` or `iphonesimulator` for the other destinations.
+The builder verifies pinned downloads, checks each native library's platform,
+retains licenses and records its build-input fingerprint. The app embed phase
+rejects missing or stale receipts. Each native library is relinked into its own
+signed `PlozzBDJ*.framework` under the app's `Frameworks` directory; native
+dependencies and JVM library discovery use that layout. Even unsigned simulator
+builds ad-hoc sign rewritten frameworks so arm64 loading does not use invalidated
+linker signatures. Java modules, JARs, fonts and notices remain nonexecutable
+resources in `DiscRuntime`. Assets remain under `.build`; do not commit generated
+runtimes. `DiscRuntime/source-dependencies.json` records upstream archive URLs and
+checksums, and `DiscRuntime/legal` retains the runtime, libbluray, ASM, libffi and
+font notices. These files identify inputs, not a complete corresponding-source or
+relinking offer.
+The primary OpenJDK GPLv2 license, additional-license information and assembly
+exception are also retained in `DiscRuntime/legal/openjdk`; component notice
+directories alone do not substitute for those required texts.
+The experimental JVM flags disable implicit null checks and reduce signal use;
+they do not eliminate all runtime signal handlers. Offscreen disc graphics require
+`java.awt.headless=false`.
+
+#### Distribution validation
+
+The archive lane runs `tools/validate-disc-runtime.py --app <archived-app>` before
+upload and requires a native-only app. It checks device architectures/platforms, framework dependencies,
+extension version parity, executable placement, exact process-symbol imports,
+Java exclusion and the signed bundle. Its process-symbol denylist
+is a project guard, not a complete list of Apple's validation rules. It does not
+establish physical-device compatibility, licensing compliance or App Review
+approval. Those remain separate release gates.
+
+The following additional gates apply before any proposal to re-enable Java in
+distribution; a native-only release does not inherit approval of the experiment:
+
+- Exercise original menu selection, playback, return, repeated reopen, cancellation
+  and noncooperative shutdown on both supported device platforms. Simulator
+  regressions do not establish device performance or termination of arbitrary Java.
+- Review the actual combined OpenJDK/libbluray/native dependency licenses, modified
+  corresponding source, build scripts and applicable replacement/relinking
+  obligations. Bundling license texts and upstream URLs is not legal clearance.
+- Supply written App Review notes that explicitly describe disc-provided Java
+  execution by a bundled interpreter, disabled disc networking, temporary storage,
+  resource limits and the restart-required quarantine. Do not call Java metadata.
+  Apple's downloaded-code rules remain a review question, not an engineering pass.
+- Provide an isolated read-only share containing the original red/blue test disc
+  generated by `tools/generate-bdj-test-fixture.py`, with exact connection and menu
+  steps for the production app. Use review-only access, not an internal test account
+  or a commercial movie. Verify that access and the same archived app before
+  submission; this document does not authorize submission or publish credentials.
+
+The native **Play video** fallback opens the automatically selected feature.
+**Disc videos** opens a native playlist list from the menu actions, menu failure
+screen, or direct-play overlay. An independent native reader enumerates playlist
+information without starting either disc VM, with limits of 1,024 playlists,
+2 MiB per playlist and 16 MiB combined playlist metadata. Entries show playlist
+identity, duration and chapter count; they do not guess feature or extra names.
+Selection is bound to the exact source and playback attempt, stops the previous
+navigation session, and restarts direct playback at the selected playlist.
+Manually chosen playlists suppress library watch/resume reports, automatic next
+episodes, library skip markers and subtitle downloads, and remembered series
+track changes. Old library chapters, runtime and trickplay do not carry across.
+Returning to **Play video** restores the ordinary feature path. These UI strings
+remain subject to design approval and the normal reviewed localization gate.
+The authored Java hosted test covers menu-only startup, both selected videos,
+pause/resume, top-menu return, end-of-media callbacks and repeated sessions.
+Run it alone with `TEST_RUNNER_PLOZZ_BDJ_SHUTDOWN_CHECK=1` to also exercise a
+bounded interruption-resistant fixture thread and refusal of subsequent Java
+sessions. That opt-in case intentionally quarantines its test process.
+Private-disc acceptance on tvOS Simulator also covered an original Java language
+selector, UHD feature playback and pause/resume, the original top menu, and its
+Play action returning to the same feature with continued video progression.
+That is evidence for the exercised disc and paths, not universal compatibility
+or physical-device performance. Private disc contents are not included in CI.
+
+On supported non-disc server items, the Play button's hold menu also offers
+installed external players through **Play in**. This is a one-play override, not
+a change to the saved external-player preference; it retains the selected source
+and version and uses the existing authorization, launch and fallback path.
+
+The hosted `testNativeHDMVFirstPlayAndTopMenuUseProductionTransport` uses original
+synthetic navigation metadata generated by `fixture.create_hdmv_metadata` in
+`tools/disc-menu-lab/fixture.py`, sharing the existing red/blue test clips. It
+checks native playlist selection, rendered video and a top-menu transition;
+it is not evidence of authored interactive graphics or commercial-disc support.
+Companion hosted regressions cover a missing opening stream with backup CLPI
+metadata, finite-still pause/resume, infinite-still menu transitions, and
+two-way audio selection with deliberately reversed playlist track ordering.
+Repeated-clip regressions cover an intermediate finite still, a final infinite
+still, and a 42-millisecond second item beginning at the fractional 2.002-second boundary.
+The navigation clock starts only after video presentation and rounds to 90 kHz
+ticks; independently rendered items keep that clock inside their own interval
+rather than seeking the disc VM into an adjacent item.
+External playback delivers authored play marks from that presentation clock,
+including menu-reveal cues whose timestamps share an earlier indexed keyframe.
+Byte reads and presentation updates share one mark cursor to avoid duplicates.
+Explicit seeks skip passed cues and rearm later cues for replay; natural clip
+transitions deliver the outgoing boundary before synchronizing the next clip.
+Native regressions cover exact cue times, duplicate ticks, invalid clocks,
+end-boundary cues, forward seeks, and backward replay without rereading video.
+An explicitly configured private-disc
+inspection also exercises original menu graphics and a held video frame through
+the production transport and playback adapter; its opening-Menus mode verifies
+the initial menu reveal before movie playback and menu return. It is opt-in,
+not part of CI.
+The multi-audio source is an original generated color/sine clip from
+`tools/generate-bdmv-test-fixture.py`; `fixture.create_hdmv_metadata` produces
+its alternate playlist and clip information when that clip is present.
+
+Jellyfin/Emby, Plex and Silo remain server-managed libraries: Plozz consumes their
+item identities and negotiated playback sources, not their underlying directory
+trees. This change does not merge unrelated server-provided M2TS items or claim
+to repair a server's own disc indexing.
+
+`Fixtures/bluray-test-pattern` contains original generated color/sine clips and
+synthetic MPLS playlists, with no copyrighted movie content. The main playlist
+joins two eight-second clips; a longer unrelated clip catches largest-file
+selection mistakes. Hosted WebDAV tests cover rendering, the 16-second timeline,
+cross-clip seeking, second-clip resume and teardown, and assert that the unrelated
+clip is not fetched. Regenerate into a **new** directory with:
+
+```bash
+python3 tools/generate-bdmv-test-fixture.py --output /tmp/plozz-new-bluray-fixture
+```
+
 ## Media-share disc images
 
 Media-share folder browsing and indexed libraries recognize `.iso` files
@@ -414,8 +739,8 @@ headers when updating the vendored sources, and update sources, public headers,
 binary checksums, and bundled notices together.
 
 Plozz pins the playback-corrected
-[AetherEngine fork](https://github.com/brandomoore/AetherEngine/tree/8c7f919a4cff9f0d27d27f464657578ec08fc221)
-at commit `8c7f919a4cff9f0d27d27f464657578ec08fc221`, integrating upstream
+[AetherEngine fork](https://github.com/brandomoore/AetherEngine/tree/55430e28df74ba11b36fea367ad22af0d685a68b)
+at commit `55430e28df74ba11b36fea367ad22af0d685a68b`, integrating upstream
 **7.53.1** (`0839aeee18dd0818c5c307a3c5ecba8ea3161b22`).
 Playback diagnostics show `AetherEngine v7.53.1`, read from the linked engine
 rather than a duplicated version constant. The exact fork commit remains in

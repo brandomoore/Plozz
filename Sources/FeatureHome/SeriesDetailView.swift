@@ -415,6 +415,28 @@ struct SeriesDetailView: View {
                             playbackPreparation.handoff(item)
                             onPlay(item)
                         } },
+                        onPlayDisc: playTarget == nil ? nil : { behavior in
+                            guard let target = playTarget else {
+                                PlozzLog.playback.error("The disc playback target is no longer available.")
+                                return
+                            }
+                            let selected = DetailPlaybackSelection.playItem(
+                                for: target, sources: target.sources, activeAccountID: target.sourceAccountID,
+                                versionID: effectivePlayVersionID, explicit: true
+                            )
+                            onPlay(selected.requestingDiscPlayback(behavior))
+                        },
+                        onPlayExternal: playTarget == nil ? nil : { player in
+                            guard let target = playTarget else {
+                                PlozzLog.playback.error("The playback target is no longer available.")
+                                return
+                            }
+                            let selected = DetailPlaybackSelection.playItem(
+                                for: target, sources: target.sources, activeAccountID: target.sourceAccountID,
+                                versionID: effectivePlayVersionID, explicit: true
+                            )
+                            onPlay(selected.requestingExternalPlayer(player))
+                        },
                         showsPlayPlaceholder: DetailPlaybackSelection.showsPlayPlaceholder(
                             for: series,
                             hasPlayTarget: playTarget != nil,

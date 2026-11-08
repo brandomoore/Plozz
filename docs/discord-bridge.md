@@ -382,6 +382,16 @@ appear once. Platform-specific bullets are labeled when both platforms are
 available; notes for a platform still waiting for review are not displayed.
 If a platform has no applicable changes, the message says so.
 
+After the website board is live, set repository variable
+`DISCORD_ROADMAP_LINK_ENABLED=true` to include a concise
+[Roadmap](https://plozz.app/roadmap/) link in every version announcement, including
+hotfixes, partial-platform availability, and builds without published GitHub notes.
+Leave it unset or `false` until the production page is activated and verified.
+This switch is independent of `DISCORD_ROADMAP_ENABLED`: it never enables the
+long-list Discord roadmap publisher. The link reserves space before inline notes
+are fitted to Discord's limit. Enabling or disabling it updates existing eligible
+announcements in place on the next sync without posting duplicates.
+
 Published releases read the catalog from their exact release tag
 and validate its release ID, build, and Apple version against TestFlight. The
 public date does not depend on the release entry already being merged into `main`.

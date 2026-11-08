@@ -2,6 +2,68 @@
   "schemaVersion": 1,
   "releases": [
     {
+      "id": "release/071.2",
+      "version": "2026.11.7",
+      "marketingVersion": "2026.11.6",
+      "build": "71.2",
+      "releasedAt": "2026-11-07",
+      "sections": [
+        {
+          "category": "New",
+          "items": [
+            "Unencrypted Blu-ray folder playback from network shares, with HDMV menus and video selection. BD-J plays video only; menu and manually selected disc videos don't save watch progress.",
+            "Choose a one-time player from Play's menu for supported sources.",
+            {
+              "text": "External text subtitles for more download sources, plus subtitle-only updates and retries.",
+              "platforms": ["iOS"]
+            }
+          ]
+        },
+        {
+          "category": "Updated",
+          "items": [
+            "Mark in-progress movies and episodes as unwatched to reset progress.",
+            "Performance improvements to Home and profile library selection.",
+            "More detailed real-time playback diagnostics.",
+            "Refined song cards and Play/Resume labels.",
+            {
+              "text": "Simplified download settings and improved offline artwork.",
+              "platforms": ["iOS"]
+            },
+            {
+              "text": "Improved Live TV handling when the app is backgrounded.",
+              "platforms": ["iOS"]
+            }
+          ]
+        },
+        {
+          "category": "Fixed",
+          "items": [
+            {
+              "text": "Continue Watching cards ignoring taps on iPad.",
+              "platforms": ["iOS"]
+            },
+            {
+              "text": "Settings closing during server-user verification.",
+              "platforms": ["iOS"]
+            },
+            {
+              "text": "Misplaced Resume / Start Over popovers on Home and title details.",
+              "platforms": ["iOS"]
+            },
+            {
+              "text": "Home opening with the sidebar focused instead of page content.",
+              "platforms": ["tvOS"]
+            },
+            {
+              "text": "Playback links failing while another video is playing.",
+              "platforms": ["tvOS"]
+            }
+          ]
+        }
+      ]
+    },
+    {
       "id": "release/071.1",
       "version": "2026.11.6",
       "marketingVersion": "2026.11.6",

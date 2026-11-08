@@ -1932,6 +1932,8 @@ struct PlozziOSHomeHeroForeground: View {
                 )
             }
             .buttonStyle(PlozziOSHeroActionButtonStyle(kind: .primary))
+            .accessibilityIdentifier("home-hero-play")
+            .resumePromptAnchor(id: item.id)
         }
 
         heroRequestButton
@@ -2005,6 +2007,7 @@ struct PlozziOSDetailHeroForeground: View {
     @State private var isVersionPickerPresented = false
     @State var sourceMenu = PlaybackSourceMenuState()
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.discPlaybackDefault) private var discPlaybackDefault
     @Environment(PlozziOSAppModel.self) private var appModel
 
     let item: MediaItem
@@ -2420,14 +2423,15 @@ struct PlozziOSDetailHeroForeground: View {
             ))
             .disabled(isRetryingPlaybackInventory)
         } else if playableItem != nil || showsPlayPlaceholder {
+            let opensMenu = playableItem?.effectiveDiscPlayback(default: discPlaybackDefault) == .openMenu
             Button {
                 if let playableItem { onPlay(playableItem, false) }
             } label: {
                 PlayResumeButtonLabel(
-                    title: playableItem?.playActionTitle ?? "Play",
-                    progress: playableItem?.resumeProgressFraction,
-                    remainingText: playableItem?.resumeRemainingText,
-                    seasonEpisodeText: playableItem.flatMap { $0.opensExternalSource ? nil : seasonEpisodeText(for: $0) },
+                    title: opensMenu ? "Open disc menu" : playableItem?.playActionTitle ?? "Play",
+                    progress: opensMenu ? nil : playableItem?.resumeProgressFraction,
+                    remainingText: opensMenu ? nil : playableItem?.resumeRemainingText,
+                    seasonEpisodeText: opensMenu ? nil : playableItem.flatMap { $0.opensExternalSource ? nil : seasonEpisodeText(for: $0) },
                     onLight: colorScheme == .dark,
                     spacing: 10,
                     capsuleWidth: 60,
@@ -2435,14 +2439,23 @@ struct PlozziOSDetailHeroForeground: View {
                     isPlaceholder: playableItem == nil,
                     separatesEpisodeText: playableItem?.startsWatching ?? false,
                     wrapsText: wrapsText,
-                    systemImage: playableItem?.opensExternalSource == true ? "arrow.up.forward.app" : "play.fill"
+                    systemImage: opensMenu ? "opticaldisc" : playableItem?.opensExternalSource == true ? "arrow.up.forward.app" : "play.fill"
                 )
+            }
+            .accessibilityIdentifier("detail-hero-play")
+            .contextMenu {
+                if let playableItem {
+                    DiscPlaybackAlternativeAction(item: playableItem) { onPlay($0, false) }
+                    ExternalPlaybackActions(item: playableItem) { onPlay(playableItem.requestingExternalPlayer($0), false) }
+                }
+                detailContextMenu
             }
             .buttonStyle(PlozziOSHeroActionButtonStyle(
                 kind: .primary,
                 minimumWidth: style == .compactPortrait && !wrapsText ? 180 : nil
             ))
             .disabled(playableItem == nil)
+            .resumePromptAnchor()
         }
     }
 

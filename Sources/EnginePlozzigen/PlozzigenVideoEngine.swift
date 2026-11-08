@@ -452,6 +452,25 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
     /// loads.
     private var activeResolvedSource: MediaTransportResolvedSource?
     private var activeTransportReader: TransportIOReader?
+    private var activeDiscReader: TransportDiscDirectoryReader?
+    #if canImport(DiscNavigation) && canImport(UIKit)
+    private let discMenuPresentation = DiscMenuPlaybackState()
+    private var discSession: DiscMenuSession?
+    public var discMenu: DiscMenuPlaybackState? {
+        discMenuPresentation.isActive ? discMenuPresentation : nil
+    }
+    public func discVideos() async throws -> [DiscVideo] {
+        guard let reader = activeDiscReader else { throw CocoaError(.fileReadNoSuchFile) }
+        return try await DiscMenuSession.videos(reader: reader)
+    }
+    #endif
+    private var isHoldingDiscStill: Bool {
+        #if canImport(DiscNavigation) && canImport(UIKit)
+        discSession?.state.isStill == true
+        #else
+        false
+        #endif
+    }
     private let scrubStillExtractors = NSHashTable<PlozzigenScrubStillExtractor>.weakObjects()
     #if canImport(UIKit)
     private let videoView: UIView
@@ -513,6 +532,7 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
                 || (line.contains("[HLSLocalServer]") && line.contains("GET "))
             if handoff,
                line.contains("[TTFF]")
+                || line.contains("[disc]")
                 || line.contains("[DisplayCriteria]")
                 || isStallDiag
                 || isFailureDetail {
@@ -552,6 +572,15 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
 
     public func load(request: PlaybackRequest, startPosition: TimeInterval) async {
         guard let outputGeneration = await beginOutputLoad() else { return }
+        #if canImport(DiscNavigation) && canImport(UIKit)
+        let outgoingDisc = discSession
+        outgoingDisc?.stop()
+        await outgoingDisc?.drain()
+        discSession = nil
+        guard outputLoadGeneration == outputGeneration, !Task.isCancelled else { return }
+        discMenuPresentation.reset()
+        discMenuPresentation.isActive = request.discPlayback == .openMenu
+        #endif
         streamingFailure = nil
         hasReachedSessionReadiness = false
         if let streaming = request.streamingOptions, request.isTranscoding, !request.audioTracks.isEmpty {
@@ -567,6 +596,12 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
         invalidateScrubStills()
         activeTransportReader?.closeAllReaders()
         activeTransportReader = nil
+        if let disc = activeDiscReader {
+            activeDiscReader = nil
+            disc.closeAllReaders()
+            await disc.waitForFinalShutdown()
+            guard outputLoadGeneration == outputGeneration, !Task.isCancelled else { return }
+        }
         clearASS()
         let outputPolicy = liveOutputPolicy
         defer { finishOutputLoad(outputGeneration, policy: outputPolicy) }
@@ -604,6 +639,11 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
 
         var stage = "audioSession"
         do {
+            if request.discPlayback == .openMenu {
+                guard case .networkDisc = request.playbackSource else {
+                    throw MediaTransportError.unsupportedCapability("This source does not expose disc menus")
+                }
+            }
             try await Self.configureOnDemandAudioSession(outputPolicy: outputPolicy)
             guard probePublicationGate.accepts(probeGeneration), !Task.isCancelled else { return }
             stage = "resolve"
@@ -629,6 +669,132 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
                     options: options,
                     audioSourceStreamIndex: audioSourceStreamIndex
                 )
+            } else if case .some(.networkDisc(let locator)) = request.playbackSource {
+                guard let networkFileResolver else {
+                    throw MediaTransportError.unsupportedCapability("network-disc playback resolver")
+                }
+                let admission = try await networkFileResolver.resolve(locator.anchor)
+                guard probePublicationGate.accepts(probeGeneration), !Task.isCancelled else {
+                    await admission.waitForFinalShutdown()
+                    return
+                }
+                activeResolvedSource = admission
+                let baseReader = TransportDiscDirectoryReader(locator: locator, resolver: networkFileResolver)
+                let reader: TransportDiscDirectoryReader
+                if let playlist = request.discPlaylistOverride {
+                    let playlistPath = String(format: "BDMV/PLAYLIST/%05d.mpls", playlist)
+                    guard request.discPlayback == .playVideo, (0...99999).contains(playlist),
+                          baseReader.discFiles.contains(where: {
+                              $0.path.caseInsensitiveCompare(playlistPath) == .orderedSame
+                          }) else {
+                        baseReader.closeAllReaders()
+                        throw MediaTransportError.unsupportedCapability("Invalid disc playlist selection")
+                    }
+                    reader = baseReader.selectingPlaylist(playlist)
+                    baseReader.close()
+                } else {
+                    reader = baseReader
+                }
+                activeDiscReader = reader
+                stage = "engine.load"
+                if request.discPlayback == .openMenu {
+                    #if canImport(DiscNavigation) && canImport(UIKit)
+                    let discOptions = options
+                    let session = try DiscMenuSession(
+                        reader: reader, region: request.discRegionOverride,
+                        state: discMenuPresentation,
+                        load: { [weak self] selected, position, clip in
+                            guard let self, self.outputLoadGeneration == outputGeneration, !Task.isCancelled else {
+                                throw CancellationError()
+                            }
+                            var selectionOptions = discOptions
+                            if let clip {
+                                let opened = await Task.detached { selected.openDiscFile(clip.path) }.value
+                                guard let opened else { throw CocoaError(.fileReadNoSuchFile) }
+                                guard !Task.isCancelled, self.outputLoadGeneration == outputGeneration else {
+                                    opened.close()
+                                    throw CancellationError()
+                                }
+                                let offset = max(0, position - clip.playlistStart)
+                                selectionOptions.nativeSourcePlaybackRange =
+                                    min(clip.sourceRange.lowerBound + offset,
+                                        clip.sourceRange.upperBound - 1 / 90_000.0)..<clip.sourceRange.upperBound
+                                try await self.engine.load(source: .custom(opened, formatHint: "mpegts"),
+                                                           options: selectionOptions)
+                            } else {
+                                try await self.engine.load(
+                                    source: .custom(selected), startPosition: position > 0 ? position : nil,
+                                    options: selectionOptions
+                                )
+                            }
+                            guard self.outputLoadGeneration == outputGeneration, !Task.isCancelled else {
+                                throw CancellationError()
+                            }
+                            let reachedEnd: Bool
+                            if case .ended = self.engine.playbackPhase { reachedEnd = true } else { reachedEnd = false }
+                            if reachedEnd || self.intendsPause || self.discMenuPresentation.isStill {
+                                self.engine.pause()
+                            } else {
+                                self.engine.play()
+                            }
+                            self.publishProbedSourceFacts(
+                                format: self.engine.sourceVideoFormat, generation: probeGeneration
+                            )
+                            self.beginObservingLateSourceFormatChanges(generation: probeGeneration)
+                            self.chapters = MediaChapter.normalized(self.engine.mediaChapters.map {
+                                MediaChapter(start: $0.startSeconds, title: $0.name)
+                            }, duration: self.engine.duration)
+                            self.onChaptersChanged?()
+                            self.syncTracks()
+                            return reachedEnd
+                        },
+                        pause: { [weak self] in self?.engine.pause() },
+                        resume: { [weak self] in self?.engine.play() },
+                        isPaused: { [weak self] in self?.intendsPause ?? true },
+                        selectAudio: { [weak self] pid in
+                            guard let self else { return .pending }
+                            if let trackID = Self.discAudioTrackID(
+                                pid: pid, tracks: self.engine.audioTracks,
+                                activeTrackID: self.engine.activeAudioTrackIndex
+                            ), self.engine.activeAudioTrackIndex != trackID {
+                                self.engine.selectAudioTrack(index: trackID)
+                            }
+                            return Self.discAudioSelectionResult(
+                                pid: pid, tracks: self.engine.audioTracks,
+                                activeTrackID: self.engine.activeAudioTrackIndex,
+                                hasPresentedFrame: self.engine.hasFirstFrameReadyForDisplay
+                            )
+                        },
+                        selectSubtitle: { [weak self] pid, enabled in
+                            guard let self else { return false }
+                            if enabled {
+                                let tracks = self.engine.subtitleTracks.filter { $0.mpegTSPID == pid }
+                                guard pid >= 0, tracks.count == 1, let track = tracks.first,
+                                      let mediaTrack = self.subtitleTracks.first(where: { $0.id == track.id })
+                                else { return false }
+                                self.applySubtitleTrack(mediaTrack)
+                            } else {
+                                self.applySubtitleTrack(nil)
+                            }
+                            return true
+                        }
+                    )
+                    discSession = session
+                    try await session.start()
+                    guard self.outputLoadGeneration == outputGeneration, !Task.isCancelled else { return }
+                    status = .ready
+                    return
+                    #else
+                    throw MediaTransportError.unsupportedCapability("disc menu runtime")
+                    #endif
+                } else {
+                    try await engine.load(
+                        source: .custom(reader),
+                        startPosition: startPosition > 0 ? startPosition : nil,
+                        options: options,
+                        audioSourceStreamIndex: audioSourceStreamIndex
+                    )
+                }
             } else {
                 let source = request.playbackSource
                 let resolvedURL: URL?
@@ -725,6 +891,12 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
                     stage == "resolve" ? nil : engine.errorInfo, fallbackError: error
                 )
             let err: AppError = error as? AppError ?? .unknown(detail)
+            #if canImport(DiscNavigation) && canImport(UIKit)
+            if request.discPlayback == .openMenu {
+                discMenuPresentation.failure = "The disc menu could not be opened."
+                discMenuPresentation.isOpening = false
+            }
+            #endif
             status = .failed(err)
             onFailure?(err)
         }
@@ -921,7 +1093,7 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
     ) -> LoadOptions {
         let source = request.playbackSource
         let isLocalFile: Bool
-        if case .networkFile = request.playbackSource {
+        if request.playbackSource?.requiresNetworkFileResolver == true {
             isLocalFile = false
         } else if case .authenticatedHTTP = source {
             isLocalFile = false
@@ -1193,12 +1365,19 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
 
     public func play() {
         intendsPause = false
+        #if canImport(DiscNavigation) && canImport(UIKit)
+        discSession?.setPaused(false)
+        if discSession?.state.isStill == true { return }
+        #endif
         engine.play()
         isPaused = false
     }
 
     public func pause() {
         intendsPause = true
+        #if canImport(DiscNavigation) && canImport(UIKit)
+        discSession?.setPaused(true)
+        #endif
         engine.pause()
         isPaused = true
     }
@@ -1283,13 +1462,19 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
 
     public func seek(to seconds: TimeInterval) async {
         resetASSFrameForSeek()
+        #if canImport(DiscNavigation) && canImport(UIKit)
+        let seekingDisc = discSession
+        let seekGeneration = seekingDisc?.beginSeek()
+        defer {
+            if let seekGeneration { seekingDisc?.endSeek(generation: seekGeneration) }
+        }
+        #endif
         await engine.seek(to: seconds)
     }
 
     public func seek(to seconds: TimeInterval, kind: VideoSeekKind) async {
-        resetASSFrameForSeek()
         PlaybackTrace.note("engine.seek BEGIN target=\(String(format: "%.2f", seconds)) kind=\(kind) state=\(engine.state) curr=\(String(format: "%.2f", currentTime)) dur=\(String(format: "%.2f", duration))")
-        await engine.seek(to: seconds)
+        await seek(to: seconds)
         PlaybackTrace.note("engine.seek END   target=\(String(format: "%.2f", seconds)) state=\(engine.state) curr=\(String(format: "%.2f", currentTime))")
     }
 
@@ -1306,6 +1491,10 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
     }
 
     private func stopEngine(resetDisplayCriteria: Bool) {
+        #if canImport(DiscNavigation) && canImport(UIKit)
+        discSession?.stop()
+        discMenuPresentation.isActive = false
+        #endif
         chapters = []
         serverRenditionAudio = nil
         liveScrubThumbnails = nil
@@ -1315,6 +1504,7 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
         invalidateScrubStills()
         activeTransportReader?.closeAllReaders()
         activeTransportReader = nil
+        activeDiscReader?.closeAllReaders()
         clearASS()
         nativeSubtitleOutput?.detach()
         nativeSubtitleOutput = nil
@@ -1344,8 +1534,15 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
     /// deinit release. No-op for URL-backed loads (nothing leased). Call after
     /// `stop()`.
     public func drainTransport() async {
+        #if canImport(DiscNavigation) && canImport(UIKit)
+        await discSession?.drain()
+        discSession = nil
+        #endif
         let source = activeResolvedSource
         activeResolvedSource = nil
+        let disc = activeDiscReader
+        activeDiscReader = nil
+        await disc?.waitForFinalShutdown()
         await source?.waitForFinalShutdown()
     }
 
@@ -1365,6 +1562,18 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
 
     public func selectAudioTrack(_ track: MediaTrack?) {
         guard let track else { return }
+        #if canImport(DiscNavigation) && canImport(UIKit)
+        if let discSession {
+            guard let pid = engine.audioTracks.first(where: { $0.id == track.id })?.mpegTSPID else {
+                discMenuPresentation.notice = "The selected audio track has no disc identity."
+                return
+            }
+            discSession.chooseTrack(pid: pid, subtitle: false) { [weak self] in
+                self?.engine.selectAudioTrack(index: track.id)
+            }
+            return
+        }
+        #endif
         if let serverRenditionAudio {
             if track.id != serverRenditionAudio.selectedID {
                 PlozzLog.playback.error("Server audio selection requires a new provider rendition.")
@@ -1499,6 +1708,35 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
     }
 
     public func selectSubtitleTrack(_ track: MediaTrack?) {
+        #if canImport(DiscNavigation) && canImport(UIKit)
+        if let discSession {
+            if discMenuPresentation.hasSubtitleSelection, discMenuPresentation.subtitleTrackID == track?.id {
+                return
+            }
+            let sourceTrack = engine.subtitleTracks.first { $0.id == track?.id }
+            guard track == nil || sourceTrack?.mpegTSPID != nil || sourceTrack?.isExternal == true else {
+                discMenuPresentation.notice = "The selected subtitle track has no disc identity."
+                return
+            }
+            discSession.chooseTrack(pid: sourceTrack?.mpegTSPID ?? -1, subtitle: true) { [weak self] in
+                self?.applySubtitleTrack(track)
+            }
+            return
+        }
+        #endif
+        applySubtitleTrack(track)
+    }
+
+    private func applySubtitleTrack(_ track: MediaTrack?) {
+        #if canImport(DiscNavigation) && canImport(UIKit)
+        let discSelectionChanged = discSession != nil && (
+            !discMenuPresentation.hasSubtitleSelection || discMenuPresentation.subtitleTrackID != track?.id
+        )
+        if discSession != nil {
+            discMenuPresentation.hasSubtitleSelection = true
+            discMenuPresentation.subtitleTrackID = track?.id
+        }
+        #endif
         clearASS()
         synchronizeNativeSubtitleOutput()
         if nativeSubtitleOutput != nil {
@@ -1511,6 +1749,9 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
         } else {
             engine.clearSubtitle()
         }
+        #if canImport(DiscNavigation) && canImport(UIKit)
+        if discSelectionChanged { onTracksChanged?() }
+        #endif
     }
 
     public func supportsSubtitleTimingAdjustments(for track: MediaTrack) -> Bool {
@@ -1958,7 +2199,7 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
                     // the user intends to stay paused, treat that as a phantom:
                     // re-assert the pause on the engine and keep our paused state
                     // rather than surfacing a "playing" overlay over a held frame.
-                    if self.intendsPause {
+                    if self.intendsPause || self.isHoldingDiscStill {
                         self.engine.pause()
                         self.isPaused = true
                         if self.status != .ready { self.status = .ready }
@@ -1975,8 +2216,20 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
                 case .seeking:
                     break
                 case .ended:
+                    #if canImport(DiscNavigation) && canImport(UIKit)
+                    if let discSession = self.discSession { discSession.ended(); return }
+                    #endif
                     if !self.suppressFailureCallbackForForegroundReload { self.onEnded?() }
                 case .error(let msg):
+                    #if canImport(DiscNavigation) && canImport(UIKit)
+                    if let discSession = self.discSession {
+                        HandoffDiagnostics.emit("aether DISC_STATE_ERROR detail=" + HandoffDiagnostics.redactedDetail(msg))
+                        discSession.failPlayback(
+                            unsupportedInterval: self.engine.errorInfo?.kind == .authoredPlaybackIntervalUnsupported
+                        )
+                        return
+                    }
+                    #endif
                     if self.suppressFailureCallbackForForegroundReload { return }
                     if let generation = self.liveAttemptGate.activeGeneration {
                         self.reportLiveFailure(
@@ -2011,6 +2264,10 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] time in
                 guard let self else { return }
+                #if canImport(DiscNavigation) && canImport(UIKit)
+                self.discSession?.updateTime(time, sourceSeconds: self.engine.sourceTime,
+                                            hasPresentedFrame: self.engine.hasFirstFrameReadyForDisplay)
+                #endif
                 guard self.liveAttemptGate.activeGeneration == nil else { return }
                 if time > self.furthestObservedPosition {
                     self.furthestObservedPosition = time
@@ -2051,6 +2308,9 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
                             + " delivery=\(self.engine.audioDelivery.rawValue)"
                     )
                 }
+                #if canImport(DiscNavigation) && canImport(UIKit)
+                self.discSession?.tracksReady()
+                #endif
                 self.onTracksChanged?()
             }
             .store(in: &cancellables)
@@ -2215,6 +2475,32 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
         }
     }
 
+    static func discAudioTrackID(pid: Int, tracks: [TrackInfo], activeTrackID: Int?) -> Int? {
+        guard (0x20..<0x1fff).contains(pid) else { return nil }
+        let matches = tracks.filter { $0.mpegTSPID == pid }
+        // TrueHD and its AC-3 companion can share a transport PID. If the
+        // engine already renders that PID, preserve its supported representation.
+        if let activeTrackID, matches.contains(where: { $0.id == activeTrackID }) {
+            return activeTrackID
+        }
+        return matches.count == 1 ? matches.first?.id : nil
+    }
+
+    #if canImport(DiscNavigation) && canImport(UIKit)
+    static func discAudioSelectionResult(
+        pid: Int, tracks: [TrackInfo], activeTrackID: Int?, hasPresentedFrame: Bool
+    ) -> DiscAudioSelectionResult {
+        guard hasPresentedFrame, (0x20..<0x1fff).contains(pid),
+              let activeTrackID, tracks.contains(where: { $0.id == activeTrackID }) else { return .pending }
+        if tracks.contains(where: { $0.id == activeTrackID && $0.mpegTSPID == pid }) { return .selected }
+        // Missing identity and an unfinished representation switch are not proof
+        // that the disc's requested audio is unavailable.
+        guard tracks.allSatisfy({ $0.mpegTSPID != nil }),
+              !tracks.contains(where: { $0.mpegTSPID == pid }) else { return .pending }
+        return .unavailable
+    }
+    #endif
+
     private func syncTracks() {
         audioTracks = serverRenditionAudio?.tracks
             ?? Self.selectableAudioTracks(from: engine.audioTracks, route: engine.videoRoute)
@@ -2251,6 +2537,9 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
         // already run once at playResolved, so tell the VM to rebuild the menu now
         // that the lists are populated — otherwise the subtitle/audio menu is
         // empty for the whole session.
+        #if canImport(DiscNavigation) && canImport(UIKit)
+        discSession?.tracksReady()
+        #endif
         onTracksChanged?()
     }
 }

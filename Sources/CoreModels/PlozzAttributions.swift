@@ -48,6 +48,25 @@ public struct PlozzAttribution: Identifiable, Sendable {
 }
 
 public enum PlozzAttributions {
+    private static let experimentalJavaEntries: [PlozzAttribution] = {
+        #if PLOZZ_EXPERIMENTAL_BDJ && DEBUG
+        [
+            PlozzAttribution(
+                title: "OpenJDK & DejaVu",
+                detail:
+                    "This experimental build uses the OpenJDK Zero interpreter under GPL-2.0, "
+                    + "with exceptions applying to designated components, plus DejaVu fonts. "
+                    + "Sources and build adaptations are recorded in "
+                    + "tools/disc-menu-lab/dependencies.json and tools/build-disc-runtime.py. "
+                    + "Complete component notices are bundled in DiscRuntime/legal.",
+                licenses: [.init("GPL-2.0; component-specific exceptions", family: .gpl)]
+            ),
+        ]
+        #else
+        []
+        #endif
+    }()
+
     public static let introduction =
         "Plozz is free and open source under the GPL-3.0 license with an App Store "
         + "exception. It is not affiliated with, endorsed, or certified by any of "
@@ -78,7 +97,7 @@ public enum PlozzAttributions {
                 "Playback is powered by AetherEngine by Vincent Herbst, under "
                 + "LGPL-3.0 with an Apple Store exception. "
                 + "Upstream: https://github.com/superuser404notfound/AetherEngine. "
-                + "Source: https://github.com/brandomoore/AetherEngine/tree/8c7f919a4cff9f0d27d27f464657578ec08fc221",
+                + "Source: https://github.com/brandomoore/AetherEngine/tree/55430e28df74ba11b36fea367ad22af0d685a68b",
             licenses: [.init("LGPL-3.0", family: .lgpl)]
         ),
         PlozzAttribution(
@@ -129,6 +148,16 @@ public enum PlozzAttributions {
                 .init("MIT", family: .mit),
             ]
         ),
+        PlozzAttribution(
+            title: "libbluray",
+            detail:
+                "Disc navigation uses libbluray 1.5.0 and its bundled libudfread. "
+                + "This build does not include decryption libraries. "
+                + "Source: https://download.videolan.org/pub/videolan/libbluray/1.5.0/. "
+                + "Complete license texts are bundled in LibblurayNotices.txt.",
+            licenses: [.init("LGPL-2.1-or-later", family: .lgpl)]
+        ),
+    ] + experimentalJavaEntries + [
         PlozzAttribution(
             title: "dav1d",
             detail:

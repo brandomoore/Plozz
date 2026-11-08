@@ -225,6 +225,17 @@ final candidate run IDs are `42f5249893bd44fe87b730309d848452` /
 are retained under `.build/performance/`; no failed/inconclusive comparison was
 discarded or overridden.
 
+### Disc graphics
+
+`disc-java-flush` exercises the production native Java graphics bridge with 200
+960x540 updates per sample, including 20 pixel-verified color changes and 180
+unchanged redraws. It measures synchronous copying/composition work, not Java
+execution, playback, presentation FPS or input latency. Separate graphics tests
+cover transparent clears, plane order, plane replacement and late callbacks after
+Stop. The same optimized iPad Simulator workload measured median producer CPU
+time of 132.1 ms before unchanged-frame reuse and 23.0 ms afterward; this is not
+a physical-device or all-disc performance claim.
+
 ### Song recognition
 
 `song-recognition-disabled`, `song-recognition-tap-only`, and

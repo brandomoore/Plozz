@@ -45,6 +45,22 @@ struct PlozziOSPlayerControlsOverlay: View {
     @Environment(\.scenePhase) private var scenePhase
     @StateObject private var pictureInPicture = PlozziOSPictureInPictureController()
 
+    init(
+        viewModel: PlayerViewModel, keyboardActions: PlozziOSPlayerKeyboardActions,
+        hasVersions: Bool, versionsPresented: Bool, onShowVersions: @escaping () -> Void,
+        onClose: @escaping () -> Void
+    ) {
+        self.viewModel = viewModel
+        self.keyboardActions = keyboardActions
+        self.hasVersions = hasVersions
+        self.versionsPresented = versionsPresented
+        self.onShowVersions = onShowVersions
+        self.onClose = onClose
+        // Disc navigation can temporarily clear its overlay between scenes.
+        // Recreating the transport must not reveal it without a user interaction.
+        _controlsVisible = State(initialValue: !viewModel.isDiscMenuPlayback)
+    }
+
     private var isScrubbing: Bool { viewModel.controls.isScrubbing }
     private var nativeMenuPresented: Bool { menuPresentation.isBusy }
     private var menuSourceID: [String?] {
@@ -723,6 +739,7 @@ struct PlozziOSPlayerTransport<PlaybackControls: View>: View {
     let supportsVideoZoom: Bool
     let hasVersions: Bool
     let menuPresentation: PlayerMenuPresentation
+    @State private var discPresentationOwner = UUID()
     @Binding var isCardOpen: Bool
     let onInteraction: () -> Void
     /// The full player bounds, not this bottom cluster's intrinsic size.
@@ -865,16 +882,26 @@ struct PlozziOSPlayerTransport<PlaybackControls: View>: View {
     private var trackControlGroup: some View {
         let item = viewModel.currentPlaybackItem
         return PlayerGlassControlGroup {
-            PlayerMoreMenuButton(
-                model: viewModel.controls,
-                availability: .init(
-                    maximumSpeed: viewModel.maximumPlaybackSpeed, video: supportsVideoZoom,
-                    quality: viewModel.streamingQualityAvailable, versions: hasVersions
-                ),
-                presentation: menuPresentation,
-                layout: .init(size: availableSize),
-                actions: menuActions(for: item)
-            )
+            HStack(spacing: 0) {
+                if viewModel.isDiscMenuPlayback || viewModel.hasDiscVideos {
+                    PlayerDiscControlsButton(
+                        model: viewModel, onInteraction: onInteraction,
+                        onPresentationChanged: {
+                            menuPresentation.setPresented($0, owner: discPresentationOwner)
+                        }
+                    )
+                }
+                PlayerMoreMenuButton(
+                    model: viewModel.controls,
+                    availability: .init(
+                        maximumSpeed: viewModel.maximumPlaybackSpeed, video: supportsVideoZoom,
+                        quality: viewModel.streamingQualityAvailable, versions: hasVersions
+                    ),
+                    presentation: menuPresentation,
+                    layout: .init(size: availableSize),
+                    actions: menuActions(for: item)
+                )
+            }
         }
         .accessibilityIdentifier("player-track-controls")
     }

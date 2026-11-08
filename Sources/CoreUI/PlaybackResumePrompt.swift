@@ -1,16 +1,52 @@
 import CoreModels
 import SwiftUI
 
+private struct PlaybackResumePromptAnchorKey: PreferenceKey {
+    static var defaultValue: [String: Anchor<CGRect>] { [:] }
+
+    static func reduce(value: inout [String: Anchor<CGRect>], nextValue: () -> [String: Anchor<CGRect>]) {
+        value.merge(nextValue(), uniquingKeysWith: { _, next in next })
+    }
+}
+
 public extension View {
+    func resumePromptAnchor(id: String = "play") -> some View {
+        anchorPreference(key: PlaybackResumePromptAnchorKey.self, value: .bounds) { [id: $0] }
+    }
+
     func resumePrompt(
         item: Binding<MediaItem?>,
+        anchorID: String? = "play",
         onChoose: @escaping (MediaItem, TimeInterval) -> Void
     ) -> some View {
-        resumePrompt(request: item, mediaItem: { $0 }, onChoose: onChoose)
+        resumePrompt(request: item, mediaItem: { $0 }, anchorID: anchorID, onChoose: onChoose)
     }
 
     /// Retains the complete request, including its source and playlist, while choosing a start position.
     func resumePrompt<Request>(
+        request: Binding<Request?>,
+        mediaItem: @escaping (Request) -> MediaItem,
+        anchorID: String? = "play",
+        onChoose: @escaping (Request, TimeInterval) -> Void
+    ) -> some View {
+        #if os(iOS)
+        overlayPreferenceValue(PlaybackResumePromptAnchorKey.self) { anchors in
+            GeometryReader { proxy in
+                let anchor = anchorID.flatMap { anchors[$0] }
+                let bounds = anchor.map { proxy[$0] } ?? CGRect(origin: .zero, size: proxy.size)
+                Color.clear
+                    .frame(width: bounds.width, height: bounds.height)
+                    .allowsHitTesting(false)
+                    .resumePromptDialog(request: request, mediaItem: mediaItem, onChoose: onChoose)
+                    .position(x: bounds.midX, y: bounds.midY)
+            }
+        }
+        #else
+        resumePromptDialog(request: request, mediaItem: mediaItem, onChoose: onChoose)
+        #endif
+    }
+
+    private func resumePromptDialog<Request>(
         request: Binding<Request?>,
         mediaItem: @escaping (Request) -> MediaItem,
         onChoose: @escaping (Request, TimeInterval) -> Void

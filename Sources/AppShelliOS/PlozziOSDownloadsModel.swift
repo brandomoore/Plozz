@@ -1008,7 +1008,7 @@ final class PlozziOSDownloadsModel {
                     : (kind == .plex ? "mp4" : "movpkg"),
                 quality: quality
             )
-        case .publicURL, .dlnaResource, nil:
+        case .publicURL, .networkDisc, .dlnaResource, nil:
             throw PlozziOSDownloadError.unavailable(
                 "This playback source cannot be downloaded for offline use."
             )

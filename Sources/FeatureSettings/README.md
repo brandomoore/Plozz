@@ -7,6 +7,13 @@ system green appearance instead of inheriting the page's monochrome navigation t
 
 The Settings screen and its detail pages. Profile-aware and integration-aware.
 
+Disc playback lives in a dedicated Discs section near the bottom of Playback,
+just before Advanced, on TV and mobile. It uses the shared labeled menu row on TV, showing the setting name
+and current choice rather than an unlabeled segmented picker.
+Its helper note explains HDMV-only menus, automatic video playback for BD-J,
+and the watch-progress limitation once on both platforms; disc action menus
+and video pickers do not repeat it.
+
 Playback groups its five optional **Player tabs** in one shared control surface
 on TV and mobile. Labels match the player tabs, Info stays always available, and
 visibility preferences are independent of autoplay and Up Next behavior.

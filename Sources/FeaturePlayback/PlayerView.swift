@@ -7,6 +7,40 @@ import AVKit
 import CoreModels
 import CoreUI
 
+/// A stable loading owner, including the mobile shell's pre-model resolution.
+public struct PlayerLoadingOverlay: View {
+    private let viewModel: PlayerViewModel?
+    private let discMenuRequested: Bool
+
+    public init(viewModel: PlayerViewModel?, discMenuRequested: Bool = false) {
+        self.viewModel = viewModel
+        self.discMenuRequested = discMenuRequested
+    }
+
+    public var body: some View {
+        if viewModel?.showBringUpSpinner ?? true {
+            if let viewModel, let options = viewModel.streamingOptions, options.quality != .original {
+                StreamingPlaybackLoadingView(
+                    options: options, provider: viewModel.streamingProviderName,
+                    phase: viewModel.streamingPreparation, transcoding: viewModel.streamingIsTranscoding,
+                    h264Fallback: viewModel.streamingUsedH264Fallback,
+                    hevcFallback: viewModel.streamingUsedHEVCFallback
+                )
+                .transition(.opacity)
+            } else {
+                LoadingMessagesView(
+                    spinnerTint: .white, messageColor: .white.opacity(0.85),
+                    showsMessages: !discMenuRequested && viewModel?.isDiscMenuPlayback != true
+                )
+                .accessibilityIdentifier("player-loading")
+                .ignoresSafeArea()
+                .allowsHitTesting(false)
+                .transition(.opacity)
+            }
+        }
+    }
+}
+
 /// Full-screen playback using Plozz's **custom** player: an `AVPlayer` rendered
 /// into an `AVPlayerLayer` with a hand-built transport overlay and Siri Remote
 /// handling (`CustomPlayerContainer`). Going custom is what lets us show
@@ -17,6 +51,7 @@ import CoreUI
 public struct PlayerView: View {
     @State private var viewModel: PlayerViewModel
     @State private var diagnosticsSampler = PlaybackDiagnosticsSampler()
+    @State private var discStatus = TransientStatusPresenter(displayDuration: .seconds(5))
     /// Suspends Liquid Glass while demanding video is on screen.
     ///
     /// Optional so a player hosted outside the app root — previews, tests —
@@ -45,6 +80,7 @@ public struct PlayerView: View {
     private let showDiagnostics: Bool
     private let themePalette: ThemePalette
     private let showsSharedControls: Bool
+    private let showsLoadingOverlay: Bool
     private let onDismiss: (() -> Void)?
 
     public init(
@@ -52,18 +88,33 @@ public struct PlayerView: View {
         showDiagnostics: Bool = false,
         themePalette: ThemePalette = .dark,
         showsSharedControls: Bool = true,
+        showsLoadingOverlay: Bool = true,
         onDismiss: (() -> Void)? = nil
     ) {
         _viewModel = State(initialValue: viewModel)
         self.showDiagnostics = showDiagnostics
         self.themePalette = themePalette
         self.showsSharedControls = showsSharedControls
+        self.showsLoadingOverlay = showsLoadingOverlay
         self.onDismiss = onDismiss
     }
 
 
     public var body: some View {
         configuredPlayerStack
+        #if canImport(UIKit)
+        .transientStatusOverlay(presenter: discStatus, palette: themePalette)
+        .onChange(of: discNotice, initial: true) { _, notice in
+            if let notice {
+                discStatus.present(icon: "exclamationmark.triangle", text: notice)
+            } else {
+                discStatus.dismiss()
+            }
+        }
+        .discPlaybackSheet(isPresented: $viewModel.showsDiscVideos) {
+            DiscVideoPicker(model: viewModel, close: { viewModel.showsDiscVideos = false })
+        }
+        #endif
         #if os(iOS)
         .modifier(MobilePlaybackDisplaySleepModifier(
             playbackActive: viewModel.wantsForegroundDisplayAwake
@@ -104,6 +155,7 @@ public struct PlayerView: View {
             }
         }
         .onDisappear {
+            discStatus.dismiss()
             diagnosticsSampler.stop()
             releaseGlassSuspension()
             Task { await viewModel.stop() }
@@ -220,7 +272,9 @@ public struct PlayerView: View {
         // viewer sees one continuous indicator from tap → first frame (no black
         // gap, no second in-player spinner on an engine swap). Above the HDR veil
         // so it stays visible during an HDMI display-mode switch.
-        .overlay { bringUpSpinnerOverlay }
+        .overlay {
+            if showsLoadingOverlay { PlayerLoadingOverlay(viewModel: viewModel) }
+        }
         .animation(.easeInOut(duration: 0.2), value: viewModel.showBringUpSpinner)
         .overlay(alignment: .topLeading) { diagnosticsOverlay }
     }
@@ -233,27 +287,6 @@ public struct PlayerView: View {
             .ignoresSafeArea()
             .allowsHitTesting(hdrTransition.veilOpacity > 0.01)
             .animation(.easeInOut(duration: 0.35), value: hdrTransition.veilOpacity)
-    }
-
-    /// The single bring-up spinner overlay content, extracted from `body`.
-    /// Pure extraction — identical gating and transition.
-    @ViewBuilder
-    private var bringUpSpinnerOverlay: some View {
-        if viewModel.showBringUpSpinner {
-            if let options = viewModel.streamingOptions, options.quality != .original {
-                StreamingPlaybackLoadingView(
-                    options: options, provider: viewModel.streamingProviderName,
-                    phase: viewModel.streamingPreparation, transcoding: viewModel.streamingIsTranscoding,
-                    h264Fallback: viewModel.streamingUsedH264Fallback,
-                    hevcFallback: viewModel.streamingUsedHEVCFallback
-                )
-                .transition(.opacity)
-            } else {
-                LoadingMessagesView(spinnerTint: .white, messageColor: .white.opacity(0.85))
-                    .ignoresSafeArea()
-                    .transition(.opacity)
-            }
-        }
     }
 
     /// The diagnostics overlay content, extracted from `body`. Pure extraction —
@@ -282,6 +315,31 @@ public struct PlayerView: View {
     /// extraction — identical structure and behavior.
     @ViewBuilder
     private var phaseContent: some View {
+        #if canImport(UIKit)
+        if viewModel.isDiscMenuPlayback, let state = viewModel.videoEngine.discMenu,
+           state.presentsMenu {
+            DiscMenuPlayerContent(
+                model: viewModel, state: state, dismiss: dismissPlayer,
+                showVideos: { viewModel.showsDiscVideos = true }
+            )
+        } else {
+            ordinaryPhaseContent
+        }
+        #else
+        ordinaryPhaseContent
+        #endif
+    }
+
+    #if canImport(UIKit)
+    private var discNotice: LocalizedStringResource? {
+        guard viewModel.isDiscMenuPlayback, let state = viewModel.videoEngine.discMenu,
+              state.failure == nil else { return nil }
+        return state.notice
+    }
+    #endif
+
+    @ViewBuilder
+    private var ordinaryPhaseContent: some View {
         switch viewModel.phase {
         case .loading:
             // Black backdrop that hosts the (not-yet-presenting) engine
@@ -299,15 +357,25 @@ public struct PlayerView: View {
             readyPlayerContainer
 
         case .failed:
-            StreamingPlaybackFailureView(
-                message: viewModel.playbackFailureReport?.message
-                    ?? viewModel.streamingQualityError?.userMessage
-                    ?? StreamingPlaybackFailure(kind: .unknown).userMessage,
-                report: viewModel.playbackFailureReport,
-                showsForcedTranscodingHint: viewModel.showsForcedTranscodingFailureHint,
-                onRetry: { viewModel.retryPlayback() },
-                onDismiss: { dismissPlayer() }
-            )
+            VStack(spacing: 24) {
+                StreamingPlaybackFailureView(
+                    message: viewModel.playbackFailureReport?.message
+                        ?? viewModel.streamingQualityError?.userMessage
+                        ?? StreamingPlaybackFailure(kind: .unknown).userMessage,
+                    report: viewModel.playbackFailureReport,
+                    showsForcedTranscodingHint: viewModel.showsForcedTranscodingFailureHint,
+                    onRetry: { viewModel.retryPlayback() },
+                    onDismiss: { dismissPlayer() }
+                )
+                if viewModel.hasDiscVideos {
+                    Button("Disc videos") { viewModel.showsDiscVideos = true }
+                        .contextMenu {
+                            if viewModel.isSelectedDiscVideo {
+                                Button("Play video") { viewModel.playVideoWithoutMenus() }
+                            }
+                        }
+                }
+            }
         }
     }
 

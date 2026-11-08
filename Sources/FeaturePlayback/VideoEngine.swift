@@ -79,6 +79,10 @@ public struct PlayerEngineCapabilities: OptionSet, Sendable {
 ///    lives above the engine, not inside it.
 @MainActor
 public protocol VideoEngine: AnyObject {
+    #if canImport(UIKit)
+    var discMenu: DiscMenuPlaybackState? { get }
+    func discVideos() async throws -> [DiscVideo]
+    #endif
     /// Decoded playback audio for song identification (#351); nil when the engine
     /// can't provide it. Call `removeSongTap()` when done.
     func installSongTap() -> AsyncStream<SongTapChunk>?
@@ -383,6 +387,10 @@ public protocol VideoEngine: AnyObject {
 }
 
 public extension VideoEngine {
+    #if canImport(UIKit)
+    var discMenu: DiscMenuPlaybackState? { nil }
+    func discVideos() async throws -> [DiscVideo] { throw CocoaError(.featureUnsupported) }
+    #endif
     func installSongTap() -> AsyncStream<SongTapChunk>? { nil }
     func removeSongTap() {}
     var supportsActivePictureAnalysis: Bool { false }

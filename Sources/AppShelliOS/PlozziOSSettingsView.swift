@@ -2698,6 +2698,21 @@ struct PlozziOSPlaybackSettingsView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             .settingsSearchGroup(["lossless-audio", "identify-songs"])
+            SettingsSectionGroup("Discs") {
+                VStack(alignment: .leading, spacing: 6) {
+                    Picker("Disc playback", selection: $model.settings.discPlayback) {
+                        ForEach(DiscPlaybackBehavior.allCases, id: \.self) {
+                            Text($0.title).tag($0)
+                        }
+                    }
+                    Text(DiscPlaybackBehavior.settingsNotice)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .settingsSearchAnchor("disc-playback")
+            }
+            .settingsSearchGroup(["disc-playback"])
             SettingsSectionGroup {
                 Button { showsAdvancedPlayback = true } label: {
                     SettingsDisclosureLabel { Text("Advanced") }

@@ -70,6 +70,8 @@ struct DetailHeroView: View, Equatable {
             && lhs.isRequestingSeasons == rhs.isRequestingSeasons
             // Presence, not identity — see above.
             && (lhs.onPlay == nil) == (rhs.onPlay == nil)
+            && (lhs.onPlayDisc == nil) == (rhs.onPlayDisc == nil)
+            && (lhs.onPlayExternal == nil) == (rhs.onPlayExternal == nil)
             && (lhs.onPlayTrailer == nil) == (rhs.onPlayTrailer == nil)
             && lhs.trailerItem == rhs.trailerItem
             && (lhs.onSelectVersion == nil) == (rhs.onSelectVersion == nil)
@@ -87,6 +89,7 @@ struct DetailHeroView: View, Equatable {
     @Environment(HeroTrailerController.self) private var heroTrailerController
     @Environment(HeroBackgroundSettingsModel.self) private var heroBackground
     @Environment(\.detailHeaderSettings) private var detailHeaderSettings
+    @Environment(\.discPlaybackDefault) private var discPlaybackDefault
     @Environment(\.plozzAppTextScale) private var appTextScale
     @Environment(\.plozzArtworkPolicy) private var artworkPolicy
     @Environment(\.scenePhase) private var scenePhase
@@ -151,6 +154,8 @@ struct DetailHeroView: View, Equatable {
     /// its focusable placeholder visible before a target has resolved.
     let playTitle: LocalizedStringResource?
     let onPlay: (() -> Void)?
+    var onPlayDisc: ((DiscPlaybackBehavior) -> Void)? = nil
+    var onPlayExternal: ((ExternalPlayer) -> Void)? = nil
     var showsPlayPlaceholder: Bool = false
     var onRetryPlaybackInventory: (() -> Void)?
     var isRetryingPlaybackInventory = false
@@ -1443,7 +1448,9 @@ struct DetailHeroView: View, Equatable {
         // resume text (`reservedResumeText`) that survives the watched transition,
         // rather than shrinking after a watched transition. Placeholder dimensions
         // never constrain the ready button.
-        let liveResumeText = resumeText
+        let opensMenu = (actionItem ?? item).selectingVersion(selectedVersionID)
+            .effectiveDiscPlayback(default: discPlaybackDefault) == .openMenu
+        let liveResumeText = opensMenu ? nil : resumeText
         let sizingText = reservedResumeText ?? liveResumeText
         let button = Button {
             guard !isRetryingPlaybackInventory, pendingPrimaryAction == nil else { return }
@@ -1459,7 +1466,7 @@ struct DetailHeroView: View, Equatable {
             }
         } label: {
             ZStack {
-                if let sizingText, onRetryPlaybackInventory == nil {
+                if let sizingText, !opensMenu, onRetryPlaybackInventory == nil {
                     playResumeSizer(remaining: sizingText).hidden()
                 }
                 if onRetryPlaybackInventory != nil {
@@ -1469,15 +1476,15 @@ struct DetailHeroView: View, Equatable {
                     )
                 } else {
                     PlayResumeButtonLabel(
-                        title: title,
-                        progress: playProgress,
-                        remainingText: playRemainingText,
-                        seasonEpisodeText: playSeasonEpisodeText,
+                        title: opensMenu ? "Open disc menu" : title,
+                        progress: opensMenu ? nil : playProgress,
+                        remainingText: opensMenu ? nil : playRemainingText,
+                        seasonEpisodeText: opensMenu ? nil : playSeasonEpisodeText,
                         onLight: playButtonHasFocus || colorScheme == .light,
                         isPlaceholder: action == nil,
                         isLoading: pendingPrimaryAction?.kind == .play,
                         separatesEpisodeText: (actionItem ?? item).startsWatching,
-                        systemImage: (versions.first(where: { $0.id == selectedVersionID })
+                        systemImage: opensMenu ? "opticaldisc" : (versions.first(where: { $0.id == selectedVersionID })
                             ?? (versions.allSatisfy(\.isExternalSource) ? versions.first : nil))?.isExternalSource == true
                             ? "arrow.up.forward.app" : "play.fill"
                     )
@@ -1489,6 +1496,26 @@ struct DetailHeroView: View, Equatable {
         .focused($playButtonHasFocus)
         .focused($heroActionRowFocus, equals: .play)
         .accessibilityIdentifier("detail-hero-play")
+        .contextMenu {
+            if let onPlayDisc {
+                DiscPlaybackAlternativeAction(
+                    item: (actionItem ?? item).selectingVersion(selectedVersionID)
+                ) { selection in
+                    guard let behavior = selection.discPlaybackOverride else { return }
+                    preparePrimaryAction()
+                    heroTrailerController.stop()
+                    onPlayDisc(behavior)
+                }
+            }
+            if let onPlayExternal {
+                ExternalPlaybackActions(item: (actionItem ?? item).selectingVersion(selectedVersionID)) { player in
+                    preparePrimaryAction()
+                    heroTrailerController.stop()
+                    onPlayExternal(player)
+                }
+            }
+            heroContextMenu
+        }
         .accessibilityValue(pendingPrimaryAction?.kind == .play ? Text("Loading") : Text(verbatim: ""))
         .onChange(of: liveResumeText) { _, new in
             if let new { reservedResumeText = new }
