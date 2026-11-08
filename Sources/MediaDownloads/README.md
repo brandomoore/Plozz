@@ -89,8 +89,12 @@ Cancel action pauses rather than deletes downloads.
 
 On iPhone and iPad, download row menus offer Go to Movie or Go to Show when the
 saved record identifies a connected source. These actions open the source's
-detail page without interrupting the transfer. Episode menus and the downloaded
-show's plain-ellipsis toolbar menu also offer Go to Show.
+detail page without interrupting the transfer. The downloaded-show page keeps
+its title in the scrolling content, below the navigation bar. Edit enables native
+episode multiselect, Select All, and confirmed removal of the selected downloads.
+Cancel leaves downloads untouched and clears the selection. Episode menus remain
+available in either mode, including Play for completed downloads, Go to Show, and
+Remove Download. Tapping an episode while editing selects it instead of navigating.
 
 ## Download quality and tracks
 

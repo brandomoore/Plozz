@@ -5,8 +5,7 @@ import SwiftUI
 import CoreUI
 
 /// The drill-in page for a single downloaded show: seasons as sections, each
-/// with its own episode count, size, and a "Remove Season" action, plus a
-/// toolbar action to remove the entire show. Reads the show live from the
+/// with its own episode count, size, and removal actions. Reads the show live from the
 /// model's grouped library so it updates as episodes are deleted, and pops
 /// itself once the last episode is gone.
 struct PlozziOSDownloadedShowView: View {
@@ -19,6 +18,10 @@ struct PlozziOSDownloadedShowView: View {
     @Environment(\.themePalette) private var palette
     @State private var pendingBulkDeletion: PlozziOSDownloadsBulkDeletion?
     @State private var detailNav: PlozziOSDownloadDetailNav?
+    @State private var editMode: EditMode = .inactive
+    @State private var selectedIDs: Set<String> = []
+    @State private var playbackRequest: PlozziOSPlaybackRequest?
+    @State private var pendingResumeRequest: PlozziOSPlaybackRequest?
 
     var body: some View {
         let show = currentShow
@@ -26,14 +29,31 @@ struct PlozziOSDownloadedShowView: View {
             if let show {
                 ScrollViewReader { proxy in
                     GeometryReader { geometry in
-                        List {
+                        let horizontalInset = max(20, (geometry.size.width - 900) / 2)
+                        List(selection: $selectedIDs) {
+                            // Unsectioned content can lose its rendering when native selection exits edit mode.
+                            Section {
+                                Text(show.title)
+                                    .font(.largeTitle.bold())
+                                    .foregroundStyle(palette.primaryText)
+                                    .accessibilityAddTraits(.isHeader)
+                                    .accessibilityIdentifier("download-show-title")
+                                    .selectionDisabled()
+                                    .listRowSeparator(.hidden)
+                                    .listRowBackground(Color.clear)
+                                    .listRowInsets(EdgeInsets(
+                                        top: 8, leading: horizontalInset, bottom: 8, trailing: horizontalInset
+                                    ))
+                            }
                             ForEach(show.seasons) { season in
                                 PlozziOSDownloadedSeasonSection(
                                     season: season, model: model, appModel: appModel,
-                                    horizontalInset: max(20, (geometry.size.width - 900) / 2),
+                                    horizontalInset: horizontalInset,
+                                    isEditing: editMode.isEditing,
                                     openEpisode: { item in
                                         detailNav = PlozziOSDownloadDetailNav(item: item)
                                     },
+                                    playEpisode: play,
                                     removeSeason: {
                                         pendingBulkDeletion = .season(season, showTitle: show.title)
                                     }
@@ -43,6 +63,7 @@ struct PlozziOSDownloadedShowView: View {
                         }
                         .listStyle(.plain)
                         .scrollContentBackground(.hidden)
+                        .environment(\.editMode, $editMode)
                         .task(id: initialSeasonID) {
                             guard let initialSeasonID else { return }
                             await Task.yield()
@@ -51,8 +72,9 @@ struct PlozziOSDownloadedShowView: View {
                     }
                 }
                 .background { AppBackground(palette: palette) }
-                .navigationTitle(show.title)
+                .navigationTitle("")
                 .navigationBarTitleDisplayMode(.inline)
+                .navigationBarBackButtonHidden(editMode.isEditing)
                 // Capturing this view's dismiss environment creates an iOS 18 navigation update loop.
                 .navigationDestination(item: $detailNav) { [appModel] nav in
                     if let provider = appModel.provider(for: nav.item) {
@@ -73,34 +95,31 @@ struct PlozziOSDownloadedShowView: View {
                     }
                 }
                 .toolbar {
-                    ToolbarItem(placement: .topBarTrailing) {
-                        Menu {
-                            PlozziOSDownloadNavigationAction(
-                                records: show.records, model: model, appModel: appModel
-                            ) { detailNav = PlozziOSDownloadDetailNav(item: $0) }
-                            if show.records.contains(where: \.isActiveDownload) {
-                                Button {
-                                    Task { await model.pause(show.records) }
-                                } label: {
-                                    Label("Pause Show", systemImage: "pause.fill")
-                                }
-                            } else if show.records.contains(where: \.isResumableDownload) {
-                                Button {
-                                    Task { await model.resume(show.records) }
-                                } label: {
-                                    Label("Resume Show", systemImage: "play.fill")
-                                }
+                    if editMode.isEditing {
+                        ToolbarItem(placement: .topBarLeading) {
+                            Button("Cancel") {
+                                endEditing()
                             }
-                            Button(role: .destructive) {
-                                pendingBulkDeletion = .show(show)
-                            } label: {
-                                Label("Remove Show", systemImage: "trash")
-                            }
-                        } label: {
-                            Image(systemName: "ellipsis")
+                            .accessibilityIdentifier("download-edit-cancel")
                         }
-                        .accessibilityLabel("More actions")
-                        .accessibilityIdentifier("download-show-actions")
+                        ToolbarItemGroup(placement: .topBarTrailing) {
+                            Button("Select All") {
+                                selectedIDs = Set(show.records.map(\.id))
+                            }
+                            Button("Remove", role: .destructive) {
+                                pendingBulkDeletion = .selection(
+                                    show.records.filter { selectedIDs.contains($0.id) }
+                                )
+                            }
+                            .disabled(selectedIDs.isEmpty)
+                            .accessibilityIdentifier("download-remove-selected")
+                        }
+                    } else {
+                        ToolbarItem(placement: .topBarTrailing) {
+                            Button("Edit") {
+                                editMode = .active
+                            }
+                        }
                     }
                 }
             } else {
@@ -123,7 +142,10 @@ struct PlozziOSDownloadedShowView: View {
                 Button(deletion.confirmLabel, role: .destructive) {
                     let records = deletion.records
                     pendingBulkDeletion = nil
-                    Task { await model.remove(records) }
+                    Task {
+                        await model.remove(records)
+                        selectedIDs.subtract(records.map(\.id))
+                    }
                 }
                 Button("Cancel", role: .cancel) { pendingBulkDeletion = nil }
             }
@@ -135,7 +157,55 @@ struct PlozziOSDownloadedShowView: View {
         .onChange(of: showStillExists) { _, exists in
             if !exists { dismiss() }
         }
+        .onChange(of: currentShow?.records.map(\.id)) { _, ids in
+            selectedIDs.formIntersection(ids ?? [])
+        }
+        .onChange(of: appModel.profiles.activeProfileID) { _, _ in
+            endEditing()
+            pendingResumeRequest = nil
+        }
+        .onChange(of: appModel.isActiveProfileAuthorized) { _, authorized in
+            if !authorized {
+                endEditing()
+                pendingResumeRequest = nil
+            }
+        }
+        .resumePrompt(request: $pendingResumeRequest, mediaItem: { $0.item }) { request, position in
+            var request = request
+            request.startPosition = position
+            pendingResumeRequest = nil
+            playbackRequest = request
+        }
+        .plozziOSPlayerCover(
+            item: $playbackRequest, orientation: appModel.settings.playback.settings.orientation
+        ) { [appModel] request, orientation in
+            if let provider = appModel.provider(for: request.item) {
+                PlozziOSPlayerView(request: request, provider: provider, orientation: orientation)
+            } else {
+                ContentUnavailableView("Server unavailable", systemImage: "server.rack")
+            }
+        }
+        .onDisappear { pendingResumeRequest = nil }
         .task { await model.refreshArtwork() }
+    }
+
+    private func endEditing() {
+        editMode = .inactive
+        selectedIDs.removeAll()
+        pendingBulkDeletion = nil
+    }
+
+    private func play(_ item: MediaItem) {
+        guard appModel.isActiveProfileAuthorized else { return }
+        let request = PlozziOSPlaybackRequest(
+            item: item, startPosition: item.resumePosition ?? 0,
+            versionPreferences: appModel.versionPreferences
+        )
+        if appModel.settings.playback.settings.shouldAskBeforeResuming(at: request.startPosition) {
+            pendingResumeRequest = request
+        } else {
+            playbackRequest = request
+        }
     }
 
     private var currentShow: PlozziOSDownloadedShow? {
@@ -154,15 +224,20 @@ private struct PlozziOSDownloadedSeasonSection: View {
     let model: PlozziOSDownloadsModel
     let appModel: PlozziOSAppModel
     let horizontalInset: CGFloat
+    let isEditing: Bool
     let openEpisode: (MediaItem) -> Void
+    let playEpisode: (MediaItem) -> Void
     let removeSeason: () -> Void
 
     var body: some View {
         Section {
             ForEach(season.records) { record in
                 PlozziOSDownloadedEpisodeRow(
-                    record: record, model: model, appModel: appModel, openEpisode: openEpisode
+                    record: record, model: model, appModel: appModel,
+                    isEditing: isEditing, openEpisode: openEpisode, playEpisode: playEpisode
                 )
+                    .tag(record.id)
+                    .selectionDisabled(!isEditing)
                     .listRowSeparator(.hidden)
                     .listRowBackground(Color.clear)
                     .listRowInsets(EdgeInsets(
@@ -251,10 +326,17 @@ private struct PlozziOSDownloadedEpisodeRow: View {
     let record: DownloadedMediaRecord
     let model: PlozziOSDownloadsModel
     let appModel: PlozziOSAppModel
+    let isEditing: Bool
     let openEpisode: (MediaItem) -> Void
+    let playEpisode: (MediaItem) -> Void
 
     var body: some View {
+        let item = model.playbackItem(for: record) ?? model.detailItem(for: record)
         DownloadCompactCard(menu: {
+            Button("Play", systemImage: "play.fill") {
+                if let item { playEpisode(item) }
+            }
+            .disabled(record.status != .completed || item.flatMap { appModel.provider(for: $0) } == nil)
             PlozziOSDownloadNavigationAction(
                 records: [record], model: model, appModel: appModel, open: openEpisode
             )
@@ -268,26 +350,29 @@ private struct PlozziOSDownloadedEpisodeRow: View {
                 }
             }
             PlozziOSDownloadSubtitleAction(record: record, model: model)
-            Button("Remove", systemImage: "trash", role: .destructive) {
+            Button("Remove Download", systemImage: "trash", role: .destructive) {
                 Task { await model.remove(record) }
             }
         }, accessibilityTitle: record.snapshot.title) {
-            Button {
-                if let item = model.playbackItem(for: record) ?? model.detailItem(for: record) {
-                    openEpisode(item)
+            let content = DownloadRowContent(
+                title: DownloadFormatting.episodeLabel(for: record),
+                subtitle: DownloadFormatting.status(for: record),
+                status: record.status,
+                fraction: DownloadFormatting.activeFraction(for: record),
+                failure: DownloadFormatting.failure(for: record),
+                artworkURL: model.artworkURL(for: record),
+                kind: record.snapshot.kind
+            )
+            if isEditing {
+                content
+            } else {
+                Button {
+                    if let item { openEpisode(item) }
+                } label: {
+                    content
                 }
-            } label: {
-                DownloadRowContent(
-                    title: DownloadFormatting.episodeLabel(for: record),
-                    subtitle: DownloadFormatting.status(for: record),
-                    status: record.status,
-                    fraction: DownloadFormatting.activeFraction(for: record),
-                    failure: DownloadFormatting.failure(for: record),
-                    artworkURL: model.artworkURL(for: record),
-                    kind: record.snapshot.kind
-                )
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
         }
         .swipeActions(edge: .trailing, allowsFullSwipe: true) {
             Button("Remove", systemImage: "trash", role: .destructive) {

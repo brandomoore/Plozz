@@ -1139,6 +1139,16 @@ struct PlozziOSDownloadsBulkDeletion: Identifiable {
     /// while the dialog is on screen is not deleted (honoring "completed kept").
     var reevaluatesActiveAtConfirm = false
 
+    static func selection(_ records: [DownloadedMediaRecord]) -> Self {
+        Self(
+            id: "selection",
+            title: "Remove Downloads?",
+            message: "This removes the selected downloads from this device.",
+            confirmLabel: "Remove \(records.count) Downloads",
+            records: records
+        )
+    }
+
     static func show(_ show: PlozziOSDownloadedShow) -> Self {
         Self(
             id: "show:\(show.id)",

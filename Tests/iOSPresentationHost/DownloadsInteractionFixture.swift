@@ -28,6 +28,8 @@ struct DownloadsInteractionFixture: View {
                 fatalError("Could not prepare the Downloads fixture account: \(error)")
             }
             app.accountsProviders.reloadAccounts()
+            app.profiles.markFirstRunProfileSetupComplete()
+            app.selectProfile(app.profiles.activeProfileID)
             app.settings.heroBackground.settings.detailMode = .off
             app.metadataProviderSettingsModel.settings = MetadataProviderSettings(
                 orderMode: .custom, preferOnlineArtwork: false,
@@ -49,6 +51,10 @@ struct DownloadsInteractionFixture: View {
                     seasonNumber: 2, episodeNumber: index
                 )
             )
+        }
+        if ProcessInfo.processInfo.arguments.contains("--download-edit") {
+            records = Array(records.prefix(3))
+            records[2].snapshot.seasonNumber = 3
         }
         if ProcessInfo.processInfo.arguments.contains("--download-movie") {
             records = [
