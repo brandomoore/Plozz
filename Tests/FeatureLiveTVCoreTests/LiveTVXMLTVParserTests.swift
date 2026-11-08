@@ -8,6 +8,33 @@ import zlib
 final class LiveTVXMLTVParserTests: XCTestCase {
     private let now = Date(timeIntervalSince1970: 1_767_225_600)
 
+    func testExternalCancellationInterruptsPlainAndCompressedInputWithoutCancellingTask() throws {
+        final class CancellationBudget: @unchecked Sendable {
+            private let lock = NSLock()
+            private var remaining = 20
+            func check() -> Bool { lock.withLock { remaining -= 1; return remaining <= 0 } }
+        }
+        let inputs = [
+            "<!--" + String(repeating: " ", count: 1_000_000) + "--><tv/>",
+            "<tv>" + String(repeating: "<programme channel=\"unmatched\"/>", count: 1_000) + "</tv>"
+        ]
+        for xml in inputs {
+            for compressed in [false, true] {
+                let budget = CancellationBudget()
+                let parser = LiveTVXMLTVParser(isCancelled: { budget.check() })
+                let data = Data(xml.utf8)
+                XCTAssertThrowsError(try parser.parseIndexed(
+                    data: compressed ? gzip(data) : data, channels: [], now: now, sink: { _ in
+                        XCTFail("No programmes in this input should be retained.")
+                    }
+                ), "compressed=\(compressed)") {
+                    XCTAssertEqual($0 as? LiveTVSourceImportError, .cancelled)
+                }
+                XCTAssertFalse(Task.isCancelled)
+            }
+        }
+    }
+
     func testLargeChannelDirectoryRetainsOnlyTheRequestedSchedule() throws {
         let declarations = (0..<20_001).map { "<channel id=\"g\($0)\"/>" }.joined()
         let xml = Data("""

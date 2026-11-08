@@ -346,6 +346,29 @@ pragmas, so an immediate reopen tolerates a previous connection's checkpoint.
 Committed imports are unchanged, and closing still rolls back unfinished work;
 do not disable journaling or skip closing to avoid a teardown hang.
 
+For `RUNNINGBOARD / 0xdead10cc`, inspect file-lock lifetime rather than the idle
+event-loop frame. An idle WAL connection can retain a main-file SHARED lock even
+when `sqlite3_get_autocommit` is true, `sqlite3_txn_state` is `SQLITE_TXN_NONE`,
+every statement is reset, and another connection can checkpoint the WAL.
+`StorageSuspensionTests` probes exclusive access before and after the real
+connections close; a checkpoint-only test does not establish suspension safety.
+
+The iOS scene lifecycle includes `ApplicationStorageLifecycle` in its existing
+finite suspension lease. IPTV clients, indexed Live TV caches and generated
+channel snapshot stores register before opening SQLite, fence inactive access,
+and close on their owning actors without waiting for network cancellation.
+Running guide parsing and SQLite bulk work also observe the admission fence;
+queued actor cleanup alone cannot interrupt an import that already holds a
+transaction. Cancellation rolls back before close, even if the suspension task
+has been cancelled. Interrupted IPTV staging is removed or closed before the next
+import, including rapid background/foreground transitions.
+Foreground access lazily reopens committed data; stale import identities cannot
+publish or discard a newer staging table. Connection-local change counters are
+invalidated on reopen. In-memory snapshot fixtures keep their data because they
+have no file locks. This complements the existing share/artwork/download
+lifecycle; it does not identify which store owned every historical Apple crash.
+Confirm recurrence separately on the affected Mac runtime and distributed build.
+
 Xtream catalogue entries require a usable source ID, but a missing or empty
 display name does not invalidate an otherwise addressable entry. Such entries
 keep their native ID for both playback routing and fallback display, matching

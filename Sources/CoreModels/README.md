@@ -13,6 +13,10 @@ language every other module speaks.
 - The dual-provider abstraction: `MediaProvider` protocol, `ProviderKind`,
   `ProviderRegistry` / `ProviderResolving`, `ResolvedAccount`.
 - Cross-cutting UI state: `LoadState`, `AppError`.
+- `ApplicationStorageLifecycle` fences process-wide storage admission before
+  asynchronously closing registered actor-owned stores. Owners register before
+  opening files, reject inactive access, and ignore stale cleanup after resume.
+  Registration is weak, so the registry does not retain retired stores.
 - `PerformanceDiagnostics` owns consent-scoped, bounded operation histories and
   numeric Home responsiveness windows. Home load/merge/publication retention is
   independent of HTTP/decode traffic. UI observers must hold a current Home

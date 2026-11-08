@@ -50,14 +50,17 @@ public struct LiveTVXMLTVParser: Sendable {
     private let maximumExpandedBytes: Int
     private let provider: LiveTVGuideProvider?
     private let preferredLanguage: String?
+    private let isCancelled: @Sendable () -> Bool
 
     public init(
         maximumExpandedBytes: Int = Self.maximumExpandedBytes,
         provider: LiveTVGuideProvider? = nil,
-        preferredLanguage: String? = LanguageMatch.deviceLanguageCode
+        preferredLanguage: String? = LanguageMatch.deviceLanguageCode,
+        isCancelled: @escaping @Sendable () -> Bool = { Task.isCancelled }
     ) {
         self.maximumExpandedBytes = maximumExpandedBytes
         self.provider = provider
+        self.isCancelled = isCancelled
         self.preferredLanguage = LanguageMatch.normalized(
             preferredLanguage?.trimmingCharacters(in: .whitespacesAndNewlines)
         )
@@ -77,7 +80,7 @@ public struct LiveTVXMLTVParser: Sendable {
             makeStream: {
                 try BoundedGzipInputStream(
                     compressedStream: InputStream(data: gzipData),
-                    maximumExpandedBytes: maximumExpandedBytes
+                    maximumExpandedBytes: maximumExpandedBytes, isCancelled: isCancelled
                 )
             },
             channels: channels,
@@ -119,7 +122,8 @@ public struct LiveTVXMLTVParser: Sendable {
             makeStream: {
                 if gzip {
                     return try BoundedGzipInputStream(
-                        compressedStream: InputStream(data: data), maximumExpandedBytes: maximumExpandedBytes
+                        compressedStream: InputStream(data: data), maximumExpandedBytes: maximumExpandedBytes,
+                        isCancelled: isCancelled
                     )
                 }
                 return InputStream(data: data)
@@ -142,7 +146,7 @@ public struct LiveTVXMLTVParser: Sendable {
         guard (0...7).contains(lookbackDays), (1...28).contains(lookaheadDays) else {
             throw LiveTVSourceImportError.invalidGuide
         }
-        let metadataDelegate = XMLTVDelegate()
+        let metadataDelegate = XMLTVDelegate(isCancelled: isCancelled)
         try parseXML(stream: makeStream(), delegate: metadataDelegate)
         try checkCancellation()
         if metadataDelegate.skippedChannelDeclarations > 0 {
@@ -182,7 +186,7 @@ public struct LiveTVXMLTVParser: Sendable {
             initialRetainedTextBytes: metadataDelegate.retainedTextBytes,
             preferredLanguage: preferredLanguage,
             now: now, lookbackDays: lookbackDays, lookaheadDays: lookaheadDays,
-            totalPrograms: metadataDelegate.sourceProgramCount, sink: sink
+            totalPrograms: metadataDelegate.sourceProgramCount, sink: sink, isCancelled: isCancelled
         )
         try parseXML(stream: makeStream(), delegate: programmeDelegate)
         try checkCancellation()
@@ -197,7 +201,7 @@ public struct LiveTVXMLTVParser: Sendable {
         delegate.reportProgress(force: true)
         stream.open()
         defer { stream.close() }
-        let guardedStream = EntityRejectingXMLInputStream(source: stream)
+        let guardedStream = EntityRejectingXMLInputStream(source: stream, isCancelled: isCancelled)
         delegate.didStartRoot = { guardedStream.inspectDeclarations = false }
         defer { delegate.didStartRoot = nil }
         let parser = XMLParser(stream: guardedStream)
@@ -223,7 +227,7 @@ public struct LiveTVXMLTVParser: Sendable {
     }
 
     private func checkCancellation() throws {
-        if Task.isCancelled {
+        if isCancelled() {
             throw LiveTVSourceImportError.cancelled
         }
     }
@@ -231,6 +235,7 @@ public struct LiveTVXMLTVParser: Sendable {
 
 private final class XMLTVDelegate: NSObject, XMLParserDelegate {
     var didStartRoot: (() -> Void)?
+    private let isCancelled: @Sendable () -> Bool
     private enum Pass: String {
         case metadata
         case programmes
@@ -306,7 +311,8 @@ private final class XMLTVDelegate: NSObject, XMLParserDelegate {
         )
     }
 
-    override init() {
+    init(isCancelled: @escaping @Sendable () -> Bool) {
+        self.isCancelled = isCancelled
         pass = .metadata
         channelsByGuideID = [:]
         lowerBound = nil
@@ -323,8 +329,10 @@ private final class XMLTVDelegate: NSObject, XMLParserDelegate {
         preferredLanguage: String?,
         now: Date, lookbackDays: Int = 1, lookaheadDays: Int = 7,
         totalPrograms: Int? = nil,
-        sink: ((LiveTVPrototypeProgram) throws -> Void)? = nil
+        sink: ((LiveTVPrototypeProgram) throws -> Void)? = nil,
+        isCancelled: @escaping @Sendable () -> Bool
     ) {
+        self.isCancelled = isCancelled
         pass = .programmes
         self.channelsByGuideID = channelsByGuideID
         self.preferredLanguage = preferredLanguage
@@ -350,14 +358,14 @@ private final class XMLTVDelegate: NSObject, XMLParserDelegate {
         assignments: [String: LiveTVGuideMatch],
         guideChannels: [String: [String]]
     ) throws -> LiveTVGuideImport {
-        if Task.isCancelled {
+        if isCancelled() {
             throw LiveTVSourceImportError.cancelled
         }
         programs.sort {
             ($0.channelID, $0.start, $0.end, $0.title, $0.id)
                 < ($1.channelID, $1.start, $1.end, $1.title, $1.id)
         }
-        if Task.isCancelled {
+        if isCancelled() {
             throw LiveTVSourceImportError.cancelled
         }
         if truncatedDescriptions > 0 {
@@ -388,7 +396,7 @@ private final class XMLTVDelegate: NSObject, XMLParserDelegate {
             parser.abortParsing()
             return
         }
-        if Task.isCancelled {
+        if isCancelled() {
             error = .cancelled
             parser.abortParsing()
             return
@@ -714,7 +722,7 @@ private final class XMLTVDelegate: NSObject, XMLParserDelegate {
         if error == nil {
             failureReason = .syntax
             parseErrorCode = (parseError as NSError).code
-            error = Task.isCancelled ? .cancelled : .invalidGuide
+            error = isCancelled() ? .cancelled : .invalidGuide
         }
     }
 
@@ -815,7 +823,7 @@ private final class XMLTVDelegate: NSObject, XMLParserDelegate {
             return
         }
         for channel in channelsByGuideID[program.guideChannelID] ?? [] {
-            if Task.isCancelled {
+            if isCancelled() {
                 error = .cancelled
                 parser.abortParsing()
                 return
@@ -1009,9 +1017,15 @@ private final class BoundedGzipInputStream: InputStream {
     private var reachedEnd = false
     private var failure: LiveTVSourceImportError?
 
-    init(compressedStream: InputStream, maximumExpandedBytes: Int) throws {
+    private let isCancelled: @Sendable () -> Bool
+
+    init(
+        compressedStream: InputStream, maximumExpandedBytes: Int,
+        isCancelled: @escaping @Sendable () -> Bool
+    ) throws {
         self.compressedStream = compressedStream
         self.maximumExpandedBytes = maximumExpandedBytes
+        self.isCancelled = isCancelled
         super.init(data: Data())
         let status = inflateInit2_(
             &zstream,
@@ -1056,7 +1070,7 @@ private final class BoundedGzipInputStream: InputStream {
         maxLength len: Int
     ) -> Int {
         guard failure == nil else { return -1 }
-        if Task.isCancelled {
+        if isCancelled() {
             failure = .cancelled
             return -1
         }
@@ -1089,7 +1103,7 @@ private final class BoundedGzipInputStream: InputStream {
         guard !reachedEnd else { return false }
 
         while output.isEmpty && !reachedEnd && failure == nil {
-            if Task.isCancelled {
+            if isCancelled() {
                 failure = .cancelled
                 break
             }
@@ -1157,6 +1171,7 @@ private final class EntityRejectingXMLInputStream: InputStream {
     private static let cdata = Array("<![CDATA[".utf8)
     private enum ScanState { case text, markup, comment, instruction, cdata }
     private let source: InputStream
+    private let isCancelled: @Sendable () -> Bool
     private var state = ScanState.text
     private var prefix = [UInt8]()
     private var previous: UInt8 = 0
@@ -1164,8 +1179,9 @@ private final class EntityRejectingXMLInputStream: InputStream {
     private var failure: LiveTVSourceImportError?
     private(set) var rejectedEntity = false
 
-    init(source: InputStream) {
+    init(source: InputStream, isCancelled: @escaping @Sendable () -> Bool) {
         self.source = source
+        self.isCancelled = isCancelled
         super.init(data: Data())
     }
 
@@ -1177,11 +1193,12 @@ private final class EntityRejectingXMLInputStream: InputStream {
 
     override func read(_ buffer: UnsafeMutablePointer<UInt8>, maxLength len: Int) -> Int {
         guard failure == nil else { return -1 }
-        if Task.isCancelled {
+        if isCancelled() {
             failure = .cancelled
             return -1
         }
-        let count = source.read(buffer, maxLength: len)
+        // Check cancellation between bounded reads, including long XML prologs.
+        let count = source.read(buffer, maxLength: min(len, 64 * 1_024))
         guard count > 0 else { return count }
         // Declarations are legal only in the prolog. Once XMLParser reports
         // the real root, it rejects any later declaration as malformed XML.
