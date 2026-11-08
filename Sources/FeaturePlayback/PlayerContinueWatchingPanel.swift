@@ -82,18 +82,21 @@ struct PlayerContinueWatchingCard: View {
 
     var body: some View {
         Button(action: action) {
-            if metrics.isVertical {
-                compactContent
-            } else {
-                let layout = PlayerMediaArtworkLayout(
-                    height: metrics.cardHeight, inset: inset, cornerRadius: cornerRadius,
-                    aspectRatio: aspectRatio
-                )
-                layout {
-                    artwork(cornerRadius: layout.thumbnailShape.cornerSize.width)
-                    if showsCaptions { caption }
+            Group {
+                if metrics.isVertical {
+                    compactContent
+                } else {
+                    let layout = PlayerMediaArtworkLayout(
+                        height: metrics.cardHeight, inset: inset, cornerRadius: cornerRadius,
+                        aspectRatio: aspectRatio
+                    )
+                    layout {
+                        artwork(cornerRadius: layout.thumbnailShape.cornerSize.width)
+                        if showsCaptions { caption }
+                    }
                 }
             }
+            .contentShape(.interaction, RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
         }
         .buttonStyle(PlayerOverVideoCardStyle(
             focused: isFocused, cornerRadius: cornerRadius,

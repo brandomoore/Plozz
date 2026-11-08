@@ -206,6 +206,9 @@ struct PresentationHostApp: App {
         func application(
             _ application: UIApplication, supportedInterfaceOrientationsFor window: UIWindow?
         ) -> UIInterfaceOrientationMask {
+            if ProcessInfo.processInfo.arguments.contains("--continue-watching-player-fixture") {
+                return .all
+            }
             // Hosted XCTest links its own package globals; ask its window for its registry's policy.
             if let owner = window?.windowScene?.keyWindow as? PresentationOrientationWindow {
                 return owner.supportedPresentationOrientations
