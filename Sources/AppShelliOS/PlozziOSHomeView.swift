@@ -185,6 +185,7 @@ struct PlozziOSHomeView: View {
     @State private var heroRandomRolls = HeroRandomRollStore()
     @State private var playbackRequest: PlozziOSPlaybackRequest?
     @State private var pendingResumeRequest: PlozziOSPlaybackRequest?
+    @State private var pendingResumeAnchorID: String?
     @State private var externalOpening = ExternalMediaOpening()
     @State private var isRequestingHero = false
     @State private var heroRequestStatuses: [String: MediaAvailabilityStatus] = [:]
@@ -473,7 +474,9 @@ struct PlozziOSHomeView: View {
         // still resolves to its next-up episode rather than being handed to the
         // player as a container.
         .plozziOSRailPlay { play($0) }
-        .resumePrompt(request: $pendingResumeRequest, mediaItem: { $0.item }) { request, position in
+        .resumePrompt(
+            request: $pendingResumeRequest, mediaItem: { $0.item }, anchorID: pendingResumeAnchorID
+        ) { request, position in
             var request = request
             request.startPosition = position
             pendingResumeRequest = nil
@@ -621,7 +624,7 @@ struct PlozziOSHomeView: View {
                     autoAdvance: appModel.settings.hero.effectiveSettings.autoAdvance,
                     autoAdvanceSeconds:
                         appModel.settings.hero.effectiveSettings.autoAdvanceSeconds,
-                    onPlay: play,
+                    onPlay: { play($0, resumeAnchorID: $0.id) },
                     isRequesting: isRequestingHero,
                     requestStatus: { heroRequestStatuses[$0.id] },
                     onRequest: beginHeroRequest,
@@ -900,7 +903,7 @@ struct PlozziOSHomeView: View {
         }
     }
 
-    private func play(_ item: MediaItem) {
+    private func play(_ item: MediaItem, resumeAnchorID: String? = nil) {
         // A series or season can't be played directly (see `playbackTarget`), so
         // resolve the next-up episode first. Every other kind plays as-is.
         guard item.kind.needsPlaybackTargetResolution else {
@@ -908,7 +911,7 @@ struct PlozziOSHomeView: View {
                 item: item,
                 startPosition: item.resumePosition ?? 0,
                 versionPreferences: appModel.versionPreferences
-            ))
+            ), resumeAnchorID: resumeAnchorID)
             return
         }
         guard let provider = appModel.provider(for: item) else { return }
@@ -923,11 +926,11 @@ struct PlozziOSHomeView: View {
                 item: episode,
                 startPosition: episode.resumePosition ?? 0,
                 versionPreferences: appModel.versionPreferences
-            ))
+            ), resumeAnchorID: resumeAnchorID)
         }
     }
 
-    private func presentPlay(_ request: PlozziOSPlaybackRequest) {
+    private func presentPlay(_ request: PlozziOSPlaybackRequest, resumeAnchorID: String? = nil) {
         if request.item.opensExternalSource {
             guard let provider = appModel.provider(for: request.item) else {
                 externalOpening.failed = true
@@ -944,6 +947,7 @@ struct PlozziOSHomeView: View {
         }
         if request.item.effectiveDiscPlayback(default: appModel.settings.playback.settings.discPlayback) != .openMenu,
            appModel.settings.playback.settings.shouldAskBeforeResuming(at: request.startPosition) {
+            pendingResumeAnchorID = resumeAnchorID
             pendingResumeRequest = request
         } else {
             playbackRequest = request

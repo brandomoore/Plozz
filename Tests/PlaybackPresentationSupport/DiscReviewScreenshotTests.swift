@@ -146,7 +146,15 @@ final class DiscReviewScreenshotTests: XCTestCase {
 
     #if os(iOS)
     func testResumePromptStaysBesidePlayButton() {
-        let app = launch("detail-resume")
+        verifyResumePrompt(scenario: "detail-resume", playIdentifier: "detail-hero-play")
+    }
+
+    func testHomeResumePromptStaysBesidePlayButton() {
+        verifyResumePrompt(scenario: "detail-home-resume", playIdentifier: "home-hero-play")
+    }
+
+    private func verifyResumePrompt(scenario: String, playIdentifier: String) {
+        let app = launch(scenario)
         let orientations: [UIDeviceOrientation] = UIDevice.current.userInterfaceIdiom == .pad
             ? [.portrait, .landscapeLeft] : [.portrait]
         for orientation in orientations {
@@ -158,7 +166,7 @@ final class DiscReviewScreenshotTests: XCTestCase {
                 object: app
             )
             XCTAssertEqual(XCTWaiter.wait(for: [rotated], timeout: 5), .completed)
-            let play = app.buttons["detail-hero-play"]
+            let play = app.buttons[playIdentifier]
             XCTAssertTrue(play.waitForExistence(timeout: 10))
             if !play.isHittable { app.swipeUp() }
             let playFrame = play.frame

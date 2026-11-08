@@ -22,7 +22,7 @@ struct DiscReviewFixture: View {
     var body: some View {
         Group {
             if fixture.scenario.hasPrefix("detail") {
-                DiscReviewDetail(item: fixture.item)
+                DiscReviewDetail(item: fixture.item, isHome: fixture.scenario == "detail-home-resume")
                 .environment(\.discPlaybackDefault,
                               fixture.scenario == "detail-menu-default" ? .openMenu : .playVideo)
             } else {
@@ -39,6 +39,7 @@ struct DiscReviewFixture: View {
     @MainActor
     private struct DiscReviewDetail: View {
         let item: MediaItem
+        let isHome: Bool
         @State private var trailer = HeroTrailerController()
         #if os(tvOS)
         @State private var background = HeroBackgroundSettingsModel(store: InMemoryHeroBackgroundSettingsStore())
@@ -68,15 +69,28 @@ struct DiscReviewFixture: View {
         var body: some View {
             NavigationStack {
                 ScrollView {
-                    PlozziOSDetailHeroSection(
-                        item: item, backdropItem: item, playableItem: item, sources: [],
-                        selectedSourceAccountID: nil, versions: item.versions, selectedVersionID: nil,
-                        onSelectSource: { _ in }, onSelectVersion: { _ in }, actionHandler: actions,
-                        onPlay: { selected, _ in pendingResume = selected }
-                    )
+                    if isHome {
+                        PlozziOSHomeHeroForeground(
+                            item: item, detailItem: item, watchlistItem: item,
+                            presentation: HeroPresentation(item: item, artworkStyle: .landscape, surface: .home),
+                            style: UIDevice.current.userInterfaceIdiom == .phone ? .compactPortrait : .landscape,
+                            onPlay: { pendingResume = $0 }
+                        )
+                        .padding(24)
+                        .frame(maxWidth: .infinity, minHeight: 600, alignment: .bottomLeading)
+                    } else {
+                        PlozziOSDetailHeroSection(
+                            item: item, backdropItem: item, playableItem: item, sources: [],
+                            selectedSourceAccountID: nil, versions: item.versions, selectedVersionID: nil,
+                            onSelectSource: { _ in }, onSelectVersion: { _ in }, actionHandler: actions,
+                            onPlay: { selected, _ in pendingResume = selected }
+                        )
+                    }
                 }
             }
-            .resumePrompt(item: $pendingResume) { _, _ in pendingResume = nil }
+            .resumePrompt(item: $pendingResume, anchorID: isHome ? item.id : "play") { _, _ in
+                pendingResume = nil
+            }
             .environment(appModel)
             .environment(trailer)
             .environment(sidebar)
@@ -142,7 +156,7 @@ private final class DiscReviewState {
         var version = MediaVersion(id: "disc", container: "bdmv")
         version.discMenuAvailability = scenario == "detail-unavailable" ? .unavailable(.unsupportedRuntime) : .unknown
         item = MediaItem(id: "disc-review", title: "Original disc fixture", kind: .movie,
-                         runtime: 7200, resumePosition: scenario == "detail-resume" ? 600 : nil,
+                         runtime: 7200, resumePosition: scenario.hasSuffix("-resume") ? 600 : nil,
                          allowsTitleBasedMetadataMatching: false, versions: [version])
         engine = DiscReviewEngine(scenario: scenario, opensMenu: opensMenu)
         var settings = PlaybackSettings.default

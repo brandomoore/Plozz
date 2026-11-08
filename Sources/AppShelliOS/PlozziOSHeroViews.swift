@@ -1932,6 +1932,8 @@ struct PlozziOSHomeHeroForeground: View {
                 )
             }
             .buttonStyle(PlozziOSHeroActionButtonStyle(kind: .primary))
+            .accessibilityIdentifier("home-hero-play")
+            .resumePromptAnchor(id: item.id)
         }
 
         heroRequestButton

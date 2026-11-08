@@ -97,11 +97,19 @@ final class PlaybackResumePromptTests: XCTestCase {
     }
 
     func testNativePromptPresentsResumeRestartAndCancelWithoutStartingPlayback() async throws {
+        try await verifyNativePrompt(anchorID: "play")
+    }
+
+    func testNonHeroRequestDoesNotBorrowTheHeroAnchor() async throws {
+        try await verifyNativePrompt(anchorID: nil)
+    }
+
+    private func verifyNativePrompt(anchorID: String?) async throws {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
         let previous = scene.windows.first(where: \.isKeyWindow)
         let window = UIWindow(windowScene: scene)
         let state = ResumePromptState()
-        let host = UIHostingController(rootView: ResumePromptFixture(state: state))
+        let host = UIHostingController(rootView: ResumePromptFixture(state: state, anchorID: anchorID))
         window.rootViewController = host
         window.makeKeyAndVisible()
         defer {
@@ -123,10 +131,15 @@ final class PlaybackResumePromptTests: XCTestCase {
         let popover = try XCTUnwrap(dialog.popoverPresentationController)
         let source = try XCTUnwrap(popover.sourceView)
         let anchor = source.convert(popover.sourceRect, to: window)
-        XCTAssertEqual(anchor.width, 180, accuracy: 1)
-        XCTAssertEqual(anchor.height, 44, accuracy: 1)
-        XCTAssertGreaterThan(anchor.midY, window.bounds.midY,
-                             "The prompt must attach to Play, not the top of the detail page.")
+        if anchorID != nil {
+            XCTAssertEqual(anchor.width, 180, accuracy: 1)
+            XCTAssertEqual(anchor.height, 44, accuracy: 1)
+            XCTAssertGreaterThan(anchor.midY, window.bounds.midY,
+                                 "The prompt must attach to Play, not another anchor or the page.")
+        } else {
+            XCTAssertEqual(anchor.width, window.bounds.width, accuracy: 1)
+            XCTAssertGreaterThan(anchor.height, 100, "Non-hero requests must retain their container anchor.")
+        }
         state.item = nil
         let dismissDeadline = ContinuousClock.now + .seconds(3)
         while host.presentedViewController != nil, ContinuousClock.now < dismissDeadline {
@@ -146,6 +159,7 @@ private final class ResumePromptState {
 
 private struct ResumePromptFixture: View {
     @Bindable var state: ResumePromptState
+    let anchorID: String?
 
     var body: some View {
         VStack {
@@ -156,7 +170,12 @@ private struct ResumePromptFixture: View {
         }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .padding(.bottom, 100)
-            .resumePrompt(item: $state.item) { _, position in
+            .overlay(alignment: .topTrailing) {
+                Color.clear
+                    .frame(width: 80, height: 44)
+                    .resumePromptAnchor(id: "another-item")
+            }
+            .resumePrompt(item: $state.item, anchorID: anchorID) { _, position in
                 state.chosenPosition = position
             }
             .environment(\.locale, Locale(identifier: "en"))
