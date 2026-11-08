@@ -27,17 +27,32 @@ strong catalog identity; native titles, artwork and watch state remain intact.
 Missing, stale or unavailable index entries fall back to the existing verified
 search. Index membership alone is not enough to display a synthetic library card.
 
-At most six candidates resolve concurrently, with a 24-candidate budget and
+Plex, Jellyfin and Emby fetch known copies in exact-ID batches scoped to the
+authenticated account, including when several accounts use the same provider.
+Silo, shares and other providers without the optional `LibraryItemBatchProviding`
+transport retain individual lookups. A partial, failed or invalid batch retries
+only the affected candidates individually before falling back to verified search.
+Raw item IDs never identify an account or combine different servers' responses.
+
+At most six batch/individual lookup or search jobs run concurrently, with a 24-candidate budget and
 twelve distinct displayed results. Known indexed copies reserve display slots,
 so a full indexed row does not initiate searches for unused later recommendations.
 Unknown candidates retain bounded lookahead so a slow early search cannot hold
 back a full set of later matches.
 Provider order and continuation priority remain intact. Fast rows publish as a
 batch immediately on completion; slower fallbacks retain 400-ms coalesced progress.
+A cancellable publication timer exposes ready cards even when another server is
+still pending and no further result arrives to trigger publication.
 The detail model owns cancellation, including native lookups, and resumes an
 interrupted row when returning. Cancelled recommendation responses do not enter
 the public cache. Discovery's external-inclusive mode remains network-free after
 recommendations, using the index only.
+
+Seeded movie/series pages prepare public recommendations alongside their initial
+detail fetch, without starting private library reads. Fresh detail consumes that
+work only when the complete recommendation key still matches; identity changes
+cancel it and resolve the new query. Failed/cancelled opens discard unconsumed
+preparation. Series Related loading starts after fresh detail, not after seasons.
 
 Recommendation caching does not cache private library metadata. A new detail
 loader still verifies native copies; cached public recommendations cannot promise

@@ -28,12 +28,13 @@ final class RelatedTitlesLoaderTests: XCTestCase {
         titles: [RelatedTitle],
         sources: @escaping @Sendable (MediaItem) -> [MediaSourceRef] = { _ in [] },
         fetch: (@Sendable (MediaSourceRef) async -> MediaItem?)? = nil,
+        batches: [String: @Sendable ([String]) async -> [MediaItem]] = [:],
         search: @escaping @Sendable (String, Int) async -> [MediaItem] = { _, _ in [] }
     ) -> RelatedTitlesLoader {
         RelatedTitlesLoader(
             resolver: .init(providers: [Titles(titles: titles)]),
             store: RelatedTitlesStore(directory: nil), search: search,
-            indexedLibrarySources: sources, loadIndexedItem: fetch
+            indexedLibrarySources: sources, loadIndexedItem: fetch, loadIndexedBatches: batches
         )
     }
 
@@ -294,6 +295,216 @@ final class RelatedTitlesLoaderTests: XCTestCase {
         XCTAssertFalse(loader.isLoading)
     }
 
+    func testBatchesAreAccountScopedOrderedBoundedAndStopAtTwelve() async {
+        for accountCount in [2, 16] {
+            let copies = (0..<24).map { index -> MediaItem in
+                var item = native(index)
+                item.id = "native-\(index / accountCount)"
+                item.sourceAccountID = "account-\(index % accountCount)"
+                return item
+            }
+            let calls = Calls()
+            var batches: [String: @Sendable ([String]) async -> [MediaItem]] = [:]
+            for account in 0..<accountCount {
+                let id = "account-\(account)"
+                batches[id] = { ids in await calls.batch(id, ids: ids, items: copies) }
+            }
+            let loader = loader(
+                titles: (0..<24).map(title),
+                sources: { item in
+                    guard let copy = copies.first(where: { $0.providerIDs == item.providerIDs }) else { return [] }
+                    return [.init(accountID: copy.sourceAccountID!, itemID: copy.id, kind: .movie)]
+                },
+                fetch: { _ in XCTFail("Healthy batches must not fetch individually"); return nil },
+                batches: batches,
+                search: { _, _ in XCTFail("Healthy index must not search"); return [] }
+            )
+            await loader.load(for: seed)
+            XCTAssertEqual(loader.entries.map(\.item), Array(copies.prefix(12)))
+            let recorded = await calls.batches
+            let peak = await calls.peak
+            XCTAssertEqual(recorded.count, min(accountCount, 12))
+            XCTAssertEqual(recorded.values.flatMap { $0 }.flatMap { $0 }.count, 12)
+            XCTAssertLessThanOrEqual(peak, RelatedTitlesLoader.concurrentLookups)
+        }
+    }
+
+    func testPartialAndUnverifiedBatchResultsRetryOnlyAffectedItems() async {
+        let copies = (0..<3).map(native)
+        var foreign = copies[1]
+        foreign.sourceAccountID = "wrong-account"
+        let returned = [copies[0], foreign]
+        let calls = Calls()
+        let loader = loader(
+            titles: (0..<3).map(title),
+            sources: { item in
+                let n = Int(item.providerIDs["Tmdb"]!)! - 1
+                return [.init(accountID: "account", itemID: copies[n].id, kind: .movie)]
+            },
+            fetch: { source in await calls.fetch(source, from: copies) },
+            batches: ["account": { _ in returned }],
+            search: { _, _ in XCTFail("Individual recovery succeeded"); return [] }
+        )
+        await loader.load(for: seed)
+        XCTAssertEqual(loader.entries.map(\.item), copies)
+        let fetched = await calls.fetched
+        XCTAssertEqual(Set(fetched), Set(copies.dropFirst().map(\.id)))
+    }
+
+    func testSlowServerCannotHideReadyCardsFromAnotherAccount() async throws {
+        let started = expectation(description: "Slow batch started")
+        let gate = Gate()
+        let copies = (0..<12).map { index -> MediaItem in
+            var item = native(index)
+            item.sourceAccountID = index < 6 ? "slow" : "fast"
+            return item
+        }
+        let loader = loader(
+            titles: (0..<12).map(title),
+            sources: { item in
+                let copy = copies[Int(item.providerIDs["Tmdb"]!)! - 1]
+                return [.init(accountID: copy.sourceAccountID!, itemID: copy.id, kind: .movie)]
+            },
+            batches: [
+                "slow": { _ in started.fulfill(); await gate.wait(); return Array(copies.prefix(6)) },
+                "fast": { _ in Array(copies.suffix(6)) }
+            ]
+        )
+        let task = Task { await loader.load(for: seed) }
+        await fulfillment(of: [started], timeout: 2)
+        let deadline = ContinuousClock.now + .seconds(2)
+        while loader.entries.isEmpty, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        let early = loader.entries.map(\.item)
+        let stillLoading = loader.isLoading
+        await gate.open()
+        await task.value
+        XCTAssertEqual(early, Array(copies.suffix(6)))
+        XCTAssertTrue(stillLoading)
+        XCTAssertEqual(loader.entries.map(\.item), copies)
+    }
+
+    func testBatchCancellationDoesNotBeginIndividualOrSearchFallback() async {
+        let started = expectation(description: "Batch started")
+        let cancelled = expectation(description: "Batch cancelled")
+        let loader = loader(
+            titles: [title(0)],
+            sources: { _ in [.init(accountID: "account", itemID: "native-0", kind: .movie)] },
+            fetch: { _ in XCTFail("Cancelled batch must not retry"); return nil },
+            batches: ["account": { _ in
+                started.fulfill()
+                do { try await Task.sleep(for: .seconds(30)) }
+                catch { cancelled.fulfill() }
+                return []
+            }],
+            search: { _, _ in XCTFail("Cancelled batch must not search"); return [] }
+        )
+        let task = Task { await loader.load(for: seed) }
+        await fulfillment(of: [started], timeout: 2)
+        task.cancel()
+        loader.cancel()
+        await fulfillment(of: [cancelled], timeout: 2)
+        await task.value
+        XCTAssertFalse(loader.hasResolved)
+        XCTAssertTrue(loader.entries.isEmpty)
+    }
+
+    func testPreparationSharesPublicWorkButDoesNotFetchOrPublishLibraryData() async throws {
+        let started = expectation(description: "Public lookup started")
+        let gate = Gate()
+        let calls = Calls()
+        let recommendation = title(0)
+        let copy = native(0)
+        let loader = RelatedTitlesLoader(
+            resolver: .init(providers: [CallbackTitles {
+                _ = await calls.beginAttempt()
+                started.fulfill()
+                await gate.wait()
+                return [recommendation]
+            }]),
+            store: RelatedTitlesStore(directory: nil),
+            search: { query, _ in await calls.search(query); return [copy] }
+        )
+        loader.prepareRecommendations(for: seed)
+        await fulfillment(of: [started], timeout: 2)
+        loader.prepareRecommendations(for: seed)
+        XCTAssertTrue(loader.entries.isEmpty)
+        XCTAssertFalse(loader.isLoading)
+        let searchesBeforeLoad = await calls.searched
+        XCTAssertTrue(searchesBeforeLoad.isEmpty)
+        let load = Task { await loader.load(for: seed) }
+        let deadline = ContinuousClock.now + .seconds(2)
+        while !loader.isLoading, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        await gate.open()
+        await load.value
+        let attempts = await calls.attempts
+        XCTAssertEqual(attempts, 1)
+        XCTAssertEqual(loader.entries.map(\.item), [copy])
+    }
+
+    func testCancellationBeforeRowLoadCancelsPreparationAndAllowsRetry() async {
+        let started = expectation(description: "Preparation started")
+        let cancelled = expectation(description: "Preparation cancelled")
+        let calls = Calls()
+        let recommendation = title(0)
+        let copy = native(0)
+        let store = RelatedTitlesStore(directory: nil)
+        let loader = RelatedTitlesLoader(
+            resolver: .init(providers: [CallbackTitles {
+                if await calls.beginAttempt() == 1 {
+                    started.fulfill()
+                    do { try await Task.sleep(for: .seconds(30)) }
+                    catch { cancelled.fulfill(); return [] }
+                }
+                return [recommendation]
+            }]),
+            store: store, search: { _, _ in [copy] }
+        )
+        loader.prepareRecommendations(for: seed)
+        await fulfillment(of: [started], timeout: 2)
+        loader.cancel()
+        await fulfillment(of: [cancelled], timeout: 2)
+        let cached = await store.record(for: MetadataQuery(seed).seriesScoped.enrichmentCacheKey)
+        XCTAssertNil(cached)
+        await loader.load(for: seed)
+        XCTAssertEqual(loader.entries.map(\.item), [copy])
+    }
+
+    func testChangedFreshIdentityDoesNotConsumeOldPreparation() async {
+        let started = expectation(description: "Old preparation started")
+        let gate = Gate()
+        let calls = Calls()
+        let oldTitle = title(1)
+        let freshTitle = title(0)
+        let copy = native(0)
+        let store = RelatedTitlesStore(directory: nil)
+        let loader = RelatedTitlesLoader(
+            resolver: .init(providers: [CallbackTitles {
+                if await calls.beginAttempt() == 1 {
+                    started.fulfill()
+                    await gate.wait()
+                    return [oldTitle]
+                }
+                return [freshTitle]
+            }]),
+            store: store, search: { _, _ in [copy] }
+        )
+        loader.prepareRecommendations(for: seed)
+        await fulfillment(of: [started], timeout: 2)
+        var freshSeed = seed
+        freshSeed.providerIDs["Tmdb"] = "777"
+        await loader.load(for: freshSeed)
+        await gate.open()
+        XCTAssertEqual(loader.entries.map(\.item), [copy])
+        let attempts = await calls.attempts
+        XCTAssertEqual(attempts, 2)
+        let cached = await store.record(for: MetadataQuery(seed).seriesScoped.enrichmentCacheKey)
+        XCTAssertNil(cached)
+    }
+
     private struct Titles: RelatedTitlesProviding {
         let id: MetadataSource = .tmdb
         let isEnabled = true
@@ -311,11 +522,21 @@ final class RelatedTitlesLoaderTests: XCTestCase {
     private actor Calls {
         var fetched: [String] = []
         var searched: [String] = []
+        var batches: [String: [[String]]] = [:]
         var active = 0
         var peak = 0
         var attempts = 0
         func search(_ query: String) { searched.append(query) }
         func beginAttempt() -> Int { attempts += 1; return attempts }
+        func batch(_ account: String, ids: [String], items: [MediaItem]) async -> [MediaItem] {
+            batches[account, default: []].append(ids)
+            active += 1
+            peak = max(peak, active)
+            defer { active -= 1 }
+            do { try await Task.sleep(for: .milliseconds(5)) }
+            catch { return [] }
+            return items.reversed().filter { $0.sourceAccountID == account && ids.contains($0.id) }
+        }
         func fetch(_ source: MediaSourceRef, from items: [MediaItem]) async -> MediaItem? {
             fetched.append(source.itemID)
             active += 1

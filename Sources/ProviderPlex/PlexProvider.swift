@@ -7,7 +7,7 @@ import CoreNetworking
 /// Holds an authenticated `PlexClient` and maps Plex `Metadata`/`Directory`
 /// onto the provider-agnostic `CoreModels` types. Feature modules depend only on
 /// `MediaProvider`; this is the single place Plex specifics live.
-public struct PlexProvider: MediaProvider, AuthenticatedHTTPOriginProviding, ServerAddressUpdating {
+public struct PlexProvider: LibraryItemBatchProviding, AuthenticatedHTTPOriginProviding, ServerAddressUpdating {
     public let kind: ProviderKind = .plex
     public let session: UserSession
     public let accountID: String
@@ -657,6 +657,24 @@ public struct PlexProvider: MediaProvider, AuthenticatedHTTPOriginProviding, Ser
         let t = (title ?? "").lowercased()
         let titlePhrases = ["continue watching", "keep watching", "on deck", "recently added"]
         return titlePhrases.contains { t.contains($0) }
+    }
+
+    public func libraryItems(ids: [String]) async throws -> [MediaItem] {
+        try Task.checkCancellation()
+        let requested = Set(ids)
+        guard !requested.isEmpty else { return [] }
+        guard requested.count <= 50,
+              requested.allSatisfy({ !$0.isEmpty && $0.utf8.allSatisfy { (48...57).contains($0) } })
+        else { throw AppError.invalidResponse }
+        let metadata = try await client.metadata(ratingKeys: requested.sorted())
+        try Task.checkCancellation()
+        var seen = Set<String>()
+        for record in metadata {
+            guard let id = record.ratingKey, requested.contains(id), seen.insert(id).inserted else {
+                throw AppError.invalidResponse
+            }
+        }
+        return await stampExtras(metadata.map { map(metadata: $0) })
     }
 
     public func item(id: String) async throws -> MediaItem {

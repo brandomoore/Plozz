@@ -29,8 +29,105 @@ private actor RelatedSearchAttempts {
     func next() -> Int { count += 1; return count }
 }
 
+private struct DetailRecommendations: RelatedTitlesProviding {
+    let id: MetadataSource = .tmdb
+    let isEnabled = true
+    let operation: @Sendable () async -> [RelatedTitle]
+    func relatedTitles(for query: MetadataQuery, limit: Int) async -> [RelatedTitle] { await operation() }
+}
+
 @MainActor
 final class ItemDetailViewModelTests: XCTestCase {
+    func testRecommendationsOverlapPrimaryDetailWithoutStartingLibrarySearches() async {
+        let primaryStarted = expectation(description: "Primary request started")
+        let recommendationsStarted = expectation(description: "Recommendations started before primary completes")
+        let searched = expectation(description: "Library search after primary completes")
+        let release = AsyncGate()
+        let seed = MediaItem(id: "seed", title: "Seed", kind: .movie, providerIDs: ["Tmdb": "999"])
+        let copy = MediaItem(id: "copy", title: "Related", kind: .movie, providerIDs: ["Tmdb": "1"])
+        let searchStarted = LockedFlag()
+        let provider = FakeMediaProvider(allItems: [seed])
+        provider.itemGate = [seed.id: { primaryStarted.fulfill(); await release.wait() }]
+        let loader = RelatedTitlesLoader(
+            resolver: .init(providers: [DetailRecommendations {
+                recommendationsStarted.fulfill()
+                return [.init(title: "Related", kind: .movie, providerIDs: ["Tmdb": "1"], source: .tmdb)]
+            }]),
+            store: RelatedTitlesStore(directory: nil), search: { _, _ in
+                searchStarted.set(); searched.fulfill(); return [copy]
+            }
+        )
+        let vm = ItemDetailViewModel(
+            provider: provider, itemID: seed.id, initialItem: seed,
+            onlineTrailerResolver: { _ in [] }, relatedTitlesLoader: loader
+        )
+        defer { vm.suspendEnrichment() }
+        let task = Task { await vm.load() }
+        await fulfillment(of: [primaryStarted, recommendationsStarted], timeout: 2)
+        let searchedEarly = searchStarted.value
+        let entriesEarly = loader.entries
+        release.open()
+        await task.value
+        await fulfillment(of: [searched], timeout: 2)
+        XCTAssertFalse(searchedEarly)
+        XCTAssertTrue(entriesEarly.isEmpty)
+    }
+
+    func testRelatedDoesNotWaitForSeriesChildren() async {
+        let childrenStarted = expectation(description: "Children request started")
+        let relatedStarted = expectation(description: "Related resolves while children are pending")
+        let release = AsyncGate()
+        let seed = MediaItem(id: "series", title: "Series", kind: .series, providerIDs: ["Tmdb": "999"])
+        let provider = FakeMediaProvider(allItems: [seed])
+        provider.childrenByParent = [seed.id: []]
+        provider.childrenGate = [seed.id: { _ in childrenStarted.fulfill(); await release.wait() }]
+        let loader = RelatedTitlesLoader(
+            resolver: .init(providers: [DetailRecommendations {
+                [.init(title: "Related", kind: .series, providerIDs: ["Tmdb": "1"], source: .tmdb)]
+            }]),
+            store: RelatedTitlesStore(directory: nil), search: { _, _ in relatedStarted.fulfill(); return [] }
+        )
+        let vm = ItemDetailViewModel(
+            provider: provider, itemID: seed.id, initialItem: seed,
+            onlineTrailerResolver: { _ in [] }, relatedTitlesLoader: loader
+        )
+        defer { vm.suspendEnrichment() }
+        let task = Task { await vm.load() }
+        await fulfillment(of: [childrenStarted, relatedStarted], timeout: 2)
+        let childrenLoadedEarly = vm.state.value?.childrenLoaded
+        release.open()
+        await task.value
+        XCTAssertEqual(childrenLoadedEarly, false)
+        XCTAssertEqual(vm.state.value?.childrenLoaded, true)
+    }
+
+    func testFailedPrimaryDetailCancelsUnconsumedRecommendations() async {
+        let started = AsyncGate()
+        let cancelled = expectation(description: "Preparation cancelled after primary failure")
+        let seed = MediaItem(id: "missing", title: "Missing", kind: .movie, providerIDs: ["Tmdb": "999"])
+        let provider = FakeMediaProvider(allItems: [])
+        provider.itemGate = [seed.id: { await started.wait() }]
+        let loader = RelatedTitlesLoader(
+            resolver: .init(providers: [DetailRecommendations {
+                started.open()
+                do { try await Task.sleep(for: .seconds(30)) }
+                catch { cancelled.fulfill() }
+                return []
+            }]),
+            store: RelatedTitlesStore(directory: nil),
+            search: { _, _ in XCTFail("No library work after primary failure"); return [] }
+        )
+        let vm = ItemDetailViewModel(
+            provider: provider, itemID: seed.id, initialItem: seed,
+            onlineTrailerResolver: { _ in [] }, relatedTitlesLoader: loader
+        )
+        defer { vm.suspendEnrichment() }
+        await vm.load()
+        await fulfillment(of: [cancelled], timeout: 2)
+        XCTAssertFalse(loader.hasResolved)
+        XCTAssertTrue(loader.entries.isEmpty)
+    }
+
     func testLeavingAndReturningDetailCancelsAndResumesRelatedSearches() async throws {
         let started = expectation(description: "Related search started")
         let cancelled = expectation(description: "Related search cancelled")

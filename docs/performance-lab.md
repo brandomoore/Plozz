@@ -168,6 +168,63 @@ Baseline/candidate evidence remains under `.build/performance/runs/`:
 `b9a4f350fa804859a59039e8b7ec0025`, and `1a4a5d0b743c4a7495f654774a9b50cc`,
 respectively.
 
+#### Account-batched follow-up
+
+The current fixture adds production runtime batching, overlapping native IDs,
+`related-mixed-servers-scroll` (two Plex accounts, Jellyfin, Emby, Silo and a
+share), and `related-detail-open-scroll` (the production detail model, a 250-ms
+primary request, and 350-ms cold recommendations). The cached/cold pair now uses
+Plex/Jellyfin batch-capable fixtures. Silo/share fixtures deliberately do not
+advertise batching. These revised workloads have their own frozen baselines;
+do not compare their CPU costs directly with the earlier fixture.
+
+The complete-row medians below compare the preceding individual-fetch loader
+with account batching and earlier public recommendation preparation:
+
+| Simulator | Cached before / after | Cold before / after | Seeded detail open before / after |
+| --- | ---: | ---: | ---: |
+| iPad | 101 / 56 ms | 454 / 415 ms | 709 / 418 ms |
+| iPhone | 95 / 55 ms | 458 / 410 ms | 706 / 411 ms |
+| Apple TV | 1,487 / 1,474 ms | 1,538 / 1,511 ms | 1,904 / 1,507 ms |
+
+Two-account library requests fell from twelve individual reads to two batches;
+peak native concurrency fell from six to two. The six-account mixed case fell
+from twelve to eight requests (four batches plus four individual reads), retained
+the six-request concurrency bound, and preserved all twelve account-qualified
+native cards. Its complete-row latency stayed essentially unchanged: iPad
+100 / 102 ms, iPhone 96 / 101 ms, TV 1,498 / 1,470 ms. Non-batch servers still
+need bounded individual requests; fewer total requests does not guarantee a
+faster final card.
+
+The final generic comparison was within budget on TV, inconclusive on iPad,
+and flagged iPhone detail-open CPU (128 / 173 ms). A retained repeat of the
+unchanged iPhone candidate did not reproduce that regression (90 ms), but its
+cached CPU comparison remained inconclusive. Shared-host load and scroll-window
+CPU varied substantially: final detail-open scroll CPU was iPad 144 / 187 ms,
+iPhone 116 / 159 ms (80 ms on repeat), and TV 263 / 222 ms. Consequently these
+results establish request reduction and controlled row-latency improvement,
+not zero scrolling overhead. TV's roughly 720-ms main-actor wake-up gaps remain.
+No physical-device smoothness or live-server latency claim is made.
+
+Separately, a bounded read-only check on real Plex, Jellyfin and Emby servers
+compared each batch response with individual reads of three movies and three
+series per provider. All eighteen cards retained the same native identity,
+title, artwork, provider IDs and watch state. This verifies endpoint semantics,
+not live app rendering or production latency; no watch-history changes were made.
+
+All comparisons accepted identical environment, scenario and whole-test
+fingerprints; additional correctness tests and a source-switch cancellation
+ownership guard were added afterward. Baseline /
+final candidate run IDs are `42f5249893bd44fe87b730309d848452` /
+`ef1238885910427eb0b15bb3273cd416` (iPad),
+`efd5989f1b2447068161417060bfcede` /
+`f661eb5c88ea42499ae92514550e4110` (iPhone), and
+`c6c383ff3dba4944b66e2c676aa19341` /
+`15f61ec030f74145aa37ca43319164f7` (TV). The iPhone confirmation is
+`626580e31db64328ba12f35c594410c0`. Initial candidates and all comparison verdicts
+are retained under `.build/performance/`; no failed/inconclusive comparison was
+discarded or overridden.
+
 ### Song recognition
 
 `song-recognition-disabled`, `song-recognition-tap-only`, and

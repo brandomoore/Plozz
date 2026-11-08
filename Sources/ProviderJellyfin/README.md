@@ -68,6 +68,13 @@ supported capability remains at parity.
 
 ## Home browsing
 
+Exact-ID Related card reads use `LibraryItemBatchProviding` on both Jellyfin and
+Emby. Each bounded batch uses the authenticated viewer's Items endpoint, includes
+provider identity, images and user data, and rejects duplicate or unrequested
+records. It does not call PlaybackInfo or request media-source inventory. Missing
+records remain missing so the shared loader can retry/search without inventing
+ownership.
+
 Movie and series `Thumb` images populate the shared `landscapeCard` artwork
 placement, independently of Home/detail backdrop ordering. The same mapping
 applies to Emby. Only advertised images are used; episode thumbnails keep their

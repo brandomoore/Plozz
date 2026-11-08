@@ -330,6 +330,7 @@ private struct PlozziOSCanonicalItemDetailView: View {
                             search: search,
                             indexedLibrarySources: identitySources,
                             loadIndexedItem: relatedTitleLibraryItemLoader(in: accounts),
+                            loadIndexedBatches: relatedTitleLibraryBatchLoaders(in: accounts),
                             displayMode: DetailOpenEnvironment.relatedTitlesDisplayMode(
                                 isDiscoveryItem: isDiscoveryItem
                             )

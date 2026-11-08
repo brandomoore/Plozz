@@ -7,7 +7,7 @@ import CoreNetworking
 /// Holds an authenticated `JellyfinClient` and maps Jellyfin DTOs onto the
 /// provider-agnostic `CoreModels` types. Feature modules depend only on
 /// `MediaProvider`; this is the single place Jellyfin specifics live.
-public struct JellyfinProvider: MediaProvider, ServerRatingsProviding, SeriesResumeProviding, SeriesIdentityProviding, AuthenticatedHTTPOriginProviding, ServerAddressUpdating {
+public struct JellyfinProvider: LibraryItemBatchProviding, ServerRatingsProviding, SeriesResumeProviding, SeriesIdentityProviding, AuthenticatedHTTPOriginProviding, ServerAddressUpdating {
     public var playbackInventoryRequiresEnrichment: Bool { true }
 
     public let kind: ProviderKind
@@ -684,6 +684,12 @@ public struct JellyfinProvider: MediaProvider, ServerRatingsProviding, SeriesRes
             }
         }
         return Array(result.prefix(limit))
+    }
+
+    public func libraryItems(ids: [String]) async throws -> [MediaItem] {
+        let items = try await client.libraryItems(userID: session.userID, ids: ids)
+        try Task.checkCancellation()
+        return items.map { map(item: $0) }
     }
 
     public func item(id: String) async throws -> MediaItem {

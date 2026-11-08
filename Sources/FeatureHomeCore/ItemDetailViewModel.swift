@@ -781,6 +781,13 @@ public final class ItemDetailViewModel {
 
         // Cold open (no seeded hero) shows a spinner immediately instead of blank.
         if state.value == nil { state = .loading }
+        if let seed = state.value?.item {
+            relatedTitlesLoader?.prepareRecommendations(for: seed)
+        }
+        var startedRelated = false
+        defer {
+            if !startedRelated, isCurrent() { relatedTitlesLoader?.cancelRecommendationPreparation() }
+        }
         do {
             let fetched = try await loadProvider.item(id: loadItemID)
             guard !Task.isCancelled, isCurrent() else { return }
@@ -853,6 +860,8 @@ public final class ItemDetailViewModel {
                 // await — so navigating away cancels it instead of letting the
                 // multi-server search fan-out starve the next page's `provider.item`.
                 startSpeculativeEnrichment(for: item)
+                loadRelatedTitles(for: taggedItem)
+                startedRelated = true
                 // Publish seasons and resume independently. Explicit episode/season
                 // entries can browse immediately; SeriesEpisodeEntry owns the
                 // resume gate for entries without an explicit selection.
@@ -873,7 +882,6 @@ public final class ItemDetailViewModel {
                 // and must never hold up the page. Cache read first (instant), then
                 // a background refresh that repaints only if it finds something new.
                 loadUpcomingSchedule(for: taggedItem)
-                loadRelatedTitles(for: taggedItem)
                 persistSnapshot()
                 await resumeTask
                 guard !Task.isCancelled, isCurrent() else { return }
@@ -911,6 +919,7 @@ public final class ItemDetailViewModel {
                 // branch above, so the row simply never loaded on a movie page —
                 // it looked like a matching failure and was a missing call.
                 loadRelatedTitles(for: taggedItem)
+                startedRelated = true
                 await runTrailersAndRatings(
                     for: item,
                     children: [],
@@ -2119,8 +2128,10 @@ public final class ItemDetailViewModel {
     /// cancels indexed lookups and fallback searches.
     private func loadRelatedTitles(for item: MediaItem) {
         guard let relatedTitlesLoader else { return }
-        relatedTitlesTask?.cancel()
-        relatedTitlesLoader.cancel()
+        if relatedTitlesTask != nil {
+            relatedTitlesTask?.cancel()
+            relatedTitlesLoader.cancel()
+        }
         relatedTitlesItem = item
         let mode = DetailOpenEnvironment.relatedTitlesDisplayMode(isDiscoveryItem: isDiscoveryItem)
         relatedTitlesTask = Task { [weak self] in

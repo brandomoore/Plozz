@@ -159,3 +159,51 @@ public func relatedTitleLibraryItemLoader(
         return item
     }
 }
+
+/// Only batch-capable active accounts appear here. Other providers keep the
+/// individual lookup path; provider kinds and raw item IDs are not account keys.
+public func relatedTitleLibraryBatchLoaders(
+    in accounts: [ResolvedAccount]
+) -> [String: @Sendable ([String]) async -> [MediaItem]] {
+    var loaders: [String: @Sendable ([String]) async -> [MediaItem]] = [:]
+    for account in accounts {
+        guard let provider = account.provider as? any LibraryItemBatchProviding else { continue }
+        let accountID = account.account.id
+        loaders[accountID] = { ids in
+            guard !Task.isCancelled, !ids.isEmpty else { return [] }
+            let lookup = Task<[MediaItem], Never> {
+                do {
+                    try Task.checkCancellation()
+                    let items = try await provider.libraryItems(ids: ids)
+                    try Task.checkCancellation()
+                    let requested = Set(ids)
+                    guard items.allSatisfy({ requested.contains($0.id) }),
+                          Set(items.map(\.id)).count == items.count else {
+                        throw AppError.invalidResponse
+                    }
+                    return items.map { $0.taggingSource(accountID) }
+                } catch {
+                    if !Task.isCancelled, !(error is CancellationError), (error as? AppError) != .cancelled {
+                        PlozzLog.app.error("Related: indexed batch failed; falling back to individual lookups.")
+                    }
+                    return []
+                }
+            }
+            let timeout = DispatchWorkItem { lookup.cancel() }
+            DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 4, execute: timeout)
+            let items = await withTaskCancellationHandler {
+                await lookup.value
+            } onCancel: {
+                lookup.cancel()
+            }
+            timeout.cancel()
+            guard !Task.isCancelled else { return [] }
+            if lookup.isCancelled {
+                PlozzLog.app.error("Related: indexed batch timed out; falling back to individual lookups.")
+                return []
+            }
+            return items
+        }
+    }
+    return loaders
+}

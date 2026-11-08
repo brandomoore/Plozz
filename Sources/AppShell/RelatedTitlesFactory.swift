@@ -21,6 +21,7 @@ func makeRelatedTitlesLoader(
         search: search,
         indexedLibrarySources: identitySources,
         loadIndexedItem: relatedTitleLibraryItemLoader(in: accounts),
+        loadIndexedBatches: relatedTitleLibraryBatchLoaders(in: accounts),
         displayMode: displayMode
     )
 }

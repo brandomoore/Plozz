@@ -69,10 +69,13 @@ public final class RelatedTitlesLoader {
     // or persist identity records.
     private let indexedLibrarySources: @Sendable (MediaItem) -> [MediaSourceRef]
     private let loadIndexedItem: (@Sendable (MediaSourceRef) async -> MediaItem?)?
+    private let loadIndexedBatches: [String: @Sendable ([String]) async -> [MediaItem]]
     private let now: @Sendable () -> Date
     private let displayMode: DisplayMode
     private var loadedSeedKey: String?
     private var activeLoadID: UUID?
+    @ObservationIgnored private nonisolated(unsafe) var preparedRecommendations:
+        (key: String, task: Task<[RelatedTitle], Never>)?
 
     public init(
         resolver: RelatedTitlesResolver,
@@ -80,6 +83,7 @@ public final class RelatedTitlesLoader {
         search: @escaping @Sendable (String, Int) async -> [MediaItem],
         indexedLibrarySources: @escaping @Sendable (MediaItem) -> [MediaSourceRef] = { _ in [] },
         loadIndexedItem: (@Sendable (MediaSourceRef) async -> MediaItem?)? = nil,
+        loadIndexedBatches: [String: @Sendable ([String]) async -> [MediaItem]] = [:],
         displayMode: DisplayMode = .libraryOnly,
         now: @escaping @Sendable () -> Date = Date.init
     ) {
@@ -88,8 +92,35 @@ public final class RelatedTitlesLoader {
         self.search = search
         self.indexedLibrarySources = indexedLibrarySources
         self.loadIndexedItem = loadIndexedItem
+        self.loadIndexedBatches = loadIndexedBatches
         self.displayMode = displayMode
         self.now = now
+    }
+
+    deinit {
+        preparedRecommendations?.task.cancel()
+    }
+
+    /// Prepares only public recommendations while the primary detail loads.
+    /// Native library requests and row publication still wait for fresh detail.
+    public func prepareRecommendations(for item: MediaItem) {
+        guard !Task.isCancelled, item.allowsTitleBasedMetadataMatching,
+              item.kind == .movie || item.kind == .series else { return }
+        let query = MetadataQuery(item).seriesScoped
+        let key = query.enrichmentCacheKey
+        guard preparedRecommendations?.key != key else { return }
+        cancelRecommendationPreparation()
+        let resolver = self.resolver
+        let store = self.store
+        let now = self.now
+        preparedRecommendations = (key, Task {
+            await Self.resolveTitles(for: query, key: key, resolver: resolver, store: store, now: now)
+        })
+    }
+
+    public func cancelRecommendationPreparation() {
+        preparedRecommendations?.task.cancel()
+        preparedRecommendations = nil
     }
 
     /// Loads the row for `item`, cache-first.
@@ -99,6 +130,7 @@ public final class RelatedTitlesLoader {
     public func load(for item: MediaItem, displayMode override: DisplayMode? = nil) async {
         guard !Task.isCancelled else { return }
         guard item.allowsTitleBasedMetadataMatching else {
+            cancelRecommendationPreparation()
             activeLoadID = nil
             loadedSeedKey = nil
             entries = []
@@ -110,7 +142,10 @@ public final class RelatedTitlesLoader {
         let query = MetadataQuery(item).seriesScoped
         let seedKey = query.enrichmentCacheKey
         let key = "\(seedKey)#\(mode == .libraryOnly ? "library" : "external")"
-        guard loadedSeedKey != key else { return }
+        guard loadedSeedKey != key else {
+            cancelRecommendationPreparation()
+            return
+        }
         let loadID = UUID()
         activeLoadID = loadID
         loadedSeedKey = key
@@ -159,6 +194,7 @@ public final class RelatedTitlesLoader {
     /// The owner cancels its task and invalidates publication before a page can
     /// resume the same seed. A late response from the old attempt cannot win.
     public func cancel() {
+        cancelRecommendationPreparation()
         guard isLoading else { return }
         activeLoadID = nil
         loadedSeedKey = nil
@@ -202,9 +238,27 @@ public final class RelatedTitlesLoader {
     }
 
     private func resolvedTitles(for query: MetadataQuery, key: String) async -> [RelatedTitle] {
+        if let prepared = preparedRecommendations, prepared.key == key {
+            preparedRecommendations = nil
+            return await withTaskCancellationHandler {
+                await prepared.task.value
+            } onCancel: {
+                prepared.task.cancel()
+            }
+        }
+        cancelRecommendationPreparation()
+        return await Self.resolveTitles(for: query, key: key, resolver: resolver, store: store, now: now)
+    }
+
+    private nonisolated static func resolveTitles(
+        for query: MetadataQuery, key: String, resolver: RelatedTitlesResolver,
+        store: RelatedTitlesStore, now: @Sendable () -> Date
+    ) async -> [RelatedTitle] {
+        guard !Task.isCancelled else { return [] }
         if let cached = await store.record(for: key), !cached.isRefreshDue(now: now()) {
             return cached.titles
         }
+        guard !Task.isCancelled else { return [] }
         let resolved = await resolver.relatedTitles(for: query)
         guard !Task.isCancelled else { return [] }
         // An empty answer is cached too, so a title no provider covers doesn't
@@ -221,8 +275,14 @@ public final class RelatedTitlesLoader {
     ) async {
         let search = self.search
         let loadIndexedItem = self.loadIndexedItem
+        let loadIndexedBatches = self.loadIndexedBatches
         let capabilities = MediaCapabilities.detected()
         let ordered = Array(titles.prefix(Self.maximumLookups))
+        let sources = ordered.map { related -> MediaSourceRef? in
+            guard loadIndexedItem != nil || !loadIndexedBatches.isEmpty,
+                  let item = indexedLibraryItem(for: related, capabilities: capabilities) else { return nil }
+            return item.sources.first { $0.accountID == item.sourceAccountID && $0.itemID == item.id }
+        }
         var matched: [Int: MediaItem] = [:]
         let clock = ContinuousClock()
         var lastPublish = clock.now
@@ -245,63 +305,125 @@ public final class RelatedTitlesLoader {
             return (result, lastIndex)
         }
 
-        await withTaskGroup(of: (Int, MediaItem?).self) { group in
-            var next = 0
+        await withTaskGroup(of: LibraryLookupResult.self) { group in
+            var remaining = Array(ordered.indices)
+            var retries: [Int] = []
             var pending = Set<Int>()
             var indexedPending = Set<Int>()
-            @MainActor func addTask(_ index: Int) {
+            var activeTasks = 0
+
+            @MainActor func addSingle(_ index: Int) {
                 let related = ordered[index]
-                let indexed = loadIndexedItem == nil ? nil
-                    : indexedLibraryItem(for: related, capabilities: capabilities)
-                let source = indexed.flatMap { item in
-                    item.sources.first { $0.accountID == item.sourceAccountID && $0.itemID == item.id }
-                }
+                let source = sources[index]
                 group.addTask {
-                    guard !Task.isCancelled else { return (index, nil) }
+                    var result = LibraryLookupResult(indices: [index])
+                    guard !Task.isCancelled else { return result }
                     if let source, let loadIndexedItem {
                         let native = await loadIndexedItem(source)
-                        guard !Task.isCancelled else { return (index, nil) }
-                        if let native {
-                            let expected = RelatedEntry(related: related, libraryItem: nil).item
-                            if native.id == source.itemID,
-                               native.sourceAccountID == source.accountID,
-                               native.locallyValidatedPlayableSource,
-                               HeroDiscoveryIdentityVerification.matches(expected, native) {
-                                return (index, native)
-                            }
-                            PlozzLog.app.error("Related: stale or unverified indexed copy; falling back to library search.")
+                        guard !Task.isCancelled else { return result }
+                        if let native = Self.validatedNativeItem(native, for: related, source: source) {
+                            result.items[index] = native
+                            return result
                         }
                     }
                     for query in RelatedTitleMatcher.searchQueries(for: related) {
-                        guard !Task.isCancelled else { return (index, nil) }
+                        guard !Task.isCancelled else { return result }
                         let hits = await search(query, Self.searchLimit)
-                        guard !Task.isCancelled else { return (index, nil) }
+                        guard !Task.isCancelled else { return result }
                         if let hit = RelatedTitleMatcher.match(related, in: hits) {
-                            return (index, hit)
+                            result.items[index] = hit
+                            return result
                         }
                     }
-                    return (index, nil)
+                    return result
                 }
+                activeTasks += 1
                 pending.insert(index)
                 if source != nil { indexedPending.insert(index) }
             }
-            while next < min(Self.concurrentLookups, ordered.count) {
-                addTask(next)
-                next += 1
+
+            @MainActor func schedule(_ resolved: (entries: [RelatedEntry], lastIndex: Int?)) {
+                while activeTasks < Self.concurrentLookups {
+                    if !retries.isEmpty {
+                        addSingle(retries.removeFirst())
+                        continue
+                    }
+                    guard let next = remaining.first else { break }
+                    let capacity = Self.maximumEntries - resolved.entries.count - indexedPending.count
+                    let earlier = resolved.lastIndex.map { next < $0 } ?? false
+                    guard capacity > 0 || earlier else { break }
+                    if let source = sources[next], let fetch = loadIndexedBatches[source.accountID] {
+                        // Only the next potential row participates. Do not fetch
+                        // distant recommendations merely because they share a server.
+                        let indices = remaining.prefix(max(1, capacity)).filter {
+                            sources[$0]?.accountID == source.accountID
+                        }
+                        let selected = Set(indices)
+                        remaining.removeAll { selected.contains($0) }
+                        pending.formUnion(selected)
+                        indexedPending.formUnion(selected)
+                        activeTasks += 1
+                        group.addTask {
+                            var result = LibraryLookupResult(indices: indices)
+                            guard !Task.isCancelled else { return result }
+                            let ids = Array(Set(indices.compactMap { sources[$0]?.itemID })).sorted()
+                            let items = await fetch(ids)
+                            guard !Task.isCancelled else { return result }
+                            for index in indices {
+                                guard let source = sources[index] else { continue }
+                                let item = items.first { $0.id == source.itemID }
+                                if let native = Self.validatedNativeItem(item, for: ordered[index], source: source) {
+                                    result.items[index] = native
+                                } else {
+                                    result.retries.append(index)
+                                }
+                            }
+                            return result
+                        }
+                    } else {
+                        remaining.removeFirst()
+                        addSingle(next)
+                    }
+                }
             }
-            for await (index, hit) in group {
-                pending.remove(index)
-                indexedPending.remove(index)
+            schedule(([], nil))
+            func schedulePublication() {
+                group.addTask {
+                    do { try await Task.sleep(for: Self.publishInterval) }
+                    catch { return LibraryLookupResult(indices: [], isPublicationTick: true) }
+                    return LibraryLookupResult(indices: [], isPublicationTick: true)
+                }
+            }
+            if activeTasks > 0 { schedulePublication() }
+            for await result in group {
+                if result.isPublicationTick {
+                    guard !Task.isCancelled, activeLoadID == loadID, activeTasks > 0 else {
+                        group.cancelAll()
+                        return
+                    }
+                    let batch = resolvedEntries().entries
+                    if entries != batch { entries = batch }
+                    lastPublish = clock.now
+                    schedulePublication()
+                    continue
+                }
+                activeTasks -= 1
+                pending.subtract(result.indices)
+                indexedPending.subtract(result.indices)
                 guard !Task.isCancelled, activeLoadID == loadID else {
                     group.cancelAll()
                     return
                 }
-                if let hit { matched[index] = hit }
+                matched.merge(result.items, uniquingKeysWith: { _, fresh in fresh })
+                retries.append(contentsOf: result.retries)
+                retries.sort()
                 let resolved = resolvedEntries()
                 let batch = resolved.entries
                 let full = batch.count == Self.maximumEntries
                 if full, let lastIndex = resolved.lastIndex,
-                   !pending.contains(where: { $0 < lastIndex }) {
+                   !pending.contains(where: { $0 < lastIndex }),
+                   !retries.contains(where: { $0 < lastIndex }),
+                   !remaining.contains(where: { $0 < lastIndex }) {
                     if entries != batch { entries = batch }
                     group.cancelAll()
                     return
@@ -309,10 +431,11 @@ public final class RelatedTitlesLoader {
                 // Known copies reserve slots to avoid speculative tail searches.
                 // Unknown candidates keep bounded lookahead: a slow search must
                 // not prevent faster later matches from filling the row.
-                while next < ordered.count, pending.count < Self.concurrentLookups,
-                      batch.count + indexedPending.count < Self.maximumEntries {
-                    addTask(next)
-                    next += 1
+                schedule(resolved)
+                if activeTasks == 0 {
+                    if entries != batch { entries = batch }
+                    group.cancelAll()
+                    return
                 }
                 let now = clock.now
                 // Fast index-backed rows publish together as soon as complete.
@@ -324,6 +447,27 @@ public final class RelatedTitlesLoader {
                 if entries != batch { entries = batch }
             }
         }
+    }
+
+    private struct LibraryLookupResult: Sendable {
+        let indices: [Int]
+        var isPublicationTick = false
+        var items: [Int: MediaItem] = [:]
+        var retries: [Int] = []
+    }
+
+    private nonisolated static func validatedNativeItem(
+        _ item: MediaItem?, for related: RelatedTitle, source: MediaSourceRef
+    ) -> MediaItem? {
+        guard let item else { return nil }
+        let expected = RelatedEntry(related: related, libraryItem: nil).item
+        guard item.id == source.itemID, item.sourceAccountID == source.accountID,
+              item.locallyValidatedPlayableSource,
+              HeroDiscoveryIdentityVerification.matches(expected, item) else {
+            PlozzLog.app.error("Related: stale or unverified indexed copy; falling back to library search.")
+            return nil
+        }
+        return item
     }
 
     /// Maximum candidate budget, including indexed lookups and search fallbacks.
@@ -340,7 +484,7 @@ public final class RelatedTitlesLoader {
 
     /// The most entries the row will show, once matching has filtered the rest.
     static let maximumEntries = 12
-    /// Concurrent native lookups/searches, bounded for servers also streaming.
+    /// Concurrent batch/individual lookups and searches, bounded for busy servers.
     static let concurrentLookups = 6
     /// Hits per search: a handful is plenty to find an exact id match, and a large
     /// page costs the server real work.
