@@ -2,6 +2,28 @@
   "schemaVersion": 1,
   "releases": [
     {
+      "id": "release/071.4",
+      "version": "2026.11.8",
+      "marketingVersion": "2026.11.6",
+      "build": "71.4",
+      "releasedAt": "2026-11-08",
+      "sections": [
+        {
+          "category": "Fixed",
+          "items": [
+            {
+              "text": "Pinned sidebar blocking navigation into Live TV and Settings.",
+              "platforms": ["tvOS"]
+            },
+            {
+              "text": "Music playback skipping a newly selected song.",
+              "platforms": ["tvOS"]
+            }
+          ]
+        }
+      ]
+    },
+    {
       "id": "release/071.3",
       "version": "2026.11.8",
       "marketingVersion": "2026.11.6",
