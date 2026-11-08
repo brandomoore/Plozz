@@ -165,7 +165,7 @@ public struct PlozziOSRootView: View {
         }
     }
 
-    private var appContent: some View {
+    private var profileAccessContent: some View {
         appDownloadContent
         .plozzSheet(item: $providerSetupRouter.reauthenticationAccount) { account in
             PlozziOSAccountReauthenticationView(appModel: appModel, account: account)
@@ -217,6 +217,10 @@ public struct PlozziOSRootView: View {
         .onChange(of: appModel.pendingServersNeedingSetup.map(\.id)) { _, _ in
             considerColdLaunchDetection()
         }
+    }
+
+    private var setupPresentationContent: some View {
+        profileAccessContent
         .plozzFullScreenCover(isPresented: $showDetectedCover, onDismiss: {
             if detectedFollowUpReceive {
                 detectedFollowUpReceive = false
@@ -311,6 +315,10 @@ public struct PlozziOSRootView: View {
                 onCancel: { showingProfileSwitcher = false }
             )
         }
+    }
+
+    private var appContent: some View {
+        setupPresentationContent
         .environment(\.familyGuidanceProvider, appModel.familyGuidance)
         .detailPlaybackPreparationEnvironment(
             appModel.detailPlaybackPreparation,
