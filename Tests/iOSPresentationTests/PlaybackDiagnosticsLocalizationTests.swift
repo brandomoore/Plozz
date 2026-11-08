@@ -194,6 +194,37 @@ final class PlaybackDiagnosticsLocalizationTests: XCTestCase {
         XCTAssertFalse(text.contains("Plozzigen"), text)
     }
 
+    func testRealtimeStatisticsShareTheExistingPhoneAndTabletPanelWithoutNetworkClaims() throws {
+        var diagnostics = fixture(mode: .plozzigen)
+        diagnostics.observedBitrate = nil
+        diagnostics.audioDelivery = .bridged
+        diagnostics.engineStatistics = .init(
+            decoder: "AVPlayer", recentBitrate: 51_500_000, averageBitrate: 42_700_000,
+            audioBridgeBitrate: 7_400_000, delivery: .local, deliveryBitrate: 650_000_000,
+            deliveredBytes: 2_000_000_000, muxAVGapMilliseconds: -23.5,
+            sourceBytes: 3_000_000_000, producerRestarts: 0, muxedBytes: 2_500_000_000,
+            servedBytes: 2_000_000_000, serverRequests: 153, audioBridgeBytes: 1_048_576,
+            residentMemoryBytes: 700_000_000
+        )
+        for (width, size): (CGFloat, DynamicTypeSize) in [(390, .large), (844, .large), (390, .accessibility3)] {
+            let panel = PlaybackDiagnosticsOverlay(diagnostics: diagnostics, presentation: .mobile)
+            let text = try renderedText(
+                panel.mobileContent(width: width).frame(width: width)
+                    .environment(\.dynamicTypeSize, size)
+                    .fixedSize(horizontal: false, vertical: true),
+                locale: "en_US", scale: size.isAccessibilitySize ? 1 : 3
+            )
+            for token in ["Recent bitrate", "Average bitrate", "Bridge bitrate", "Local delivery",
+                          "Local transferred", "Read / muxed", "Local server", "Restarts", "Bridge buffer",
+                          "Resident memory", "Mux A/V gap", "Audio delivery", "Converted",
+                          "51.5", "42.7", "650.0", "7.4", "-23.5"] {
+                XCTAssertTrue(normalized(text).contains(normalized(token)), "Missing \(token): \(text)")
+            }
+            XCTAssertFalse(text.contains("Network throughput"), text)
+            XCTAssertFalse(text.contains("Source read rate"), text)
+        }
+    }
+
     func testPlaybackCacheShowsZeroUsageAndFormatsCountsInTheAppLocale() async throws {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
             .first { $0.activationState == .foregroundActive })
@@ -624,13 +655,13 @@ final class PlaybackDiagnosticsLocalizationTests: XCTestCase {
         return value
     }
 
-    private func renderedText(_ view: some View, locale: String) throws -> String {
+    private func renderedText(_ view: some View, locale: String, scale: CGFloat = 3) throws -> String {
         let renderer = ImageRenderer(content: view
             .environment(\.themePalette, .dark)
             .environment(\.locale, Locale(identifier: locale))
             .background(.black)
         )
-        renderer.scale = 3
+        renderer.scale = scale
         let image = try XCTUnwrap(renderer.cgImage)
         return try renderedText(image, locale: locale)
     }

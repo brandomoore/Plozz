@@ -301,6 +301,10 @@ glass. Reduced-transparency fallbacks remain available.
 Phone portrait keeps the existing bounded, compact vertical-list layout, with
 the same row height and natural content sizing as Chapters. Playback details
 and progress-only bars sit beside the small artwork rather than shrinking Home's overlays.
+The Continue Watching button label defines the whole rounded card's touch area,
+including artwork and padding, even with labels hidden or a borderless surface.
+The shared artwork renderer stays non-interactive; taps must not fall through
+to the player's background gesture surface.
 Home's Showcase background and absolute card sizing are not copied into playback.
 Narrow artwork keeps detailed playback indicators on one line. It uses the same
 fitting order as mobile Home: drop the play glyph, then the progress bar, before
@@ -1259,6 +1263,36 @@ server/network throughput, and encoded stream bitrate is not a network rate.
 The instance counter labels native adapters rather than claiming to count every
 AVPlayer hidden inside third-party engines. New stall records retain measured
 player/engine buffer context in the existing playback journal.
+
+The existing TV overlay and mobile sheet also expose the engine's cached 1 Hz
+statistics: recent (~10 seconds) and session-average **played audio + video**
+bitrate, audio-bridge output bitrate, active video decoder, transferred bytes,
+producer restarts, source/mux/server byte counters, bridge buffer, and resident
+memory. These reads add no network requests or second sampling loop. Missing
+measurements disappear rather than retaining a prior route's values or inventing
+zeroes. Real zero counters remain visible.
+
+The TV panel retains its existing background scrim and avoids live-video
+backdrop sampling. Its glass-like edge is a subtle one-point gradient highlight,
+not a full-panel blur or a bright opaque outline. The highlight stays visible
+around the whole perimeter, with only a slight top-to-bottom variation.
+
+**Audio delivery** maps the engine's typed outcome independently of its decoder
+label: stream copy, converted, decoded to PCM, player-managed, no source audio,
+or audio dropped. No source audio and a failed audio pipeline remain distinct.
+The value clears with the rest of the snapshot on teardown or route changes;
+an unknown outcome is omitted, never inferred from the source codec or receiver.
+
+**Local delivery** is the engine-to-AVPlayer link, never the media server's
+network speed. **Source read rate** measures transfers from the source,
+which can also be a local file. **Read / muxed** lists source bytes then
+mux output bytes; **Local server** lists served bytes and requests. **Mux A/V gap**
+is the producer's audio/video timestamp gap, not measured display/speaker lip sync.
+The remote-HLS bypass does not relabel declared playlist bandwidth as measured
+played bitrate. Native AVPlayer transfers, dropped frames, and stalls sum all
+access-log entries for the current item; the engine's session-wide dropped-frame
+counter takes precedence across its internal item replacements. Engine RSS and
+the app's physical memory footprint are distinct measurements.
 
 Playback diagnostics row labels use the shared app localization catalog on TV
 and mobile. Media filenames, server names, codec identifiers, and the HDR format

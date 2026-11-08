@@ -207,6 +207,7 @@ struct PresentationHostApp: App {
             _ application: UIApplication, supportedInterfaceOrientationsFor window: UIWindow?
         ) -> UIInterfaceOrientationMask {
             let arguments = ProcessInfo.processInfo.arguments
+            if arguments.contains("--continue-watching-player-fixture") { return .all }
             if arguments.contains("--disc-touch-fixture") { return .allButUpsideDown }
             if let index = arguments.firstIndex(of: "--disc-review-fixture"),
                arguments.indices.contains(index + 1),

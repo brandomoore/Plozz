@@ -147,6 +147,10 @@ public struct PlaybackDiagnostics: Equatable, Sendable {
     public var indicatedBitrate: Double?
     /// Bitrate actually *observed* over the network, in bits/sec.
     public var observedBitrate: Double?
+    /// AVPlayer access-log bytes for the current item, summed across its entries.
+    public var transferredBytes: Int64?
+    public var engineStatistics: EnginePlaybackStatistics?
+    public var audioDelivery: EngineAudioDelivery?
     public var videoCodec: String?
     /// Video codec profile, e.g. `Main 10`.
     public var videoProfile: String?
@@ -873,6 +877,30 @@ public extension PlaybackDiagnostics {
     var hdrText: String { hdr == .unknown ? Self.placeholder : hdr.displayName }
     var videoCodecText: String { videoCodec ?? Self.placeholder }
     var audioCodecText: String { audioCodec ?? Self.placeholder }
+    var audioDeliveryDescription: LocalizedStringResource? {
+        guard let delivery = audioDelivery else { return nil }
+        switch delivery {
+        case .noAudioInSource:
+            return .init("playback.diagnostics.audioDelivery.noAudio", defaultValue: "No audio in source",
+                         comment: "Playback diagnostics: the media contains no audio stream, not an engine failure.")
+        case .streamCopy:
+            return .init("playback.diagnostics.audioDelivery.streamCopy", defaultValue: "Stream copy",
+                         comment: "Playback diagnostics: the engine delivers compressed audio unchanged to the renderer. Does not claim receiver passthrough.")
+        case .bridged:
+            return .init("playback.diagnostics.audioDelivery.bridged", defaultValue: "Converted",
+                         comment: "Playback diagnostics: the engine decodes and re-encodes audio for playback. Does not specify whether conversion is lossless.")
+        case .decoded:
+            return .init("playback.diagnostics.audioDelivery.decoded", defaultValue: "Decoded to PCM",
+                         comment: "Playback diagnostics: the engine decodes audio to PCM and renders it itself.")
+        case .droppedNoPipeline:
+            return .init("playback.diagnostics.audioDelivery.dropped", defaultValue: "Audio dropped",
+                         comment: "Playback diagnostics: the source has audio but the engine could not deliver it; video plays silently. Distinct from a source with no audio.")
+        case .playerManaged:
+            return .init("playback.diagnostics.audioDelivery.playerManaged", defaultValue: "Player-managed",
+                         comment: "Playback diagnostics: AVFoundation manages audio; the engine does not classify its conversion or output.")
+        }
+    }
+
     /// Display-only interpretation of the active engine label, not source fidelity or receiver output.
     var audioEncodingDescription: LocalizedStringResource? {
         guard mode == .plozzigen, let pipeline = audioPipelineDescription else { return nil }
