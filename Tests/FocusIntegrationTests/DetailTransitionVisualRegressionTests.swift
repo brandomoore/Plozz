@@ -213,6 +213,14 @@ final class DetailTransitionVisualRegressionTests: XCTestCase {
     }
 
     func testFeaturedBrightPosterCornersStayCoveredAfterFocusExit() async throws {
+        try await assertBrightPosterCornersStayCovered(episodes: false)
+    }
+
+    func testEpisodeBrightArtworkCornersStayCoveredAfterFocusExit() async throws {
+        try await assertBrightPosterCornersStayCovered(episodes: true)
+    }
+
+    private func assertBrightPosterCornersStayCovered(episodes: Bool) async throws {
         let scene = try await activeScene()
         let artworks = [
             try await seedArtwork(color: .white),
@@ -222,17 +230,30 @@ final class DetailTransitionVisualRegressionTests: XCTestCase {
         let coordinator = FeaturedTrailerCoordinator()
         let host = HomeRowsFocusHost(rootView: AnyView(VStack {
             Button("Outside") {}.frame(height: 80)
-            FeaturedMediaRow(
-                title: Text("Featured"),
-                items: (0..<2).map {
-                    MediaItem(
-                        id: "bright-corners-\($0)", title: "White poster \($0)", kind: .movie,
-                        posterURL: artworks[$0], backdropURL: artworks[$0], allowsTitleBasedMetadataMatching: false
-                    )
-                },
-                scope: ObjectIdentifier(controller), coordinator: coordinator, controller: controller,
-                settings: .default, resolver: { _ in nil }, isActive: false, onSelect: { _ in }
-            )
+            if episodes {
+                HStack(spacing: 40) {
+                    ForEach(0..<2) { index in
+                        EpisodeColumnCard(item: MediaItem(
+                            id: "bright-episode-\(index)", title: "White episode \(index)", kind: .episode,
+                            runtime: 2_400, resumePosition: index == 0 ? nil : 1_200,
+                            posterURL: artworks[index], backdropURL: artworks[index],
+                            allowsTitleBasedMetadataMatching: false
+                        )) {}
+                    }
+                }
+            } else {
+                FeaturedMediaRow(
+                    title: Text("Featured"),
+                    items: (0..<2).map {
+                        MediaItem(
+                            id: "bright-corners-\($0)", title: "White poster \($0)", kind: .movie,
+                            posterURL: artworks[$0], backdropURL: artworks[$0], allowsTitleBasedMetadataMatching: false
+                        )
+                    },
+                    scope: ObjectIdentifier(controller), coordinator: coordinator, controller: controller,
+                    settings: .default, resolver: { _ in nil }, isActive: false, onSelect: { _ in }
+                )
+            }
         }
         .environment(\.plozzCardFocusStyle, .system)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -248,8 +269,8 @@ final class DetailTransitionVisualRegressionTests: XCTestCase {
             window.rootViewController = nil
             previous?.makeKeyAndVisible()
         }
-        try await waitUntil { self.focusTargets(in: window).filter { $0.frame.height > 300 }.count == 2 }
-        let posters = try focusTargets(in: window).filter { $0.frame.height > 300 }
+        try await waitUntil { self.focusTargets(in: window).filter { $0 is NativePosterButton }.count == 2 }
+        let posters = try focusTargets(in: window).filter { $0 is NativePosterButton }
             .map { try XCTUnwrap($0 as? NativePosterButton) }
         let outside = try XCTUnwrap(focusTargets(in: window).first { $0.frame.height < 150 })
         let system = try XCTUnwrap(UIFocusSystem.focusSystem(for: window))
@@ -262,7 +283,7 @@ final class DetailTransitionVisualRegressionTests: XCTestCase {
         func capture(_ name: String) -> UIImage {
             let image = renderedKeylineSnapshot(in: window)
             let attachment = XCTAttachment(image: image)
-            attachment.name = "Featured white corners \(name)"
+            attachment.name = "\(episodes ? "Episode" : "Featured") white corners \(name)"
             attachment.lifetime = .keepAlways
             add(attachment)
             return image
@@ -307,10 +328,11 @@ final class DetailTransitionVisualRegressionTests: XCTestCase {
                     (Int(frame.minY + 80) * image.width + Int(frame.midX)) * 4
                 ], 245, "The regression must render the seeded white artwork, not online fallback art.")
                 var excess = 0
-                for y in (Int(frame.maxY) - 28)..<Int(frame.maxY) {
+                let cornerWidth = episodes ? 16 : 28
+                for y in (Int(frame.maxY) - cornerWidth)..<Int(frame.maxY) {
                     let reference = Int(pixels[(y * image.width + Int(frame.midX)) * 4])
-                    for x in Array(Int(frame.minX)..<(Int(frame.minX) + 28))
-                        + Array((Int(frame.maxX) - 28)..<Int(frame.maxX)) {
+                    for x in Array(Int(frame.minX)..<(Int(frame.minX) + cornerWidth))
+                        + Array((Int(frame.maxX) - cornerWidth)..<Int(frame.maxX)) {
                         excess = max(excess, Int(pixels[(y * image.width + x) * 4]) - reference)
                     }
                 }

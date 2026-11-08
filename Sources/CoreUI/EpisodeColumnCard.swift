@@ -204,11 +204,11 @@ public struct EpisodeColumnCard: View, Equatable {
     }
 
     private var episodeOverlays: some View {
-        episodeOverlayContent
+        episodeOverlayContent()
             .overlay(alignment: .topTrailing) { statusIndicator }
     }
 
-    private var episodeOverlayContent: some View {
+    private func episodeOverlayContent(scrimOutset: CGFloat = 0) -> some View {
         ZStack {
             if presentation.isUpcoming, let air = item.upcomingReleaseText {
                 VStack(spacing: 8) {
@@ -229,7 +229,9 @@ public struct EpisodeColumnCard: View, Equatable {
                 .padding(.horizontal, 12)
             }
             if presentation.artworkTreatment != .blurred {
-                ResumeChipOverlay(item: item).plozzChromeFocused(isFocused)
+                ResumeChipOverlay(item: item)
+                    .extendingScrim(by: scrimOutset)
+                    .plozzChromeFocused(isFocused)
             }
         }
     }
@@ -248,8 +250,10 @@ public struct EpisodeColumnCard: View, Equatable {
             fallbackWidth: Self.artworkSize.width, title: nil, subtitle: nil,
             overlay: ZStack {
                 if captionsHidden && nativeArtwork.image == nil { neutralPlaceholder }
-                episodeOverlayContent
+                episodeOverlayContent(scrimOutset: 40)
             },
+            rasterizesOverlay: false,
+            clipsOverlayToArtwork: false,
             indicators: nativeStatusIndicator,
             focus: $isFocused, action: action
         )

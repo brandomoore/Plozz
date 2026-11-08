@@ -1237,6 +1237,10 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   remain anchored to the original artwork height, and artwork, video and
   metadata keep their original layout. Do not clip this overscan back to the
   overlay bounds; the native image surface supplies the final silhouette.
+  Detail-page episode cards use the same live, unclipped 40pt scrim overscan for
+  their runtime/progress chrome. The gradient stays anchored to the artwork,
+  without moving captions or changing card size; custom-focus and mobile cards
+  retain their existing clipped composition.
   See [Featured sections](../FeatureHome/README.md).
   Continue Watching
   keeps its established size, reflection, logo position and resume chrome without
