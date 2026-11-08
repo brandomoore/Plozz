@@ -197,6 +197,7 @@ final class PlaybackDiagnosticsLocalizationTests: XCTestCase {
     func testRealtimeStatisticsShareTheExistingPhoneAndTabletPanelWithoutNetworkClaims() throws {
         var diagnostics = fixture(mode: .plozzigen)
         diagnostics.observedBitrate = nil
+        diagnostics.audioDelivery = .bridged
         diagnostics.engineStatistics = .init(
             decoder: "AVPlayer", recentBitrate: 51_500_000, averageBitrate: 42_700_000,
             audioBridgeBitrate: 7_400_000, delivery: .local, deliveryBitrate: 650_000_000,
@@ -215,7 +216,8 @@ final class PlaybackDiagnosticsLocalizationTests: XCTestCase {
             )
             for token in ["Recent bitrate", "Average bitrate", "Bridge bitrate", "Local delivery",
                           "Local transferred", "Read / muxed", "Local server", "Restarts", "Bridge buffer",
-                          "Resident memory", "Mux A/V gap", "51.5", "42.7", "650.0", "7.4", "-23.5"] {
+                          "Resident memory", "Mux A/V gap", "Audio delivery", "Converted",
+                          "51.5", "42.7", "650.0", "7.4", "-23.5"] {
                 XCTAssertTrue(normalized(text).contains(normalized(token)), "Missing \(token): \(text)")
             }
             XCTAssertFalse(text.contains("Network throughput"), text)

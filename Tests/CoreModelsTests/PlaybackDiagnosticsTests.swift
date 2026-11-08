@@ -2,6 +2,27 @@ import XCTest
 @testable import CoreModels
 
 final class EnginePlaybackStatisticsTests: XCTestCase {
+    func testAudioDeliveryUsesTheReportedOutcomeRatherThanSourceOrPipelineLabels() {
+        let cases: [(EngineAudioDelivery, String)] = [
+            (.noAudioInSource, "No audio in source"), (.streamCopy, "Stream copy"),
+            (.bridged, "Converted"), (.decoded, "Decoded to PCM"),
+            (.droppedNoPipeline, "Audio dropped"), (.playerManaged, "Player-managed")
+        ]
+        XCTAssertEqual(cases.count, EngineAudioDelivery.allCases.count)
+        for mode: PlaybackDiagnostics.PlaybackMode in [.directPlay, .plozzigen] {
+            var diagnostics = PlaybackDiagnostics(mode: mode)
+            diagnostics.audioCodec = "AAC"
+            diagnostics.audioPipelineDescription = "Stream-copy (AAC)"
+            XCTAssertNil(diagnostics.audioDeliveryDescription)
+            for (delivery, expected) in cases {
+                diagnostics.audioDelivery = delivery
+                XCTAssertEqual(diagnostics.audioDeliveryDescription.map { String(localized: $0) }, expected)
+            }
+            diagnostics.audioDelivery = nil
+            XCTAssertNil(diagnostics.audioDeliveryDescription)
+        }
+    }
+
     func testUnavailableRatesAreNotZeroButRealZeroCountersAndSignedGapsSurvive() {
         let value = EnginePlaybackStatistics(
             recentBitrate: .nan, averageBitrate: .infinity, audioBridgeBitrate: -1,

@@ -1243,7 +1243,14 @@ zeroes. Real zero counters remain visible.
 
 The TV panel retains its existing background scrim and avoids live-video
 backdrop sampling. Its glass-like edge is a subtle one-point gradient highlight,
-not a full-panel blur or a bright opaque outline.
+not a full-panel blur or a bright opaque outline. The highlight stays visible
+around the whole perimeter, with only a slight top-to-bottom variation.
+
+**Audio delivery** maps the engine's typed outcome independently of its decoder
+label: stream copy, converted, decoded to PCM, player-managed, no source audio,
+or audio dropped. No source audio and a failed audio pipeline remain distinct.
+The value clears with the rest of the snapshot on teardown or route changes;
+an unknown outcome is omitted, never inferred from the source codec or receiver.
 
 **Local delivery** is the engine-to-AVPlayer link, never the media server's
 network speed. **Source read rate** measures transfers from the source,

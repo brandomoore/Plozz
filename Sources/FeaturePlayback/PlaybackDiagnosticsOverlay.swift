@@ -235,6 +235,8 @@ struct PlaybackDiagnosticsOverlay: View {
             optionalRow("Bitrate", d.audioBitrateText)
             optionalRow(LocalizedStringResource("Bridge bitrate", comment: "Playback diagnostics: measured bitrate of locally converted audio, not the original audio track."),
                         PlaybackDiagnostics.formatBitrate(d.engineStatistics?.audioBridgeBitrate))
+            optionalRow(LocalizedStringResource("Audio delivery", comment: "Playback diagnostics: how the engine delivers audio, including no source audio or audio dropped by the engine."),
+                        d.audioDeliveryDescription)
             if d.mode == .plozzigen {
                 optionalRow(LocalizedStringResource("Encoding", comment: "Playback diagnostics: the active engine's audio encoding step, not the original recording's quality or the receiver's output."),
                             d.audioEncodingDescription)

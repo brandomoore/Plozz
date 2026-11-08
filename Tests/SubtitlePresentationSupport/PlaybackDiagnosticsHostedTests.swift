@@ -60,6 +60,14 @@ final class PlaybackDiagnosticsHostedTests: XCTestCase {
         }.max() ?? 0
         XCTAssertGreaterThan(rim - center, 15, "Retain a visible glass-like edge")
         XCTAssertLessThan(rim - center, 45, "The rim must not become a bright outline")
+        let edges = [
+            (0..<3).map { Int(pixels[($0 * image.width + image.width / 2) * 4]) }.max()!,
+            ((image.height - 3)..<image.height).map { Int(pixels[($0 * image.width + image.width / 2) * 4]) }.max()!,
+            (0..<3).map { Int(pixels[(image.height / 2 * image.width + $0) * 4]) }.max()!,
+            ((image.width - 3)..<image.width).map { Int(pixels[(image.height / 2 * image.width + $0) * 4]) }.max()!
+        ]
+        XCTAssertLessThanOrEqual(try XCTUnwrap(edges.max()) - XCTUnwrap(edges.min()), 10,
+                                "The highlight should remain similar on all four sides")
         let attachment = XCTAttachment(image: UIImage(cgImage: image))
         attachment.name = "Subtle diagnostics rim"
         attachment.lifetime = .keepAlways
@@ -73,7 +81,7 @@ final class PlaybackDiagnosticsHostedTests: XCTestCase {
             "Playback cache", "512 MB", "Encoding", "Lossy encoding",
             "Recent / avg", "Bridge bitrate", "Local delivery", "1.86 GB", "Read-ahead target", "10 min",
             "Read / muxed", "Local server", "Restarts", "Bridge buffer", "Resident memory", "Mux A/V gap",
-            "51.5", "42.7", "650.0", "7.4", "-23.5", "Decoder"
+            "51.5", "42.7", "650.0", "7.4", "-23.5", "Decoder", "Audio delivery", "Converted"
         ])
     }
 
@@ -235,6 +243,7 @@ final class PlaybackDiagnosticsHostedTests: XCTestCase {
             servedBytes: 2_000_000_000, serverRequests: 153, audioBridgeBytes: 1_048_576,
             residentMemoryBytes: 700_000_000
         )
+        value.audioDelivery = .bridged
         value.serverName = "Fixture server"
         value.streamTransport = PlaybackDiagnostics.streamTransportFacts(url: URL(string: "http://127.0.0.1:12345/master.m3u8"))
         return value

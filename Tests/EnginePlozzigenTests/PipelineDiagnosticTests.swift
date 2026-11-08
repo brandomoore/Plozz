@@ -4,6 +4,18 @@ import XCTest
 @testable import EnginePlozzigen
 
 final class PipelineDiagnosticTests: XCTestCase {
+    func testEveryAudioOutcomeMapsWithoutInferringFromDecoderOrVideoRoute() {
+        let cases: [(AudioDelivery, EngineAudioDelivery?)] = [
+            (.none, nil), (.noAudioInSource, .noAudioInSource), (.streamCopy, .streamCopy),
+            (.bridged, .bridged), (.decoded, .decoded), (.droppedNoPipeline, .droppedNoPipeline),
+            (.playerManaged, .playerManaged)
+        ]
+        XCTAssertEqual(cases.count, AudioDelivery.allCases.count)
+        for (engine, expected) in cases {
+            XCTAssertEqual(PlozzigenVideoEngine.playbackAudioDelivery(engine), expected)
+        }
+    }
+
     func testOverlayStatisticsKeepPlayedBitrateSeparateFromLocalDelivery() throws {
         let value = try XCTUnwrap(PlozzigenVideoEngine.playbackStatistics(
             snapshot(), route: .loopback, decoder: "AVPlayer"

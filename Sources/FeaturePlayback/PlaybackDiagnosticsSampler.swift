@@ -201,6 +201,7 @@ public final class PlaybackDiagnosticsSampler {
         latest?.audioOutput = nil
         latest?.sessionCache = nil
         latest?.engineStatistics = nil
+        latest?.audioDelivery = nil
         latest?.transferredBytes = nil
     }
 
@@ -357,6 +358,7 @@ public final class PlaybackDiagnosticsSampler {
                 diagnostics.sessionCache = t.sessionCache
                 diagnostics.engineStatistics = t.statistics
             }
+            diagnostics.audioDelivery = t.audioDelivery
             // The engine retains session totals across internal AVPlayer item replacements.
             if let drops = t.droppedFrameCount, drops >= 0 {
                 diagnostics.droppedVideoFrames = drops

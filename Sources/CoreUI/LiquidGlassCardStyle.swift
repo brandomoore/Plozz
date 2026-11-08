@@ -396,7 +396,7 @@ public struct PlozzGlassPanelModifier: ViewModifier {
         if refractEdgesOnly {
             content
                 .background { shape.fill(scrim) }
-                .modifier(RefractiveRimGlass(cornerRadius: cornerRadius, palette: palette))
+                .modifier(RefractiveRimGlass(cornerRadius: cornerRadius))
                 .clipShape(shape)
         } else {
             content
@@ -411,7 +411,6 @@ public struct PlozzGlassPanelModifier: ViewModifier {
 /// A subdued glass-like highlight without live-video backdrop sampling.
 private struct RefractiveRimGlass: ViewModifier {
     let cornerRadius: CGFloat
-    let palette: ThemePalette
 
     func body(content: Content) -> some View {
         let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
@@ -421,11 +420,10 @@ private struct RefractiveRimGlass: ViewModifier {
         content.overlay { shape.strokeBorder(fauxRim, lineWidth: 1) }
     }
 
-    /// Top-lit → dark-bottom gradient stroke that reads as a refracted edge with
-    /// zero backdrop sampling.
+    /// Slightly top-lit, with a continuous highlight around the whole panel.
     private var fauxRim: LinearGradient {
         LinearGradient(
-            colors: [.white.opacity(0.28), palette.cardBorder.opacity(0.18), .white.opacity(0.07)],
+            colors: [.white.opacity(0.22), .white.opacity(0.20), .white.opacity(0.18)],
             startPoint: .top,
             endPoint: .bottom
         )

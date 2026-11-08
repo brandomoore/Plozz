@@ -7,6 +7,40 @@ import os
 
 @MainActor
 final class PlaybackDiagnosticsSamplerTests: XCTestCase {
+    func testAudioDeliveryRefreshesAcrossLiveRoutesSeekingMissingTelemetryAndRestart() {
+        let sampler = PlaybackDiagnosticsSampler()
+        defer { sampler.stop() }
+        var route = LiveChannelEngineRoute.localHLS
+        var telemetry: EngineLiveTelemetry? = .init(audioDelivery: .streamCopy)
+        sampler.start(
+            player: nil, mode: .plozzigen, engineTelemetry: { telemetry },
+            liveRoute: { route }, liveStream: { .init() }, includesSystemMetrics: false
+        )
+        for (nextRoute, delivery): (LiveChannelEngineRoute, EngineAudioDelivery) in [
+            (.localHLS, .streamCopy), (.localHLS, .bridged), (.software, .decoded),
+            (.nativeHLS, .playerManaged), (.localHLS, .droppedNoPipeline),
+            (.localHLS, .noAudioInSource)
+        ] {
+            route = nextRoute
+            telemetry = .init(audioDelivery: delivery)
+            sampler.sampleTick()
+            XCTAssertEqual(sampler.latest?.audioDelivery, delivery)
+            telemetry = .init()
+            sampler.sampleTick()
+            XCTAssertNil(sampler.latest?.audioDelivery, "An unavailable seek/reroute sample must clear the old outcome")
+        }
+        telemetry = nil
+        sampler.sampleTick()
+        XCTAssertNil(sampler.latest?.audioDelivery)
+        telemetry = .init(audioDelivery: .bridged)
+        sampler.sampleTick()
+        sampler.stop()
+        XCTAssertNil(sampler.latest?.audioDelivery)
+        sampler.start(player: nil, mode: .directPlay, includesSystemMetrics: false)
+        sampler.sampleTick()
+        XCTAssertNil(sampler.latest?.audioDelivery)
+    }
+
     func testRealtimeStatisticsRefreshAndClearAcrossMissingSamplesRouteChangesAndStop() {
         let sampler = PlaybackDiagnosticsSampler()
         defer { sampler.stop() }

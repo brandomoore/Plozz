@@ -239,7 +239,8 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
             audioPipelineDescription: audioPipeline,
             sessionCache: cache,
             statistics: engine.isSessionReady
-                ? Self.playbackStatistics(t, route: engine.videoRoute, decoder: engine.activeVideoDecoder) : nil
+                ? Self.playbackStatistics(t, route: engine.videoRoute, decoder: engine.activeVideoDecoder) : nil,
+            audioDelivery: engine.isSessionReady ? Self.playbackAudioDelivery(engine.audioDelivery) : nil
         )
     }
 
@@ -270,6 +271,20 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
                 return $0.rssMb > 0 && !bytes.overflow ? bytes.partialValue : nil
             }
         )
+    }
+
+    nonisolated static func playbackAudioDelivery(
+        _ delivery: AudioDelivery
+    ) -> EngineAudioDelivery? {
+        switch delivery {
+        case .none: nil
+        case .noAudioInSource: .noAudioInSource
+        case .streamCopy: .streamCopy
+        case .bridged: .bridged
+        case .decoded: .decoded
+        case .droppedNoPipeline: .droppedNoPipeline
+        case .playerManaged: .playerManaged
+        }
     }
 
     nonisolated static func sessionCacheTelemetry(_ status: SessionCacheStatus) -> EngineSessionCache? {
