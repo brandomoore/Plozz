@@ -3,6 +3,8 @@
 Music browsing (artists / albums / tracks) and an app-scoped audio
 player that is **independent** of the full-screen video `PlayerViewModel`,
 so audio keeps playing as the user navigates the rest of the app.
+The Music tab is currently integrated into the tvOS shell, not the iOS/iPadOS
+shell.
 
 ## Responsibility
 
@@ -60,6 +62,11 @@ so audio keeps playing as the user navigates the rest of the app.
   account has an independent reporting lane so an offline server cannot delay a
   healthy one. Last.fm has its own globally ordered lane, independent of provider
   delivery. A delayed stop must never target the incoming provider.
+- **Pending selection wins over outgoing completion.** If the old track ends
+  while a selected track is resolving or buffering, report the old track's
+  completion without advancing away from the requested selection. End events
+  must belong to the actual current player item; the newly playing track still
+  advances normally after the handoff.
 
 ## Where to look first
 
@@ -77,3 +84,29 @@ deactivate→reactivate session cycle, gapless-vs-reactivate gating, the `.faile
 retry, and the self-heal watchdog — are documented in
 [`docs/airplay-audio-recovery.md`](../../docs/airplay-audio-recovery.md). Read it
 before touching the transition/seek/recovery paths in `AudioPlaybackController`.
+
+## FLAC playback
+
+Plex and Jellyfin/Emby advertise native FLAC music playback. The shared
+`AudioPlaybackController` plays the original stream through `AVQueuePlayer`;
+server bandwidth limits can still require transcoding. Source format does not
+guarantee bit-perfect output: the audio session, output route, and receiver
+determine the output format.
+
+`FLACMusicPlaybackHostedTests` runs in the tvOS hosted presentation suite. Synthetic
+stereo 16-bit/44.1 kHz and 24-bit/96 kHz fixtures cover local decoding, real HTTP
+byte-range playback (including extensionless universal-audio URLs), pause/resume,
+seek, manual queue changes, and natural end-of-track advancement. Assertions
+inspect the actual player clock and audio format, not just optimistic UI state.
+The test publisher mutes speaker output while retaining the real player/session.
+Provider tests separately verify authenticated original-file selection and
+native quality metadata. These checks do not establish physical-device or
+AirPlay output fidelity.
+
+The shared `Tests/SubtitlePresentationSupport/Fixtures/music-flac-*.flac` tones
+contain no music or third-party recordings. Regenerate them with:
+
+```sh
+ffmpeg -f lavfi -i 'sine=frequency=440:sample_rate=44100:duration=8' -ac 2 -c:a flac -sample_fmt s16 -map_metadata -1 Tests/SubtitlePresentationSupport/Fixtures/music-flac-16-44100.flac
+ffmpeg -f lavfi -i 'sine=frequency=660:sample_rate=96000:duration=8' -ac 2 -c:a flac -sample_fmt s32 -bits_per_raw_sample 24 -map_metadata -1 Tests/SubtitlePresentationSupport/Fixtures/music-flac-24-96000.flac
+```

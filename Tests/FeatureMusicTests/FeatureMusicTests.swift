@@ -7,6 +7,69 @@ import MediaPlayer
 
 @MainActor
 final class MusicNowPlayingOwnershipTests: XCTestCase {
+    func testOutgoingEndCannotReplaceASelectionWaitingForItsStream() async throws {
+        let publisher = MusicPublisherSpy()
+        let controller = AudioPlaybackController(nowPlayingPublisher: publisher)
+        let gate = MusicResolveGate()
+        let started = expectation(description: "Outgoing track started")
+        let resolving = expectation(description: "Requested track is resolving")
+        let stopped = expectation(description: "Outgoing completion reported")
+        let resolved = expectation(description: "Cancelled resolution returned")
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".caf")
+        defer { controller.stop() }
+        addTeardownBlock {
+            await gate.release()
+            try FileManager.default.removeItem(at: file)
+        }
+        let format = try XCTUnwrap(AVAudioFormat(standardFormatWithSampleRate: 44_100, channels: 1))
+        let buffer = try XCTUnwrap(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 441_000))
+        buffer.frameLength = 441_000
+        let samples = try XCTUnwrap(buffer.floatChannelData)
+        samples[0].initialize(repeating: 0, count: Int(buffer.frameLength))
+        do {
+            let audio = try AVAudioFile(forWriting: file, settings: format.settings)
+            try audio.write(from: buffer)
+        }
+        var completions: [(String, Double)] = []
+        controller.play(
+            tracks: ["outgoing", "prefetched", "requested", "wrong"].map {
+                MusicTrack(id: $0, title: $0, duration: 10)
+            },
+            startIndex: 0,
+            resolveStreamURL: { track in
+                if track.id == "requested" {
+                    resolving.fulfill()
+                    await gate.wait()
+                    resolved.fulfill()
+                }
+                return .init(url: file)
+            },
+            reportPlayback: { track, event, position, _ in
+                if track.id == "outgoing", event == .start { started.fulfill() }
+                if event == .stop {
+                    completions.append((track.id, position))
+                    stopped.fulfill()
+                }
+            }
+        )
+        await fulfillment(of: [started], timeout: 3)
+        let outgoing = try XCTUnwrap(publisher.player?.currentItem)
+        controller.pause()
+        controller.play(at: 2)
+        await fulfillment(of: [resolving], timeout: 3)
+        NotificationCenter.default.post(name: .AVPlayerItemDidPlayToEndTime, object: outgoing)
+        await fulfillment(of: [stopped], timeout: 3)
+        XCTAssertEqual(controller.index, 2)
+        XCTAssertEqual(controller.currentTrack?.id, "requested")
+        XCTAssertEqual(completions.map(\.0), ["outgoing"])
+        XCTAssertEqual(completions.first?.1 ?? -1, 10, accuracy: 0.1)
+        controller.stop()
+        await gate.release()
+        await fulfillment(of: [resolved], timeout: 3)
+        XCTAssertNil(publisher.player?.currentItem)
+        XCTAssertNil(controller.currentTrack)
+    }
+
     func testGlobalScrobbleOrderDoesNotWaitForOutgoingProvider() async throws {
         let controller = AudioPlaybackController(nowPlayingPublisher: MusicPublisherSpy())
         let gate = MusicResolveGate()
@@ -348,10 +411,14 @@ private actor MusicResolveGate {
 
 @MainActor
 private final class MusicPublisherSpy: NowPlayingPublishing {
+    weak var player: AVPlayer?
     var isActive = false
     var activations = 0
     var resigned: (@MainActor () -> Void)?
-    func bind(player: AVPlayer?) {}
+    func bind(player: AVPlayer?) {
+        self.player = player
+        player?.isMuted = true
+    }
     func activate(onCommand: @escaping @MainActor (NowPlayingCommand) -> Void,
                   onResigned: @escaping @MainActor () -> Void) {
         isActive = true

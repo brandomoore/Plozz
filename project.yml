@@ -674,6 +674,7 @@ targets:
     type: bundle.unit-test
     platform: tvOS
     sources:
+      - path: Tests/PlaybackPresentationSupport/FLACMusicPlaybackHostedTests.swift
       - path: Tests/FocusIntegrationTests
       - path: Tests/PlaybackPresentationSupport/PlayerSongLayoutPreviewTests.swift
       - path: Tests/PlaybackPresentationSupport/PlayerContinueWatchingPresentationTests.swift
