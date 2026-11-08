@@ -59,6 +59,10 @@ packages alternate tracks without another video encode. This is Emby-specific:
 Jellyfin's audio-only endpoint does not honor the selected index. Original and
 legacy HLS downloads are unchanged; see [MediaDownloads](../MediaDownloads/README.md).
 
+Playback requests use the selected source's runtime, not the title-level runtime
+or a stale detail version. Missing or nonpositive source runtimes remain unknown.
+This keeps reduced-download validation from rejecting a valid shorter or longer cut.
+
 Subtitle inventory preserves the source's external/embedded distinction while
 providing exact-source extraction locators for text tracks on both Jellyfin and
 Emby. Reduced offline downloads save those extractable embedded tracks as sidecars;
