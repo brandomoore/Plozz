@@ -228,7 +228,11 @@ final class DiscMenuSession {
             }
         }
         native.statusChanged = { [weak self] reason in
-            MainActor.assumeIsolated { self?.fail(reason) }
+            MainActor.assumeIsolated {
+                PlozzLog.playback.error("Native disc navigation failed: \(reason)")
+                HandoffDiagnostics.emit("disc NATIVE_FAILURE reason=\(HandoffDiagnostics.redactedDetail(reason))")
+                self?.fail(Self.failureMessage(for: reason))
+            }
         }
         native.diagnosticEvent = { event in
             HandoffDiagnostics.emit(event)
@@ -236,7 +240,21 @@ final class DiscMenuSession {
         native.noticeChanged = { [weak self] notice in
             MainActor.assumeIsolated {
                 guard let self, !self.stopped else { return }
-                self.state.notice = notice
+                switch notice {
+                case "Retrying disc read...":
+                    self.state.notice = "Retrying disc read..."
+                case "The disc restricted that playback control.":
+                    self.state.notice = "The disc restricted that playback control."
+                case "That control is unavailable here.":
+                    self.state.notice = "That control is unavailable here."
+                case "Use the arrow controls for this menu.":
+                    self.state.notice = "Use the arrow controls for this menu."
+                case "The disc menu is not available yet.":
+                    self.state.notice = "The disc menu is not available yet."
+                default:
+                    PlozzLog.playback.error("Unrecognized disc notice: \(notice)")
+                    self.state.notice = "That control is unavailable here."
+                }
                 self.noticeTask?.cancel()
                 self.noticeTask = Task { [weak self] in
                     do { try await Task.sleep(for: .seconds(5)) } catch { return }
@@ -411,7 +429,7 @@ final class DiscMenuSession {
 
     func chooseTrack(pid: Int, subtitle: Bool, completion: @escaping () -> Void) {
         guard !stopped, let loadedGeneration, let native else {
-            state.notice = String(localized: "Wait for the disc video before selecting a track.")
+            state.notice = "Wait for the disc video before selecting a track."
             return
         }
         native.selectTrackPID(pid, subtitle: subtitle, generation: loadedGeneration) { [weak self] accepted in
@@ -427,7 +445,7 @@ final class DiscMenuSession {
                     }
                     completion()
                 } else {
-                    self.state.notice = String(localized: "The disc does not allow that track selection here.")
+                    self.state.notice = "The disc does not allow that track selection here."
                 }
             }
         }
@@ -442,20 +460,42 @@ final class DiscMenuSession {
                 guard let self, !self.stopped, !self.state.isMenuVisible, !self.state.isStill else { return }
                 if !self.isPaused() { activeSeconds += 1 }
             }
-            self?.fail(String(localized: "Disc playback did not start in time."))
+            self?.fail("Disc playback did not start in time.")
         }
     }
 
     func failPlayback(unsupportedInterval: Bool) {
         fail(unsupportedInterval
-             ? String(localized: "This video format cannot play the pauses required by the disc.")
-             : String(localized: "The disc's selected video could not be played."))
+             ? "This video format cannot play the pauses required by the disc."
+             : "The disc's selected video could not be played.")
     }
 
-    func fail(_ reason: String) {
+    static func failureMessage(for diagnostic: String) -> LocalizedStringResource {
+        switch diagnostic {
+        case "This disc's menu format is not supported":
+            "This disc's menu format is not supported"
+        case "Another disc menu is still closing":
+            "Another disc menu is still closing"
+        case "Could not configure the selected player region":
+            "Could not configure the selected player region"
+        case "This player cannot present pauses between disc video clips.":
+            "This player cannot present pauses between disc video clips."
+        case "A video file required by the disc is missing":
+            "A video file required by the disc is missing"
+        case "The previous Java menu did not close. Restart Plozz to open another Java menu":
+            "The previous Java menu did not close. Restart Plozz to open another Java menu"
+        case "The Java disc runtime is unavailable":
+            "The Java disc runtime is unavailable"
+        default:
+            "The disc menu could not be opened."
+        }
+    }
+
+    func fail(_ reason: LocalizedStringResource) {
         guard !stopped, state.failure == nil else { return }
-        PlozzLog.playback.error("Disc navigation failed: \(reason)")
-        HandoffDiagnostics.emit("disc FAILURE reason=\(HandoffDiagnostics.redactedDetail(reason))")
+        let detail = String(localized: reason) // l10n:content - diagnostic logging only; UI retains the resource.
+        PlozzLog.playback.error("Disc navigation failed: \(detail)")
+        HandoffDiagnostics.emit("disc FAILURE reason=\(HandoffDiagnostics.redactedDetail(detail))")
         state.failure = reason
         state.isOpening = false
         pause()

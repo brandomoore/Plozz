@@ -63,6 +63,7 @@ struct DiscReviewFixture: View {
         }()
         @State private var sidebar = PlozziOSSidebarGeometryModel()
         @State private var actions = DiscReviewActions()
+        @State private var pendingResume: MediaItem?
 
         var body: some View {
             NavigationStack {
@@ -71,10 +72,11 @@ struct DiscReviewFixture: View {
                         item: item, backdropItem: item, playableItem: item, sources: [],
                         selectedSourceAccountID: nil, versions: item.versions, selectedVersionID: nil,
                         onSelectSource: { _ in }, onSelectVersion: { _ in }, actionHandler: actions,
-                        onPlay: { _, _ in }
+                        onPlay: { selected, _ in pendingResume = selected }
                     )
                 }
             }
+            .resumePrompt(item: $pendingResume) { _, _ in pendingResume = nil }
             .environment(appModel)
             .environment(trailer)
             .environment(sidebar)
@@ -140,7 +142,8 @@ private final class DiscReviewState {
         var version = MediaVersion(id: "disc", container: "bdmv")
         version.discMenuAvailability = scenario == "detail-unavailable" ? .unavailable(.unsupportedRuntime) : .unknown
         item = MediaItem(id: "disc-review", title: "Original disc fixture", kind: .movie,
-                         runtime: 7200, allowsTitleBasedMetadataMatching: false, versions: [version])
+                         runtime: 7200, resumePosition: scenario == "detail-resume" ? 600 : nil,
+                         allowsTitleBasedMetadataMatching: false, versions: [version])
         engine = DiscReviewEngine(scenario: scenario, opensMenu: opensMenu)
         var settings = PlaybackSettings.default
         settings.discPlayback = opensMenu ? .openMenu : .playVideo

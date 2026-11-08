@@ -144,6 +144,29 @@ final class DiscReviewScreenshotTests: XCTestCase {
     func testCaptureDetailVideoAlternative() { detail("detail-menu-default", "Play menu - play video") }
     func testCaptureUnsupportedMenuExplanation() { detail("detail-unavailable", "Play menu - unsupported Java") }
 
+    #if os(iOS)
+    func testResumePromptStaysBesidePlayButton() {
+        let app = launch("detail-resume")
+        for orientation in [UIDeviceOrientation.portrait, .landscapeLeft] {
+            XCUIDevice.shared.orientation = orientation
+            let play = app.buttons["detail-hero-play"]
+            XCTAssertTrue(play.waitForExistence(timeout: 10))
+            if !play.isHittable { app.swipeUp() }
+            let playFrame = play.frame
+            play.tap()
+            let resume = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Resume")).firstMatch
+            XCTAssertTrue(resume.waitForExistence(timeout: 5))
+            let restart = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Start Over")).firstMatch
+            XCTAssertTrue(restart.exists)
+            XCTAssertLessThan(abs(resume.frame.midY - playFrame.midY), 320,
+                              "Resume choices must remain near the Play button.")
+            capture(app, "Resume prompt \(orientation == .portrait ? "portrait" : "landscape")")
+            restart.tap()
+            XCTAssertTrue(resume.waitForNonExistence(timeout: 5))
+        }
+    }
+    #endif
+
     func testCapturePlaybackSetting() {
         #if os(tvOS)
         let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.FocusHost")

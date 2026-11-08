@@ -847,7 +847,7 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
             let err: AppError = error as? AppError ?? .unknown(detail)
             #if canImport(DiscNavigation) && canImport(UIKit)
             if request.discPlayback == .openMenu {
-                discMenuPresentation.failure = String(localized: "The disc menu could not be opened.")
+                discMenuPresentation.failure = "The disc menu could not be opened."
                 discMenuPresentation.isOpening = false
             }
             #endif
@@ -1519,7 +1519,7 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
         #if canImport(DiscNavigation) && canImport(UIKit)
         if let discSession {
             guard let pid = engine.audioTracks.first(where: { $0.id == track.id })?.mpegTSPID else {
-                discMenuPresentation.notice = String(localized: "The selected audio track has no disc identity.")
+                discMenuPresentation.notice = "The selected audio track has no disc identity."
                 return
             }
             discSession.chooseTrack(pid: pid, subtitle: false) { [weak self] in
@@ -1669,7 +1669,7 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
             }
             let sourceTrack = engine.subtitleTracks.first { $0.id == track?.id }
             guard track == nil || sourceTrack?.mpegTSPID != nil || sourceTrack?.isExternal == true else {
-                discMenuPresentation.notice = String(localized: "The selected subtitle track has no disc identity.")
+                discMenuPresentation.notice = "The selected subtitle track has no disc identity."
                 return
             }
             discSession.chooseTrack(pid: sourceTrack?.mpegTSPID ?? -1, subtitle: true) { [weak self] in

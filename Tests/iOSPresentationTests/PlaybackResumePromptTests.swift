@@ -120,6 +120,13 @@ final class PlaybackResumePromptTests: XCTestCase {
         XCTAssertEqual(dialog.title, "Movie")
         XCTAssertEqual(dialog.actions.map(\.title), ["Resume", "Start Over", "Cancel"])
         XCTAssertNil(state.chosenPosition)
+        let popover = try XCTUnwrap(dialog.popoverPresentationController)
+        let source = try XCTUnwrap(popover.sourceView)
+        let anchor = source.convert(popover.sourceRect, to: window)
+        XCTAssertEqual(anchor.width, 180, accuracy: 1)
+        XCTAssertEqual(anchor.height, 44, accuracy: 1)
+        XCTAssertGreaterThan(anchor.midY, window.bounds.midY,
+                             "The prompt must attach to Play, not the top of the detail page.")
         state.item = nil
         let dismissDeadline = ContinuousClock.now + .seconds(3)
         while host.presentedViewController != nil, ContinuousClock.now < dismissDeadline {
@@ -141,7 +148,14 @@ private struct ResumePromptFixture: View {
     @Bindable var state: ResumePromptState
 
     var body: some View {
-        Text("Fixture")
+        VStack {
+            Spacer()
+            Text("Fixture")
+                .frame(width: 180, height: 44)
+                .resumePromptAnchor()
+        }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .padding(.bottom, 100)
             .resumePrompt(item: $state.item) { _, position in
                 state.chosenPosition = position
             }

@@ -106,7 +106,7 @@ public struct PlayerView: View {
         .transientStatusOverlay(presenter: discStatus, palette: themePalette)
         .onChange(of: discNotice, initial: true) { _, notice in
             if let notice {
-                discStatus.present(icon: "exclamationmark.triangle", text: "\(notice)")
+                discStatus.present(icon: "exclamationmark.triangle", text: notice)
             } else {
                 discStatus.dismiss()
             }
@@ -331,7 +331,7 @@ public struct PlayerView: View {
     }
 
     #if canImport(UIKit)
-    private var discNotice: String? {
+    private var discNotice: LocalizedStringResource? {
         guard viewModel.isDiscMenuPlayback, let state = viewModel.videoEngine.discMenu,
               state.failure == nil else { return nil }
         return state.notice

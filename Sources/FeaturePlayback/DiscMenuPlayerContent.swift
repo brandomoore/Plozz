@@ -23,7 +23,7 @@ struct DiscMenuPlayerContent: View {
             DiscMenuArtwork(state: state)
             if let failure = state.failure {
                 PlaybackFailureView(
-                    title: "Disc menu unavailable", message: "\(failure)", report: nil
+                    title: "Disc menu unavailable", message: failure, report: nil
                 ) {
                     Button("Retry") { model.retryDiscMenu() }.plozzActionButton()
                     Button("Play video") { model.playVideoWithoutMenus() }.discPlaybackActionButton()

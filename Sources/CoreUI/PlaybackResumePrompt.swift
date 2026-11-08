@@ -1,7 +1,19 @@
 import CoreModels
 import SwiftUI
 
+private struct PlaybackResumePromptAnchorKey: PreferenceKey {
+    static var defaultValue: Anchor<CGRect>? { nil }
+
+    static func reduce(value: inout Anchor<CGRect>?, nextValue: () -> Anchor<CGRect>?) {
+        value = nextValue() ?? value
+    }
+}
+
 public extension View {
+    func resumePromptAnchor() -> some View {
+        anchorPreference(key: PlaybackResumePromptAnchorKey.self, value: .bounds) { $0 }
+    }
+
     func resumePrompt(
         item: Binding<MediaItem?>,
         onChoose: @escaping (MediaItem, TimeInterval) -> Void
@@ -11,6 +23,27 @@ public extension View {
 
     /// Retains the complete request, including its source and playlist, while choosing a start position.
     func resumePrompt<Request>(
+        request: Binding<Request?>,
+        mediaItem: @escaping (Request) -> MediaItem,
+        onChoose: @escaping (Request, TimeInterval) -> Void
+    ) -> some View {
+        #if os(iOS)
+        overlayPreferenceValue(PlaybackResumePromptAnchorKey.self) { anchor in
+            GeometryReader { proxy in
+                let bounds = anchor.map { proxy[$0] } ?? CGRect(origin: .zero, size: proxy.size)
+                Color.clear
+                    .frame(width: bounds.width, height: bounds.height)
+                    .allowsHitTesting(false)
+                    .resumePromptDialog(request: request, mediaItem: mediaItem, onChoose: onChoose)
+                    .position(x: bounds.midX, y: bounds.midY)
+            }
+        }
+        #else
+        resumePromptDialog(request: request, mediaItem: mediaItem, onChoose: onChoose)
+        #endif
+    }
+
+    private func resumePromptDialog<Request>(
         request: Binding<Request?>,
         mediaItem: @escaping (Request) -> MediaItem,
         onChoose: @escaping (Request, TimeInterval) -> Void

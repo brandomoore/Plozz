@@ -25,6 +25,9 @@ authored movie playback returns to normal controls after its first presented fra
 Nonfatal disc notices use the shared transient status toast across menu and movie
 surfaces. Audio warnings require ready playback and a known missing transport PID;
 pending track discovery or a representation switch is not an unavailable track.
+Disc presentation retains localized resources until rendering. Native failures
+keep their diagnostic detail in logs while presenting localized actionable copy
+or the shared menu-unavailable message.
 See [disc navigation](../../docs/playback-engines.md#original-disc-navigation)
 for the initial compatibility and track-selection limits.
 

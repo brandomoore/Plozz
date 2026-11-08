@@ -7,6 +7,15 @@ import XCTest
 
 @MainActor
 final class DiscMenuSelectionHostedTests: XCTestCase {
+    func testNativeFailureRetainsActionableLocalizedCopy() {
+        let unsupported: LocalizedStringResource = "This disc's menu format is not supported"
+        XCTAssertEqual(
+            DiscMenuSession.failureMessage(for: "This disc's menu format is not supported"), unsupported
+        )
+        let fallback: LocalizedStringResource = "The disc menu could not be opened."
+        XCTAssertEqual(DiscMenuSession.failureMessage(for: "Invalid disc graphics run"), fallback)
+    }
+
     func testPresentationClockWaitsForOutstandingSeeks() async throws {
         let session = try makeSession { _, _, _ in false }
         session.select(1, position: 0, generation: 1)

@@ -2453,6 +2453,7 @@ struct PlozziOSDetailHeroForeground: View {
                 minimumWidth: style == .compactPortrait && !wrapsText ? 180 : nil
             ))
             .disabled(playableItem == nil)
+            .resumePromptAnchor()
         }
     }
 

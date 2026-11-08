@@ -270,13 +270,13 @@ public final class PlayerViewModel {
     #if canImport(UIKit)
     public func loadDiscVideos() async throws -> [DiscVideo] {
         guard !didStop, let source = request?.playbackSource, case .networkDisc = source else {
-            throw AppError.unknown(String(localized: "This source does not expose disc videos."))
+            throw AppError.unknown("This source does not expose disc videos.")
         }
         let attempt = diagnosticAttempt
         let videos = try await engine.discVideos()
         try Task.checkCancellation()
         guard !didStop, diagnosticAttempt == attempt, request?.playbackSource == source else {
-            throw AppError.unknown(String(localized: "Playback changed. Open disc videos again."))
+            throw AppError.unknown("Playback changed. Open disc videos again.")
         }
         loadedDiscVideos = (source, attempt, videos)
         return videos
@@ -287,7 +287,7 @@ public final class PlayerViewModel {
         guard !didStop, let catalog = loadedDiscVideos,
               catalog.attempt == diagnosticAttempt, catalog.source == request?.playbackSource,
               catalog.videos.contains(video), (0...99999).contains(video.playlist) else {
-            throw AppError.unknown(String(localized: "Playback changed. Open disc videos again."))
+            throw AppError.unknown("Playback changed. Open disc videos again.")
         }
         let featureResume = request?.usesUnidentifiedDiscTimeline == true
             ? discVideoSelection?.featureResume ?? startPositionOverride ?? request?.startPosition ?? 0
@@ -1357,7 +1357,7 @@ public final class PlayerViewModel {
             if let selection = discVideoSelection {
                 guard request.playbackSource == selection.source else {
                     await releaseStreamingSession(request, reason: .superseded)
-                    throw AppError.unknown(String(localized: "The disc source changed. Open disc videos again."))
+                    throw AppError.unknown("The disc source changed. Open disc videos again.")
                 }
                 request.discPlayback = .playVideo
                 request.discPlaylistOverride = selection.playlist
@@ -1382,7 +1382,7 @@ public final class PlayerViewModel {
                 controls.infoCard.hasNextEpisode = false
                 guard case .networkDisc = request.playbackSource else {
                     await releaseStreamingSession(request, reason: .superseded)
-                    throw AppError.unknown(String(localized: "This source does not provide access to disc menus."))
+                    throw AppError.unknown("This source does not provide access to disc menus.")
                 }
             }
             diagnosticFacts = .init(
@@ -2034,7 +2034,7 @@ public final class PlayerViewModel {
         }
         let actualEngineKind = engineHandoff.commitEngineForPlayback(engineKind)
         if request.usesUnidentifiedDiscTimeline && actualEngineKind != .plozzigen {
-            phase = .failed(.unknown(String(localized: "This disc's menu format is not supported.")))
+            phase = .failed(.unknown("This disc's menu format is not supported."))
             return
         }
         streamingResumePosition = startPosition

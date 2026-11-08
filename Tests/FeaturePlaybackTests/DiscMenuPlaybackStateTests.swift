@@ -4,6 +4,20 @@ import XCTest
 
 @MainActor
 final class DiscMenuPlaybackStateTests: XCTestCase {
+    func testPresentationMessagesRetainLocalizationResources() {
+        let state = DiscMenuPlaybackState()
+        let failure: LocalizedStringResource = "The disc menu could not be opened."
+        let notice: LocalizedStringResource = "Wait for the disc video before selecting a track."
+        state.failure = failure
+        state.notice = notice
+        XCTAssertEqual(state.failure, failure)
+        XCTAssertEqual(state.notice, notice)
+        state.notice = nil
+        state.audioSelectionUnavailable = true
+        let audioWarning: LocalizedStringResource = "The disc's selected audio track is unavailable."
+        XCTAssertEqual(state.notice, audioWarning)
+    }
+
     func testRecoveredTrackClearsOnlyItsOwnWarning() {
         let state = DiscMenuPlaybackState()
         state.audioSelectionUnavailable = true

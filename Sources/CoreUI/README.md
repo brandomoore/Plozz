@@ -96,6 +96,8 @@ are distinct; only the external recorder starts or verifies a capture.
 platforms. It retains the full pending playback request through the choice so
 source, version and playlist context are preserved; cancellation starts nothing.
 Callers apply the profile's opt-in setting before presenting it.
+On mobile detail pages, `resumePromptAnchor()` marks the Play button so the
+native popover follows that control instead of anchoring to the whole page.
 
 `TopNavigationScroll` connects each root vertical scroll owner to the custom
 top bar. `scrollsTopNavigation()` handles ordinary SwiftUI roots; native grids

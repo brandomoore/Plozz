@@ -27,18 +27,18 @@ public final class DiscMenuPlaybackState {
     public var isStill = false
     public var hasSubtitleSelection = false
     public var subtitleTrackID: Int?
-    public var failure: String?
-    private var transientNotice: String?
+    public var failure: LocalizedStringResource?
+    private var transientNotice: LocalizedStringResource?
     public var audioSelectionUnavailable = false
     public var subtitleSelectionUnavailable = false
-    public var notice: String? {
+    public var notice: LocalizedStringResource? {
         get {
             if let transientNotice { return transientNotice }
             if audioSelectionUnavailable {
-                return String(localized: "The disc's selected audio track is unavailable.")
+                return "The disc's selected audio track is unavailable."
             }
             if subtitleSelectionUnavailable {
-                return String(localized: "The disc's selected subtitle track is unavailable.")
+                return "The disc's selected subtitle track is unavailable."
             }
             return nil
         }
