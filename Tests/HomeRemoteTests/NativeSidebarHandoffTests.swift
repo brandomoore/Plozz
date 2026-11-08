@@ -100,22 +100,22 @@ final class NativeSidebarHandoffTests: XCTestCase {
         var screenshot = app.screenshot()
         repeat {
             let image = try XCTUnwrap(screenshot.image.cgImage)
-            // The fixture's blue backdrop has no white pixels. Sample the title
-            // band only, excluding native chrome, the action pills and row cards.
-            let title = try XCTUnwrap(image.cropping(to: CGRect(
-                x: Double(image.width) * 0.03, y: Double(image.height) * 0.5,
-                width: Double(image.width) * 0.35, height: Double(image.height) * 0.15
+            // Sample the white focused Play pill, not the title: cached artwork
+            // can replace the fixture title with a colored logo.
+            let controls = try XCTUnwrap(image.cropping(to: CGRect(
+                x: Double(image.width) * 0.03, y: Double(image.height) * 0.72,
+                width: Double(image.width) * 0.17, height: Double(image.height) * 0.09
             )))
-            var pixels = [UInt8](repeating: 0, count: title.width * title.height * 4)
+            var pixels = [UInt8](repeating: 0, count: controls.width * controls.height * 4)
             try pixels.withUnsafeMutableBytes { bytes in
                 let context = try XCTUnwrap(CGContext(
-                    data: bytes.baseAddress, width: title.width, height: title.height,
-                    bitsPerComponent: 8, bytesPerRow: title.width * 4,
+                    data: bytes.baseAddress, width: controls.width, height: controls.height,
+                    bitsPerComponent: 8, bytesPerRow: controls.width * 4,
                     space: CGColorSpaceCreateDeviceRGB(),
                     bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
                         | CGBitmapInfo.byteOrder32Big.rawValue
                 ))
-                context.draw(title, in: CGRect(x: 0, y: 0, width: title.width, height: title.height))
+                context.draw(controls, in: CGRect(x: 0, y: 0, width: controls.width, height: controls.height))
             }
             let brightPixels = stride(from: 0, to: pixels.count, by: 4).filter {
                 pixels[$0] > 200 && pixels[$0 + 1] > 200 && pixels[$0 + 2] > 200
@@ -130,7 +130,7 @@ final class NativeSidebarHandoffTests: XCTestCase {
         attachment.name = "Missing rendered Home hero"
         attachment.lifetime = .keepAlways
         add(attachment)
-        XCTFail("The hero title must be visible, not merely a focused transparent action row.")
+        XCTFail("The hero controls must be visible, not merely a focused transparent action row.")
         return screenshot
     }
 
