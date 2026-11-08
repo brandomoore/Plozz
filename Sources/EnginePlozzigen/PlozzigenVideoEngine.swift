@@ -237,8 +237,54 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
             observedBitrate: t?.instantBitrateMbps.map { $0 * 1_000_000 },
             bufferedSecondsAhead: bufferAhead,
             audioPipelineDescription: audioPipeline,
-            sessionCache: cache
+            sessionCache: cache,
+            statistics: engine.isSessionReady
+                ? Self.playbackStatistics(t, route: engine.videoRoute, decoder: engine.activeVideoDecoder) : nil,
+            audioDelivery: engine.isSessionReady ? Self.playbackAudioDelivery(engine.audioDelivery) : nil
         )
+    }
+
+    nonisolated static func playbackStatistics(
+        _ telemetry: LiveTelemetry?, route: VideoRoute, decoder: String?
+    ) -> EnginePlaybackStatistics? {
+        guard route != .none, route != .audio else { return nil }
+        let demuxed = route == .loopback || route == .software
+        let local = route == .loopback
+        return EnginePlaybackStatistics(
+            decoder: decoder,
+            recentBitrate: demuxed ? telemetry?.instantBitrateMbps.map { $0 * 1_000_000 } : nil,
+            averageBitrate: demuxed ? telemetry?.averageBitrateMbps.map { $0 * 1_000_000 } : nil,
+            audioBridgeBitrate: telemetry?.audioBridgeBitrateMbps.map { $0 * 1_000_000 },
+            delivery: local ? .local : .source,
+            deliveryBitrate: telemetry?.networkThroughputMbps.map { $0 * 1_000_000 },
+            deliveredBytes: telemetry?.networkTransferredBytes,
+            muxAVGapMilliseconds: local ? telemetry?.avSyncGapMs : nil,
+            cachedBytes: demuxed ? telemetry?.cachedBytes : nil,
+            sourceBytes: demuxed ? telemetry?.demuxerBytesFetched : nil,
+            producerRestarts: local ? telemetry?.producerRestartCount : nil,
+            muxedBytes: local ? telemetry?.muxedBytesLifetime : nil,
+            servedBytes: local ? telemetry?.serverBytesSentLifetime : nil,
+            serverRequests: local ? telemetry?.serverRequestCount : nil,
+            audioBridgeBytes: local ? telemetry.map { Int64($0.audioBridgeLiveBytes) } : nil,
+            residentMemoryBytes: telemetry.flatMap {
+                let bytes = Int64($0.rssMb).multipliedReportingOverflow(by: 1_048_576)
+                return $0.rssMb > 0 && !bytes.overflow ? bytes.partialValue : nil
+            }
+        )
+    }
+
+    nonisolated static func playbackAudioDelivery(
+        _ delivery: AudioDelivery
+    ) -> EngineAudioDelivery? {
+        switch delivery {
+        case .none: nil
+        case .noAudioInSource: .noAudioInSource
+        case .streamCopy: .streamCopy
+        case .bridged: .bridged
+        case .decoded: .decoded
+        case .droppedNoPipeline: .droppedNoPipeline
+        case .playerManaged: .playerManaged
+        }
     }
 
     nonisolated static func sessionCacheTelemetry(_ status: SessionCacheStatus) -> EngineSessionCache? {
