@@ -11,6 +11,33 @@ import XCTest
 
 @MainActor
 final class DetailPrimaryFocusHostedTests: XCTestCase {
+    func testDetailCallbackRefreshDoesNotRebuildEpisodeMenuActions() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let model = PrimaryFocusModel(mode: .showNavigation)
+        model.recordsMenuRefresh = true
+        await model.gate.release()
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
+        window.rootViewController = UIHostingController(rootView: PrimaryFocusRoot(model: model))
+        window.makeKeyAndVisible()
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        model.path.append(1)
+        try await waitUntil { model.actions.episodeMenuBuilds > 0 }
+        try await Task.sleep(for: .milliseconds(500))
+        let before = model.actions.episodeMenuBuilds
+        for revision in 1...5 {
+            model.menuRevision = revision
+            try await Task.sleep(for: .milliseconds(100))
+        }
+        XCTAssertEqual(model.actions.episodeMenuBuilds, before,
+                       "Refreshing detail callbacks must not rebuild unchanged episode menu content.")
+    }
+
     func testSeriesHeaderShowsSeriesSynopsisAndRatingsForEpisodeContextEntry() async throws {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
         let previous = scene.windows.first(where: \.isKeyWindow)
@@ -440,6 +467,9 @@ private enum PrimaryFocusMode {
 
 @MainActor @Observable
 private final class PrimaryFocusModel {
+    var recordsMenuRefresh = false
+    var menuRevision = 0
+    var receivedMenuRevision: Int?
     let mode: PrimaryFocusMode
     var path: [Int] = []
     var infoFocused = false
@@ -504,6 +534,9 @@ private struct PrimaryFocusRoot: View {
         if let detail = model.detail {
             ItemDetailView(
                 viewModel: detail, onPlay: { _ in }, onSelectChild: { _ in },
+                onNavigate: model.recordsMenuRefresh ? { [revision = model.menuRevision] _ in
+                    model.receivedMenuRevision = revision
+                } : nil,
                 initialSeasonID: model.mode == .showNavigation ? "primary-season" : nil
             )
         } else {
@@ -537,8 +570,11 @@ private struct PrimaryFocusRoot: View {
 
 @MainActor
 private final class PrimaryFocusActions: MediaItemActionHandling {
+    var episodeMenuBuilds = 0
+
     func actions(for item: MediaItem, context: MediaItemActionContext) -> [MediaItemAction] {
-        [.addToWatchlist]
+        if item.kind == .episode { episodeMenuBuilds += 1 }
+        return [.addToWatchlist]
     }
     func perform(_ action: MediaItemAction, on item: MediaItem, context: MediaItemActionContext) {}
 }

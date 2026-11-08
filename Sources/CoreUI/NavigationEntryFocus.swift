@@ -7,18 +7,6 @@ public enum NavigationEntryFocusPreference: Equatable, Sendable {
     case fallback
 }
 
-private struct NavigationContentResetRequestKey: EnvironmentKey {
-    static let defaultValue: UInt64? = nil
-}
-
-public extension EnvironmentValues {
-    /// A selected navigation destination was activated again; reset its root before focus returns.
-    var navigationContentResetRequest: UInt64? {
-        get { self[NavigationContentResetRequestKey.self] }
-        set { self[NavigationContentResetRequestKey.self] = newValue }
-    }
-}
-
 public extension View {
     /// Declares a page's entry target without changing ordinary directional focus.
     @ViewBuilder

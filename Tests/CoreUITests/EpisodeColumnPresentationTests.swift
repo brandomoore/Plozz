@@ -5,6 +5,26 @@ import CoreModels
 @testable import CoreUI
 
 final class EpisodeColumnPresentationTests: XCTestCase {
+    func testEpisodeOverviewCollapsesParagraphsWithoutChangingSourceMetadata() {
+        let overview = "A guiding thought.\r\n\r\nThe crew investigate.\u{2028}\tMore details."
+        let item = episode(overview: overview)
+        let presentation = EpisodeColumnPresentation(item: item, spoilerSettings: .default)
+        let expected = "A guiding thought. The crew investigate. More details."
+        XCTAssertEqual(presentation.visibleOverview, expected)
+        XCTAssertTrue(presentation.accessibilityLabel.contains(expected))
+        XCTAssertEqual(item.overview, overview)
+        XCTAssertEqual(EpisodeColumnPresentation.compactOverview(overview), expected)
+        XCTAssertNil(EpisodeColumnPresentation.compactOverview(" \r\n\t\u{2029} "))
+        for mode in [SpoilerSettings.Mode.blur, .placeholder] {
+            let hidden = EpisodeColumnPresentation(
+                item: item, spoilerSettings: SpoilerSettings(isEnabled: true, mode: mode)
+            )
+            XCTAssertNil(hidden.visibleOverview)
+            XCTAssertFalse(hidden.accessibilityLabel.contains("A guiding thought"))
+            XCTAssertFalse(hidden.debugDescription.contains("The crew investigate"))
+        }
+    }
+
     func testUnwatchedEpisodeShowsIdentityRuntimeAndOverview() {
         let presentation = EpisodeColumnPresentation(
             item: episode(runtime: 2_700),

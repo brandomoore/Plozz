@@ -117,7 +117,14 @@ struct InfoPanelView: View {
         let thumbRadius = PlozzTheme.Metrics.mediumMediaCornerRadius
         let contentPad = metrics.contentPadding
 
-        return PlayerSongLayout(enabled: model.songRecognition.isAvailable, state: model.songRecognition.state, focus: $focus) {
+        return PlayerSongLayout(
+            enabled: model.songRecognition.isAvailable, state: model.songRecognition.state, focus: $focus,
+            onOptionsPresented: {
+                model.isPanelOpen = $0
+                model.controlBarActivity &+= 1
+                if !$0 { actions.restoreInfoFocus() }
+            }
+        ) {
             Group {
                 if metrics.showsThumbnail {
                     regularBody(thumbRadius: thumbRadius, thumbHeight: metrics.contentHeight)

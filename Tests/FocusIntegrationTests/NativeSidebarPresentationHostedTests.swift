@@ -10,34 +10,6 @@ import XCTest
 
 @MainActor
 final class NativeSidebarPresentationHostedTests: XCTestCase {
-    func testNativeHomeReselectionIsDistinctFromReturningOrChangingDestinations() throws {
-        let handoff = NavigationDestinationFocusHandoff()
-        handoff.beginNativeSelection(.home, current: .settings)
-        let entry = try XCTUnwrap(handoff.request)
-        XCTAssertFalse(entry.resetsContent, "Returning from another page retains Home's browsing state.")
-        XCTAssertTrue(handoff.complete(entry))
-        XCTAssertEqual(handoff.completedGeneration, entry.generation)
-
-        handoff.beginNativeSelection(.settings, current: .settings)
-        XCTAssertNil(handoff.request, "Other native destinations retain their existing reselection behavior.")
-        handoff.beginNativeSelection(.home, current: .home)
-        let reset = try XCTUnwrap(handoff.request)
-        XCTAssertTrue(reset.resetsContent)
-        XCTAssertTrue(handoff.complete(reset))
-        handoff.beginNativeSelection(.home, current: .home)
-        let repeated = try XCTUnwrap(handoff.request)
-        XCTAssertTrue(repeated.resetsContent)
-        XCTAssertNotEqual(repeated.generation, reset.generation)
-        XCTAssertNil(handoff.completedGeneration)
-
-        handoff.beginNativeSelection(.settings, current: .home)
-        XCTAssertFalse(try XCTUnwrap(handoff.request).resetsContent)
-        XCTAssertFalse(handoff.complete(repeated), "An older reset cannot release another page's focus gate.")
-        handoff.cancel()
-        XCTAssertNil(handoff.request)
-        XCTAssertNil(handoff.completedGeneration, "Cancellation must not trigger content focus as if it completed.")
-    }
-
     func testStartupFocusHostPreservesNativeSidebarBounds() async throws {
         for wrapped in [false, true] {
             let fixture = try await makeFixture()

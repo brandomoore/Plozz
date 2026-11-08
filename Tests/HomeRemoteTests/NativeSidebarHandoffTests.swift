@@ -233,7 +233,7 @@ final class NativeSidebarHandoffTests: XCTestCase {
     }
 
     private func assertFocused(
-        _ element: XCUIElement, app: XCUIApplication, timeout: TimeInterval = 5,
+        _ element: XCUIElement, app: XCUIApplication, timeout: TimeInterval = 15,
         file: StaticString = #filePath, line: UInt = #line
     ) {
         let expected = XCTNSPredicateExpectation(

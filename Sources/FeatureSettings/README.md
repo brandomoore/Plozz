@@ -36,6 +36,11 @@ composite controls retain separate minimum touch targets with
 `settingsControlTarget()`. Per-view customization menus respond across their
 whole title/value row, not only the value. Native toggles remain independent.
 
+TV label customization uses `ViewCustomizationRow` for Only show descriptions on focus,
+matching the neighboring controls' sizing and focus treatment. Its live episode
+preview shows descriptions under every card by default, or only the focused
+example when enabled, without changing the preview's layout.
+
 ## Settings search
 
 Settings search is local: queries are neither saved nor sent to a service or log.

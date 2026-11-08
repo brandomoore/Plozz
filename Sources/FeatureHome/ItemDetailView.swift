@@ -410,11 +410,7 @@ public struct ItemDetailView: View {
             isActive: isTrailerOwner
         )
         #endif
-        // Overrides rather than replaces, so a caller that supplies no router
-        // leaves any inherited one intact.
-        .transformEnvironment(\.mediaItemNavigator) { navigator in
-            if let onNavigate { navigator = MediaItemNavigator(onNavigate) }
-        }
+        .mediaItemNavigator(onNavigate, preservingInherited: true)
         // A push does not disappear the page beneath it, so a page can only learn
         // it has been covered from the *child's* lifecycle — see DetailStackDepth.
         .onAppear { stackDepth?.pageAppeared(pageIdentity) }

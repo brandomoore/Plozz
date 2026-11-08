@@ -311,7 +311,6 @@ public struct HomeView: View {
     /// How far the navigation rail insets page content, so the libraries row can
     /// carry the same gutter as every media row.
     @Environment(\.plozzNavigationContentInset) private var navigationContentInset
-    @Environment(\.navigationContentResetRequest) private var contentResetRequest
     @Environment(\.plozzPinnedSidebarActive) private var pinnedSidebarActive
     @Environment(\.mediaItemActionHandler) private var mediaItemActionHandler
     @Environment(\.scenePhase) private var scenePhase
@@ -639,6 +638,7 @@ public struct HomeView: View {
                                         exposureScopeID: ObjectIdentifier(viewModel),
                                         recedeModel: heroRecedeModel
                                     )
+                                    .id(Self.heroTopID)
                                     // (touch-pan disabler lives as a sibling below so it is
                                     //  unambiguously inside the scroll content — see note.)
                                 } else if heroSlotState == .placeholder {
@@ -647,6 +647,7 @@ public struct HomeView: View {
                                     // rows never appear "finished" and then jump down seconds
                                     // later when the hero arrives.
                                     HomeHeroSkeletonView()
+                                        .id(Self.heroTopID)
                                         .contentShape(Rectangle())
                                         .focusable(true)
                                         .prefersDefaultFocus(true, in: heroFocusScope)
@@ -726,16 +727,10 @@ public struct HomeView: View {
                             // then lands initial focus on the hero instead of a Continue
                             // Watching card, with no visible focus steal-back.
                             .focusScope(heroFocusScope)
-                            .id(Self.heroTopID)
                         }
                         // Never clip a focused card's lift, shadow or border.
                         .scrollClipDisabled()
                         .scrollsTopNavigation { heroRecedeModel.isReceded = false }
-                        .onChange(of: contentResetRequest) { _, request in
-                            guard request != nil, heroIsFrontmost else { return }
-                            heroRecedeModel.isReceded = false
-                            heroScrollProxy.scrollTo(Self.heroTopID, anchor: .top)
-                        }
                         // Drive the recede off the SCROLL, observed as a BOOL so this fires
                         // ONLY when the threshold is crossed — never on every scroll frame.
                         // (The old per-frame CGFloat capture wrote @State each frame, forcing

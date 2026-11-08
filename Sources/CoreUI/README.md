@@ -756,6 +756,33 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   Native card focus observation is separate from explicit focus requests.
   Caption, overlay and transition-anchor readers update without rebuilding
   the poster's artwork loader or context menu.
+  Detail episode cards using system focus attach a `UIContextMenuInteraction`
+  to the poster's enclosing native view. Its artwork and hosted caption form one
+  targeted preview, so the title and synopsis lift with the thumbnail. Caption
+  travel runs in UIKit's focus-animation coordinator alongside the artwork,
+  not a later SwiftUI focus-state animation. Focus-only synopses may fade in,
+  but do not start a second delayed position animation on native cards.
+  Caption presentation remains active until dismissal completes; an older dismissal
+  cannot collapse a newly reopened preview. Keep the existing row spacing and
+  card positions. UIKit still controls preview placement and may nudge an
+  enlarged preview inward at the screen's safe-area edge.
+  Keep the interaction off the `UIButton`: button-owned holds intermittently
+  stopped reopening after dismissal even without a menu rebuild. Do not
+  substitute `UIButton.menu`: its control-menu presentation omits the contextual
+  thumbnail lift. The SwiftUI context-menu bridge replaced its action
+  list during opening even with unchanged actions; the native menu keeps one
+  list and does not fade its contents after presentation begins. Keep its menu
+  instance and interaction stable across callback and unrelated metadata updates.
+  Rebuild actions for changed item/account identities, action lists, ordered
+  sibling identities, handler/router identity, or locale. Obsolete actions are
+  invalidated when that context changes or the poster is dismantled. A changed
+  action scope dismisses an already presented menu.
+  Custom-focus episode cards and other SwiftUI-owned controls retain their
+  existing menu path; mobile menus and their artwork routing are unchanged.
+  Episode-card captions collapse paragraph breaks and whitespace into one
+  continuous synopsis, including blurred captions. Provider metadata and
+  expanded synopsis formatting remain unchanged; protected prose stays absent
+  from presentation accessibility and debug output.
 - **QR images** — `QRCodeView` renders on a worker actor, including Core Image
   initialization. Settings, account authorization and device pairing share it.
   Payload/correction/mask changes replace the request; cancelled work cannot
@@ -1241,6 +1268,10 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   remain anchored to the original artwork height, and artwork, video and
   metadata keep their original layout. Do not clip this overscan back to the
   overlay bounds; the native image surface supplies the final silhouette.
+  Detail-page episode cards use the same live, unclipped 40pt scrim overscan for
+  their runtime/progress chrome. The gradient stays anchored to the artwork,
+  without moving captions or changing card size; custom-focus and mobile cards
+  retain their existing clipped composition.
   See [Featured sections](../FeatureHome/README.md).
   Continue Watching
   keeps its established size, reflection, logo position and resume chrome without

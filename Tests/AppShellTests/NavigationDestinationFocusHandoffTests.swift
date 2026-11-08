@@ -36,12 +36,18 @@ final class NavigationDestinationFocusHandoffTests: XCTestCase {
         handoff.begin(.settings)
         let old = try XCTUnwrap(handoff.request)
         handoff.cancel()
+        XCTAssertNil(handoff.completedRequest)
         XCTAssertFalse(handoff.isWaiting)
         handoff.begin(.settings)
         let latest = try XCTUnwrap(handoff.request)
         XCTAssertNotEqual(old.generation, latest.generation)
         XCTAssertFalse(handoff.complete(old))
         XCTAssertTrue(handoff.complete(latest))
+        XCTAssertEqual(handoff.completedRequest, latest)
+        handoff.begin(.home)
+        XCTAssertNil(handoff.completedRequest)
+        handoff.cancel()
+        XCTAssertNil(handoff.completedRequest, "Cancellation must not trigger native content-entry focus.")
     }
 
     func testReselectingAPendingDestinationDoesNotRestartItsReadiness() {

@@ -419,7 +419,6 @@ struct FocusHeroHomeView<RowContent: View>: View {
     @State private var metadata = FocusHeroMetadata()
     @State private var featuredState = HeroShowcaseState()
     @Environment(\.plozzArtworkPolicy) private var artworkPolicy
-    @Environment(\.navigationContentResetRequest) private var contentResetRequest
 
     // Reads nothing from `model`: this body builds the rows, and must not run
     // again when the pinned row or the hero title changes.
@@ -461,12 +460,6 @@ struct FocusHeroHomeView<RowContent: View>: View {
             edges: navigationStyle == .rail ? [.vertical, .trailing] : .vertical
         )
         .onAppear { model.seed(from: rows) }
-        .onChange(of: contentResetRequest) { _, request in
-            guard request != nil, isFrontmost else { return }
-            model.returnToTop(in: rows)
-            if featuredHero != nil { featuredState.returnToHero?() }
-            onReturnToTop()
-        }
         .onChange(of: rows.map(\.itemIDs)) { _, _ in model.seed(from: rows) }
         .onChange(of: rows.map(\.items)) { _, _ in model.seed(from: rows) }
         .onChange(of: rows.map(\.liveChannels)) { _, _ in model.seed(from: rows) }

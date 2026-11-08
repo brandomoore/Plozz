@@ -16,44 +16,30 @@ final class NavigationDestinationFocusHandoff {
         let destination: NavigationRailDestination
         let generation: UInt64
         let focusTarget: FocusTarget
-        let resetsContent: Bool
     }
 
     private(set) var request: Request?
-    @ObservationIgnored private(set) var completedGeneration: UInt64?
+    private(set) var completedRequest: Request?
     @ObservationIgnored private var generation: UInt64 = 0
 
     var isWaiting: Bool { request != nil }
 
-    func beginNativeSelection(_ destination: NavigationRailDestination, current: NavigationRailDestination) {
-        guard destination != current || destination == .home else { return }
-        begin(destination, resetsContent: destination == current)
-    }
-
-    func begin(
-        _ destination: NavigationRailDestination,
-        focusTarget: FocusTarget = .content,
-        resetsContent: Bool = false
-    ) {
-        guard request?.destination != destination || request?.focusTarget != focusTarget
-                || request?.resetsContent != resetsContent else { return }
+    func begin(_ destination: NavigationRailDestination, focusTarget: FocusTarget = .content) {
+        guard request?.destination != destination || request?.focusTarget != focusTarget else { return }
         generation &+= 1
-        completedGeneration = nil
-        request = Request(
-            destination: destination, generation: generation,
-            focusTarget: focusTarget, resetsContent: resetsContent
-        )
+        completedRequest = nil
+        request = Request(destination: destination, generation: generation, focusTarget: focusTarget)
     }
 
     func complete(_ presented: Request) -> Bool {
         guard request == presented else { return false }
-        completedGeneration = presented.generation
+        completedRequest = presented
         request = nil
         return true
     }
 
     func cancel() {
-        completedGeneration = nil
+        completedRequest = nil
         request = nil
     }
 }

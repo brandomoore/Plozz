@@ -45,15 +45,11 @@ struct NativeSidebarNavigation<Content: View>: View {
             handoff.cancel()
             if allowed { handoff.begin(selection) }
         }
-        .onChange(of: handoff.request) { previous, current in
-            if current?.resetsContent == true {
-                startupDestination = nil
-                contentRequest = nil
-            }
-            if current == nil, let previous, previous.destination == selection,
-               handoff.completedGeneration == previous.generation,
-               previous.resetsContent || (startupFocusAllowed && previous.destination == startupDestination) {
-                contentRequest = previous.generation
+        .onChange(of: handoff.completedRequest) { _, completed in
+            guard startupDestination == nil || startupFocusAllowed else { return }
+            if let completed, completed.destination == selection, completed.focusTarget == .content,
+               startupDestination == selection || selection == .home {
+                contentRequest = completed.generation
             }
         }
         .onChange(of: selection) { _, _ in
@@ -76,7 +72,6 @@ struct NativeSidebarFocusDestination<Content: View>: View {
 
     var body: some View {
         content
-            .environment(\.navigationContentResetRequest, resetRequest)
             .navigationEntryFocus(selection == destination ? .fallback : nil)
             .disabled(selection != destination || handoff.isWaiting)
             .background {
@@ -91,10 +86,5 @@ struct NativeSidebarFocusDestination<Content: View>: View {
             }
     }
 
-    private var resetRequest: UInt64? {
-        guard selection == destination, let request = handoff.request,
-              request.destination == destination, request.resetsContent else { return nil }
-        return request.generation
-    }
 }
 #endif
