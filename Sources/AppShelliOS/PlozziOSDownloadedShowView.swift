@@ -4,7 +4,7 @@ import MediaDownloads
 import SwiftUI
 import CoreUI
 
-/// The drill-in page for a single downloaded show: seasons as sections, each
+/// The drill-in page for a single downloaded show: episodes grouped by season, each
 /// with its own episode count, size, and removal actions. Reads the show live from the
 /// model's grouped library so it updates as episodes are deleted, and pops
 /// itself once the last episode is gone.
@@ -31,22 +31,19 @@ struct PlozziOSDownloadedShowView: View {
                     GeometryReader { geometry in
                         let horizontalInset = max(20, (geometry.size.width - 900) / 2)
                         List(selection: $selectedIDs) {
-                            // Unsectioned content can lose its rendering when native selection exits edit mode.
-                            Section {
-                                Text(show.title)
-                                    .font(.largeTitle.bold())
-                                    .foregroundStyle(palette.primaryText)
-                                    .accessibilityAddTraits(.isHeader)
-                                    .accessibilityIdentifier("download-show-title")
-                                    .selectionDisabled()
-                                    .listRowSeparator(.hidden)
-                                    .listRowBackground(Color.clear)
-                                    .listRowInsets(EdgeInsets(
-                                        top: 8, leading: horizontalInset, bottom: 8, trailing: horizontalInset
-                                    ))
-                            }
+                            Text(show.title)
+                                .font(.largeTitle.bold())
+                                .foregroundStyle(palette.primaryText)
+                                .accessibilityAddTraits(.isHeader)
+                                .accessibilityIdentifier("download-show-title")
+                                .selectionDisabled()
+                                .listRowSeparator(.hidden)
+                                .listRowBackground(Color.clear)
+                                .listRowInsets(EdgeInsets(
+                                    top: 8, leading: horizontalInset, bottom: 8, trailing: horizontalInset
+                                ))
                             ForEach(show.seasons) { season in
-                                PlozziOSDownloadedSeasonSection(
+                                PlozziOSDownloadedSeasonRows(
                                     season: season, model: model, appModel: appModel,
                                     horizontalInset: horizontalInset,
                                     isEditing: editMode.isEditing,
@@ -58,7 +55,6 @@ struct PlozziOSDownloadedShowView: View {
                                         pendingBulkDeletion = .season(season, showTitle: show.title)
                                     }
                                 )
-                                .id(season.id)
                             }
                         }
                         .listStyle(.plain)
@@ -219,7 +215,7 @@ struct PlozziOSDownloadedShowView: View {
 
 }
 
-private struct PlozziOSDownloadedSeasonSection: View {
+private struct PlozziOSDownloadedSeasonRows: View {
     let season: PlozziOSDownloadedSeason
     let model: PlozziOSDownloadsModel
     let appModel: PlozziOSAppModel
@@ -230,21 +226,7 @@ private struct PlozziOSDownloadedSeasonSection: View {
     let removeSeason: () -> Void
 
     var body: some View {
-        Section {
-            ForEach(season.records) { record in
-                PlozziOSDownloadedEpisodeRow(
-                    record: record, model: model, appModel: appModel,
-                    isEditing: isEditing, openEpisode: openEpisode, playEpisode: playEpisode
-                )
-                    .tag(record.id)
-                    .selectionDisabled(!isEditing)
-                    .listRowSeparator(.hidden)
-                    .listRowBackground(Color.clear)
-                    .listRowInsets(EdgeInsets(
-                        top: 6, leading: horizontalInset, bottom: 6, trailing: horizontalInset
-                    ))
-            }
-        } header: {
+        Group {
             DownloadSeasonHeader(
                 seasonNumber: season.seasonNumber,
                 summary: DownloadFormatting.showSubtitle(
@@ -263,10 +245,27 @@ private struct PlozziOSDownloadedSeasonSection: View {
                 },
                 remove: removeSeason
             )
+            .id(season.id)
+            .selectionDisabled()
+            .listRowSeparator(.hidden)
+            .listRowBackground(Color.clear)
             .textCase(nil)
             .listRowInsets(EdgeInsets(
                 top: 16, leading: horizontalInset, bottom: 6, trailing: horizontalInset
             ))
+            ForEach(season.records) { record in
+                PlozziOSDownloadedEpisodeRow(
+                    record: record, model: model, appModel: appModel,
+                    isEditing: isEditing, openEpisode: openEpisode, playEpisode: playEpisode
+                )
+                    .tag(record.id)
+                    .selectionDisabled(!isEditing)
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
+                    .listRowInsets(EdgeInsets(
+                        top: 6, leading: horizontalInset, bottom: 6, trailing: horizontalInset
+                    ))
+            }
         }
     }
 }
