@@ -56,13 +56,16 @@ extension PlozziOSAppModel {
 struct PlozziOSHomeLoadID: Equatable {
     let visibility: HomeLibraryVisibility
     let viewModelID: ObjectIdentifier
+    let isLoadingAllowed: Bool
 
     init(
         visibility: HomeLibraryVisibility,
-        viewModel: HomeViewModel
+        viewModel: HomeViewModel,
+        isLoadingAllowed: Bool = true
     ) {
         self.visibility = visibility
         viewModelID = ObjectIdentifier(viewModel)
+        self.isLoadingAllowed = isLoadingAllowed
     }
 }
 
@@ -407,9 +410,14 @@ struct PlozziOSHomeView: View {
         .task(
             id: PlozziOSHomeLoadID(
                 visibility: appModel.settings.homeVisibility.visibility.intent,
-                viewModel: viewModel
+                viewModel: viewModel,
+                isLoadingAllowed: appModel.allowsHomeContentLoading
             )
         ) {
+            guard appModel.allowsHomeContentLoading else {
+                viewModel.cancelPendingLoad()
+                return
+            }
             await viewModel.loadIfNeeded(
                 for: appModel.settings.homeVisibility.visibility
             )
@@ -678,7 +686,11 @@ struct PlozziOSHomeView: View {
                 rows: rows, content: content, visibility: visibility.visibility, liveTV: liveTV,
                 presentation: appModel.settings.libraryPresentation.settings
             )) { presentation in
-                Group {
+                PlozziOSHomeRowSlot(
+                    presentation: presentation, captions: appModel.settings.cardStyle.captions,
+                    continueWatchingLayout: visibility.continueWatchingLayout,
+                    continueWatchingUsesSeriesArtwork: visibility.continueWatchingUsesSeriesArtwork
+                ) {
                     switch presentation.source {
                     case let .home(row):
                         PlozziOSHomeRowView(
@@ -697,54 +709,30 @@ struct PlozziOSHomeView: View {
                             onNavigationInteraction: viewModel.noteHomeNavigationInteraction
                         )
                     case let .library(row):
-                        let section = row.section
-                        if let issue = row.issue {
-                            PlozziOSHomeSectionStatusRow(
-                                issue: issue, browseItem: row.browseItem, appModel: appModel, viewModel: viewModel,
-                                onCustomizeHome: { showingHomeCustomization = true }
-                            )
-                        } else if let failure = row.failure {
-                            PlozziOSHomeRowFailure(
-                                title: section.displayName,
-                                error: failure, viewModel: viewModel
-                            )
-                        } else if row.isLoading && row.collectionCardStyle != .featured {
-                            PlozziOSHomeSkeletonRail(
-                                title: section.displayName,
-                                style: section.style == .landscape ? .landscape : .poster,
-                                showsCaption: appModel.settings.cardStyle.captions.showsLabels(in: .home)
-                            )
-                        } else if row.collectionCardStyle == .featured {
-                            PlozziOSFeaturedCollectionRail(
-                                row: row, appModel: appModel, scope: ObjectIdentifier(viewModel),
-                                coordinator: featuredTrailers, controller: trailerController,
-                                isActive: homeIsFrontmost && homeHasAppeared && !homeIsScrolling,
-                                onBrowse: browseAction(for: presentation)
-                            )
-                        } else {
-                            PlozziOSHomeMediaRail(
-                                title: section.displayName,
-                                items: section.items,
-                                style: section.style == .landscape
-                                    ? .landscape
-                                    : .poster,
-                                appModel: appModel,
-                                browseItem: row.browseItem,
-                                onBrowse: browseAction(for: presentation),
-                                onNavigationInteraction:
-                                    viewModel.noteHomeNavigationInteraction
-                            )
-                        }
+                        PlozziOSHomeLibraryPresentationRow(
+                            presentation: presentation, row: row,
+                            appModel: appModel, viewModel: viewModel,
+                            coordinator: featuredTrailers, controller: trailerController,
+                            isActive: row.collectionCardStyle == .featured
+                                && homeIsFrontmost && homeHasAppeared && !homeIsScrolling,
+                            rowBrowser: $rowBrowser, showingHomeCustomization: $showingHomeCustomization
+                        )
+                        .equatable()
                     }
                 }
                 .environment(\.plozzLandscapeTitleLogo, presentation.choice.collectionSection?.titleLogo ?? .off)
-                .plozziOSHomeScrollRow(presentation.id)
             }
         }
         return scroll
             .id(ObjectIdentifier(viewModel))
             .scrollClipDisabled()
             .onScrollPhaseChange { _, phase in homeIsScrolling = phase != .idle }
+            .homeResponsivenessDiagnostics(
+                isEnabled: AppReleaseChannel.current.isBeta && appModel.crashReporting.isEnabled
+                    && !appModel.isOfflineMode && homeIsFrontmost && homeHasAppeared && playbackRequest == nil,
+                scope: ObjectIdentifier(viewModel),
+                isScrolling: homeIsScrolling, isLoading: viewModel.isRefreshing
+            )
             .onScrollGeometryChange(for: Bool.self) { geometry in
                 geometry.contentOffset.y > trailerPauseThreshold
             } action: { _, isPastHalfHero in
@@ -2708,7 +2696,68 @@ private struct PlozziOSHomeRowFailure: View {
     }
 }
 
-private struct PlozziOSHomeRowView: View {
+struct PlozziOSHomeLibraryPresentationRow: View, Equatable {
+    @Environment(\.plozziOSIsRunningOnMac) private var isRunningOnMac
+    let presentation: HomePresentationRow
+    let row: HomeLibrarySectionGroup.Row
+    let appModel: PlozziOSAppModel
+    let viewModel: HomeViewModel
+    let coordinator: FeaturedTrailerCoordinator
+    let controller: HeroTrailerController
+    let isActive: Bool
+    @Binding var rowBrowser: HomeRowBrowseModel?
+    @Binding var showingHomeCustomization: Bool
+
+    nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
+        // Bindings address the same owning Home state for this model/row identity.
+        // Settings read inside body still invalidate through Observation/environment.
+        lhs.presentation == rhs.presentation && lhs.row == rhs.row
+            && lhs.appModel === rhs.appModel && lhs.viewModel === rhs.viewModel
+            && lhs.coordinator === rhs.coordinator && lhs.controller === rhs.controller
+            && lhs.isActive == rhs.isActive
+    }
+
+    private var onBrowse: (() -> Void)? {
+        guard presentation.supportsBrowsing(
+            loadedItemThreshold: isRunningOnMac ? PlozziOSMediaRailLayout.desktopBrowseThreshold : nil
+        ) else { return nil }
+        return { rowBrowser = viewModel.browseRow(presentation) }
+    }
+
+    var body: some View {
+        let section = row.section
+        if let issue = row.issue {
+            PlozziOSHomeSectionStatusRow(
+                issue: issue, browseItem: row.browseItem, appModel: appModel, viewModel: viewModel,
+                onCustomizeHome: { showingHomeCustomization = true }
+            )
+        } else if let failure = row.failure {
+            PlozziOSHomeRowFailure(
+                title: section.displayName, error: failure, viewModel: viewModel
+            )
+        } else if row.isLoading && row.collectionCardStyle != .featured {
+            PlozziOSHomeSkeletonRail(
+                title: section.displayName,
+                style: section.style == .landscape ? .landscape : .poster,
+                showsCaption: appModel.settings.cardStyle.captions.showsLabels(in: .home)
+            )
+        } else if row.collectionCardStyle == .featured {
+            PlozziOSFeaturedCollectionRail(
+                row: row, appModel: appModel, scope: ObjectIdentifier(viewModel),
+                coordinator: coordinator, controller: controller, isActive: isActive, onBrowse: onBrowse
+            )
+        } else {
+            PlozziOSHomeMediaRail(
+                title: section.displayName, items: section.items,
+                style: section.style == .landscape ? .landscape : .poster,
+                appModel: appModel, browseItem: row.browseItem, onBrowse: onBrowse,
+                onNavigationInteraction: viewModel.noteHomeNavigationInteraction
+            )
+        }
+    }
+}
+
+struct PlozziOSHomeRowView: View {
     @Environment(\.plozzMetrics) private var metrics
     @Environment(\.plozzCardStyle) private var artworkStyle
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
@@ -2932,7 +2981,7 @@ struct PlozziOSHomeMediaRail: View {
     private func rail(metrics: PlozzMetrics) -> some View {
         PlozziOSMediaSection(
             title: title, artworkInset: cardStyle == .framed ? metrics.cardInset : 0,
-            onBrowse: onBrowse
+            reservesBrowseSpace: true, onBrowse: onBrowse
         ) {
             if browseItem != nil && items.isEmpty && loadingPlaceholderCount == 0 {
                 Text("No titles in this collection.")

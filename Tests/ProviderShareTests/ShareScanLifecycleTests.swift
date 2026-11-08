@@ -3,6 +3,7 @@ import Foundation
 import MediaTransportCore
 import XCTest
 @testable import ProviderShare
+@testable import TestSupportPerformance
 
 /// Batch 3 (findings A5 + A7): explicit scan outcomes drive *conditional* background
 /// completion stamping (a cancelled/superseded/invalidated pass must never suppress the
@@ -14,6 +15,102 @@ import XCTest
 /// (only the transport session + diagnostics sink are injected), so they exercise the
 /// production completion-gating, owner-attribution, and arbiter-retirement paths.
 final class ShareScanLifecycleTests: XCTestCase {
+
+    private final class ListingLoad: @unchecked Sendable {
+        private let lock = NSLock()
+        private var active = 0
+        private var peak = 0
+        private var total = 0
+
+        func begin() {
+            lock.withLock {
+                active += 1
+                total += 1
+                peak = max(peak, active)
+            }
+        }
+
+        func end() { lock.withLock { active -= 1 } }
+        var counts: (peak: Int, total: Int) { lock.withLock { (peak, total) } }
+    }
+
+    @MainActor
+    func testPerformanceTwentyShareScans() async throws {
+        try PerformanceProbe.requireEnabled()
+        try await PerformanceProbe.measure(self, scenario: "multi-share-scanning") {
+            let load = ListingLoad()
+            let coordinator = self.makeCoordinator(
+                diagnostics: ScanDiagnosticsSpy(), initialWorkScope: .paused
+            )
+            let ids = (0..<20).map { _ in "load-\(UUID())" }
+            let revision = CredentialRevision()
+            var tree = ["": (0..<24).map { "Folder \($0)" }]
+            for folder in tree[""]! {
+                tree[folder] = (0..<8).map { "\(folder)/Film \($0) (2000).mkv" }
+            }
+            var stores: [ShareCatalogStore] = []
+            for id in ids {
+                let controller = LifecycleListController(
+                    blocksRoot: false, tree: tree, listingLoad: load
+                )
+                let store = await coordinator.store(
+                    accountKey: id, displayName: "Fixture", credentialRevision: revision,
+                    sessionFactory: self.makeSessionFactory(
+                        accountID: id, revision: revision, controller: controller
+                    )
+                )
+                stores.append(store)
+            }
+            let sampler = Task.detached {
+                var samples = 0
+                var maximum: Int64 = 0
+                while !Task.isCancelled {
+                    let start = ContinuousClock.now
+                    await MainActor.run {}
+                    let elapsed = start.duration(to: .now).components
+                    maximum = max(maximum, elapsed.seconds * 1_000_000 + elapsed.attoseconds / 1_000_000_000_000)
+                    samples += 1
+                    do { try await Task.sleep(for: .milliseconds(5)) }
+                    catch { break }
+                }
+                return (samples, maximum)
+            }
+            await coordinator.setAutomaticWorkScope(
+                .init(profileID: "fixture", accountKeys: Set(ids)), revision: 1
+            )
+            var cachedReads = 0
+            var maximumRead: Int64 = 0
+            let deadline = ContinuousClock.now.advanced(by: .seconds(45))
+            var completed = 0
+            repeat {
+                completed = 0
+                for id in ids {
+                    if await coordinator.backgroundScanCompletedAt(id) != nil { completed += 1 }
+                }
+                let start = ContinuousClock.now
+                _ = await stores[cachedReads % stores.count].movies(offset: 0, limit: 20)
+                let elapsed = start.duration(to: .now).components
+                maximumRead = max(maximumRead, elapsed.seconds * 1_000_000 + elapsed.attoseconds / 1_000_000_000_000)
+                cachedReads += 1
+                if completed < ids.count { try await Task.sleep(for: .milliseconds(10)) }
+            } while completed < ids.count && ContinuousClock.now < deadline
+            sampler.cancel()
+            let scheduling = await sampler.value
+            var assets = 0
+            for store in stores { assets += await store.assetDiscoveryStats(newerThan: 0).total }
+            for id in ids { await coordinator.invalidate(accountKey: id) }
+            XCTAssertEqual(completed, 20, "Every queued source must finish; deferring all work is not a speedup.")
+            XCTAssertEqual(assets, 20 * 24 * 8)
+            XCTAssertEqual(load.counts.total, 20 * 25)
+            XCTAssertGreaterThan(scheduling.0, 0)
+            return [
+                "shares": ids.count, "completedScans": completed, "assets": assets,
+                "directoryListings": load.counts.total, "peakListings": load.counts.peak,
+                "cachedReads": cachedReads, "maximumCachedReadMicroseconds": Int(maximumRead),
+                "mainActorSamples": scheduling.0, "mainActorMaxDelayMicroseconds": Int(scheduling.1)
+            ]
+        }
+    }
 
     // MARK: - Test doubles
 
@@ -62,17 +159,20 @@ final class ShareScanLifecycleTests: XCTestCase {
         private let ignoresTaskCancellation: Bool
         let tree: [String: [String]]
         let failingDirs: Set<String>
+        let listingLoad: ListingLoad?
 
         init(
             blocksRoot: Bool,
             ignoresTaskCancellation: Bool = false,
             tree: [String: [String]] = [:],
-            failingDirs: Set<String> = []
+            failingDirs: Set<String> = [],
+            listingLoad: ListingLoad? = nil
         ) {
             self.blocksRootFlag = blocksRoot
             self.ignoresTaskCancellation = ignoresTaskCancellation
             self.tree = tree
             self.failingDirs = failingDirs
+            self.listingLoad = listingLoad
         }
 
         var rootLists: Int { lock.withLock { rootListCountValue } }
@@ -160,6 +260,9 @@ final class ShareScanLifecycleTests: XCTestCase {
         }
 
         func list(relativePath: String) async throws -> [RemoteFileEntry] {
+            controller.listingLoad?.begin()
+            defer { controller.listingLoad?.end() }
+            if controller.listingLoad != nil { try await Task.sleep(for: .milliseconds(30)) }
             if relativePath.isEmpty {
                 controller.noteRootList()
                 await controller.blockRoot()
@@ -168,7 +271,11 @@ final class ShareScanLifecycleTests: XCTestCase {
                 throw MediaTransportError.unsupportedCapability("injected listing failure")
             }
             return try controller.children(of: relativePath).map {
-                try RemoteFileEntry(relativePath: $0, kind: .directory, modifiedAt: Date())
+                try RemoteFileEntry(
+                    relativePath: $0, kind: $0.hasSuffix(".mkv") ? .file : .directory,
+                    size: $0.hasSuffix(".mkv") ? 1_000 : nil,
+                    modifiedAt: Date(timeIntervalSince1970: 100)
+                )
             }
         }
 
@@ -266,6 +373,133 @@ final class ShareScanLifecycleTests: XCTestCase {
     }
 
     // MARK: - A5: completion gating and owner attribution
+
+    func testTwentyCatalogsQueueScansWithoutBlockingCachedReadsAndAllEventuallyComplete() async {
+        let coordinator = makeCoordinator(diagnostics: ScanDiagnosticsSpy())
+        let revision = CredentialRevision()
+        let ids = (0..<20).map { _ in "bounded-\(UUID())" }
+        let controllers = ids.map { _ in LifecycleListController(blocksRoot: true) }
+        for (index, id) in ids.enumerated() {
+            let store = await coordinator.store(
+                accountKey: id, displayName: "Fixture", credentialRevision: revision,
+                sessionFactory: makeSessionFactory(
+                    accountID: id, revision: revision, controller: controllers[index]
+                )
+            )
+            await store.setMeta("cached-value", id)
+            if index < 2 { await controllers[index].waitUntilListing() }
+        }
+        XCTAssertEqual(controllers.map(\.rootLists).reduce(0, +), 2)
+        let cached = await coordinator.store(
+            accountKey: ids[19], displayName: "Fixture", credentialRevision: revision,
+            sessionFactory: makeSessionFactory(
+                accountID: ids[19], revision: revision, controller: controllers[19]
+            )
+        )
+        let value = await cached.meta("cached-value")
+        XCTAssertEqual(value, ids[19], "Catalog reads must not wait behind scan admission.")
+        for controller in controllers { controller.setBlocksRoot(false); controller.noteShutdown() }
+        let finished = await poll(timeout: 10) {
+            for id in ids where await coordinator.backgroundScanCompletedAt(id) == nil { return false }
+            return true
+        }
+        XCTAssertTrue(finished)
+        XCTAssertTrue(controllers.allSatisfy { $0.rootLists == 1 })
+        for id in ids { await coordinator.invalidate(accountKey: id) }
+    }
+
+    func testQueuedScanYieldsToPlaybackAndProfileExclusionWithoutOpeningTransport() async throws {
+        let coordinator = makeCoordinator(diagnostics: ScanDiagnosticsSpy())
+        let revision = CredentialRevision()
+        let ids = (0..<4).map { _ in "queued-\(UUID())" }
+        let controllers = ids.map { _ in LifecycleListController(blocksRoot: true) }
+        for (index, id) in ids.enumerated() {
+            _ = await coordinator.store(
+                accountKey: id, displayName: "Fixture", credentialRevision: revision,
+                sessionFactory: makeSessionFactory(
+                    accountID: id, revision: revision, controller: controllers[index]
+                )
+            )
+            if index < 2 { await controllers[index].waitUntilListing() }
+        }
+        let playback = try await coordinator.acquirePlayback(accountKey: ids[2])
+        XCTAssertEqual(controllers[2].rootLists, 0)
+        let stamp = await coordinator.backgroundScanCompletedAt(ids[2])
+        XCTAssertNil(stamp)
+        await coordinator.setAutomaticWorkScope(
+            .init(profileID: "replacement", accountKeys: Set(ids.prefix(2))), revision: 1
+        )
+        await playback.releaseAndWait()
+        for controller in controllers { controller.setBlocksRoot(false); controller.noteShutdown() }
+        let drained = await poll {
+            let third = await coordinator.scanTaskCountForTesting(ids[2])
+            let fourth = await coordinator.scanTaskCountForTesting(ids[3])
+            return third == 0 && fourth == 0
+        }
+        XCTAssertTrue(drained)
+        XCTAssertEqual(controllers[2].rootLists + controllers[3].rootLists, 0)
+        await coordinator.setAutomaticWorkScope(
+            .init(profileID: "replacement", accountKeys: Set(ids)), revision: 2
+        )
+        let resumed = await poll(timeout: 10) {
+            for id in ids where await coordinator.backgroundScanCompletedAt(id) == nil { return false }
+            return true
+        }
+        XCTAssertTrue(resumed, "Cancelled waiters must not leak capacity or lose eligible work.")
+        for id in ids { await coordinator.invalidate(accountKey: id) }
+    }
+
+    func testScanCapacityStaysOwnedUntilCancelledTransportFinishesDraining() async {
+        let coordinator = makeCoordinator(diagnostics: ScanDiagnosticsSpy())
+        let revision = CredentialRevision()
+        let ids = (0..<3).map { _ in "draining-budget-\(UUID())" }
+        let controllers = ids.map { _ in LifecycleListController(blocksRoot: true) }
+        let shutdown = LifecycleShutdownGate()
+        for (index, id) in ids.enumerated() {
+            _ = await coordinator.store(
+                accountKey: id, displayName: "Fixture", credentialRevision: revision,
+                sessionFactory: makeSessionFactory(
+                    accountID: id, revision: revision, controller: controllers[index],
+                    shutdownGate: index == 0 ? shutdown : nil
+                )
+            )
+            if index < 2 { await controllers[index].waitUntilListing() }
+        }
+        let removal = Task { await coordinator.invalidate(accountKey: ids[0]) }
+        let closing = await poll { controllers[0].shutdownCount > 0 }
+        XCTAssertTrue(closing)
+        XCTAssertEqual(controllers[2].rootLists, 0, "Cancellation is not a released scan slot.")
+        await shutdown.open()
+        await removal.value
+        let admitted = await poll { controllers[2].rootLists == 1 }
+        XCTAssertTrue(admitted)
+        for controller in controllers { controller.noteShutdown() }
+        for id in ids { await coordinator.invalidate(accountKey: id) }
+    }
+
+    func testBrowsingAnyAccountPacesEveryRegisteredScanner() async throws {
+        let coordinator = makeCoordinator(diagnostics: ScanDiagnosticsSpy(), initialWorkScope: .paused)
+        let revision = CredentialRevision()
+        let ids = (0..<2).map { _ in "global-pacing-\(UUID())" }
+        for id in ids {
+            _ = await coordinator.store(
+                accountKey: id, displayName: "Fixture", credentialRevision: revision,
+                sessionFactory: makeSessionFactory(
+                    accountID: id, revision: revision,
+                    controller: LifecycleListController(blocksRoot: false)
+                )
+            )
+        }
+        let first = await coordinator.scanPacerForTesting(ids[0])
+        let second = await coordinator.scanPacerForTesting(ids[1])
+        let firstPacer = try XCTUnwrap(first)
+        let secondPacer = try XCTUnwrap(second)
+        XCTAssertTrue(firstPacer === secondPacer)
+        await coordinator.noteInteractiveActivity(accountKey: "unregistered-raw-browser")
+        let paced = await secondPacer.paceIfBrowsing()
+        XCTAssertTrue(paced)
+        for id in ids { await coordinator.invalidate(accountKey: id) }
+    }
 
     func testExcludedSourceRegistrationAndPollingDoNotScanOrDiscardItsCatalog() async {
         let accountID = "scope-paused-\(UUID())"

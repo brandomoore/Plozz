@@ -1,6 +1,11 @@
 #if canImport(SwiftUI)
 import SwiftUI
 
+public extension EnvironmentValues {
+    /// Eager scroll layouts can retain placeholders without animating offscreen rows.
+    @Entry var plozzShimmerEnabled = true
+}
+
 /// A reusable shimmer overlay for placeholder/skeleton content: a soft, slow
 /// sheen drifts across the view to gently signal "loading" — deliberately
 /// understated (low intensity, wide feathered band, eased timing with an
@@ -23,6 +28,7 @@ private struct ShimmerModifier: ViewModifier {
 
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.plozzShimmerEnabled) private var shimmerEnabled
     @State private var phase: CGFloat = -1
 
     private var intensity: Double {
@@ -34,6 +40,7 @@ private struct ShimmerModifier: ViewModifier {
         if reduceMotion {
             return AnyView(content.opacity(0.65))
         }
+        guard shimmerEnabled else { return AnyView(content) }
         return AnyView(
             content
                 .overlay {

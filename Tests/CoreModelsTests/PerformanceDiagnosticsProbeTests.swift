@@ -96,7 +96,16 @@ final class PerformanceDiagnosticsProbeTests: XCTestCase {
         defer { diagnostics.stop() }
         for _ in 0..<PerformanceDiagnostics.maximumRecent {
             diagnostics.begin(.serverRequest, provider: .plex)?.finish(.succeeded, httpStatus: 200)
+            diagnostics.begin(.homePublish)?.finish(.succeeded)
         }
+        let home = try XCTUnwrap(diagnostics.beginHomeObservation())
+        var metrics = PerformanceDiagnostics.HomeUIMetrics()
+        metrics.samples = 1
+        for _ in 0..<PerformanceDiagnostics.maximumHomeUI {
+            clock.advance()
+            XCTAssertTrue(home.record(metrics))
+        }
+        home.stop()
         for _ in 0..<PerformanceDiagnostics.maximumSlow {
             let span = diagnostics.begin(.homeMerge, provider: .jellyfin, metrics: .init(items: 100))
             clock.advance()
@@ -116,8 +125,9 @@ final class PerformanceDiagnosticsProbeTests: XCTestCase {
                 XCTAssertNotNil(context)
                 serializedBytes += data.count
                 records += snapshot.active.count + snapshot.recent.count + snapshot.slow.count
+                    + snapshot.homeRecent.count + snapshot.homeSlow.count + snapshot.homeUI.count
             }
-            XCTAssertEqual(records, 6_400)
+            XCTAssertEqual(records, 15_600)
             XCTAssertGreaterThan(serializedBytes, 0)
             return ["snapshots": 100, "records": records, "serializedBytes": serializedBytes]
         }

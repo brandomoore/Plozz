@@ -17,6 +17,11 @@ language every other module speaks.
   asynchronously closing registered actor-owned stores. Owners register before
   opening files, reject inactive access, and ignore stale cleanup after resume.
   Registration is weak, so the registry does not retain retired stores.
+- `PerformanceDiagnostics` owns consent-scoped, bounded operation histories and
+  numeric Home responsiveness windows. Home load/merge/publication retention is
+  independent of HTTP/decode traffic. UI observers must hold a current Home
+  observation token; replacement and opt-out reject late samples. The recorder
+  does not schedule sampling or emit events.
 - `ThemeMusicVolume` persists a bounded 0–1 gain per profile. Legacy named levels
   decode to their original gain; only the old `"off"` token triggers the paired
   background-mode migration, not a new numeric zero.
@@ -241,6 +246,15 @@ curated sections and new appearances need explicit configuration and capability
 contracts before they can become templates in this editor. Do not overload an
 existing `HomeRowID` to represent independent instances or change provider IDs
 to make them unique in the UI.
+
+`LibraryInventoryStore` is a bounded, local names/IDs cache for already authorized
+server viewers, separate from profile choices and navigation's per-profile
+snapshot. Home and Settings warm it through live library discovery. It never
+resolves credentials or authorizes a profile; callers supply currently resolved
+accounts. Profile-local providers, including downloaded-media projections, bypass
+both cache reads and writes so they cannot replace the server's full inventory.
+See [Libraries behavior](../FeatureSettings/README.md#responsibility) for
+refresh, error, and storage limits.
 
 ## Profile deletion and namespace ownership
 

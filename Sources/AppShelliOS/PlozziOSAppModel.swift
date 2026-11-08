@@ -84,6 +84,10 @@ final class PlozziOSAppModel {
             && !activeProfileNeedsUnlock
             && !accountsProviders.activeProfileAwaitsIdentity
     }
+
+    var allowsHomeContentLoading: Bool {
+        isActiveProfileAuthorized && !profiles.activeProfile.needsSetup && !isSettingsPresented
+    }
     var allowsStandalonePlayback: Bool { admissionContext.explicitStandaloneChoice }
     var pendingStandaloneLiveTVEntry: Bool { appAdmission.pendingLiveTVEntry }
 
@@ -160,13 +164,21 @@ final class PlozziOSAppModel {
 
     @discardableResult
     func refreshNavigationLibraries() async -> Bool {
+        guard !Task.isCancelled else { return false }
         let scope = navigationLibrariesScopeKey
         let currentSettings = settings
         let accountIDs = Set(accountsProviders.navigationAccounts.map(\.id))
-        let request = currentSettings.discoveredLibraries.beginRefresh(accountIDs: accountIDs)
+        let accounts = accountsProviders.homeAccounts
+        let cached = HomeAggregator.cachedLibraries(from: accounts)
+        currentSettings.discoveredLibraries.seed(
+            libraries: cached.libraries, cachedAccountIDs: cached.accountIDs, accountIDs: accountIDs
+        )
+        let request = currentSettings.discoveredLibraries.beginRefresh(
+            accountIDs: accountIDs.subtracting(cached.accountIDs)
+        )
         defer { currentSettings.discoveredLibraries.cancelRefresh(request) }
         guard let discovered = await navigationLibraryDiscovery.refresh(
-            from: accountsProviders.homeAccounts,
+            from: accounts,
             expectedAccountIDs: accountIDs,
             navigation: currentSettings.navigation,
             isCurrent: { self.settings === currentSettings && self.navigationLibrariesScopeKey == scope }
@@ -622,6 +634,9 @@ final class PlozziOSAppModel {
         onPublish: { [weak self] in
             self?.drainWatchOutbox()
             self?.universalWatchlistIdentityDidUpdate()
+        },
+        isWarmingAllowed: { [weak self] in
+            self?.profiles.activeProfile.needsSetup == false
         }
     )
 
@@ -1474,6 +1489,7 @@ final class PlozziOSAppModel {
             // holds every server it inherited, and importing against that pulls
             // the household's aggregate watchlist into it.
             if profiles.finishSetup(for: id) {
+                identityIndex.warmIdentityIndex()
                 Task { @MainActor in
                     await updateTrackersForActiveProfile()
                     await prepareUniversalWatchlist()
@@ -1493,6 +1509,7 @@ final class PlozziOSAppModel {
     func cancelProfileOnboarding() {
         guard let id = profileOnboardingID else { return }
         if profiles.finishSetup(for: id) {
+            identityIndex.warmIdentityIndex()
             Task { @MainActor in
                 await updateTrackersForActiveProfile()
                 await prepareUniversalWatchlist()
@@ -2848,12 +2865,17 @@ final class PlozziOSAppModel {
     }
 
     func setAccount(_ accountID: String, enabled: Bool, for profileID: String) {
-        var ids = activeAccountIDs(for: profileID)
+        let previous = activeAccountIDs(for: profileID)
+        var ids = previous
         if enabled {
             ids.insert(accountID)
         } else {
             ids.remove(accountID)
         }
+        guard ids != previous
+            || profiles.storedActiveAccountIDs(for: profileID) == nil
+            || profiles.unconfirmedAccountSelectionProfileIDs.contains(profileID)
+        else { return }
         profiles.setActiveAccountIDs(Array(ids), for: profileID)
         watchReconcilers[profileID] = nil
         // Noted BEFORE the reload below, which schedules a watchlist import: the
@@ -2868,15 +2890,16 @@ final class PlozziOSAppModel {
         }
         if profiles.activeProfileID == profileID {
             // The account set drives what's on screen, so this stays synchronous.
-            reloadAccountsAndCrashContext()
+            heroTrailerCache.removeAll()
+            accountsProviders.refreshActiveAccountSelection()
+            identityIndex.reset()
             // Everything else is bookkeeping, and it was running in the same
             // turn as the toggle — blocking the main actor long enough that the
             // switch's own animation dropped frames and the expanding card
             // appeared to jump. Yield first so the UI settles, then catch up.
             Task { @MainActor [weak self] in
                 await Task.yield()
-                guard let self else { return }
-                self.identityIndex.reset()
+                guard let self, self.profiles.activeProfileID == profileID else { return }
                 self.identityIndex.warmIdentityIndex()
                 self.drainWatchOutbox()
             }
@@ -3074,6 +3097,7 @@ final class PlozziOSAppModel {
 
     func finishFirstRunThemeSelection() {
         profiles.markFirstRunProfileSetupComplete()
+        identityIndex.warmIdentityIndex()
         pendingFirstRunStep = nil
         if appliesPlexIdentityAfterLibrarySelection {
             appliesPlexIdentityAfterLibrarySelection = false

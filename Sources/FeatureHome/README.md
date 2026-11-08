@@ -20,20 +20,45 @@ fallback when the user's server has no attached trailer.
 
 ## Mobile Home loading geometry
 
-Home measures its viewport once and shares that width with loaded and skeleton
-rails, so newly mounted rows do not first lay out at a fallback poster size.
-Browse headings keep their native 44-point touch target without enlarging the
-row. Library placeholders use the library card's own layout; featured collection
-placeholders use the featured row's card size.
+Home shares its measured viewport width with loaded and skeleton rails.
+`PlozziOSHomeRowSlot` reserves each row's footprint using the real card sizing
+primitives, heading, captions, and current layout settings. Loading, populated,
+and failed content occupy that space rather than determining its height. The
+invisible sizing content does not shimmer or enter the accessibility tree.
+Long status messages can scroll inside the reserved row instead of expanding
+the page. Browse headings reserve chevron space before their action is available;
+only actionable headings are buttons, with the native 44-point touch target.
+Library, featured, Continue Watching, and Live TV rows use their own geometry.
 
-The vertical stack remains eager to avoid estimated-height changes. Stable
-`HomeRowID` content-coordinate frames preserve the first surviving visible row
-when loading inserts or removes rows above it. Empty rows disappear rather than
-leaving gaps. Scroll geometry is retained in a non-observable owner, not published
-through the full Home view every frame; a new Home model resets the scroll scope.
-At the top, Home stays at the top. Viewport resizing is not treated as a row
-insertion. This does not promise a fixed total height before the server's row
-inventory is known, or prove physical-device frame pacing.
+The first progressive Home publication includes configured server and collection
+rows before provider responses arrive. Planning and fetching share the same
+active-account, server-user, enabled-library, and row-visibility filters.
+Matching cached content remains usable while refreshing; an unavailable response
+is not treated as an empty row. A failed global row with no usable cards regains
+its loading reservation when an interrupted load resumes or an explicit retry
+starts. Only content surviving library/tile visibility and the Recently Added
+watched filter counts as usable. Successfully empty rows stay absent; retained
+cards stay visible.
+
+The vertical stack remains eager to avoid estimated-height changes. Loading-rail
+geometry is retained offscreen; its horizontal stack is lazy, like the loaded
+rail, so clipped placeholder cards are not all constructed at startup.
+The mobile rail's native scroll
+visibility controls its shared shimmer animation. Only visible loading rows
+animate; scrolling a row into view resumes its shimmer without delaying loading.
+Server/library/collection rows have a scoped, equatable presentation boundary,
+so another server's response does not reconstruct their unchanged content and
+browse closures. The comparison includes row content/status, Home model and
+controller identities, and featured playback activity. Profile settings and
+environment changes remain observable inside the row; browsing/customization
+bindings retain the owning Home's presentation state.
+Scrolling is native: there is no per-row frame tracking, anchor preservation, or
+compensating scroll command. Confirmed-empty rows follow the existing empty-message
+and dismissal policy; removing one is a real document change. Newly discovered
+inventory, hero availability, viewport/settings changes, and an Auto collection
+cover shape resolved from new metadata can also change the document. Reserving
+known row layouts does not promise immutable whole-page geometry or prove
+physical-device frame pacing.
 
 ## Inline library collections
 
@@ -1284,11 +1309,45 @@ removing successful rows. Cancellation stops queued requests. Parent-series
 identity lookups are coalesced per account and load, and incomplete Home content
 does not overwrite the durable snapshot.
 
+Mobile Home measures every configured row's exact footprint eagerly, while a
+native lazy vertical stack mounts its rail content near the viewport. Offscreen
+responses update the model without constructing all of their card views. The
+sizing template receives only geometry and caption inputs, not changing media
+payloads. Lazy content never determines the reserved height; native scrolling
+still owns the offset. This changes presentation work, not provider concurrency,
+request ordering, cancellation, or how much content is loaded.
+
 If SwiftUI replaces Home's view task during library-settings preparation, a
 coalesced replacement request retries the cancelled preparation once. The rows
 must not wait for another trip away from Home and back. Cancellation without a
 replacement does not start background loading; an already-running aggregation
 still completes without a duplicate fetch.
+
+Explicit owner suspension is different from view-task cancellation. Mobile Home
+and Watchlist defer Home aggregation while Settings is presented, profile setup
+is unfinished, or the active profile is unauthorized. A suspended load cancels
+aggregation and its collection-refresh/reenrichment work; resumption uses the
+final library choices. If the loaded content is still fresh, queued collection
+previews and identity enrichment resume without refetching all Home feeds.
+If loading was incomplete, resumption keeps already-published global, library,
+server and collection cards visible and interactive while replacement results
+arrive. Only unresolved rows show skeletons. Loading/failure evidence remains
+on the source rows and in section diagnostics, not over usable retained cards.
+Successful empty responses still remove old content. Live global-row readiness
+is scoped to the viewer's library intent; it does not relax cold-launch snapshot
+freshness or carry across changed choices.
+Replacing an account/profile-scoped Home model on either
+platform permanently invalidates it before creating the next one. Late results
+and queued reloads from that retired model cannot publish or restart work; do
+not rely on `deinit` while an outstanding load retains its model.
+
+Identity verification does not imply a membership change. `IdentityIndex` compares
+completed account rebuilds on its own actor and keeps its cached snapshot when
+membership and source metadata are unchanged. Scan freshness and persistence
+still advance. The shared runtime publishes only newer membership revisions,
+after pruning the active account set, and retains profile/generation fences.
+Home reenrichment and watchlist reconciliation therefore run for real changes,
+not every unchanged server completion; live source lookup closures remain live.
 
 Showcase keeps its first-row anchor while that row loads; a lower row finishing
 does not choose focus or scroll the page. Its leading loading card has a visible

@@ -7,6 +7,67 @@ import XCTest
 
 @MainActor
 final class LibraryNavigationDiscoveryTests: XCTestCase {
+    func testNewSettingsShowsAuthorizedCacheBeforeBackgroundDiscoveryFinishes() async {
+        let discovery = LibraryDiscoveryModel()
+        let source = account("warm", kind: .jellyfin) { [.init(id: "movies", title: "Movies", kind: .movie)] }
+        _ = await discovery.libraries(from: [source])
+        let settings = DiscoveredLibrariesStore()
+        let navigation = makeNavigation()
+        let started = expectation(description: "Live refresh started")
+        let gate = LibraryDiscoveryGate()
+        let refreshing = account("warm", kind: .jellyfin, metadata: source.account) { await gate.load(started: started) }
+        let task = Task {
+            await discovery.refreshNavigationLibraries(
+                from: [refreshing], navigation: navigation, settings: settings, isCurrent: { true }
+            )
+        }
+        await fulfillment(of: [started], timeout: 5)
+        XCTAssertEqual(settings.state.value?.map(\.key), ["warm:movies"])
+        XCTAssertTrue(settings.refreshingAccountIDs.isEmpty)
+        await gate.finish()
+        _ = await task.value
+        XCTAssertEqual(settings.state.value?.map(\.key), ["warm:old"])
+    }
+
+    func testCachedOfflineLibrariesKeepExplicitFailureAndAuthDenialClearsThem() async {
+        let discovery = LibraryDiscoveryModel()
+        let navigation = makeNavigation()
+        let settings = DiscoveredLibrariesStore()
+        let source = account("warm", kind: .plex) { [.init(id: "movies", title: "Movies", kind: .movie)] }
+        _ = await discovery.libraries(from: [source])
+        for error in [AppError.serverUnreachable, .unauthorized] {
+            let failing = account("warm", kind: .plex, metadata: source.account) { throw error }
+            _ = await discovery.refreshNavigationLibraries(
+                from: [failing], navigation: navigation, settings: settings, isCurrent: { true }
+            )
+            XCTAssertEqual(settings.failures, ["warm": error])
+            XCTAssertEqual(settings.unreachableAccountIDs, ["warm"])
+            XCTAssertEqual(settings.state.value?.map(\.key) ?? [], error == .serverUnreachable ? ["warm:movies"] : [])
+        }
+        XCTAssertNil(LibraryInventoryStore.shared.load(for: source))
+        XCTAssertTrue(navigation.contentLibraries.isEmpty, "Rejected authorization must also clear remembered navigation rows.")
+    }
+
+    func testUnresolvedProvidersCannotReadSavedLibrariesAndSuccessfulEmptyReplacesCache() async {
+        let discovery = LibraryDiscoveryModel()
+        let source = account("warm", kind: .plex) { [.init(id: "movies", title: "Movies", kind: .movie)] }
+        _ = await discovery.libraries(from: [source])
+        let settings = DiscoveredLibrariesStore()
+        _ = await discovery.refreshNavigationLibraries(
+            from: [], expectedAccountIDs: ["warm"], navigation: makeNavigation(),
+            settings: settings, isCurrent: { true }
+        )
+        XCTAssertEqual(settings.state, .empty)
+        XCTAssertEqual(settings.failures, ["warm": .unauthorized])
+        let empty = account("warm", kind: .plex, metadata: source.account) { [] }
+        _ = await discovery.refreshNavigationLibraries(
+            from: [empty], navigation: makeNavigation(), settings: settings, isCurrent: { true }
+        )
+        XCTAssertEqual(settings.state, .empty)
+        XCTAssertTrue(settings.failures.isEmpty)
+        XCTAssertEqual(LibraryInventoryStore.shared.load(for: source), [])
+    }
+
     func testSettingsRecoveryPublishesLibrariesToNavigationAndItsEditor() async {
         let discovery = LibraryDiscoveryModel()
         let navigation = makeNavigation()
@@ -102,7 +163,7 @@ final class LibraryNavigationDiscoveryTests: XCTestCase {
         }
         await fulfillment(of: [started], timeout: 5)
         _ = await discovery.refreshNavigationLibraries(
-            from: [account("plex", kind: .plex) { [.init(id: "new", title: "New", kind: .movie)] }],
+            from: [account("plex", kind: .plex, metadata: oldAccount.account) { [.init(id: "new", title: "New", kind: .movie)] }],
             navigation: navigation, settings: settings, isCurrent: { true }
         )
         await gate.finish()
@@ -110,6 +171,7 @@ final class LibraryNavigationDiscoveryTests: XCTestCase {
         XCTAssertFalse(oldPublished)
         XCTAssertEqual(navigation.contentLibraries.map(\.key), ["plex:new"])
         XCTAssertEqual(navigation.contentLibraries, settings.state.value)
+        XCTAssertEqual(LibraryInventoryStore.shared.load(for: oldAccount)?.map(\.id), ["new"])
     }
 
     func testCancelledSettingsRefreshCannotStrandTheShellDiscovery() async {
@@ -243,7 +305,7 @@ final class LibraryNavigationDiscoveryTests: XCTestCase {
     }
 
     private func account(
-        _ id: String, kind: ProviderKind,
+        _ id: String, kind: ProviderKind, metadata: Account? = nil,
         libraries: @escaping @Sendable () async throws -> [MediaLibrary]
     ) -> ResolvedAccount {
         let server = MediaServer(
@@ -253,7 +315,7 @@ final class LibraryNavigationDiscoveryTests: XCTestCase {
             server: server, userID: "viewer", userName: "Viewer", deviceID: "fixture", accessToken: "fixture"
         )
         return ResolvedAccount(
-            account: Account(id: id, server: server, userID: "viewer", userName: "Viewer", deviceID: "fixture"),
+            account: metadata ?? Account(id: id, server: server, userID: "viewer", userName: "Viewer", deviceID: "fixture"),
             provider: NavigationLibraryProvider(session: session, loadLibraries: libraries)
         )
     }

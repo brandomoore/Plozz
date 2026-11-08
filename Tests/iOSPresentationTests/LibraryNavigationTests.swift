@@ -12,6 +12,94 @@ import XCTest
 
 @MainActor
 final class LibraryNavigationTests: XCTestCase {
+    func testNewProfileImmediatelyShowsTwentyCachedServersWhileRefreshIsBlocked() async throws {
+        let fixture = LibraryNavigationFixture(libraryCount: 6)
+        let app = try makeApp(fixture: fixture, extraServers: 18)
+        XCTAssertEqual(serverGroups(from: app.accounts).count, 20)
+        await app.refreshNavigationLibraries()
+        XCTAssertEqual(app.settings.discoveredLibraries.state.value?.count, 120)
+        app.settings.homeVisibility.setEnabled(false, for: "jellyfin:library-1")
+
+        let profile = app.profiles.add(name: "Cache viewer", isAwaitingSetup: true)
+        app.profiles.select(profile.id)
+        app.profiles.setActiveAccountIDs(app.accounts.map(\.id), for: profile.id)
+        app.refreshActiveProfileSettings()
+        app.accountsProviders.reloadAccounts()
+        XCTAssertTrue(app.settings.homeVisibility.isEnabled("jellyfin:library-1"),
+                      "The cache shares inventories, never another profile's choices.")
+        let started = expectation(description: "Background discovery reached a server")
+        await fixture.pauseAll(started: started)
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
+        window.overrideUserInterfaceStyle = .dark
+        let host = UIHostingController(rootView:
+            PlozziOSProfileSetupView(appModel: app, onDone: {})
+                .environment(\.themePalette, .dark)
+                .environment(\.colorScheme, .dark)
+                .environment(\.locale, Locale(identifier: "en"))
+        )
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        func descendants<T: UIView>(_ root: UIView, of type: T.Type) -> [T] {
+            (root as? T).map { [$0] } ?? root.subviews.flatMap { descendants($0, of: type) }
+        }
+        func visibleText(_ name: String) throws -> [String] {
+            let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+                XCTAssertTrue(window.drawHierarchy(in: window.bounds, afterScreenUpdates: true))
+            }
+            let attachment = XCTAttachment(image: image)
+            attachment.name = name
+            attachment.lifetime = .keepAlways
+            add(attachment)
+            let request = VNRecognizeTextRequest()
+            request.recognitionLevel = .accurate
+            request.recognitionLanguages = ["en-US"]
+            try VNImageRequestHandler(cgImage: XCTUnwrap(image.cgImage)).perform([request])
+            return (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }
+        }
+        do {
+            await fulfillment(of: [started], timeout: 5)
+            try await waitUntil(window: window) { !descendants(host.view, of: UISwitch.self).isEmpty }
+            XCTAssertEqual(app.settings.discoveredLibraries.state.value?.count, 120)
+            XCTAssertTrue(app.settings.discoveredLibraries.refreshingAccountIDs.isEmpty)
+            let top = try visibleText("Twenty cached servers before any live response")
+            XCTAssertEqual(top.filter { $0.contains("Saved for") }.count, 1)
+            XCTAssertTrue(top.contains { $0.contains("Cache viewer") })
+            XCTAssertFalse(top.contains { $0.contains("Loading libraries") || $0.contains("Pick the servers") })
+            XCTAssertFalse(top.contains { $0.contains("Saved for profile") })
+            for enabled in [false, true, false, true] {
+                let control = try XCTUnwrap(descendants(host.view, of: UISwitch.self).min {
+                    $0.convert($0.bounds, to: window).minY < $1.convert($1.bounds, to: window).minY
+                })
+                control.setOn(enabled, animated: false)
+                control.sendActions(for: .valueChanged)
+                XCTAssertEqual(app.activeAccountIDs(for: profile.id).count, enabled ? 20 : 19)
+                try await waitUntil(window: window) {
+                    app.settings.discoveredLibraries.state.value?.count == (enabled ? 120 : 114)
+                }
+                XCTAssertTrue(app.settings.discoveredLibraries.refreshingAccountIDs.isEmpty)
+            }
+            let scroll = try XCTUnwrap(descendants(host.view, of: UIScrollView.self).first)
+            scroll.setContentOffset(CGPoint(x: 0, y: 650), animated: false)
+            try await Task.sleep(for: .milliseconds(150))
+            window.layoutIfNeeded()
+            let scrolled = try visibleText("Profile context scrolls away with the libraries")
+            XCTAssertFalse(scrolled.contains { $0.contains("Saved for") || $0.contains("Pick the servers") })
+            XCTAssertLessThanOrEqual(scroll.contentSize.width, scroll.bounds.width + 1)
+        } catch {
+            await fixture.resumeAll()
+            throw error
+        }
+        await fixture.resumeAll()
+    }
+
     func testSuccessfulLiveTVSetupRevealsTabOnlyForCurrentProfile() throws {
         let app = try makeApp()
         let originalProfile = app.profiles.activeProfileID
@@ -422,7 +510,8 @@ final class LibraryNavigationTests: XCTestCase {
 
     private func makeApp(
         fixture: LibraryNavigationFixture = LibraryNavigationFixture(),
-        usesDuplicateLibraryNames: Bool = false
+        usesDuplicateLibraryNames: Bool = false,
+        extraServers: Int = 0
     ) throws -> PlozziOSAppModel {
         let suite = "LibraryNavigationTests.\(UUID())"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
@@ -439,12 +528,12 @@ final class LibraryNavigationTests: XCTestCase {
         let libraries: [(String, ProviderKind, String, MediaItemKind)] = [
             ("plex", .plex, "Plex Movies", .movie),
             ("jellyfin", .jellyfin, "Jellyfin Shows", .series)
-        ]
+        ] + (0..<extraServers).map { ("extra-\($0)", .jellyfin, "Movies", .movie) }
         for (id, kind, title, mediaKind) in libraries {
             try store.add(Account(
                 id: id,
                 server: MediaServer(
-                    id: id, name: id, baseURL: URL(string: "https://fixture.invalid")!, provider: kind
+                    id: id, name: id, baseURL: URL(string: "https://\(id).fixture.invalid")!, provider: kind
                 ),
                 userID: "viewer", userName: "Viewer", deviceID: "fixture"
             ), token: "fixture")
@@ -458,7 +547,7 @@ final class LibraryNavigationTests: XCTestCase {
                 )
             }
         }
-        app.profiles.setActiveAccountIDs(["plex", "jellyfin"], for: profile.id)
+        app.profiles.setActiveAccountIDs(libraries.map(\.0), for: profile.id)
         app.accountsProviders.tokenResolver = { _ in "fixture" }
         app.accountsProviders.reloadAccounts()
         return app
@@ -558,16 +647,31 @@ private actor LibraryNavigationFixture {
     private var failure: AppError?
     private var started: XCTestExpectation?
     private var continuation: CheckedContinuation<Void, Never>?
+    private var allPaused = false
+    private var allContinuations: [CheckedContinuation<Void, Never>] = []
     private(set) var browseRequests: [String] = []
 
     init(libraryCount: Int = 1) { self.libraryCount = libraryCount }
     func setFailure(_ failure: AppError?) { self.failure = failure }
     func pause(started: XCTestExpectation) { self.started = started }
     func resume() { continuation?.resume(); continuation = nil }
+    func pauseAll(started: XCTestExpectation) { allPaused = true; self.started = started }
+    func resumeAll() {
+        allPaused = false
+        for continuation in allContinuations { continuation.resume() }
+        allContinuations.removeAll()
+    }
     func clearBrowseRequests() { browseRequests.removeAll() }
     func recordBrowse(accountID: String, containerID: String) { browseRequests.append("\(accountID):\(containerID)") }
 
     func libraries(accountID: String, library: MediaLibrary) async throws -> [MediaLibrary] {
+        if allPaused {
+            await withCheckedContinuation {
+                allContinuations.append($0)
+                started?.fulfill()
+                started = nil
+            }
+        }
         if accountID == "plex" {
             if let started {
                 self.started = nil

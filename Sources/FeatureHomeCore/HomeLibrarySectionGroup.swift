@@ -40,6 +40,20 @@ public struct HomeLibrarySectionGroup: Identifiable, Equatable, Sendable {
         public var issue: HomeSectionIssue? = nil
         public var collectionCardStyle: CollectionSection.CardStyle? = nil
         public var id: String { section.id }
+
+        init(
+            section: LibrarySection, isLoading: Bool, failure: AppError?,
+            browseItem: MediaItem? = nil, issue: HomeSectionIssue? = nil,
+            collectionCardStyle: CollectionSection.CardStyle? = nil
+        ) {
+            self.section = section
+            // Refresh state belongs to the source row; usable cards remain interactive.
+            self.isLoading = isLoading && section.items.isEmpty
+            self.failure = section.items.isEmpty ? failure : nil
+            self.browseItem = browseItem
+            self.issue = issue
+            self.collectionCardStyle = collectionCardStyle
+        }
     }
 
     /// Base rows retain their relative slots through progressive loading.

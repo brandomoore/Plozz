@@ -69,7 +69,8 @@ final class HomeViewModelReenrichTests: XCTestCase {
 
     private func makeViewModel(
         provider: FakeMediaProvider,
-        box: SourcesBox
+        box: SourcesBox,
+        isLoadingAllowed: @escaping @MainActor () -> Bool = { true }
     ) -> HomeViewModel {
         let server = MediaServer(id: "srv-a", name: "Local", baseURL: URL(string: "http://host")!, provider: .jellyfin)
         let account = Account(id: "a", server: server, userID: "u", userName: "Me", deviceID: "d")
@@ -78,8 +79,27 @@ final class HomeViewModelReenrichTests: XCTestCase {
             accounts: [resolved],
             layoutStore: InMemoryHomeLayoutStore(),
             identitySources: { box.sources(for: $0) },
-            currentVisibility: { .default }
+            currentVisibility: { .default },
+            isLoadingAllowed: isLoadingAllowed
         )
+    }
+
+    func testReturningFromSettingsReenrichesFreshContentWithoutReloadingServers() async {
+        let provider = FakeMediaProvider(allItems: [])
+        provider.continueWatchingItems = [MediaItem(id: "m1", title: "Movie", kind: .movie)]
+        let box = SourcesBox()
+        var allowed = true
+        let vm = makeViewModel(provider: provider, box: box, isLoadingAllowed: { allowed })
+        await vm.load()
+        allowed = false
+        vm.cancelPendingLoad()
+        box.set(["m1": [MediaSourceRef(accountID: "b", itemID: "twin", providerKind: .plex)]])
+        await vm.reenrich()
+        XCTAssertFalse(vm.state.value?.continueWatching.first?.sources.contains { $0.accountID == "b" } == true)
+        allowed = true
+        await vm.loadIfNeeded(for: .default)
+        XCTAssertEqual(provider.librariesCallCount, 1)
+        XCTAssertTrue(vm.state.value?.continueWatching.first?.sources.contains { $0.accountID == "b" } == true)
     }
 
     func testReenrichFoldsNewlyDiscoveredSourceIntoLoadedCard() async {
