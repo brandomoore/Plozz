@@ -24,8 +24,59 @@ private final class SeriesResumeFakeProvider: FakeMediaProvider, SeriesResumePro
     }
 }
 
+private actor RelatedSearchAttempts {
+    private var count = 0
+    func next() -> Int { count += 1; return count }
+}
+
 @MainActor
 final class ItemDetailViewModelTests: XCTestCase {
+    func testLeavingAndReturningDetailCancelsAndResumesRelatedSearches() async throws {
+        let started = expectation(description: "Related search started")
+        let cancelled = expectation(description: "Related search cancelled")
+        let resumed = expectation(description: "Related search resumed")
+        let calls = RelatedSearchAttempts()
+        let seed = MediaItem(id: "seed", title: "Seed", kind: .movie, providerIDs: ["Tmdb": "1"])
+        let copy = MediaItem(id: "related", title: "Related", kind: .movie, providerIDs: ["Tmdb": "2"])
+        let store = RelatedTitlesStore(directory: nil)
+        await store.store(.init(
+            seedKey: MetadataQuery(seed).seriesScoped.enrichmentCacheKey,
+            titles: [.init(title: "Related", kind: .movie, providerIDs: ["Tmdb": "2"], source: .tmdb)],
+            refreshedAt: Date()
+        ))
+        let loader = RelatedTitlesLoader(
+            resolver: .init(providers: []), store: store, search: { _, _ in
+                if await calls.next() == 1 {
+                    started.fulfill()
+                    do { try await Task.sleep(for: .seconds(30)) }
+                    catch { cancelled.fulfill(); return [] }
+                }
+                resumed.fulfill()
+                return [copy]
+            }
+        )
+        let vm = ItemDetailViewModel(
+            provider: FakeMediaProvider(allItems: [seed]), itemID: seed.id,
+            ratingsProvider: CapturingDiscoveryRatingsProvider(),
+            onlineTrailerResolver: { _ in [] }, playableVideoIDResolver: { _ in nil },
+            trailerCache: TrailerResolutionCache(), relatedTitlesLoader: loader
+        )
+        defer { vm.suspendEnrichment() }
+        await vm.load()
+        await fulfillment(of: [started], timeout: 1)
+        vm.suspendEnrichment()
+        await fulfillment(of: [cancelled], timeout: 1)
+        XCTAssertFalse(loader.hasResolved)
+        vm.resumeEnrichmentIfNeeded()
+        await fulfillment(of: [resumed], timeout: 1)
+        let deadline = ContinuousClock.now + .seconds(1)
+        while !loader.hasResolved, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertTrue(loader.hasResolved)
+        XCTAssertEqual(loader.entries.map(\.item.id), [copy.id])
+    }
+
     func testServerRatingsDoNotDelayDetailLoadOrReplaceContentWithAPlaceholder() async {
         let native = ExternalRating(source: .community, value: 7, scale: .outOfTen)
         let supplied = ExternalRating(source: .imdb, value: 8.7, scale: .outOfTen)
@@ -38,6 +89,7 @@ final class ItemDetailViewModelTests: XCTestCase {
             await release.wait()
             return [supplied]
         }
+
         let external = CapturingDiscoveryRatingsProvider()
         let vm = ItemDetailViewModel(
             provider: provider, itemID: item.id, ratingsProvider: external,

@@ -105,6 +105,69 @@ publish only sanitized aggregates.
 
 ## Baseline → attribution → candidate → regression
 
+### Related loading while scrolling
+
+`related-cached-scroll` and `related-cold-scroll` mount the production Related row
+in a detail-like vertical scroll fixture on iOS/iPadOS and tvOS. Each sample
+resolves 24 public recommendations against two synthetic Plex/Silo accounts,
+with twelve owned titles in the identity index. Search uses the production
+cross-account fan-out with 150-500 ms synthetic responses; indexed native fetches
+take 40 ms. Cold recommendations add 350 ms. Local generated artwork removes
+internet-image variance. Every sample must produce the exact twelve native
+identities, curated titles and posters, and complete 100 verified scroll positions.
+One warmup and five retained samples use optimized Debug builds.
+
+These are controlled latency experiments, not timings against Plex/Silo servers.
+The fixture uses the real row, not the complete detail page or a native gesture/
+remote driver. First/full-row counters measure the SwiftUI view observing the
+published entries, not composited pixels or completed artwork. The 16-ms scroll
+loop's maximum main-actor wake-up gap is not presented FPS or a device hitch count.
+The fixture reserves a row footprint, so it does not test detail-page insertion
+geometry.
+
+The index-backed lookup and early-stop change produced these median complete-row
+times with identical workloads and Xcode 27.2 (iOS/iPadOS 26.2, tvOS 27.0):
+
+| Simulator | Cached before / after | Cold before / after |
+| --- | ---: | ---: |
+| iPad Pro 13-inch M5 | 1,324 / 95 ms | 1,684 / 456 ms |
+| iPhone 17 Pro | 1,324 / 95 ms | 1,673 / 456 ms |
+| Apple TV 4K | 2,336 / 1,490 ms | 2,790 / 1,529 ms |
+
+All samples retained twelve results. Library work fell from 48 searches to
+twelve native item fetches, with no search requests. Mobile publication dropped
+from three batches to one; TV cached median dropped from three to two and cold
+from three to one. Final scroll-window process CPU medians were 152 / 149 ms
+(iPad cached), 119 / 104 ms (iPhone cached), and 179 / 202 ms (TV cached).
+Cold iPad scroll CPU rose from 141 to 161 ms, while cold TV fell from 255 to
+188 ms. This is not a uniform CPU improvement or proof of zero scrolling overhead.
+
+The initial candidate's generic comparison was within budget on iPhone and TV;
+iPad cached total CPU was inconclusive due to variability, including a repeat.
+Additional correctness tests and a cold-index lookahead regression were then
+added. The final comparison command rejected the changed whole-Tests fingerprint;
+no guard was bypassed and no final automated budget pass is claimed. The table
+above summarizes the final repeated workload manually: its exact performance
+test file, environment and scenarios were verified unchanged on all three
+simulators. Initial TV cached full-row median was 768 ms versus the final
+1,490 ms, illustrating the simulator's rendering variability.
+
+TV retained roughly 710-ms maximum wake-up gaps on both sides. A separate bounded
+main-thread sample showed substantial RenderBox `SurfacePool::wait_image_queue`
+sleeping; it does not attribute those waits to the loader. These simulator results
+therefore do not prove smooth physical-TV scrolling or universally immediate
+appearance. Slow/cold recommendation services and cold/stale library indexes can
+still require network work; the fallback remains progressive.
+
+Baseline/candidate evidence remains under `.build/performance/runs/`:
+`3e6f4ca18f98411cbe9ae11ecd61581f` / `f277e0aa501948c1927b24f73d72f59c`
+(iPad), `5fb2076114604749bfe882c744a69f7c` /
+`c4837e7d8b4c4125ae8d437ad4aee72b` (iPhone), and
+`a12155a5de114a589e39dd14020c1ef3` / `be42ce31c18347eb9db52d685e19fe56`
+(TV). Initial compatible candidates were `9e856e5b01394ce08053881e64b85438`,
+`b9a4f350fa804859a59039e8b7ec0025`, and `1a4a5d0b743c4a7495f654774a9b50cc`,
+respectively.
+
 ### Song recognition
 
 `song-recognition-disabled`, `song-recognition-tap-only`, and

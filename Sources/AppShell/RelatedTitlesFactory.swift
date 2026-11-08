@@ -20,6 +20,7 @@ func makeRelatedTitlesLoader(
         resolver: .production(traktClientID: TraktConfig.resolved().clientID),
         search: search,
         indexedLibrarySources: identitySources,
+        loadIndexedItem: relatedTitleLibraryItemLoader(in: accounts),
         displayMode: displayMode
     )
 }

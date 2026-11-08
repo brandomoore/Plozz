@@ -18,6 +18,33 @@ an empty provider feed from local curation without recording media or account ID
 Home rows, item detail, series/season experience, and the online-trailer
 fallback when the user's server has no attached trailer.
 
+## Related loading
+
+Library-only Related rows use the active profile's identity index to locate a
+native copy, then fetch that item from its owning account instead of searching
+every server by title. The fresh response must agree on item, account, kind and
+strong catalog identity; native titles, artwork and watch state remain intact.
+Missing, stale or unavailable index entries fall back to the existing verified
+search. Index membership alone is not enough to display a synthetic library card.
+
+At most six candidates resolve concurrently, with a 24-candidate budget and
+twelve distinct displayed results. Known indexed copies reserve display slots,
+so a full indexed row does not initiate searches for unused later recommendations.
+Unknown candidates retain bounded lookahead so a slow early search cannot hold
+back a full set of later matches.
+Provider order and continuation priority remain intact. Fast rows publish as a
+batch immediately on completion; slower fallbacks retain 400-ms coalesced progress.
+The detail model owns cancellation, including native lookups, and resumes an
+interrupted row when returning. Cancelled recommendation responses do not enter
+the public cache. Discovery's external-inclusive mode remains network-free after
+recommendations, using the index only.
+
+Recommendation caching does not cache private library metadata. A new detail
+loader still verifies native copies; cached public recommendations cannot promise
+zero network or immediate cold-provider responses. See the controlled
+[Related loading measurements](../../docs/performance-lab.md#related-loading-while-scrolling)
+for timing scope and scrolling limitations.
+
 ## Continue Watching watch actions
 
 In-progress movies, episodes and videos offer both **Mark as Watched** and

@@ -56,8 +56,9 @@ public struct RelatedTitlesRecord: Codable, Sendable, Equatable {
 
 /// Disk-backed cache of related titles, one record per seed.
 ///
-/// Mirrors ``SeriesScheduleStore``: a small in-memory map persisted atomically, so
-/// a detail page can render its Related row with **zero network** on a revisit.
+/// Mirrors ``SeriesScheduleStore``: a small in-memory map persisted atomically.
+/// Revisits skip public recommendation requests; native library verification
+/// remains profile-scoped and is not stored here.
 public actor RelatedTitlesStore {
     public static let shared = RelatedTitlesStore()
 

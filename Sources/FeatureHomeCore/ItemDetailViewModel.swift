@@ -500,6 +500,8 @@ public final class ItemDetailViewModel {
     /// never downgrades a fresher render. Cancelled on each new load.
     private nonisolated(unsafe) var snapshotRestoreTask: Task<Void, Never>?
     private nonisolated(unsafe) var serverRatingsTask: Task<Void, Never>?
+    private nonisolated(unsafe) var relatedTitlesTask: Task<Void, Never>?
+    @ObservationIgnored private var relatedTitlesItem: MediaItem?
     /// Set once the live fetch publishes fresh detail, so a late snapshot restore
     /// never clobbers a fresher hero.
     @ObservationIgnored private var hasPaintedFreshDetail = false
@@ -695,6 +697,7 @@ public final class ItemDetailViewModel {
         alternateSourceEnrichmentTask?.cancel()
         snapshotRestoreTask?.cancel()
         serverRatingsTask?.cancel()
+        relatedTitlesTask?.cancel()
         pendingSnapshotWrite?.cancel()
         seasonLoads.values.forEach { $0.task?.cancel() }
     }
@@ -1550,6 +1553,8 @@ public final class ItemDetailViewModel {
         crossServerDiscoveryTask?.cancel(); crossServerDiscoveryTask = nil
         alternateSourceEnrichmentTask?.cancel(); alternateSourceEnrichmentTask = nil
         serverRatingsTask?.cancel(); serverRatingsTask = nil
+        relatedTitlesTask?.cancel(); relatedTitlesTask = nil
+        relatedTitlesLoader?.cancel()
         seasonLoadingSuspended = true
         cancelSeasonLoads()
         seasonEpisodeRosters.reset()
@@ -1562,6 +1567,10 @@ public final class ItemDetailViewModel {
     public func resumeEnrichmentIfNeeded() {
         if seasonLoadingResumeSourceGeneration == nil {
             seasonLoadingSuspended = false
+        }
+        if relatedTitlesTask == nil, relatedTitlesLoader?.hasResolved == false,
+           let relatedTitlesItem {
+            loadRelatedTitles(for: relatedTitlesItem)
         }
         guard hasPaintedFreshDetail else { return }
         if let item = state.value?.item, let activeProvider {
@@ -2106,13 +2115,19 @@ public final class ItemDetailViewModel {
     /// before. Never blocks first paint — it runs after children are published.
     /// Resolves the Related row, when a loader was supplied.
     ///
-    /// Never awaited by the caller and always last: the row sits below the fold,
-    /// costs a provider call plus a library search per title, and must not delay
-    /// anything the viewer is actually looking at.
+    /// Never delays detail content. Owned separately so leaving the page also
+    /// cancels indexed lookups and fallback searches.
     private func loadRelatedTitles(for item: MediaItem) {
         guard let relatedTitlesLoader else { return }
+        relatedTitlesTask?.cancel()
+        relatedTitlesLoader.cancel()
+        relatedTitlesItem = item
         let mode = DetailOpenEnvironment.relatedTitlesDisplayMode(isDiscoveryItem: isDiscoveryItem)
-        Task { await relatedTitlesLoader.load(for: item, displayMode: mode) }
+        relatedTitlesTask = Task { [weak self] in
+            await relatedTitlesLoader.load(for: item, displayMode: mode)
+            guard !Task.isCancelled else { return }
+            self?.relatedTitlesTask = nil
+        }
     }
 
     /// Fills ``upcomingSchedule`` from cache, then refreshes it in the background.

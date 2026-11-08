@@ -42,6 +42,18 @@ HOME_HOST_FITTING_COUNTERS = [
     "hostFittingMaxNanoseconds", "hostFittingReentrantCalls",
 ]
 SCENARIOS = {
+    **{
+        f"related-{state}-scroll": {
+            "suite": "ui",
+            "test": f"RelatedTitlesPerformanceTests/testPerformance{state.title()}RecommendationsWhileScrolling",
+            "file": "Tests/PerformancePresentationSupport/RelatedTitlesPerformanceTests.swift",
+            "description": "Load the production Related row from 24 recommendations and a two-account index while traversing its mounted native row; synthetic Plex/Silo latency, server metadata preserved.",
+            "counters": ["items", "searchRequests", "detailRequests", "recommendationRequests", "publications",
+                         "firstRowMicroseconds", "fullRowMicroseconds", "finishedMicroseconds", "scrollTargets",
+                         "maxMainActorGapMicroseconds", "scrollCPUTimeMicroseconds"],
+        }
+        for state in ("cached", "cold")
+    },
     "identity-unchanged-servers": {
         "suite": "core", "target": "AppRuntimeTests",
         "test": "IdentityIndexRefreshTests/testPerformanceRevalidatingTwentyUnchangedServers",

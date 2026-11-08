@@ -329,6 +329,7 @@ private struct PlozziOSCanonicalItemDetailView: View {
                             resolver: .production(traktClientID: TraktConfig.resolved().clientID),
                             search: search,
                             indexedLibrarySources: identitySources,
+                            loadIndexedItem: relatedTitleLibraryItemLoader(in: accounts),
                             displayMode: DetailOpenEnvironment.relatedTitlesDisplayMode(
                                 isDiscoveryItem: isDiscoveryItem
                             )
