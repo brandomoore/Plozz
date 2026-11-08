@@ -11,6 +11,56 @@ import XCTest
 
 @MainActor
 final class DetailPrimaryFocusHostedTests: XCTestCase {
+    func testSeriesHeaderShowsSeriesSynopsisAndRatingsForEpisodeContextEntry() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
+        let model = PrimaryFocusModel(mode: .seriesPage)
+        let detail = try XCTUnwrap(model.detail)
+        await model.gate.release()
+        await detail.load()
+        defer {
+            detail.suspendEnrichment()
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        let episode = try XCTUnwrap(detail.state.value?.children.first)
+        for explicitEpisode in [false, true] {
+            window.rootViewController = UIHostingController(rootView:
+                ItemDetailView(
+                    viewModel: detail, spoilerSettings: .default, onPlay: { _ in }, onSelectChild: { _ in },
+                    initialEpisode: explicitEpisode ? episode : nil
+                )
+                .environment(model.trailer)
+                .environment(model.background)
+                .mediaItemActionHandler(model.actions)
+                .environment(\.themePalette, .dark)
+                .environment(\.locale, Locale(identifier: "en_US"))
+                .environment(\.scenePhase, .active)
+                .preferredColorScheme(.dark)
+            )
+            window.makeKeyAndVisible()
+            var text = ""
+            try await waitUntil {
+                let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+                    window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+                }
+                let request = VNRecognizeTextRequest()
+                request.recognitionLanguages = ["en-US"]
+                try VNImageRequestHandler(cgImage: XCTUnwrap(image.cgImage)).perform([request])
+                text = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ")
+                return text.contains("quiet village") && text.contains("8.7")
+                    && text.contains(String(localized: episode.playActionTitle))
+            }
+            XCTAssertFalse(text.contains("murderer"), text)
+            XCTAssertFalse(text.contains("2.3"), text)
+            XCTAssertTrue(text.contains(String(localized: episode.playActionTitle)), text)
+            capture(window, name: "series-header-episode-context-\(explicitEpisode)")
+        }
+    }
+
     func testActualTVHeroTrailerButtonsNeverShowText() async throws {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
         let previous = scene.windows.first(where: \.isKeyWindow)
@@ -254,13 +304,13 @@ final class DetailPrimaryFocusHostedTests: XCTestCase {
 
     private func waitUntil(
         timeout: Duration = .seconds(5),
-        file: StaticString = #filePath, line: UInt = #line, _ condition: @MainActor () -> Bool
+        file: StaticString = #filePath, line: UInt = #line, _ condition: @MainActor () throws -> Bool
     ) async throws {
         let deadline = ContinuousClock.now + timeout
-        while !condition(), ContinuousClock.now < deadline {
+        while !(try condition()), ContinuousClock.now < deadline {
             try await Task.sleep(for: .milliseconds(10))
         }
-        XCTAssertTrue(condition(), file: file, line: line)
+        XCTAssertTrue(try condition(), file: file, line: line)
     }
 }
 
@@ -466,9 +516,12 @@ private struct PrimaryFocusProvider: MediaProvider {
     }
     var seed: MediaItem {
         MediaItem(id: "primary-page", title: "Primary page", kind: mediaKind,
+                  overview: mediaKind == .series ? "A quiet village beside the ocean." : nil,
                   parentTitle: mediaKind == .episode ? "Fixture Show" : nil,
                   seriesID: mediaKind == .episode ? "fixture-show" : nil,
-                  runtime: 1800, allowsTitleBasedMetadataMatching: false, sourceAccountID: "fixture")
+                  runtime: 1800,
+                  ratings: mediaKind == .series ? [.init(source: .imdb, value: 8.7, scale: .outOfTen)] : [],
+                  allowsTitleBasedMetadataMatching: false, sourceAccountID: "fixture")
     }
     func item(id: String) async throws -> MediaItem {
         if !holdsResume { await gate.wait() }
@@ -487,9 +540,11 @@ private struct PrimaryFocusProvider: MediaProvider {
         }
         return [MediaItem(
             id: "primary-episode", title: "First episode", kind: .episode,
+            overview: "The murderer is revealed.",
             seasonNumber: holdsResume ? 4 : 1, episodeNumber: 1, seriesID: seed.id,
             seasonID: holdsResume ? "primary-season" : nil,
-            runtime: 1800, allowsTitleBasedMetadataMatching: false, sourceAccountID: "fixture"
+            runtime: 1800, ratings: [.init(source: .imdb, value: 2.3, scale: .outOfTen)],
+            allowsTitleBasedMetadataMatching: false, sourceAccountID: "fixture"
         )]
     }
     func libraries() async throws -> [MediaLibrary] { [] }

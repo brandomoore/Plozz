@@ -549,12 +549,14 @@ struct PlozziOSSeriesLoadingHero: View {
 
     var body: some View {
         let style: HeroArtworkStyle = horizontalSizeClass == .compact ? .compactPortrait : .landscape
-        // Keep the known Home artwork and show synopsis, not the episode's prose.
-        let presentation = HeroPresentation(item: item, artworkStyle: style, surface: .home)
+        let series = SeriesEpisodeEntry.seriesSeed(
+            from: item, seriesID: item.seriesID ?? item.id, sourceAccountID: item.sourceAccountID
+        )
+        let presentation = HeroPresentation(item: series, artworkStyle: style, surface: .detail)
         let settings = appModel.settings.detailPage.settings
         ScrollView {
             PlozziOSHeroStage(
-                item: item, presentation: presentation, style: style,
+                item: series, presentation: presentation, style: style,
                 surfaceRole: .detail, isActive: false,
                 textSize: settings.textSize,
                 trailerController: trailerController,
@@ -2052,11 +2054,9 @@ struct PlozziOSDetailHeroForeground: View {
     private var actions: [ActionEntry] {
         var seen = Set<MediaItemAction>()
         var entries: [ActionEntry] = []
-        // A series page rests its hero on the episode Play would run, and an
-        // episode is not watchlistable — so the button did not act on the wrong
-        // thing, it vanished. `watchlistSubject` promotes it to its show, the
-        // same way the tvOS heroes already do.
-        for target in [item, watchlistSubject, rootItem] {
+        // Watched-state actions follow Play; Watchlist remains about the show.
+        let actionItem = rootItem.kind == .series ? playableItem ?? item : item
+        for target in [actionItem, watchlistSubject, rootItem] {
             for action in actionHandler.actions(for: target, context: .none)
                 where offersAction(action) && seen.insert(action).inserted {
                 let subject = action == .browseFiles && rootItem.fileBrowserContainerID != nil

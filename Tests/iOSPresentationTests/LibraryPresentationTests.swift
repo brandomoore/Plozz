@@ -491,7 +491,7 @@ final class LibraryPresentationTests: XCTestCase {
                     let browser = PlozziOSInlineSeriesBrowser(
                         viewModel: model, seasons: seasons, looseEpisodes: [],
                         initialSeasonID: selection.rawValue, initialEpisode: nil,
-                        onPlayTargetChange: { _ in }, onHeroShowsSeriesChange: { _ in }, onPlay: { _, _ in }
+                        onPlayTargetChange: { _ in }, onPlay: { _, _ in }
                     )
                     try await withPresentation(
                         ScrollView { browser.padding(.top, 8) }.navigationTitle("Cinema")

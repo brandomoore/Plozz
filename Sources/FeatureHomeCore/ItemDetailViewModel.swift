@@ -648,7 +648,17 @@ public final class ItemDetailViewModel {
         // `load()` then swaps in the fully-detailed item (and children/ratings)
         // in place without ever dropping back to a loading/skeleton state.
         if let initialItem {
-            let seeded = sourceAccountID.map(initialItem.taggingSource) ?? initialItem
+            var seeded = self.activeSourceAccountID.map(initialItem.taggingSource) ?? initialItem
+            if seeded.kind == .season, let seriesID = seeded.seriesID {
+                preselectedSeasonID = seeded.id
+                seeded = SeriesEpisodeEntry.seriesSeed(
+                    from: seeded, seriesID: seriesID, sourceAccountID: seeded.sourceAccountID
+                )
+            } else if seeded.kind == .episode, seeded.seriesID == itemID, seeded.id != itemID {
+                seeded = SeriesEpisodeEntry.seriesSeed(
+                    from: seeded, seriesID: itemID, sourceAccountID: seeded.sourceAccountID
+                )
+            }
             let resume = initialResumeEpisode.flatMap { episode -> MediaItem? in
                 guard episode.kind == .episode,
                       episode.locallyValidatedPlayableSource,

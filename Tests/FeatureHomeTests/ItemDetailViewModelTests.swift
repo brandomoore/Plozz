@@ -859,6 +859,77 @@ final class ItemDetailViewModelTests: XCTestCase {
         }
     }
 
+    func testSeriesEntryFactoriesKeepHeaderAndPlaybackSubjectsSeparate() async throws {
+        for kind in [ProviderKind.plex, .jellyfin, .emby, .silo, .mediaShare] {
+            let show = MediaItem(
+                id: "show", title: "Village stories", kind: .series, overview: "The whole show.",
+                ratings: [.init(source: .imdb, value: 8.7, scale: .outOfTen)],
+                allowsTitleBasedMetadataMatching: false, sourceAccountID: "account"
+            )
+            let season = MediaItem(
+                id: "season", title: "Season two", kind: .season, overview: "Season spoilers.",
+                parentTitle: show.title, seasonNumber: 2, seriesID: show.id,
+                allowsTitleBasedMetadataMatching: false, sourceAccountID: "account"
+            )
+            let episode = MediaItem(
+                id: "episode", title: "The secret", kind: .episode, overview: "Episode spoilers.",
+                parentTitle: show.title, seasonNumber: 2, episodeNumber: 4, seriesID: show.id,
+                seasonID: season.id, runtime: 1800, resumePosition: 120,
+                ratings: [.init(source: .imdb, value: 2.3, scale: .outOfTen)],
+                allowsTitleBasedMetadataMatching: false, sourceAccountID: "account"
+            )
+            let provider = FakeMediaProvider(
+                allItems: [show, season, episode], kind: kind, accountID: "account"
+            )
+            provider.childrenByParent = [show.id: [season], season.id: [episode]]
+            let environment = DetailOpenEnvironment(
+                resolveProvider: { _ in provider }, resolveOptionalProvider: { _ in provider },
+                identitySources: { _ in [] }, crossServerSourceResolver: nil,
+                continueWatchingSnapshot: { [episode] },
+                onlineTrailerResolver: { _ in [] }
+            )
+            let entries = [
+                try environment.makeViewModel(for: show, libraryOrigin: nil),
+                try environment.makeViewModel(for: show, libraryOrigin: "account"),
+                try environment.makeSeriesContextViewModel(
+                    seriesID: show.id, seed: episode, sourceAccountID: "account", originAccountID: nil
+                ),
+                try environment.makeSeriesContextViewModel(
+                    seriesID: show.id, seed: season, sourceAccountID: "account", originAccountID: "account"
+                ),
+                try environment.makeViewModel(for: season, libraryOrigin: "account")
+            ]
+            for model in entries {
+                defer { model.suspendEnrichment() }
+                let seed = try XCTUnwrap(model.state.value?.item)
+                XCTAssertEqual(seed.kind, .series, "\(kind): series identity is required before loading.")
+                XCTAssertEqual(seed.id, show.id)
+                XCTAssertNotEqual(seed.overview, episode.overview)
+                XCTAssertNotEqual(seed.overview, season.overview)
+                XCTAssertNotEqual(seed.ratings, episode.ratings)
+                await model.load()
+                let loaded = try XCTUnwrap(model.state.value?.item)
+                XCTAssertEqual(loaded.id, show.id)
+                XCTAssertEqual(loaded.overview, show.overview)
+                XCTAssertEqual(loaded.ratings, show.ratings)
+                let subject = HeroContentPolicy.detailSubject(focused: episode, root: loaded)
+                XCTAssertEqual(subject.id, show.id)
+                XCTAssertEqual(SeriesEpisodeEntry.openingSeed(
+                    for: loaded, initialEpisode: episode, initialSeasonID: season.id,
+                    resumeEpisode: model.serverResumeEpisode
+                )?.id, episode.id)
+            }
+            XCTAssertEqual(entries.last?.preselectedSeasonID, season.id)
+            let explicitEpisode = try environment.makeViewModel(for: episode, libraryOrigin: "account")
+            defer { explicitEpisode.suspendEnrichment() }
+            XCTAssertEqual(explicitEpisode.state.value?.item.id, episode.id)
+            await explicitEpisode.load()
+            XCTAssertEqual(explicitEpisode.state.value?.item.kind, .episode)
+            XCTAssertEqual(explicitEpisode.state.value?.item.overview, episode.overview)
+            XCTAssertEqual(explicitEpisode.state.value?.item.ratings, episode.ratings)
+        }
+    }
+
     func testEpisodeEntryWaitsForResumeWithoutFreezingAProvisionalSeason() {
         XCTAssertTrue(SeriesEpisodeEntry.waitsForResume(
             isResolving: true, hasResumeSeed: false, hasExplicitSelection: false

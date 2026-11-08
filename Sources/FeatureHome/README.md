@@ -912,8 +912,16 @@ records on both platforms; error dialogs, playback routing and timeouts are unch
   and hashed trailer ownership so an intermittent failure can be inspected
   without restarting the affected app.
 - **Series** — `SeriesDetailView` + `SeriesResume` provide one stable
-  series backdrop with focus-driven season tabs and an episode rail; the
-  hero text updates as focus moves without distracting backdrop swaps.
+  series header, focus-driven season tabs and an episode rail. On TV and mobile,
+  the header describes and rates the show, not the selected or resume episode;
+  missing series metadata never falls back to episode prose or scores.
+  Home, library, Search, Related, Continue Watching, season/context-menu and
+  deep-link entry retain their episode/season selection without changing that
+  subject, including the first paint while parent metadata is loading.
+  Episode descriptions stay in the browser; explicit Episode Info pages retain
+  their own synopsis, ratings and spoiler rules. Play/Resume, versions and watched
+  actions still target the selected episode, while Watchlist and Trailer target
+  the series. No series-versus-episode setting is needed.
   Season lists publish independently of the server resume lookup on both
   platforms. "Go to Show" retains the episode's season and can load its rail
   while resume is pending; entries without an explicit season still wait for
