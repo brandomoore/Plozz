@@ -126,6 +126,54 @@ asynchronous work, and the final MP4 is published atomically. Per-track server
 preparation references survive retries. Packaging preserves compressed content;
 it is not a full-original download fallback.
 
+### Restart and offline playback validation
+
+`OfflineDownloadPlaybackHostedTests` is an opt-in, two-process iOS hosted check.
+Generate its synthetic media without accessing a server or personal library:
+
+```sh
+python3 tools/generate-playback-fixture.py --offline-downloads \
+  --output .build/offline-fixtures/media.mp4
+```
+
+The generator refuses existing outputs. It creates a 24-second H.264 MP4 with
+English and French AAC tracks (distinct 440/880 Hz tones), plus the single-audio
+video and audio-only input used by the Emby packaging path.
+
+Build `PlozziOSPresentationTests` for an explicitly owned iOS simulator using the
+normal build lease and private package workspace. In a copy of that build's
+`.xctestrun` manifest **beside the original** (its paths are relative), set the
+`PlozziOSPresentationTests.EnvironmentVariables` entries:
+
+- `PLOZZ_OFFLINE_VALIDATION_RUN`: a fresh UUID, shared by both phases.
+- `PLOZZ_OFFLINE_VALIDATION_FIXTURES`: the absolute directory containing the three generated files.
+
+Run these selectors separately with `xcodebuild test-without-building`, the same
+manifest and simulator, `-parallel-testing-enabled NO`, and distinct result
+bundles:
+
+```text
+PlozziOSPresentationTests/OfflineDownloadPlaybackHostedTests/testPrepareReducedDownloadsForProcessRestart
+PlozziOSPresentationTests/OfflineDownloadPlaybackHostedTests/testPlayPersistedDownloadsOfflineAfterProcessRestart
+```
+
+The first phase runs real background HTTP transfers against a bounded loopback
+fixture, pauses/resumes each video, verifies no second full-video request, saves
+text subtitles, and shuts down the server. It covers both a native multi-audio
+MP4 and separately downloaded audio packaged locally. The second phase rejects
+the producer's process ID, reopens the production durable catalog format, enables
+Offline Mode, and uses `PlayerViewModel` with the native engine. It requires a
+presented video frame, advancing playback, the preferred audio language, both
+audio selections, both subtitle languages, forward/backward seeking, subtitle
+gaps, and subtitles off. Playback resolution must not call the unavailable provider.
+Successful runs remove only their own catalog/media directory.
+
+This tests production persistence envelopes with a disk-backed test adapter,
+not simulator Keychain entitlement behavior. It also does not replace live-server
+protocol checks, UI navigation coverage, physical-device background-task admission,
+or physical-device audiovisual checks. Without the explicit fixture environment,
+these two methods skip rather than claiming restart coverage from one process.
+
 External text subtitles are saved beside new downloads, for both Original and reduced
 quality. Plex and Jellyfin/Emby discovery uses the exact downloaded media source, not
 the first version of the title, and never starts another playback/transcode session.
