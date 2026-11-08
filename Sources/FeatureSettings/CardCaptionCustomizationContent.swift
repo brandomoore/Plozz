@@ -164,7 +164,7 @@ struct CardCaptionCustomizationContent: View {
             #if os(tvOS)
             if view == .episodes {
                 ViewCustomizationRow(
-                    id: "episode-descriptions-on-focus", title: "Descriptions on focus",
+                    id: "episode-descriptions-on-focus", title: "Only show descriptions on focus",
                     value: settings.episodeDescriptionsOnFocus ? "On" : "Off"
                 ) {
                     settings.episodeDescriptionsOnFocus.toggle()
