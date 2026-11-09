@@ -438,8 +438,18 @@ IPTV movies and episodes can use a provider-owned independent handoff: the
 origin HTTP(S) URL is sent directly, without starting Plozz's local proxy.
 Sources requiring custom HTTP headers stay in Plozz; the app-link APIs cannot
 carry those headers. Explicit unknown versions are not replaced with a default.
-NAS shares bypass external negotiation because the app-link APIs do not carry
-their transport authentication and connection policies. Silo negotiates its native
+WebDAV files can use anonymous HTTP(S) delivery with system TLS trust. Protected
+WebDAV shares can also hand off when their server redirects the media GET to an
+independently readable HTTPS delivery URL. The transport revalidates the selected
+file's identity and size and proves bounded range access before handing off;
+the delivery request never receives the share's password, bearer or cookies.
+Direct URLs that still need share authentication, certificate-pinned connections,
+disc folders and other share transports remain internal. WebDAV cannot satisfy
+conversion requests or reduced streaming-quality limits. Matching SRT sidecars
+use the same independent-delivery check, without copying local subtitle files
+to another app. Temporary delivery URLs stay in memory and may expire; the
+external player cannot renew them through Plozz.
+Silo negotiates its native
 original-file or HLS plan, retaining the exact version and mobile quality limits.
 Native Silo URLs require account authentication on every media request. Handoff
 requires the current account token and any advertised grant expiry to cover the
@@ -458,7 +468,8 @@ preference. External playback remains available for supported online sources.
 
 External playback requires independently accessible HTTP(S) media: original
 files, remote HLS, and server remux/transcode streams are eligible. App-local
-proxies, downloaded files, private share connections and separate audio streams
+proxies, downloaded files, share connections requiring app-owned authentication
+or trust, and separate audio streams
 remain internal. DASH can open in VLC; other players retain the built-in fallback.
 Mobile quality limits and forced conversion are negotiated through the same
 provider streaming API, not bypassed by handing

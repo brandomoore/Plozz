@@ -40,6 +40,7 @@ final class ExternalPlaybackRuntimeTests: XCTestCase {
         XCTAssertEqual(choices(), [])
         fixture.authorized = true
         fixture.kind = .mediaShare
+        fixture.baseURL = URL(string: "smb://nas.test/media")!
         XCTAssertEqual(choices(), [])
     }
 
@@ -141,6 +142,7 @@ final class ExternalPlaybackRuntimeTests: XCTestCase {
                 let fixture = ExternalPlaybackFixture()
                 defer { fixture.cleanup() }
                 fixture.kind = .mediaShare
+                fixture.baseURL = URL(string: "smb://nas.test/media")!
                 fixture.item.kind = mediaKind
                 fixture.selection = .init(player: player, customURLTemplate: "customplayer://play?url={url}")
                 let opened = try await fixture.launch()
@@ -183,7 +185,70 @@ final class ExternalPlaybackRuntimeTests: XCTestCase {
             await restored.processReturn(context: { fixture.context }) { completion in
                 XCTAssertEqual(completion.position, 300)
             }
+
             XCTAssertEqual(fixture.releasedSessionIDs, ["silo-session"])
+        }
+    }
+
+    func testWebDAVUsesIndependentNegotiationAndCorrelatesReturnsWithoutSavingURLs() async throws {
+        for player in [ExternalPlayer.nativePlayer, .infuse, .vlc] {
+            let fixture = ExternalPlaybackFixture()
+            defer { fixture.cleanup() }
+            fixture.kind = .mediaShare
+            fixture.selection.player = player
+            XCTAssertTrue(fixture.runtime.availablePlayers(
+                for: fixture.item, context: fixture.context, selection: fixture.selection
+            ).contains(.builtIn))
+            let opened = try await fixture.launch()
+            XCTAssertTrue(opened)
+            XCTAssertEqual(fixture.externalRequests, 1)
+            XCTAssertEqual(fixture.selectedVersion, "version-one")
+            XCTAssertEqual(fixture.opened.count, 1)
+            if player.returnsProgress {
+                let data = try XCTUnwrap(fixture.defaults.data(forKey: "com.plozz.externalPlaybackReceipt"))
+                XCTAssertFalse(String(decoding: data, as: UTF8.self).contains("synthetic-token"))
+                XCTAssertTrue(fixture.runtime.receive(try fixture.callback(position: "300")))
+                var returnedPosition: TimeInterval?
+                await fixture.runtime.processReturn(context: { fixture.context }) {
+                    returnedPosition = $0.position
+                }
+                XCTAssertEqual(returnedPosition, 300)
+            }
+        }
+    }
+
+    func testWebDAVSubtitlesUseOnlyIndependentURLsAndNeverEnterTheReceipt() async throws {
+        let fixture = ExternalPlaybackFixture()
+        defer { fixture.cleanup() }
+        fixture.kind = .mediaShare
+        let subtitle = try XCTUnwrap(URL(string: "https://delivery.test/sub.srt?grant=subtitle-ticket"))
+        fixture.request.externalSubtitleURLs = [
+            URL(fileURLWithPath: "/private/sidecar.srt"),
+            try XCTUnwrap(URL(string: "http://127.0.0.1/sidecar.srt")),
+            subtitle
+        ]
+        let opened = try await fixture.launch()
+        XCTAssertTrue(opened)
+        let query = try XCTUnwrap(URLComponents(url: fixture.opened[0], resolvingAgainstBaseURL: false)?.queryItems)
+        XCTAssertEqual(query.filter { $0.name == "sub" }.compactMap(\.value), [subtitle.absoluteString])
+        let data = try XCTUnwrap(fixture.defaults.data(forKey: "com.plozz.externalPlaybackReceipt"))
+        XCTAssertFalse(String(decoding: data, as: UTF8.self).contains("subtitle-ticket"))
+    }
+
+    func testWebDAVRejectedDeliveryFallsBackAndProfileChangeCancelsHandoff() async throws {
+        for cancelled in [false, true] {
+            let fixture = ExternalPlaybackFixture()
+            defer { fixture.cleanup() }
+            fixture.kind = .mediaShare
+            if cancelled { fixture.beforeRequest = { fixture.profileID = "another-profile" } }
+            else { fixture.requestError = ExternalPlayerError.unsupportedSource }
+            do {
+                let opened = try await fixture.launch()
+                XCTAssertFalse(opened)
+                XCTAssertFalse(cancelled)
+            } catch { XCTAssertTrue(cancelled && error is CancellationError) }
+            XCTAssertTrue(fixture.opened.isEmpty)
+            XCTAssertNil(fixture.runtime.receipt)
         }
     }
 
@@ -750,6 +815,7 @@ private final class ExternalPlaybackFixture {
     var installed = true
     var installationChecks = 0
     var kind: ProviderKind = .jellyfin
+    var baseURL = URL(string: "https://server.test")!
     var requestError: (any Error)?
     var openSucceeds = true
     var opened: [URL] = []
@@ -777,7 +843,7 @@ private final class ExternalPlaybackFixture {
     lazy var account = Account(id: "account", from: session)
     var session: UserSession {
         UserSession(
-            server: MediaServer(id: "server", name: "Fixture", baseURL: URL(string: "https://server.test")!, provider: kind),
+            server: MediaServer(id: "server", name: "Fixture", baseURL: baseURL, provider: kind),
             userID: userID, userName: "Fixture", deviceID: "fixture", accessToken: "synthetic-token"
         )
     }
@@ -865,7 +931,7 @@ private struct ExternalPlaybackProvider: StreamingSessionReleasing, ExternalPlay
             }
             fixture.externalRequests += 1
             fixture.streamingOptions = streaming
-            if kind == .silo { fixture.selectedVersion = mediaSourceID }
+            if kind == .silo || kind == .mediaShare { fixture.selectedVersion = mediaSourceID }
             fixture.beforeRequest?()
             if let error = fixture.requestError { throw error }
             return fixture.request

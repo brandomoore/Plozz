@@ -42,6 +42,15 @@ actor ShareTransportBrowser {
         }
     }
 
+    func externalPlaybackURL(for locator: NetworkFileLocator) async throws -> URL {
+        try await enqueue { fileSystem in
+            guard let external = fileSystem as? any MediaTransportExternalPlaybackFileSystem else {
+                throw MediaTransportError.unsupportedCapability("external playback")
+            }
+            return try await external.externalPlaybackURL(for: locator)
+        }
+    }
+
     func readFile(_ path: String, maximumBytes: Int = 16 * 1_024 * 1_024) async throws -> Data {
         try await enqueue { fileSystem in
             try await fileSystem.readSmallFile(

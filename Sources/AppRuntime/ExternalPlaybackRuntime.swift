@@ -193,7 +193,7 @@ public final class ExternalPlaybackRuntime {
               let account = context.accounts.first(where: { $0.account.id == item.sourceAccountID })
                 ?? (item.sourceAccountID == nil ? context.accounts.first : nil),
               [.jellyfin, .emby, .plex].contains(account.provider.kind)
-                || ([.iptv, .silo].contains(account.provider.kind)
+                || (Self.supportsIndependentHandoff(account.provider)
                     && account.provider is any ExternalPlaybackProviding) else { return [] }
         return ExternalPlayer.supported.filter { player in
             guard player != selection.player else { return false }
@@ -205,6 +205,12 @@ public final class ExternalPlaybackRuntime {
 
     private static func supportsOnDemand(_ item: MediaItem) -> Bool {
         !item.opensExternalSource && (item.kind == .movie || item.kind == .episode || item.kind == .video)
+    }
+
+    private static func supportsIndependentHandoff(_ provider: any MediaProvider) -> Bool {
+        [.iptv, .silo].contains(provider.kind)
+            || (provider.kind == .mediaShare
+                && ["http", "https"].contains(provider.session.server.baseURL.scheme?.lowercased() ?? ""))
     }
 
     private func launchIfSupported(
@@ -229,12 +235,9 @@ public final class ExternalPlaybackRuntime {
         }
         try checkCurrent()
         switch account.provider.kind {
-        case .mediaShare:
-            // Share transports enforce connection policies the app-link APIs cannot carry.
-            PlozzLog.playback.info("Source requires Plozz playback; skipping external player.")
-            return false
-        case .iptv, .silo:
-            guard account.provider is any ExternalPlaybackProviding else { return false }
+        case .iptv, .silo, .mediaShare:
+            guard Self.supportsIndependentHandoff(account.provider),
+                  account.provider is any ExternalPlaybackProviding else { return false }
         case .jellyfin, .emby, .plex:
             break
         }
@@ -254,7 +257,7 @@ public final class ExternalPlaybackRuntime {
         try checkCurrent()
         let provider = account.provider
         var request: PlaybackRequest
-        if [.iptv, .silo].contains(provider.kind), let external = provider as? any ExternalPlaybackProviding {
+        if Self.supportsIndependentHandoff(provider), let external = provider as? any ExternalPlaybackProviding {
             try streamingOptions?.quality.validate()
             var options = streamingOptions
             options?.startPosition = 0
@@ -295,10 +298,13 @@ public final class ExternalPlaybackRuntime {
                 player: selection.player, resolver: initial.resolver
             )
             try checkCurrent()
-            var subtitles: [URL] = []
+            var subtitles = Array(request.externalSubtitleURLs.filter {
+                ExternalPlayerURL.isSupportedMediaURL($0)
+            }.prefix(8))
             if selection.player != .custom {
                 for track in request.subtitleTracks where !track.isBitmapSubtitle
                     && ["srt", "subrip"].contains(track.codec?.lowercased() ?? "") {
+                    if subtitles.count == 8 { break }
                     guard case .authenticatedHTTP(let locator) = track.deliverySource else { continue }
                     let url = try await initial.resolver.resolve(locator)
                     try checkCurrent()

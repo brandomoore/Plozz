@@ -76,7 +76,8 @@ public struct RangeProbeResult: Equatable, Sendable {
     public let lastModified: Date?
     /// Optional, completely validated prefix retained only for this source lease.
     public let initialData: Data
-    let usesAnonymousSession: Bool
+    /// The final delivery request used an isolated, credential-free session.
+    public let usesAnonymousSession: Bool
 
     public var etag: ETag? {
         guard case .strongETag(let etag) = validator else { return nil }

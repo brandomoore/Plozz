@@ -134,7 +134,8 @@ final class WebDAVMediaTransportSession: MediaTransportSession, @unchecked Senda
     func isHealthy() async -> Bool { true }
 }
 
-final class WebDAVMediaTransportFileSystem: MediaTransportPreparationWarmingFileSystem, @unchecked Sendable {
+final class WebDAVMediaTransportFileSystem: MediaTransportPreparationWarmingFileSystem,
+    MediaTransportExternalPlaybackFileSystem, @unchecked Sendable {
     static let maximumSmallFileSize = 16 * 1_024 * 1_024
 
     private let client: WebDAVClient
@@ -295,6 +296,29 @@ final class WebDAVMediaTransportFileSystem: MediaTransportPreparationWarmingFile
         MediaTransportSourceLease(source: try await openByteSource(for: locator))
     }
 
+    func externalPlaybackURL(for locator: NetworkFileLocator) async throws -> URL {
+        guard trustPolicy == .system else {
+            throw MediaTransportError.unsupportedCapability("external playback requires system TLS trust")
+        }
+        try validateLocator(locator)
+        let absolute = try absolutePath(forRelative: locator.relativePath)
+        guard let url = root.origin.url(path: absolute) else {
+            throw MediaTransportError.invalidInput(reason: "could not build WebDAV URL")
+        }
+        do {
+            let probe = try await validatedPlaybackProbe(for: locator, url: url, prefetch: false)
+            if case .anonymous = credential {
+                // The original DAV connection already uses no account credentials.
+            } else if !probe.usesAnonymousSession {
+                throw MediaTransportError.unsupportedCapability("external playback requires anonymous delivery")
+            }
+            try Task.checkCancellation()
+            return probe.resourceURL
+        } catch {
+            throw mapWebDAVError(error)
+        }
+    }
+
     func prepareSource(for locator: NetworkFileLocator) async throws -> MediaTransportSourceLease {
         let source = try await openByteSource(for: locator)
         let container = (locator.relativePath as NSString).pathExtension.lowercased()
@@ -376,6 +400,21 @@ final class WebDAVMediaTransportFileSystem: MediaTransportPreparationWarmingFile
         url: URL,
         reportDeliveryConnectionFailure: Bool = false
     ) async throws -> WebDAVByteSource {
+        let probe = try await validatedPlaybackProbe(
+            for: locator, url: url,
+            prefetch: sessionKey.role == .playback && locator.representation.size >= RangeProbe.initialReadByteCount,
+            reportDeliveryConnectionFailure: reportDeliveryConnectionFailure
+        )
+        return WebDAVByteSource(
+            client: client, representation: probe, sessionKey: sessionKey,
+            credential: credential, trustPolicy: trustPolicy
+        )
+    }
+
+    private func validatedPlaybackProbe(
+        for locator: NetworkFileLocator, url: URL, prefetch: Bool,
+        reportDeliveryConnectionFailure: Bool = false
+    ) async throws -> RangeProbeResult {
         try Task.checkCancellation()
         // Revalidate the stable DAV identity before opening a delivery grant.
         // This also protects resumed downloads whose locator was persisted.
@@ -386,8 +425,7 @@ final class WebDAVMediaTransportFileSystem: MediaTransportPreparationWarmingFile
             probe = discovered
         } else {
             probe = try await probeFile(
-                url, prefetch: sessionKey.role == .playback
-                    && locator.representation.size >= RangeProbe.initialReadByteCount,
+                url, prefetch: prefetch,
                 reportDeliveryConnectionFailure: reportDeliveryConnectionFailure,
                 allowUnvalidatedPlayback: sessionKey.role == .playback
             )
@@ -408,13 +446,7 @@ final class WebDAVMediaTransportFileSystem: MediaTransportPreparationWarmingFile
                 throw MediaTransportError.sourceChanged(reason: "WebDAV GET modification time changed")
             }
         }
-        return WebDAVByteSource(
-            client: client,
-            representation: probe,
-            sessionKey: sessionKey,
-            credential: credential,
-            trustPolicy: trustPolicy
-        )
+        return probe
     }
 
     private func validatedOpeningMetadata(

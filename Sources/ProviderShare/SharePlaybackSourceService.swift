@@ -306,12 +306,10 @@ struct SharePlaybackSourceService: Sendable {
         )
     }
 
-    func discoverSidecarSubtitles(
-        forVideoRelPath relPath: String,
-        exactStemOnly: Bool,
-        directoryEntries ownEntries: [RemoteFileEntry]?,
-        requiresCompleteResult: Bool = false
-    ) async throws -> [MediaTrack] {
+    private func matchingSidecars(
+        forVideoRelPath relPath: String, exactStemOnly: Bool,
+        directoryEntries ownEntries: [RemoteFileEntry]?, requiresCompleteResult: Bool
+    ) async throws -> [(path: String, sidecar: ShareMediaParser.Sidecar)] {
         try Task.checkCancellation()
         let dir = (relPath as NSString).deletingLastPathComponent
         let videoStem = ShareMediaParser.videoStem((relPath as NSString).lastPathComponent)
@@ -340,6 +338,56 @@ struct SharePlaybackSourceService: Sendable {
                 candidates.append((listDir, entry.name, dedicated))
             }
         }
+        return candidates.compactMap { candidateDir, name, dedicated in
+            guard let sidecar = ShareMediaParser.parseSidecar(name) else { return nil }
+            let matches = exactStemOnly
+                ? sidecar.stem.caseInsensitiveCompare(videoStem) == .orderedSame
+                : Self.sidecarMatchesVideo(
+                    sidecarStem: sidecar.stem, videoStem: videoStem, dedicatedFolder: dedicated
+                )
+            guard matches else { return nil }
+            return (candidateDir.isEmpty ? name : "\(candidateDir)/\(name)", sidecar)
+        }
+    }
+
+    func externalSubtitleURLs(
+        forVideoRelPath relPath: String, exactStemOnly: Bool,
+        directoryEntries: [RemoteFileEntry]?, player: ExternalPlayer
+    ) async throws -> [URL] {
+        guard player != .custom else { return [] }
+        let candidates = try await matchingSidecars(
+            forVideoRelPath: relPath, exactStemOnly: exactStemOnly,
+            directoryEntries: directoryEntries, requiresCompleteResult: false
+        ).filter { $0.sidecar.ext == "srt" }.prefix(player == .vlc ? 1 : 8)
+        var urls: [URL] = []
+        for candidate in candidates {
+            try Task.checkCancellation()
+            do {
+                let locator = try await networkFileLocator(for: candidate.path)
+                let url = try await store.externalPlaybackURL(for: locator)
+                guard ExternalPlayerURL.isSupportedMediaURL(url) else {
+                    throw MediaTransportError.unsupportedCapability("external subtitle URL")
+                }
+                urls.append(url)
+            } catch {
+                if error is CancellationError || (error as? MediaTransportError) == .cancelled { throw error }
+                try Task.checkCancellation()
+                PlozzLog.playback.error("share.sidecars external subtitle unavailable")
+            }
+        }
+        return urls
+    }
+
+    func discoverSidecarSubtitles(
+        forVideoRelPath relPath: String,
+        exactStemOnly: Bool,
+        directoryEntries ownEntries: [RemoteFileEntry]?,
+        requiresCompleteResult: Bool = false
+    ) async throws -> [MediaTrack] {
+        let candidates = try await matchingSidecars(
+            forVideoRelPath: relPath, exactStemOnly: exactStemOnly,
+            directoryEntries: ownEntries, requiresCompleteResult: requiresCompleteResult
+        )
         guard !candidates.isEmpty else { return [] }
 
         var tracks: [MediaTrack] = []
@@ -355,20 +403,11 @@ struct SharePlaybackSourceService: Sendable {
             return []
         }
 
-        for (candidateDir, name, dedicated) in candidates {
+        for (relSidecar, sidecar) in candidates {
             try Task.checkCancellation()
-            guard let sidecar = ShareMediaParser.parseSidecar(name) else { continue }
-            let matches = exactStemOnly
-                ? sidecar.stem.caseInsensitiveCompare(videoStem) == .orderedSame
-                : Self.sidecarMatchesVideo(
-                    sidecarStem: sidecar.stem,
-                    videoStem: videoStem,
-                    dedicatedFolder: dedicated
-                )
-            guard matches else { continue }
             if requiresCompleteResult, tracks.count >= 64 { throw AppError.invalidResponse }
 
-            let relSidecar = candidateDir.isEmpty ? name : "\(candidateDir)/\(name)"
+            let name = (relSidecar as NSString).lastPathComponent
             let data: Data
             do {
                 data = try await store.readFile(relSidecar)

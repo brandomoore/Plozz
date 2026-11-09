@@ -506,6 +506,18 @@ ETag or modification time. Missing, incomplete or ambiguous entries retain the
 ordinary opening-stat fallback. This avoids a redundant metadata round trip,
 not the final source-open/prepared-claim revalidation. Listings are never reused
 across Play requests, and detail preparation still does no sidecar discovery.
+
+External WebDAV playback opts into `MediaTransportExternalPlaybackFileSystem`;
+it never converts a network-file locator into a guessed URL in the app shell.
+The WebDAV adapter reuses ordinary opening metadata, representation/size checks,
+root-safe URL construction and a two-byte range probe without prefetching media.
+Only anonymous connections under system TLS trust, or server-issued HTTPS
+delivery redirects fetched in an isolated anonymous session, qualify. Reusable
+credentials and certificate pins are never handed to another app. The selected
+file and matching SRT sidecars yield ephemeral URLs for the shared external-player
+runtime; neither URL nor grant is saved in its callback receipt. Protected direct
+URLs, other share transports, disc folders and conversion policies keep their
+built-in path. An external player cannot renew an expired server-issued URL.
 Other share transports retain opening-stat metadata; their directory-listing and
 file-stat representations need not carry the same precision or completeness.
 
