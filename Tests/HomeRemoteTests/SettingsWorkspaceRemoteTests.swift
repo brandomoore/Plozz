@@ -32,7 +32,7 @@ final class SettingsWorkspaceRemoteTests: XCTestCase {
         let help = app.alerts["How automatic selection works"]
         XCTAssertTrue(help.waitForExistence(timeout: 5), app.debugDescription)
         XCTAssertTrue(help.staticTexts.matching(NSPredicate(
-            format: "label CONTAINS %@ AND label CONTAINS %@", "1080p", "HDR"
+            format: "label CONTAINS %@ AND label CONTAINS %@", "lower-bitrate HDR", "previous choice takes priority"
         )).firstMatch.exists)
         capture("automatic-version-examples", in: app)
         XCUIRemote.shared.press(.select)
