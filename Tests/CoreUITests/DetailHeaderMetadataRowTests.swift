@@ -101,7 +101,7 @@ final class DetailHeaderMetadataRowTests: XCTestCase {
     }
 
     private func referenceStaticRow(_ line: some View) -> some View {
-        line.frame(minHeight: 44)
+        line
             .lineLimit(1)
             .plozzForeground(.primary)
             .frame(maxWidth: .infinity, alignment: .center)
@@ -250,7 +250,10 @@ final class DetailHeaderMetadataRowTests: XCTestCase {
                             )
                             let expectedSize = size(of: expected, width: width, textSize: textSize)
                             XCTAssertEqual(actualSize.height, expectedSize.height, accuracy: 0.5, context)
-                            XCTAssertGreaterThanOrEqual(actualSize.height, 44, context)
+                            let complete = inline(ratings: scores, badges: formats, age: age, showsDisclosure: false)
+                            if size(of: complete, width: 4_000, textSize: textSize).width > width {
+                                XCTAssertGreaterThanOrEqual(actualSize.height, 44, context)
+                            }
                             try assertSameRendering(
                                 render(row, width: width, textSize: textSize),
                                 render(expected, width: width, textSize: textSize), context: context
@@ -306,6 +309,20 @@ final class DetailHeaderMetadataRowTests: XCTestCase {
                     context: "complete-no-disclosure-\(scores.count)-\(formats.count)-\(textSize)"
                 )
             }
+        }
+    }
+
+    func testStaticBadgesUseNaturalHeightButOverflowRetainsItsTouchTarget() {
+        let row = DetailHeaderMetadataRow(ratings: [], badges: badges)
+        let complete = inline(ratings: [], badges: badges, age: nil, showsDisclosure: false)
+        for textSize in [DynamicTypeSize.large, .accessibility3] {
+            let natural = size(of: complete, width: 4_000, textSize: textSize)
+            let actual = size(of: row, width: ceil(natural.width) + 1, textSize: textSize)
+            XCTAssertEqual(actual.height, natural.height, accuracy: 0.5)
+            if textSize == .large {
+                XCTAssertLessThan(actual.height, 44)
+            }
+            XCTAssertGreaterThanOrEqual(size(of: row, width: 44, textSize: textSize).height, 44)
         }
     }
 

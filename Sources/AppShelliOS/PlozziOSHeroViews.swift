@@ -43,7 +43,6 @@ enum PlozziOSHeroArtworkFallback {
 }
 
 enum PlozziOSHeroMetrics {
-    static let compactDetailActionSpacing: CGFloat = 20
     static let detailContentTopInset: CGFloat = 24
 
     /// Whether this hero fills its stage by **mirroring** its own bottom edge
@@ -2206,7 +2205,6 @@ struct PlozziOSDetailHeroForeground: View {
                 stackedActionRows(actions: entries)
             }
             .controlSize(.large)
-            .padding(.top, style == .compactPortrait ? PlozziOSHeroMetrics.compactDetailActionSpacing : 0)
         }
         .frame(
             maxWidth: PlozziOSPageLayout.heroTextMaxWidth(for: style),

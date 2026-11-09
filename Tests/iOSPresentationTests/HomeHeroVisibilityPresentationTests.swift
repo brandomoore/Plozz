@@ -12,6 +12,67 @@ import XCTest
 
 @MainActor
 final class HomeHeroVisibilityPresentationTests: XCTestCase {
+    func testCompactDetailBadgesStayCloseToSynopsisAndActions() async throws {
+        let app = PlozziOSAppModel()
+        let original = app.profiles.activeProfileID
+        let profile = app.profiles.add(name: "Detail spacing fixture", isAwaitingSetup: false)
+        app.selectProfile(profile.id)
+        defer {
+            app.selectProfile(original)
+            app.profiles.remove(profile.id)
+        }
+        let item = MediaItem(
+            id: "spacing-fixture", title: "SIGNAL", kind: .movie,
+            overview: "Across the stars.", officialRating: "PG", genres: ["Documentary"],
+            allowsTitleBasedMetadataMatching: false,
+            mediaInfo: .init(
+                video: .init(width: 3840, height: 2160, videoRangeType: "DOVIWithHDR10"),
+                audio: .init(codec: "eac3", channels: 6)
+            )
+        )
+        let presentation = HeroPresentation(item: item, artworkStyle: .compactPortrait, surface: .detail)
+        let foreground = PlozziOSDetailHeroForeground(
+            item: item, rootItem: item, playableItem: item,
+            sources: [], selectedSourceAccountID: nil, versions: [], selectedVersionID: nil,
+            onSelectSource: { _ in }, onSelectVersion: { _ in },
+            presentation: presentation, fallbackPresentation: presentation,
+            style: .compactPortrait, actionHandler: SizingActions(), onPlay: { _, _ in }
+        )
+        .padding(20)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .environment(app)
+        for colorScheme in [ColorScheme.dark, .light] {
+            try await withWindow(
+                foreground.background(colorScheme == .dark ? Color.black : Color.white),
+                sizeClass: .compact, colorScheme: colorScheme
+            ) { window in
+                try await self.settle(window)
+                let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+                    window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+                }
+                let attachment = XCTAttachment(image: image)
+                attachment.name = "compact-detail-badge-spacing-\(colorScheme)"
+                attachment.lifetime = .keepAlways
+                self.add(attachment)
+                let frames = try HeroTextInk.frames(
+                    in: image, terms: ["Across the stars", "HDR10", "Play"],
+                    darkTerms: colorScheme == .dark ? ["Play"] : ["Across the stars", "HDR10"]
+                )
+                let synopsis = try XCTUnwrap(frames["Across the stars"])
+                let badge = try XCTUnwrap(frames["HDR10"])
+                let play = try XCTUnwrap(frames["Play"])
+                let upperGap = badge.minY - synopsis.maxY
+                let lowerGap = play.minY - badge.maxY
+                XCTAssertGreaterThan(upperGap, 0)
+                XCTAssertLessThanOrEqual(upperGap, 20, "Static badges must not reserve a button-height slot.")
+                XCTAssertGreaterThan(lowerGap, 0)
+                XCTAssertLessThanOrEqual(lowerGap, 36, "Actions must not add another large gap below the badges.")
+                XCTAssertEqual(lowerGap - 14, upperGap, accuracy: 10,
+                               "Allow for Play's native label inset, then keep the visible gaps balanced.")
+            }
+        }
+    }
+
     func testSeriesDetailsKeepSeriesMetadataAcrossEntryRoutesAndSizeClasses() async throws {
         let app = PlozziOSAppModel()
         let original = app.profiles.activeProfileID
@@ -542,6 +603,7 @@ final class HomeHeroVisibilityPresentationTests: XCTestCase {
     private func withWindow<Content: View>(
         _ content: Content,
         sizeClass: UserInterfaceSizeClass,
+        colorScheme: ColorScheme = .dark,
         exercise: (UIWindow) async throws -> Void
     ) async throws {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
@@ -555,9 +617,9 @@ final class HomeHeroVisibilityPresentationTests: XCTestCase {
             .environment(\.horizontalSizeClass, sizeClass)
             .environment(\.dynamicTypeSize, .large)
             .environment(\.plozziOSHeroContainerHeight, size.height)
-            .environment(\.themePalette, ThemePalette.dark))
+            .environment(\.themePalette, colorScheme == .dark ? ThemePalette.dark : .light))
         host.additionalSafeAreaInsets.top = 44
-        host.overrideUserInterfaceStyle = .dark
+        host.overrideUserInterfaceStyle = colorScheme == .dark ? .dark : .light
         window.rootViewController = host
         window.makeKeyAndVisible()
         defer {
