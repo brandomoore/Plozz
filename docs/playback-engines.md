@@ -522,13 +522,30 @@ characters (including `@`, `/`, `?`, `#`, `%` and non-ASCII text). Keep legal
 punctuation raw inside the media URL and encode that entire URL once into the
 app-link query; overencoding the password also fails. Incompatible passwords
 keep built-in playback rather than launching a known-failing login; VLC retains
-standard escaped userinfo.
-Digest-only policy remains internal because playback links cannot constrain the
-receiver's challenge negotiation. Bearer/custom headers and certificate pins
-also remain internal rather than being dropped.
+standard escaped userinfo. Additional Basic-authentication probes confirmed
+that both tested players sent percent-escaped passwords literally instead of
+decoding them. Native Player's documented short link did not change that result;
+anonymous bootstrap redirects did not provide a working alternative in either
+player. Plozz does not start a relay that would depend on its own app remaining
+active during external playback.
+If the delivered media still needs Digest-only policy, bearer/custom headers
+or a certificate pin, it remains internal rather than dropping those requirements.
 Server-issued HTTPS delivery redirects retain isolated anonymous sessions;
-share credentials are never added to those delivery URLs. Media and matching
-SRT URLs are ephemeral and excluded from callback receipts and logs. Callback
+share credentials are never added to independently readable delivery URLs.
+Same-origin HTTPS delivery grants are also checked in an isolated anonymous
+session with a conditional two-byte read against the already-probed validator
+and size. This avoids unnecessarily exporting a reusable password, and lets
+header-authenticated or receiver-incompatible logins resolve independent media.
+Only a 401 permits falling back to an already-supported password contract;
+changed representations, redirects, authorization failures and other errors
+are not hidden behind that fallback.
+
+A pinned DAV origin can resolve a foreign HTTPS delivery grant: the original
+metadata and GET still enforce its pin, while the independent delivery uses
+system trust. Direct playback or anonymous redirects returning to the pinned
+origin remain internal; no pin is removed to make a connection work.
+Media and matching SRT URLs are ephemeral and excluded from callback receipts
+and logs. Callback
 resource digests omit userinfo so a sanitized return URL still matches, while
 nonce, profile, account and credential-revision checks retain ownership.
 Other share transports, disc folders and conversion policies keep their built-in

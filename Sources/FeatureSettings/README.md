@@ -448,10 +448,15 @@ receive share passwords. The transport
 revalidates the selected file's identity and size and proves bounded range access
 before handing off. Server redirects to independently readable HTTPS delivery
 URLs still use isolated anonymous requests and never receive the share's
-password, bearer or cookies.
-Bearer/header-only authentication, Digest-only authentication policy,
-certificate-pinned connections, disc folders and other share transports remain
-internal. WebDAV cannot satisfy
+password, bearer or cookies. A delivery URL can remain on the same HTTPS server:
+Plozz checks it in a separate anonymous session against the selected file's
+validator and size before sending it without share credentials. A pinned DAV
+connection can also resolve a separate, system-trusted HTTPS delivery server;
+the pin is still enforced on the DAV connection and is never dropped on a
+direct handoff to that origin.
+Media that still requires bearer/custom headers, Digest-only policy or a
+certificate pin remains internal, as do disc folders and other share transports.
+WebDAV cannot satisfy
 conversion requests or reduced streaming-quality limits. Matching SRT sidecars
 use the same player-specific authentication policy, without copying local
 subtitle files to another app. Plozz keeps playback URLs in memory, not callback

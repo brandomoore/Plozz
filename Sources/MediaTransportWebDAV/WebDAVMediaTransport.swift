@@ -297,9 +297,6 @@ final class WebDAVMediaTransportFileSystem: MediaTransportPreparationWarmingFile
     }
 
     func externalPlaybackURL(for locator: NetworkFileLocator, player: ExternalPlayer) async throws -> URL {
-        guard trustPolicy == .system else {
-            throw MediaTransportError.unsupportedCapability("external playback requires system TLS trust")
-        }
         try validateLocator(locator)
         let absolute = try absolutePath(forRelative: locator.relativePath)
         guard let url = root.origin.url(path: absolute) else {
@@ -308,27 +305,49 @@ final class WebDAVMediaTransportFileSystem: MediaTransportPreparationWarmingFile
         do {
             let probe = try await validatedPlaybackProbe(for: locator, url: url, prefetch: false)
             try Task.checkCancellation()
+            if probe.usesAnonymousSession,
+               trustPolicy == .system || TransportOrigin(url: probe.resourceURL) != root.origin {
+                return probe.resourceURL
+            }
+            guard trustPolicy == .system else {
+                throw MediaTransportError.unsupportedCapability("external playback requires system TLS trust")
+            }
             if case .anonymous = credential {
                 return probe.resourceURL
             }
-            if probe.usesAnonymousSession { return probe.resourceURL }
-            guard player.supportsHTTPPasswordAuthentication,
-                  case let .password(username, password, policy) = credential,
-                  policy.permits(.basic),
-                  TransportOrigin(url: probe.resourceURL) == root.origin,
-                  !username.isEmpty, !username.contains(":"),
-                  var components = URLComponents(url: probe.resourceURL, resolvingAgainstBaseURL: false) else {
+            var passwordURL: URL?
+            if player.supportsHTTPPasswordAuthentication,
+               case let .password(username, password, policy) = credential,
+               policy.permits(.basic),
+               TransportOrigin(url: probe.resourceURL) == root.origin,
+               !username.isEmpty, !username.contains(":"),
+               var components = URLComponents(url: probe.resourceURL, resolvingAgainstBaseURL: false) {
+                // External clients own challenge negotiation; a Digest-only policy
+                // cannot be enforced through their playback-link APIs.
+                components.user = username
+                components.password = password
+                if let authenticatedURL = components.url,
+                   ExternalPlayerURL.isSupportedMediaURL(authenticatedURL, player: player, allowPassword: true) {
+                    passwordURL = authenticatedURL
+                }
+            }
+            // A signed URL can remain on the DAV origin. Prove it works without
+            // the account session instead of assuming its login was required.
+            if root.origin.isSecure, passwordURL == nil || probe.resourceURL != url {
+                do {
+                    try await client.validateAnonymousAccess(to: probe, sessionKey: sessionKey)
+                    try Task.checkCancellation()
+                    return probe.resourceURL
+                } catch TransportError.authenticationFailed {
+                    // This is not an independent grant; use only the already
+                    // validated password contract, if the selected player has one.
+                }
+            }
+            try Task.checkCancellation()
+            guard let passwordURL else {
                 throw MediaTransportError.unsupportedCapability("external playback authentication")
             }
-            // External clients own challenge negotiation; a Digest-only policy
-            // cannot be enforced through their playback-link APIs.
-            components.user = username
-            components.password = password
-            guard let authenticatedURL = components.url,
-                  ExternalPlayerURL.isSupportedMediaURL(authenticatedURL, player: player, allowPassword: true) else {
-                throw MediaTransportError.unsupportedCapability("external playback authentication")
-            }
-            return authenticatedURL
+            return passwordURL
         } catch {
             throw mapWebDAVError(error)
         }
