@@ -92,7 +92,7 @@ public struct ExternalPlayerSettingsView: View {
                 ExternalPlayerChoices(model: model)
             }
             if model.settings.player != .builtIn {
-                SettingsSectionGroup("\(model.settings.player.name) support") {
+                SettingsSectionGroup("\(model.settings.player.name) limitations") {
                     ExternalPlayerSupportSummary(player: model.settings.player)
                 }
             }
@@ -155,10 +155,12 @@ private struct ExternalPlayerConfiguration: View {
             SettingsControlGroup {
                 ExternalPlayerChoices(model: model, installedPlayers: installedPlayers, focus: $focusedPlayer)
             }
-            SettingsFormGroup(title: Text("\(previewPlayer.name) support")) {
-                ExternalPlayerSupportSummary(player: previewPlayer)
+            if previewPlayer != .builtIn {
+                SettingsFormGroup(title: Text("\(previewPlayer.name) limitations")) {
+                    ExternalPlayerSupportSummary(player: previewPlayer)
+                }
+                .accessibilityIdentifier("external-player-support-section")
             }
-            .accessibilityIdentifier("external-player-support-section")
         }
     }
 }
@@ -254,28 +256,25 @@ private struct ExternalPlayerSupportSummary: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            if player == .builtIn {
-                Text("Uses Plozz's playback controls and watch progress.")
+            #if os(tvOS)
+            if player == .nativePlayer || player == .infuse {
+                Text("Live TV and non-WebDAV network shares play in Plozz.")
+                Text("Some WebDAV passwords, extra login headers and pinned certificates also require Plozz.")
+            } else if player == .vlc {
+                Text("Live TV, SMB, NFS, SFTP, FTPS and unsupported share logins play in Plozz.")
+            } else if player == .custom {
+                Text("Live TV, non-WebDAV network shares and links needing passwords play in Plozz.")
+            }
+            #else
+            Text("Live TV and downloads play in Plozz.")
+            if player == .custom {
+                Text("Non-WebDAV network shares and links needing passwords also play in Plozz.")
             } else {
-                Text("Plays compatible library videos, including server-converted streams.")
-                #if os(tvOS)
-                Text("Live TV and unsupported sources use Plozz.")
-                if player == .nativePlayer {
-                    Text("Native Player accepts HTTP(S) links only. Some WebDAV passwords and advanced authentication aren't supported; affected videos play in Plozz.")
-                } else if player == .infuse {
-                    Text("Infuse opens HTTP(S) links from Plozz. Some WebDAV passwords and advanced authentication aren't supported; affected videos play in Plozz.")
-                } else if player == .vlc {
-                    Text("VLC opens HTTP(S) and plain FTP links from Plozz. Other network shares and unsupported logins play in Plozz.")
-                }
-                #else
-                Text("Live TV, downloads and unsupported sources use Plozz.")
-                if player != .custom {
-                    Text("Network shares may need background streaming on iOS/iPadOS 26; otherwise they play in Plozz.")
-                }
-                #endif
-                if player == .vlc || player == .custom {
-                    Text("This player doesn't return watch progress to Plozz.")
-                }
+                Text("Some network shares stay in Plozz when background streaming is unavailable.")
+            }
+            #endif
+            if player == .vlc || player == .custom {
+                Text("Watch progress isn't returned to Plozz.")
             }
         }
         .settingsHelperText()

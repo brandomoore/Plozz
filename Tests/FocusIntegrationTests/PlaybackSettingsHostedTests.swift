@@ -18,7 +18,7 @@ private final class PlayerSupportFocusController<Content: View>: UIHostingContro
 
 @MainActor
 final class PlaybackSettingsHostedTests: XCTestCase {
-    func testExternalPlayerFocusPreviewsSeparateSupportWithoutChangingSelection() async throws {
+    func testExternalPlayerFocusPreviewsOnlyLimitationsWithoutChangingSelection() async throws {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
             .first { $0.activationState == .foregroundActive })
         let previous = scene.windows.first(where: \.isKeyWindow)
@@ -67,29 +67,29 @@ final class PlaybackSettingsHostedTests: XCTestCase {
         }
         try await focus(.nativePlayer)
         let native = try visibleText(in: window, attachment: "External-player-Native-support")
-        for phrase in ["Native Player support", "library videos", "server-converted", "Live TV",
-                       "HTTP(S)", "WebDAV passwords", "advanced authentication", "affected videos play in Plozz"] {
+        for phrase in ["Native Player limitations", "Live TV", "non-WebDAV",
+                       "WebDAV passwords", "extra login headers", "pinned certificates"] {
             XCTAssertTrue(native.contains(phrase), native)
         }
+        XCTAssertFalse(native.contains("library videos"), native)
+        XCTAssertFalse(native.contains("server-converted"), native)
+        XCTAssertFalse(native.contains("Native Player support"), native)
         try await focus(.infuse)
         let infuse = try visibleText(in: window, attachment: "External-player-Infuse-support")
-        XCTAssertTrue(infuse.contains("Infuse opens HTTP(S)"), infuse)
         XCTAssertTrue(infuse.contains("WebDAV passwords"), infuse)
-        XCTAssertTrue(infuse.contains("Infuse support"), infuse)
-        XCTAssertFalse(infuse.contains("Native Player accepts"), infuse)
+        XCTAssertTrue(infuse.contains("Infuse limitations"), infuse)
+        XCTAssertFalse(infuse.contains("Native Player limitations"), infuse)
         try await focus(.vlc)
         let vlc = try visibleText(in: window, attachment: "External-player-VLC-support")
-        XCTAssertTrue(vlc.contains("library videos"), vlc)
-        XCTAssertTrue(vlc.contains("plain FTP"), vlc)
-        XCTAssertTrue(vlc.contains("Other network shares"), vlc)
-        XCTAssertTrue(vlc.contains("VLC support"), vlc)
-        XCTAssertTrue(vlc.contains("doesn't return watch progress"), vlc)
-        XCTAssertFalse(vlc.contains("misreads"), vlc)
+        XCTAssertTrue(vlc.contains("SMB, NFS, SFTP, FTPS"), vlc)
+        XCTAssertTrue(vlc.contains("VLC limitations"), vlc)
+        XCTAssertTrue(vlc.contains("Watch progress isn't returned"), vlc)
+        XCTAssertFalse(vlc.contains("library videos"), vlc)
         try await focus(.builtIn)
         let builtIn = try visibleText(in: window, attachment: "External-player-built-in")
         XCTAssertFalse(builtIn.contains("server-converted"), builtIn)
-        XCTAssertFalse(builtIn.contains("advanced authentication"), builtIn)
-        XCTAssertTrue(builtIn.contains("Plozz support"), builtIn)
+        XCTAssertFalse(builtIn.contains("limitations"), builtIn)
+        XCTAssertFalse(builtIn.contains("WebDAV"), builtIn)
     }
 
     func testPlayerTabsShareOneSettingsGroupWithoutAnInfoToggle() async throws {

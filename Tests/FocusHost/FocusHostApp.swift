@@ -172,7 +172,8 @@ private struct ExternalPlayerSettingsFixture: View {
 
     @MainActor private func verifyFocusPreview() async throws {
         let player: ExternalPlayer = ProcessInfo.processInfo.arguments.contains("--external-player-vlc") ? .vlc
-            : ProcessInfo.processInfo.arguments.contains("--external-player-infuse") ? .infuse : .nativePlayer
+            : ProcessInfo.processInfo.arguments.contains("--external-player-infuse") ? .infuse
+            : ProcessInfo.processInfo.arguments.contains("--external-player-built-in") ? .builtIn : .nativePlayer
         let deadline = ContinuousClock.now + .seconds(5)
         while ContinuousClock.now < deadline {
             if let window = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene })

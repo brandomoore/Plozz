@@ -425,13 +425,14 @@ See [spatial audio](../../docs/playback-engines.md#spatial-audio) for limitation
 
 Playback > Advanced > External player is a device-only, default-off preference
 shared by all profiles on that device. It stays inside Playback rather than
-adding an Everyone category. Support details live in a separate, player-named
-section, not beneath the final picker option inside its control group.
+adding an Everyone category. A separate "[player] limitations" section lists only
+sources that stay in Plozz and missing watch-progress return, not general playback
+capabilities. It is not a footer inside the picker and is hidden for built-in playback.
 On tvOS, focusing a player previews its support without changing the saved
 default; only activating the row changes the selection. With focus outside the
 picker, the section returns to the selected player. Mobile shows the selected
-player's support in a separate section beneath its menu.
-On tvOS, VLC identifies its HTTP(S)/plain-FTP path;
+player's limitations in a separate section beneath its menu.
+On tvOS, VLC lists the share protocols that stay in Plozz;
 Native Player and Infuse also explain WebDAV
 password-character, extra-header and certificate-pin limitations and the built-in
 fallback. About external playback retains credential-sharing and progress details;
