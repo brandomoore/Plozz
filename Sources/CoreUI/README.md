@@ -78,6 +78,10 @@ its List accessibility container, whose reported frame may include the other col
 `SettingsPageLink` uses a button-backed native destination on mobile so a link
 cannot take over its sibling switch or menu's action in a composite List cell.
 TV navigation, focus styles, and row geometry are unchanged.
+Mobile `settingsPageSurface` paints the shared dialog background inside each
+native navigation destination. A clear pushed page reveals UIKit's opaque
+default instead of the sheet behind it, so it must retain the same palette and
+gradient preference as the Settings root.
 
 Mobile `ConnectionCodeView` uses `settingsGroupSurface` so code tiles follow the
 same gradient, theme, and reduced-transparency treatment as surrounding groups,

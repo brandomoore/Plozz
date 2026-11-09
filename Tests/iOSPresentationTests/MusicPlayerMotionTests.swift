@@ -6,6 +6,70 @@ import XCTest
 
 @MainActor
 final class MusicPlayerMotionTests: XCTestCase {
+    func testPlayPauseLoadingWaitsOneSecondAndCancelsFastLoads() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        window.frame = CGRect(x: 100, y: 100, width: 80, height: 80)
+        for size in [30.0, 60.0] {
+            let state = PlayPauseMotionState()
+            state.playing = true
+            window.rootViewController = UIHostingController(rootView:
+                PlayPauseMotionFixture(state: state, size: size)
+                    .transaction { $0.disablesAnimations = true }
+            )
+            window.overrideUserInterfaceStyle = .light
+            window.makeKeyAndVisible()
+            try await Task.sleep(for: .milliseconds(150))
+            let pause = try XCTUnwrap(snapshot(window).pngData())
+
+            state.playing = false
+            state.buffering = true
+            let started = ContinuousClock.now
+            for delay in [100, 600, 900] {
+                try await ContinuousClock().sleep(until: started + .milliseconds(delay))
+                XCTAssertEqual(snapshot(window).pngData(), pause, "No loading flash before one second (\(delay)ms)")
+            }
+            try await ContinuousClock().sleep(until: started + .milliseconds(1_250))
+            XCTAssertNotEqual(snapshot(window).pngData(), pause, "A sustained load must show the spinner")
+            state.buffering = false
+            state.playing = true
+            try await Task.sleep(for: .milliseconds(100))
+            XCTAssertEqual(snapshot(window).pngData(), pause, "Playback must immediately clear loading")
+
+            state.playing = false
+            state.buffering = true
+            try await Task.sleep(for: .milliseconds(700))
+            state.buffering = false
+            state.playing = true
+            try await Task.sleep(for: .milliseconds(400))
+            XCTAssertEqual(snapshot(window).pngData(), pause, "A cancelled timer must not publish late")
+            state.playing = false
+            state.buffering = true
+            try await Task.sleep(for: .milliseconds(500))
+            XCTAssertEqual(snapshot(window).pngData(), pause, "Each loading interval gets a fresh delay")
+            try await Task.sleep(for: .milliseconds(750))
+            XCTAssertNotEqual(snapshot(window).pngData(), pause)
+
+            state.showsButton = false
+            try await Task.sleep(for: .milliseconds(100))
+            state.showsButton = true
+            try await Task.sleep(for: .milliseconds(150))
+            XCTAssertEqual(snapshot(window).pngData(), pause, "Reappearing must not retain an expired gate")
+            state.buffering = false
+            try await Task.sleep(for: .milliseconds(100))
+            let play = snapshot(window).pngData()
+            XCTAssertNotEqual(play, pause, "Pausing must keep the Play glyph available")
+            try await Task.sleep(for: .milliseconds(1_050))
+            XCTAssertEqual(snapshot(window).pngData(), play, "Disappearing/cancelled loading must stay cleared")
+        }
+    }
+
     func testPlayPauseScalesBetweenGlyphsAtDockAndExpandedSizes() async throws {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
         let previous = scene.windows.first(where: \.isKeyWindow)
@@ -128,14 +192,23 @@ final class MusicPlayerMotionTests: XCTestCase {
 @MainActor @Observable
 private final class PlayPauseMotionState {
     var playing = false
+    var buffering = false
+    var showsButton = true
 }
 
 private struct PlayPauseMotionFixture: View {
     let state: PlayPauseMotionState
     let size: CGFloat
     var body: some View {
-        PlayPauseButton(playing: state.playing, glyphSize: size, hitSize: size == 30 ? 30 : 72) {
-            state.playing.toggle()
+        Group {
+            if state.showsButton {
+                PlayPauseButton(
+                    playing: state.playing, buffering: state.buffering,
+                    glyphSize: size, hitSize: size == 30 ? 30 : 72
+                ) {
+                    state.playing.toggle()
+                }
+            }
         }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(.white)

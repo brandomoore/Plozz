@@ -473,13 +473,16 @@ struct TransportSkipButton: View {
 struct PlayPauseButton: View {
     let playing: Bool
     /// Asked to play and waiting for sound — the first song after a cold launch,
-    /// or a stream recovering. Shown as a spinner, because a play glyph there
-    /// reads as "nothing happened" and a pause glyph over silence reads as
-    /// broken. Tapping still cancels.
+    /// or a stream recovering. Keep Pause available immediately, but only show
+    /// a spinner after one uninterrupted second of waiting. Tapping still cancels.
     var buffering: Bool = false
     var glyphSize: CGFloat = PlayerControlMetrics.playGlyph
     var hitSize: CGFloat = PlayerControlMetrics.playHit
     let action: () -> Void
+    @State private var loadingDelayElapsed = false
+
+    private var showsLoading: Bool { buffering && loadingDelayElapsed }
+    private var showsPause: Bool { (playing || buffering) && !showsLoading }
 
     var body: some View {
         Button(action: action) {
@@ -488,24 +491,31 @@ struct PlayPauseButton: View {
                     .opacity(playing || buffering ? 0 : 1)
                     .scaleEffect(playing || buffering ? 0.62 : 1)
                 AppIcon.pause.styled(size: glyphSize)
-                    .opacity(playing && !buffering ? 1 : 0)
-                    .scaleEffect(playing && !buffering ? 1 : 0.62)
+                    .opacity(showsPause ? 1 : 0)
+                    .scaleEffect(showsPause ? 1 : 0.62)
                 ProgressView()
                     .controlSize(hitSize < PlayerControlMetrics.playHit ? .small : .large)
-                    .opacity(buffering ? 1 : 0)
+                    .opacity(showsLoading ? 1 : 0)
             }
             // Enough bounce to feel alive; the incoming glyph settles just past
             // its mark and back, which is what sells it as a physical switch.
             // Kept a touch quicker than the skip's hand-over: this is direct
             // feedback on a toggle, where the skip is a transition between two
             // tracks. Close enough that the row still reads as one family.
-            .animation(.spring(response: 0.4, dampingFraction: 0.62), value: playing)
-            .animation(.easeInOut(duration: 0.2), value: buffering)
+            .animation(.spring(response: 0.4, dampingFraction: 0.62), value: playing || buffering)
+            .animation(.easeInOut(duration: 0.2), value: showsLoading)
             .playerHitTarget(hitSize)
         }
         .buttonStyle(PlayerButtonStyle(showsWash: false))
         .foregroundStyle(.primary)
-        .accessibilityLabel(buffering ? "Loading" : (playing ? "Pause" : "Play"))
+        .accessibilityLabel(showsLoading ? "Loading" : (showsPause ? "Pause" : "Play"))
+        .task(id: buffering) {
+            loadingDelayElapsed = false
+            guard buffering else { return }
+            try? await Task.sleep(for: .seconds(1))
+            guard !Task.isCancelled else { return }
+            loadingDelayElapsed = true
+        }
     }
 }
 
