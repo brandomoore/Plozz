@@ -2102,7 +2102,7 @@ private struct PlozziOSSeriesDownloadPicker: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Close") {
+                    Button("Close", systemImage: "xmark") {
                         dismiss()
                     }
                     .disabled(isBusy)

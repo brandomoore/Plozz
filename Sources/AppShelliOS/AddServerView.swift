@@ -71,7 +71,7 @@ struct AddServerView: View {
                 }
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) {
-                        Button("Cancel") { dismiss() }
+                        Button("Cancel", systemImage: "xmark") { dismiss() }
                     }
                 }
                 .navigationDestination(item: $chosenProvider) { selected in
@@ -203,7 +203,7 @@ struct AddServerView: View {
         .toolbar {
             if startsAtProvider && provider != .mediaShare && provider != .plex {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+                    Button("Cancel", systemImage: "xmark") { dismiss() }
                 }
             }
         }
@@ -660,7 +660,7 @@ struct PlexServerSignInView: View {
                     if isChoosingServers { showCancelConfirm = true }
                     else { dismiss() }
                 } label: {
-                    if isNavigationRoot { Text("Cancel") }
+                    if isNavigationRoot { Label("Cancel", systemImage: "xmark") }
                     else { Label("Back", systemImage: "chevron.backward").labelStyle(.iconOnly) }
                 }
                 .confirmationDialog("Start over?", isPresented: $showCancelConfirm, titleVisibility: .visible) {
@@ -725,7 +725,7 @@ struct PlozziOSAccountReauthenticationView: View {
             )
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") {
+                    Button("Cancel", systemImage: "xmark") {
                         model.cancel()
                         dismiss()
                     }

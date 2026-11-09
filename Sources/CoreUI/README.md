@@ -65,6 +65,11 @@ Mobile full-width page actions use `plozzPageActionLabel()` inside a native
 not sizing. On iOS 26, disabled page actions use the same native glass treatment
 as secondary actions instead of a separate prominent-button outline.
 Toolbar actions and native form rows retain their system metrics.
+Mobile Back, Close, and Cancel toolbar actions use `cancellationAction` placement
+and a localized title plus symbol. Native navigation containers own their
+position, including iPhone Duo's vertical bars; do not pin them to a physical
+left or right edge. Text-only task actions may remain horizontal. Validate with
+the iOS 27.1 SDK or later, not merely a Duo runtime running an older-SDK build.
 Mobile settings actions inside `SettingsSectionGroup` use `settingsActionRow()`.
 It puts the group's 16-point horizontal and 12-point vertical insets inside the
 button or menu's hit area, with a 44-point minimum height. A container value tells

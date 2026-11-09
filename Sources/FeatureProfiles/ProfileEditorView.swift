@@ -1062,7 +1062,7 @@ extension ProfileEditorView {
         .task { await loadPhotoCandidates() }
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
-                Button("Cancel", action: attemptCancel)
+                Button("Cancel", systemImage: "xmark", action: attemptCancel)
             }
             ToolbarItem(placement: .confirmationAction) {
                 Button(isEditing ? "Save" : "Create", action: save)

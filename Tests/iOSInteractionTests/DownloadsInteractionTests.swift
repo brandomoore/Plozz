@@ -80,7 +80,11 @@ final class DownloadsInteractionTests: XCTestCase {
         XCTAssertTrue(app.buttons["Edit"].waitForExistence(timeout: 3), app.debugDescription)
         let title = showPage("Downloaded Show 12")
         XCTAssertTrue(title.exists)
-        XCTAssertGreaterThanOrEqual(title.frame.minY, app.navigationBars.firstMatch.frame.maxY)
+        XCTAssertFalse(title.frame.intersects(backButton(to: "Downloads").frame))
+        let navigationBar = app.navigationBars.firstMatch
+        if navigationBar.frame.width > navigationBar.frame.height {
+            XCTAssertGreaterThanOrEqual(title.frame.minY, navigationBar.frame.maxY)
+        }
         app.buttons["Edit"].tap()
         title.tap()
         XCTAssertFalse(app.buttons["download-remove-selected"].isEnabled,
@@ -139,6 +143,32 @@ final class DownloadsInteractionTests: XCTestCase {
         XCTAssertTrue(app.buttons["Remove 1 Downloads"].waitForExistence(timeout: 3))
         app.buttons["Remove 1 Downloads"].tap()
         XCTAssertTrue(app.staticTexts["No Downloads"].waitForExistence(timeout: 5))
+    }
+
+    func testDownloadedShowCancelStaysOnTheNativeNavigationEdge() {
+        openEditableShow()
+        let back = backButton(to: "Downloads")
+        XCTAssertTrue(back.isHittable, app.debugDescription)
+        let navigationIsOnRight = back.frame.midX > app.frame.midX
+        let normal = XCTAttachment(screenshot: app.screenshot())
+        normal.name = "download-native-back"
+        normal.lifetime = .keepAlways
+        add(normal)
+        app.buttons["Edit"].tap()
+        let cancel = app.buttons["download-edit-cancel"]
+        XCTAssertTrue(cancel.waitForExistence(timeout: 3))
+        XCTAssertTrue(cancel.isHittable)
+        XCTAssertEqual(cancel.frame.midX > app.frame.midX, navigationIsOnRight,
+                       "Cancel must use the same native navigation edge as Back.")
+        XCTAssertFalse(cancel.frame.intersects(showPage("Andor").frame))
+        let editing = XCTAttachment(screenshot: app.screenshot())
+        editing.name = "download-native-cancel"
+        editing.lifetime = .keepAlways
+        add(editing)
+        cancel.tap()
+        XCTAssertTrue(back.waitForExistence(timeout: 3))
+        back.tap()
+        XCTAssertTrue(app.navigationBars["Downloads"].waitForExistence(timeout: 3))
     }
 
     func testEditCancelClearsSelectionAndItemRemovalKeepsOtherDownloads() {
@@ -381,7 +411,7 @@ final class DownloadsInteractionTests: XCTestCase {
     }
 
     private func backButton(to title: String) -> XCUIElement {
-        app.navigationBars.buttons.matching(NSPredicate(
+        app.buttons.matching(NSPredicate(
             format: "identifier == %@ OR label == %@ OR label == %@",
             "BackButton", title, "Back"
         )).firstMatch

@@ -92,8 +92,8 @@ struct PlozziOSDownloadedShowView: View {
                 }
                 .toolbar {
                     if editMode.isEditing {
-                        ToolbarItem(placement: .topBarLeading) {
-                            Button("Cancel") {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Cancel", systemImage: "xmark") {
                                 endEditing()
                             }
                             .accessibilityIdentifier("download-edit-cancel")

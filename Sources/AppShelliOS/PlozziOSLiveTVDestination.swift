@@ -17,6 +17,7 @@ struct PlozziOSLiveTVDestination: View {
 
     @Environment(ProfilesModel.self) private var profiles
     @Environment(\.mediaItemNavigator) private var navigateToItem
+    @Environment(\.plozziOSUsesVerticalToolbar) private var usesVerticalToolbar
     @State private var isExpanded = false
     @State private var liveOutputGroup = LiveChannelOutputGroup()
     @State private var network: LiveTVMobileNetworkController
@@ -221,6 +222,11 @@ struct PlozziOSLiveTVDestination: View {
             isActive: isActive && isCurrentProfileScope
         )
         .toolbar(isExpanded ? .hidden : .visible, for: .tabBar)
+        .toolbar {
+            if usesVerticalToolbar && !isExpanded {
+                PlozziOSSettingsToolbarItem(action: onShowSettings)
+            }
+        }
         .onAppear {
             network.start()
         }

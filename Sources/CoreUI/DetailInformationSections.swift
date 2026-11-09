@@ -556,11 +556,10 @@ public struct DetailInformationSections: View {
             #if !os(tvOS)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button { showsFullOverview = false } label: {
-                        Image(systemName: "xmark")
-                            .foregroundStyle(palette.secondaryText)
-                    }
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close", systemImage: "xmark") { showsFullOverview = false }
+                        .labelStyle(.iconOnly)
+                        .foregroundStyle(palette.secondaryText)
                 }
             }
             #endif
