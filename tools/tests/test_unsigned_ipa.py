@@ -186,6 +186,15 @@ class UnsignedIPATests(unittest.TestCase):
         self.assertIn("${{ steps.build.outputs.ipa_path }}", workflow)
         self.assertIn("${{ steps.build.outputs.receipt_path }}", workflow)
 
+    def test_workflow_attaches_unsigned_ipas_only_when_a_release_is_named(self):
+        workflow = (ROOT / ".github/workflows/unsigned-ipa.yml").read_text()
+        self.assertIn("release_tag:", workflow)
+        self.assertIn("if: ${{ inputs.release_tag != '' }}", workflow)
+        self.assertIn("permissions:\n      contents: write", workflow)
+        self.assertIn("gh release upload \"$RELEASE_TAG\" \"${ipas[@]}\" --clobber", workflow)
+        self.assertIn("find dist -type f -name '*.ipa'", workflow)
+        self.assertIn("gh release view \"$RELEASE_TAG\"", workflow)
+
     def test_build_uses_snapshot_locked_packages_and_verified_payload(self):
         repository = self.root / "repository"
         (repository / "Config").mkdir(parents=True)

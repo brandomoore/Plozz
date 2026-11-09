@@ -172,6 +172,14 @@ local commands if your account has no compatible hosted image. No signing or
 App Store Connect secrets are required. Download the IPA and receipt from the
 completed run's artifacts (retained for seven days).
 
+To publish the unsigned IPAs as release assets, enter an existing release tag in
+the **Release tag** field. The IPA is attached to that release in the repository
+running the workflow; the receipt remains in the run artifacts. Leave the field
+blank to keep the current artifacts-only behavior. The release job needs
+`contents: write`, so enable read/write workflow permissions in a fork before
+using it. A tag that does not already have a release fails the upload instead of
+creating one.
+
 **An unsigned IPA is not directly installable.** Sign the app, embedded frameworks,
 and tvOS Top Shelf extension with your own compatible identity/provisioning before
 installing; your signing tool and Apple account determine device availability,

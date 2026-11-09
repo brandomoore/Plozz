@@ -13,6 +13,11 @@ on:
         type: string
         default: xcode-27
         required: true
+      release_tag:
+        description: Existing release tag to attach the unsigned IPA to (blank keeps artifacts only)
+        type: string
+        default: ""
+        required: false
 
 permissions:
   contents: read
@@ -47,3 +52,30 @@ jobs:
             ${{ steps.build.outputs.receipt_path }}
           if-no-files-found: error
           retention-days: 7
+
+  release:
+    name: Attach unsigned IPAs to release
+    needs: build
+    if: ${{ inputs.release_tag != '' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: ${{ inputs.release_tag }}
+    steps:
+      - name: Download unsigned IPAs
+        uses: actions/download-artifact@v4
+        with:
+          pattern: Plozz-*-unsigned
+          merge-multiple: true
+          path: dist
+      - name: Verify the release exists
+        run: gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" > /dev/null
+      - name: Upload unsigned IPAs
+        run: |
+          set -euo pipefail
+          mapfile -t ipas < <(find dist -type f -name '*.ipa' | sort)
+          test "${#ipas[@]}" -gt 0
+          gh release upload "$RELEASE_TAG" "${ipas[@]}" --clobber --repo "$GITHUB_REPOSITORY"
