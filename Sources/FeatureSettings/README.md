@@ -670,7 +670,14 @@ watch history and planning-list behavior are documented in
   and Hero source selection uses the enabled library inventory. Discovering
   libraries for those controls must not restore a separate management list.
 - **Home rows** is one shared arrangement editor on TV, iPhone and iPad.
-  Normal rows open their own settings. Source-specific rows and their settings
+  Normal rows open their own settings with a **Row name** field.
+  Save changes applies a profile-specific heading,
+  and clearing it restores the original heading. Names survive hiding, reordering,
+  preset changes, and temporary source unavailability without renaming server content.
+  Home and its row-browse pages use these headings; dedicated destinations such as
+  Watchlist and other library pages keep their original names.
+  Collection rows retain their existing name editor.
+  Source-specific rows and their settings
   use the shared provider brand mark, including the transport badge for shares.
   In the editor, Add row, and reorder rows, the mark sits beside the
   library/server name on the second line rather than before the section title;

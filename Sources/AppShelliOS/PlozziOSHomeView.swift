@@ -708,7 +708,8 @@ struct PlozziOSHomeView: View {
                         )
                     case let .liveTV(channels):
                         PlozziOSHomeMediaRail(
-                            title: Text("Live TV"), items: [], style: .landscape,
+                            title: presentation.choice.localizedTitle.map(Text.init) ?? Text(verbatim: presentation.choice.title),
+                            items: [], style: .landscape,
                             appModel: appModel, liveChannels: channels,
                             onNavigationInteraction: viewModel.noteHomeNavigationInteraction
                         )
@@ -2785,12 +2786,12 @@ struct PlozziOSHomeRowView: View {
         Group {
             if let failure = row.failure, row.items.isEmpty, row.libraries.isEmpty {
                 PlozziOSHomeRowFailure(
-                    title: Text(row.title), error: failure, viewModel: viewModel,
+                    title: row.displayName, error: failure, viewModel: viewModel,
                     report: row.kind == .continueWatching
                         ? viewModel.continueWatchingDiagnostic.map(PlaybackDiagnosticReport.library) : nil
                 )
             } else if row.kind == .libraries, row.loadingPlaceholderCount == 0 {
-                PlozziOSMediaSection(title: Text(row.title)) {
+                PlozziOSMediaSection(title: row.displayName) {
                     libraryRow
                 }
             } else if row.items.isEmpty {
@@ -2799,7 +2800,7 @@ struct PlozziOSHomeRowView: View {
                 // geometry as the real rail, so the cards swap in without the
                 // page shifting.
                 PlozziOSHomeSkeletonRail(
-                    title: Text(row.title),
+                    title: row.displayName,
                     style: cardStyle,
                     cardCount: row.loadingPlaceholderCount > 0 ? row.loadingPlaceholderCount : 8,
                     showsCaption: row.kind == .libraries
@@ -2816,7 +2817,7 @@ struct PlozziOSHomeRowView: View {
                 )
             } else {
                 PlozziOSHomeMediaRail(
-                    title: Text(row.title),
+                    title: row.displayName,
                     items: row.items,
                     style: cardStyle,
                     appModel: appModel,

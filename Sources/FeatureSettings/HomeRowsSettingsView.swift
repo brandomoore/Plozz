@@ -279,7 +279,7 @@ struct HomeSectionsSettingsView: View {
                     row: { id in
                         let choice = byID[id]
                         return .init(
-                            title: choice?.homeEditorTitle ?? Text("Row"),
+                            title: choice?.homeEditorTitle(in: arrangement) ?? Text("Row"),
                             symbolName: "rectangle.grid.1x2",
                             providerKind: choice?.homeEditorProvider(in: accounts),
                             mediaShareTransport: choice?.library?.transportKind,
@@ -313,7 +313,7 @@ struct HomeSectionsSettingsView: View {
                                 .environment(cards)
                             }
                         } label: {
-                            HomeSectionChoiceLabel(choice: choice, accounts: accounts)
+                            HomeSectionChoiceLabel(choice: choice, accounts: accounts, visibility: arrangement)
                         }
                         .accessibilityIdentifier("home-section-\(id.presentationID)")
                         .contextMenu {

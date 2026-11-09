@@ -124,6 +124,9 @@ struct HomeEditorRowLabel: View {
 
 extension HomeRowChoice {
     var homeEditorTitle: Text { localizedTitle.map(Text.init) ?? Text(verbatim: title) }
+    func homeEditorTitle(in visibility: HomeLibraryVisibility) -> Text {
+        visibility.homeRowName(for: id).map { Text(verbatim: $0) } ?? homeEditorTitle
+    }
     func homeEditorProvider(in accounts: [ResolvedAccount]) -> ProviderKind? {
         library?.providerKind ?? serverRow?.providerKind
             ?? collectionSection.flatMap { section in
@@ -164,14 +167,50 @@ struct HomeSectionChoiceLabel: View {
     let choice: HomeRowChoice
     var accessory = "chevron.forward"
     var accounts: [ResolvedAccount] = []
+    var visibility: HomeLibraryVisibility = .default
 
     var body: some View {
         HomeEditorRowLabel(
-            title: choice.homeEditorTitle, subtitle: choice.homeEditorSource(in: accounts),
+            title: choice.homeEditorTitle(in: visibility), subtitle: choice.homeEditorSource(in: accounts),
             accessory: accessory,
             subtitleProvider: choice.homeEditorProvider(in: accounts),
             mediaShareTransport: choice.library?.transportKind
         )
+    }
+}
+
+struct HomeRowNameEditor: View {
+    let choice: HomeRowChoice
+    let visibility: HomeLibraryVisibilityModel
+    @State private var name: String
+
+    init(choice: HomeRowChoice, visibility: HomeLibraryVisibilityModel) {
+        self.choice = choice
+        self.visibility = visibility
+        _name = State(initialValue: visibility.visibility.homeRowName(for: choice.id) ?? "")
+    }
+
+    private var trimmedName: String { name.trimmingCharacters(in: .whitespacesAndNewlines) }
+
+    var body: some View {
+        SettingsSectionGroup {
+            TextField("Row name", text: $name, prompt: choice.homeEditorTitle)
+                .accessibilityIdentifier("home-section-name")
+                .onSubmit(save)
+            Button("Save changes", action: save)
+                #if os(tvOS)
+                .buttonStyle(SettingsFormButtonStyle())
+                #else
+                .settingsActionRow()
+                #endif
+                .disabled(trimmedName == (visibility.visibility.homeRowName(for: choice.id) ?? ""))
+                .accessibilityIdentifier("home-section-name-save")
+        }
+    }
+
+    private func save() {
+        visibility.setHomeRowName(name, for: choice.id)
+        name = visibility.visibility.homeRowName(for: choice.id) ?? ""
     }
 }
 
@@ -192,11 +231,13 @@ struct HomeSectionSettingsView: View {
     @State private var failed = false
 
     var body: some View {
-        HomeEditorPage(title: choice.homeEditorTitle, showsHeader: true) {
+        HomeEditorPage(title: choice.homeEditorTitle(in: visibility.visibility), showsHeader: true) {
             HStack(spacing: 12) {
                 choice.homeEditorProviderMark
                 choice.homeEditorSource.font(.subheadline).plozzForeground(.secondary)
             }
+            HomeRowNameEditor(choice: choice, visibility: visibility)
+                .id(ObjectIdentifier(visibility))
             if hasCollectionCovers, let libraryPresentation {
                 SettingsSectionGroup {
                     CollectionCoverLayoutPicker(selection: Binding(
@@ -421,7 +462,9 @@ struct HomeAddSectionView: View {
                         dismiss()
                     } catch { failed = true }
                 } label: {
-                    HomeSectionChoiceLabel(choice: choice, accessory: "plus", accounts: accounts)
+                    HomeSectionChoiceLabel(
+                        choice: choice, accessory: "plus", accounts: accounts, visibility: visibility.visibility
+                    )
                 }
                 .buttonStyle(SettingsFormButtonStyle())
                 .accessibilityIdentifier("home-add-\(choice.id.presentationID)")

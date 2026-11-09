@@ -1998,6 +1998,71 @@ final class HomeRowArrangementHostedTests: XCTestCase {
         }
     }
 
+    func testRowNameEditorShowsSavedNameAndProfileScopedHeading() async throws {
+        let suite = "HomeRowNameEditor.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let model = HomeLibraryVisibilityModel(store: HomeLibraryVisibilityStore(defaults: defaults))
+        let choice = try XCTUnwrap(HomeRowChoice.shared.first { $0.id == .global(.watchlist) })
+        model.setHomeRowName("Movie night", for: choice.id)
+        try await withWindow {
+            let page = HomeSectionSettingsView(
+                choice: choice, inventory: HomeSectionCatalogModel(),
+                visibility: model, libraries: [], accounts: []
+            )
+            #if os(tvOS)
+            page.environment(\.settingsPageBackButton, AnyView(SettingsBackButton {}))
+            #else
+            NavigationStack { page }
+            #endif
+        } inspect: { window in
+            func fields(_ view: UIView) -> [UITextField] {
+                (view as? UITextField).map { [$0] } ?? view.subviews.flatMap(fields)
+            }
+            let lines = try await self.capture(window, name: "Home row name editor")
+            XCTAssertTrue(lines.contains { $0.0.contains("Movie night") }, lines.map(\.0).joined(separator: " | "))
+            XCTAssertTrue(lines.contains { $0.0.contains("Save changes") })
+            #if os(iOS)
+            let field = try XCTUnwrap(fields(window).first)
+            XCTAssertEqual(field.text, "Movie night")
+            XCTAssertTrue(field.becomeFirstResponder())
+            field.selectAll(nil)
+            field.insertText("  Weekend picks  ")
+            try await Task.sleep(for: .milliseconds(100))
+            field.sendActions(for: .editingDidEndOnExit)
+            try await Task.sleep(for: .milliseconds(100))
+            XCTAssertEqual(model.visibility.homeRowName(for: choice.id), "Weekend picks")
+            XCTAssertEqual(field.text, "Weekend picks")
+            field.selectAll(nil)
+            field.insertText("   ")
+            try await Task.sleep(for: .milliseconds(100))
+            field.sendActions(for: .editingDidEndOnExit)
+            try await Task.sleep(for: .milliseconds(100))
+            XCTAssertNil(model.visibility.homeRowName(for: choice.id))
+            field.resignFirstResponder()
+            #else
+            model.setHomeRowName("", for: choice.id)
+            #endif
+            let reset = try await self.capture(window, name: "Home row default heading")
+            XCTAssertTrue(reset.contains { $0.0.contains("Watchlist") })
+            #if os(tvOS)
+            let label = try XCTUnwrap(reset.first { $0.0.contains("Save changes") }).1
+            let point = CGPoint(x: label.midX * window.bounds.width, y: (1 - label.midY) * window.bounds.height)
+            let item = try XCTUnwrap(self.focusableItem(at: point, in: window))
+            let host = try XCTUnwrap(window.rootViewController as? HomeRowsFocusHost)
+            host.target = item
+            let system = try XCTUnwrap(UIFocusSystem(for: window))
+            system.requestFocusUpdate(to: host)
+            system.updateFocusIfNeeded()
+            let focused = XCTNSPredicateExpectation(
+                predicate: NSPredicate { _, _ in system.focusedItem === item }, object: nil
+            )
+            await self.fulfillment(of: [focused], timeout: 2)
+            _ = try await self.snapshot(window, name: "Home row Save changes focused")
+            #endif
+        }
+    }
+
     func testContinueWatchingSectionOrdersArtworkAndGroupedControls() async throws {
         let suite = "HomeSectionLayout.\(UUID())"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
@@ -2018,9 +2083,16 @@ final class HomeRowArrangementHostedTests: XCTestCase {
             }
             .environment(\.horizontalSizeClass, .regular)
         } inspect: { window in
-            let lines = try await self.capture(window, name: "Continue Watching grouped section layout")
-            XCTAssertEqual(lines.filter { $0.0 == "Continue Watching" }.count, 1,
-                           "The section must not repeat its heading in the native navigation bar.")
+            let image = try await self.snapshot(window, name: "Continue Watching grouped section layout", scale: 2)
+            let request = VNRecognizeTextRequest()
+            request.recognitionLevel = .accurate
+            request.recognitionLanguages = ["en-US"]
+            try VNImageRequestHandler(cgImage: XCTUnwrap(image.cgImage)).perform([request])
+            let lines = (request.results ?? []).compactMap { observation in
+                observation.topCandidates(1).first.map { ($0.string, observation.boundingBox) }
+            }
+            XCTAssertEqual(lines.filter { $0.0 == "Continue Watching" }.count, 2,
+                           "Show one page heading and one default-name placeholder, not a duplicate page heading.")
             #if os(tvOS)
             let actionTitle = "Center button action"
             #else
