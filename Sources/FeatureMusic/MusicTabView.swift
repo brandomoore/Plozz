@@ -6,11 +6,27 @@ import MetadataKit
 import CoreNetworking
 
 /// Navigation routes inside the Music tab's stack.
-enum MusicRoute: Hashable {
+public enum MusicRoute: Hashable {
     case grid(MusicItemKind)
     case artist(MusicArtist)
     case album(MusicAlbum)
     case playlist(MusicPlaylist)
+}
+
+@MainActor
+@Observable
+public final class MusicNavigation {
+    public var path: [MusicRoute] = []
+    public private(set) var requestGeneration = 0
+
+    public init() {}
+
+    public func open(_ route: MusicRoute) {
+        path.append(route)
+        requestGeneration &+= 1
+    }
+
+    public func reset() { path = [] }
 }
 
 /// The Music tab: a `NavigationStack` over the landing screen, with a persistent
@@ -26,8 +42,9 @@ public struct MusicTabView: View {
     private let authenticatedHTTPResolver: any AuthenticatedHTTPResourceResolving
     private let appTheme: AppTheme
     private let musicPlayer: MusicPlayerSettingsModel
+    private let onNavigateBack: (() -> Void)?
 
-    @State private var path = NavigationPath()
+    @State private var navigation: MusicNavigation
     /// The shell's chrome model, present only under the custom navigation rail.
     @Environment(NavigationChromeModel.self) private var navigationChrome: NavigationChromeModel?
     /// Owned by the app shell (`MainTabView`) and bound in, so the full-screen
@@ -36,9 +53,9 @@ public struct MusicTabView: View {
     /// stack presents unreliably (it only appears after a stray Back press); the
     /// root host presents it on the first trigger in both tab styles.
     @Binding var showNowPlaying: Bool
-    @State private var layoutModel = MusicLandingLayoutModel()
+    @State private var layoutModel: MusicLandingLayoutModel
 
-    public init(accounts: [ResolvedAccount], visibleLibraryIDs: [String: [String]] = [:], controller: AudioPlaybackController, authenticatedHTTPResolver: any AuthenticatedHTTPResourceResolving, appTheme: AppTheme = .system, musicPlayer: MusicPlayerSettingsModel, showNowPlaying: Binding<Bool>) {
+    public init(accounts: [ResolvedAccount], visibleLibraryIDs: [String: [String]] = [:], controller: AudioPlaybackController, authenticatedHTTPResolver: any AuthenticatedHTTPResourceResolving, appTheme: AppTheme = .system, musicPlayer: MusicPlayerSettingsModel, showNowPlaying: Binding<Bool>, navigation: MusicNavigation? = nil, namespace: String? = nil, onNavigateBack: (() -> Void)? = nil) {
         self.context = MusicContext(
             accounts: accounts,
             visibleLibraryIDs: visibleLibraryIDs.isEmpty ? nil : visibleLibraryIDs
@@ -47,22 +64,36 @@ public struct MusicTabView: View {
         self.authenticatedHTTPResolver = authenticatedHTTPResolver
         self.appTheme = appTheme
         self.musicPlayer = musicPlayer
+        self.onNavigateBack = onNavigateBack
         self._showNowPlaying = showNowPlaying
+        self._navigation = State(initialValue: navigation ?? MusicNavigation())
+        self._layoutModel = State(initialValue: MusicLandingLayoutModel(store: MusicLandingLayoutStore(namespace: namespace)))
     }
 
 
     public var body: some View {
-        NavigationStack(path: $path) {
+        @Bindable var navigation = navigation
+        NavigationStack(path: $navigation.path) {
             MusicLandingView(
                 viewModel: MusicLandingViewModel(context: context, cache: .shared),
                 controller: controller,
-                onSelectRoute: { path.append($0) },
+                onSelectRoute: { navigation.path.append($0) },
                 onPlayTrack: { playTrack($0) },
                 layout: layoutModel.layout
             )
             .navigationDestination(for: MusicRoute.self) { route in
                 destination(for: route)
             }
+            #if os(iOS)
+            .toolbar {
+                if let onNavigateBack, navigation.path.isEmpty {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button("Back", systemImage: "chevron.backward", action: onNavigateBack)
+                            .labelStyle(.iconOnly)
+                    }
+                }
+            }
+            #endif
         }
         // The Now Playing control is no longer a fixed overlay — it lives inside
         // each page's header and scrolls with the content. We plumb the "open the
@@ -86,7 +117,7 @@ public struct MusicTabView: View {
         // to a pushed destination is torn down with it, so popping the last page
         // would remove the only thing that could report depth 0 and the rail would
         // stay hidden on the music landing screen.
-        .reportsNavigationDepth(path.count, to: navigationChrome)
+        .reportsNavigationDepth(navigation.path.count, to: navigationChrome)
     }
 
     /// Plays a single recently-played song from the landing rail. Resolves the
@@ -110,7 +141,8 @@ public struct MusicTabView: View {
     }
 
     @ViewBuilder
-    private func destination(for route: MusicRoute) -> some View {        // Hide the top tab bar once the user drills one level in (grid, artist,
+    private func destination(for route: MusicRoute) -> some View {
+        // Hide the top tab bar once the user drills one level in (grid, artist,
         // album, playlist, etc.) so detail screens get the full height; it
         // reappears automatically when they pop back to the landing screen.
         Group {
@@ -119,13 +151,13 @@ public struct MusicTabView: View {
                 MusicGridView(
                     viewModel: MusicGridViewModel(context: context, kind: kind),
                     controller: controller,
-                    onSelectRoute: { path.append($0) }
+                    onSelectRoute: { navigation.path.append($0) }
                 )
             case let .artist(artist):
                 ArtistDetailView(
                     viewModel: ArtistDetailViewModel(artist: artist, context: context),
                     controller: controller,
-                    onSelectAlbum: { path.append(MusicRoute.album($0)) }
+                    onSelectAlbum: { navigation.path.append(MusicRoute.album($0)) }
                 )
             case let .album(album):
                 AlbumDetailView(
@@ -141,7 +173,9 @@ public struct MusicTabView: View {
                 )
             }
         }
+        #if os(tvOS)
         .toolbar(.hidden, for: .tabBar)
+        #endif
         // Re-inject the "open full player" action here too. Custom environment
         // values set on the NavigationStack (line ~68) are inherited by the root
         // content but NOT reliably by `navigationDestination`-pushed views, so

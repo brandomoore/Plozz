@@ -4,6 +4,7 @@ import CoreModels
 import CoreUI
 import CrashReporting
 import FeatureHomeCore
+import FeatureMusic
 import FeatureProfiles
 import FeatureSettings
 import FeatureSyncSetup
@@ -387,13 +388,14 @@ public struct PlozziOSRootView: View {
         .environment(appModel)
         .environment(appModel.settings.navigation)
         .environment(appModel.guidePreparation)
+        .background { PlozziOSMusicLifecycle(appModel: appModel) }
         .environment(heroTrailerController)
         .themeMusicScope(
             controller: themeMusicController,
             model: appModel.settings.themeMusic,
             background: appModel.settings.heroBackground.settings,
             isBlocked: heroTrailerController.isPlaying || heroTrailerController.isPlaybackSuppressed
-                || isLiveTVSelected,
+                || isLiveTVSelected || appModel.music?.player.controller.hasActivePlayback == true,
             detailAllowed: !appModel.isSettingsPresented && !showingProfileSwitcher
                 && appModel.isActiveProfileAuthorized,
             authorization: themeMusicAuthorization,
@@ -849,6 +851,7 @@ enum PlozziOSDestination: Identifiable, Hashable {
     case discover
     case liveTV
     case downloads
+    case music
     case search
     case settings
     case allLibraries
@@ -863,6 +866,7 @@ enum PlozziOSDestination: Identifiable, Hashable {
         case .discover: "discover"
         case .liveTV: "liveTV"
         case .downloads: "downloads"
+        case .music: "music"
         case .search: "search"
         case .settings: "settings"
         case .allLibraries: "allLibraries"
@@ -877,6 +881,7 @@ enum PlozziOSDestination: Identifiable, Hashable {
         case "discover": self = .discover
         case "liveTV": self = .liveTV
         case "downloads": self = .downloads
+        case "music": self = .music
         case "search": self = .search
         case "settings": self = .settings
         case "allLibraries": self = .allLibraries
@@ -899,6 +904,7 @@ enum PlozziOSDestination: Identifiable, Hashable {
         case .discover: "Discover"
         case .liveTV: "Live TV"
         case .downloads: "Downloads"
+        case .music: "Music"
         case .search: "Search"
         case .settings: "Settings"
         case .allLibraries: AllLibrariesBrowse.title
@@ -913,6 +919,7 @@ enum PlozziOSDestination: Identifiable, Hashable {
         case .discover: "sparkles"
         case .liveTV: "antenna.radiowaves.left.and.right"
         case .downloads: "arrow.down.circle"
+        case .music: "music.note"
         case .search: "magnifyingglass"
         case .settings: "gearshape"
         case .allLibraries: "square.stack.3d.up"
@@ -1049,12 +1056,16 @@ struct PlozziOSTabShell: View {
         let libraryKeys = Set(libraries.map(\.key))
         return navigation.resolvedLayout(
             additionallyHiddenKeys: NavigationDestinationDefaults.iOSAutomaticallyHiddenKeys(
-                available: NavigationDestinationDefaults.iOS(visibleLibraries: libraries)
+                available: NavigationDestinationDefaults.iOS(
+                    visibleLibraries: libraries, hasMusic: appModel.music?.availability.hasMusic == true
+                )
             )
         )
             .sections(
                 available: navigation.availableNavigationKeys(
-                    NavigationDestinationDefaults.iOS(visibleLibraries: libraries)
+                    NavigationDestinationDefaults.iOS(
+                        visibleLibraries: libraries, hasMusic: appModel.music?.availability.hasMusic == true
+                    )
                 ),
                 requiredEnabled: navigation.requiredNavigationKeys
             ).enabled
@@ -1066,6 +1077,7 @@ struct PlozziOSTabShell: View {
                 case NavigationLibraryLayout.liveTVKey: return .liveTV
                 case NavigationLibraryLayout.searchKey: return .search
                 case NavigationLibraryLayout.downloadsKey: return .downloads
+                case NavigationLibraryLayout.musicKey: return .music
                 case NavigationLibraryLayout.settingsKey: return .settings
                 case NavigationLibraryLayout.allLibrariesKey: return .allLibraries
                 default: return libraryKeys.contains(key) ? .library(key) : nil
@@ -1158,21 +1170,30 @@ struct PlozziOSTabShell: View {
             : (tabDestinations.first ?? .settings)
     }
 
+    @ViewBuilder
     private func tabContent(for destination: PlozziOSDestination) -> some View {
         let isOverflow = overflowNavigation.destinationIndex.map {
             tabDestinations.indices.contains($0) && tabDestinations[$0] == destination
         } ?? false
-        return NavigationStack {
+        if destination == .music {
             destinationContent(for: destination, keepsNavigationBar: isOverflow)
-                .toolbar {
-                    if isOverflow, destination != .downloads {
-                        PlozziOSOverflowBackToolbarItem(action: overflowNavigation.returnToMore)
-                    }
-                }
+                .safeAreaPadding(.bottom, appModel.music?.player.controller.hasActivePlayback == true ? 64 : 0)
                 .environment(\.plozziOSIsOverflowDestination, isOverflow)
                 .environment(\.plozziOSOverflowNavigation, overflowNavigation)
+        } else {
+            NavigationStack {
+                destinationContent(for: destination, keepsNavigationBar: isOverflow)
+                    .safeAreaPadding(.bottom, appModel.music?.player.controller.hasActivePlayback == true ? 64 : 0)
+                    .toolbar {
+                        if isOverflow, destination != .downloads {
+                            PlozziOSOverflowBackToolbarItem(action: overflowNavigation.returnToMore)
+                        }
+                    }
+                    .environment(\.plozziOSIsOverflowDestination, isOverflow)
+                    .environment(\.plozziOSOverflowNavigation, overflowNavigation)
+            }
+            .id(destination == .downloads ? downloadNavigationID : nil)
         }
-        .id(destination == .downloads ? downloadNavigationID : nil)
     }
 
     @ViewBuilder
@@ -1183,6 +1204,10 @@ struct PlozziOSTabShell: View {
             PlozziOSOfflineUnavailableView()
         } else {
         switch destination {
+        case .music:
+            if let music = appModel.music {
+                PlozziOSMusicDestination(appModel: appModel, music: music)
+            }
         case .home:
             PlozziOSDestinationView(
                 destination: .home,
@@ -1431,7 +1456,10 @@ struct PlozziOSTabShell: View {
         .onReceive(NotificationCenter.default.publisher(for: .universalWatchlistCacheDidLoad)) { _ in
             refreshWatchlistNavigation()
         }
-        .onChange(of: NavigationDestinationDefaults.iOS(visibleLibraries: appModel.visibleNavigationLibraries),
+        .onChange(of: NavigationDestinationDefaults.iOS(
+            visibleLibraries: appModel.visibleNavigationLibraries,
+            hasMusic: appModel.music?.availability.hasMusic == true
+        ),
                   initial: true) { _, available in
             appModel.settings.navigation.automaticallyHiddenKeys =
                 NavigationDestinationDefaults.iOSAutomaticallyHiddenKeys(available: available)
@@ -1469,10 +1497,23 @@ struct PlozziOSTabShell: View {
                 Color.clear
             } else {
                 contentAwareTabs
+                    .overlay {
+                        if let music = appModel.music, music.authorizationID != nil {
+                            MusicPlayerOverlay(
+                                session: music.player, hasBottomBar: !usesVerticalToolbar,
+                                contentLeft: sidebarGeometry.isVisible ? sidebarGeometry.coveredWidth : 0,
+                                appearance: music.settings.appearance
+                            )
+                        }
+                    }
             }
         }
         .onChange(of: appModel.profiles.activeProfile.needsSetup, initial: true) { _, needsSetup in
             if needsSetup { homeViewModelBox.discard { $0.invalidate() } }
+        }
+        .onChange(of: appModel.music?.player.navigation.requestGeneration) { _, _ in
+            guard appModel.music?.authorizationID != nil else { return }
+            openDestination(.music)
         }
         .homeLiveTVScope(
             profileID: appModel.profiles.activeProfileID,
@@ -2089,7 +2130,7 @@ private struct PlozziOSDestinationView: View {
                 viewModel: sharedHomeViewModel,
                 onShowSettings: onShowSettings
             )
-        case .discover, .liveTV, .library, .allLibraries:
+        case .discover, .liveTV, .library, .allLibraries, .music:
             EmptyView()
         case .search:
             PlozziOSSearchView(

@@ -64,7 +64,9 @@ public struct NavigationLibrariesDetailView: View {
         let visible = all.filter { scope.homeVisibility.isEnabled($0.key) }
         #if os(iOS)
         let keys = NavigationDestinationDefaults.iOS(
-            visibleLibraries: includesIndividualLibraries ? visible : []
+            visibleLibraries: includesIndividualLibraries ? visible : [],
+            hasMusic: !excludedKeys.contains(NavigationLibraryLayout.musicKey)
+                && AppReleaseChannel.current.isBeta && visible.contains { $0.library.isMusic }
         )
         let automaticallyHiddenDestinations = NavigationDestinationDefaults.iOSAutomaticallyHiddenKeys(available: keys)
         #else

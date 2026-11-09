@@ -3,8 +3,9 @@
 Music browsing (artists / albums / tracks) and an app-scoped audio
 player that is **independent** of the full-screen video `PlayerViewModel`,
 so audio keeps playing as the user navigates the rest of the app.
-The Music tab is currently integrated into the tvOS shell, not the iOS/iPadOS
-shell.
+The Music tab is integrated into the tvOS shell and, in development/TestFlight
+builds only, the iOS/iPadOS shell. App Store builds do not create the mobile
+music runtime or probe music libraries.
 
 ## Responsibility
 
@@ -29,7 +30,8 @@ shell.
     Remote play/pause/skip and tvOS Control Center work.
 - **Mini-player & Now Playing** — `MiniPlayerView` + `NowPlayingView`
   observe the **same** injected `AudioPlaybackController` instance from
-  the environment.
+  the environment on tvOS. `iOS/` ports the Mozz player presentation onto this
+  same engine on iPhone/iPad; it does not introduce another playback engine.
 - **Artwork** — `MusicArtworkImage` + `MusicCard` render through
   `CoreUI.FallbackAsyncImage`. Server art is always tried first; if it's
   missing, `MusicArtworkFallback` produces an async closure that asks
@@ -67,6 +69,42 @@ shell.
   completion without advancing away from the requested selection. End events
   must belong to the actual current player item; the newly playing track still
   advances normally after the handoff.
+- **Queue edits preserve the playing occurrence.** Reordering uses final
+  positions relative to Up Next. Clearing history or upcoming tracks also
+  updates the unshuffled order, and invalidates only the prepared next item.
+- **Mobile authorization is live.** Profile, server-user/credential, offline
+  mode and enabled-library changes invalidate the runtime, pending feedback
+  writes, navigation and playback. Player feedback is keyed by account and
+  provider track ID, never by display title.
+
+## iOS music player
+
+The presentation is ported from `brandomoore/Mozz` revision
+`58dab0015d09a4978f2c484e072d1bc0e30f69dc`; see `iOS/Mozz-NOTICE.txt`.
+The original morphing island/drawer, artwork transitions, press feedback,
+transport glyph motion, scrubbing, queue reordering and immersive lyrics
+presentation are retained. The host remains Plozz's native navigation rather
+than Mozz's separate split tab bar.
+
+`MusicPlayerSession` bridges the presentation to Plozz's audio controller,
+profile-scoped appearance and shared artwork/lyrics services. Plex exposes
+five-star ratings (translated to its ten-point API scale); Jellyfin/Emby expose
+favorites. Writes are serialized per account-qualified track and failed
+optimistic changes roll back. Unsupported feedback controls are omitted.
+Album/artist actions retain their originating account when opening the Music
+stack. Mozz downloads, radio, library synchronization and account storage are
+not imported.
+
+Mobile browsing reuses the tvOS view models and provider aggregation with
+touch-sized cards and vertically scrolling detail pages. Reduced-motion and
+reduced-transparency preferences remain effective. The port's source copy is
+not yet part of the reviewed translation pipeline.
+
+`MusicPlayerPresentationTests` covers feedback rollback and delayed authorization,
+mobile navigation gating, and mounted expand/collapse/skip presentation. For a
+local visual check, launch `PlozziOSPresentationHost` with
+`--music-player-fixture` (add `--music-expanded` to start expanded). The fixture
+uses generated silent audio and never connects to a media server.
 
 ## Where to look first
 

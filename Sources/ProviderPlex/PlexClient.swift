@@ -1372,6 +1372,20 @@ public struct PlexClient: Sendable {
         _ = try await send(endpoint)
     }
 
+    func setMusicRating(_ rating: Double?, ratingKey: String) async throws {
+        let endpoint = Endpoint(
+            path: "/:/rate",
+            queryItems: [
+                URLQueryItem(name: "key", value: ratingKey),
+                URLQueryItem(name: "identifier", value: "com.plexapp.plugins.library"),
+                URLQueryItem(name: "rating", value: rating.map { String($0) } ?? "-1"),
+                URLQueryItem(name: "X-Plex-Token", value: token)
+            ],
+            headers: headers
+        )
+        _ = try await send(endpoint)
+    }
+
     /// `PUT /library/metadata/{ratingKey}/refresh` — asks the PMS to re-scan the
     /// item's files and re-fetch metadata/artwork from its configured agents.
     /// The server queues the work and returns immediately.

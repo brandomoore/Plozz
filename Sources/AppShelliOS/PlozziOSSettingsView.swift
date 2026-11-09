@@ -2269,9 +2269,7 @@ private struct PlozziOSNavigationSettingsView: View {
                 NavigationLibrariesDetailView(
                     scope: navigationLibrariesScope,
                     navigation: appModel.settings.navigation,
-                    excludedKeys: [
-                        NavigationLibraryLayout.musicKey,
-                    ]
+                    excludedKeys: appModel.music == nil ? [NavigationLibraryLayout.musicKey] : []
                 )
                 .id(appModel.navigationLibrariesScopeKey)
             }

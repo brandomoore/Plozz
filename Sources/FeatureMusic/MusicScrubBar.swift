@@ -199,7 +199,7 @@ struct MusicScrubBar: View {
 
     @ViewBuilder
     private func glassTrack(height: CGFloat) -> some View {
-        if #available(tvOS 26.0, *) {
+        if #available(tvOS 26.0, iOS 26.0, *) {
             Capsule()
                 .fill(.clear)
                 .frame(height: height)

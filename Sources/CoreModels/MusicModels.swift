@@ -143,6 +143,7 @@ public struct MusicTrack: Codable, Hashable, Identifiable, Sendable {
     public var albumTitle: String?
     public var albumID: String?
     public var artistName: String?
+    public var artistID: String?
     public var trackNumber: Int?
     public var discNumber: Int?
     /// Track runtime in seconds, if known.
@@ -160,6 +161,7 @@ public struct MusicTrack: Codable, Hashable, Identifiable, Sendable {
         albumTitle: String? = nil,
         albumID: String? = nil,
         artistName: String? = nil,
+        artistID: String? = nil,
         trackNumber: Int? = nil,
         discNumber: Int? = nil,
         duration: TimeInterval? = nil,
@@ -172,6 +174,7 @@ public struct MusicTrack: Codable, Hashable, Identifiable, Sendable {
         self.albumTitle = albumTitle
         self.albumID = albumID
         self.artistName = artistName
+        self.artistID = artistID
         self.trackNumber = trackNumber
         self.discNumber = discNumber
         self.duration = duration

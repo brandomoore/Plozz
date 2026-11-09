@@ -161,7 +161,18 @@ struct MusicCard: View {
             customCard
         }
         #else
-        customCard
+        Button(action: action) {
+            VStack(alignment: .leading, spacing: 8) {
+                artwork.frame(width: 150, height: 150)
+                Text(title).font(.headline).lineLimit(2)
+                if let subtitle {
+                    Text(subtitle).font(.subheadline).foregroundStyle(.secondary).lineLimit(2)
+                }
+            }
+            .frame(width: 150, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
         #endif
     }
 
@@ -334,6 +345,24 @@ struct ArtistCard: View {
     @Environment(\.plozzMetrics) private var metrics
 
     var body: some View {
+        #if os(iOS)
+        Button(action: action) {
+            VStack(spacing: 8) {
+                MusicArtworkImage(
+                    url: artist.artworkURL,
+                    systemPlaceholder: "music.mic",
+                    cornerRadius: 75,
+                    asyncFallbackURL: MusicArtworkFallback.artistImage(name: artist.name),
+                    pinIdentity: artist.id
+                )
+                .frame(width: 150, height: 150)
+                .clipShape(Circle())
+                Text(artist.name).font(.headline).lineLimit(2)
+            }
+            .frame(width: 150)
+        }
+        .buttonStyle(.plain)
+        #else
         let diameter = metrics.artistTileDiameter
         let slot = diameter + metrics.circleFocusPadding * 2
         CircularFocusTile(
@@ -359,6 +388,7 @@ struct ArtistCard: View {
             }
         )
         .plozzCircularFocusStyle()
+        #endif
     }
 }
 

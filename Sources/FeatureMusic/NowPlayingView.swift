@@ -1,4 +1,4 @@
-#if canImport(SwiftUI) && canImport(AVFoundation)
+#if os(tvOS) && canImport(SwiftUI) && canImport(AVFoundation)
 import SwiftUI
 import CoreModels
 import CoreUI

@@ -135,8 +135,9 @@ public enum NavigationDestinationDefaults {
         ]
     }
 
-    public static func iOS(visibleLibraries: [AggregatedLibrary]) -> [String] {
+    public static func iOS(visibleLibraries: [AggregatedLibrary], hasMusic: Bool = false) -> [String] {
         var keys = iOS
+        if hasMusic { keys.insert(NavigationLibraryLayout.musicKey, at: 1) }
         let libraries = NavigationRailPlan.browsableLibraries(visibleLibraries)
         keys.insert(
             contentsOf: (libraries.count > 1 ? [NavigationLibraryLayout.allLibrariesKey] : [])
@@ -153,7 +154,7 @@ public enum NavigationDestinationDefaults {
     /// New libraries stay in the editor until explicitly shown. This is a
     /// presentation default, not a persisted hide or a content restriction.
     public static func iOSAutomaticallyHiddenKeys(available: [String]) -> Set<String> {
-        Set(available).subtracting(iOSDefaultVisibleKeys)
+        Set(available).subtracting(iOSDefaultVisibleKeys + [NavigationLibraryLayout.musicKey])
     }
 }
 

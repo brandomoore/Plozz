@@ -1,0 +1,50 @@
+The iOS music player presentation is adapted from:
+https://github.com/brandomoore/Mozz
+Revision: 58dab0015d09a4978f2c484e072d1bc0e30f69dc
+
+Copyright (C) 2026 Mozz contributors
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, version 3 of the License only.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU General Public License for more details.
+
+The full GPL version 3 text is included in the repository's LICENSE.
+
+Additional permission under GNU GPL version 3 section 7:
+
+If you modify this Program, or any covered work, by linking or combining
+it with software, libraries, or services required by Apple platform
+distribution mechanisms (including App Store DRM, terms, or code-signing
+requirements), you are granted additional permission to convey the resulting
+work through Apple's App Store and related distribution channels.
+
+Plozz modifications replace Mozz's application, playback, artwork-storage,
+account and preferences integration with Plozz-owned services. The original
+player geometry, transitions, gestures and vector icon assets are retained.
+
+Tabler Icons
+Copyright (c) 2020-2026 Paweł Kuna
+https://github.com/tabler/tabler-icons
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
