@@ -1147,7 +1147,8 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   a content-sized 900pt card, capped at 760pt high, with a 38pt leading title,
   48pt content insets and Menu/Back dismissal. Metadata uses unboxed
   scrolling content, including on mobile; mobile retains its native inline title
-  and Done action.
+  and Done action. `PlozzDialogHeading` owns the TV title treatment shared by
+  About, detail More dialogs, and the song-service picker.
   Section gaps, gutters, and padding come from `DetailInformationLayout`.
   Ratings stay separate from editorial facts. Revealing one
   protected score reveals the shared score group, never the surrounding facts.

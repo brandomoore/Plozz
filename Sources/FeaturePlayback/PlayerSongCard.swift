@@ -248,9 +248,7 @@ struct SongServiceChooser: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 24) {
                         HStack {
-                            Text("Open song")
-                                .font(.title2.bold())
-                                .accessibilityAddTraits(.isHeader)
+                            PlozzDialogHeading(Text("Open song"))
                             Spacer()
                             Button("Done") { dismiss() }
                                 .buttonStyle(.bordered)
@@ -341,6 +339,9 @@ private struct SongServiceOptions: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 24) {
             SongServiceHeader(song: song)
+                #if os(tvOS)
+                .padding(.vertical, 12)
+                #endif
             VStack(spacing: 12) {
                 ForEach(SongServiceLink.links(for: song)) { link in
                     SongServiceButton(link: link) { select(link) }
@@ -356,9 +357,14 @@ private struct SongServiceHeader: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
+        #if os(tvOS)
+        let artworkSpacing: CGFloat = 32
+        #else
+        let artworkSpacing: CGFloat = 20
+        #endif
         let layout = dynamicTypeSize.isAccessibilitySize
             ? AnyLayout(VStackLayout(alignment: .leading, spacing: 16))
-            : AnyLayout(HStackLayout(alignment: .center, spacing: 20))
+            : AnyLayout(HStackLayout(alignment: .center, spacing: artworkSpacing))
         layout {
             AsyncImage(url: song.artworkURL) { image in
                 image.resizable().scaledToFill()
@@ -409,7 +415,7 @@ private struct SongServiceButton: View {
                     .multilineTextAlignment(.leading)
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                Image(systemName: link.service == .appleMusic ? "arrow.up.right" : "magnifyingglass")
+                Image(systemName: "arrow.up.right")
                     .font(.body)
                     .accessibilityHidden(true)
             }

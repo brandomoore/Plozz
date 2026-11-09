@@ -79,6 +79,14 @@ final class PlayerSongLayoutPreviewTests: XCTestCase {
             XCTAssertGreaterThan(serviceFrames[0].minY, serviceFrames[1].maxY)
             XCTAssertGreaterThan(serviceFrames[1].minY, serviceFrames[2].maxY,
                                  "Each service needs a separate full-width row, not adjacent inline links.")
+            #if os(tvOS)
+            let heading = try XCTUnwrap(observations.first {
+                $0.topCandidates(1).first?.string == "Open song"
+            }?.boundingBox)
+            XCTAssertLessThanOrEqual(heading.height * window.bounds.height,
+                                    UIFont.systemFont(ofSize: 38, weight: .semibold).lineHeight,
+                                    "Use the compact detail-dialog heading rather than a page-sized title.")
+            #endif
         }
     }
 
@@ -116,7 +124,9 @@ final class PlayerSongLayoutPreviewTests: XCTestCase {
             host.view.frame = window.bounds
             window.layoutIfNeeded()
             try await Task.sleep(for: .milliseconds(500))
-            let captured = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+            let format = UIGraphicsImageRendererFormat()
+            format.scale = 2
+            let captured = UIGraphicsImageRenderer(bounds: window.bounds, format: format).image { _ in
                 XCTAssertTrue(window.drawHierarchy(in: window.bounds, afterScreenUpdates: true))
             }
             let image = try XCTUnwrap(captured.cgImage)
@@ -127,6 +137,7 @@ final class PlayerSongLayoutPreviewTests: XCTestCase {
             let request = VNRecognizeTextRequest()
             request.recognitionLevel = .accurate
             request.recognitionLanguages = ["en-US"]
+            request.customWords = song.title.components(separatedBy: " ")
             try VNImageRequestHandler(cgImage: image).perform([request])
             let text = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }
                 .joined(separator: " ").replacingOccurrences(of: "- ", with: "")

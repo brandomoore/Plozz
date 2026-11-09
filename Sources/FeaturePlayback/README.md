@@ -120,8 +120,10 @@ bounded language-match/accessibility flags without track titles or URLs.
   Selecting a song offers its exact Apple Music link (when supplied), a Spotify
   search, or a YouTube search. The chooser pairs album artwork with wrapping song
   metadata above full-width native service buttons, rather than inline text links.
-  TV uses a compact floating card with scroll fallback; iPhone/iPad use an inline
-  navigation title and native sheet sizing. Bundled monochrome service marks inherit
+  TV uses a compact floating card with scroll fallback, the shared detail-dialog
+  heading, and extra space around song metadata; iPhone/iPad use an inline
+  navigation title and native sheet sizing. All service rows use an external-open
+  accessory. Bundled monochrome service marks inherit
   the native control's contrast. Apple Music, Spotify and YouTube marks come from
   [Simple Icons](https://github.com/simple-icons/simple-icons/tree/1bb2f6e6ea50f920de8d2f3d273ae48564a5eaee/icons)
   under CC0 (see `Resources/SongServiceIconsLicense.txt`); trademarks remain their

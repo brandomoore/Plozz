@@ -512,10 +512,7 @@ public struct DetailInformationSections: View {
     #if os(tvOS)
     private var tvOverviewCard: some View {
         DetailReaderCard {
-            Text(item.title)
-                .font(.system(size: 38, weight: .semibold))
-                .foregroundStyle(palette.primaryText)
-                .fixedSize(horizontal: false, vertical: true)
+            PlozzDialogHeading(Text(item.title))
 
             if !item.genres.isEmpty {
                 Text(item.genres.prefix(3).joined(separator: ", "))
