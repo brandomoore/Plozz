@@ -2699,6 +2699,17 @@
       ],
       "count": 1
     },
+    "Sources/FeatureSettings/PlayerTabSettingsControls.swift|PlayerTabSettingsControls|controls|Toggle|<dynamic>": {
+      "reason": "Player-tab switches are generated from PlayerOptionalTab; each tab's explicit catalog entry owns its search anchor and the CoreModels tests require one per case.",
+      "covered_by": [
+        "player-tab-chapters",
+        "player-tab-cast",
+        "player-tab-episodes",
+        "player-tab-playlist",
+        "continue-watching-in-player"
+      ],
+      "count": 1
+    },
     "Sources/FeatureSettings/SkipMarkerSettingsControl.swift|SkipMarkerSettingsControl|body|Button|<dynamic>": {
       "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
       "count": 1

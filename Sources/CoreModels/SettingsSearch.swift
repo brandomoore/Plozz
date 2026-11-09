@@ -414,6 +414,16 @@ public enum SettingsSearchCatalog {
               keywords: "automatically start play next episode binge stop after each episode continuous playback"),
         .init("autoplay-next-playlist", page: .playback, title: "Autoplay next playlist item",
               keywords: "automatically start play next video playlist continuous playback"),
+        .init("player-tab-chapters", page: .playback, title: "Chapters",
+              keywords: "player tabs show hide chapters scenes navigation"),
+        .init("player-tab-cast", page: .playback, title: .localized(PlayerOptionalTab.cast.title),
+              keywords: "player tabs show hide cast actors people"),
+        .init("player-tab-episodes", page: .playback, title: "Episodes",
+              keywords: "player tabs show hide episodes season series navigation"),
+        .init("player-tab-playlist", page: .playback, title: "Playlist",
+              keywords: "player tabs show hide playlist queue navigation"),
+        .init("continue-watching-in-player", page: .playback, title: .localized(PlayerOptionalTab.continueWatching.title),
+              keywords: "player tabs show hide continue watching switch title resume another movie show"),
         .init("show-up-next-card", page: .playback, title: "Show Up Next card",
               keywords: "next episode popup countdown end credits"),
         .init("audio-language", page: .playback, title: "Preferred audio language",
@@ -656,7 +666,7 @@ public enum SettingsSearchCatalog {
               keywords: "merge combine continue watching next up next episode"),
         .init("continue-action", page: .continueWatching, title: "When selecting an item",
               keywords: "continue watching tap click center button play details resume")
-    ] + PlayerOptionalTab.allCases.map(\.settingsSearchEntry) + HeroSourceKind.allCases.map { source in
+    ] + HeroSourceKind.allCases.map { source in
         .init("hero-source-\(source.rawValue)", page: .heroContent, title: source.displayName,
               keywords: "hero banner carousel featured content source include exclude enable disable",
               requiresAdultProfile: source == .featured)

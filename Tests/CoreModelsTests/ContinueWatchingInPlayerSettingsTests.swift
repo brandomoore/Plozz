@@ -81,12 +81,10 @@ final class ContinueWatchingInPlayerSettingsTests: XCTestCase {
         XCTAssertEqual(PlaybackSettingsModel(store: primary).settings, model.settings)
     }
 
-    func testEveryPlayerTabHasASettingsSearchEntry() {
+    func testEveryPlayerTabHasACatalogEntry() {
+        let catalog = SettingsSearchCatalog.targets(on: .playback)
         for tab in PlayerOptionalTab.allCases {
-            let entry = tab.settingsSearchEntry
-            XCTAssertEqual(entry.id, tab.searchAnchor)
-            XCTAssertEqual(entry.page, .playback)
-            XCTAssertEqual(entry.anchorID, tab.searchAnchor)
+            XCTAssertTrue(catalog.contains(tab.searchAnchor), tab.searchAnchor)
         }
     }
 

@@ -45,27 +45,4 @@ public enum PlayerOptionalTab: CaseIterable, Hashable, Sendable {
         case .continueWatching: "continue-watching-in-player"
         }
     }
-
-    /// Searchable settings entry for this section. New cases get a settings
-    /// toggle and a search result without editing the settings view or catalog.
-    public var settingsSearchEntry: SettingsSearchEntry {
-        SettingsSearchEntry(
-            searchAnchor, page: .playback, title: title, keywords: searchKeywords
-        )
-    }
-
-    private var searchKeywords: LocalizedStringResource {
-        switch self {
-        case .chapters:
-            "player tabs show hide chapters scenes navigation"
-        case .cast:
-            "player tabs show hide cast actors people"
-        case .episodes:
-            "player tabs show hide episodes season series navigation"
-        case .playlist:
-            "player tabs show hide playlist queue navigation"
-        case .continueWatching:
-            "player tabs show hide continue watching switch title resume another movie show"
-        }
-    }
 }
