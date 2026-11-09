@@ -24,9 +24,11 @@ Its helper note explains HDMV-only menus, automatic video playback for BD-J,
 and the watch-progress limitation once on both platforms; disc action menus
 and video pickers do not repeat it.
 
-Playback groups its five optional **Player tabs** in one shared control surface
-on TV and mobile. Labels match the player tabs, Info stays always available, and
-visibility preferences are independent of autoplay and Up Next behavior.
+Playback groups its optional **Player tabs** in one shared control surface on TV
+and mobile. The switches and their search entries are generated from
+`PlayerOptionalTab`, so future sections inherit both without editing the settings
+view. Labels match the player tabs, Info stays always available, and visibility
+preferences are independent of autoplay and Up Next behavior.
 
 Movie & show details → Trailers & music is the shared destination for trailer
 availability, independent Home autoplay and detail background playback. Home →

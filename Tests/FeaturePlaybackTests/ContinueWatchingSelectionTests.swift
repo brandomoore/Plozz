@@ -43,6 +43,34 @@ final class ContinueWatchingSelectionTests: XCTestCase {
         XCTAssertEqual(PlayerControls.Category.visibleCardTabs(model: .init(), player: nil), [.info])
     }
 
+    func testDisabledCastAndChaptersDoNotRetainSectionPayloads() async {
+        var settings = PlaybackSettings()
+        settings.castInPlayer = false
+        settings.chaptersInPlayer = false
+        let model = PlayerViewModel(
+            provider: ContinueWatchingTestProvider(), itemID: "current", playbackSettings: settings
+        )
+        model.applyPlayerSectionVisibility(
+            cast: [.init(id: "person", name: "Person", role: "Character")],
+            chapters: [.init(start: 0, title: "Chapter")]
+        )
+        XCTAssertTrue(model.controls.infoCard.cast.isEmpty)
+        XCTAssertTrue(model.controls.infoCard.chapters.isEmpty)
+        await model.stop()
+    }
+
+    func testEnabledCastAndChaptersKeepTheirSectionPayloads() async {
+        let model = PlayerViewModel(
+            provider: ContinueWatchingTestProvider(), itemID: "current"
+        )
+        let person = MediaPerson(id: "person", name: "Person", role: "Character")
+        let chapter = MediaChapter(start: 0, title: "Chapter")
+        model.applyPlayerSectionVisibility(cast: [person], chapters: [chapter])
+        XCTAssertEqual(model.controls.infoCard.cast, [person])
+        XCTAssertEqual(model.controls.infoCard.chapters, [chapter])
+        await model.stop()
+    }
+
     func testSnapshotIsDerivedOnceAndObservesHomeUpdates() async throws {
         let home = ContinueWatchingHomeSnapshot()
         let first = MediaItem(id: "first", title: "First", kind: .movie)
