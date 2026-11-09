@@ -93,6 +93,11 @@ actual retained engine view's intermediate bounds across native fullscreen
 dismissal, rather than treating an animated overlay as evidence of video motion.
 `PlozzFocusTests/LiveTVMultiviewMotionHostedTests` separately covers interpolated
 renderer bounds, interrupted layout changes, picture clipping and Reduce Motion.
+Remote caption tests inspect rendered text in native-glass and reduced-glass
+screenshots: only the focused channel is labeled, the label times out and returns
+on refocus, and video bounds, focus and audio remain unchanged. Exit coverage uses
+Back rather than an explicit TV Close button, including setup, cancellation and
+confirmed return to the guide.
 The synthetic engine reports SDR picture dimensions and disables HDMI-transition
 fades: it has no display-mode switch to settle, and a black veil is not video evidence.
 

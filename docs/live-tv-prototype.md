@@ -1782,13 +1782,20 @@ Focused labels stay dark against the bright fill in native-glass and
 reduced-transparency modes. These controls do not use the larger page/form action pills.
 Watching hides controls after four seconds of inactivity. Editing, native menus,
 channel selection, preparation failures and VoiceOver keep them available.
+On Apple TV, only the focused picture briefly shows a compact channel logo and
+name, using the native playback glass treatment and its reduced-effects fallback.
+The label fades after three seconds, independently of the controls, and returns
+on refocus. VoiceOver retains it while focused; the pane's accessible channel
+name and audio state remain available even when the visual label is hidden.
+Reduce Motion suppresses the fade, and loading/error indicators remain separate.
 Native menu focus notifications do not write back into the pinned controls'
 activity state, avoiding an update loop that can repeatedly rebuild the menu.
 Back from a guide row still focuses Search; Back from those controls or Cancel
 returns to setup. In Multiview, Back restores all pictures if expanded, then
-leaves setup or dismisses active controls. Any Back or Close Multiview action
-that would end the composition asks for confirmation. Keep watching dismisses
-the confirmation without closing streams.
+leaves setup or dismisses active controls. Apple TV has no explicit Close
+Multiview button; Back asks for confirmation when it would leave the composition
+and return to the guide. The Close control on iPhone/iPad also asks for
+confirmation. Keep watching dismisses the confirmation without closing streams.
 
 Favorite saves channel IDs in display order, the main picture and the chosen
 layout. The guide's Multiviews control opens these saved compositions. Favorites

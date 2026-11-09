@@ -599,8 +599,10 @@ private struct LiveTVMultiviewHeader: View {
                 LiveTVMultiviewAction(title: "Watch", symbol: "play.fill", action: watch, editing: editing)
                     .accessibilityIdentifier("live-multiview-watch")
             }
+            #if !os(tvOS)
             LiveTVMultiviewAction(title: "Close Multiview", symbol: "xmark", action: exit, editing: editing)
                 .accessibilityIdentifier("live-multiview-done")
+            #endif
         }
         .environment(\.colorScheme, .dark)
         #if os(tvOS)
@@ -631,6 +633,20 @@ private struct LiveTVMultiviewPaneControl: View {
 
     var body: some View {
         ZStack(alignment: .top) {
+            #if os(tvOS)
+            LiveTVMultiviewFocusCaption(channel: pane.channel, isFocused: nativeFocused)
+                .frame(maxWidth: min(440, max(0, focusFrame.width - 32)), alignment: .leading)
+                .padding(16)
+                .frame(width: focusFrame.width, height: focusFrame.height, alignment: .bottomLeading)
+                .position(x: focusFrame.midX, y: focusFrame.midY)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+            if pane.preparation.isPreparing {
+                ProgressView()
+                    .tint(.white)
+                    .position(x: focusFrame.midX, y: focusFrame.midY)
+            }
+            #else
             if chromeVisible {
                 VStack(spacing: 0) {
                     Spacer(minLength: 0)
@@ -641,6 +657,7 @@ private struct LiveTVMultiviewPaneControl: View {
                 .allowsHitTesting(false)
                 .accessibilityHidden(true)
             }
+            #endif
             pictureControl
             .disabled(!isInteractive || (pane.preparation.current == nil && pane.preparation.failure != nil))
             .accessibilityLabel(liveTVChannelLabel(pane.channel?.name))
@@ -707,6 +724,55 @@ private struct LiveTVMultiviewPaneControl: View {
         #endif
     }
 }
+
+#if os(tvOS)
+private struct LiveTVMultiviewFocusCaption: View {
+    let channel: LiveTVPrototypeChannel?
+    let isFocused: Bool
+    @State private var expiredChannelID: String?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
+    @Environment(\.playerUsesNativeGlass) private var nativeGlass
+    @Environment(\.plozzReduceTransparency) private var reduceTransparency
+
+    private var focusedChannelID: String? { isFocused ? channel?.id : nil }
+    private var isVisible: Bool {
+        focusedChannelID != nil && (voiceOver || expiredChannelID != focusedChannelID)
+    }
+
+    var body: some View {
+        HStack(spacing: 12) {
+            if let channel {
+                if channel.logoURL != nil || channel.source == .plozz {
+                    PrototypeStationMark(channel: channel, size: 32, cornerRadius: 6)
+                }
+                Text(verbatim: channel.name)
+                    .font(.caption.weight(.semibold))
+                    .lineLimit(1)
+            }
+        }
+        .foregroundStyle(.white)
+        .padding(12)
+        .background {
+            let shape = RoundedRectangle(cornerRadius: 18, style: .continuous)
+            if #available(tvOS 26.0, *), nativeGlass {
+                PlayerNativeGlassSurface(shape)
+            } else {
+                shape.fill(.black.opacity(reduceTransparency ? 1 : 0.82))
+            }
+        }
+        .opacity(isVisible ? 1 : 0)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: isVisible)
+        .task(id: focusedChannelID) {
+            expiredChannelID = nil
+            guard let focusedChannelID else { return }
+            try? await Task.sleep(for: .seconds(3))
+            guard !Task.isCancelled else { return }
+            expiredChannelID = focusedChannelID
+        }
+    }
+}
+#endif
 
 private struct LiveTVMultiviewCaption: View {
     let pane: LiveTVMultiviewPane
