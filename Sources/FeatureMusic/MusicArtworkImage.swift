@@ -26,6 +26,7 @@ struct MusicArtworkImage: View {
     /// `PlozzCardCaption.subtitleColor(...)` so it flips with focus + reduced
     /// transparency. Falls back to `.secondary` when nil.
     var placeholderColor: Color? = nil
+    var onResolveReference: ((ArtworkReference?) -> Void)? = nil
     @Environment(\.themePalette) private var palette
     @Environment(\.plozzArtworkPolicy) private var artworkPolicy
 
@@ -37,7 +38,8 @@ struct MusicArtworkImage: View {
         showsMediaEdge: Bool = true,
         asyncFallbackURL: (@Sendable () async -> URL?)? = nil,
         pinIdentity: String? = nil,
-        placeholderColor: Color? = nil
+        placeholderColor: Color? = nil,
+        onResolveReference: ((ArtworkReference?) -> Void)? = nil
     ) {
         self.url = url
         self.systemPlaceholder = systemPlaceholder
@@ -47,6 +49,7 @@ struct MusicArtworkImage: View {
         self.asyncFallbackURL = asyncFallbackURL
         self.pinIdentity = pinIdentity
         self.placeholderColor = placeholderColor
+        self.onResolveReference = onResolveReference
     }
 
     var body: some View {
@@ -54,11 +57,13 @@ struct MusicArtworkImage: View {
             RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                 .fill(palette.fill)
             FallbackAsyncImage(
-                urls: [url].compactMap { $0 },
+                references: [url].compactMap { $0 }.map(ArtworkReference.remote),
                 variant: variant,
                 artworkPolicy: artworkPolicy.forArea(.music),
                 asyncFallbackURL: asyncFallbackURL,
-                pinIdentity: pinIdentity
+                onResolveReference: onResolveReference,
+                pinIdentity: pinIdentity,
+                content: ArtworkFillImage.init
             ) {
                 placeholder
             }

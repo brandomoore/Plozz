@@ -224,7 +224,9 @@ struct PresentationHostApp: App {
 
     var body: some Scene {
         WindowGroup {
-            if ProcessInfo.processInfo.arguments.contains("--music-player-fixture") {
+            if ProcessInfo.processInfo.arguments.contains("--music-detail-fixture") {
+                MusicDetailFixture()
+            } else if ProcessInfo.processInfo.arguments.contains("--music-player-fixture") {
                 MusicPlayerFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--offline-review-fixture") {
                 OfflineModeReviewFixture()

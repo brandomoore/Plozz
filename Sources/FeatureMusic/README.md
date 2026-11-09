@@ -88,6 +88,24 @@ than Mozz's separate split tab bar.
 Its light/dark monochrome accent is scoped to the player, including navigation
 menus and active controls; the surrounding app keeps its own accent color.
 
+Mobile album and artist details borrow Mozz's artwork-led presentation:
+centered album covers on compact screens, horizontal heroes on wider screens,
+an image-led artist header, and compact divided album tracks. Native Play and
+Shuffle actions keep the existing provider/account-scoped playback path.
+`iOS/MobileMusicDetail.swift` caps content width at 1,000 points and stacks the
+hero/actions at accessibility text sizes. Page headings scroll with content;
+Plozz's native navigation bar and back gesture remain in place.
+
+The detail backdrop uses the same policy-resolved, cached bitmap as its hero,
+with a dark two-tone palette that keeps text legible. These immersive pages use
+dark foreground styling even in the light app theme; Pure Black uses a black
+background and framed artwork. Reduce Motion disables artist overscroll stretch
+and the active-track equalizer animation. Playlist, video, and tvOS details are
+unchanged. No artist top-song fetching, downloads, or radio were added.
+The presentation host's `--music-detail-fixture` opens the album preview;
+`--music-artist`, `--music-light`, `--music-oled`, `--music-no-art`, and
+`--music-large-text` exercise its detail variants without a server account.
+
 `MusicPlayerSession` bridges the presentation to Plozz's audio controller,
 profile-scoped appearance and shared artwork/lyrics services. Plex exposes
 five-star ratings (translated to its ten-point API scale); Jellyfin/Emby expose

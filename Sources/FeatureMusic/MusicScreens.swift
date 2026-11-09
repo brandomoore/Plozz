@@ -563,6 +563,15 @@ struct ArtistDetailView: View {
     @Environment(\.plozzMetrics) private var metrics
 
     var body: some View {
+        #if os(iOS)
+        MobileMusicArtistDetail(
+            artist: viewModel.artist,
+            albums: viewModel.albums,
+            onSelectAlbum: onSelectAlbum
+        )
+        .task { await viewModel.load() }
+        .detailOpenFeedback()
+        #else
         let columns = [GridItem(.adaptive(minimum: MusicLayout.isMobile ? MusicLayout.gridMinimum : (280 * metrics.scale).rounded()), spacing: metrics.gridSpacing)]
         return ScrollView {
             VStack(alignment: .leading, spacing: metrics.rowSpacing) {
@@ -624,6 +633,7 @@ struct ArtistDetailView: View {
         .scrollClipDisabled()
         .task { await viewModel.load() }
         .detailOpenFeedback()
+        #endif
     }
 }
 
@@ -639,6 +649,19 @@ struct AlbumDetailView: View {
     @FocusState private var playFocused: Bool
 
     var body: some View {
+        #if os(iOS)
+        MobileMusicAlbumDetail(
+            album: viewModel.album,
+            tracks: viewModel.tracks,
+            nowPlayingTrack: controller.currentTrack,
+            isPlaying: controller.isPlaying,
+            onPlay: { play(from: nil) },
+            onShuffle: shuffle,
+            onPlayTrack: { play(from: $0) }
+        )
+        .task { await viewModel.load() }
+        .detailOpenFeedback()
+        #else
         MusicDetailLayout(
             tracks: viewModel.tracks,
             artworkFallback: viewModel.album.artworkURL,
@@ -659,6 +682,7 @@ struct AlbumDetailView: View {
             try? await Task.sleep(for: .milliseconds(50))
             if !viewModel.tracks.isEmpty { playFocused = true }
         }
+        #endif
     }
 
     private let columnWidth = MusicLayout.artworkWidth

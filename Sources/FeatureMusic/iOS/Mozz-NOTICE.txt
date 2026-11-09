@@ -1,4 +1,4 @@
-The iOS music player presentation is adapted from:
+The iOS music player and album/artist detail presentation is adapted from:
 https://github.com/brandomoore/Mozz
 Revision: 58dab0015d09a4978f2c484e072d1bc0e30f69dc
 
@@ -26,6 +26,8 @@ work through Apple's App Store and related distribution channels.
 Plozz modifications replace Mozz's application, playback, artwork-storage,
 account and preferences integration with Plozz-owned services. The original
 player geometry, transitions, gestures and vector icon assets are retained.
+Album/artist details adapt Mozz's artwork-led heroes, responsive layout and
+two-tone backdrop, retaining Plozz's artwork policy and native navigation.
 
 Tabler Icons
 Copyright (c) 2020-2026 Paweł Kuna
