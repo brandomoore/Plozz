@@ -2896,11 +2896,14 @@ struct PlozziOSHeroMetadata: View {
                             : .leading
                     )
                 } else if mode == .detail, usesCompactDetailLayout {
-                    DetailHeaderMetadataRow(
-                        ratings: effectiveRatings,
-                        badges: effectiveTechnicalBadges,
-                        familyGuidanceAge: effectiveFamilyGuidanceAge
-                    )
+                    if !effectiveRatings.isEmpty || !effectiveTechnicalBadges.isEmpty || effectiveFamilyGuidanceAge != nil {
+                        DetailHeaderMetadataRow(
+                            ratings: effectiveRatings,
+                            badges: effectiveTechnicalBadges,
+                            familyGuidanceAge: effectiveFamilyGuidanceAge
+                        )
+                        .padding(.vertical, 8)
+                    }
                 } else if mode == .detail,
                     !factComponents.isEmpty
                         || !effectiveRatings.isEmpty

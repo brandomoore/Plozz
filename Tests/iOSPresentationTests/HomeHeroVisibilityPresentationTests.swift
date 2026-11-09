@@ -63,10 +63,10 @@ final class HomeHeroVisibilityPresentationTests: XCTestCase {
                 let play = try XCTUnwrap(frames["Play"])
                 let upperGap = badge.minY - synopsis.maxY
                 let lowerGap = play.minY - badge.maxY
-                XCTAssertGreaterThan(upperGap, 0)
-                XCTAssertLessThanOrEqual(upperGap, 20, "Static badges must not reserve a button-height slot.")
-                XCTAssertGreaterThan(lowerGap, 0)
-                XCTAssertLessThanOrEqual(lowerGap, 36, "Actions must not add another large gap below the badges.")
+                XCTAssertGreaterThan(upperGap, 20, "Keep breathing room above the badges.")
+                XCTAssertLessThanOrEqual(upperGap, 28, "Use 8-point padding, not a button-height slot.")
+                XCTAssertGreaterThan(lowerGap, 36, "Keep breathing room below the badges.")
+                XCTAssertLessThanOrEqual(lowerGap, 44, "Use 8-point padding without an extra action-row gap.")
                 XCTAssertEqual(lowerGap - 14, upperGap, accuracy: 10,
                                "Allow for Play's native label inset, then keep the visible gaps balanced.")
             }
