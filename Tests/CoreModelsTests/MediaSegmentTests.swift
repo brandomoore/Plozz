@@ -21,6 +21,89 @@ final class MediaSegmentTests: XCTestCase {
         XCTAssertEqual([MediaSegment]().filling(from: community).map(\.id), ["c-intro", "c-credits"])
     }
 
+    func testSquashingDuplicateCreditsUsesLatestStartAndLatestEnd() {
+        let squashed = [
+            MediaSegment(id: "early", kind: .credits, start: 10, end: 20),
+            MediaSegment(id: "late", kind: .credits, start: 12, end: 18)
+        ].squashingDuplicateKinds()
+        XCTAssertEqual(squashed.count, 1)
+        XCTAssertEqual(squashed[0].start, 12)
+        XCTAssertEqual(squashed[0].end, 20)
+    }
+
+    func testSquashingDisjointCreditsKeepsTheLaterCandidate() {
+        let squashed = [
+            MediaSegment(id: "early", kind: .credits, start: 10, end: 20),
+            MediaSegment(id: "late", kind: .credits, start: 25, end: 30)
+        ].squashingDuplicateKinds()
+        XCTAssertEqual(squashed.map(\.id), ["late"])
+        XCTAssertEqual(squashed[0].start, 25)
+        XCTAssertEqual(squashed[0].end, 30)
+    }
+
+    func testSquashingDuplicateIntroUsesLaterStartAndEarlierEnd() {
+        let squashed = [
+            MediaSegment(id: "early", kind: .intro, start: 10, end: 20),
+            MediaSegment(id: "late", kind: .intro, start: 12, end: 18)
+        ].squashingDuplicateKinds()
+        XCTAssertEqual(squashed.count, 1)
+        XCTAssertEqual(squashed[0].start, 12)
+        XCTAssertEqual(squashed[0].end, 18)
+    }
+
+    func testSquashingDisjointIntroKeepsTheEarlierCandidate() {
+        let squashed = [
+            MediaSegment(id: "early", kind: .intro, start: 10, end: 20),
+            MediaSegment(id: "late", kind: .intro, start: 25, end: 30)
+        ].squashingDuplicateKinds()
+        XCTAssertEqual(squashed.map(\.id), ["early"])
+        XCTAssertEqual(squashed[0].start, 10)
+        XCTAssertEqual(squashed[0].end, 20)
+    }
+
+    func testMergedForPlaybackExtendsCreditsToDurationWithoutPostCredits() {
+        let merged = [MediaSegment(id: "credits", kind: .credits, start: 10, end: 20)]
+            .mergedForPlayback(duration: 24)
+        XCTAssertEqual(merged.segments.count, 1)
+        XCTAssertEqual(merged.segments[0].start, 10)
+        XCTAssertEqual(merged.segments[0].end, 24)
+        XCTAssertFalse(merged.hasPostCredits)
+    }
+
+    func testMergedForPlaybackUsesExplicitPostCredits() {
+        let merged = [MediaSegment(id: "credits", kind: .credits, start: 10, end: 20)]
+            .mergedForPlayback(
+                duration: 25,
+                explicitPostCredits: .init(id: "post", kind: .unknown, start: 20, end: 25)
+            )
+        XCTAssertEqual(merged.segments[0].end, 20)
+        XCTAssertEqual(merged.postCredits?.id, "post")
+        XCTAssertTrue(merged.hasPostCredits)
+    }
+
+    func testMergedForPlaybackInfersPostCreditsFromFiniteCreditsEnd() {
+        let merged = [MediaSegment(id: "credits", kind: .credits, start: 10, end: 20)]
+            .mergedForPlayback(duration: 26)
+        XCTAssertEqual(merged.segments[0].end, 20)
+        XCTAssertEqual(merged.postCredits?.start, 20)
+        XCTAssertEqual(merged.postCredits?.end, 26)
+        XCTAssertTrue(merged.hasPostCredits)
+    }
+
+    func testMergedForPlaybackDoesNotInferShortTail() {
+        let merged = [MediaSegment(id: "credits", kind: .credits, start: 10, end: 20)]
+            .mergedForPlayback(duration: 24)
+        XCTAssertEqual(merged.segments[0].end, 24)
+        XCTAssertFalse(merged.hasPostCredits)
+    }
+
+    func testMergedForPlaybackDoesNotInferWhenCreditsOpenToEnd() {
+        let merged = [MediaSegment(id: "credits", kind: .credits, start: 10, end: 25)]
+            .mergedForPlayback(duration: 25)
+        XCTAssertEqual(merged.segments[0].end, 25)
+        XCTAssertFalse(merged.hasPostCredits)
+    }
+
     func testCommunityLookupIsNeededUntilIntroAndCreditsAreBothMarked() {
         let intro = MediaSegment(kind: .intro, start: 10, end: 40)
         let credits = MediaSegment(kind: .credits, start: 1200, end: 1260)

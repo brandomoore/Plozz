@@ -7,6 +7,9 @@ language every other module speaks.
 
 - Domain value types: `MediaItem`, `MediaLibrary`, `MediaServer`,
   `UserSession`, `Account`, `Profile`, `MusicTrack`, `Person`, etc.
+- Playback skip markers: `MediaSegment` and `MergedSkipMarkers` collapse
+  duplicate candidates per kind, keep credits on the later window, and identify
+  after-credits scenes before the player consumes them.
 - `MediaItem` retains optional confirmed original language, series production
   status and whole-title catalog season/episode totals. These are independent
   of local ownership, unwatched counts, schedules and playable audio languages.
