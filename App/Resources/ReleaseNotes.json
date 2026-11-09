@@ -2,6 +2,56 @@
   "schemaVersion": 1,
   "releases": [
     {
+      "id": "release/071.6",
+      "version": "2026.11.9",
+      "marketingVersion": "2026.11.6",
+      "build": "71.6",
+      "releasedAt": "2026-11-09",
+      "sections": [
+        {
+          "category": "New",
+          "items": [
+            {
+              "text": "Multiple audio languages in new reduced-quality Plex, Emby and compatible Silo downloads.",
+              "platforms": ["iOS"]
+            },
+            {
+              "text": "Select and remove multiple downloaded episodes.",
+              "platforms": ["iOS"]
+            }
+          ]
+        },
+        {
+          "category": "Updated",
+          "items": [
+            "Broader external-player support for converted videos and compatible network shares.",
+            "More music services and a redesigned song picker.",
+            {
+              "text": "More text subtitles saved with reduced-quality Jellyfin and Emby downloads.",
+              "platforms": ["iOS"]
+            },
+            {
+              "text": "Improved download navigation and native toolbar controls.",
+              "platforms": ["iOS"]
+            }
+          ]
+        },
+        {
+          "category": "Fixed",
+          "items": [
+            {
+              "text": "Settings text contrast with gradients or Liquid Glass disabled.",
+              "platforms": ["tvOS"]
+            },
+            {
+              "text": "Playback and audio selection for downloaded videos.",
+              "platforms": ["iOS"]
+            }
+          ]
+        }
+      ]
+    },
+    {
       "id": "release/071.5",
       "version": "2026.11.8",
       "marketingVersion": "2026.11.6",
