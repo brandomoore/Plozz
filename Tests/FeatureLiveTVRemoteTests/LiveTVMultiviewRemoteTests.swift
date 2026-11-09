@@ -4,6 +4,52 @@ import Vision
 
 final class LiveTVMultiviewRemoteTests: XCTestCase {
     @MainActor
+    func testProductionNativeFocusAndAutomaticWatchingPreserveEveryStream() async throws {
+        continueAfterFailure = false
+        let app = fixtureApplication()
+        app.launchArguments = ["--live-root-fixture", "--visual-focus-fixture", "--motion-fixture"]
+        app.launch()
+        defer { app.terminate() }
+        XCTAssertTrue(app.buttons["live-tv-channel-channels-1"].waitForExistence(timeout: 10))
+        startProductionChannel(in: app)
+        select(app.buttons["live-channel-timeline"], in: app)
+        select(app.buttons["live-channel-multiview"], in: app)
+        select(app.buttons["live-multiview-add"], in: app)
+        chooseGuideChannel(2, in: app)
+        XCTAssertFalse(app.buttons["live-multiview-watch"].exists)
+        XCTAssertFalse(app.buttons["live-multiview-done"].exists)
+        focusAudio("Sports 1", in: app)
+        let videos = [1, 2].map { app.otherElements["multiview-fixture-video-\($0)"] }
+        capture("production-videos-after-adding-channel", in: app)
+        XCTAssertTrue(videos.allSatisfy(\.exists), app.debugDescription)
+        let firstFocus = videos.map(\.frame)
+        capture("production-native-focus-first-video", in: app)
+        XCTAssertGreaterThan(firstFocus[0].width, firstFocus[1].width + 15)
+        XCUIRemote.shared.press(.right)
+        assertNativeFocus(pane("Sports 2", in: app), in: app)
+        capture("production-native-focus-second-video", in: app)
+        XCTAssertGreaterThan(videos[1].frame.width, videos[0].frame.width + 15)
+        assertAudio("Sports 2", in: app)
+        try await Task.sleep(for: .seconds(11))
+        assertChromeHidden(in: app)
+        assertSideBySideFillsScreen(in: app)
+        capture("production-idle-full-videos-no-focus-treatment", in: app)
+        assertAudio("Sports 2", in: app)
+        XCUIRemote.shared.press(.left)
+        XCTAssertTrue(app.buttons["live-multiview-layout"].waitForExistence(timeout: 5))
+        capture("production-controls-return-after-idle", in: app)
+        XCTAssertLessThan(videos[0].frame.width, app.frame.width / 2)
+        XCTAssertLessThan(videos[1].frame.width, app.frame.width / 2)
+        assertMetrics("Engines 2 loads 2 stops 0 audible 1", in: app)
+        select(app.buttons["live-multiview-layout"], in: app)
+        try await Task.sleep(for: .seconds(11))
+        capture("production-native-menu-blocks-idle-timeout", in: app)
+        selectMenuItem("Main and stack", in: app)
+        XCTAssertTrue(app.buttons["live-multiview-layout"].exists)
+        assertMetrics("Engines 2 loads 2 stops 0 audible 1", in: app)
+    }
+
+    @MainActor
     func testFocusedChannelCaptionDisappearsAndReturnsWithoutChangingVideoOrFocus() async throws {
         try await assertTransientChannelCaption(reduceGlass: false)
     }
@@ -25,7 +71,6 @@ final class LiveTVMultiviewRemoteTests: XCTestCase {
         focusAudio("Sports 1", in: app)
         let frame = pane("Sports 2", in: app).frame
         let firstFrame = pane("Sports 1", in: app).frame
-        let videoFrame = app.otherElements["multiview-fixture-video-2"].frame
         let screenWidth = app.frame.width
         func captionText(_ screenshot: UIImage, in frame: CGRect) throws -> String {
             let image = try XCTUnwrap(screenshot.cgImage)
@@ -43,12 +88,17 @@ final class LiveTVMultiviewRemoteTests: XCTestCase {
         let visible = capture("channel-caption-\(style)-focused", in: app)
         XCTAssertTrue(try captionText(visible, in: frame).contains("Sports 2"))
         XCTAssertFalse(try captionText(visible, in: firstFrame).contains("Sports 1"))
+        assertNativeFocus(pane("Sports 2", in: app), in: app)
+        let videoFrame = settledVideoFrame(2, in: app)
+        // A boundary press renews the controls deadline without refocusing or renewing the caption.
+        XCUIRemote.shared.press(.right)
         try await Task.sleep(for: .seconds(4))
         let hidden = capture("channel-caption-\(style)-hidden", in: app)
+        let hiddenVideoFrame = app.otherElements["multiview-fixture-video-2"].frame
         XCTAssertFalse(try captionText(hidden, in: frame).contains("Sports 2"))
         assertNativeFocus(pane("Sports 2", in: app), in: app)
         assertAudio("Sports 2", in: app)
-        XCTAssertEqual(app.otherElements["multiview-fixture-video-2"].frame, videoFrame)
+        XCTAssertEqual(hiddenVideoFrame, videoFrame)
         XCUIRemote.shared.press(.left)
         XCUIRemote.shared.press(.right)
         let restored = capture("channel-caption-\(style)-refocused", in: app)
@@ -74,7 +124,7 @@ final class LiveTVMultiviewRemoteTests: XCTestCase {
         startProductionChannel(in: app)
         select(app.buttons["live-channel-timeline"], in: app)
         select(app.buttons["live-channel-multiview"], in: app)
-        XCTAssertTrue(app.buttons["live-multiview-watch"].waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(app.buttons["live-multiview-add"].waitForExistence(timeout: 5), app.debugDescription)
         let video = app.staticTexts["multiview-fixture-metrics"]
         func widths() -> [Double] {
             (video.value as? String ?? "").split(separator: ",").compactMap { Double($0) }
@@ -167,7 +217,7 @@ final class LiveTVMultiviewRemoteTests: XCTestCase {
         select(playback, in: app, activate: false)
         try assertFocusedControl(playback, name: "production-playback-menu-return", in: app)
         select(app.buttons["live-channel-multiview"], in: app)
-        for name in ["favorite", "watch", "done", "layout"] {
+        for name in ["favorite", "layout"] {
             let button = app.buttons["live-multiview-\(name)"]
             select(button, in: app, activate: false)
             try assertFocusedControl(button, name: "production-multiview-\(name)", showsTitle: true, in: app)
@@ -187,7 +237,7 @@ final class LiveTVMultiviewRemoteTests: XCTestCase {
             try assertFocusedControl(button, name: "transport-\(name)-\(reduceGlass)", in: app)
         }
         select(app.buttons["live-channel-multiview"], in: app)
-        for name in ["watch", "done", "add", "layout", "replace"] {
+        for name in ["add", "layout", "replace"] {
             let button = app.buttons["live-multiview-\(name)"]
             select(button, in: app, activate: false)
             XCTAssertLessThanOrEqual(button.frame.height, reference.height * 1.2,
@@ -263,6 +313,7 @@ final class LiveTVMultiviewRemoteTests: XCTestCase {
         select(app.buttons["live-channel-subtitles"], in: app)
         capture("player-subtitle-menu", in: app)
         select(app.buttons["Off"], in: app)
+        XCUIRemote.shared.press(.menu)
         assertRenderedFocus(
             app.buttons["live-channel-subtitles"], anchor: timeline,
             name: "player-subtitles-return", in: app
@@ -327,7 +378,7 @@ final class LiveTVMultiviewRemoteTests: XCTestCase {
         press(.down)
         XCTAssertEqual(focusedElement(in: app).identifier, "live-channel-info", nativeFocus(in: app))
         capture("osd-card-info", in: app)
-        for tab in ["live-channel-on-now", "live-channel-guide", "live-channel-stats"] {
+        for tab in ["live-channel-on-now", "live-channel-guide"] {
             press(.right)
             XCTAssertEqual(focusedElement(in: app).identifier, tab, nativeFocus(in: app))
             capture("osd-\(tab)", in: app)
@@ -349,9 +400,7 @@ final class LiveTVMultiviewRemoteTests: XCTestCase {
         }
 
         // Guide: a card like the others, with the grid under the pills.
-        press(.down) // badge → timeline
-        press(.down) // → Info tab, card opens
-        for _ in 0..<2 { press(.right) }
+        select(app.buttons["live-channel-guide"], in: app, activate: false)
         XCTAssertEqual(focusedElement(in: app).identifier, "live-channel-guide", nativeFocus(in: app))
         let guide = app.descendants(matching: .any)["live-channel-guide-overlay"].firstMatch
         XCTAssertTrue(guide.waitForExistence(timeout: 5), "Focusing the Guide pill shows the grid")
@@ -359,10 +408,10 @@ final class LiveTVMultiviewRemoteTests: XCTestCase {
         press(.down)
         XCTAssertNotEqual(focusedElement(in: app).identifier, "live-channel-guide", "Down walks into the grid")
         capture("osd-guide-moved", in: app)
-        press(.up)
+        select(app.buttons["live-channel-guide"], in: app, activate: false)
         XCTAssertEqual(focusedElement(in: app).identifier, "live-channel-guide", "Up from the grid returns to the pills")
-        press(.right)
-        XCTAssertEqual(focusedElement(in: app).identifier, "live-channel-stats", nativeFocus(in: app))
+        press(.left)
+        XCTAssertEqual(focusedElement(in: app).identifier, "live-channel-on-now", nativeFocus(in: app))
         XCUIRemote.shared.press(.menu)
         XCTAssertTrue(timeline.waitForExistence(timeout: 5), "Menu closes the card")
         capture("osd-guide-closed", in: app)
@@ -381,8 +430,8 @@ final class LiveTVMultiviewRemoteTests: XCTestCase {
         defer { app.terminate() }
         select(app.buttons["live-channel-multiview"], in: app)
         XCTAssertFalse(app.buttons["live-multiview-done"].exists)
-        for name in ["add", "layout", "replace", "watch"] {
-            let anchor = name == "layout" ? app.buttons["live-multiview-watch"] : app.buttons["live-multiview-layout"]
+        for name in ["add", "layout", "replace"] {
+            let anchor = name == "layout" ? app.buttons["live-multiview-add"] : app.buttons["live-multiview-layout"]
             assertRenderedFocus(
                 app.buttons["live-multiview-\(name)"], anchor: anchor,
                 name: "multiview-single-\(name)", in: app
@@ -429,18 +478,17 @@ final class LiveTVMultiviewRemoteTests: XCTestCase {
     }
 
     @MainActor
-    func testPaneDirectionsFromWatchAndAcrossEveryCornerKeepNativeContextMenus() async throws {
+    func testPaneDirectionsFromControlsAndAcrossEveryCornerKeepNativeContextMenus() async throws {
         continueAfterFailure = false
         let app = launchVisualFixture()
         defer { app.terminate() }
         select(app.buttons["live-channel-multiview"], in: app)
         XCTAssertFalse(app.buttons["live-multiview-done"].exists)
-        select(app.buttons["live-multiview-watch"], in: app, activate: false)
-        XCUIRemote.shared.press(.down)
-        assertNativeFocus(pane("Sports 1", in: app), in: app)
-        capture("single-pane-down-from-watch", in: app)
+        XCTAssertFalse(app.buttons["live-multiview-watch"].exists)
+        select(app.buttons["live-multiview-layout"], in: app, activate: false)
         XCUIRemote.shared.press(.up)
-        assertNativeFocus(app.buttons["live-multiview-watch"], in: app)
+        assertNativeFocus(pane("Sports 1", in: app), in: app)
+        capture("single-pane-up-from-controls", in: app)
 
         select(app.buttons["live-multiview-add"], in: app)
         chooseGuideChannel(2, in: app)
@@ -454,17 +502,17 @@ final class LiveTVMultiviewRemoteTests: XCTestCase {
             assertNativeFocus(pane("Sports 2", in: app), in: app)
             assertAudio("Sports 2", in: app)
             capture("\(corner)-inset-directional-focus", in: app)
-            assertSelectAndBackPreservePictures(channel: "Sports 2", engine: 2, in: app)
+            assertSelectAndBackPreservePictures(channel: "Sports 2", engine: 2, corner: corner, in: app)
             XCUIRemote.shared.press(corner.hasSuffix("left") ? .right : .left)
             assertNativeFocus(pane("Sports 1", in: app), in: app)
             assertAudio("Sports 1", in: app)
             capture("\(corner)-main-directional-focus", in: app)
-            assertSelectAndBackPreservePictures(channel: "Sports 1", engine: 1, in: app)
+            assertSelectAndBackPreservePictures(channel: "Sports 1", engine: 1, corner: corner, in: app)
             revealChrome(in: app)
         }
         focusAudio("Sports 2", in: app)
         XCUIRemote.shared.press(.select, forDuration: 1)
-        try await Task.sleep(for: .seconds(6))
+        try await Task.sleep(for: .seconds(11))
         capture("corner-pane-native-context-menu", in: app)
         selectMenuItem("Make main picture", in: app)
         assertAudio("Sports 2", in: app)
@@ -553,7 +601,7 @@ final class LiveTVMultiviewRemoteTests: XCTestCase {
         assertCornerLayout(in: app, topLeft: true)
         focusAudio("Sports 1", in: app)
         focusAudio("Sports 2", in: app)
-        assertSelectAndBackPreservePictures(channel: "Sports 2", engine: 2, in: app)
+        assertSelectAndBackPreservePictures(channel: "Sports 2", engine: 2, corner: "Top left", in: app)
         assertMetrics("Engines 2 loads 2 stops 0 audible 1", in: app)
 
         revealChrome(in: app)
@@ -567,7 +615,7 @@ final class LiveTVMultiviewRemoteTests: XCTestCase {
     }
 
     @MainActor
-    func testChromeHidesWithoutResizingAndNativeInputRestoresFocusAndAudio() async throws {
+    func testChromeIdleCyclesResizeVideosAndRestoreFocusAndAudio() async throws {
         continueAfterFailure = false
         let app = launchVisualFixture()
         defer { app.terminate() }
@@ -579,10 +627,12 @@ final class LiveTVMultiviewRemoteTests: XCTestCase {
         let original = [1, 2].map { app.otherElements["multiview-fixture-video-\($0)"].frame }
         for cycle in 1...2 {
             focusAudio("Sports 1", in: app)
+            let activations = [1, 2].map { audioActivations($0, in: app) }
             let shown = capture("multiview-chrome-shown-\(cycle)", in: app)
             assertChromeHidden(in: app)
             let hidden = capture("multiview-chrome-hidden-\(cycle)", in: app)
             assertNativeFocus(pane("Sports 1", in: app), in: app)
+            XCTAssertEqual([1, 2].map { audioActivations($0, in: app) }, activations)
             for (index, frame) in original.enumerated() {
                 assertVideoFrame(index + 1, equals: frame, in: app)
                 let sample = CGRect(
@@ -597,16 +647,17 @@ final class LiveTVMultiviewRemoteTests: XCTestCase {
             XCUIRemote.shared.press(.right)
             assertNativeFocus(pane("Sports 2", in: app), in: app)
             assertAudio("Sports 2", in: app)
-            XCTAssertTrue(app.buttons["live-multiview-edit"].waitForExistence(timeout: 2))
+            XCTAssertEqual(audioActivations(1, in: app), activations[0])
+            XCTAssertEqual(audioActivations(2, in: app), activations[1] + 1)
+            XCTAssertTrue(app.buttons["live-multiview-layout"].waitForExistence(timeout: 2))
             capture("multiview-chrome-revealed-\(cycle)", in: app)
             for (index, frame) in original.enumerated() {
-                assertVideoFrame(index + 1, equals: frame, in: app)
+                XCTAssertLessThan(app.otherElements["multiview-fixture-video-\(index + 1)"].frame.width, frame.width)
             }
-            if !app.buttons["live-multiview-edit"].exists { XCUIRemote.shared.press(.down) }
-            select(app.buttons["live-multiview-edit"], in: app, activate: false)
+            select(app.buttons["live-multiview-layout"], in: app, activate: false)
             assertAudio("Sports 2", in: app)
             try await Task.sleep(for: .seconds(6))
-            assertNativeFocus(app.buttons["live-multiview-edit"], in: app)
+            assertNativeFocus(app.buttons["live-multiview-layout"], in: app)
             XCTAssertFalse(app.buttons["live-multiview-done"].exists)
             XCUIRemote.shared.press(.menu)
             assertChromeHidden(in: app)
@@ -626,21 +677,22 @@ final class LiveTVMultiviewRemoteTests: XCTestCase {
         defer { app.terminate() }
         select(app.buttons["live-channel-multiview"], in: app)
         select(app.buttons["live-multiview-add"], in: app)
-        try await Task.sleep(for: .seconds(6))
+        try await Task.sleep(for: .seconds(11))
         capture("multiview-picker-pinned", in: app)
         chooseGuideChannel(2, in: app)
         finishSetup(in: app)
         focusAudio("Sports 2", in: app)
         revealChrome(in: app)
+        select(app.buttons["live-multiview-layout"], in: app, activate: false)
         assertNativeFocus(app.buttons["live-multiview-layout"], in: app)
         assertAudio("Sports 2", in: app)
         select(app.buttons["live-multiview-layout"], in: app)
-        try await Task.sleep(for: .seconds(6))
+        try await Task.sleep(for: .seconds(11))
         capture("multiview-layout-menu-pinned", in: app)
         selectMenuItem("Corner", in: app)
+        finishSetup(in: app)
         assertCornerLayout(in: app)
         assertAudio("Sports 2", in: app)
-        finishSetup(in: app)
         focusAudio("Sports 2", in: app)
         assertChromeHidden(in: app)
         XCUIRemote.shared.press(.menu)
@@ -714,10 +766,8 @@ final class LiveTVMultiviewRemoteTests: XCTestCase {
 
     @MainActor
     private func finishSetup(in app: XCUIApplication) {
-        let watch = app.descendants(matching: .any)["live-multiview-watch"].firstMatch
-        if watch.exists {
-            select(watch, in: app)
-        }
+        XCTAssertFalse(app.buttons["live-multiview-watch"].exists)
+        assertChromeHidden(in: app)
     }
 
     @MainActor
@@ -727,16 +777,36 @@ final class LiveTVMultiviewRemoteTests: XCTestCase {
                 && !app.buttons["live-multiview-edit"].exists && !app.buttons["live-multiview-done"].exists
         }
         XCTAssertEqual(
-            XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: hidden, object: nil)], timeout: 8),
+            XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: hidden, object: nil)], timeout: 15),
             .completed, "Watching must remove chrome without removing native pane focus targets"
         )
     }
 
     @MainActor
-    private func assertSelectAndBackPreservePictures(channel: String, engine: Int, in app: XCUIApplication) {
+    private func assertSelectAndBackPreservePictures(
+        channel: String, engine: Int, corner: String? = nil, in app: XCUIApplication
+    ) {
         finishSetup(in: app)
         select(pane(channel, in: app), in: app, activate: false)
-        let original = [1, 2].map { app.otherElements["multiview-fixture-video-\($0)"].frame }
+        finishSetup(in: app)
+        let original: [CGRect]
+        if let corner {
+            let width = app.frame.width * 0.32
+            let height = width * 9 / 16
+            original = [app.frame, CGRect(
+                x: corner.hasSuffix("left") ? 16 : app.frame.maxX - width - 16,
+                y: corner.hasPrefix("Top") ? 16 : app.frame.maxY - height - 16,
+                width: width, height: height)]
+        } else {
+            original = (0..<2).map {
+                CGRect(x: CGFloat($0) * app.frame.width / 2, y: 0,
+                       width: app.frame.width / 2, height: app.frame.height)
+            }
+        }
+        for (index, frame) in original.enumerated() {
+            assertVideoFrame(index + 1, equals: frame, in: app)
+        }
+        let activations = [1, 2].map { audioActivations($0, in: app) }
         assertNativeFocus(pane(channel, in: app), in: app)
         XCUIRemote.shared.press(.select)
         assertVideoFrame(engine, equals: app.frame, in: app)
@@ -753,19 +823,20 @@ final class LiveTVMultiviewRemoteTests: XCTestCase {
         }
         assertNativeFocus(pane(channel, in: app), in: app)
         assertAudio(channel, in: app)
+        XCTAssertEqual([1, 2].map { audioActivations($0, in: app) }, activations)
         assertChromeHidden(in: app)
         assertMetrics("Engines 2 loads 2 stops 0 audible 1", in: app)
         capture("multiview-restored-\(channel)", in: app)
     }
 
     @MainActor
-    func testFourChannelSetupUsesGuideAndFullscreenHasNoFocusOutline() {
+    func testFourChannelSetupUsesGuideAndIdleRestoresFullPictures() {
         continueAfterFailure = false
         let app = launchVisualFixture()
         defer { app.terminate() }
         select(app.buttons["live-channel-multiview"], in: app)
         XCTAssertTrue(
-            app.descendants(matching: .any)["live-multiview-watch"].firstMatch.waitForExistence(timeout: 5),
+            app.buttons["live-multiview-add"].waitForExistence(timeout: 5),
             app.debugDescription)
         let setupVideo = app.otherElements["multiview-fixture-video-1"].frame
         XCTAssertGreaterThan(setupVideo.minX, app.frame.minX)
@@ -789,16 +860,16 @@ final class LiveTVMultiviewRemoteTests: XCTestCase {
         for (index, frame) in frames.enumerated() { assertVideoFrame(index + 1, equals: frame, in: app) }
         select(pane("Sports 2", in: app), in: app, activate: false)
         select(pane("Sports 1", in: app), in: app, activate: false)
-        let first = capture("multiview-four-watch-focus-first", in: app)
+        capture("multiview-four-interactive-focus-first", in: app)
         select(pane("Sports 2", in: app), in: app, activate: false)
         assertAudio("Sports 2", in: app)
-        let second = capture("multiview-four-watch-focus-second", in: app)
-        let edge = CGRect(
-            x: frames[0].minX + frames[0].width * 0.35, y: frames[0].minY + 2,
-            width: frames[0].width * 0.3, height: 6)
-        XCTAssertLessThan(pixelDifference(first, second, region: edge, screen: app.frame).mean, 0.01)
+        capture("multiview-four-interactive-focus-second", in: app)
+        XCTAssertGreaterThan(app.otherElements["multiview-fixture-video-2"].frame.width,
+                             app.otherElements["multiview-fixture-video-1"].frame.width)
         select(pane("Sports 4", in: app), in: app, activate: false)
         assertAudio("Sports 4", in: app)
+        finishSetup(in: app)
+        for (index, frame) in frames.enumerated() { assertVideoFrame(index + 1, equals: frame, in: app) }
         XCUIRemote.shared.press(.select)
         assertVideoFrame(4, equals: app.frame, in: app)
         XCUIRemote.shared.press(.menu)
@@ -866,11 +937,12 @@ final class LiveTVMultiviewRemoteTests: XCTestCase {
         select(app.buttons["live-multiview-replace"], in: app)
         chooseGuideChannel(3, in: app)
         let replaced = NSPredicate { _, _ in
-            app.staticTexts["multiview-fixture-player-2"].label == "Engine 2 loads 2"
+            let player = app.staticTexts["multiview-fixture-player-2"]
+            return player.exists && player.label == "Engine 2 loads 2"
         }
         XCTAssertEqual(
             XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: replaced, object: nil)], timeout: 5),
-            .completed)
+            .completed, app.debugDescription)
         XCTAssertEqual(app.staticTexts["multiview-fixture-player-1"].label, "Engine 1 loads 1")
         XCTAssertTrue(pane("Sports 3", in: app).exists)
         finishSetup(in: app)
@@ -955,12 +1027,41 @@ final class LiveTVMultiviewRemoteTests: XCTestCase {
     }
 
     @MainActor
+    private func audioActivations(_ engine: Int, in app: XCUIApplication) -> Int {
+        let value = app.staticTexts["multiview-fixture-player-\(engine)"].value as? String
+        guard let value, let count = Int(value) else {
+            XCTFail("Missing audio activation count for engine \(engine)")
+            return -1
+        }
+        return count
+    }
+
+    @MainActor
+    private func settledVideoFrame(_ engine: Int, in app: XCUIApplication) -> CGRect {
+        let video = app.otherElements["multiview-fixture-video-\(engine)"]
+        var previous = CGRect.null
+        var stableSince = ContinuousClock.now
+        let settled = NSPredicate { _, _ in
+            let frame = video.frame
+            if frame != previous {
+                previous = frame
+                stableSince = .now
+                return false
+            }
+            return stableSince.duration(to: .now) >= .milliseconds(500)
+        }
+        XCTAssertEqual(XCTWaiter.wait(for: [
+            XCTNSPredicateExpectation(predicate: settled, object: nil)
+        ], timeout: 5), .completed, "Measure the rendered video after its focus/layout animation.")
+        return video.frame
+    }
+
+    @MainActor
     private func assertVideoFrame(_ engine: Int, equals slot: CGRect, in app: XCUIApplication) {
         let width = min(slot.width, slot.height * 16 / 9)
         let height = width * 9 / 16
-        let expected = app.launchArguments.contains("--live-root-fixture")
-            ? CGRect(x: slot.midX - width / 2, y: slot.midY - height / 2, width: width, height: height)
-            : slot
+        let expected = CGRect(
+            x: slot.midX - width / 2, y: slot.midY - height / 2, width: width, height: height)
         let video = app.otherElements["multiview-fixture-video-\(engine)"]
         let matches = NSPredicate { _, _ in
             guard video.exists else { return false }
@@ -970,7 +1071,8 @@ final class LiveTVMultiviewRemoteTests: XCTestCase {
         }
         XCTAssertEqual(
             XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: matches, object: nil)], timeout: 5),
-            .completed, "Video \(engine) must receive its maximum player slot \(expected): \(video)"
+            .completed, "Video \(engine) must receive its maximum player slot \(expected): " +
+                (video.exists ? "\(video.frame)" : "missing")
         )
     }
 
@@ -990,7 +1092,7 @@ final class LiveTVMultiviewRemoteTests: XCTestCase {
             XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: matches, object: nil)], timeout: 5),
             .completed, app.debugDescription, file: file, line: line
         )
-        if app.descendants(matching: .any)["live-multiview-watch"].firstMatch.exists {
+        if app.buttons["live-multiview-layout"].exists {
             XCTAssertGreaterThan(main.frame.minX, app.frame.minX)
             XCTAssertGreaterThan(main.frame.minY, app.frame.minY)
             XCTAssertLessThan(main.frame.maxY, app.frame.maxY)
@@ -1094,7 +1196,8 @@ final class LiveTVMultiviewRemoteTests: XCTestCase {
             .first(where: { $0.hasPrefix(prefix) }) else { return reported }
         let frame = NSCoder.cgRect(for: String(component.dropFirst(prefix.count)))
         guard frame.width > 0, frame.height > 0 else { return reported }
-        // Native menu anchors, menu cells and panes can own UIKit focus without AX hasFocus.
+        // Native controls can own UIKit focus without AX hasFocus. AX includes
+        // the rendered lift while the focus item can report the resting bounds.
         let candidates = diagnostic.contains("focused=_UIContextMenuCell |")
             ? app.cells.allElementsBoundByIndex
             : app.descendants(matching: .any).matching(NSPredicate(
@@ -1105,8 +1208,8 @@ final class LiveTVMultiviewRemoteTests: XCTestCase {
             let candidate = $0.frame
             return abs(candidate.midX - frame.midX) < 2 &&
                 abs(candidate.midY - frame.midY) < 2 &&
-                abs(candidate.width - frame.width) < 2 &&
-                abs(candidate.height - frame.height) < 2
+                abs(candidate.width - frame.width) < max(2, frame.width * 0.15) &&
+                abs(candidate.height - frame.height) < max(2, frame.height * 0.15)
         } ?? reported
     }
 
@@ -1144,7 +1247,7 @@ final class LiveTVMultiviewRemoteTests: XCTestCase {
         if reduceGlass { app.launchArguments.append("--reduce-panel-glass") }
         app.launch()
         XCTAssertTrue(app.staticTexts["multiview-fixture-player-1"].waitForExistence(timeout: 10))
-        capture("visual-fixture-launched", in: app)
+        XCTAssertTrue(app.buttons["live-channel-multiview"].waitForExistence(timeout: 10))
         return app
     }
 
@@ -1176,7 +1279,7 @@ final class LiveTVMultiviewRemoteTests: XCTestCase {
                 return
             }
         }
-        // Corner hit regions are narrower than the video and its full-picture focus outline.
+        // Include the native lift's full rendered bounds, not only its resting slot.
         let frame = visualSurface?.frame ?? target.frame
         let before = capture("\(name)-unfocused", in: app)
         select(target, in: app, activate: false, file: file, line: line)

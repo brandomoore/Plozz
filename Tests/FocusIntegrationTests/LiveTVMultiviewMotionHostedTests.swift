@@ -1,4 +1,5 @@
 import CoreModels
+import CoreUI
 import Observation
 import SwiftUI
 import UIKit
@@ -8,6 +9,118 @@ import XCTest
 
 @MainActor
 final class LiveTVMultiviewMotionHostedTests: XCTestCase {
+    func testEnteringWindowClaimsOutputFromAnotherOffscreenLabel() async throws {
+        let fixture = try await makeFixture()
+        defer { fixture.close() }
+        let engine = MotionEngine()
+        let incoming = VideoPresentationView(frame: CGRect(x: 0, y: 0, width: 640, height: 360))
+        let preparedLabel = VideoPresentationView(frame: incoming.frame)
+        incoming.attach(engine, deferringOffscreenAttachment: true)
+        preparedLabel.attach(engine, deferringOffscreenAttachment: true)
+        XCTAssertTrue(engine.output.superview === preparedLabel)
+        fixture.window.addSubview(incoming)
+        fixture.window.layoutIfNeeded()
+        XCTAssertTrue(engine.output.superview === incoming)
+        XCTAssertTrue(engine.output.window === fixture.window)
+        XCTAssertEqual(engine.output.bounds.size, incoming.bounds.size)
+        XCTAssertEqual(engine.stops, 0)
+    }
+
+    func testOffscreenNativeCardLabelCannotStealTheVisibleVideoOutput() async throws {
+        let fixture = try await makeFixture()
+        defer { fixture.close() }
+        let output = fixture.model.engine.output
+        let visibleParent = try XCTUnwrap(output.superview as? VideoPresentationView)
+        let replacement = VideoPresentationView(frame: CGRect(x: 0, y: 0, width: 640, height: 360))
+        replacement.attach(fixture.model.engine, deferringOffscreenAttachment: true)
+        XCTAssertTrue(output.superview === visibleParent)
+        XCTAssertTrue(output.window === fixture.window)
+        fixture.window.addSubview(replacement)
+        fixture.window.layoutIfNeeded()
+        XCTAssertTrue(output.superview === replacement)
+        XCTAssertTrue(output.window === fixture.window)
+        visibleParent.attach(fixture.model.engine, deferringOffscreenAttachment: true)
+        XCTAssertTrue(output.superview === replacement, "An outgoing label must not steal back the live output.")
+        visibleParent.removeFromSuperview()
+        XCTAssertTrue(output.window === fixture.window)
+        XCTAssertEqual(fixture.model.engine.stops, 0)
+    }
+
+    func testNativeCardCanLiftLiveVideoAndDisableItsEffectWhileRetainingFocus() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let model = NativeCardModel()
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
+        window.rootViewController = UIHostingController(rootView: NativeCardPage(model: model))
+        window.makeKeyAndVisible()
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        try await Task.sleep(for: .seconds(1))
+        window.layoutIfNeeded()
+        let output = model.engine.output
+        let focused = output.convert(output.bounds, to: window)
+        let focus = UIFocusSystem.focusSystem(for: window)?.focusedItem
+        XCTAssertNotNil(focus)
+        XCTAssertGreaterThan(focused.width, 961, "Native card focus must lift the live video itself.")
+        func capture(_ name: String) {
+            let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+                window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+            }
+            let attachment = XCTAttachment(image: image)
+            attachment.name = name
+            attachment.lifetime = .keepAlways
+            add(attachment)
+        }
+        capture("native-live-video-focused")
+        model.presentsFocus = false
+        try await Task.sleep(for: .seconds(1))
+        window.layoutIfNeeded()
+        capture("native-live-video-effect-disabled")
+        let idle = output.convert(output.bounds, to: window)
+        XCTAssertEqual(idle.width, 960, accuracy: 1)
+        XCTAssertNotNil(UIFocusSystem.focusSystem(for: window)?.focusedItem)
+        XCTAssertTrue(output.window === window)
+        XCTAssertEqual(model.engine.stops, 0)
+        for enabled in [false, true, false, true] {
+            model.enabled = enabled
+            model.presentsFocus = enabled
+            try await Task.sleep(for: .milliseconds(500))
+            window.layoutIfNeeded()
+            XCTAssertTrue(output.window === window, "Changing card ownership must preserve the windowed video.")
+            XCTAssertEqual(model.engine.stops, 0)
+        }
+    }
+
+    @Observable
+    final class NativeCardModel {
+        let engine = MotionEngine()
+        var presentsFocus = true
+        var enabled = true
+    }
+
+    private struct NativeCardPage: View {
+        let model: NativeCardModel
+        var body: some View {
+            ZStack {
+                Color.black
+                VideoSurfaceContainer(engine: model.engine)
+                    .videoCardFocusSurface()
+                    .environment(\.videoCardFocus, model.enabled ? VideoCardFocus(
+                        identifier: "native-video-card", title: "Live video", audible: true,
+                        presentsEffect: model.presentsFocus, cornerRadius: 20, horizontalInset: 0,
+                        request: 0, prefersFocus: true, focused: { _ in },
+                        activate: {}, promote: {}, replace: {}) : nil)
+                    .frame(width: 960, height: 540)
+            }
+            .ignoresSafeArea()
+        }
+    }
+
     func testEmbeddedVideoResizesThroughIntermediateBoundsWithoutReplacingOutput() async throws {
         let fixture = try await makeFixture()
         defer { fixture.close() }
@@ -18,6 +131,7 @@ final class LiveTVMultiviewMotionHostedTests: XCTestCase {
         let samples = try await sample(fixture, milliseconds: 420)
         XCTAssertGreaterThan(samples.filter { $0.width > 641 && $0.width < start - 1 }.count, 2,
                              "The actual engine view must resize, not just its SwiftUI wrapper.")
+        try await waitForVideoSize(CGSize(width: 640, height: 360), in: fixture)
         XCTAssertEqual(output.bounds.width, 640, accuracy: 1)
         XCTAssertEqual(output.bounds.height, 360, accuracy: 1)
         XCTAssertTrue(output.superview === originalSuperview)
@@ -64,6 +178,31 @@ final class LiveTVMultiviewMotionHostedTests: XCTestCase {
         XCTAssertEqual(fixture.model.engine.stops, 0)
     }
 
+    func testFocusInsetAnimatesActualVideoBothWaysAndHonorsReduceMotion() async throws {
+        for reduceMotion in [false, true] {
+            let fixture = try await makeFixture(reduceMotion: reduceMotion)
+            defer { fixture.close() }
+            let full = fixture.model.frame
+            let inset = LiveTVMultiviewGeometry.presentationFrame(
+                in: full, aspectRatio: 16 / 9, focusActive: true)
+            fixture.model.frame = inset
+            let shrinking = try await sample(fixture, milliseconds: 420)
+            XCTAssertEqual(fixture.model.engine.output.bounds.width, inset.width, accuracy: 1)
+            fixture.model.frame = full
+            let growing = try await sample(fixture, milliseconds: 420)
+            for samples in [shrinking, growing] {
+                let intermediate = samples.filter { $0.width > inset.width + 1 && $0.width < full.width - 1 }
+                if reduceMotion {
+                    XCTAssertTrue(intermediate.isEmpty)
+                } else {
+                    XCTAssertGreaterThan(intermediate.count, 2)
+                }
+            }
+            XCTAssertEqual(fixture.model.engine.output.bounds.width, full.width, accuracy: 1)
+            XCTAssertEqual(fixture.model.engine.stops, 0)
+        }
+    }
+
     func testReduceMotionUsesFinalVideoBoundsWithoutIntermediateLayouts() async throws {
         let fixture = try await makeFixture(reduceMotion: true)
         defer { fixture.close() }
@@ -74,7 +213,9 @@ final class LiveTVMultiviewMotionHostedTests: XCTestCase {
     }
 
     func testRoundedClipCutsPictureCornersButKeepsItsCenter() {
-        let clip = PrototypeVideoClip(reflectionHeight: 0, cornerRadius: 10)
+        XCTAssertEqual(LiveTVMultiviewGeometry.videoCornerRadius, 20)
+        let clip = PrototypeVideoClip(
+            reflectionHeight: 0, cornerRadius: LiveTVMultiviewGeometry.videoCornerRadius)
         let picture = LiveTVMultiviewGeometry.contentFrame(
             in: CGRect(x: 0, y: 0, width: 960, height: 1080), aspectRatio: 16 / 9)
         XCTAssertEqual(picture.size, CGSize(width: 960, height: 540))
@@ -112,6 +253,15 @@ final class LiveTVMultiviewMotionHostedTests: XCTestCase {
         return samples
     }
 
+    private func waitForVideoSize(_ size: CGSize, in fixture: Fixture) async throws {
+        let deadline = ContinuousClock.now + .seconds(2)
+        while fixture.model.engine.output.bounds.size != size, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(16))
+            fixture.window.layoutIfNeeded()
+        }
+        XCTAssertEqual(fixture.model.engine.output.bounds.size, size)
+    }
+
     private func makeFixture(reduceMotion: Bool = false) async throws -> Fixture {
         let deadline = ContinuousClock.now + .seconds(5)
         while !UIApplication.shared.connectedScenes.contains(where: { $0.activationState == .foregroundActive }),
@@ -146,7 +296,8 @@ final class LiveTVMultiviewMotionHostedTests: XCTestCase {
                 Color.black
                 if model.visible {
                     VideoSurfaceContainer(engine: model.engine)
-                        .clipShape(PrototypeVideoClip(reflectionHeight: 0, cornerRadius: 10))
+                        .clipShape(PrototypeVideoClip(
+                            reflectionHeight: 0, cornerRadius: LiveTVMultiviewGeometry.videoCornerRadius))
                         .modifier(PrototypeVideoPlacement(frame: model.frame))
                         .transition(reduceMotion ? .identity : .scale(scale: 0.94).combined(with: .opacity))
                         .animation(reduceMotion ? nil : .easeInOut(duration: 0.32), value: model.frame)

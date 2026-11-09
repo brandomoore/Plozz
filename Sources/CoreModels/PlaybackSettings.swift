@@ -189,11 +189,10 @@ public struct PlaybackSettings: Codable, Equatable, Sendable {
     /// if you don't use Match Dynamic Range and prefer the snappiest transitions.
     public var fadeOnDynamicRangeChange: Bool
 
-    /// Fade to black when leaving playback of content whose dynamic range *isn't*
-    /// changing, to absorb the handshake blip the TV produces when tvOS's *Match
-    /// Frame Rate* drops the display back from the movie's rate (23.976/24/25 Hz)
-    /// to the UI's. There's no API that reports whether Match Frame Rate is on,
-    /// so this is ON by default (it's the setup that flashes) and OFF is the
+    /// Fade to black when opening or leaving playback whose dynamic range *isn't*
+    /// changing, to cover tvOS's *Match Frame Rate* switch between the content's
+    /// rate (23.976/24/25 Hz) and the UI's. There's no API that reports whether
+    /// Match Frame Rate is on, so this is ON by default and OFF is the
     /// escape hatch for anyone who has frame-rate matching disabled and would
     /// rather return to Home instantly.
     public var fadeOnFrameRateChange: Bool

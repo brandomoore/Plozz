@@ -184,16 +184,16 @@ public final class PlayerViewModel {
     /// iOS a veil would be black held over nothing, and since nothing would ever
     /// report a settle it would run to its full timeout on every single exit.
     ///
-    /// A pending Plozzigen probe counts as a dynamic-range exit because the engine
-    /// may already have begun a display switch before publishing facts. Everything
+    /// An unknown/HDR Plozzigen probe counts as a dynamic-range exit because the
+    /// engine may already have begun a display switch before publishing facts. Everything
     /// else falls through to the frame-rate case: tvOS exposes no way to ask
     /// whether *Match Frame Rate* is on, so when the viewer leaves that fade
     /// enabled we cover the exit unconditionally — with the tighter frame-rate
     /// hold, so an SDR title still returns to Home promptly.
     var exitVeilKind: DisplayTransitionKind? {
         #if os(tvOS)
-        let isDynamicRangeExit = effectiveDynamicRange.isAwaitingEngineProbe
-            || (effectiveDynamicRange.bestAvailable?.isHDR ?? false)
+        let isDynamicRangeExit = effectiveDynamicRange.bestAvailable?.isHDR
+            ?? effectiveDynamicRange.isAwaitingEngineProbe
         if isDynamicRangeExit, playbackSettings.fadeOnDynamicRangeChange { return .dynamicRange }
         if playbackSettings.fadeOnFrameRateChange { return .frameRate }
         return nil
@@ -207,6 +207,14 @@ public final class PlayerViewModel {
     var fadesOnDynamicRangeChange: Bool {
         #if os(tvOS)
         playbackSettings.fadeOnDynamicRangeChange
+        #else
+        false
+        #endif
+    }
+
+    var fadesOnFrameRateChange: Bool {
+        #if os(tvOS)
+        playbackSettings.fadeOnFrameRateChange
         #else
         false
         #endif

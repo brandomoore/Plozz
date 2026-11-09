@@ -11,6 +11,37 @@ final class LiveTVMultiviewGeometryTests: XCTestCase {
         CGSize(width: 768, height: 1024), CGSize(width: 1440, height: 1080)
     ]
 
+    func testFocusPresentationInsetsEveryPictureWithoutChangingAspectOrSlots() {
+        let panes = [UUID(), UUID(), UUID(), UUID()]
+        let ratios: [CGFloat] = [16 / 9, 4 / 3, 21 / 9]
+        for layout in LiveTVMultiviewLayout.allCases {
+            for size in sizes {
+                for id in panes {
+                    let slot = LiveTVMultiviewGeometry.frame(
+                        for: id, panes: panes, primary: panes[0], layout: layout,
+                        corner: .bottomTrailing, insetSize: .medium, expanded: nil, size: size)
+                    for ratio in ratios {
+                        let full = LiveTVMultiviewGeometry.contentFrame(in: slot, aspectRatio: ratio)
+                        let focused = LiveTVMultiviewGeometry.presentationFrame(
+                            in: slot, aspectRatio: ratio, focusActive: true)
+                        #if os(tvOS)
+                        let inset = LiveTVMultiviewGeometry.focusInset(for: full.width)
+                        XCTAssertEqual(focused.width, full.width - inset * 2, accuracy: 0.001)
+                        XCTAssertEqual(focused.height, focused.width / ratio, accuracy: 0.001)
+                        #else
+                        XCTAssertEqual(focused, full)
+                        #endif
+                        XCTAssertEqual(focused.midX, full.midX, accuracy: 0.001)
+                        XCTAssertEqual(focused.midY, full.midY, accuracy: 0.001)
+                        XCTAssertEqual(focused.width / focused.height, ratio, accuracy: 0.001)
+                        XCTAssertEqual(LiveTVMultiviewGeometry.presentationFrame(
+                            in: slot, aspectRatio: ratio, focusActive: false), full)
+                    }
+                }
+            }
+        }
+    }
+
     func testSideBySideAndPortraitSlotsConsumeTheEntireCanvas() {
         let panes = [UUID(), UUID()]
         for size in sizes {
@@ -194,7 +225,11 @@ final class LiveTVMultiviewGeometryTests: XCTestCase {
         chrome.activity(at: 20)
         XCTAssertTrue(chrome.isVisible)
         XCTAssertTrue(chrome.isEditing)
+        #if os(tvOS)
+        XCTAssertTrue(chrome.canAutoHide(blocked: false))
+        #else
         XCTAssertFalse(chrome.canAutoHide(blocked: false))
+        #endif
         chrome.watching(at: 21)
         XCTAssertFalse(chrome.isEditing)
         XCTAssertTrue(chrome.canAutoHide(blocked: false))
@@ -214,7 +249,11 @@ final class LiveTVMultiviewGeometryTests: XCTestCase {
         XCTAssertTrue(chrome.canAutoHide(blocked: false))
         chrome.editing(at: 2)
         XCTAssertFalse(chrome.canAutoHide(blocked: true))
+        #if os(tvOS)
+        XCTAssertTrue(chrome.canAutoHide(blocked: false))
+        #else
         XCTAssertFalse(chrome.canAutoHide(blocked: false))
+        #endif
     }
 
     func testNativeMenuFocusActivityDoesNotPublishAnyStateChangesWhileEditing() {
@@ -222,8 +261,8 @@ final class LiveTVMultiviewGeometryTests: XCTestCase {
         chrome.editing(at: 1)
         let pinned = chrome
         for event in 2...1_000 {
-            chrome.activity(at: TimeInterval(event))
-            chrome.editing(at: TimeInterval(event))
+            chrome.activity(at: TimeInterval(event), blocked: true)
+            chrome.editing(at: TimeInterval(event), blocked: true)
             XCTAssertEqual(chrome, pinned, "Native menu focus must not redraw its own anchor")
         }
         chrome.watching(at: 1_001)

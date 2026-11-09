@@ -1744,9 +1744,14 @@ preview, and browsing never retunes a Multiview player. Selecting a station or
 programme adds/replaces its live channel, then returns to setup. Already-added
 channels are marked; selecting one returns to it without allocating another
 player. Cancel preserves every stream and the existing composition.
+On Apple TV, Back from this guide reaches its toolbar rather than leaving Live
+TV, so search and cancellation remain available without stopping the streams.
 
-Watch switches to the full physical-screen canvas, including safe-area edges,
-with no video focus outlines. Two channels split horizontally in landscape and
+On Apple TV, ten seconds without interaction automatically leaves setup for the
+full physical-screen canvas, including safe-area edges, and hides controls and
+focus treatment. There is no Watch button. Remote activity restores the
+interactive layout and controls. On iPhone/iPad, Watch remains an explicit action.
+Two channels split horizontally in landscape and
 vertically in portrait; three or four use a two-row grid. Main and stack places
 one large picture on the left and up to three separate pictures stacked on the
 right, without overlap. Corner mode retains its overlaid inset column.
@@ -1757,7 +1762,7 @@ Apple TV animates the retained video surfaces into Multiview and between layouts
 including pane entry/removal, setup/watch, promotion and expansion. Native
 full-screen playback first hands its existing renderer back to the full-size
 inline canvas, then shrinks it; no replacement player or screenshot stands in
-for the video. Rounded corners clip each fitted picture, not its letterbox slot,
+for the video. On tvOS, 20-point rounded corners clip each fitted picture, not its letterbox slot,
 and disappear when a picture is expanded. Reduce Motion makes these changes
 immediate. Removing a pane still retires its stream immediately; visual removal
 never delays authorization or tuner cleanup.
@@ -1780,13 +1785,23 @@ the same native button treatment as normal playback, including the Layout menu.
 Their height stays transport-sized while width follows the action's title.
 Focused labels stay dark against the bright fill in native-glass and
 reduced-transparency modes. These controls do not use the larger page/form action pills.
-Watching hides controls after four seconds of inactivity. Editing, native menus,
-channel selection, preparation failures and VoiceOver keep them available.
+Apple TV uses the same ten-second inactivity deadline for setup and viewing.
+Native menus, channel selection, initial preparation, failures and VoiceOver
+block that deadline. Mobile retains its four-second viewing timeout and keeps
+controls available while editing.
 On Apple TV, only the focused picture briefly shows a compact channel logo and
 name, using the native playback glass treatment and its reduced-effects fallback.
 The label fades after three seconds, independently of the controls, and returns
 on refocus. VoiceOver retains it while focused; the pane's accessible channel
 name and audio state remain available even when the visual label is hidden.
+During interaction, every fitted picture reserves space for the system's native
+card lift and specular highlight. The focused video itself grows within that
+space; no custom outline is painted on focused or unfocused pictures. The inset
+scales with picture width and reserves at least 28 points per side where the
+picture is large enough. After the ten-second idle deadline, focus effects
+disappear and the retained videos expand into the viewing layout. VoiceOver
+keeps the interactive presentation available. These changes do not reload or
+replace streams; Reduce Motion uses final layout sizes immediately.
 Reduce Motion suppresses the fade, and loading/error indicators remain separate.
 Native menu focus notifications do not write back into the pinned controls'
 activity state, avoiding an update loop that can repeatedly rebuild the menu.

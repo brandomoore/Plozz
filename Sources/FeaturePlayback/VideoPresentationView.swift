@@ -7,6 +7,7 @@ import UIKit
 final class VideoPresentationView: UIView {
     private var engine: (any VideoEngine)?
     private var surface: UIView?
+    private var defersOffscreenAttachment = false
     private var zoom = PlayerVideoZoom()
     private var aspectRatio: Double?
     private var fitsInsideSafeArea = false
@@ -109,13 +110,28 @@ final class VideoPresentationView: UIView {
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
-    func attach(_ engine: any VideoEngine) {
-        if self.engine !== engine { stopPictureSampling() }
+    func attach(_ engine: any VideoEngine, deferringOffscreenAttachment: Bool = false) {
+        defersOffscreenAttachment = deferringOffscreenAttachment
+        let changesEngine = self.engine !== engine
+        if changesEngine { stopPictureSampling() }
         let output = engine.makeVideoOutputView()
         self.engine = engine
         #if os(iOS)
         updateColorSampling()
         #endif
+        guard output.superview !== surfaceHost else { return }
+        // Native card styles can prepare an offscreen label while the previous
+        // label is still presenting this same live output.
+        if deferringOffscreenAttachment, output.window != nil {
+            guard window != nil else { return }
+            // An outgoing label can still receive updates during its removal
+            // animation. It must not reclaim a renderer its replacement owns.
+            if !changesEngine, surface === output { return }
+        }
+        attachOutput(output)
+    }
+
+    private func attachOutput(_ output: UIView) {
         guard output.superview !== surfaceHost else { return }
         if surface?.superview === surfaceHost { surface?.removeFromSuperview() }
         output.removeFromSuperview()
@@ -175,6 +191,11 @@ final class VideoPresentationView: UIView {
 
     override func didMoveToWindow() {
         super.didMoveToWindow()
+        // Another offscreen label may have claimed the output before this host
+        // entered the window, even if its initial attachment was not deferred.
+        if window != nil, defersOffscreenAttachment, let engine {
+            attachOutput(engine.makeVideoOutputView())
+        }
         updatePictureSampling()
         #if os(iOS)
         updateColorSampling()

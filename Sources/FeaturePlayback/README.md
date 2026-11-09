@@ -511,6 +511,14 @@ Live TV channel selection does not display an "Opening [channel]" toast in the
 guide or player. Existing in-player loading indicators, playback errors, retry
 actions, and cancellation on navigation remain unchanged.
 
+SwiftUI video containers defer attachment when their replacement host is
+offscreen and the engine's output is already windowed. The replacement claims
+that same output when it enters a window. This prevents native card preparation
+and interactive/idle style changes from stealing a visible renderer; initial
+unattached outputs can still mount before playback becomes ready. Once the new
+host owns the windowed output, updates to an outgoing label cannot steal it back
+during its removal animation.
+
 The retained channel engine keeps output muted until the current source has
 finished loading and its first-frame signal permits presentation. Scheduled
 programme boundaries and live-clock reconciliation close the same gate; decoder
@@ -529,10 +537,17 @@ The retained preview clears its local exit veil after collapse. Profile
 dynamic-range and frame-rate fade preferences apply; guide channel browsing,
 secondary multiview panes, and mobile playback do not acquire an HDMI veil.
 Ready SDR preview/fullscreen transitions still use the in-place engine path.
+Known SDR entry and exit use only the existing **Frame rate** fade preference,
+not the **HDR & Dolby Vision** preference, unless replacing HDR output. Both
+preferences retain their existing defaults; neither changes the Apple TV's
+system Match Content settings. Frame-rate entry has a two-second safety cap.
+Unknown incoming sources retain the conservative dynamic-range veil; an old
+channel's SDR range is not evidence about the new channel. Engine correction of
+an SDR hint to HDR can still protect the actual range switch.
 Live loads publish generation-fenced source range after probing and when native
 HLS discovers its video description later. The native mount's provisional SDR
-default is not evidence; confirmed source facts release the probe-aware veil
-without waiting for its safety timeout.
+default is not evidence; confirmed source facts and display-settle notifications
+resolve the probe-aware veil, with the bounded timeout as fallback.
 
 Mobile transport buttons, timelines, and tabs use native **clear** Liquid Glass,
 without tint or a colored backing. Like AVKit video chrome, their symbols and

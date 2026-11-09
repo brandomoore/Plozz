@@ -124,6 +124,11 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
     @State private var externalPlayback: PrototypeExternalPlayback?
     @State private var multiviewSelection: LiveTVMultiviewSelection?
     @State private var multiviewEditingInsets: EdgeInsets?
+    @State private var multiviewFocusPresented = false
+    @State private var multiviewNativeFocusedPaneID: UUID?
+    @State private var multiviewFocusRequest = 0
+    @State private var multiviewBackRequest = 0
+    @State private var multiviewRequestedFocusID: UUID?
     @State private var pendingMultiviewFavorite: LiveTVMultiviewFavorite?
     @State private var multiviewFavoriteIssue: LocalizedStringResource?
     @State private var managesLibraryChannels = false
@@ -405,7 +410,7 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
                             ? LiveTVMultiviewGeometry.contentFrame(
                                 in: slotFrame, aspectRatio: pane.videoAspectRatio.map { CGFloat($0) })
                             : slotFrame
-                        let cornerRadius: CGFloat = roundsPicture ? 10 : 0
+                        let cornerRadius: CGFloat = roundsPicture ? LiveTVMultiviewGeometry.videoCornerRadius : 0
                         #else
                         let videoFrame = slotFrame
                         let cornerRadius: CGFloat = showingMultiview && multiview.isEditingLayout ? 10 : 0
@@ -423,6 +428,7 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
                     .environment(\.playbackReflectionColorScheme, palette.isLight ? .light : .dark)
                     .environment(\.themePalette, ThemePalette.dark)
                     .environment(\.colorScheme, .dark)
+                    .environment(\.videoCardFocus, videoCardFocus(for: pane, frame: videoFrame))
                     #if os(iOS)
                     .frame(width: videoFrame.width, height: videoFrame.height)
                     #endif
@@ -465,13 +471,23 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
                     .zIndex(showingMultiview
                         ? (pane.id != multiview.primaryPaneID ? 1 : 0) : (expanded ? 1 : 0))
                     #else
-                    .zIndex(showingMultiview && pane.id != multiview.primaryPaneID ? 1 : 0)
+                    // The full-screen HUD's transparent middle otherwise occludes native card focus.
+                    // Setup reserves control space; expanded pictures stay below their controls.
+                    .zIndex(showingMultiview && multiview.expandedPaneID == nil && pane.preparation.failure == nil
+                        ? (pane.id != multiview.primaryPaneID ? 4 : 3) : 0)
                     #endif
                     .opacity(multiviewSelection != nil
                         ? (pane.id == multiview.audiblePaneID ? 1 : 0)
                         : (multiview.expandedPaneID == nil || multiview.expandedPaneID == pane.id ? 1 : 0))
+                    #if os(tvOS)
+                    .allowsHitTesting(!multiview.isEnabled || (showingMultiview
+                        && (multiview.expandedPaneID == nil || multiview.expandedPaneID == pane.id)))
+                    .accessibilityHidden(multiview.isEnabled && (!showingMultiview
+                        || (multiview.expandedPaneID != nil && multiview.expandedPaneID != pane.id)))
+                    #else
                     .allowsHitTesting(!multiview.isEnabled)
                     .accessibilityHidden(multiview.isEnabled)
+                    #endif
                     #if os(iOS)
                     .opacity(expanded || layout.heroHeight > 0 ? 1 : 0)
                     .allowsHitTesting(expanded || layout.heroHeight > 0)
@@ -533,6 +549,17 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
                         safeAreaInsets: geometry.safeAreaInsets,
                         editingInsets: multiviewEditingInsets,
                         onEditingInsetsChange: { multiviewEditingInsets = $0 },
+                        onFocusPresentationChange: { multiviewFocusPresented = $0 },
+                        nativeFocusedPaneID: multiviewNativeFocusedPaneID,
+                        onRestoreVideoFocus: {
+                            multiviewRequestedFocusID = multiview.audiblePaneID
+                            multiviewFocusRequest &+= 1
+                        },
+                        onRequestVideoFocus: {
+                            multiviewRequestedFocusID = $0
+                            multiviewFocusRequest &+= 1
+                        },
+                        backRequest: multiviewBackRequest,
                         exit: { leaveMultiview() },
                         returnToGuide: { leaveMultiview(); leavePlaybackForGuide() },
                         addChannel: { beginMultiviewSelection(.add) },
@@ -617,6 +644,39 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
                 multiview.requestPlayPause()
             }
         }
+        #endif
+    }
+
+    private func videoCardFocus(for pane: LiveTVMultiviewPane, frame: CGRect) -> VideoCardFocus? {
+        #if os(tvOS)
+        guard showingMultiview,
+              multiview.expandedPaneID == nil || multiview.expandedPaneID == pane.id else { return nil }
+        let presentsEffect = multiviewFocusPresented && multiview.expandedPaneID == nil
+        return VideoCardFocus(
+            identifier: "live-multiview-pane-\(pane.id.uuidString)",
+            title: pane.channel?.name ?? "", audible: pane.id == multiview.audiblePaneID,
+            presentsEffect: presentsEffect,
+            cornerRadius: multiview.expandedPaneID == nil ? LiveTVMultiviewGeometry.videoCornerRadius : 0,
+            horizontalInset: presentsEffect ? LiveTVMultiviewGeometry.focusInset(for: frame.width) : 0,
+            request: multiviewFocusRequest,
+            prefersFocus: pane.id == (multiviewRequestedFocusID ?? multiview.audiblePaneID),
+            focused: { focused in
+                if focused { multiviewNativeFocusedPaneID = pane.id }
+                else if multiviewNativeFocusedPaneID == pane.id { multiviewNativeFocusedPaneID = nil }
+            },
+            activate: {
+                multiview.selectAudio(pane.id)
+                multiview.finishEditingLayout()
+                if multiview.panes.count > 1 { multiview.expand(pane.id) }
+            },
+            promote: { multiview.promote(pane.id) },
+            replace: { beginMultiviewSelection(.replace(pane.id)) },
+            back: { multiviewBackRequest &+= 1 },
+            caption: AnyView(LiveTVMultiviewFocusCaption(
+                channel: pane.channel,
+                isFocused: multiviewFocusPresented && multiviewNativeFocusedPaneID == pane.id)))
+        #else
+        nil
         #endif
     }
 
@@ -1743,7 +1803,8 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
             tune: { tune($0.channelID, origin: $0) },
             details: { sheet = .program($0) }, openControls: openSearch,
             openSources: { sheet = .sources }, openGuideTime: { sheet = .guideTime },
-            openToolbar: usesNativeFullscreen && !isSearching && playback.pendingWatchChannelID == nil ? nil : {
+            openToolbar: usesNativeFullscreen && !isSearching && multiviewSelection == nil
+                && playback.pendingWatchChannelID == nil ? nil : {
                 if playback.pendingWatchChannelID != nil {
                     playback.cancelWatch()
                     return

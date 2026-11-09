@@ -368,7 +368,7 @@ public struct LiveChannelPlayerView: View {
         ZStack {
             (hasInlineControls ? Color.clear : Color.black)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .ignoresSafeArea(.all, edges: hasInlineControls ? [] : .all)
+                .ignoresSafeArea(.all, edges: hasInlineControls || isMultiview ? [] : .all)
 
             if let model {
                 let sourceMatches = model.matchesSource(
@@ -377,25 +377,28 @@ public struct LiveChannelPlayerView: View {
                 )
                 let showsReflection = hasInlineControls && !reduceTransparency && isActive
                     && scenePhase == .active && !model.continuesExternally
-                VideoSurfaceContainer(
-                    engine: model.engine, zoom: model.videoZoom.settings,
-                    aspectRatio: model.videoAspectRatio,
-                    subtitleViewport: liveSubtitleViewport,
-                    needsPictureSubtitles: model.selectedSubtitleID != nil && model.subtitles.style.positionReference == .picture,
-                    reflectionHeight: showsReflection ? previewReflectionHeight : 0,
-                    topReflectionHeight: showsReflection ? previewTopReflectionHeight : 0,
-                    leadingReflectionWidth: showsReflection ? previewLeadingReflectionWidth : 0,
-                    trailingReflectionWidth: showsReflection ? previewTrailingReflectionWidth : 0,
-                    previewCornerRadius: hasInlineControls ? PlozzTheme.Metrics.Radius.content : 0,
-                    reflectionIsActive: sourceMatches && model.hasPresentedFrame
-                        && model.interruption == nil && model.networkBlock == nil
-                )
-                    .ignoresSafeArea(.all, edges: hasInlineControls ? [] : .all)
+                ZStack {
+                    VideoSurfaceContainer(
+                        engine: model.engine, zoom: model.videoZoom.settings,
+                        aspectRatio: model.videoAspectRatio,
+                        subtitleViewport: liveSubtitleViewport,
+                        needsPictureSubtitles: model.selectedSubtitleID != nil && model.subtitles.style.positionReference == .picture,
+                        reflectionHeight: showsReflection ? previewReflectionHeight : 0,
+                        topReflectionHeight: showsReflection ? previewTopReflectionHeight : 0,
+                        leadingReflectionWidth: showsReflection ? previewLeadingReflectionWidth : 0,
+                        trailingReflectionWidth: showsReflection ? previewTrailingReflectionWidth : 0,
+                        previewCornerRadius: hasInlineControls ? PlozzTheme.Metrics.Radius.content : 0,
+                        reflectionIsActive: sourceMatches && model.hasPresentedFrame
+                            && model.interruption == nil && model.networkBlock == nil
+                    )
 
-                if sourceMatches, model.networkBlock == nil, !model.continuesExternally {
-                    LiveChannelSubtitleSurface(model: model, viewport: liveSubtitleViewport)
-                        .allowsHitTesting(false)
+                    if sourceMatches, model.networkBlock == nil, !model.continuesExternally {
+                        LiveChannelSubtitleSurface(model: model, viewport: liveSubtitleViewport)
+                            .allowsHitTesting(false)
+                    }
                 }
+                .videoCardFocusSurface()
+                .ignoresSafeArea(.all, edges: hasInlineControls || isMultiview ? [] : .all)
 
                 #if os(iOS)
                 if hasInlineControls {
@@ -428,7 +431,7 @@ public struct LiveChannelPlayerView: View {
                     Rectangle()
                         .fill(.black)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .ignoresSafeArea(.all, edges: hasInlineControls ? [] : .all)
+                        .ignoresSafeArea(.all, edges: hasInlineControls || isMultiview ? [] : .all)
                         .allowsHitTesting(false)
                 }
 

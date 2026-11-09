@@ -119,6 +119,40 @@ struct MultiviewFixture: View {
     @State private var state = MultiviewFixtureState()
     @State private var isFavorite = false
     @State private var channelSelection: LiveTVMultiviewSelection?
+    @State private var focusPresented = false
+    @State private var nativeFocusedPaneID: UUID?
+    @State private var focusRequest = 0
+    @State private var backRequest = 0
+    @State private var requestedFocusID: UUID?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private func videoCardFocus(for pane: LiveTVMultiviewPane, frame: CGRect) -> VideoCardFocus? {
+        let coordinator = state.coordinator
+        guard coordinator.isEnabled, channelSelection == nil,
+              coordinator.expandedPaneID == nil || coordinator.expandedPaneID == pane.id else { return nil }
+        let effect = focusPresented && coordinator.expandedPaneID == nil
+        return VideoCardFocus(
+            identifier: "live-multiview-pane-\(pane.id.uuidString)",
+            title: pane.channel?.name ?? "", audible: pane.id == coordinator.audiblePaneID,
+            presentsEffect: effect,
+            cornerRadius: coordinator.expandedPaneID == nil ? LiveTVMultiviewGeometry.videoCornerRadius : 0,
+            horizontalInset: effect ? LiveTVMultiviewGeometry.focusInset(for: frame.width) : 0,
+            request: focusRequest, prefersFocus: pane.id == (requestedFocusID ?? coordinator.audiblePaneID),
+            focused: { value in
+                if value { nativeFocusedPaneID = pane.id }
+                else if nativeFocusedPaneID == pane.id { nativeFocusedPaneID = nil }
+            },
+            activate: {
+                coordinator.selectAudio(pane.id)
+                coordinator.finishEditingLayout()
+                if coordinator.panes.count > 1 { coordinator.expand(pane.id) }
+            },
+            promote: { coordinator.promote(pane.id) },
+            replace: { channelSelection = .replace(pane.id) },
+            back: { backRequest &+= 1 },
+            caption: AnyView(LiveTVMultiviewFocusCaption(
+                channel: pane.channel, isFocused: focusPresented && nativeFocusedPaneID == pane.id)))
+    }
 
     var body: some View {
         GeometryReader { geometry in
@@ -128,7 +162,7 @@ struct MultiviewFixture: View {
                 Color.black.ignoresSafeArea()
                 ForEach(coordinator.panes) { pane in
                     if let prepared = pane.preparation.current {
-                        let frame = coordinator.isEnabled ? LiveTVMultiviewGeometry.frame(
+                        let slot = coordinator.isEnabled ? LiveTVMultiviewGeometry.frame(
                             for: pane.id, panes: coordinator.panes.map(\.id),
                             primary: coordinator.primaryPaneID, layout: coordinator.layout,
                             corner: coordinator.corner, insetSize: coordinator.insetSize,
@@ -136,6 +170,9 @@ struct MultiviewFixture: View {
                             isEditing: coordinator.isEditingLayout,
                             aspectRatio: pane.videoAspectRatio.map { CGFloat($0) }
                         ).offsetBy(dx: bounds.minX, dy: bounds.minY) : CGRect(origin: .zero, size: geometry.size)
+                        let roundsPicture = coordinator.isEnabled && coordinator.expandedPaneID == nil
+                        let frame = roundsPicture ? LiveTVMultiviewGeometry.contentFrame(
+                            in: slot, aspectRatio: pane.videoAspectRatio.map { CGFloat($0) }) : slot
                         LiveChannelPlayerView(
                             channelID: prepared.channel.id, title: prepared.channel.name,
                             input: prepared.input, logoURL: nil,
@@ -171,19 +208,35 @@ struct MultiviewFixture: View {
                                 ))
                             }
                         )
-                        .frame(width: frame.width, height: frame.height)
-                        .clipShape(RoundedRectangle(
-                            cornerRadius: coordinator.isEnabled && coordinator.isEditingLayout ? 10 : 0))
-                        .position(x: frame.midX, y: frame.midY)
-                        .zIndex(coordinator.isEnabled && pane.id != coordinator.primaryPaneID ? 1 : 0)
-                        .allowsHitTesting(!coordinator.isEnabled)
-                        .accessibilityHidden(coordinator.isEnabled)
+                        .environment(\.videoCardFocus, videoCardFocus(for: pane, frame: frame))
+                        .clipShape(PrototypeVideoClip(
+                            reflectionHeight: 0,
+                            cornerRadius: roundsPicture ? LiveTVMultiviewGeometry.videoCornerRadius : 0))
+                        .modifier(PrototypeVideoPlacement(frame: frame))
+                        .animation(reduceMotion ? nil : .easeInOut(duration: 0.32), value: frame)
+                        .zIndex(coordinator.isEnabled && coordinator.expandedPaneID == nil && pane.preparation.failure == nil
+                            ? (pane.id != coordinator.primaryPaneID ? 4 : 3) : 0)
+                        .allowsHitTesting(channelSelection == nil
+                            && (coordinator.expandedPaneID == nil || coordinator.expandedPaneID == pane.id))
+                        .accessibilityHidden(channelSelection != nil
+                            || (coordinator.expandedPaneID != nil && coordinator.expandedPaneID != pane.id))
                         .opacity(coordinator.expandedPaneID == nil || coordinator.expandedPaneID == pane.id ? 1 : 0)
                     }
                 }
                 if coordinator.isEnabled && channelSelection == nil {
                     LiveTVMultiviewOverlay(
                         coordinator: coordinator,
+                        onFocusPresentationChange: { focusPresented = $0 },
+                        nativeFocusedPaneID: nativeFocusedPaneID,
+                        onRestoreVideoFocus: {
+                            requestedFocusID = coordinator.audiblePaneID
+                            focusRequest &+= 1
+                        },
+                        onRequestVideoFocus: {
+                            requestedFocusID = $0
+                            focusRequest &+= 1
+                        },
+                        backRequest: backRequest,
                         exit: { _ = coordinator.exit() },
                         returnToGuide: { _ = coordinator.exit() },
                         addChannel: { channelSelection = .add },
@@ -549,6 +602,7 @@ private final class MultiviewFixtureEngine: LiveChannelEngine {
     var loads = 0
     var stops = 0
     var audible = false
+    var audioActivations = 0
     var liveSnapshot = LiveChannelEngineSnapshot(
         phase: .playing, firstFrameReady: true, position: 100,
         bufferedPosition: 110, seekableRange: 90...110,
@@ -577,7 +631,11 @@ private final class MultiviewFixtureEngine: LiveChannelEngine {
         ])
     }
 
-    func configureLiveOutput(_ policy: LiveChannelOutputPolicy) { audible = policy.isAudible }
+    func configureLiveOutput(_ policy: LiveChannelOutputPolicy) {
+        if policy.isAudible, !audible { audioActivations += 1 }
+        audible = policy.isAudible
+        label.accessibilityValue = String(audioActivations)
+    }
     func loadLive(url: URL, httpHeaders: [String: String]) async {
         loads += 1
         status = .ready
