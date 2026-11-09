@@ -185,6 +185,11 @@ and library grids use that same mobile toolbar placement, keeping supported
 query actions available while the content scrolls without adding a pinned
 content header.
 
+Mobile row-browser destinations capture only the app model and resolved layout
+inputs. Capturing the entire Home view causes a navigation update loop on iOS 18
+inside the production tab shell; standalone Home navigation does not reproduce
+it. Keep the shell-backed Films heading regression when changing this boundary.
+
 `HomeRowBrowseModel` preserves source order by default and loads additional
 bounded pages as the grid advances. Library and collection rows use their existing
 container APIs. Provider Home feeds continue the exact feed: Plex uses its

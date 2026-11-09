@@ -63,10 +63,18 @@ final class ContinueWatchingDetailsInteractionTests: XCTestCase {
         assertMovieRowNavigation(title: "Recently Added in Movies")
     }
 
+    func testServerFilmsHeaderWithHeroRemainsNavigableAcrossRepeatedPushes() {
+        executionTimeAllowance = 180
+        launch(["--browse-movies", "--browse-server-films"])
+        XCTAssertTrue(app.buttons["home-hero-artwork-detail"].waitForExistence(timeout: 10))
+        assertMovieRowNavigation(title: "Films")
+    }
+
     private func assertMovieRowNavigation(title: String) {
         let heading = app.buttons.matching(identifier: "home-row-see-all")
             .matching(NSPredicate(format: "label == %@", title)).firstMatch
         for _ in 0..<4 {
+            for _ in 0..<4 where !heading.exists { app.swipeUp() }
             XCTAssertTrue(heading.waitForExistence(timeout: 10), app.debugDescription)
             for _ in 0..<3 where !heading.isHittable { app.swipeUp() }
             heading.tap()
