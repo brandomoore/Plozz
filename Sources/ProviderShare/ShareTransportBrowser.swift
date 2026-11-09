@@ -42,12 +42,12 @@ actor ShareTransportBrowser {
         }
     }
 
-    func externalPlaybackURL(for locator: NetworkFileLocator) async throws -> URL {
+    func externalPlaybackURL(for locator: NetworkFileLocator, player: ExternalPlayer) async throws -> URL {
         try await enqueue { fileSystem in
             guard let external = fileSystem as? any MediaTransportExternalPlaybackFileSystem else {
                 throw MediaTransportError.unsupportedCapability("external playback")
             }
-            return try await external.externalPlaybackURL(for: locator)
+            return try await external.externalPlaybackURL(for: locator, player: player)
         }
     }
 

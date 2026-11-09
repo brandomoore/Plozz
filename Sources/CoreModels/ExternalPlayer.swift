@@ -41,6 +41,10 @@ public enum ExternalPlayer: String, Codable, CaseIterable, Sendable {
 
     public var supportsDASH: Bool { self == .vlc }
 
+    public var supportsHTTPPasswordAuthentication: Bool {
+        self == .nativePlayer || self == .infuse || self == .vlc
+    }
+
     public static var supported: [Self] {
         #if os(tvOS)
         [.builtIn, .nativePlayer, .infuse, .vlc]
@@ -108,11 +112,23 @@ public enum ExternalPlayerError: Error, Equatable, Sendable {
 
 /// App links contain authenticated media URLs. Never persist or log the result.
 public enum ExternalPlayerURL {
-    public static func isSupportedMediaURL(_ url: URL, player: ExternalPlayer = .infuse) -> Bool {
+    public static func isSupportedMediaURL(
+        _ url: URL, player: ExternalPlayer = .infuse, allowPassword: Bool = false
+    ) -> Bool {
         guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
               ["http", "https"].contains(components.scheme?.lowercased() ?? ""),
-              let host = components.host, !host.isEmpty,
-              components.user == nil, components.password == nil else { return false }
+              let host = components.host, !host.isEmpty else { return false }
+        if components.user != nil || components.password != nil {
+            guard allowPassword, player.supportsHTTPPasswordAuthentication,
+                  let user = components.user, !user.isEmpty, !user.contains(":"),
+                  components.password != nil else { return false }
+            // Infuse and Native Player reject escaped passwords in tested playback
+            // links. Refuse before opening rather than send a login they cannot use.
+            if player != .vlc,
+               components.percentEncodedPassword != components.password || components.password?.contains(":") == true {
+                return false
+            }
+        }
         let normalizedHost = host.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "[]"))
         return !["localhost", "::1", "0.0.0.0", "0", "2130706433"].contains(normalizedHost)
             && !normalizedHost.hasPrefix("127.") && !normalizedHost.hasPrefix("::ffff:127.")
@@ -139,9 +155,11 @@ public enum ExternalPlayerURL {
 
     public static func make(
         settings: ExternalPlayerSettings, mediaURL: URL, title: String,
-        position: TimeInterval, subtitles: [URL] = [], callbackScheme: String, nonce: UUID
+        position: TimeInterval, subtitles: [URL] = [], callbackScheme: String, nonce: UUID,
+        allowPassword: Bool = false
     ) throws -> URL {
-        guard isSupportedMediaURL(mediaURL, player: settings.player), position.isFinite, position >= 0,
+        guard isSupportedMediaURL(mediaURL, player: settings.player, allowPassword: allowPassword),
+              position.isFinite, position >= 0,
               position < Double(Int.max) else { throw ExternalPlayerError.unsupportedSource }
         if settings.player == .custom {
             try validateCustomTemplate(settings.customURLTemplate)
@@ -172,7 +190,9 @@ public enum ExternalPlayerURL {
                 query.append(URLQueryItem(name: "x-" + outcome, value: url.absoluteString))
             }
         }
-        let supportedSubtitles = subtitles.filter { isSupportedMediaURL($0) }
+        let supportedSubtitles = subtitles.filter {
+            isSupportedMediaURL($0, player: settings.player, allowPassword: allowPassword)
+        }
         for url in supportedSubtitles.prefix(settings.player == .vlc ? 1 : 8) {
             query.append(URLQueryItem(name: "sub", value: url.absoluteString))
         }

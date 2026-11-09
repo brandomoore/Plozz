@@ -819,8 +819,8 @@ public struct ShareProvider: MediaLibraryQueryProviding, MediaFileBrowsing, Exte
         let externalURL: URL?
         if let externalPlayer {
             onStage("external")
-            let url = try await store.externalPlaybackURL(for: locator)
-            guard ExternalPlayerURL.isSupportedMediaURL(url, player: externalPlayer) else {
+            let url = try await store.externalPlaybackURL(for: locator, player: externalPlayer)
+            guard ExternalPlayerURL.isSupportedMediaURL(url, player: externalPlayer, allowPassword: true) else {
                 throw ExternalPlayerError.unsupportedSource
             }
             externalURL = url

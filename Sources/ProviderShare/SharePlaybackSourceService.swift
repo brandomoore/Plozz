@@ -364,8 +364,8 @@ struct SharePlaybackSourceService: Sendable {
             try Task.checkCancellation()
             do {
                 let locator = try await networkFileLocator(for: candidate.path)
-                let url = try await store.externalPlaybackURL(for: locator)
-                guard ExternalPlayerURL.isSupportedMediaURL(url) else {
+                let url = try await store.externalPlaybackURL(for: locator, player: player)
+                guard ExternalPlayerURL.isSupportedMediaURL(url, player: player, allowPassword: true) else {
                     throw MediaTransportError.unsupportedCapability("external subtitle URL")
                 }
                 urls.append(url)

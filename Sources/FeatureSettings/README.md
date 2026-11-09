@@ -438,16 +438,24 @@ IPTV movies and episodes can use a provider-owned independent handoff: the
 origin HTTP(S) URL is sent directly, without starting Plozz's local proxy.
 Sources requiring custom HTTP headers stay in Plozz; the app-link APIs cannot
 carry those headers. Explicit unknown versions are not replaced with a default.
-WebDAV files can use anonymous HTTP(S) delivery with system TLS trust. Protected
-WebDAV shares can also hand off when their server redirects the media GET to an
-independently readable HTTPS delivery URL. The transport revalidates the selected
-file's identity and size and proves bounded range access before handing off;
-the delivery request never receives the share's password, bearer or cookies.
-Direct URLs that still need share authentication, certificate-pinned connections,
-disc folders and other share transports remain internal. WebDAV cannot satisfy
+WebDAV files can use anonymous or password-authenticated HTTP(S) delivery with
+system TLS trust. Native Player, Infuse and VLC receive the configured share
+username and password in an ephemeral playback URL, including matching SRT
+sidecars. Passwords containing a colon or requiring URL escapes stay in Plozz
+for Infuse and Native Player, whose playback-link handlers reject those
+credentials; VLC handles escaped passwords. Custom player templates never
+receive share passwords. The transport
+revalidates the selected file's identity and size and proves bounded range access
+before handing off. Server redirects to independently readable HTTPS delivery
+URLs still use isolated anonymous requests and never receive the share's
+password, bearer or cookies.
+Bearer/header-only authentication, Digest-only authentication policy,
+certificate-pinned connections, disc folders and other share transports remain
+internal. WebDAV cannot satisfy
 conversion requests or reduced streaming-quality limits. Matching SRT sidecars
-use the same independent-delivery check, without copying local subtitle files
-to another app. Temporary delivery URLs stay in memory and may expire; the
+use the same player-specific authentication policy, without copying local
+subtitle files to another app. Plozz keeps playback URLs in memory, not callback
+receipts or logs. Temporary server-issued delivery URLs may expire; the
 external player cannot renew them through Plozz.
 Silo negotiates its native
 original-file or HLS plan, retaining the exact version and mobile quality limits.

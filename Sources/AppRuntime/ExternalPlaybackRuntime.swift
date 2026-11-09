@@ -86,6 +86,7 @@ public final class ExternalPlaybackRuntime {
         var isTrailer: Bool?
         var isExtra: Bool?
         var streamingSessionID: String?
+        var stripsURLPassword: Bool?
         var position: TimeInterval?
         var progress: Double?
         var returnedAt: Date?
@@ -293,13 +294,14 @@ public final class ExternalPlaybackRuntime {
             guard request.externalAudioURL == nil, !request.suppressOrdinaryWatchReporting else {
                 throw ExternalPlayerError.unsupportedSource
             }
+            let allowPassword = provider.kind == .mediaShare && request.sourceProvider == .mediaShare
             let mediaURL = try await resolveURL(
                 source: request.playbackSource, fallback: request.streamURL,
-                player: selection.player, resolver: initial.resolver
+                player: selection.player, allowPassword: allowPassword, resolver: initial.resolver
             )
             try checkCurrent()
             var subtitles = Array(request.externalSubtitleURLs.filter {
-                ExternalPlayerURL.isSupportedMediaURL($0)
+                ExternalPlayerURL.isSupportedMediaURL($0, player: selection.player, allowPassword: allowPassword)
             }.prefix(8))
             if selection.player != .custom {
                 for track in request.subtitleTracks where !track.isBitmapSubtitle
@@ -316,16 +318,19 @@ public final class ExternalPlaybackRuntime {
                 settings: selection, mediaURL: mediaURL,
                 title: request.sourceFileName ?? request.item.title,
                 position: settings.resumeRewindInterval.applied(to: startPosition ?? request.startPosition),
-                subtitles: subtitles, callbackScheme: callbackScheme, nonce: nonce
+                subtitles: subtitles, callbackScheme: callbackScheme, nonce: nonce, allowPassword: allowPassword
             )
             try checkCurrent()
             if selection.player.returnsProgress || request.streamingSessionID != nil {
+                let stripsPassword = allowPassword && mediaURL.password != nil
                 try save(Receipt(
                     id: nonce, owner: Owner(profileID: initial.profileID, account: account),
-                    itemID: item.id, player: selection.player, mediaURLDigest: Self.digest(mediaURL),
+                    itemID: item.id, player: selection.player,
+                    mediaURLDigest: Self.digest(mediaURL, strippingPassword: stripsPassword),
                     duration: request.item.runtime.flatMap { $0.isFinite && $0 > 0 ? $0 : nil },
                     createdAt: Date(), isTrailer: item.isTrailer, isExtra: item.isExtra,
-                    streamingSessionID: request.streamingSessionID
+                    streamingSessionID: request.streamingSessionID,
+                    stripsURLPassword: stripsPassword ? true : nil
                 ))
             }
             if request.streamingSessionID != nil, let streaming = provider as? any StreamingQualityProviding {
@@ -358,6 +363,7 @@ public final class ExternalPlaybackRuntime {
 
     private func resolveURL(
         source: PlaybackSource?, fallback: URL?, player: ExternalPlayer,
+        allowPassword: Bool,
         resolver: any AuthenticatedHTTPResourceResolving
     ) async throws -> URL {
         let url: URL
@@ -373,7 +379,7 @@ public final class ExternalPlaybackRuntime {
             guard let fallback else { throw ExternalPlayerError.unsupportedSource }
             url = fallback
         }
-        guard ExternalPlayerURL.isSupportedMediaURL(url, player: player) else {
+        guard ExternalPlayerURL.isSupportedMediaURL(url, player: player, allowPassword: allowPassword) else {
             throw ExternalPlayerError.unsupportedSource
         }
         return url
@@ -406,7 +412,7 @@ public final class ExternalPlaybackRuntime {
                       let position = values.first(where: { $0.name == "position" })?.value.flatMap(Double.init),
                       position.isFinite, position >= 0, position < 24 * 60 * 60 * 30,
                       let played = values.first(where: { $0.name == "lastPlayedUrl" })?.value.flatMap(URL.init(string:)),
-                      Self.digest(played) == pending.mediaURLDigest else {
+                      Self.digest(played, strippingPassword: pending.stripsURLPassword == true) == pending.mediaURLDigest else {
                     throw ExternalPlayerError.invalidCallback
                 }
                 if pending.player == .nativePlayer {
@@ -557,7 +563,16 @@ public final class ExternalPlaybackRuntime {
         receipt = nil
     }
 
-    static func digest(_ url: URL) -> String {
-        SHA256.hash(data: Data(url.absoluteString.utf8)).map { String(format: "%02x", $0) }.joined()
+    static func digest(_ url: URL, strippingPassword: Bool = false) -> String {
+        var identity = url.absoluteString
+        if strippingPassword, var components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+           components.user != nil || components.password != nil {
+            // A player may remove authentication from lastPlayedUrl. Account,
+            // credential revision and nonce still bind the callback to its owner.
+            components.user = nil
+            components.password = nil
+            if let resource = components.url { identity = resource.absoluteString }
+        }
+        return SHA256.hash(data: Data(identity.utf8)).map { String(format: "%02x", $0) }.joined()
     }
 }

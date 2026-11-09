@@ -511,13 +511,33 @@ External WebDAV playback opts into `MediaTransportExternalPlaybackFileSystem`;
 it never converts a network-file locator into a guessed URL in the app shell.
 The WebDAV adapter reuses ordinary opening metadata, representation/size checks,
 root-safe URL construction and a two-byte range probe without prefetching media.
-Only anonymous connections under system TLS trust, or server-issued HTTPS
-delivery redirects fetched in an isolated anonymous session, qualify. Reusable
-credentials and certificate pins are never handed to another app. The selected
-file and matching SRT sidecars yield ephemeral URLs for the shared external-player
-runtime; neither URL nor grant is saved in its callback receipt. Protected direct
-URLs, other share transports, disc folders and conversion policies keep their
-built-in path. An external player cannot renew an expired server-issued URL.
+Under system TLS trust, anonymous URLs and configured password authentication
+can be handed off to supported players. The transport, not the app shell,
+adds percent-encoded credentials to an exact-origin URL for Native Player,
+Infuse or VLC. This follows the existing configured-HTTP LAN policy; it does not
+permit HTTPS downgrades. Custom templates cannot opt into password handoff.
+Infuse and Native Player accepted unreserved ASCII and raw `+&=!$'()*,;` password
+characters in physical playback-link probes, but rejected colon and escaped
+characters (including `@`, `/`, `?`, `#`, `%` and non-ASCII text). Keep legal
+punctuation raw inside the media URL and encode that entire URL once into the
+app-link query; overencoding the password also fails. Incompatible passwords
+keep built-in playback rather than launching a known-failing login; VLC retains
+standard escaped userinfo.
+Digest-only policy remains internal because playback links cannot constrain the
+receiver's challenge negotiation. Bearer/custom headers and certificate pins
+also remain internal rather than being dropped.
+Server-issued HTTPS delivery redirects retain isolated anonymous sessions;
+share credentials are never added to those delivery URLs. Media and matching
+SRT URLs are ephemeral and excluded from callback receipts and logs. Callback
+resource digests omit userinfo so a sanitized return URL still matches, while
+nonce, profile, account and credential-revision checks retain ownership.
+Other share transports, disc folders and conversion policies keep their built-in
+path. An external player cannot renew an expired server-issued URL.
+
+Physical Apple TV probes with disposable LAN HTTP fixtures verified Basic and
+Digest media retrieval and rendered video in Infuse 8.5.9 and Native Player
+2.0.1. Both fetched authenticated SRT sidecars; rendered SRT was observed in
+Infuse only. These probes are not HTTPS, certificate-pinning or iOS evidence.
 Other share transports retain opening-stat metadata; their directory-listing and
 file-stat representations need not carry the same precision or completeness.
 

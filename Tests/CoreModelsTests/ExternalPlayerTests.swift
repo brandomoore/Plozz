@@ -88,6 +88,95 @@ final class ExternalPlayerTests: XCTestCase {
         XCTAssertTrue(ExternalPlayerURL.isSupportedMediaURL(URL(string: "http://192.168.1.2/video")!))
     }
 
+    func testPasswordLinksRequireExplicitOptInAndAKnownPlayer() throws {
+        var source = try XCTUnwrap(URLComponents(url: media, resolvingAgainstBaseURL: false))
+        source.user = "fixture"
+        source.password = "synthetic"
+        let authenticated = try XCTUnwrap(source.url)
+        for player in ExternalPlayer.allCases {
+            XCTAssertFalse(ExternalPlayerURL.isSupportedMediaURL(authenticated, player: player))
+            let supported = [ExternalPlayer.nativePlayer, .infuse, .vlc].contains(player)
+            XCTAssertEqual(
+                ExternalPlayerURL.isSupportedMediaURL(authenticated, player: player, allowPassword: true), supported
+            )
+            if supported {
+                let link = try ExternalPlayerURL.make(
+                    settings: .init(player: player), mediaURL: authenticated, title: "Movie", position: 0,
+                    subtitles: [authenticated], callbackScheme: "test", nonce: nonce, allowPassword: true
+                )
+                let query = try XCTUnwrap(URLComponents(url: link, resolvingAgainstBaseURL: false)?.queryItems)
+                XCTAssertEqual(query.first { $0.name == "url" }?.value, authenticated.absoluteString)
+                XCTAssertEqual(query.first { $0.name == "sub" }?.value, authenticated.absoluteString)
+                for callback in query.filter({ $0.name.hasPrefix("x-") }) {
+                    XCTAssertFalse(callback.value?.contains("synthetic") ?? true)
+                }
+            } else {
+                XCTAssertThrowsError(try ExternalPlayerURL.make(
+                    settings: .init(player: player, customURLTemplate: "player://play?url={url}"),
+                    mediaURL: authenticated, title: "Movie", position: 0,
+                    callbackScheme: "test", nonce: nonce, allowPassword: true
+                ))
+            }
+        }
+        source.password = nil
+        XCTAssertFalse(ExternalPlayerURL.isSupportedMediaURL(try XCTUnwrap(source.url), allowPassword: true))
+        source.password = "synthetic"
+        source.host = "127.0.0.1"
+        XCTAssertFalse(ExternalPlayerURL.isSupportedMediaURL(try XCTUnwrap(source.url), allowPassword: true))
+    }
+
+    func testPasswordPunctuationIsNotOverencodedInsideTheNestedURL() throws {
+        let password = "fixture+&=!$'()*,;"
+        var source = try XCTUnwrap(URLComponents(url: media, resolvingAgainstBaseURL: false))
+        source.user = "fixture"
+        source.password = password
+        XCTAssertEqual(source.percentEncodedPassword, password)
+        let authenticated = try XCTUnwrap(source.url)
+        for player in [ExternalPlayer.nativePlayer, .infuse, .vlc] {
+            let link = try ExternalPlayerURL.make(
+                settings: .init(player: player), mediaURL: authenticated, title: "Movie", position: 0,
+                subtitles: [authenticated], callbackScheme: "test", nonce: nonce, allowPassword: true
+            )
+            let query = try XCTUnwrap(URLComponents(url: link, resolvingAgainstBaseURL: false)?.queryItems)
+            for name in ["url", "sub"] {
+                let nested = try XCTUnwrap(query.first { $0.name == name }?.value)
+                XCTAssertEqual(nested, authenticated.absoluteString)
+                XCTAssertEqual(URLComponents(string: nested)?.percentEncodedPassword, password)
+            }
+        }
+        source.percentEncodedPassword = "fixture:secret"
+        let rawColon = try XCTUnwrap(source.url)
+        for player in [ExternalPlayer.nativePlayer, .infuse] {
+            XCTAssertFalse(ExternalPlayerURL.isSupportedMediaURL(rawColon, player: player, allowPassword: true))
+        }
+    }
+
+    func testIncompatiblePasswordsAreNotSentToPlayersThatRejectThem() throws {
+        for password in [
+            "fixture:secret", "fixture@secret", "fixture/secret", "fixture?secret",
+            "fixture#secret", "fixture%secret", "fixtur\u{e9}"
+        ] {
+            var source = try XCTUnwrap(URLComponents(url: media, resolvingAgainstBaseURL: false))
+            source.user = "fixture"
+            source.password = password
+            let url = try XCTUnwrap(source.url)
+            if !password.contains(":") {
+                XCTAssertNotEqual(source.password, source.percentEncodedPassword)
+            }
+            for player in [ExternalPlayer.nativePlayer, .infuse, .vlc] {
+                XCTAssertEqual(
+                    ExternalPlayerURL.isSupportedMediaURL(url, player: player, allowPassword: true), player == .vlc
+                )
+                if player != .vlc {
+                    XCTAssertThrowsError(try ExternalPlayerURL.make(
+                        settings: .init(player: player), mediaURL: url, title: "Movie", position: 0,
+                        callbackScheme: "test", nonce: nonce, allowPassword: true
+                    ))
+                }
+            }
+        }
+    }
+
     func testInvalidResumePositionsAreRejected() {
         for position in [Double.nan, .infinity, -1, Double(Int.max)] {
             XCTAssertThrowsError(try ExternalPlayerURL.make(

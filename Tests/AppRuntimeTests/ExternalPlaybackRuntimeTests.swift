@@ -235,6 +235,97 @@ final class ExternalPlaybackRuntimeTests: XCTestCase {
         XCTAssertFalse(String(decoding: data, as: UTF8.self).contains("subtitle-ticket"))
     }
 
+    func testWebDAVPasswordHandoffKeepsCredentialsEphemeralAndAcceptsSanitizedReturns() async throws {
+        for player in [ExternalPlayer.nativePlayer, .infuse, .vlc] {
+            for stripPassword in [false, true] {
+                let fixture = ExternalPlaybackFixture()
+                defer { fixture.cleanup() }
+                fixture.kind = .mediaShare
+                fixture.selection.player = player
+                let resource = fixture.media
+                var components = try XCTUnwrap(URLComponents(url: resource, resolvingAgainstBaseURL: false))
+                components.user = "webdav-fixture"
+                components.password = "ephemeral-secret"
+                fixture.media = try XCTUnwrap(components.url)
+                fixture.request.sourceProvider = .mediaShare
+                fixture.request.externalSubtitleURLs = [fixture.media]
+                let opened = try await fixture.launch()
+                XCTAssertTrue(opened)
+                let query = try XCTUnwrap(URLComponents(url: fixture.opened[0], resolvingAgainstBaseURL: false)?.queryItems)
+                XCTAssertEqual(query.first { $0.name == "url" }?.value, fixture.media.absoluteString)
+                XCTAssertEqual(query.first { $0.name == "sub" }?.value, fixture.media.absoluteString)
+                if player.returnsProgress {
+                    let data = try XCTUnwrap(fixture.defaults.data(forKey: "com.plozz.externalPlaybackReceipt"))
+                    let saved = String(decoding: data, as: UTF8.self)
+                    for secret in ["webdav-fixture", "ephemeral-secret", "server.test", "synthetic-token"] {
+                        XCTAssertFalse(saved.contains(secret))
+                    }
+                    let restored = ExternalPlaybackRuntime(defaults: fixture.defaults, callbackScheme: fixture.callbackScheme)
+                    XCTAssertTrue(restored.receive(try fixture.callback(
+                        position: "300", playedURL: stripPassword ? resource : fixture.media
+                    )))
+                    var position: TimeInterval?
+                    await restored.processReturn(context: { fixture.context }) { position = $0.position }
+                    XCTAssertEqual(position, 300)
+                }
+            }
+        }
+    }
+
+    func testPasswordOptInDoesNotEnableOtherProvidersCustomLinksOrIncompatibleCredentials() async throws {
+        for mode in 0..<4 {
+            let fixture = ExternalPlaybackFixture()
+            defer { fixture.cleanup() }
+            var source = try XCTUnwrap(URLComponents(url: fixture.media, resolvingAgainstBaseURL: false))
+            source.user = "fixture"
+            source.password = mode == 3 ? "synthetic@secret" : "synthetic"
+            fixture.media = try XCTUnwrap(source.url)
+            fixture.kind = mode == 0 ? .jellyfin : .mediaShare
+            fixture.request.sourceProvider = mode == 1 ? .jellyfin : .mediaShare
+            if mode == 2 {
+                fixture.selection = .init(player: .custom, customURLTemplate: "player://play?url={url}")
+            }
+            let opened = try await fixture.launch()
+            XCTAssertFalse(opened)
+            XCTAssertTrue(fixture.opened.isEmpty)
+            XCTAssertNil(fixture.runtime.receipt)
+        }
+    }
+
+    func testPasswordStrippingDoesNotPermitAnotherResourceCallback() async throws {
+        let fixture = ExternalPlaybackFixture()
+        defer { fixture.cleanup() }
+        fixture.kind = .mediaShare
+        var source = try XCTUnwrap(URLComponents(url: fixture.media, resolvingAgainstBaseURL: false))
+        source.user = "fixture"
+        source.password = "synthetic"
+        fixture.media = try XCTUnwrap(source.url)
+        fixture.request.sourceProvider = .mediaShare
+        _ = try await fixture.launch()
+        source.user = nil
+        source.password = nil
+        source.path = "/another.mkv"
+        XCTAssertTrue(fixture.runtime.receive(try fixture.callback(
+            position: "300", playedURL: XCTUnwrap(source.url)
+        )))
+        XCTAssertEqual(fixture.runtime.error, .invalidCallback)
+        XCTAssertNil(fixture.runtime.receipt)
+    }
+
+    func testOrdinaryCallbackCannotOptIntoPasswordStripping() async throws {
+        let fixture = ExternalPlaybackFixture()
+        defer { fixture.cleanup() }
+        _ = try await fixture.launch()
+        var source = try XCTUnwrap(URLComponents(url: fixture.media, resolvingAgainstBaseURL: false))
+        source.user = "fixture"
+        source.password = "synthetic"
+        XCTAssertTrue(fixture.runtime.receive(try fixture.callback(
+            position: "300", playedURL: XCTUnwrap(source.url)
+        )))
+        XCTAssertEqual(fixture.runtime.error, .invalidCallback)
+        XCTAssertNil(fixture.runtime.receipt)
+    }
+
     func testWebDAVRejectedDeliveryFallsBackAndProfileChangeCancelsHandoff() async throws {
         for cancelled in [false, true] {
             let fixture = ExternalPlaybackFixture()
@@ -801,7 +892,7 @@ final class ExternalPlaybackRuntimeTests: XCTestCase {
 @MainActor
 private final class ExternalPlaybackFixture {
     let suite = "ExternalPlaybackRuntimeTests.\(UUID().uuidString)"
-    let media = URL(string: "https://server.test/movie.mkv?token=synthetic-token")!
+    var media = URL(string: "https://server.test/movie.mkv?token=synthetic-token")!
     let callbackScheme = "com.test.external-player"
     lazy var defaults = UserDefaults(suiteName: suite)!
     lazy var runtime = ExternalPlaybackRuntime(
@@ -862,14 +953,14 @@ private final class ExternalPlaybackFixture {
             context: { self.context }, isPresented: { true }
         )
     }
-    func callback(position: String, progress: String? = nil) throws -> URL {
+    func callback(position: String, progress: String? = nil, playedURL: URL? = nil) throws -> URL {
         let openedURL = try XCTUnwrap(opened.last)
         let query = try XCTUnwrap(URLComponents(url: openedURL, resolvingAgainstBaseURL: false)?.queryItems)
         let success = try XCTUnwrap(query.first { $0.name == "x-success" }?.value)
         var components = try XCTUnwrap(URLComponents(string: success))
         components.queryItems = (components.queryItems ?? []) + [
             .init(name: "position", value: position),
-            .init(name: "lastPlayedUrl", value: media.absoluteString)
+            .init(name: "lastPlayedUrl", value: (playedURL ?? media).absoluteString)
         ]
         if let progress { components.queryItems?.append(.init(name: "progress", value: progress)) }
         return try XCTUnwrap(components.url)

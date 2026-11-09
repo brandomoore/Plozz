@@ -62,8 +62,8 @@ actor ShareLibraryStore {
         try await browser.statForOpening(relativePath)
     }
 
-    func externalPlaybackURL(for locator: NetworkFileLocator) async throws -> URL {
-        try await browser.externalPlaybackURL(for: locator)
+    func externalPlaybackURL(for locator: NetworkFileLocator, player: ExternalPlayer) async throws -> URL {
+        try await browser.externalPlaybackURL(for: locator, player: player)
     }
 
     /// Read a file's bytes off the share (share-relative path). Used to pull small
