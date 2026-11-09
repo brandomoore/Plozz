@@ -8,17 +8,23 @@ public struct PlaybackVersionPreferencePicker: View {
     public init(model: PlaybackSettingsModel) { self.model = model }
 
     public var body: some View {
-        Picker("Version selection", selection: $model.settings.versionSelectionMode) {
-            if model.settings.versionSelectionMode == nil {
-                Text("Choose on first play")
-                    .tag(Optional<PlaybackVersionSelectionMode>.none)
-                    .disabled(true)
+        HStack {
+            Picker("Version selection", selection: $model.settings.versionSelectionMode) {
+                if model.settings.versionSelectionMode == nil {
+                    Text("Choose on first play")
+                        .tag(Optional<PlaybackVersionSelectionMode>.none)
+                        .disabled(true)
+                }
+                ForEach(PlaybackVersionSelectionMode.allCases, id: \.self) { mode in
+                    Text(mode.title).tag(Optional(mode))
+                }
             }
-            ForEach(PlaybackVersionSelectionMode.allCases, id: \.self) { mode in
-                Text(mode.title).tag(Optional(mode))
+            .accessibilityIdentifier("playback-version-selection")
+            if model.settings.versionSelectionMode == .automatic {
+                AutomaticVersionInfoButton()
             }
         }
-        .accessibilityIdentifier("playback-version-selection")
+        .accessibilityElement(children: .contain)
     }
 }
 #endif

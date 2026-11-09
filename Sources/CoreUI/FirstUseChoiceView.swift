@@ -11,6 +11,7 @@ public struct FirstUseChoiceView: View {
     let footer: LocalizedStringResource
     let firstIdentifier: String
     let secondIdentifier: String
+    let messageAccessory: AnyView?
     let choose: (Bool) -> Void
     @Environment(\.themePalette) private var palette
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -19,6 +20,7 @@ public struct FirstUseChoiceView: View {
         symbol: String, title: LocalizedStringResource, message: LocalizedStringResource,
         firstAction: LocalizedStringResource, secondAction: LocalizedStringResource,
         footer: LocalizedStringResource, firstIdentifier: String, secondIdentifier: String,
+        messageAccessory: AnyView? = nil,
         choose: @escaping (Bool) -> Void
     ) {
         self.symbol = symbol
@@ -29,13 +31,14 @@ public struct FirstUseChoiceView: View {
         self.footer = footer
         self.firstIdentifier = firstIdentifier
         self.secondIdentifier = secondIdentifier
+        self.messageAccessory = messageAccessory
         self.choose = choose
     }
 
     public var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 36) {
-                FirstUseChoiceHeading(symbol: symbol, title: title, message: message)
+                FirstUseChoiceHeading(symbol: symbol, title: title, message: message, accessory: messageAccessory)
                 FirstUseChoiceActions(
                     first: firstAction, second: secondAction,
                     firstIdentifier: firstIdentifier, secondIdentifier: secondIdentifier,
@@ -65,6 +68,7 @@ private struct FirstUseChoiceHeading: View {
     let symbol: String
     let title: LocalizedStringResource
     let message: LocalizedStringResource
+    let accessory: AnyView?
     @Environment(\.themePalette) private var palette
     @ScaledMetric(relativeTo: .title) private var titleSize: CGFloat = 46
 
@@ -82,10 +86,13 @@ private struct FirstUseChoiceHeading: View {
                 #endif
                 .foregroundStyle(palette.primaryText)
                 .accessibilityAddTraits(.isHeader)
-            Text(message)
-                .font(.body)
-                .foregroundStyle(palette.secondaryText)
-                .fixedSize(horizontal: false, vertical: true)
+            HStack(alignment: .top, spacing: 12) {
+                Text(message)
+                    .font(.body)
+                    .foregroundStyle(palette.secondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+                accessory
+            }
         }
     }
 }

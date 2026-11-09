@@ -2127,6 +2127,34 @@ final class SettingsInteractionTests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Playback"].waitForExistence(timeout: 5))
     }
 
+    func testAutomaticVersionHelpLeavesTheSelectionUnchanged() {
+        launchPlayback()
+        let picker = app.buttons["playback-version-selection"]
+        reveal(picker, fullyVisible: true)
+        picker.tap()
+        app.buttons["Choose automatically"].tap()
+        let info = app.buttons["automatic-version-information"]
+        XCTAssertTrue(info.wait(for: \.isHittable, toEqual: true, timeout: 5))
+        XCTAssertGreaterThanOrEqual(info.frame.width, 44 - 0.01)
+        XCTAssertGreaterThanOrEqual(info.frame.height, 44 - 0.01)
+        XCTAssertFalse(picker.frame.intersects(info.frame), app.debugDescription)
+        capture("automatic-version-setting")
+        info.tap()
+        let help = app.alerts["How automatic selection works"]
+        XCTAssertTrue(help.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(help.staticTexts.matching(NSPredicate(
+            format: "label CONTAINS %@ AND label CONTAINS %@", "1080p", "HDR"
+        )).firstMatch.exists)
+        capture("automatic-version-examples")
+        help.buttons["Done"].tap()
+        XCTAssertTrue(help.waitForNonExistence(timeout: 5))
+        XCTAssertTrue(picker.label.contains("Choose automatically") || picker.value as? String == "Choose automatically")
+        picker.tap()
+        app.buttons["Ask every time"].tap()
+        XCTAssertTrue(info.waitForNonExistence(timeout: 5))
+        XCTAssertTrue(picker.label.contains("Ask every time") || picker.value as? String == "Ask every time")
+    }
+
     func testCompactSkipDefaultsShowEffectiveValueAndNativeMenuChoices() {
         launchPlayback()
         let customize = app.buttons["skip-marker-settings"]

@@ -7,6 +7,11 @@ system green appearance instead of inheriting the page's monochrome navigation t
 
 The Settings screen and its detail pages. Profile-aware and integration-aware.
 
+Automatic version selection has a shared information button beside its TV
+option, beside the selected mobile value, and beside the first-use description.
+The native help dialog explains remembered series choices and metadata-based
+ranking with examples; opening or dismissing it never selects a playback mode.
+
 Disc playback lives in a dedicated Discs section near the bottom of Playback,
 just before Advanced, on TV and mobile. It uses the shared labeled menu row on TV, showing the setting name
 and current choice rather than an unlabeled segmented picker.

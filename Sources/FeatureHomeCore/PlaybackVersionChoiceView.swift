@@ -103,7 +103,8 @@ private struct PlaybackVersionChoiceContent: View {
                 secondAction: "Choose automatically",
                 footer: "Change this any time in Settings > Playback > Version selection.",
                 firstIdentifier: "version-choice-ask",
-                secondIdentifier: "version-choice-automatic"
+                secondIdentifier: "version-choice-automatic",
+                messageAccessory: AnyView(AutomaticVersionInfoButton())
             ) { ask in
                 model.chooseMode(ask ? .askEveryTime : .automatic, promptID: prompt.id)
             }

@@ -3,6 +3,31 @@ import Vision
 
 @MainActor
 final class SettingsWorkspaceRemoteTests: XCTestCase {
+    func testAutomaticVersionHelpDoesNotSelectAutomatic() throws {
+        let app = try launchSettings(style: "tabBar", syncEnabled: false)
+        defer { app.terminate() }
+        try focus(section("playback", in: app), in: app)
+        XCUIRemote.shared.press(.select)
+        let ask = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Ask every time")).firstMatch
+        try focus(ask, in: app)
+        XCUIRemote.shared.press(.select)
+        XCTAssertTrue(ask.isSelected)
+        let info = app.buttons["How automatic selection works"]
+        try focus(info, in: app)
+        capture("automatic-version-setting", in: app)
+        XCUIRemote.shared.press(.select)
+        let help = app.alerts["How automatic selection works"]
+        XCTAssertTrue(help.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(help.staticTexts.matching(NSPredicate(
+            format: "label CONTAINS %@ AND label CONTAINS %@", "1080p", "HDR"
+        )).firstMatch.exists)
+        capture("automatic-version-examples", in: app)
+        XCUIRemote.shared.press(.select)
+        XCTAssertTrue(help.waitForNonExistence(timeout: 5))
+        XCTAssertTrue(ask.isSelected, "Reading help must not change the playback mode.")
+        XCTAssertTrue(info.exists)
+    }
+
     func testGeneralSourceEntryPointsOpenTheSharedChooser() throws {
         let app = try launchSettings(style: "tabBar", syncEnabled: false)
         defer { app.terminate() }
