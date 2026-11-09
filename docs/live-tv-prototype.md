@@ -1762,7 +1762,10 @@ Apple TV animates the retained video surfaces into Multiview and between layouts
 including pane entry/removal, setup/watch, promotion and expansion. Native
 full-screen playback first hands its existing renderer back to the full-size
 inline canvas, then shrinks it; no replacement player or screenshot stands in
-for the video. On tvOS, 20-point rounded corners clip each fitted picture, not its letterbox slot,
+for the video. A temporary window host keeps that renderer visible during native
+cover dismissal, and resizing waits for the inline host's actual layout.
+Focus clearance around a shrunken corner picture is transparent rather than an
+opaque backing rectangle. On tvOS, 20-point rounded corners clip each fitted picture, not its letterbox slot,
 and disappear when a picture is expanded. Reduce Motion makes these changes
 immediate. Removing a pane still retires its stream immediately; visual removal
 never delays authorization or tuner cleanup.

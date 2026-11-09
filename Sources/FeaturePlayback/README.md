@@ -518,6 +518,15 @@ and interactive/idle style changes from stealing a visible renderer; initial
 unattached outputs can still mount before playback becomes ready. Once the new
 host owns the windowed output, updates to an outgoing label cannot steal it back
 during its removal animation.
+When native fullscreen playback enters Multiview, a temporary, noninteractive
+window host carries the same live renderer across cover dismissal. The inline
+host must be windowed, laid out at full size, and have a visible presentation
+layer before the resize begins; a task yield alone is not a presentation boundary.
+The native card's subsequent
+label replacement carries the renderer the same way, without cross-fading its
+owners. A rejected Multiview request restores the inline output; cancellation
+releases the handoff without starting Multiview. Focus spacing outside each Multiview picture
+is transparent, so an inset does not mask the main picture with a black border.
 
 The retained channel engine keeps output muted until the current source has
 finished loading and its first-frame signal permits presentation. Scheduled

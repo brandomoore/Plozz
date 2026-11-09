@@ -115,6 +115,43 @@ final class LiveTVMultiviewRemoteTests: XCTestCase {
     }
 
     @MainActor
+    func testCornerFocusClearanceShowsTheMainVideoInsteadOfABlackBacking() throws {
+        continueAfterFailure = false
+        let app = launchVisualFixture()
+        defer { app.terminate() }
+        select(app.buttons["live-channel-multiview"], in: app)
+        select(app.buttons["live-multiview-add"], in: app)
+        chooseGuideChannel(2, in: app)
+        select(app.buttons["live-multiview-layout"], in: app)
+        selectMenuItem("Corner", in: app)
+        focusAudio("Sports 1", in: app)
+        let main = settledVideoFrame(1, in: app)
+        let inset = settledVideoFrame(2, in: app)
+        let screenshot = capture("corner-transparent-focus-clearance", in: app)
+        let image = try XCTUnwrap(screenshot.cgImage)
+        let scale = CGFloat(image.width) / app.frame.width
+        for point in [
+            CGPoint(x: inset.minX - 10, y: inset.midY),
+            CGPoint(x: inset.midX, y: inset.minY - 8)
+        ] {
+            XCTAssertTrue(main.contains(point))
+            let crop = try XCTUnwrap(image.cropping(to: CGRect(
+                x: point.x * scale, y: point.y * scale, width: 1, height: 1)))
+            var pixel = [UInt8](repeating: 0, count: 4)
+            try pixel.withUnsafeMutableBytes { bytes in
+                let context = try XCTUnwrap(CGContext(
+                    data: bytes.baseAddress, width: 1, height: 1, bitsPerComponent: 8,
+                    bytesPerRow: 4, space: CGColorSpaceCreateDeviceRGB(),
+                    bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+                context.draw(crop, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+            }
+            XCTAssertGreaterThan(pixel[2], 150, "The main blue picture must show through the inset's focus clearance.")
+            XCTAssertLessThan(pixel[0], 50)
+        }
+        assertMetrics("Engines 2 loads 2 stops 0 audible 1", in: app)
+    }
+
+    @MainActor
     func testProductionNativeFullscreenShrinksTheActualRetainedVideoIntoMultiview() throws {
         let app = fixtureApplication()
         app.launchArguments = ["--live-root-fixture", "--visual-focus-fixture", "--motion-fixture"]

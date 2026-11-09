@@ -35,7 +35,7 @@ public struct LiveTVPrototypePlayback {
     public let videoAspectRatioChanged: @MainActor (Double?) -> Void
     public let isMultiview: Bool
     public let isAudible: Bool
-    public let openMultiview: () -> Void
+    public let openMultiview: () -> Bool
     public let canOpenMultiview: Bool
     public let isPlaybackActive: Bool
     public let isAuthorized: Bool
@@ -733,8 +733,9 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
             isAudible: pane.id == multiview.audiblePaneID,
             openMultiview: {
                 guard !hasAuthorizedExternalPlayback, activity.acceptsInteraction,
-                      multiview.begin() else { return }
+                      multiview.begin() else { return false }
                 updatePlaybackAvailability()
+                return true
             },
             canOpenMultiview: !multiview.isEnabled && !hasAuthorizedExternalPlayback,
             isPlaybackActive: activity.isPlaybackActive,

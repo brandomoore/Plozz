@@ -30,6 +30,8 @@ configuration supplies channel actions, focus requests and interactive spacing.
 Idle presentation retains a focusable surface without a visual lift; other
 platforms leave the content unchanged. Renderer hosts must preserve a single
 windowed output when SwiftUI prepares replacement labels offscreen.
+Label and style replacements use identity transitions: cross-fading two hosts
+cannot cross-fade the single live renderer they share. Geometry still animates.
 
 `homeResponsivenessDiagnostics` passively observes visible mobile Home in
 opted-in diagnostic builds. Its cancellable 100 ms main-actor wake-up sampler

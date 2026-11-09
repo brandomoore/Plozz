@@ -91,7 +91,7 @@ public struct LiveChannelPlayerView: View {
     private let onPlaybackUpdate: @MainActor (LiveTVPlaybackUpdate) -> Void
     private let onPlaybackFailed: @MainActor (LiveChannelFailureReport) -> Void
     private let onVideoAspectRatioChange: @MainActor (Double?) -> Void
-    private let onMultiview: (() -> Void)?
+    private let onMultiview: (() -> Bool)?
     private let outputGroup: LiveChannelOutputGroup?
     private let outputID: UUID?
     private let isAudible: Bool
@@ -125,6 +125,7 @@ public struct LiveChannelPlayerView: View {
     @State private var fullscreenOwnsSurface = false
     @State private var returnsToGuideAfterFullscreen = false
     @State private var opensMultiviewAfterFullscreen = false
+    @State private var videoHandoff: VideoPresentationHandoff?
     @State private var engineInitializationFailed = false
     @State private var controlsVisible = true
     @State private var touchGestures = PlayerTouchGestureState()
@@ -218,7 +219,7 @@ public struct LiveChannelPlayerView: View {
         onPlaybackUpdate: @escaping @MainActor (LiveTVPlaybackUpdate) -> Void = { _ in },
         onPlaybackFailed: @escaping @MainActor (LiveChannelFailureReport) -> Void = { _ in },
         onVideoAspectRatioChange: @escaping @MainActor (Double?) -> Void = { _ in },
-        onMultiview: (() -> Void)? = nil,
+        onMultiview: (() -> Bool)? = nil,
         outputGroup: LiveChannelOutputGroup? = nil,
         outputID: UUID? = nil,
         isAudible: Bool = true,
@@ -316,7 +317,7 @@ public struct LiveChannelPlayerView: View {
         onPlaybackUpdate: @escaping @MainActor (LiveTVPlaybackUpdate) -> Void = { _ in },
         onPlaybackFailed: @escaping @MainActor (LiveChannelFailureReport) -> Void = { _ in },
         onVideoAspectRatioChange: @escaping @MainActor (Double?) -> Void = { _ in },
-        onMultiview: (() -> Void)? = nil,
+        onMultiview: (() -> Bool)? = nil,
         outputGroup: LiveChannelOutputGroup? = nil,
         outputID: UUID? = nil,
         isAudible: Bool = true,
@@ -366,7 +367,7 @@ public struct LiveChannelPlayerView: View {
 
     private var playerSurface: some View {
         ZStack {
-            (hasInlineControls ? Color.clear : Color.black)
+            (hasInlineControls || isMultiview ? Color.clear : Color.black)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .ignoresSafeArea(.all, edges: hasInlineControls || isMultiview ? [] : .all)
 
@@ -700,9 +701,10 @@ public struct LiveChannelPlayerView: View {
 
     private var presentationObservedRoot: some View {
         ZStack {
-            (hasInlineControls ? Color.clear : Color.black)
+            (hasInlineControls || isMultiview ? Color.clear : Color.black)
             if !fullscreenOwnsSurface {
                 playerSurface
+                    .transition(.identity)
             }
         }
         .plozzFullScreenCover(isPresented: $fullscreenPresented, onDismiss: fullscreenDidDismiss) {
@@ -711,15 +713,6 @@ public struct LiveChannelPlayerView: View {
                 #if os(iOS)
                 .liveChannelSystemOverlays()
                 #endif
-        }
-        .task(id: !fullscreenOwnsSurface && isActive && isAuthorized) {
-            guard !fullscreenOwnsSurface, opensMultiviewAfterFullscreen else { return }
-            // Reattach the retained renderer at full size before shrinking its canvas.
-            await Task.yield()
-            guard !Task.isCancelled, !fullscreenOwnsSurface else { return }
-            opensMultiviewAfterFullscreen = false
-            guard isActive, isAuthorized else { return }
-            onMultiview?()
         }
         .onChange(of: wantsNativeFullscreen, initial: true) { _, presented in
             if presented { updateSource() }
@@ -879,14 +872,43 @@ public struct LiveChannelPlayerView: View {
         if fullscreenOwnsSurface {
             opensMultiviewAfterFullscreen = true
             returnsToGuideAfterFullscreen = false
+            if let model {
+                videoHandoff = VideoPresentationHandoff(
+                    engine: model.engine, completion: finishOpeningMultiview)
+            }
             updateFullscreenPresentation(false)
         } else {
-            onMultiview?()
+            beginMultiview()
+        }
+    }
+
+    private func finishOpeningMultiview() {
+        guard opensMultiviewAfterFullscreen, !fullscreenOwnsSurface else { return }
+        opensMultiviewAfterFullscreen = false
+        videoHandoff = nil
+        guard isActive, isAuthorized else { return }
+        beginMultiview()
+    }
+
+    private func beginMultiview() {
+        #if os(tvOS)
+        // Installing the native card replaces the inline label too. Carry its live
+        // renderer through that replacement before animating the card's geometry.
+        if let model {
+            videoHandoff = VideoPresentationHandoff(engine: model.engine) {
+                videoHandoff = nil
+            }
+        }
+        #endif
+        if onMultiview?() != true {
+            videoHandoff?.cancel(restoringOutput: true)
+            videoHandoff = nil
         }
     }
 
     private func fullscreenDidDismiss() {
         fullscreenOwnsSurface = false
+        if videoHandoff == nil { finishOpeningMultiview() }
         // SwiftUI may retain the dismissal closure from presentation time.
         // Read current state rather than its captured isActive/isExpanded inputs.
         if returnsToGuideAfterFullscreen {
@@ -978,6 +1000,9 @@ public struct LiveChannelPlayerView: View {
     }
 
     private func stopPlayback() {
+        opensMultiviewAfterFullscreen = false
+        videoHandoff?.cancel()
+        videoHandoff = nil
         exitTask?.cancel()
         exitTask = nil
         displayTask?.cancel()

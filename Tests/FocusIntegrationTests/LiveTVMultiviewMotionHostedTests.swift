@@ -9,6 +9,83 @@ import XCTest
 
 @MainActor
 final class LiveTVMultiviewMotionHostedTests: XCTestCase {
+    func testFullscreenHandoffKeepsTheActualOutputVisibleUntilTheInlineHostLaysOut() async throws {
+        let fixture = try await makeFixture()
+        defer { fixture.close() }
+        let output = fixture.model.engine.output
+        let previousHost = try XCTUnwrap(output.superview as? VideoPresentationView)
+        let originalFrame = output.convert(output.bounds, to: fixture.window)
+        var completions = 0
+        let handoff = try XCTUnwrap(VideoPresentationHandoff(engine: fixture.model.engine) {
+            completions += 1
+        })
+        defer { handoff.cancel() }
+        fixture.model.visible = false
+        try await Task.sleep(for: .milliseconds(100))
+        XCTAssertTrue(output.superview === handoff)
+        XCTAssertTrue(output.window === fixture.window, "Dismissing the old host must not blank the live renderer.")
+        XCTAssertEqual(output.convert(output.bounds, to: fixture.window), originalFrame)
+        previousHost.attach(fixture.model.engine, deferringOffscreenAttachment: true)
+        XCTAssertTrue(output.superview === handoff)
+        let nextHost = VideoPresentationView(frame: .zero)
+        nextHost.attach(fixture.model.engine, deferringOffscreenAttachment: true)
+        XCTAssertTrue(output.superview === handoff, "An offscreen inline host must not end the handoff.")
+        fixture.window.addSubview(nextHost)
+        nextHost.layoutIfNeeded()
+        XCTAssertEqual(completions, 0, "A zero-sized host is not ready to animate.")
+        XCTAssertTrue(output.superview === handoff)
+        nextHost.frame = fixture.window.bounds
+        nextHost.layoutIfNeeded()
+        let deadline = ContinuousClock.now + .seconds(2)
+        while completions == 0, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertEqual(completions, 1)
+        XCTAssertNil(handoff.superview)
+        XCTAssertTrue(output.superview === nextHost)
+        XCTAssertEqual(output.convert(output.bounds, to: fixture.window), originalFrame)
+        XCTAssertEqual(fixture.model.engine.stops, 0)
+    }
+
+    func testCancelledFullscreenHandoffCannotStartMultiviewBeforeItsNewHostIsPresented() async throws {
+        let fixture = try await makeFixture()
+        defer { fixture.close() }
+        var completions = 0
+        let handoff = try XCTUnwrap(VideoPresentationHandoff(engine: fixture.model.engine) {
+            completions += 1
+        })
+        let nextHost = VideoPresentationView(frame: fixture.window.bounds)
+        nextHost.attach(fixture.model.engine, deferringOffscreenAttachment: true)
+        fixture.window.addSubview(nextHost)
+        nextHost.layoutIfNeeded()
+        handoff.cancel()
+        try await Task.sleep(for: .milliseconds(20))
+        XCTAssertEqual(completions, 0)
+        XCTAssertNil(handoff.superview)
+        XCTAssertNil(fixture.model.engine.output.superview)
+        XCTAssertEqual(fixture.model.engine.stops, 0)
+    }
+
+    func testDeclinedMultiviewRestoresTheInlineRendererWithoutRestartingIt() async throws {
+        let fixture = try await makeFixture()
+        defer { fixture.close() }
+        let output = fixture.model.engine.output
+        let originalHost = output.superview
+        let originalFrame = output.frame
+        var completions = 0
+        let handoff = try XCTUnwrap(VideoPresentationHandoff(engine: fixture.model.engine) {
+            completions += 1
+        })
+        handoff.cancel(restoringOutput: true)
+        try await Task.sleep(for: .milliseconds(20))
+        XCTAssertEqual(completions, 0)
+        XCTAssertTrue(output.superview === originalHost)
+        XCTAssertEqual(output.frame, originalFrame)
+        XCTAssertTrue(output.window === fixture.window)
+        XCTAssertNil(handoff.superview)
+        XCTAssertEqual(fixture.model.engine.stops, 0)
+    }
+
     func testEnteringWindowClaimsOutputFromAnotherOffscreenLabel() async throws {
         let fixture = try await makeFixture()
         defer { fixture.close() }

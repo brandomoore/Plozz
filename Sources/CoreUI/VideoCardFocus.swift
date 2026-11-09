@@ -65,8 +65,10 @@ private struct VideoCardFocusModifier: ViewModifier {
         #if os(tvOS)
         if let configuration {
             VideoCardSurface(configuration: configuration, content: content)
+                .transition(.identity)
         } else {
             content
+                .transition(.identity)
         }
         #else
         content
@@ -143,11 +145,13 @@ private struct VideoCardButtonStyle: PrimitiveButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         if presentsEffect {
             Button(configuration).buttonStyle(.card)
+                .transition(.identity)
         } else {
             configuration.label
                 .focusable()
                 .focusEffectDisabled()
                 .onTapGesture(perform: configuration.trigger)
+                .transition(.identity)
         }
     }
 }
