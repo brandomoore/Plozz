@@ -902,6 +902,20 @@ public struct HomeView: View {
                 navigationActivity: navigationActivity
             )
         )
+        .contentRefreshSurface(
+            id: ContentRefreshSurfaceID(kind: .home),
+            isVisible: heroIsFrontmost
+        ) { request in
+            switch request.action {
+            case .reloadHome:
+                await viewModel.loadIfNeeded(
+                    for: visibility.visibility,
+                    trigger: request.reason.diagnosticTrigger
+                )
+            case .reloadSeriesContext, .refreshWatchStateOnly, .reloadDetail, .none:
+                break
+            }
+        }
         .onReceive(NotificationCenter.default.publisher(for: .identityIndexDidUpdate)) { _ in
             // The cross-server index warmed further; re-fold the fuller source set
             // into the loaded cards in place so a title that cold-loaded before its
@@ -2284,22 +2298,14 @@ struct HomeShareScanRefreshObserver: View {
     /// fan-out a second time (measured at 11s of duplicated network and CPU).
     @State private var hasChangeBaseline = false
 
-    /// Whether the app has actually been backgrounded.
-    ///
-    /// `scenePhase` reaches `.active` during launch too, so refreshing on every
-    /// arrival at `.active` reloaded Home moments after it had loaded. Only a
-    /// genuine return from background is the "expected reshuffle" moment.
-    @State private var hasBeenBackgrounded = false
-    @State private var hasPendingForegroundRefresh = false
     @State private var nextPollAt: ContinuousClock.Instant?
 
-    /// Show a pending change once nothing is in the way. Called both when a change
-    /// arrives and on every poll tick, so a viewer who is mid-browse when new
-    /// content lands still sees it as soon as they stop.
+    /// Show a pending share change once nothing is in the way. Foreground and
+    /// surface-return refreshes belong to `ContentRefreshCoordinator`; this
+    /// observer only reports changes the share scanner actually found.
     private func refreshIfSafe() {
         guard isFrontmost, scenePhase == .active else { return }
-        guard hasPendingForegroundRefresh || (hasPendingChange && isSafeToRefresh) else { return }
-        hasPendingForegroundRefresh = false
+        guard hasPendingChange && isSafeToRefresh else { return }
         hasPendingChange = false
         onRefresh()
     }
@@ -2351,18 +2357,10 @@ struct HomeShareScanRefreshObserver: View {
                 refreshIfSafe()
             }
             .onChange(of: scenePhase) { _, phase in
-                // Returning from background is the one moment a visible reshuffle
-                // is expected rather than jarring, and the most likely time for
-                // something to have arrived. Launch also passes through `.active`,
-                // and refreshing there just re-runs the load that is already in
-                // flight.
-                if phase == .background || phase == .inactive {
-                    hasBeenBackgrounded = true
-                } else if phase == .active, hasBeenBackgrounded {
-                    hasBeenBackgrounded = false
-                    hasPendingForegroundRefresh = true
-                    refreshIfSafe()
-                }
+                // Share changes can land while the app is inactive. This only
+                // flushes that pending catalog work; foreground content refresh
+                // belongs to ContentRefreshCoordinator.
+                if phase == .active { refreshIfSafe() }
             }
             .onChange(of: isFrontmost) { _, frontmost in
                 if frontmost { refreshIfSafe() }

@@ -52,6 +52,10 @@ struct SeriesDetailView: View {
     /// Which season's episodes the rail is currently showing. Driven by season
     /// tab focus; seeded to the "next up" season on first appearance.
     @State private var selectedSeasonID: String?
+    /// Set only when the viewer (or the opening route) deliberately chose a
+    /// season. Focus entering the browser is not a season choice, so a return
+    /// refresh may still re-resolve the server's current resume season.
+    @State private var hasExplicitSeasonSelection: Bool
     /// The browser's resting selection resolves Play, not the header's subject.
     @State private var heroItem: MediaItem
     @State private var hasEditedSeasonWatchState = false
@@ -207,6 +211,9 @@ struct SeriesDetailView: View {
         let seasonID = initialEpisode?.seasonID ?? initialSeasonID
         let initialSeason = seasonID.flatMap { id in seasons.first { $0.id == id } }
         _selectedSeasonID = State(initialValue: initialSeason?.id)
+        _hasExplicitSeasonSelection = State(
+            initialValue: initialSeasonID != nil || initialEpisode != nil
+        )
         _heroItem = State(initialValue:
             SeriesEpisodeEntry.openingSeed(
                 for: series, initialEpisode: initialEpisode,
@@ -787,7 +794,7 @@ struct SeriesDetailView: View {
             seasons: seasons,
             episodes: stampedLooseEpisodes,
             selectedSeasonID: selectedSeasonID,
-            preserveSelection: hasUserDirectedFocus,
+            preserveSelection: hasExplicitSeasonSelection,
             initialSeasonID: initialSeasonID,
             initialEpisode: initialEpisode,
             resumeEpisode: viewModel.serverResumeEpisode
@@ -1085,6 +1092,7 @@ struct SeriesDetailView: View {
     /// Selects `season`: marks it active and kicks off (cached) episode loading
     /// so the rail and Play target are ready as focus settles on the tab.
     private func select(_ season: MediaItem) {
+        hasExplicitSeasonSelection = true
         selectedSeasonID = season.id
         Task {
             await viewModel.loadEpisodes(for: season.id)

@@ -18,6 +18,23 @@ an empty provider feed from local curation without recording media or account ID
 Home rows, item detail, series/season experience, and the online-trailer
 fallback when the user's server has no attached trailer.
 
+## Foreground and return refresh
+
+Home, series detail, and episode detail register a visible surface with
+`ContentRefreshCoordinator`. Platform timing and action choice live in
+`ContentRefreshProfile`; views only perform the typed action they receive.
+
+The top surface is the only one refreshed. Home refreshes silently when the
+existing Continue Watching policy says it is stale. A series return re-fetches
+the item, seasons, and server resume episode so the page can move to the current
+season/episode; an explicit season choice is preserved. An episode return updates
+only the loaded item's watch state — it does not reload children, change seasons,
+or navigate. The parent series page refreshes when it is revealed again.
+
+App activation is delivered by `ContentRefreshLifecycleReader` rather than a
+view-local `scenePhase` check, so suspend/resume and a long-idle return to Home
+use the same path. See [state management](../../docs/state-management.md).
+
 ## Related loading
 
 Library-only Related rows use the active profile's identity index to locate a
