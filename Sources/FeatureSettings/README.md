@@ -441,9 +441,9 @@ carry those headers. Explicit unknown versions are not replaced with a default.
 WebDAV files can use anonymous or password-authenticated HTTP(S) delivery with
 system TLS trust. Native Player, Infuse and VLC receive the configured share
 username and password in an ephemeral playback URL, including matching SRT
-sidecars. Passwords containing a colon or requiring URL escapes stay in Plozz
-for Infuse and Native Player, whose playback-link handlers reject those
-credentials; VLC handles escaped passwords. Custom player templates never
+sidecars. Passwords containing a colon or requiring URL escapes cannot use
+direct links in the tested Infuse and Native Player versions; VLC handles
+escaped passwords. Custom player templates never
 receive share passwords. The transport
 revalidates the selected file's identity and size and proves bounded range access
 before handing off. Server redirects to independently readable HTTPS delivery
@@ -454,8 +454,18 @@ validator and size before sending it without share credentials. A pinned DAV
 connection can also resolve a separate, system-trusted HTTPS delivery server;
 the pin is still enforced on the DAV connection and is never dropped on a
 direct handoff to that origin.
-Media that still requires bearer/custom headers, Digest-only policy or a
-certificate pin remains internal, as do disc folders and other share transports.
+When direct WebDAV handoff is unsupported, iOS/iPadOS 26 can instead serve the
+exact selected file and matching SRTs through an app-owned loopback endpoint.
+This keeps password/bearer authentication, Digest-only policy and certificate
+pins inside the existing transport. It requires actual admission of a
+`BGContinuedProcessingTask` before opening the player; a denied or delayed grant
+keeps playback in Plozz. The system activity reports unique file bytes served,
+not watched progress. Cancellation/expiration stops the endpoint, and the next
+return to Plozz presents any execution-expiration error. No server setup,
+duplicate library configuration, downloaded-video export or background-audio
+keepalive is involved. This fallback is unavailable on tvOS and older iOS;
+those platforms retain direct handoff or built-in playback. Disc folders and
+other share transports remain internal.
 WebDAV cannot satisfy
 conversion requests or reduced streaming-quality limits. Matching SRT sidecars
 use the same player-specific authentication policy, without copying local
@@ -479,9 +489,10 @@ On iPhone/iPad, downloaded movies and episodes play inside Plozz. Downloads
 menus do not export files to other apps, regardless of the external-player
 preference. External playback remains available for supported online sources.
 
-External playback requires independently accessible HTTP(S) media: original
-files, remote HLS, and server remux/transcode streams are eligible. App-local
-proxies, downloaded files, share connections requiring app-owned authentication
+Direct external playback requires independently accessible HTTP(S) media: original
+files, remote HLS, and server remux/transcode streams are eligible. Except for
+the explicitly admitted WebDAV file endpoint above, app-local proxies,
+downloaded files, share connections requiring app-owned authentication
 or trust, and separate audio streams
 remain internal. DASH can open in VLC; other players retain the built-in fallback.
 Mobile quality limits and forced conversion are negotiated through the same

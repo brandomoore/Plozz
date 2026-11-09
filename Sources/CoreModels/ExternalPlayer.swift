@@ -1,15 +1,27 @@
 import Foundation
 
-/// Providers can negotiate an independent source and lifecycle for an external
-/// player without reusing an app-local proxy or bypassing streaming limits.
+/// Providers negotiate independent delivery by default. Local file fallback
+/// requires explicit runtime opt-in and must preserve streaming limits.
 public protocol ExternalPlaybackProviding: MediaProvider {
     func externalPlaybackInfo(
         for itemID: String, mediaSourceID: String?, player: ExternalPlayer,
         streaming: StreamingPlaybackOptions?
     ) async throws -> PlaybackRequest
+
+    func externalPlaybackInfo(
+        for itemID: String, mediaSourceID: String?, player: ExternalPlayer,
+        streaming: StreamingPlaybackOptions?, allowLocalRelay: Bool
+    ) async throws -> PlaybackRequest
 }
 
 public extension ExternalPlaybackProviding {
+    func externalPlaybackInfo(
+        for itemID: String, mediaSourceID: String?, player: ExternalPlayer,
+        streaming: StreamingPlaybackOptions?, allowLocalRelay: Bool
+    ) async throws -> PlaybackRequest {
+        try await externalPlaybackInfo(for: itemID, mediaSourceID: mediaSourceID, player: player, streaming: streaming)
+    }
+
     func externalPlaybackInfo(for itemID: String, mediaSourceID: String?) async throws -> PlaybackRequest {
         try await externalPlaybackInfo(for: itemID, mediaSourceID: mediaSourceID, player: .infuse, streaming: nil)
     }
@@ -156,9 +168,19 @@ public enum ExternalPlayerURL {
     public static func make(
         settings: ExternalPlayerSettings, mediaURL: URL, title: String,
         position: TimeInterval, subtitles: [URL] = [], callbackScheme: String, nonce: UUID,
-        allowPassword: Bool = false
+        allowPassword: Bool = false, ownedLocalURLs: Set<URL> = []
     ) throws -> URL {
-        guard isSupportedMediaURL(mediaURL, player: settings.player, allowPassword: allowPassword),
+        func supported(_ url: URL) -> Bool {
+            if ownedLocalURLs.contains(url), settings.player != .custom,
+               let parts = URLComponents(url: url, resolvingAgainstBaseURL: false),
+               parts.scheme == "http", parts.host == "127.0.0.1",
+               let port = parts.port, (1...65535).contains(port),
+               parts.user == nil, parts.password == nil, parts.query == nil, parts.fragment == nil {
+                return true
+            }
+            return isSupportedMediaURL(url, player: settings.player, allowPassword: allowPassword)
+        }
+        guard supported(mediaURL),
               position.isFinite, position >= 0,
               position < Double(Int.max) else { throw ExternalPlayerError.unsupportedSource }
         if settings.player == .custom {
@@ -191,7 +213,7 @@ public enum ExternalPlayerURL {
             }
         }
         let supportedSubtitles = subtitles.filter {
-            isSupportedMediaURL($0, player: settings.player, allowPassword: allowPassword)
+            supported($0)
         }
         for url in supportedSubtitles.prefix(settings.player == .vlc ? 1 : 8) {
             query.append(URLQueryItem(name: "sub", value: url.absoluteString))

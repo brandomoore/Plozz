@@ -703,6 +703,15 @@ public struct ShareProvider: MediaLibraryQueryProviding, MediaFileBrowsing, Exte
         for itemID: String, mediaSourceID: String?, player: ExternalPlayer,
         streaming: StreamingPlaybackOptions?
     ) async throws -> PlaybackRequest {
+        try await externalPlaybackInfo(
+            for: itemID, mediaSourceID: mediaSourceID, player: player, streaming: streaming, allowLocalRelay: false
+        )
+    }
+
+    public func externalPlaybackInfo(
+        for itemID: String, mediaSourceID: String?, player: ExternalPlayer,
+        streaming: StreamingPlaybackOptions?, allowLocalRelay: Bool
+    ) async throws -> PlaybackRequest {
         try streaming?.quality.validate()
         guard ["http", "https"].contains(session.server.baseURL.scheme?.lowercased() ?? ""),
               streaming?.requiresConversionPolicy != true else {
@@ -712,11 +721,14 @@ public struct ShareProvider: MediaLibraryQueryProviding, MediaFileBrowsing, Exte
             guard !mediaSourceID.isEmpty else { throw ExternalPlayerError.unsupportedSource }
             _ = try await playbackPreparationLocator(for: itemID, mediaSourceID: mediaSourceID)
         }
-        return try await preparePlaybackInfo(for: itemID, mediaSourceID: mediaSourceID, externalPlayer: player)
+        return try await preparePlaybackInfo(
+            for: itemID, mediaSourceID: mediaSourceID, externalPlayer: player,
+            allowLocalRelay: allowLocalRelay && player != .custom
+        )
     }
 
     private func preparePlaybackInfo(
-        for itemID: String, mediaSourceID: String?, externalPlayer: ExternalPlayer?
+        for itemID: String, mediaSourceID: String?, externalPlayer: ExternalPlayer?, allowLocalRelay: Bool = false
     ) async throws -> PlaybackRequest {
         let started = Date()
         let requestID = UUID().uuidString
@@ -728,6 +740,7 @@ public struct ShareProvider: MediaLibraryQueryProviding, MediaFileBrowsing, Exte
         do {
             let request = try await resolvePlaybackInfo(
                 for: itemID, mediaSourceID: mediaSourceID, externalPlayer: externalPlayer,
+                allowLocalRelay: allowLocalRelay,
                 onStage: {
                     stage = $0
                     HandoffDiagnostics.emit("\(context) stage=\(stage) event=start")
@@ -749,6 +762,7 @@ public struct ShareProvider: MediaLibraryQueryProviding, MediaFileBrowsing, Exte
 
     private func resolvePlaybackInfo(
         for itemID: String, mediaSourceID: String?, externalPlayer: ExternalPlayer?,
+        allowLocalRelay: Bool,
         onStage: (String) -> Void
     ) async throws -> PlaybackRequest {
         let isPersonalVideos = libraryConfiguration?.contentType == .personalVideos
@@ -819,11 +833,17 @@ public struct ShareProvider: MediaLibraryQueryProviding, MediaFileBrowsing, Exte
         let externalURL: URL?
         if let externalPlayer {
             onStage("external")
-            let url = try await store.externalPlaybackURL(for: locator, player: externalPlayer)
-            guard ExternalPlayerURL.isSupportedMediaURL(url, player: externalPlayer, allowPassword: true) else {
-                throw ExternalPlayerError.unsupportedSource
+            do {
+                let url = try await store.externalPlaybackURL(for: locator, player: externalPlayer)
+                guard ExternalPlayerURL.isSupportedMediaURL(url, player: externalPlayer, allowPassword: true) else {
+                    throw ExternalPlayerError.unsupportedSource
+                }
+                externalURL = url
+            } catch MediaTransportError.unsupportedCapability where allowLocalRelay {
+                try Task.checkCancellation()
+                PlozzLog.playback.info("share.external using an app-owned source for unsupported direct authentication")
+                externalURL = nil
             }
-            externalURL = url
         } else {
             externalURL = nil
         }
@@ -911,6 +931,11 @@ public struct ShareProvider: MediaLibraryQueryProviding, MediaFileBrowsing, Exte
                     directoryEntries: opening.directoryEntries, player: externalPlayer
                 )
             }
+        } else if let externalPlayer, allowLocalRelay {
+            request.externalSubtitleLocators = try await playbackSource.externalSubtitleLocators(
+                forVideoRelPath: relPath, exactStemOnly: isExtra,
+                directoryEntries: opening.directoryEntries, player: externalPlayer
+            )
         }
         return request
     }

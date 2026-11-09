@@ -1,11 +1,128 @@
 import CoreModels
 import CoreNetworking
+import MediaTransportCore
 import TraktService
 import XCTest
 @testable import AppRuntime
 
 @MainActor
 final class ExternalPlaybackRuntimeTests: XCTestCase {
+    func testOwnedRelayOpensExactFileAndCallbackRevokesItWithoutPersistingCapability() async throws {
+        let fixture = ExternalPlaybackFixture()
+        defer { fixture.cleanup() }
+        let resolver = try fixture.enableLocalRelay()
+        let opened = try await fixture.launch()
+        XCTAssertTrue(opened)
+        let link = try XCTUnwrap(fixture.opened.last)
+        let query = try XCTUnwrap(URLComponents(url: link, resolvingAgainstBaseURL: false)?.queryItems)
+        let media = try XCTUnwrap(query.first { $0.name == "url" }?.value.flatMap(URL.init(string:)))
+        XCTAssertEqual(media.host, "127.0.0.1")
+        let (bytes, _) = try await URLSession.shared.data(from: media)
+        XCTAssertEqual(bytes, Data(repeating: 42, count: 1000))
+        let persisted = String(decoding: try XCTUnwrap(
+            fixture.defaults.data(forKey: "com.plozz.externalPlaybackReceipt")
+        ), as: UTF8.self)
+        XCTAssertFalse(persisted.contains(media.path))
+        XCTAssertFalse(persisted.contains("127.0.0.1"))
+        fixture.runtime.receive(try fixture.callback(position: "140", playedURL: media))
+        await resolver.source.waitForShutdown()
+        XCTAssertEqual(fixture.execution.completions, [true])
+        let resolved = await resolver.resolved
+        XCTAssertEqual(resolved.map(\.relativePath), ["movie.mkv"])
+    }
+
+    func testRelayAdmissionFailureNeverOpensAnotherAppAndDrainsSource() async throws {
+        let fixture = ExternalPlaybackFixture()
+        defer { fixture.cleanup() }
+        let resolver = try fixture.enableLocalRelay()
+        fixture.runtime.acquireRelayExecution = { _, _, _ in throw ExternalPlayerError.unavailable }
+        let opened = try await fixture.launch()
+        XCTAssertFalse(opened)
+        XCTAssertTrue(fixture.opened.isEmpty)
+        await resolver.source.waitForShutdown()
+    }
+
+    func testTerminalRelayReadFailureEndsBackgroundExecutionAndSurfacesFailure() async throws {
+        let fixture = ExternalPlaybackFixture()
+        defer { fixture.cleanup() }
+        let resolver = try fixture.enableLocalRelay()
+        let opened = try await fixture.launch()
+        XCTAssertTrue(opened)
+        await resolver.source.fail(.trust(reason: "test"))
+        let link = try XCTUnwrap(fixture.opened.last)
+        let query = try XCTUnwrap(URLComponents(url: link, resolvingAgainstBaseURL: false)?.queryItems)
+        let media = try XCTUnwrap(query.first { $0.name == "url" }?.value.flatMap(URL.init(string:)))
+        do {
+            let (_, response) = try await URLSession.shared.data(from: media)
+            XCTAssertNotEqual((response as? HTTPURLResponse)?.statusCode, 200)
+        } catch {}
+        await resolver.source.waitForShutdown()
+        XCTAssertEqual(fixture.execution.completions, [false])
+        XCTAssertEqual(fixture.runtime.error, .playbackFailed)
+    }
+
+    func testRelayStopsOnExpirationContextChangeNewIntentAndForegroundReturn() async throws {
+        for mode in 0..<4 {
+            let fixture = ExternalPlaybackFixture()
+            defer { fixture.cleanup() }
+            let resolver = try fixture.enableLocalRelay()
+            let opened = try await fixture.launch()
+            XCTAssertTrue(opened)
+            switch mode {
+            case 0:
+                fixture.execution.expire()
+                XCTAssertEqual(fixture.runtime.error, .playbackFailed)
+            case 1:
+                fixture.profileID = "another-profile"
+                fixture.runtime.updateRelayContext(fixture.context, isActive: false, isBackground: true)
+            case 2: fixture.runtime.beginPlaybackIntent(context: fixture.context)
+            default:
+                fixture.runtime.updateRelayContext(fixture.context, isActive: false, isBackground: true)
+                fixture.runtime.updateRelayContext(fixture.context, isActive: true, isBackground: false)
+            }
+            await resolver.source.waitForShutdown()
+            XCTAssertFalse(fixture.execution.isValid)
+        }
+    }
+
+    func testRelayOpenFailureAndOwnershipChangeDuringAdmissionReleaseGrant() async throws {
+        for changeOwner in [false, true] {
+            let fixture = ExternalPlaybackFixture()
+            defer { fixture.cleanup() }
+            let resolver = try fixture.enableLocalRelay()
+            fixture.openSucceeds = false
+            if changeOwner {
+                fixture.runtime.acquireRelayExecution = { _, _, _ in
+                    fixture.profileID = "another"
+                    return fixture.execution
+                }
+            }
+            do {
+                let opened = try await fixture.launch()
+                XCTAssertFalse(opened)
+                XCTAssertFalse(changeOwner)
+            } catch is CancellationError { XCTAssertTrue(changeOwner) }
+            await resolver.source.waitForShutdown()
+            XCTAssertEqual(fixture.execution.completions, [false])
+            XCTAssertNil(fixture.runtime.receipt)
+        }
+    }
+
+    func testNoRelayAdmissionOnUnsupportedPlatformOrForForeignCredentials() async throws {
+        for wrongRevision in [false, true] {
+            let fixture = ExternalPlaybackFixture()
+            defer { fixture.cleanup() }
+            let resolver = try fixture.enableLocalRelay()
+            if wrongRevision { fixture.account.credentialRevision = CredentialRevision() }
+            else { fixture.runtime.relayAvailable = false }
+            let opened = try await fixture.launch()
+            XCTAssertFalse(opened)
+            let resolved = await resolver.resolved
+            XCTAssertTrue(resolved.isEmpty)
+            XCTAssertTrue(fixture.opened.isEmpty)
+        }
+    }
+
     func testOnePlayOverrideDoesNotChangeTheDefault() async throws {
         let fixture = ExternalPlaybackFixture()
         defer { fixture.cleanup() }
@@ -924,6 +1041,26 @@ private final class ExternalPlaybackFixture {
     var beforeOpen: (@MainActor () -> Void)?
     var beforeItem: (@MainActor () -> Void)?
     var offlineResolver: (any OfflinePlaybackResolving)?
+    var networkFileResolver: (any MediaTransportNetworkFileResolving)?
+    let execution = TestExternalExecution()
+
+    func enableLocalRelay() throws -> ExternalRelayTestResolver {
+        kind = .mediaShare
+        let resolver = ExternalRelayTestResolver()
+        networkFileResolver = resolver
+        request.sourceProvider = .mediaShare
+        request.streamURL = nil
+        request.playbackSource = .networkFile(try NetworkFileLocator(
+            accountID: account.id, sourceID: "source", credentialRevision: account.credentialRevision,
+            relativePath: "movie.mkv",
+            representation: .init(
+                size: 1000, identity: .init(kind: .strongETag, value: "\"file\""), consistency: .stronglyBound
+            )
+        ))
+        runtime.relayAvailable = true
+        runtime.acquireRelayExecution = { [unowned self] _, _, _ in execution }
+        return resolver
+    }
     var item = MediaItem(
         id: "movie", title: "Fixture movie", kind: .movie, runtime: 600,
         sourceAccountID: "account", selectedVersionID: "version-one"
@@ -943,7 +1080,7 @@ private final class ExternalPlaybackFixture {
             profileID: profileID, authorizationID: "authorization", accounts: [
                 ResolvedAccount(account: account, provider: ExternalPlaybackProvider(session: session, fixture: self))
             ], isAuthorized: authorized, resolver: ExternalPlaybackResolver(url: media),
-            offlineResolver: offlineResolver
+            offlineResolver: offlineResolver, networkFileResolver: networkFileResolver
         )
     }
     func launch() async throws -> Bool {
@@ -965,7 +1102,10 @@ private final class ExternalPlaybackFixture {
         if let progress { components.queryItems?.append(.init(name: "progress", value: progress)) }
         return try XCTUnwrap(components.url)
     }
-    func cleanup() { defaults.removePersistentDomain(forName: suite) }
+    func cleanup() {
+        runtime.beginPlaybackIntent(context: context)
+        defaults.removePersistentDomain(forName: suite)
+    }
 }
 
 private struct ExternalPlaybackResolver: AuthenticatedHTTPResourceResolving {

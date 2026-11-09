@@ -378,6 +378,27 @@ struct SharePlaybackSourceService: Sendable {
         return urls
     }
 
+    func externalSubtitleLocators(
+        forVideoRelPath relPath: String, exactStemOnly: Bool,
+        directoryEntries: [RemoteFileEntry]?, player: ExternalPlayer
+    ) async throws -> [NetworkFileLocator] {
+        let candidates = try await matchingSidecars(
+            forVideoRelPath: relPath, exactStemOnly: exactStemOnly,
+            directoryEntries: directoryEntries, requiresCompleteResult: false
+        ).filter { $0.sidecar.ext == "srt" }.prefix(player == .vlc ? 1 : 8)
+        var locators: [NetworkFileLocator] = []
+        for candidate in candidates {
+            do {
+                locators.append(try await networkFileLocator(for: candidate.path))
+            } catch {
+                if error is CancellationError || (error as? MediaTransportError) == .cancelled { throw error }
+                try Task.checkCancellation()
+                PlozzLog.playback.error("share.sidecars external subtitle identity unavailable")
+            }
+        }
+        return locators
+    }
+
     func discoverSidecarSubtitles(
         forVideoRelPath relPath: String,
         exactStemOnly: Bool,

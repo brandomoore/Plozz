@@ -422,6 +422,65 @@ final class ShareProviderLocatorTests: XCTestCase {
         } catch { XCTAssertEqual(error as? MediaTransportError, .unsupportedCapability("external playback")) }
     }
 
+    func testAdmittedLocalHandoffPreservesExactLocatorAndSRTWithoutCopyingFiles() async throws {
+        let entry = try RemoteFileEntry(relativePath: "movie.mkv", kind: .file, size: 4096, strongETag: "\"video\"")
+        let subtitle = try RemoteFileEntry(relativePath: "movie.en.srt", kind: .file, size: 80, strongETag: "\"sub\"")
+        let files = LocatorFakeFileSystem(
+            statEntry: entry, listedEntries: [entry, subtitle], openingEntries: [subtitle.relativePath: subtitle]
+        )
+        let provider = makeProvider(stat: entry, fileSystem: files)
+        addTeardownBlock { await provider.teardown() }
+        let request = try await provider.externalPlaybackInfo(
+            for: "f:movie.mkv", mediaSourceID: "movie.mkv", player: .infuse, streaming: nil, allowLocalRelay: true
+        )
+        guard case .networkFile(let locator) = request.playbackSource else { return XCTFail("Expected exact typed source") }
+        XCTAssertEqual(locator.relativePath, entry.relativePath)
+        XCTAssertNil(request.streamURL)
+        XCTAssertEqual(request.externalSubtitleLocators.map(\.relativePath), ["movie.en.srt"])
+        XCTAssertTrue(request.subtitleTracks.isEmpty)
+        let reads = await files.fileReads
+        XCTAssertEqual(reads, 0)
+    }
+
+    func testLocalHandoffOptInCannotHideFailuresOrOverrideDirectDelivery() async throws {
+        let entry = try RemoteFileEntry(relativePath: "movie.mkv", kind: .file, size: 4096, strongETag: "\"video\"")
+        for error in [MediaTransportError.permissionDenied, .authentication(reason: "test"), .sourceChanged(reason: "test")] {
+            let files = LocatorFakeFileSystem(statEntry: entry, externalError: error)
+            let provider = makeProvider(stat: entry, fileSystem: files)
+            addTeardownBlock { await provider.teardown() }
+            do {
+                _ = try await provider.externalPlaybackInfo(
+                    for: "f:movie.mkv", mediaSourceID: nil, player: .infuse, streaming: nil, allowLocalRelay: true
+                )
+                XCTFail("Do not turn upstream failure into another successful source")
+            } catch let actual as MediaTransportError { XCTAssertEqual(actual, error) }
+        }
+        let url = URL(string: "https://delivery.example.com/movie.mkv")!
+        let files = LocatorFakeFileSystem(statEntry: entry, externalURL: url)
+        let provider = makeProvider(stat: entry, fileSystem: files)
+        addTeardownBlock { await provider.teardown() }
+        let direct = try await provider.externalPlaybackInfo(
+            for: "f:movie.mkv", mediaSourceID: nil, player: .infuse, streaming: nil, allowLocalRelay: true
+        )
+        XCTAssertEqual(direct.streamURL, url)
+        XCTAssertNil(direct.playbackSource)
+    }
+
+    func testLocalHandoffStillRejectsCustomPlayersAndRequiredConversion() async throws {
+        let entry = try RemoteFileEntry(relativePath: "movie.mkv", kind: .file, size: 4096, strongETag: "\"video\"")
+        let provider = makeProvider(stat: entry)
+        addTeardownBlock { await provider.teardown() }
+        for player in [ExternalPlayer.custom, .infuse] {
+            do {
+                _ = try await provider.externalPlaybackInfo(
+                    for: "f:movie.mkv", mediaSourceID: nil, player: player,
+                    streaming: player == .infuse ? .init(quality: .hd720) : nil, allowLocalRelay: true
+                )
+                XCTFail("Must preserve player and conversion policy")
+            } catch { XCTAssertTrue(error is ExternalPlayerError || error is MediaTransportError) }
+        }
+    }
+
     private func makeProvider(
         stat: RemoteFileEntry,
         streamProber: NetworkFileStreamProbing? = nil,
@@ -980,13 +1039,16 @@ private actor LocatorFakeFileSystem: MediaTransportExternalPlaybackFileSystem {
     private(set) var externalPaths: [String] = []
     private(set) var externalPlayers: [ExternalPlayer] = []
     private let externalURL: URL?
+    private let externalError: MediaTransportError?
+    private let openingEntries: [String: RemoteFileEntry]
 
     init(
         statEntry: RemoteFileEntry, openingEntry: RemoteFileEntry? = nil,
         listedEntries: [RemoteFileEntry] = [], listingError: MediaTransportError? = nil,
         fileContents: Data = Data(), directoryTree: [String: [RemoteFileEntry]]? = nil,
         deniedDirectories: Set<String> = [],
-        externalURL: URL? = nil
+        externalURL: URL? = nil, externalError: MediaTransportError? = nil,
+        openingEntries: [String: RemoteFileEntry] = [:]
     ) {
         self.statEntry = statEntry
         self.openingEntry = openingEntry
@@ -996,6 +1058,8 @@ private actor LocatorFakeFileSystem: MediaTransportExternalPlaybackFileSystem {
         self.directoryTree = directoryTree
         self.deniedDirectories = deniedDirectories
         self.externalURL = externalURL
+        self.externalError = externalError
+        self.openingEntries = openingEntries
     }
 
     func replaceStat(_ entry: RemoteFileEntry) { statEntry = entry }
@@ -1006,6 +1070,7 @@ private actor LocatorFakeFileSystem: MediaTransportExternalPlaybackFileSystem {
     func externalPlaybackURL(for locator: NetworkFileLocator, player: ExternalPlayer) async throws -> URL {
         externalPaths.append(locator.relativePath)
         externalPlayers.append(player)
+        if let externalError { throw externalError }
         guard let externalURL else { throw MediaTransportError.unsupportedCapability("external playback") }
         return externalURL
     }
@@ -1036,7 +1101,7 @@ private actor LocatorFakeFileSystem: MediaTransportExternalPlaybackFileSystem {
 
     func statForOpening(relativePath: String) async throws -> RemoteFileEntry {
         openingCalls += 1
-        return openingEntry ?? statEntry
+        return openingEntries[relativePath] ?? openingEntry ?? statEntry
     }
 
     func readSmallFile(relativePath: String, maximumBytes: Int) async throws -> Data {

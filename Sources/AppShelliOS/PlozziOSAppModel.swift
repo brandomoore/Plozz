@@ -2051,7 +2051,8 @@ final class PlozziOSAppModel {
             accounts: accountsProviders.resolvedActiveAccounts,
             isAuthorized: isActiveProfileAuthorized,
             resolver: authenticatedHTTPResolver,
-            offlineResolver: downloads.offlineResolver
+            offlineResolver: downloads.offlineResolver,
+            networkFileResolver: mediaShareRuntime.networkFileResolver
         )
     }
 
