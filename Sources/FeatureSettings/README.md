@@ -7,11 +7,16 @@ system green appearance instead of inheriting the page's monochrome navigation t
 
 The Settings screen and its detail pages. Profile-aware and integration-aware.
 
-On mobile beta builds, Screens & Navigation → Music player exposes the existing
+On mobile, Appearance starts with the shared visual theme cards, Gradient
+Backgrounds and Liquid Glass. Cards, Artwork and Circadian Mode form a separate
+group below. Theme search results open Appearance directly.
+
+On mobile beta builds, Appearance → Music player sits beneath the theme controls
+in the same group and exposes the existing
 per-profile Appearance preference: Dark, Pure Black, Light, and Match Theme.
 The native picker updates the active player's settings model directly, without
 changing the app theme or music browsing pages. Settings search reaches the same
-control; production mobile builds hide both entry points. The TV-only track
+control; production mobile builds hide the page and its search entry. The TV-only track
 details toggle is not offered on mobile.
 
 Disc playback lives in a dedicated Discs section near the bottom of Playback,
@@ -739,12 +744,12 @@ watch history and planning-list behavior are documented in
   Appearance, Screens & Navigation, Trackers, Language. Compact mobile windows
   use native push navigation; regular-width windows use a sidebar and detail stack.
   Both mobile layouts share their category section and destinations. Appearance
-  groups Theme, Cards, Artwork, and Circadian Mode; Display
+  starts with inline theme previews and controls, followed by Music player on beta
+  builds. Cards, Artwork, and Circadian Mode form the next group; Display
   Size is last inside Cards. Screens & Navigation groups App navigation,
-  All screens, Home, Libraries, and Movie & show details; Music player remains TV-only because mobile does
-  not implement those presentation choices. Mobile navigation editing includes
-  every enabled video library from the shared discovery inventory; Music remains
-  TV-only. Refreshing Libraries updates the available shortcuts
+  All screens, Home, Libraries, and Movie & show details. Mobile navigation editing includes
+  every enabled video library from the shared discovery inventory and Music on beta
+  builds when a music library is available. Refreshing Libraries updates the available shortcuts
   without resetting saved hide/order choices.
   Home, Downloads, and Search are the iPhone/iPad defaults, even before content
   discovery. Watchlist, Live TV, Settings, All Libraries, and individual libraries

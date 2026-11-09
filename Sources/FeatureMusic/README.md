@@ -121,7 +121,7 @@ control spacing or hit regions.
 Both dock sizes reuse the expanded player's scaling play/pause transition and
 press feedback. Play/pause retains its press scaling and haptics without a
 circular background highlight, in both the docks and expanded player.
-Mobile player appearance is configured under Settings → Screens & Navigation →
+Mobile player appearance is configured under Settings → Appearance →
 Music player. Explicit choices override the app theme; Match Theme resolves the
 active palette, including Pure Black and system/circadian light or dark changes.
 The collapsed dock always inherits the app's color scheme and native regular

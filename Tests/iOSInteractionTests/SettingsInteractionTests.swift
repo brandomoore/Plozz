@@ -1035,7 +1035,7 @@ final class SettingsInteractionTests: XCTestCase {
         for title in ["Appearance", "Screens & Navigation"] {
             openSettingsPage(title)
             let children = title == "Appearance"
-                ? ["Theme", "Cards", "Artwork", "Circadian Mode"]
+                ? ["Music player", "Cards", "Artwork", "Circadian Mode"]
                 : ["Spoiler Protection", "Customize Home", "Customize Libraries", "App navigation", "Detail Page"]
             for child in children {
                 let row = button(child)
@@ -1466,28 +1466,33 @@ final class SettingsInteractionTests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Appearance"].waitForExistence(timeout: 5))
     }
 
-    func testThemeMenusAndToggleKeepSeparateActions() {
+    func testThemeCardsMenusAndMusicLinkKeepSeparateActions() {
         launch()
-        app.buttons["appearance-theme"].tap()
-        XCTAssertTrue(app.navigationBars["Theme"].waitForExistence(timeout: 5))
-        let appearance = app.collectionViews.buttons.matching(NSPredicate(
-            format: "label == %@ OR label BEGINSWITH %@", "Appearance", "Appearance,"
-        )).firstMatch
-        appearance.tap()
-        XCTAssertTrue(app.buttons["Light"].waitForExistence(timeout: 3), app.debugDescription)
-        app.buttons["Light"].tap()
-        XCTAssertTrue(appearance.staticTexts["Light"].exists)
+        XCTAssertTrue(app.navigationBars["Appearance"].waitForExistence(timeout: 5))
+        let light = app.buttons["theme-option-light"]
+        XCTAssertTrue(light.waitForExistence(timeout: 3), app.debugDescription)
+        light.tap()
+        XCTAssertTrue(light.isSelected)
         let gradient = app.switches["Gradient Backgrounds"]
+        reveal(gradient)
         let before = gradient.value as? String
         tapNativeSwitch(gradient)
         XCTAssertNotEqual(gradient.value as? String, before)
-        XCTAssertTrue(appearance.staticTexts["Light"].exists)
+        XCTAssertTrue(light.isSelected)
         let glass = button("Liquid Glass")
+        reveal(glass)
         glass.tap()
-        XCTAssertTrue(app.buttons["System"].waitForExistence(timeout: 3), app.debugDescription)
-        XCTAssertFalse(app.buttons["Light"].exists)
-        app.buttons["System"].tap()
-        XCTAssertTrue(app.navigationBars["Theme"].exists)
+        let systemOption = app.buttons.matching(NSPredicate(
+            format: "label == %@ AND identifier != %@", "System", "theme-option-system"
+        )).firstMatch
+        XCTAssertTrue(systemOption.waitForExistence(timeout: 3), app.debugDescription)
+        systemOption.tap()
+        XCTAssertTrue(app.navigationBars["Appearance"].exists)
+        let music = app.buttons["appearance-musicPlayer"]
+        reveal(music)
+        music.tap()
+        XCTAssertTrue(app.navigationBars["Music player"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["music-player-appearance"].exists)
     }
 
     func testLabelEditsEnterCustomAndPresetsReplaceAllViews() {
@@ -2752,7 +2757,7 @@ final class SettingsInteractionTests: XCTestCase {
         let parent: String? = switch title {
         case "Customize Home", "Customize Libraries", "App navigation", "Detail Page", "Spoiler Protection":
             "Screens & Navigation"
-        case "Theme", "Circadian Mode": "Appearance"
+        case "Music player", "Circadian Mode": "Appearance"
         default: nil
         }
         if let parent {

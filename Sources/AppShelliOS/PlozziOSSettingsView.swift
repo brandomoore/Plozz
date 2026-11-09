@@ -1545,7 +1545,7 @@ private struct PlozziOSSettingsSearchDestination: View {
                 )
             }
         case .theme:
-            PlozziOSThemeSettingsView(theme: appModel.settings.theme, transparency: appModel.settings.transparency)
+            profilePage(.appearance)
         case .cards:
             CardAppearanceControls(
                 cards: appModel.settings.cardStyle, watchIndicator: appModel.settings.watchIndicator,
@@ -2015,11 +2015,11 @@ struct PlozziOSAppearanceSettingsView: View {
     @State private var destination: Page?
 
     private enum Page: String, CaseIterable, Identifiable {
-        case theme, cards, artwork, circadian
+        case musicPlayer, cards, artwork, circadian
         var id: Self { self }
         var title: LocalizedStringResource {
             switch self {
-            case .theme: "Theme"
+            case .musicPlayer: "Music player"
             case .cards: "Cards"
             case .artwork: "Artwork"
             case .circadian: "Circadian Mode"
@@ -2029,8 +2029,29 @@ struct PlozziOSAppearanceSettingsView: View {
 
     var body: some View {
         List {
+            SettingsSectionGroup("Theme") {
+                CompactThemePicker(selection: $theme.theme)
+                    .settingsSearchAnchor("theme")
+                Toggle("Gradient Backgrounds", isOn: $theme.gradientEnabled)
+                    .settingsSearchAnchor("gradient-backgrounds")
+                Picker("Liquid Glass", selection: $transparency.preference) {
+                    ForEach(TransparencyPreference.allCases) { preference in
+                        Text(preference == .system ? "System" : preference.displayName)
+                            .tag(preference)
+                    }
+                }
+                .settingsSearchAnchor("liquid-glass")
+                if appModel.music != nil {
+                    Button { destination = .musicPlayer } label: {
+                        SettingsDisclosureLabel { Text(Page.musicPlayer.title) }
+                    }
+                    .settingsActionRow()
+                    .accessibilityIdentifier("appearance-musicPlayer")
+                }
+            }
+            .settingsSearchGroup(["theme", "gradient-backgrounds", "liquid-glass"])
             SettingsSectionGroup {
-                ForEach(Page.allCases) { page in
+                ForEach([Page.cards, .artwork, .circadian]) { page in
                     Button { destination = page } label: {
                         SettingsDisclosureLabel { Text(page.title) }
                     }
@@ -2043,8 +2064,10 @@ struct PlozziOSAppearanceSettingsView: View {
         .navigationTitle("Appearance")
         .navigationDestination(item: $destination) { page in
             switch page {
-            case .theme:
-                PlozziOSThemeSettingsView(theme: theme, transparency: transparency)
+            case .musicPlayer:
+                if let music = appModel.music {
+                    PlozziOSMusicPlayerSettingsView(model: music.settings)
+                }
             case .cards:
                 CardAppearanceControls(
                     cards: cardStyle, watchIndicator: watchIndicator,
@@ -2096,42 +2119,12 @@ private struct SettingsCategoryNavigationReset<Identity: Equatable>: UIViewContr
     }
 }
 
-private struct PlozziOSThemeSettingsView: View {
-    @Bindable var theme: ThemeSettingsModel
-    @Bindable var transparency: TransparencyPreferenceModel
-
-    var body: some View {
-        List {
-            SettingsSectionGroup {
-                Picker("Appearance", selection: $theme.theme) {
-                    ForEach(AppTheme.allCases) { theme in
-                        Label(theme.displayName, systemImage: theme.symbolName).tag(theme)
-                    }
-                }
-                .settingsSearchAnchor("theme")
-                Toggle("Gradient Backgrounds", isOn: $theme.gradientEnabled)
-                    .settingsSearchAnchor("gradient-backgrounds")
-                Picker("Liquid Glass", selection: $transparency.preference) {
-                    ForEach(TransparencyPreference.allCases) { preference in
-                        Text(preference == .system ? "System" : preference.displayName)
-                            .tag(preference)
-                    }
-                }
-                .settingsSearchAnchor("liquid-glass")
-            }
-            .settingsSearchGroup(["theme", "gradient-backgrounds", "liquid-glass"])
-        }
-        .settingsPageSurface()
-        .navigationTitle("Theme")
-    }
-}
-
 private struct PlozziOSScreensNavigationSettingsView: View {
     let appModel: PlozziOSAppModel
     @State private var destination: Page?
 
     private enum Page: String, CaseIterable, Identifiable {
-        case home, libraries, navigation, detail, allScreens, musicPlayer
+        case home, libraries, navigation, detail, allScreens
         var id: Self { self }
         var title: LocalizedStringResource {
             switch self {
@@ -2140,7 +2133,6 @@ private struct PlozziOSScreensNavigationSettingsView: View {
             case .navigation: "App navigation"
             case .detail: "Movie & show details"
             case .allScreens: "All screens"
-            case .musicPlayer: "Music player"
             }
         }
     }
@@ -2160,7 +2152,7 @@ private struct PlozziOSScreensNavigationSettingsView: View {
                 .accessibilityIdentifier("screens-all-screens")
             }
             SettingsSectionGroup {
-                ForEach([Page.home, .libraries, .detail] + (appModel.music != nil ? [.musicPlayer] : [])) { page in
+                ForEach([Page.home, .libraries, .detail]) { page in
                     Button { destination = page } label: {
                         SettingsDisclosureLabel { Text(page.title) }
                     }
@@ -2205,10 +2197,6 @@ private struct PlozziOSScreensNavigationSettingsView: View {
                     heroBackground: appModel.settings.heroBackground,
                     themeMusic: appModel.settings.themeMusic, detailPage: appModel.settings.detailPage
                 )
-            case .musicPlayer:
-                if let music = appModel.music {
-                    PlozziOSMusicPlayerSettingsView(model: music.settings)
-                }
             }
         }
     }

@@ -27,11 +27,27 @@ final class MusicPlayerAppearanceTests: XCTestCase {
                 XCTAssertTrue(index.results(for: query).contains(appearance), query)
             }
             XCTAssertEqual(appearance.destinationPage(on: platform), .musicPlayer)
+            XCTAssertEqual(
+                appearance.destinationPath(on: platform).map { $0.resolved(locale: Locale(identifier: "en_US")) },
+                ["Appearance", "Music player"]
+            )
             XCTAssertEqual(appearance.anchorID, "music-style")
         }
         let television = SettingsSearchCatalog.entries(on: .television, releaseChannel: .production)
         XCTAssertTrue(television.contains(appearance))
         XCTAssertTrue(television.contains(details))
+        XCTAssertEqual(
+            appearance.destinationPath(on: .television).map { $0.resolved(locale: Locale(identifier: "en_US")) },
+            ["Screens & Navigation", "Music player"]
+        )
+        for id in ["theme", "gradient-backgrounds", "liquid-glass"] {
+            let entry = try XCTUnwrap(SettingsSearchCatalog.entry(id: id))
+            XCTAssertEqual(entry.destinationPage(on: .phone), .theme)
+            XCTAssertEqual(
+                entry.destinationPath(on: .phone).map { $0.resolved(locale: Locale(identifier: "en_US")) },
+                ["Appearance"]
+            )
+        }
     }
 
     func testMatchThemeResolvesActivePaletteAndExplicitChoicesRemainIndependent() {

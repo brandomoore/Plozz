@@ -239,7 +239,11 @@ public struct SettingsSearchEntry: Identifiable, Hashable, Sendable {
     }
 
     public func destinationPath(on platform: Platform) -> [SettingsSearchLabel] {
-        destinationPage(on: platform).path + (subtitlePage == .appearance ? [] : [.localized(subtitlePage.title)])
+        if platform != .television {
+            if page == .theme { return [.localized("Appearance")] }
+            if page == .musicPlayer { return [.localized("Appearance"), .localized("Music player")] }
+        }
+        return destinationPage(on: platform).path + (subtitlePage == .appearance ? [] : [.localized(subtitlePage.title)])
             + (skipKind.map { [.localized($0.settingsTitle)] } ?? [])
             + (qualityNetwork.map { [.localized($0.title)] } ?? [])
     }
