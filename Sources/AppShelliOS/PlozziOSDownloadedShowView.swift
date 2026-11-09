@@ -68,7 +68,7 @@ struct PlozziOSDownloadedShowView: View {
                     }
                 }
                 .background { AppBackground(palette: palette) }
-                .navigationTitle("")
+                .navigationTitle(Text(verbatim: ""))
                 .navigationBarTitleDisplayMode(.inline)
                 // Capturing this view's dismiss environment creates an iOS 18 navigation update loop.
                 .navigationDestination(item: $detailNav) { [appModel] nav in

@@ -9,14 +9,14 @@ public enum OfflineAudioRenditionValidator {
         case incomplete
         case resolution
 
-        public var errorDescription: String? { // l10n:content — LocalizedError requires resolved text.
+        public var errorDescription: String? {
             switch self {
             case .audioInventory:
-                String(localized: "The server did not preserve all audio tracks. Choose Original quality or retry.")
+                String(localized: "The server did not preserve all audio tracks. Choose Original quality or retry.") // l10n:content - LocalizedError requires resolved text; recomputed on each access.
             case .incomplete:
-                String(localized: "The server returned an incomplete download. Please retry.")
+                String(localized: "The server returned an incomplete download. Please retry.") // l10n:content - LocalizedError requires resolved text; recomputed on each access.
             case .resolution:
-                String(localized: "The server did not use the requested download resolution.")
+                String(localized: "The server did not use the requested download resolution.") // l10n:content - LocalizedError requires resolved text; recomputed on each access.
             }
         }
     }

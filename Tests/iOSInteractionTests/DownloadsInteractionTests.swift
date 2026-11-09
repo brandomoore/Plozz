@@ -141,8 +141,8 @@ final class DownloadsInteractionTests: XCTestCase {
         XCTAssertFalse(remove.isEnabled)
         app.buttons["Select All"].tap()
         remove.tap()
-        XCTAssertTrue(app.buttons["Remove 1 Downloads"].waitForExistence(timeout: 3))
-        app.buttons["Remove 1 Downloads"].tap()
+        XCTAssertTrue(app.buttons["Remove 1 Download"].waitForExistence(timeout: 3))
+        app.buttons["Remove 1 Download"].tap()
         XCTAssertTrue(app.staticTexts["No Downloads"].waitForExistence(timeout: 5))
     }
 
