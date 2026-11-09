@@ -51,6 +51,33 @@ final class ContinueWatchingDetailsInteractionTests: XCTestCase {
         XCTAssertTrue(app.descendants(matching: .any)["series-season-tabs"].waitForExistence(timeout: 10), app.debugDescription)
     }
 
+    func testMovieRowHeaderRemainsNavigableAcrossRepeatedPushes() {
+        executionTimeAllowance = 120
+        launch(["--browse-movies"])
+        assertMovieRowNavigation(title: "Recently Added")
+    }
+
+    func testLibraryMovieRowHeaderRemainsNavigableAcrossRepeatedPushes() {
+        executionTimeAllowance = 120
+        launch(["--browse-movies", "--browse-library-movies"])
+        assertMovieRowNavigation(title: "Recently Added in Movies")
+    }
+
+    private func assertMovieRowNavigation(title: String) {
+        let heading = app.buttons.matching(identifier: "home-row-see-all")
+            .matching(NSPredicate(format: "label == %@", title)).firstMatch
+        for _ in 0..<4 {
+            XCTAssertTrue(heading.waitForExistence(timeout: 10), app.debugDescription)
+            for _ in 0..<3 where !heading.isHittable { app.swipeUp() }
+            heading.tap()
+            XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Browse movie 0"))
+                .firstMatch.waitForExistence(timeout: 10), app.debugDescription)
+            XCTAssertTrue(app.buttons["home-row-sort-menu"].exists)
+            app.navigationBars.buttons.firstMatch.tap()
+            XCTAssertTrue(heading.wait(for: \.isHittable, toEqual: true, timeout: 10))
+        }
+    }
+
     private func launch(_ options: [String] = []) {
         app.launchArguments = ["--continue-watching-details-fixture", "-AppleLanguages", "(en)", "-AppleLocale", "en_US"] + options
         app.launch()

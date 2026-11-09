@@ -37,6 +37,10 @@ struct ContinueWatchingDetailsFixture: View {
         model.settings.spoilers.settings = .default
         model.settings.cardStyle.captions = .init(preference: .show)
         model.settings.homeVisibility.useRowDefaults(.combined)
+        if ProcessInfo.processInfo.arguments.contains("--browse-library-movies") {
+            model.settings.homeVisibility.useRowDefaults(.provider)
+            model.settings.homeVisibility.setGlobalRowEnabled(true, for: .continueWatching)
+        }
         model.settings.homeVisibility.setContinueWatchingLayout(
             ProcessInfo.processInfo.arguments.contains("--portrait") ? .portrait : .landscape
         )
@@ -78,13 +82,33 @@ private struct ContinueWatchingDetailsProvider: MediaProvider {
         )
     }
 
-    func libraries() async throws -> [MediaLibrary] { [] }
+    func libraries() async throws -> [MediaLibrary] {
+        ProcessInfo.processInfo.arguments.contains("--browse-library-movies")
+            ? [MediaLibrary(id: "movies", title: "Movies", kind: .movie)] : []
+    }
     func continueWatching(limit: Int) async throws -> [MediaItem] {
         [try await item(id: "episode"), try await item(id: "movie")]
     }
-    func latest(limit: Int) async throws -> [MediaItem] { [try await item(id: "recent-episode")] }
+    func latest(limit: Int) async throws -> [MediaItem] {
+        if ProcessInfo.processInfo.arguments.contains("--browse-movies") {
+            return (0..<100).prefix(limit).map(browseMovie)
+        }
+        return [try await item(id: "recent-episode")]
+    }
     func items(in containerID: String, kind: MediaItemKind, page: PageRequest) async throws -> MediaPage {
-        .init(items: [], startIndex: 0, totalCount: 0)
+        if containerID == "movies" {
+            return .init(
+                items: (0..<100).dropFirst(page.startIndex).prefix(page.limit).map(browseMovie),
+                startIndex: page.startIndex, totalCount: 100
+            )
+        }
+        return .init(items: [], startIndex: 0, totalCount: 0)
+    }
+    private func browseMovie(_ index: Int) -> MediaItem {
+        var movie = MediaItem(id: "browse-\(index)", title: "Browse movie \(index)", kind: .movie)
+        movie.sourceAccountID = "continue-details"
+        movie.libraryID = "movies"
+        return movie
     }
     func item(id: String) async throws -> MediaItem {
         var item: MediaItem
