@@ -23,6 +23,14 @@ final class NavigationStartupFocusHostedTests: XCTestCase {
         }
     }
 
+    func testStartupCoverDismissalEntersContentAcrossAllStyles() async throws {
+        for style in NavigationStyle.allCases {
+            for delayed in [false, true] {
+                try await exercise(style: style, delayed: delayed, empty: false, startupCover: true)
+            }
+        }
+    }
+
     func testInputWhileLoadingCancelsStartupAcrossAllStyles() async throws {
         for style in NavigationStyle.allCases {
             try await exercise(style: style, delayed: true, empty: false, cancelled: true)
@@ -42,7 +50,8 @@ final class NavigationStartupFocusHostedTests: XCTestCase {
     }
 
     private func exercise(
-        style: NavigationStyle, delayed: Bool, empty: Bool, cancelled: Bool = false
+        style: NavigationStyle, delayed: Bool, empty: Bool, cancelled: Bool = false,
+        startupCover: Bool = false
     ) async throws {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
             .first { $0.activationState == .foregroundActive })
@@ -51,6 +60,8 @@ final class NavigationStartupFocusHostedTests: XCTestCase {
         let model = Model()
         model.ready = !delayed
         model.empty = empty
+        model.presentsStartupCover = startupCover
+        model.startupCoverCompleted = !startupCover
         let host = UIHostingController(rootView: Fixture(style: style, model: model))
         window.rootViewController = host
         window.makeKeyAndVisible()
@@ -59,22 +70,34 @@ final class NavigationStartupFocusHostedTests: XCTestCase {
             window.rootViewController = nil
             previous?.makeKeyAndVisible()
         }
+        if startupCover {
+            try await waitUntil("\(style): startup cover must own focus") { model.coverButton?.isFocused == true }
+            for request in requestViews(in: host.view) {
+                XCTAssertFalse(request.isStartupRequest, "Cover input must not consume the pending page entry.")
+                XCTAssertFalse(request.gestureRecognizer(UITapGestureRecognizer(), shouldReceive: StartupPress()))
+            }
+            model.presentsStartupCover = false
+            try await waitUntil { model.startupCoverCompleted }
+        }
         if delayed {
             try await Task.sleep(for: .milliseconds(500))
             XCTAssertFalse(model.first?.isFocused == true)
             if cancelled {
                 let request = try XCTUnwrap(requestViews(in: window).first { $0.request != nil })
-                let source = try XCTUnwrap(UIFocusSystem.focusSystem(for: window)?.focusedItem)
+                let source = UIFocusSystem.focusSystem(for: window)?.focusedItem
                 XCTAssertFalse(request.gestureRecognizer(UITapGestureRecognizer(), shouldReceive: StartupPress()))
                 model.ready = true
                 try await Task.sleep(for: .milliseconds(500))
                 XCTAssertNil(request.request)
-                XCTAssertTrue(UIFocusSystem.focusSystem(for: window)?.focusedItem === source)
+                XCTAssertFalse(request.isStartupRequest)
+                if let source {
+                    XCTAssertTrue(UIFocusSystem.focusSystem(for: window)?.focusedItem === source)
+                }
                 return
             }
             model.ready = true
         }
-        try await waitUntil {
+        try await waitUntil("\(style), delayed=\(delayed): startup must enter page content") {
             if empty {
                 let item = UIFocusSystem.focusSystem(for: window)?.focusedItem
                 return self.regions(in: window).contains {
@@ -84,6 +107,9 @@ final class NavigationStartupFocusHostedTests: XCTestCase {
             return model.first?.isFocused == true
         }
         guard !empty else { return }
+        try await waitUntil("\(style): startup handoff must retire before subsequent navigation") {
+            self.requestViews(in: window).allSatisfy { $0.request == nil && !$0.isStartupRequest }
+        }
         let second = try XCTUnwrap(model.second)
         let owner = try XCTUnwrap(NavigationRailFocusHostController.containing(second))
         let system = try XCTUnwrap(UIFocusSystem.focusSystem(for: window))
@@ -107,12 +133,15 @@ final class NavigationStartupFocusHostedTests: XCTestCase {
         override var type: UIPress.PressType { .rightArrow }
     }
 
-    private func waitUntil(_ condition: () -> Bool) async throws {
+    private func waitUntil(
+        _ message: String = "Startup must enter the first real page target without remote input.",
+        _ condition: () -> Bool
+    ) async throws {
         let deadline = ContinuousClock.now + .seconds(5)
         while !condition(), ContinuousClock.now < deadline {
             try await Task.sleep(for: .milliseconds(20))
         }
-        XCTAssertTrue(condition(), "Startup must enter the first real page target without remote input.")
+        XCTAssertTrue(condition(), message)
     }
 
     @Observable
@@ -121,10 +150,14 @@ final class NavigationStartupFocusHostedTests: XCTestCase {
         var empty = false
         var revision = 0
         var selection = NavigationRailDestination.home
+        var presentsStartupCover = false
+        var startupCoverCompleted = true
         let handoff = NavigationDestinationFocusHandoff()
         let chrome = NavigationChromeModel()
+        let profile = Profile(name: "Viewer")
         @ObservationIgnored var first: UIButton?
         @ObservationIgnored var second: UIButton?
+        @ObservationIgnored var coverButton: UIButton?
     }
 
     private struct Fixture: View {
@@ -136,7 +169,7 @@ final class NavigationStartupFocusHostedTests: XCTestCase {
                 switch style {
                 case .rail:
                     NavigationRailShell(
-                        profile: Profile(name: "Viewer"), entries: [], destinations: [.home, .search],
+                        profile: model.profile, entries: [], destinations: [.home, .search],
                         selection: $model.selection, onOpenProfileSwitcher: {}, chrome: model.chrome,
                         content: page, contentDestination: model.selection
                     )
@@ -164,6 +197,14 @@ final class NavigationStartupFocusHostedTests: XCTestCase {
                 }
             }
             .environment(\.plozzNavigationStyle, style)
+            .environment(\.navigationStartupFocusAllowed, model.startupCoverCompleted)
+            .plozzFullScreenCover(
+                isPresented: $model.presentsStartupCover,
+                onDismiss: { model.startupCoverCompleted = true }
+            ) {
+                Target(title: "Continue", model: model, isFirst: false, isCover: true)
+                    .frame(width: 350, height: 100)
+            }
         }
 
         private var page: some View {
@@ -187,11 +228,14 @@ final class NavigationStartupFocusHostedTests: XCTestCase {
         let title: String
         let model: Model
         let isFirst: Bool
+        var isCover = false
 
         func makeUIView(context: Context) -> UIButton {
             let button = UIButton(type: .system)
             button.setTitle(title, for: .normal)
-            if isFirst { model.first = button } else { model.second = button }
+            if isCover { model.coverButton = button }
+            else if isFirst { model.first = button }
+            else { model.second = button }
             return button
         }
 

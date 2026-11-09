@@ -129,7 +129,6 @@ public struct DetailMoreSheet<Content: View>: View {
     private let title: Text
     private let content: Content
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.themePalette) private var palette
 
     public init(title: Text, @ViewBuilder content: () -> Content) {
         self.title = title
@@ -139,11 +138,7 @@ public struct DetailMoreSheet<Content: View>: View {
     public var body: some View {
         #if os(tvOS)
         DetailReaderCard {
-            title
-                .font(.system(size: 38, weight: .semibold))
-                .foregroundStyle(palette.primaryText)
-                .fixedSize(horizontal: false, vertical: true)
-                .accessibilityAddTraits(.isHeader)
+            PlozzDialogHeading(title)
                 .accessibilityIdentifier("detail-more-title")
             content
                 .font(.system(size: 29))

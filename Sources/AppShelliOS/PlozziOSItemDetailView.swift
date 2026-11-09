@@ -217,13 +217,6 @@ private struct PlozziOSCanonicalItemDetailView: View {
     @State private var seriesPlayTarget: MediaItem?
     @State private var hasResolvedSeriesPlayTarget = false
     @State private var presentsSeriesDownloads = false
-    /// Whether the hero describes the **show** rather than `seriesPlayTarget`.
-    ///
-    /// True when there is no resume point to offer — nothing watched, or all of it
-    /// watched and the pointer stale. Play still starts an episode in both cases,
-    /// so the two cannot be the same value: the hero is editorial (the show), the
-    /// play target is technical (the file that will run).
-    @State private var seriesHeroShowsSeries = false
     @State private var heroPullDistance: CGFloat = 0
     private let seerService: SeerService?
     private var isDiscoveryItem: Bool { viewModel.isDiscoveryItem }
@@ -329,6 +322,8 @@ private struct PlozziOSCanonicalItemDetailView: View {
                             resolver: .production(traktClientID: TraktConfig.resolved().clientID),
                             search: search,
                             indexedLibrarySources: identitySources,
+                            loadIndexedItem: relatedTitleLibraryItemLoader(in: accounts),
+                            loadIndexedBatches: relatedTitleLibraryBatchLoaders(in: accounts),
                             displayMode: DetailOpenEnvironment.relatedTitlesDisplayMode(
                                 isDiscoveryItem: isDiscoveryItem
                             )
@@ -475,7 +470,6 @@ private struct PlozziOSCanonicalItemDetailView: View {
                       initialSeasonID: initialSeasonID, resumeEpisode: resume
                   ) else { return }
             seriesPlayTarget = seed
-            seriesHeroShowsSeries = false
         }
         .modifier(requestPresentation(inDownloadSheet: false))
         .youTubeTrailerOpeningFailures(trailerOpening)
@@ -518,9 +512,7 @@ private struct PlozziOSCanonicalItemDetailView: View {
 
     private func detailContent(_ detail: ItemDetailViewModel.Detail) -> some View {
         let versionTarget = viewModel.episodeWithEnrichedBadges(seriesPlayTarget ?? detail.item)
-        let heroTarget = seriesHeroShowsSeries
-            ? detail.item
-            : versionTarget
+        let heroTarget = HeroContentPolicy.detailSubject(focused: versionTarget, root: detail.item)
         let playableHeroTarget = seriesPlayTarget.map(playbackItem(for:))
             ?? detailPlayableItem(for: detail.item)
         let seasons = detail.children.filter { $0.kind == .season }
@@ -626,7 +618,6 @@ private struct PlozziOSCanonicalItemDetailView: View {
                             seriesPlayTarget = $0
                             hasResolvedSeriesPlayTarget = true
                         },
-                        onHeroShowsSeriesChange: { seriesHeroShowsSeries = $0 },
                         onPlay: play
                     )
                 }
@@ -1780,8 +1771,6 @@ struct PlozziOSInlineSeriesBrowser: View {
     let initialEpisode: MediaItem?
     let initialSeasonID: String?
     let onPlayTargetChange: (MediaItem?) -> Void
-    /// Whether the hero should describe the show rather than the play target.
-    let onHeroShowsSeriesChange: (Bool) -> Void
     let onPlay: (MediaItem, Bool) -> Void
 
     init(
@@ -1791,7 +1780,6 @@ struct PlozziOSInlineSeriesBrowser: View {
         initialSeasonID: String?,
         initialEpisode: MediaItem?,
         onPlayTargetChange: @escaping (MediaItem?) -> Void,
-        onHeroShowsSeriesChange: @escaping (Bool) -> Void,
         onPlay: @escaping (MediaItem, Bool) -> Void
     ) {
         self.viewModel = viewModel
@@ -1800,7 +1788,6 @@ struct PlozziOSInlineSeriesBrowser: View {
         self.initialEpisode = initialEpisode
         self.initialSeasonID = initialSeasonID
         self.onPlayTargetChange = onPlayTargetChange
-        self.onHeroShowsSeriesChange = onHeroShowsSeriesChange
         self.onPlay = onPlay
         _selectedSeasonID = State(
             initialValue: SeriesEpisodeEntry.seasonID(
@@ -1867,7 +1854,6 @@ struct PlozziOSInlineSeriesBrowser: View {
                    ) {
                     resolvedSeasonID = nil
                     onPlayTargetChange(seed)
-                    onHeroShowsSeriesChange(false)
                 }
             }
             .task(id: selectedSeasonID) {
@@ -1924,12 +1910,7 @@ struct PlozziOSInlineSeriesBrowser: View {
         PlozziOSPageLayout.horizontalInset(for: horizontalSizeClass)
     }
 
-    /// Settles what Play starts, and whether the hero describes that episode or
-    /// the show itself.
-    ///
-    /// Pinned once resolved: browsing to another season must not repoint the hero,
-    /// because the resume point has not moved. Apple's TV app shows exactly this —
-    /// hero on S1 · E1 while the season selector reads Season 2.
+    /// Browsing another season does not change the pinned Play/Resume target.
     private func publishPlayTarget() {
         // `displayedEpisodes` is nil only while a season is loading — switching
         // season or server passes through it. Publishing nil there cleared the
@@ -1948,7 +1929,6 @@ struct PlozziOSInlineSeriesBrowser: View {
             resolvedSeasonID = selectedSeasonID
             railTargetID = loaded.id
             onPlayTargetChange(loaded)
-            onHeroShowsSeriesChange(false)
             return
         }
         // Already settled from the opening season: a later season change is
@@ -1966,7 +1946,6 @@ struct PlozziOSInlineSeriesBrowser: View {
             : displayedEpisodes.first
         railTargetID = target?.id
         onPlayTargetChange(target)
-        onHeroShowsSeriesChange(!hasResumePoint)
     }
 }
 

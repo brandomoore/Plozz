@@ -5,6 +5,17 @@ import FeatureHome
 import SwiftUI
 import UIKit
 
+private struct NavigationStartupFocusAllowedKey: EnvironmentKey {
+    static let defaultValue = true
+}
+
+extension EnvironmentValues {
+    var navigationStartupFocusAllowed: Bool {
+        get { self[NavigationStartupFocusAllowedKey.self] }
+        set { self[NavigationStartupFocusAllowedKey.self] = newValue }
+    }
+}
+
 /// New destinations honor the page's content-first entry preference.
 struct NavigationContentFocusRequester: UIViewRepresentable {
     let request: UInt64?
@@ -264,9 +275,9 @@ struct NavigationContentFocusRequester: UIViewRepresentable {
             HeroFocusDiagnostics.entry(selection.isPending ? "selection-pending" : "selection-ready")
             // Data loading waits for a region change. A mounted content region can
             // precede its nested host's native focus items, so finish that render
-            // handoff instead of leaving startup stranded on navigation.
+            // handoff for both startup and explicit destination selection.
             guard !selection.isPending else {
-                if isStartupRequest && selection.awaitsLayout { schedule() }
+                if selection.awaitsLayout { schedule() }
                 return
             }
             guard let target = selection.target else {

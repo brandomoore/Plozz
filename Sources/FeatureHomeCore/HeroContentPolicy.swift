@@ -21,6 +21,11 @@ public enum HomeHeroLaunchPolicy {
 
 /// Canonical text/facts/credits policy shared by Home and detail heroes.
 public enum HeroContentPolicy {
+    /// Browsing a show's children changes playback, not the subject of its page.
+    public static func detailSubject(focused: MediaItem, root: MediaItem) -> MediaItem {
+        root.kind == .series ? root : focused
+    }
+
     public static func homeDescription(
         for item: HeroPresentation
     ) -> String? {

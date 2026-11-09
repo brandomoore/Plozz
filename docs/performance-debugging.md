@@ -1603,6 +1603,16 @@ and a passing functional test are not substitutes for presented-frame timing.
   recreated between queries. The physical failure explicitly requested a rail
   item as page content, then moved again when the rail became disabled. Cross the
   newly enabled page's render commit before resolving its content target.
+- **Keep pinned page content in its own native focus section.** Without that
+  boundary, SwiftUI can omit both native buttons and nested scroll content from
+  its focus-container query while the rail's section owns focus. A visible
+  empty-state action is still useful page content; missing media must not trap
+  focus in navigation. Finish a mounted entry region's native-layout handoff for
+  explicit destination selection as well as startup. This continuation is only
+  for rendered layout; data-loading regions still wait for readiness notifications.
+  `EmptyPinnedNavigationTests` exercises the real Live TV welcome cards and
+  Settings categories, cold starts, Right/Select returns, and inactive retained
+  Live TV while switching back to Home.
 - **New-page entry prefers useful content.** `navigationEntryFocus` declares
   content and fallback regions without changing ordinary directional navigation.
   Libraries prefer their cards; Music prefers Recently Played, then Playlists.

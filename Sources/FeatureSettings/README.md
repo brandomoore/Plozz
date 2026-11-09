@@ -36,6 +36,11 @@ composite controls retain separate minimum touch targets with
 `settingsControlTarget()`. Per-view customization menus respond across their
 whole title/value row, not only the value. Native toggles remain independent.
 
+TV label customization uses `ViewCustomizationRow` for Only show descriptions on focus,
+matching the neighboring controls' sizing and focus treatment. Its live episode
+preview shows descriptions under every card by default, or only the focused
+example when enabled, without changing the preview's layout.
+
 ## Settings search
 
 Settings search is local: queries are neither saved nor sent to a service or log.
@@ -946,6 +951,9 @@ watch history and planning-list behavior are documented in
   available height instead of scrolling the whole page. There is no redundant
   Appearance heading.
   Standalone page links use matching 28pt idle/focus corners and compact 8pt gaps.
+  Their shared `.navigation` style owns the idle surface beneath the focus fill;
+  `SettingsFormLinkLabel` and tvOS `HomeEditorLink` labels must not paint their own
+  surface. This preserves contrast with gradients or Liquid Glass disabled.
   Controls within sections use inset rounded focus geometry instead. The shared
   `SettingsControlGroup` supplies section surfaces, row separators and insets;
   `SettingsDetailGroup` uses it for Cards and other multi-group pages. A row marked

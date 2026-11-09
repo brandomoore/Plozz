@@ -56,6 +56,14 @@ first-class backends; co-equal with `ProviderJellyfin`.
   Home-user token, never the server-scoped token, and rechecks identity after
   the cloud response before publishing an empty inventory.
 
+## Related card batches
+
+Related card reads support `LibraryItemBatchProviding` through the server's
+multi-rating-key metadata endpoint. Batches retain native titles, artwork, GUIDs
+and watch state, remain bounded to 50 distinct native numeric keys, and reject
+duplicate or unrequested responses. Global Discover IDs never enter this path;
+the shared loader retains individual/search recovery for unavailable copies.
+
 ## Extra resume fallback
 
 Plex can accept short progress writes without retaining an offset, including for

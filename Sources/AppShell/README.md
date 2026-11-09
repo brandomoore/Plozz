@@ -92,6 +92,22 @@ registry.
   presentation fence and native content-focus request as selecting a rail
   destination, rather than relying on automatic focus after the overlay disappears.
 
+- **Pinned navigation can enter pages without media.** Live TV setup cards and
+  Settings categories remain reachable by Select and Right. The page has its own
+  native focus section so SwiftUI keeps its controls discoverable while the rail
+  owns focus, including scroll-contained controls. A declared entry region awaiting
+  native layout keeps its render handoff for explicit navigation as well as startup; actual
+  data-loading regions wait for their existing readiness notification.
+  `EmptyPinnedNavigationTests` covers entry, return, cold startup, and retained
+  Live TV while switching back to Settings and empty Home.
+
+- **Native Sidebar owns its screen insets.** Its startup focus host fills the
+  window so the native sidebar, scrim, controls and scrolling page viewport do
+  not inherit a second overscan inset. Keep content-first startup and cover
+  dismissal handling without constraining the native `TabView` to the outer
+  SwiftUI safe area. Hosted coverage compares the focus-host and full-bleed page
+  bounds with the unwrapped native sidebar.
+
 - **Signing in does not change the starting page.** TV and mobile navigation
   availability uses the active profile's configured account metadata, not its
   credential-ready playback providers. A pending Plex Home identity or another
@@ -277,6 +293,15 @@ navigation; later content refreshes must not pull focus back to the first item.
 Loading regions suspend the request until readiness changes; mounted content
 finishes its native render handoff before the request is retired. Inactive hosts
 cannot block the visible page's entry.
+The root holds startup entry until introductions, release notes, and queued root
+covers finish dismissing. Input in those covers must not cancel the pending page
+entry. Covered shells retain the unconsumed request; dismissal starts a fresh
+native presentation handoff, without restarting entry after normal navigation.
+
+Explicitly selecting Home again resets its root scroll position and enters its
+first content item in every navigation style. Opening or dismissing a sidebar
+without selecting Home does not request that reset; the custom rail preserves
+its prior content focus.
 
 Settings is a normal destination in all three navigation shells. Its root keeps
 app navigation visible and available; categories and nested pages hide it.

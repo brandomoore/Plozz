@@ -11,6 +11,7 @@ struct NativeSidebarNavigation<Content: View>: View {
     @State private var hasStarted = false
     @State private var startupDestination: NavigationRailDestination?
     @State private var contentRequest: UInt64?
+    @Environment(\.navigationStartupFocusAllowed) private var startupFocusAllowed
 
     var body: some View {
         NavigationRailFocusHost { _ in
@@ -22,7 +23,7 @@ struct NativeSidebarNavigation<Content: View>: View {
                         contentRequest = nil
                         startupDestination = nil
                     },
-                    isStartupRequest: startupDestination != nil,
+                    isStartupRequest: startupDestination != nil && startupFocusAllowed,
                     onStartupCancelled: {
                         startupDestination = nil
                         handoff.cancel()
@@ -30,16 +31,25 @@ struct NativeSidebarNavigation<Content: View>: View {
                 )
             }
         }
+        // The native TabView owns overscan insets; its focus host must fill the window.
+        .ignoresSafeArea()
         .onAppear {
             guard !hasStarted else { return }
             hasStarted = true
             startupDestination = selection
-            handoff.begin(selection)
+            if startupFocusAllowed { handoff.begin(selection) }
         }
-        .onChange(of: handoff.request) { previous, current in
-            if current == nil, previous?.destination == startupDestination,
-               startupDestination == selection {
-                contentRequest = previous?.generation
+        .onChange(of: startupFocusAllowed) { _, allowed in
+            guard startupDestination == selection else { return }
+            contentRequest = nil
+            handoff.cancel()
+            if allowed { handoff.begin(selection) }
+        }
+        .onChange(of: handoff.completedRequest) { _, completed in
+            guard startupDestination == nil || startupFocusAllowed else { return }
+            if let completed, completed.destination == selection, completed.focusTarget == .content,
+               startupDestination == selection || selection == .home {
+                contentRequest = completed.generation
             }
         }
         .onChange(of: selection) { _, _ in
@@ -47,7 +57,7 @@ struct NativeSidebarNavigation<Content: View>: View {
             contentRequest = nil
         }
         .onDisappear {
-            startupDestination = nil
+            if startupFocusAllowed { startupDestination = nil }
             contentRequest = nil
         }
     }
@@ -75,5 +85,6 @@ struct NativeSidebarFocusDestination<Content: View>: View {
                 )
             }
     }
+
 }
 #endif

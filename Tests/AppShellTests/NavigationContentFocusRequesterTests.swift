@@ -6,6 +6,31 @@ import CoreUI
 
 @MainActor
 final class NavigationContentFocusRequesterTests: XCTestCase {
+    func testMountedEntryWaitsForItsNativeFocusItems() {
+        let window = RecreatedFocusItemsWindow(frame: CGRect(x: 0, y: 0, width: 1920, height: 1080))
+        window.includesPage = false
+        window.isHidden = false
+        defer { window.isHidden = true }
+        let marker = UIView(frame: window.bounds)
+        window.addSubview(marker)
+        window.addSubview(NavigationRowFocusRequester.RequestView(frame: window.profileFrame))
+        window.page.frame = CGRect(x: 500, y: 100, width: 1000, height: 80)
+        window.addSubview(window.page)
+        let region = NavigationEntryFocusRegionView(frame: window.page.frame)
+        region.preference = .content
+        window.addSubview(region)
+        let waiting = NavigationContentFocusRequester.entrySelection(
+            in: window, relativeTo: marker, isRightToLeft: false
+        )
+        XCTAssertTrue(waiting.isPending)
+        XCTAssertTrue(waiting.awaitsLayout)
+        XCTAssertNil(waiting.target)
+        window.includesPage = true
+        XCTAssertTrue(NavigationContentFocusRequester.firstTarget(
+            in: window, relativeTo: marker, isRightToLeft: false
+        ) === window.page)
+    }
+
     func testNativeEntrySkipsGlobalFocusQueriesAndRevalidatesTargets() {
         let window = RecreatedFocusItemsWindow(frame: CGRect(x: 0, y: 0, width: 1920, height: 1080))
         window.isHidden = false
@@ -151,6 +176,7 @@ final class NavigationContentFocusRequesterTests: XCTestCase {
             in: window, relativeTo: page, isRightToLeft: false
         )
         XCTAssertTrue(waiting.isPending)
+        XCTAssertFalse(waiting.awaitsLayout, "Data loading must wait for readiness, not poll each frame.")
         XCTAssertNil(waiting.target)
         pending.preference = nil
         XCTAssertFalse(NavigationContentFocusRequester.entrySelection(

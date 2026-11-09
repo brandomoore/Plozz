@@ -25,6 +25,23 @@ final class PlozzTypographyTests: XCTestCase {
         }
     }
 
+    func testEpisodeDescriptionsMatchHeroTextAtEveryTVAdjustment() {
+        #if os(tvOS)
+        for step in -5...5 {
+            for appScale in [CGFloat(1), CGFloat(1.2)] {
+                let scale = PlozzTypography.scale(local: HeroTextSize(rawValue: step).scale, app: appScale)
+                let description = PlozzTypography.episodeDescription.scaled(by: scale)
+                XCTAssertEqual(description, PlozzTypography.heroDescription.scaled(by: scale))
+                XCTAssertGreaterThan(PlozzTypography.episodeTitle.scaled(by: scale).pointSize,
+                                     description.pointSize)
+            }
+        }
+        #else
+        XCTAssertEqual(PlozzTypography.episodeDescription.pointSize, 20)
+        XCTAssertEqual(PlozzTypography.episodeDescription.lineSpacing, 2)
+        #endif
+    }
+
     func testHeightIncludesEveryInterlineGapAndScrimCoversTheLargerBlock() {
         let style = PlozzTypography.heroDescription.scaled(by: 1.5)
         XCTAssertEqual(style.height(lineHeight: 43, lines: 4), 185.5)

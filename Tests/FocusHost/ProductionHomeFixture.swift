@@ -38,6 +38,8 @@ struct ProductionHomeFixture: View {
     @State private var expectedNativeDestination: NavigationRailDestination?
     @State private var prematureNativeHomeFocusCount = 0
     @State private var nativeSidebarFocus = NavigationDestinationFocusHandoff()
+    @State private var nativeSelectionCount = 0
+    @State private var nativeSidebarScroll = TopNavigationScroll()
     @State private var nativeFocusHistory: [String] = []
     @State private var heroBoundaryLatencyReport = "waiting"
 
@@ -81,7 +83,10 @@ struct ProductionHomeFixture: View {
                             content: TabView(selection: Binding(
                             get: { selection },
                             set: { destination in
-                                if destination != selection { nativeSidebarFocus.begin(destination) }
+                                nativeSelectionCount += 1
+                                let reselectsHome = destination == .home && destination == selection
+                                if reselectsHome { nativeSidebarScroll.scrollToTop() }
+                                if reselectsHome || destination != selection { nativeSidebarFocus.begin(destination) }
                                 selection = destination
                             }
                         )) {
@@ -92,6 +97,7 @@ struct ProductionHomeFixture: View {
                                     fixture: fixture, path: $path, libraryPath: $libraryPath, isPinned: false,
                                     isActive: selection == .home
                                 )
+                                .environment(\.plozzTopNavigationScroll, nativeSidebarScroll)
                                 .background {
                                     // Native tabs can share a hosting ancestor. Keep the
                                     // measured hero region disjoint from Settings' target.
@@ -129,6 +135,8 @@ struct ProductionHomeFixture: View {
                                     .accessibilityIdentifier("native-production-armed")
                                 Text("\(prematureNativeHomeFocusCount)")
                                     .accessibilityIdentifier("native-production-premature-focus")
+                                Text("\(nativeSelectionCount)")
+                                    .accessibilityIdentifier("native-production-selection-count")
                             }
                             .allowsHitTesting(false)
                         }

@@ -331,6 +331,8 @@ public final class AudioPlaybackController {
     /// tearing the speaker connection down. Debouncing keeps the CURRENT track
     /// playing (route alive) until the user lands, then transitions just once.
     private var startTask: Task<Void, Never>?
+    /// An outgoing end must not replace a selection still resolving or buffering.
+    private var pendingStartOutgoingItemID: ObjectIdentifier?
     /// True while a debounced skip is pending — the UI shows the target track but
     /// the player is still on the outgoing one, so the time observer freezes the
     /// scrubber at 0 instead of showing the old track's position under the new
@@ -646,6 +648,7 @@ public final class AudioPlaybackController {
         stalledRetryTask = nil
         stuckSince = nil
         startPending = false
+        pendingStartOutgoingItemID = nil
         player.pause()
         player.removeAllItems()
         preparedNext = nil
@@ -740,13 +743,19 @@ public final class AudioPlaybackController {
     }
 
     /// Called when the current item finishes on its own.
-    private func handleItemDidEnd() {
-        guard nowPlaying.isActive else { return }
+    private func handleItemDidEnd(_ item: AVPlayerItem) {
+        guard nowPlaying.isActive, player.currentItem === item else { return }
         // A natural end means the track played to completion — report a stop at
         // full duration so the server marks it *played* (the signal that feeds
         // "Recently Played"). Do it before advancing; startCurrent's own stop
         // then no-ops because reportedTrack is already cleared.
-        reportStopIfNeeded(position: duration > 0 ? duration : currentTime)
+        let endedDuration = item.duration.seconds
+        reportStopIfNeeded(position: endedDuration.isFinite && endedDuration > 0
+            ? endedDuration : (duration > 0 ? duration : currentTime))
+        guard pendingStartOutgoingItemID != ObjectIdentifier(item) else {
+            diag("start", "Outgoing item ended while a requested transition is pending; preserving selection")
+            return
+        }
         if repeatMode == .one {
             scheduleStart(debounced: false)
         } else {
@@ -769,6 +778,7 @@ public final class AudioPlaybackController {
         diag("skip", "scheduleStart debounced=\(debounced) index=\(index) track=\"\(currentTrack?.title ?? "nil")\" route=\(routeSummary())")
         startTask?.cancel()
         trackTransitionGeneration &+= 1
+        pendingStartOutgoingItemID = player.currentItem.map(ObjectIdentifier.init)
         if debounced {
             startPending = true
             currentTime = 0
@@ -795,12 +805,18 @@ public final class AudioPlaybackController {
 
     private func startCurrent(reactivateRoute: Bool = true) async {
         guard let track = currentTrack, let resolver else { return }
+        pendingStartOutgoingItemID = player.currentItem.map(ObjectIdentifier.init)
         // Supersede guard: a rapid skip or a new queue spawns another startCurrent
         // while this one is still resolving. Capture this transition's generation so
         // a stale task bails after the await instead of stopping/starting a track the
         // user has already skipped past (which would leak a start with no stop).
         trackTransitionGeneration &+= 1
         let generation = trackTransitionGeneration
+        defer {
+            if generation == trackTransitionGeneration {
+                pendingStartOutgoingItemID = nil
+            }
+        }
         loadLyrics(for: track)
 
         // FAST PATH — the treadmill hand-off. This track was pre-enqueued behind
@@ -1388,6 +1404,7 @@ public final class AudioPlaybackController {
     }
 
     private func observeEnd(of item: AVPlayerItem) {
+        pendingStartOutgoingItemID = nil
         if let endObserver {
             NotificationCenter.default.removeObserver(endObserver)
         }
@@ -1395,9 +1412,10 @@ public final class AudioPlaybackController {
             forName: .AVPlayerItemDidPlayToEndTime,
             object: item,
             queue: .main
-        ) { [weak self] _ in
+        ) { [weak self, weak item] _ in
             MainActor.assumeIsolated {
-                self?.handleItemDidEnd()
+                guard let item else { return }
+                self?.handleItemDidEnd(item)
             }
         }
     }
@@ -1817,6 +1835,7 @@ public final class AudioPlaybackController {
         if startTask != nil { startPending = true }
         startTask?.cancel()
         startTask = nil
+        pendingStartOutgoingItemID = nil
         stuckRecoveryTask?.cancel()
         stuckRecoveryTask = nil
         stalledRetryTask?.cancel()

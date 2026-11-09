@@ -1,6 +1,7 @@
 import CoreModels
-import CoreUI
+@testable import CoreUI
 @testable import FeatureSettings
+import Observation
 import SwiftUI
 import UIKit
 import Vision
@@ -8,6 +9,96 @@ import XCTest
 
 @MainActor
 final class SettingsControlRowsHostedTests: XCTestCase {
+    func testNavigationLinksAndControlsKeepTheirFocusFillAcrossBackgroundPreferences() async throws {
+        let sceneDeadline = ContinuousClock.now + .seconds(5)
+        while !UIApplication.shared.connectedScenes.contains(where: { $0.activationState == .foregroundActive }),
+              ContinuousClock.now < sceneDeadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
+        let host = SettingsSurfaceFocusHost(rootView: AnyView(EmptyView()))
+        host.safeAreaRegions = []
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer { window.isHidden = true; window.rootViewController = nil; previous?.makeKeyAndVisible() }
+        let system = try XCTUnwrap(UIFocusSystem(for: window))
+
+        for kind in SettingsSurfaceFixture.Kind.allCases {
+            let appearance = SettingsSurfaceAppearance()
+            host.rootView = AnyView(SettingsSurfaceFixture(kind: kind, appearance: appearance))
+            window.layoutIfNeeded()
+            let deadline = ContinuousClock.now + .seconds(5)
+            while focusItems(in: host.view).isEmpty, ContinuousClock.now < deadline {
+                try await Task.sleep(for: .milliseconds(20))
+            }
+            let item = try XCTUnwrap(focusItems(in: host.view).first, kind.rawValue)
+            host.target = item
+            system.requestFocusUpdate(to: host)
+            system.updateFocusIfNeeded()
+            let focusDeadline = ContinuousClock.now + .seconds(5)
+            while system.focusedItem !== item, ContinuousClock.now < focusDeadline {
+                try await Task.sleep(for: .milliseconds(20))
+            }
+            XCTAssertTrue(system.focusedItem === item, kind.rawValue)
+            host.target = nil
+            let originalFrame = try focusFrame(item, in: window)
+
+            for (name, palette) in [("dark", ThemePalette.dark), ("black", .pureBlack), ("light", .light)] {
+                appearance.palette = palette
+                for (gradient, reduced) in [(true, false), (false, false), (false, true), (true, true), (true, false)] {
+                    appearance.gradient = gradient
+                    appearance.reduced = reduced
+                    window.layoutIfNeeded()
+                    try await Task.sleep(for: .milliseconds(200))
+                    XCTAssertTrue(system.focusedItem === item, "Changing appearance must retain \(kind.rawValue) focus.")
+                    let frame = try focusFrame(item, in: window)
+                    XCTAssertEqual(frame, originalFrame, "Appearance changes must not move or resize the focused row.")
+                    guard window.bounds.contains(frame), frame.width > 0, frame.height > 16 else {
+                        XCTFail("The focused row must be visible inside the captured window: \(frame)")
+                        return
+                    }
+                    let image = DetailTransitionSnapshot.image(of: window)
+                    let cgImage = try XCTUnwrap(image.cgImage)
+                    let scale = CGFloat(cgImage.width) / window.bounds.width
+                    let bytes = try pixels(cgImage)
+                    let label = "\(kind.rawValue)-\(name)-gradient-\(gradient)-reduced-\(reduced)"
+                    for fraction in [CGFloat(0.25), 0.5, 0.75] {
+                        for y in [frame.minY + 8, frame.maxY - 8] {
+                            let x = frame.minX + frame.width * fraction
+                            let offset = (Int(y * scale) * cgImage.width + Int(x * scale)) * 4
+                            XCTAssertTrue((0..<3).allSatisfy {
+                                palette.isLight ? bytes[offset + $0] < 20 : bytes[offset + $0] > 235
+                            }, "\(label): the focused row must paint its contrasting fill, not its idle surface.")
+                        }
+                    }
+                    if !gradient && !reduced {
+                        let attachment = XCTAttachment(image: image)
+                        attachment.name = label
+                        attachment.lifetime = .keepAlways
+                        add(attachment)
+                        let crop = try XCTUnwrap(cgImage.cropping(to: frame
+                            .applying(CGAffineTransform(scaleX: scale, y: scale))))
+                        let request = VNRecognizeTextRequest()
+                        request.recognitionLevel = .accurate
+                        request.recognitionLanguages = ["en-US"]
+                        try VNImageRequestHandler(cgImage: crop).perform([request])
+                        let text = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }
+                            .joined(separator: " ")
+                        XCTAssertTrue(text.contains(kind.title), "\(label): keep the focused title readable: \(text)")
+                        if kind == .homeEditor {
+                            XCTAssertTrue(text.contains("Tab order and visibility apply to all libraries."),
+                                          "\(label): keep secondary text readable: \(text)")
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     func testProfileHintFitsWithoutChangingHeaderSize() throws {
         for name in ["Alex", "Alexandria Morgan-Williams"] {
             for direction in [LayoutDirection.leftToRight, .rightToLeft] {
@@ -305,6 +396,26 @@ final class SettingsControlRowsHostedTests: XCTestCase {
         XCTAssertEqual(mismatches.count, 0, "Illustrated cards must derive their chrome from the containing group.")
     }
 
+    func testStandaloneNavigationOwnsItsIdleSurfaceAcrossBackgroundPreferences() throws {
+        for palette in [ThemePalette.dark, .pureBlack, .light] {
+            for (gradient, reduced) in [(true, false), (false, false), (false, true), (true, true)] {
+                let content = Color.clear.frame(width: 320, height: 80)
+                let row = SettingsFocusRow(isFocused: false, size: .navigation) { content }
+                let reference = content.settingsGroupSurface(cornerRadius: SettingsRowMetrics.navigationCornerRadius)
+                let images = try [AnyView(row), AnyView(reference)].map { view in
+                    let renderer = ImageRenderer(content: view
+                        .environment(\.themePalette, palette)
+                        .environment(\.colorScheme, palette.isLight ? .light : .dark)
+                        .environment(\.gradientBackgroundsEnabled, gradient)
+                        .environment(\.plozzReduceTransparency, reduced))
+                    renderer.scale = 1
+                    return try pixels(XCTUnwrap(renderer.cgImage))
+                }
+                XCTAssertEqual(images[0], images[1], "Moving the idle surface must preserve its existing appearance.")
+            }
+        }
+    }
+
     func testStandaloneNavigationFocusMatchesTheIdleContainerSilhouette() throws {
         let focused = ImageRenderer(content:
             SettingsFocusRow(isFocused: true, size: .navigation) {
@@ -459,5 +570,127 @@ final class SettingsControlRowsHostedTests: XCTestCase {
             context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
         }
         return bytes
+    }
+
+    private func focusItems(in view: UIView) -> [any UIFocusItem] {
+        var containers: [any UIFocusItemContainer] = [view]
+        var seen = Set<ObjectIdentifier>()
+        var seenItems = Set<ObjectIdentifier>()
+        var items: [any UIFocusItem] = []
+        while let container = containers.popLast() {
+            guard seen.insert(ObjectIdentifier(container)).inserted else { continue }
+            for item in container.focusItems(in: container.coordinateSpace.convert(view.bounds, from: view)) {
+                if let children = item.focusItemContainer { containers.append(children) }
+                if let child = item as? UIView { containers.append(child) }
+                if item.canBecomeFocused, !(item is UIScrollView),
+                   seenItems.insert(ObjectIdentifier(item)).inserted {
+                    items.append(item)
+                }
+            }
+        }
+        return items
+    }
+
+    private func focusFrame(_ item: any UIFocusItem, in window: UIWindow) throws -> CGRect {
+        if let view = item as? UIView { return view.convert(view.bounds, to: window) }
+        var environment: (any UIFocusEnvironment)? = item
+        while let current = environment {
+            if let container = current.focusItemContainer {
+                return container.coordinateSpace.convert(item.frame, to: window)
+            }
+            environment = current.parentFocusEnvironment
+        }
+        return try XCTUnwrap(nil as CGRect?, "The focused control must provide its coordinate space.")
+    }
+}
+
+@MainActor
+private final class SettingsSurfaceFocusHost: UIHostingController<AnyView> {
+    weak var target: (any UIFocusEnvironment)?
+    override var preferredFocusEnvironments: [any UIFocusEnvironment] {
+        target.map { [$0] } ?? super.preferredFocusEnvironments
+    }
+}
+
+@MainActor @Observable
+private final class SettingsSurfaceAppearance {
+    var palette = ThemePalette.dark
+    var gradient = true
+    var reduced = false
+}
+
+private struct SettingsSurfaceFixture: View {
+    enum Kind: String, CaseIterable {
+        case page, route, homeEditor, action, toggle, checkmark, menu, stepper
+
+        var title: String {
+            switch self {
+            case .page: "Theme"
+            case .route: "Artwork"
+            case .homeEditor: "Library Navigation"
+            case .action: "Customize labels"
+            case .toggle: "Gradient Backgrounds"
+            case .checkmark: "Dark"
+            case .menu: "Layout"
+            case .stepper: "Text size"
+            }
+        }
+    }
+    let kind: Kind
+    let appearance: SettingsSurfaceAppearance
+
+    var body: some View {
+        NavigationStack {
+            control
+                .frame(width: 960, height: 720, alignment: .top)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .settingsPageBackground()
+        }
+        .environment(\.themePalette, appearance.palette)
+        .environment(\.colorScheme, appearance.palette.isLight ? .light : .dark)
+        .environment(\.gradientBackgroundsEnabled, appearance.gradient)
+        .environment(\.plozzReduceTransparency, appearance.reduced)
+        .environment(\.locale, Locale(identifier: "en"))
+        .transaction { $0.disablesAnimations = true }
+    }
+
+    @ViewBuilder private var control: some View {
+        switch kind {
+        case .page, .route:
+            SettingsFormLayout(title: Text("Appearance"), rows: [
+                kind == .page
+                    ? SettingsSplitRow(id: "theme", title: "Theme") { EmptyView() }.page()
+                    : SettingsSplitRow(id: "artwork", title: "Artwork") { EmptyView() }.destination(.artwork)
+            ])
+        case .homeEditor:
+            HomeEditorLink { EmptyView() } label: {
+                HomeEditorRowLabel(
+                    title: Text("Library Navigation"),
+                    subtitle: Text("Tab order and visibility apply to all libraries."),
+                    titleSymbol: "arrow.up.arrow.down"
+                )
+            }
+        default:
+            SettingsControlGroup {
+                switch kind {
+                case .action:
+                    Button {} label: { SettingsDisclosureLabel { Text("Customize labels") } }
+                        .buttonStyle(SettingsFormButtonStyle())
+                case .toggle:
+                    Toggle("Gradient Backgrounds", isOn: .constant(false))
+                case .checkmark:
+                    SettingsCheckableRow(title: Text("Dark"), isChecked: true) {}
+                case .menu:
+                    SettingsMenuRow(title: "Layout", value: Text("Classic")) {
+                        Button("Classic") {}
+                    }
+                case .stepper:
+                    SettingsStepper(options: [1, 2, 3], selection: .constant(2), label: "Text size",
+                                    verbatimTitle: { "\($0)" })
+                default:
+                    EmptyView()
+                }
+            }
+        }
     }
 }

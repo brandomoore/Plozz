@@ -1,6 +1,25 @@
 #if canImport(SwiftUI)
 import SwiftUI
 
+#if os(tvOS)
+public struct PlozzDialogHeading: View {
+    private let title: Text
+    @Environment(\.themePalette) private var palette
+
+    public init(_ title: Text) {
+        self.title = title
+    }
+
+    public var body: some View {
+        title
+            .font(.system(size: 38, weight: .semibold))
+            .foregroundStyle(palette.primaryText)
+            .fixedSize(horizontal: false, vertical: true)
+            .accessibilityAddTraits(.isHeader)
+    }
+}
+#endif
+
 private struct DialogBackgroundOwnedKey: EnvironmentKey {
     static let defaultValue = false
 }

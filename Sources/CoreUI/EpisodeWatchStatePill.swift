@@ -246,6 +246,7 @@ public struct ResumeChipOverlay: View {
     private let bottomScrimDepth: CGFloat?
     private let compactHorizontalLayout: Bool
     private var rendersScrim = true
+    private var scrimOutset: CGFloat = 0
     private var playbackTextSize: CGFloat?
     private var playbackInset: CGFloat?
 
@@ -258,6 +259,12 @@ public struct ResumeChipOverlay: View {
         var result = self
         result.playbackTextSize = size
         result.playbackInset = inset
+        return result
+    }
+
+    func extendingScrim(by outset: CGFloat) -> Self {
+        var result = self
+        result.scrimOutset = outset
         return result
     }
 
@@ -419,6 +426,7 @@ public struct ResumeChipOverlay: View {
             bottomStart: bottomScrimStart ?? 0.52,
             bottomDepth: bottomScrimDepth ?? 0.78
         )
+        .extendingEdges(by: scrimOutset)
     }
 
     /// Anything to draw along the bottom edge. Resume progress counts even with no

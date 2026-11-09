@@ -230,7 +230,6 @@ private struct SettingsFormLinkLabel: View {
         .padding(.horizontal, SettingsFormMetrics.headingInset)
         .padding(.vertical, 20)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .settingsGroupSurface(cornerRadius: SettingsRowMetrics.navigationCornerRadius)
     }
 }
 

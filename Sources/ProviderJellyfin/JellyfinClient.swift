@@ -686,6 +686,32 @@ public struct JellyfinClient: Sendable {
         }
     }
 
+    func libraryItems(userID: String, ids: [String]) async throws -> [BaseItemDto] {
+        try Task.checkCancellation()
+        let requested = Set(ids)
+        guard !requested.isEmpty else { return [] }
+        guard requested.count <= 50,
+              requested.allSatisfy({ !$0.isEmpty && !$0.contains(",") && $0 == $0.trimmingCharacters(in: .whitespacesAndNewlines) })
+        else { throw AppError.invalidResponse }
+        let endpoint = Endpoint(
+            path: "/Users/\(userID)/Items",
+            queryItems: [
+                URLQueryItem(name: "Ids", value: requested.sorted().joined(separator: ",")),
+                URLQueryItem(name: "Limit", value: String(requested.count)),
+                URLQueryItem(name: "Fields", value: "Overview,OriginalTitle,ProviderIds,PrimaryImageAspectRatio,DateCreated,Genres"),
+                URLQueryItem(name: "EnableImages", value: "true"),
+                URLQueryItem(name: "ImageTypeLimit", value: "1"),
+                URLQueryItem(name: "EnableUserData", value: "true"),
+                URLQueryItem(name: "EnableTotalRecordCount", value: "false")
+            ],
+            headers: authHeaders
+        )
+        let items = try await http.decode(ItemsResponse.self, from: endpoint, baseURL: baseURL).Items
+        guard items.allSatisfy({ requested.contains($0.Id) }),
+              Set(items.map(\.Id)).count == items.count else { throw AppError.invalidResponse }
+        return items
+    }
+
     func item(userID: String, id: String) async throws -> BaseItemDto {
         let endpoint = Endpoint(
             path: "/Users/\(userID)/Items/\(id)",

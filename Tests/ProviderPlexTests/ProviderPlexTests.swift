@@ -2314,6 +2314,39 @@ final class PlexProviderMappingTests: XCTestCase {
         XCTAssertNil(request.streamURL)
     }
 
+    func testFLACMusicUsesOriginalAuthenticatedFileAtItsNativeSampleRate() async throws {
+        for sampleRate in [44_100, 96_000] {
+            let stub = StubHTTPClient()
+            stub.stub(pathSuffix: "/library/metadata/flac", json: """
+            {"MediaContainer":{"Metadata":[
+              {"ratingKey":"flac","type":"track","title":"FLAC fixture",
+               "Media":[{"id":7,"container":"flac","audioCodec":"flac",
+                 "Part":[{"id":8,"key":"/library/parts/8/music.flac","container":"flac",
+                   "Stream":[{"id":9,"streamType":2,"codec":"flac",
+                     "samplingRate":\(sampleRate),"channels":2,"bitrate":1200}]}]}]}
+            ]}}
+            """)
+            let provider = PlexProvider(session: makeSession(), accountID: "account", http: stub)
+            let request = try await provider.audioPlaybackInfo(for: "flac", queueContext: nil)
+            guard case .authenticatedHTTP(let locator) = request.playbackSource else {
+                return XCTFail("Expected an authenticated FLAC source")
+            }
+            XCTAssertEqual(locator.accountID, "account")
+            XCTAssertEqual(locator.resource.path, "library/parts/8/music.flac")
+            XCTAssertEqual(locator.formatHint.container, "flac")
+            XCTAssertEqual(locator.deliveryMode, .directFile)
+            XCTAssertEqual(locator.purpose, .audioStream)
+            XCTAssertFalse(request.isTranscoding)
+            XCTAssertEqual(request.quality?.isDirectPlay, true)
+            XCTAssertEqual(request.quality?.codec, "flac")
+            XCTAssertEqual(request.quality?.sampleRate, sampleRate)
+            XCTAssertEqual(request.quality?.channels, 2)
+            XCTAssertFalse(locator.resource.queryItems.contains {
+                $0.name.localizedCaseInsensitiveContains("token")
+            })
+        }
+    }
+
     func testPlaybackInfoPrefersHDBIFWhenAvailable() async throws {
         let stub = StubHTTPClient()
         stub.stub(pathSuffix: "/library/metadata/101", json: """

@@ -30,6 +30,7 @@ struct PlayerOptionsActions {
     var playNextEpisode: () -> Void = {}
     var playPreviousEpisode: () -> Void = {}
     var restart: () -> Void = {}
+    var restoreInfoFocus: () -> Void = {}
 }
 
 /// The complete custom-player transport, stacked bottom-up:
@@ -160,7 +161,7 @@ struct PlayerControls: View {
         case infoPrev       // Info panel: Previous Episode
         case infoRestart    // Info panel: Restart
         case infoStats      // Info panel: Playback Info (diagnostics) toggle
-        case infoSong       // Info panel: the playing song (opens Apple Music)
+        case infoSong       // Info panel: the playing song
         /// One face in the Cast card, by position in the row.
         case castMember(Int)
         case sequenceItem(Int)
@@ -1406,18 +1407,13 @@ struct PlayerControls: View {
                     }
                 }
         } else {
-            // Clip to the card's own silhouette. Liquid Glass draws a soft shadow
-            // beyond the shape it's applied to, and that shadow was escaping the
-            // strip masked off at the bottom of the screen — so the card announced
-            // itself with a glow above the bottom edge while still closed. (Losing
-            // the shadow is no loss here: the panels deliberately don't use one, a
-            // per-frame offscreen blur over Dolby Vision being the original
-            // frame-drop culprit. See `PanelGlassBackground`.)
+            // Hide parked glass shadows without cutting off the visible song's
+            // focus lift. Keep one view identity through the reveal.
             InfoPanelView(model: model, actions: actions, focus: $focus, onClose: closeInfoCard)
                 .clipShape(RoundedRectangle(
                     cornerRadius: PlozzTheme.Metrics.playerPanelCornerRadius,
                     style: .continuous
-                ))
+                ).inset(by: infoMode ? -InfoPanelView.cardHeight : 0))
         }
     }
 

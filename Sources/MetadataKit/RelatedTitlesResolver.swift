@@ -37,8 +37,8 @@ public struct TMDbRelatedProvider: RelatedTitlesProviding {
 /// the app. Trakt's ordinary quota also appears to be app+IP, but its client id
 /// carries a shared blast radius — Trakt has firewall-blocked a distributed app's
 /// key outright over runaway traffic from a couple of installs, which would take
-/// every user down at once. So Trakt sits second, answering only where TMDb has
-/// nothing, which keeps aggregate traffic on it low.
+/// every user down at once. All enabled sources contribute; the merged public
+/// result is cached to bound repeat traffic.
 public struct RelatedTitlesResolver: Sendable {
     private let providers: [any RelatedTitlesProviding]
 
@@ -48,10 +48,9 @@ public struct RelatedTitlesResolver: Sendable {
 
     /// Related titles for `query`, continuations first.
     ///
-    /// Providers are tried in order and their results **merged**, not raced: a
+    /// Providers run concurrently and their results are **merged**, not raced: a
     /// provider that contributes only relations (AniList) shouldn't stop a later one
-    /// contributing recommendations. Stops early once `limit` is met so an ordinary
-    /// show costs a single request.
+    /// contributing recommendations. The merged result is bounded by `limit`.
     public func relatedTitles(for query: MetadataQuery, limit: Int = 24) async -> [RelatedTitle] {
         guard limit > 0 else { return [] }
         let active = providers.filter(\.isEnabled)

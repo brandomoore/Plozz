@@ -5,6 +5,61 @@ import XCTest
 @testable import AppRuntime
 
 final class CrossServerIdentityHydrationTests: XCTestCase {
+  func testRelatedIndexedLookupUsesOnlyTheNamedActiveAccount() async throws {
+    let session = sourceLookupSession()
+    let first = MediaItem(id: "shared-id", title: "First account", kind: .movie)
+    let second = MediaItem(id: "shared-id", title: "Second account", kind: .movie)
+    let firstCalls = IdentityDetailRequests()
+    let secondCalls = IdentityDetailRequests()
+    let firstProvider = PartialIdentityProvider(
+      session: session, sparse: first, full: first, detailRequests: firstCalls
+    )
+    let secondProvider = PartialIdentityProvider(
+      session: session, sparse: second, full: second, detailRequests: secondCalls
+    )
+    let fetch = relatedTitleLibraryItemLoader(in: [
+      ResolvedAccount(account: Account(id: "one", from: session), provider: firstProvider),
+      ResolvedAccount(account: Account(id: "two", from: session), provider: secondProvider)
+    ])
+    let result = await fetch(.init(accountID: "two", itemID: "shared-id", kind: .movie))
+    XCTAssertEqual(result?.title, second.title)
+    XCTAssertEqual(result?.sourceAccountID, "two")
+    let missing = await fetch(.init(accountID: "inactive", itemID: "shared-id", kind: .movie))
+    XCTAssertNil(missing)
+    let firstRequests = await firstCalls.ids
+    let secondRequests = await secondCalls.ids
+    XCTAssertTrue(firstRequests.isEmpty)
+    XCTAssertEqual(secondRequests, ["shared-id"])
+  }
+
+  func testRelatedIndexedLookupPropagatesCancellationAndDeadline() async {
+    for cancelOwner in [true, false] {
+      let started = expectation(description: "Native request started")
+      let cancelled = expectation(description: "Native request cancelled")
+      let session = sourceLookupSession()
+      let item = MediaItem(id: "owned", title: "Owned", kind: .movie)
+      let provider = PartialIdentityProvider(
+        session: session, sparse: item, full: item,
+        itemHandler: {
+          started.fulfill()
+          do { try await Task.sleep(for: .seconds(30)) }
+          catch { cancelled.fulfill(); throw error }
+          return item
+        }
+      )
+      let fetch = relatedTitleLibraryItemLoader(in: [
+        ResolvedAccount(account: Account(id: "server", from: session), provider: provider)
+      ])
+      let task = Task { await fetch(.init(accountID: "server", itemID: "owned", kind: .movie)) }
+      defer { task.cancel() }
+      await fulfillment(of: [started], timeout: 1)
+      if cancelOwner { task.cancel() }
+      await fulfillment(of: [cancelled], timeout: cancelOwner ? 1 : 6)
+      let result = await task.value
+      XCTAssertNil(result)
+    }
+  }
+
   func testRejectedSparseSourceCannotBridgeToAnotherWatchTarget() async throws {
     var a = MediaItem(id: "a", title: "Movie", kind: .movie,
                       providerIDs: ["Imdb": "tt111", "Tmdb": "123"], sourceAccountID: "server")
@@ -397,12 +452,14 @@ private struct PartialIdentityProvider: MediaProvider {
   var additionalItems: [MediaItem] = []
   var searchEnabled = true
   var detailRequests: IdentityDetailRequests?
+  var itemHandler: (@Sendable () async throws -> MediaItem)?
 
   func libraries() async throws -> [MediaLibrary] { [] }
   func continueWatching(limit: Int) async throws -> [MediaItem] { [] }
   func latest(limit: Int) async throws -> [MediaItem] { [] }
   func item(id: String) async throws -> MediaItem {
     await detailRequests?.record(id)
+    if let itemHandler { return try await itemHandler() }
     if id == sparse.id { return full }
     if let item = additionalItems.first(where: { $0.id == id }) { return item }
     throw AppError.notFound

@@ -18,6 +18,48 @@ an empty provider feed from local curation without recording media or account ID
 Home rows, item detail, series/season experience, and the online-trailer
 fallback when the user's server has no attached trailer.
 
+## Related loading
+
+Library-only Related rows use the active profile's identity index to locate a
+native copy, then fetch that item from its owning account instead of searching
+every server by title. The fresh response must agree on item, account, kind and
+strong catalog identity; native titles, artwork and watch state remain intact.
+Missing, stale or unavailable index entries fall back to the existing verified
+search. Index membership alone is not enough to display a synthetic library card.
+
+Plex, Jellyfin and Emby fetch known copies in exact-ID batches scoped to the
+authenticated account, including when several accounts use the same provider.
+Silo, shares and other providers without the optional `LibraryItemBatchProviding`
+transport retain individual lookups. A partial, failed or invalid batch retries
+only the affected candidates individually before falling back to verified search.
+Raw item IDs never identify an account or combine different servers' responses.
+
+At most six batch/individual lookup or search jobs run concurrently, with a 24-candidate budget and
+twelve distinct displayed results. Known indexed copies reserve display slots,
+so a full indexed row does not initiate searches for unused later recommendations.
+Unknown candidates retain bounded lookahead so a slow early search cannot hold
+back a full set of later matches.
+Provider order and continuation priority remain intact. Fast rows publish as a
+batch immediately on completion; slower fallbacks retain 400-ms coalesced progress.
+A cancellable publication timer exposes ready cards even when another server is
+still pending and no further result arrives to trigger publication.
+The detail model owns cancellation, including native lookups, and resumes an
+interrupted row when returning. Cancelled recommendation responses do not enter
+the public cache. Discovery's external-inclusive mode remains network-free after
+recommendations, using the index only.
+
+Seeded movie/series pages prepare public recommendations alongside their initial
+detail fetch, without starting private library reads. Fresh detail consumes that
+work only when the complete recommendation key still matches; identity changes
+cancel it and resolve the new query. Failed/cancelled opens discard unconsumed
+preparation. Series Related loading starts after fresh detail, not after seasons.
+
+Recommendation caching does not cache private library metadata. A new detail
+loader still verifies native copies; cached public recommendations cannot promise
+zero network or immediate cold-provider responses. See the controlled
+[Related loading measurements](../../docs/performance-lab.md#related-loading-while-scrolling)
+for timing scope and scrolling limitations.
+
 ## Continue Watching watch actions
 
 In-progress movies, episodes and videos offer both **Mark as Watched** and
@@ -275,6 +317,12 @@ Title fallbacks, descriptions, metadata, and badge details scale together;
 artwork sizing and action controls remain independent. On Apple TV, Detail Page
 text sizing also scales the episode titles and three-line synopses below episode
 artwork, including loading placeholders; other row/card labels remain independent.
+Episode synopses use the same font size and line spacing as hero descriptions at
+every adjustment, while episode titles stay larger and semibold.
+TV episode descriptions are visible on every labeled card by default. The
+profile-scoped **Only show descriptions on focus** toggle in the detail-page label settings
+restores the delayed focus-only reveal. Hidden labels and spoiler protection
+still apply; label visibility presets do not reset this independent preference.
 Home's text column can use the same wider budget as an enlarged logo, even at
 default Text size. Smaller logos retain the original reading width; changing
 Text size alone never widens it. Both TV foreground renderers share this rule,
@@ -813,7 +861,8 @@ records on both platforms; error dialogs, playback routing and timeouts are unch
   episodes, extras, and filmography resolve the same policy on iOS and tvOS.
   Explicit episode overrides, including previously persisted ones, are honored.
   On TV, the episode title moves down on focus and back up on exit in every
-  focus style, including System; the synopsis keeps its delayed reveal.
+  focus style, including System; the synopsis uses a delayed reveal only when
+  **Only show descriptions on focus** is enabled.
   Loading captions use the same motion without changing row geometry, and
   Reduce Motion keeps the caption stationary.
   Collection and playlist contents follow Browse across every library. Library
@@ -870,8 +919,16 @@ records on both platforms; error dialogs, playback routing and timeouts are unch
   and hashed trailer ownership so an intermittent failure can be inspected
   without restarting the affected app.
 - **Series** — `SeriesDetailView` + `SeriesResume` provide one stable
-  series backdrop with focus-driven season tabs and an episode rail; the
-  hero text updates as focus moves without distracting backdrop swaps.
+  series header, focus-driven season tabs and an episode rail. On TV and mobile,
+  the header describes and rates the show, not the selected or resume episode;
+  missing series metadata never falls back to episode prose or scores.
+  Home, library, Search, Related, Continue Watching, season/context-menu and
+  deep-link entry retain their episode/season selection without changing that
+  subject, including the first paint while parent metadata is loading.
+  Episode descriptions stay in the browser; explicit Episode Info pages retain
+  their own synopsis, ratings and spoiler rules. Play/Resume, versions and watched
+  actions still target the selected episode, while Watchlist and Trailer target
+  the series. No series-versus-episode setting is needed.
   Season lists publish independently of the server resume lookup on both
   platforms. "Go to Show" retains the episode's season and can load its rail
   while resume is pending; entries without an explicit season still wait for
@@ -1412,7 +1469,12 @@ both the rows and featured stage. With the native Sidebar, the first Showcase ro
 also includes the hidden hero's distance in its real scroll offset, balanced by
 matching content padding so card placement does not change. Native Home chrome
 therefore disappears on the first Down, not the second row, and reappears only
-when returning to the hero. This padding is a coordinate origin, separate from
+when returning to the hero. Selecting the already-active native Home destination
+resets both the Showcase rows and the featured stage before content focus returns;
+resetting the row offset alone leaves the hero hidden. Right from the sidebar and
+returning from another destination do not issue this explicit reset. With Hero
+disabled, reselection returns to the first row instead.
+This padding is a coordinate origin, separate from
 the row destination and height stops. Changing it rebases the native scroll
 target without adding a spring or restarting the in-flight viewport-height
 path, including when Up reaches the hero before the first row settles.
@@ -1572,6 +1634,13 @@ from the parent hosting tree and hides the hosted content from accessibility.
 The media-item router retains a comparable identity within its navigation scope.
 Refreshing its callback uses the latest route without invalidating every realized
 card's context menu; enabling or disabling navigation still updates the menus.
+Detail pages install their optional override with
+`mediaItemNavigator(_:preservingInherited: true)`, retaining the inherited route
+when no override is supplied. Do not construct a fresh `MediaItemNavigator`
+inside an environment transform: its new identity rebuilds unchanged episode
+menus whenever the page's callback refreshes. Hosted detail coverage counts
+episode action-list builds across callback changes; shared-router coverage
+checks fresh callbacks, inheritance, explicit removal, and released captures.
 Native-host coverage changes the route callback during upward navigation and
 asserts that already-realized cards do not rebuild their action lists.
 Vertical row owners remain in a `VStack`: the native model offset reaches its
