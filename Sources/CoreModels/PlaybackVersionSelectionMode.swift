@@ -9,7 +9,7 @@ public enum PlaybackVersionSelectionMode: String, Codable, CaseIterable, Sendabl
         switch self {
         case .askEveryTime: "Ask every time"
         case .automatic: "Choose automatically"
-        case .serverOrder: "Server order"
+        case .serverOrder: "Use first from server"
         }
     }
 

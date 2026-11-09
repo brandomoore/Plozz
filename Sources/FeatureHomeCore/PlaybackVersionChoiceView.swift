@@ -108,7 +108,7 @@ private struct PlaybackVersionChoiceContent: View {
                     .init("Choose automatically", identifier: "version-choice-automatic") {
                         model.chooseMode(.automatic, promptID: prompt.id)
                     },
-                    .init("Server order", identifier: "version-choice-server-order") {
+                    .init("Use first from server", identifier: "version-choice-server-order") {
                         model.chooseMode(.serverOrder, promptID: prompt.id)
                     }
                 ],

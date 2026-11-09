@@ -495,7 +495,7 @@ final class PlaybackVersionChoiceHostedTests: XCTestCase {
         XCTAssertNil(probe.selected)
         XCTAssertNil(probe.error)
         let introduction = try await visibleText(in: window, name: "version-introduction-\(Int(width))-\(typeSize)")
-        for label in ["How should versions be selected", "Ask every time", "Choose automatically", "Server order", "Settings"] {
+        for label in ["How should versions be selected", "Ask every time", "Choose automatically", "Use first from server", "Settings"] {
             XCTAssertTrue(introduction.localizedCaseInsensitiveContains(label), "Missing \(label): \(introduction)")
         }
         XCTAssertFalse(introduction.contains("Remember"), "Remembering is a separate default-on setting, not a first-use choice.")
@@ -597,7 +597,7 @@ final class PlaybackVersionChoiceHostedTests: XCTestCase {
             let linear = rgb.map { $0 <= 0.04045 ? $0 / 12.92 : pow(($0 + 0.055) / 1.055, 2.4) }
             return linear[0] * 0.2126 + linear[1] * 0.7152 + linear[2] * 0.0722
         }
-        for label in ["Ask every time", "Choose automatically", "Server order"] {
+        for label in ["Ask every time", "Choose automatically", "Use first from server"] {
             let observation = try XCTUnwrap(request.results?.first {
                 $0.topCandidates(1).first?.string == label
             }, "Missing choice for contrast measurement: \(label)")

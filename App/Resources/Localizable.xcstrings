@@ -160762,6 +160762,7 @@
       }
     },
     "Ask before each multi-version video, including autoplay, or choose automatically without opening the version picker." : {
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -161198,6 +161199,226 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "每次播放有多個版本的影片前詢問，包括自動播放時；也可以為每部電影或影集記住你的選擇。"
+          }
+        }
+      }
+    },
+    "Ask each time, let Plozz choose, or use the server's first version." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "السؤال في كل مرة، أو ترك الاختيار لـ Plozz، أو استخدام أول نسخة يعرضها الخادم."
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Питане всеки път, избор от Plozz или използване на първата версия, върната от сървъра."
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Pregunta cada vegada, deixa que Plozz triï o fes servir la primera versió que retorna el servidor."
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Vždy se zeptat, nechat Plozz vybrat nebo použít první verzi vrácenou serverem."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Spørg hver gang, lad Plozz vælge, eller brug den første version, serveren returnerer."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Jedes Mal fragen, Plozz wählen lassen oder die erste vom Server gelieferte Version verwenden."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ερώτηση κάθε φορά, επιλογή από το Plozz ή χρήση της πρώτης έκδοσης που επιστρέφει ο διακομιστής."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Preguntar cada vez, dejar que Plozz elija o usar la primera versión que devuelve el servidor."
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "هر بار پرسیده شود، Plozz انتخاب کند یا از اولین نسخهٔ ارائه‌شده توسط سرور استفاده شود."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Kysy joka kerta, anna Plozzin valita tai käytä palvelimen palauttamaa ensimmäistä versiota."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Demander à chaque fois, laisser Plozz choisir ou utiliser la première version renvoyée par le serveur."
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "לשאול בכל פעם, לאפשר ל־Plozz לבחור או להשתמש בגרסה הראשונה שהשרת מחזיר."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "हर बार पूछें, Plozz को चुनने दें या सर्वर से मिला पहला वर्शन इस्तेमाल करें।"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Pitaj svaki put, prepusti odabir aplikaciji Plozz ili koristi prvu verziju koju poslužitelj vrati."
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Kérdezzen rá minden alkalommal, bízza a választást a Plozzra, vagy használja a szervertől kapott első verziót."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Tanyakan setiap kali, biarkan Plozz memilih, atau gunakan versi pertama yang dikirim server."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Chiedi ogni volta, lascia scegliere a Plozz o usa la prima versione restituita dal server."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "毎回確認するか、Plozzに任せるか、サーバーから返された最初のバージョンを使用します。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "매번 묻거나, Plozz가 선택하게 하거나, 서버가 반환한 첫 번째 버전을 사용합니다."
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Tanya setiap kali, biarkan Plozz memilih atau guna versi pertama yang dikembalikan oleh pelayan."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Spør hver gang, la Plozz velge eller bruk den første versjonen serveren returnerer."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Elke keer vragen, Plozz laten kiezen of de eerste versie gebruiken die de server teruggeeft."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Pytaj za każdym razem, pozwól Plozz wybrać lub użyj pierwszej wersji zwróconej przez serwer."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Perguntar sempre, deixar o Plozz escolher ou usar a primeira versão retornada pelo servidor."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Întreabă de fiecare dată, lasă Plozz să aleagă sau folosește prima versiune returnată de serverul selectat."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Спрашивать каждый раз, доверить выбор Plozz или использовать первую версию, возвращённую выбранным сервером."
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Vždy sa opýtať, prenechať výber aplikácii Plozz alebo použiť prvú verziu vrátenú vybraným serverom."
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Vsakič vprašaj, prepusti izbiro aplikaciji Plozz ali uporabi prvo različico, ki jo vrne izbrani strežnik."
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Pitaj svaki put, prepusti izbor aplikaciji Plozz ili koristi prvu verziju koju izabrani server vrati."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Fråga varje gång, låt Plozz välja eller använd den första versionen som den valda servern returnerar."
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ถามทุกครั้ง ให้ Plozz เลือก หรือใช้เวอร์ชันแรกที่ส่งกลับมาจากเซิร์ฟเวอร์ที่เลือก"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Her seferinde sor, Plozz seçsin veya seçili sunucudan gelen ilk sürümü kullan."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Запитувати щоразу, дозволити Plozz вибирати або використовувати першу версію, яку повернув вибраний сервер."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Hỏi mỗi lần, để Plozz chọn hoặc dùng phiên bản đầu tiên do máy chủ đã chọn trả về."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "每次询问、让 Plozz 选择，或使用所选服务器返回的第一个版本。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "每次詢問、讓 Plozz 選擇，或使用所選伺服器傳回的第一個版本。"
           }
         }
       }
@@ -170026,6 +170247,226 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "自動下載"
+          }
+        }
+      }
+    },
+    "Automatically picks a version by weighing resolution, HDR and bitrate, while considering compatibility with your device. For example, a lower-bitrate HDR video might be selected over a higher-bitrate SDR video.\n\nIf you enable Remember series version choices, your previous choice takes priority when a similar version is available for that show." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "يختار نسخة تلقائيًا بموازنة الدقة وHDR ومعدل البت، مع مراعاة توافقها مع جهازك. على سبيل المثال، قد يُختار فيديو HDR بمعدل بت أقل بدلًا من فيديو SDR بمعدل بت أعلى.\n\nإذا فعّلت «تذكّر النسخ المختارة للمسلسلات»، فسيكون لاختيارك السابق الأولوية عند توفر نسخة مشابهة لذلك المسلسل."
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Избира автоматично версия, като съпоставя резолюцията, HDR и битрейта и отчита съвместимостта с устройството ви. Например може да избере HDR видео с по-нисък битрейт вместо SDR видео с по-висок битрейт.\n\nАко включите „Запомняне на избора на версии за сериали“, предишният ви избор има предимство, когато за съответния сериал е налична подобна версия."
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Tria una versió automàticament sospesant la resolució, l'HDR i la taxa de bits, i tenint en compte la compatibilitat amb el dispositiu. Per exemple, pot triar un vídeo HDR amb una taxa de bits més baixa en lloc d'un vídeo SDR amb una taxa de bits més alta.\n\nSi actives «Recorda les versions triades per a les sèries», la teva tria anterior té prioritat quan hi ha una versió semblant disponible per a aquella sèrie."
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Při automatickém výběru verze zvažuje rozlišení, HDR a datový tok a zohledňuje kompatibilitu s vaším zařízením. Například může vybrat HDR video s nižším datovým tokem místo SDR videa s vyšším datovým tokem.\n\nPokud zapnete „Pamatovat si výběr verzí pro seriály“, bude mít vaše předchozí volba přednost, když bude pro daný seriál dostupná podobná verze."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Vælger automatisk en version ved at afveje opløsning, HDR og bitrate og tage hensyn til kompatibiliteten med din enhed. For eksempel kan en HDR-video med lavere bitrate blive valgt frem for en SDR-video med højere bitrate.\n\nHvis du aktiverer »Husk versionsvalg for serier«, har dit tidligere valg forrang, når en lignende version er tilgængelig for den pågældende serie."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Wählt automatisch eine Version aus und wägt dabei Auflösung, HDR und Bitrate gegeneinander ab. Auch die Kompatibilität mit deinem Gerät wird berücksichtigt. Beispielsweise kann ein HDR-Video mit niedrigerer Bitrate einem SDR-Video mit höherer Bitrate vorgezogen werden.\n\nWenn du „Gewählte Versionstypen für Serien merken“ aktivierst, hat deine vorherige Wahl Vorrang, sofern für die Serie eine ähnliche Version verfügbar ist."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Επιλέγει αυτόματα μια έκδοση, σταθμίζοντας την ανάλυση, το HDR και τον ρυθμό μετάδοσης bit, λαμβάνοντας υπόψη τη συμβατότητα με τη συσκευή σας. Για παράδειγμα, μπορεί να επιλεγεί ένα βίντεο HDR με χαμηλότερο ρυθμό μετάδοσης bit αντί για ένα βίντεο SDR με υψηλότερο ρυθμό μετάδοσης bit.\n\nΑν ενεργοποιήσετε την επιλογή «Απομνημόνευση επιλογών έκδοσης για σειρές», η προηγούμενη επιλογή σας έχει προτεραιότητα όταν υπάρχει παρόμοια έκδοση για τη συγκεκριμένη σειρά."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Elige automáticamente una versión sopesando la resolución, el HDR y la tasa de bits, teniendo en cuenta la compatibilidad con tu dispositivo. Por ejemplo, puede elegir un vídeo HDR con una tasa de bits menor en lugar de uno SDR con una tasa de bits mayor.\n\nSi activas «Recordar las versiones elegidas para las series», tu elección anterior tiene prioridad cuando hay una versión similar disponible para esa serie."
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "یک نسخه را با سنجیدن وضوح تصویر، HDR و نرخ بیت و در نظر گرفتن سازگاری با دستگاه شما به‌طور خودکار انتخاب می‌کند. برای مثال، ممکن است ویدیوی HDR با نرخ بیت پایین‌تر به ویدیوی SDR با نرخ بیت بالاتر ترجیح داده شود.\n\nاگر «به‌خاطر سپردن نسخه‌های انتخاب‌شده برای سریال‌ها» را فعال کنید، وقتی نسخه‌ای مشابه برای آن سریال موجود باشد، انتخاب قبلی شما در اولویت قرار می‌گیرد."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Valitsee version automaattisesti punnitsemalla tarkkuutta, HDR:ää ja bittinopeutta sekä huomioimalla yhteensopivuuden laitteesi kanssa. Esimerkiksi pienemmän bittinopeuden HDR-video voidaan valita suuremman bittinopeuden SDR-videon sijaan.\n\nJos otat käyttöön asetuksen ”Muista sarjojen versiovalinnat”, aiempi valintasi on etusijalla, kun kyseiselle sarjalle on saatavilla samankaltainen versio."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Choisit automatiquement une version en pondérant la résolution, le HDR et le débit binaire, tout en tenant compte de la compatibilité avec votre appareil. Par exemple, une vidéo HDR au débit binaire plus faible peut être préférée à une vidéo SDR au débit binaire plus élevé.\n\nSi vous activez « Mémoriser les choix de version pour les séries », votre choix précédent est prioritaire lorsqu’une version similaire est disponible pour cette série."
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "הגרסה נבחרת אוטומטית לפי שקלול הרזולוציה, HDR וקצב הסיביות, תוך התחשבות בתאימות למכשיר שלך. לדוגמה, ייתכן שסרטון HDR עם קצב סיביות נמוך יותר ייבחר במקום סרטון SDR עם קצב סיביות גבוה יותר.\n\nאם האפשרות ״זכירת הגרסה שנבחרה לכל סדרה״ מופעלת, הבחירה הקודמת שלך מקבלת עדיפות כשזמינה גרסה דומה לאותה סדרה."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "रिज़ॉल्यूशन, HDR और बिटरेट का आकलन करके और आपके डिवाइस के साथ अनुकूलता को ध्यान में रखकर अपने आप वर्शन चुनता है। उदाहरण के लिए, अधिक बिटरेट वाले SDR वीडियो के बजाय कम बिटरेट वाला HDR वीडियो चुना जा सकता है।\n\nअगर आप “हर सीरीज़ के लिए चुने गए वर्शन याद रखें” चालू करते हैं, तो उस शो के लिए मिलता-जुलता वर्शन उपलब्ध होने पर आपकी पिछली पसंद को प्राथमिकता मिलती है।"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Automatski odabire verziju procjenjujući razlučivost, HDR i brzinu prijenosa, uzimajući pritom u obzir kompatibilnost s vašim uređajem. Na primjer, može odabrati HDR videozapis s nižom brzinom prijenosa umjesto SDR videozapisa s višom brzinom prijenosa.\n\nAko uključite „Zapamti odabire verzija za serije”, vaš prethodni odabir ima prednost kada je za tu seriju dostupna slična verzija."
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "A felbontás, a HDR és a bitráta mérlegelésével automatikusan választ verziót, figyelembe véve az eszközével való kompatibilitást. Például egy alacsonyabb bitrátájú HDR-videót választhat egy magasabb bitrátájú SDR-videó helyett.\n\nHa bekapcsolja a „Sorozatok verzióválasztásának megjegyzése” beállítást, a korábbi választása elsőbbséget élvez, ha az adott sorozathoz elérhető egy hasonló verzió."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Memilih versi secara otomatis dengan menilai resolusi, HDR, dan bitrate, sambil mempertimbangkan kompatibilitas dengan perangkat Anda. Misalnya, video HDR dengan bitrate lebih rendah dapat dipilih alih-alih video SDR dengan bitrate lebih tinggi.\n\nJika Anda mengaktifkan “Ingat pilihan versi serial”, pilihan sebelumnya akan diutamakan jika versi serupa tersedia untuk serial tersebut."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Sceglie automaticamente una versione valutando risoluzione, HDR e bitrate e tenendo conto della compatibilità con il tuo dispositivo. Ad esempio, potrebbe preferire un video HDR con bitrate inferiore a un video SDR con bitrate superiore.\n\nSe attivi “Ricorda le versioni scelte per le serie”, la tua scelta precedente ha la precedenza quando è disponibile una versione simile per quella serie."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "解像度、HDR、ビットレートを総合的に評価し、デバイスとの互換性も考慮して、バージョンを自動的に選びます。たとえば、ビットレートが高いSDR動画よりも、ビットレートが低いHDR動画が選ばれることがあります。\n\n「シリーズごとのバージョン選択を記憶」を有効にすると、その番組で似たバージョンが利用できる場合に、以前の選択が優先されます。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "해상도, HDR, 비트레이트를 종합적으로 평가하고 기기 호환성을 고려해 버전을 자동으로 선택합니다. 예를 들어, 비트레이트가 높은 SDR 영상보다 비트레이트가 낮은 HDR 영상이 선택될 수 있습니다.\n\n‘시리즈별 버전 선택 기억’을 켜면 해당 시리즈에 비슷한 버전이 있을 때 이전 선택이 우선됩니다."
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Memilih versi secara automatik dengan menimbang resolusi, HDR dan kadar bit serta mengambil kira keserasian dengan peranti anda. Contohnya, video HDR dengan kadar bit lebih rendah mungkin dipilih berbanding video SDR dengan kadar bit lebih tinggi.\n\nJika anda mengaktifkan “Ingat pilihan versi siri”, pilihan terdahulu anda diutamakan apabila versi yang serupa tersedia untuk siri tersebut."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Velger automatisk en versjon ved å veie oppløsning, HDR og bithastighet opp mot hverandre og ta hensyn til kompatibilitet med enheten din. For eksempel kan en HDR-video med lavere bithastighet bli valgt fremfor en SDR-video med høyere bithastighet.\n\nHvis du slår på «Husk versjonsvalg for serier», prioriteres det tidligere valget ditt når en lignende versjon er tilgjengelig for serien."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Kiest automatisch een versie door resolutie, HDR en bitrate tegen elkaar af te wegen en rekening te houden met de compatibiliteit met je apparaat. Zo kan een HDR-video met een lagere bitrate worden gekozen in plaats van een SDR-video met een hogere bitrate.\n\nAls je ‘Versiekeuzes voor series onthouden’ inschakelt, krijgt je eerdere keuze voorrang als er een vergelijkbare versie voor die serie beschikbaar is."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Automatycznie wybiera wersję, oceniając rozdzielczość, HDR i przepływność oraz uwzględniając zgodność z urządzeniem. Na przykład film HDR o niższej przepływności może zostać wybrany zamiast filmu SDR o wyższej przepływności.\n\nJeśli włączysz opcję „Zapamiętuj wybór wersji dla seriali”, poprzedni wybór ma pierwszeństwo, gdy dla danego serialu dostępna jest podobna wersja."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Escolhe automaticamente uma versão ponderando a resolução, o HDR e a taxa de bits, além de considerar a compatibilidade com seu dispositivo. Por exemplo, um vídeo HDR com taxa de bits menor pode ser escolhido em vez de um vídeo SDR com taxa de bits maior.\n\nSe você ativar “Lembrar as versões escolhidas para séries”, sua escolha anterior terá prioridade quando uma versão semelhante estiver disponível para aquela série."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Alege automat o versiune evaluând rezoluția, HDR și rata de biți, ținând cont și de compatibilitatea cu dispozitivul tău. De exemplu, poate alege un videoclip HDR cu o rată de biți mai mică în locul unui videoclip SDR cu o rată de biți mai mare.\n\nDacă activezi „Reține versiunile alese pentru seriale”, alegerea anterioară are prioritate atunci când este disponibilă o versiune similară pentru acel serial."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Автоматически выбирает версию на основе разрешения, HDR и битрейта с учётом совместимости с вашим устройством. Например, HDR-видео с более низким битрейтом может быть выбрано вместо SDR-видео с более высоким битрейтом.\n\nЕсли включить «Запоминать выбор версий для сериалов», ваш предыдущий выбор будет иметь приоритет, когда для этого сериала доступна похожая версия."
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Automaticky vyberá verziu na základe rozlíšenia, HDR a dátového toku, pričom zohľadňuje kompatibilitu s vaším zariadením. Napríklad môže vybrať HDR video s nižším dátovým tokom namiesto SDR videa s vyšším dátovým tokom.\n\nAk zapnete možnosť „Zapamätať si výber verzií pre seriály“, váš predchádzajúci výber má prednosť, keď je pre daný seriál dostupná podobná verzia."
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Samodejno izbere različico glede na ločljivost, HDR in bitno hitrost ter upošteva združljivost z vašo napravo. Na primer lahko izbere video HDR z nižjo bitno hitrostjo namesto videa SDR z višjo bitno hitrostjo.\n\nČe omogočite možnost »Zapomni si izbire različic za serije«, ima vaša prejšnja izbira prednost, ko je za to serijo na voljo podobna različica."
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Automatski bira verziju procenjujući rezoluciju, HDR i protok, uzimajući u obzir i kompatibilnost sa vašim uređajem. Na primer, može izabrati HDR video sa nižim protokom umesto SDR videa sa višim protokom.\n\nAko uključite opciju „Zapamti izbor verzije za serije“, vaš prethodni izbor ima prednost kada je za tu seriju dostupna slična verzija."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Väljer automatiskt en version genom att väga samman upplösning, HDR och bithastighet samt ta hänsyn till kompatibiliteten med din enhet. Till exempel kan en HDR-video med lägre bithastighet väljas framför en SDR-video med högre bithastighet.\n\nOm du aktiverar ”Kom ihåg versionsval för serier” prioriteras ditt tidigare val när en liknande version är tillgänglig för den serien."
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "เลือกเวอร์ชันโดยอัตโนมัติ โดยพิจารณาความละเอียด HDR และบิตเรต พร้อมคำนึงถึงความเข้ากันได้กับอุปกรณ์ของคุณ ตัวอย่างเช่น ระบบอาจเลือกวิดีโอ HDR ที่มีบิตเรตต่ำกว่า แทนวิดีโอ SDR ที่มีบิตเรตสูงกว่า\n\nหากเปิด “จดจำเวอร์ชันที่เลือกสำหรับซีรีส์” ระบบจะให้ความสำคัญกับตัวเลือกก่อนหน้าของคุณเป็นอันดับแรก เมื่อมีเวอร์ชันที่คล้ายกันสำหรับซีรีส์นั้น"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Çözünürlük, HDR ve bit hızını değerlendirip cihazınızla uyumluluğu da dikkate alarak otomatik olarak bir sürüm seçer. Örneğin, bit hızı daha düşük bir HDR video, bit hızı daha yüksek bir SDR videoya tercih edilebilir.\n\n“Diziler için sürüm seçimlerini hatırla” seçeneğini etkinleştirirseniz, o dizi için benzer bir sürüm bulunduğunda önceki seçiminiz öncelik kazanır."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Автоматично вибирає версію, зважуючи роздільну здатність, HDR і бітрейт та враховуючи сумісність із вашим пристроєм. Наприклад, відео HDR із нижчим бітрейтом може мати перевагу над відео SDR із вищим бітрейтом.\n\nЯкщо ввімкнути «Запам’ятовувати вибір версій для серіалів», ваш попередній вибір матиме пріоритет, коли для цього серіалу доступна подібна версія."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Tự động chọn phiên bản bằng cách cân nhắc độ phân giải, HDR và tốc độ bit, đồng thời xem xét khả năng tương thích với thiết bị của bạn. Ví dụ: video HDR có tốc độ bit thấp hơn có thể được chọn thay vì video SDR có tốc độ bit cao hơn.\n\nNếu bật “Ghi nhớ phiên bản đã chọn cho phim bộ”, lựa chọn trước đó của bạn sẽ được ưu tiên khi có phiên bản tương tự cho phim bộ đó."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "自动选择版本时，会权衡分辨率、HDR 和码率，并考虑设备兼容性。例如，可能会选择码率较低的 HDR 视频，而非码率较高的 SDR 视频。\n\n如果启用“记住剧集的版本选择”，当该剧有类似版本可用时，将优先采用你之前的选择。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "自動選擇版本時，會權衡解析度、HDR 和位元率，並考量裝置相容性。例如，可能會選擇位元率較低的 HDR 影片，而非位元率較高的 SDR 影片。\n\n如果啟用「記住影集的版本選擇」，當該影集有類似版本可用時，會優先採用你先前的選擇。"
           }
         }
       }
@@ -315255,6 +315696,7 @@
       }
     },
     "Do you want to choose a version every time?" : {
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -415828,6 +416270,226 @@
         }
       }
     },
+    "How automatic selection works" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "كيفية عمل الاختيار التلقائي"
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Как работи автоматичният избор"
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Com funciona la selecció automàtica"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Jak funguje automatický výběr"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Sådan fungerer automatisk valg"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "So funktioniert die automatische Auswahl"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Πώς λειτουργεί η αυτόματη επιλογή"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Cómo funciona la selección automática"
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "نحوهٔ کار انتخاب خودکار"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Näin automaattinen valinta toimii"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Fonctionnement de la sélection automatique"
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "איך פועלת הבחירה האוטומטית"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "अपने आप चयन कैसे होता है"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Kako funkcionira automatski odabir"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Az automatikus választás működése"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Cara kerja pemilihan otomatis"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Come funziona la selezione automatica"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "自動選択の仕組み"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "자동 선택 방식"
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Cara pemilihan automatik berfungsi"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Slik fungerer automatisk valg"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zo werkt automatische selectie"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Jak działa automatyczny wybór"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Como funciona a seleção automática"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Cum funcționează selecția automată"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Как работает автоматический выбор"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ako funguje automatický výber"
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Kako deluje samodejna izbira"
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Kako funkcioniše automatski izbor"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Så fungerar automatiskt val"
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "การเลือกอัตโนมัติทำงานอย่างไร"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Otomatik seçim nasıl çalışır?"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Як працює автоматичний вибір"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Cách hoạt động của tính năng chọn tự động"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "自动选择的工作原理"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "自動選擇的運作方式"
+          }
+        }
+      }
+    },
     "How far the remote's left and right buttons jump during playback." : {
       "localizations" : {
         "ar" : {
@@ -416264,6 +416926,226 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "媒體卡片在整個 App 中的外觀。"
+          }
+        }
+      }
+    },
+    "How should versions be selected?" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "كيف تريد اختيار النسخ؟"
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Как да се избират версиите?"
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Com s'han de seleccionar les versions?"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Jak se mají vybírat verze?"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Hvordan skal versioner vælges?"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Wie sollen Versionen ausgewählt werden?"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Πώς πρέπει να επιλέγονται οι εκδόσεις;"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "¿Cómo se deben elegir las versiones?"
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "نسخه‌ها چگونه انتخاب شوند؟"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Miten versiot valitaan?"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Comment faut-il choisir les versions ?"
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "איך ייבחרו הגרסאות?"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "वर्शन कैसे चुने जाएँ?"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Kako odabrati verzije?"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Hogyan történjen a verziók kiválasztása?"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Bagaimana versi dipilih?"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Come selezionare le versioni?"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "バージョンをどう選びますか？"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "버전을 어떻게 선택할까요?"
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Bagaimana versi patut dipilih?"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Hvordan skal versjoner velges?"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Hoe moeten versies worden geselecteerd?"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Jak wybierać wersje?"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Como selecionar as versões?"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Cum vrei să fie alese versiunile?"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Как выбирать версии?"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ako sa majú vyberať verzie?"
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Kako naj se izbirajo različice?"
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Kako birati verzije?"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Hur ska versioner väljas?"
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ควรเลือกเวอร์ชันอย่างไร?"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Sürümler nasıl seçilsin?"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Як вибирати версії?"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Chọn phiên bản như thế nào?"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "如何选择版本？"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "要如何選擇版本？"
           }
         }
       }
@@ -820576,6 +821458,7 @@
       }
     },
     "Some videos have more than one version. Choose before each video, including the next episode, or let Plozz choose automatically." : {
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -993041,6 +993924,226 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "使用預設值：優先使用線上來源"
+          }
+        }
+      }
+    },
+    "Use first from server" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "استخدام أول نسخة يعرضها الخادم"
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Използване на първата версия, върната от сървъра"
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Fes servir la primera versió que retorna el servidor"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Použít první verzi vrácenou serverem"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Brug første version, serveren returnerer"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Erste vom Server gelieferte Version verwenden"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Χρήση της πρώτης έκδοσης που επιστρέφει ο διακομιστής"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Usar la primera versión devuelta por el servidor"
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "استفاده از اولین نسخهٔ دریافتی از سرور"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Käytä palvelimen ensin palauttamaa versiota"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Utiliser la première version renvoyée par le serveur"
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "שימוש בגרסה הראשונה שהשרת מחזיר"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "सर्वर से मिला पहला वर्शन इस्तेमाल करें"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Koristi prvu verziju koju poslužitelj vrati"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "A szervertől kapott első verzió használata"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Gunakan versi pertama yang dikirim server"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Usa la prima versione restituita dal server"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "サーバーが返した最初のバージョンを使用"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "서버가 반환한 첫 버전 사용"
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Guna versi pertama daripada pelayan"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Bruk første versjon fra serveren"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Eerste versie van de server gebruiken"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Użyj pierwszej wersji z serwera"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Usar primeira versão do servidor"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Folosește prima versiune de la server"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Использовать первую версию с сервера"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Použiť prvú verziu zo servera"
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Uporabi prvo različico s strežnika"
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Koristi prvu verziju sa servera"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Använd första versionen från servern"
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ใช้เวอร์ชันแรกที่เซิร์ฟเวอร์ส่งกลับมา"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Sunucudan gelen ilk sürümü kullan"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Використовувати першу версію, повернуту сервером"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Dùng phiên bản đầu tiên máy chủ trả về"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "使用服务器返回的第一个版本"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "使用伺服器傳回的第一個版本"
           }
         }
       }
