@@ -46,11 +46,17 @@ struct ExternalPlayerSettingsRows {
         ]
     }
 
-    static func external(model: ExternalPlayerSettingsModel) -> [SettingsSplitRow] {
+    static func external(
+        model: ExternalPlayerSettingsModel, installedPlayers: Set<ExternalPlayer>? = nil
+    ) -> [SettingsSplitRow] {
         [
                     SettingsSplitRow(id: "default-player", title: "Default player") {
+                        #if os(tvOS)
+                        ExternalPlayerConfiguration(model: model, installedPlayers: installedPlayers)
+                        #else
                         ExternalPlayerChoices(model: model)
-                    },
+                        #endif
+                    }.groupedContent(),
                     SettingsSplitRow(id: "external-player-help", title: "About external playback") {
                         ExternalPlayerHelp()
                     }.page(),
@@ -84,6 +90,11 @@ public struct ExternalPlayerSettingsView: View {
         List {
             SettingsSectionGroup("Default player") {
                 ExternalPlayerChoices(model: model)
+            }
+            if model.settings.player != .builtIn {
+                SettingsSectionGroup("\(model.settings.player.name) support") {
+                    ExternalPlayerSupportSummary(player: model.settings.player)
+                }
             }
             SettingsSectionGroup {
                 Button { showsAbout = true } label: {
@@ -131,9 +142,35 @@ public struct ExternalPlayerSettingsView: View {
     }
 }
 
+#if os(tvOS)
+private struct ExternalPlayerConfiguration: View {
+    @Bindable var model: ExternalPlayerSettingsModel
+    let installedPlayers: Set<ExternalPlayer>?
+    @FocusState private var focusedPlayer: ExternalPlayer?
+
+    private var previewPlayer: ExternalPlayer { focusedPlayer ?? model.settings.player }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: SettingsFormMetrics.sectionSpacing) {
+            SettingsControlGroup {
+                ExternalPlayerChoices(model: model, installedPlayers: installedPlayers, focus: $focusedPlayer)
+            }
+            SettingsFormGroup(title: Text("\(previewPlayer.name) support")) {
+                ExternalPlayerSupportSummary(player: previewPlayer)
+            }
+            .accessibilityIdentifier("external-player-support-section")
+        }
+    }
+}
+#endif
+
 private struct ExternalPlayerChoices: View {
     @Environment(\.scenePhase) private var scenePhase
     @Bindable var model: ExternalPlayerSettingsModel
+    #if os(tvOS)
+    let installedPlayers: Set<ExternalPlayer>?
+    let focus: FocusState<ExternalPlayer?>.Binding
+    #endif
     @State private var installed: Set<ExternalPlayer> = [.builtIn]
 
     private var choices: [ExternalPlayer] {
@@ -157,6 +194,7 @@ private struct ExternalPlayerChoices: View {
                         model.settings.player = player
                     }
                     .disabled(!isAvailable(player))
+                    .focused(focus, equals: player)
                     .accessibilityIdentifier("external-player-\(player.rawValue)")
                 }
             }
@@ -182,11 +220,6 @@ private struct ExternalPlayerChoices: View {
             .accessibilityValue(title(model.settings.player))
             .accessibilityIdentifier("external-player-selection").settingsSearchAnchor("external-player")
             #endif
-            ExternalPlayerSupportSummary(player: model.settings.player)
-            if model.settings.player == .vlc || model.settings.player == .custom {
-                Text("This player doesn't return watch progress to Plozz.")
-                    .settingsHelperText()
-            }
             if let error = model.error { Text(error.message).settingsHelperText() }
         }
         .task { refreshInstalledPlayers() }
@@ -196,7 +229,10 @@ private struct ExternalPlayerChoices: View {
     }
 
     private func isAvailable(_ player: ExternalPlayer) -> Bool {
-        player == .custom || installed.contains(player)
+        #if os(tvOS)
+        if let installedPlayers { return player == .custom || installedPlayers.contains(player) }
+        #endif
+        return player == .custom || installed.contains(player)
     }
 
     private func title(_ player: ExternalPlayer) -> Text {
@@ -217,8 +253,10 @@ private struct ExternalPlayerSupportSummary: View {
     let player: ExternalPlayer
 
     var body: some View {
-        if player != .builtIn {
-            VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 12) {
+            if player == .builtIn {
+                Text("Uses Plozz's playback controls and watch progress.")
+            } else {
                 Text("Plays compatible library videos, including server-converted streams.")
                 #if os(tvOS)
                 Text("Live TV and unsupported sources use Plozz.")
@@ -235,10 +273,13 @@ private struct ExternalPlayerSupportSummary: View {
                     Text("Network shares may need background streaming on iOS/iPadOS 26; otherwise they play in Plozz.")
                 }
                 #endif
+                if player == .vlc || player == .custom {
+                    Text("This player doesn't return watch progress to Plozz.")
+                }
             }
-            .settingsHelperText()
-            .accessibilityIdentifier("external-player-support")
         }
+        .settingsHelperText()
+        .accessibilityIdentifier("external-player-support")
     }
 }
 
