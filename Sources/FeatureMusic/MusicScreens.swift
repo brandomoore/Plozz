@@ -9,11 +9,13 @@ private enum MusicLayout {
     static let gridMinimum: CGFloat = 156
     static let artworkWidth: CGFloat? = nil
     static let title: Font = .title.bold()
+    static let screenPadding: CGFloat = 20
     #else
     static let isMobile = false
     static let gridMinimum: CGFloat = 280
     static let artworkWidth: CGFloat? = 480
     static let title: Font = .system(size: 40, weight: .bold)
+    static let screenPadding = PlozzTheme.Metrics.screenPadding
     #endif
 }
 
@@ -26,25 +28,12 @@ struct MusicLandingView: View {
     let onPlayTrack: (MusicTrack) -> Void
     var layout: MusicLandingLayout = .default
 
-    @Environment(\.plozzMetrics) private var metrics
-    @Environment(\.plozzNavigationContentInset) private var navigationContentInset
-
     var body: some View {
         ContentStateView(state: viewModel.state, emptyMessage: "No music found in your libraries.", onRetry: { Task { await viewModel.load() } }) { content in
-            let firstSection = firstRenderedSection(content)
-            ScrollView {
-                VStack(alignment: .leading, spacing: metrics.rowSpacing) {
-                    // The page is composed by iterating the data-driven layout, so
-                    // reordering or hiding a section is a value change, not a rewrite.
-                    ForEach(layout.visibleSections, id: \.self) { section in
-                        sectionView(section, content: content, isFirst: section == firstSection)
-                    }
-                }
-                .padding(.vertical, metrics.rowSpacing)
-            }
-            // Never clip a focused card's lift, shadow or border.
-            .scrollClipDisabled()
-            .scrollsTopNavigation()
+            MusicLandingContent(
+                content: content, controller: controller, onSelectRoute: onSelectRoute,
+                onPlayTrack: onPlayTrack, layout: layout
+            )
         }
         .navigationEntryFocus(viewModel.state == .idle || viewModel.state.isLoading ? .pending : nil)
         .task { if case .idle = viewModel.state { await viewModel.load() } }
@@ -59,6 +48,34 @@ struct MusicLandingView: View {
             try? await Task.sleep(for: .seconds(1.5))
             await viewModel.load()
         }
+    }
+}
+
+struct MusicLandingContent: View {
+    let content: MusicLandingViewModel.Content
+    let controller: AudioPlaybackController
+    let onSelectRoute: (MusicRoute) -> Void
+    let onPlayTrack: (MusicTrack) -> Void
+    var layout: MusicLandingLayout = .default
+
+    @Environment(\.plozzMetrics) private var metrics
+    @Environment(\.plozzNavigationContentInset) private var navigationContentInset
+
+    var body: some View {
+        let firstSection = firstRenderedSection(content)
+        ScrollView {
+            VStack(alignment: .leading, spacing: metrics.rowSpacing) {
+                ForEach(layout.visibleSections, id: \.self) { section in
+                    sectionView(section, content: content, isFirst: section == firstSection)
+                }
+            }
+            .padding(.top, MusicLayout.isMobile ? 12 : metrics.rowSpacing)
+            .padding(.bottom, metrics.rowSpacing)
+        }
+        #if os(tvOS)
+        .scrollClipDisabled()
+        #endif
+        .scrollsTopNavigation()
     }
 
     /// The first section that will actually render given the loaded content, so
@@ -141,10 +158,13 @@ struct MusicLandingView: View {
     @ViewBuilder
     private func entryTiles(trailing: AnyView?) -> some View {
         #if os(iOS)
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: 135))], spacing: 12) {
-            browseButtons
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                browseButtons
+            }
         }
-        .padding(.horizontal, PlozzTheme.Metrics.screenPadding)
+        .contentMargins(.horizontal, MusicLayout.screenPadding, for: .scrollContent)
+        .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
         #else
         HStack(alignment: .center, spacing: metrics.cardSpacing) {
             browseButtons
@@ -183,6 +203,7 @@ private struct BrowseButton: View {
     @Environment(\.plozzReduceTransparency) private var reduceTransparency
     @Environment(\.plozzMetrics) private var metrics
     @Environment(\.plozzCardFocusStyle) private var focusStyle
+    @Environment(\.themePalette) private var palette
 
     /// The glass lift is this button's focus outline, so with the outline off it
     /// keeps its resting surface (and therefore its resting ink) on focus.
@@ -201,9 +222,13 @@ private struct BrowseButton: View {
         }
         #else
         Button(action: action) {
-            Text(title).font(.headline).frame(maxWidth: .infinity, minHeight: 44)
+            Text(title).font(.subheadline.weight(.medium))
+                .fixedSize(horizontal: true, vertical: false)
         }
         .buttonStyle(.bordered)
+        .buttonBorderShape(.capsule)
+        .controlSize(.large)
+        .tint(palette.primaryText)
         #endif
     }
 
@@ -269,17 +294,19 @@ private struct MusicRow<Content: View>: View {
     @Environment(\.plozzCardFocusStyle) private var focusStyle
 
     var body: some View {
-        VStack(alignment: .leading, spacing: metrics.sectionTitleSpacing) {
+        VStack(alignment: .leading, spacing: MusicLayout.isMobile ? 12 : metrics.sectionTitleSpacing) {
             HStack(spacing: 24) {
-                Text(title).font(.system(size: metrics.sectionHeaderFontSize, weight: .bold))
+                Text(title)
+                    .font(MusicLayout.isMobile ? .title2.bold() : .system(size: metrics.sectionHeaderFontSize, weight: .bold))
+                    .accessibilityAddTraits(.isHeader)
                 Spacer()
                 if let trailing { trailing }
             }
             .padding(
                 .leading,
-                PlozzTheme.Metrics.screenPadding + navigationContentInset
+                MusicLayout.screenPadding + navigationContentInset
             )
-            .padding(.trailing, PlozzTheme.Metrics.screenPadding)
+            .padding(.trailing, MusicLayout.screenPadding)
 
             PinnedSidebarLeadingFade(
                 isActive: pinnedSidebarActive,
@@ -291,12 +318,12 @@ private struct MusicRow<Content: View>: View {
                     // The eager HStack kept every card's glass effect live, so fast
                     // focus moves recomputed every card's SDF and lagged navigation.
                     // Matches the lazy rails used elsewhere (MediaRowView/HomeView).
-                    LazyHStack(alignment: .top, spacing: metrics.cardSpacing) {
+                    LazyHStack(alignment: .top, spacing: MusicLayout.isMobile ? 12 : metrics.cardSpacing) {
                         content()
                     }
-                    .padding(.horizontal, PlozzTheme.Metrics.screenPadding)
+                    .padding(.horizontal, MusicLayout.screenPadding)
                     // Reserve space for focus growth without changing row spacing.
-                    .padding(.vertical, metrics.railShadowClearance)
+                    .padding(.vertical, MusicLayout.isMobile ? 0 : metrics.railShadowClearance)
                 }
                 #if os(tvOS)
                 .scrollClipDisabled(focusStyle.usesSystemEffect)
@@ -304,8 +331,8 @@ private struct MusicRow<Content: View>: View {
                 // Match the shared rails: a tight `railTopPadding`-based gap above the
                 // cards (not the wide `railVerticalPadding` used below the row), so the
                 // section header hugs the cards instead of floating far above them.
-                .padding(.top, metrics.railTopClearanceOffset)
-                .padding(.bottom, metrics.railBottomClearanceOffset)
+                .padding(.top, MusicLayout.isMobile ? 0 : metrics.railTopClearanceOffset)
+                .padding(.bottom, MusicLayout.isMobile ? 0 : metrics.railBottomClearanceOffset)
             }
         }
     }
@@ -330,7 +357,7 @@ struct MusicPageHeader: View {
             NowPlayingCard(controller: controller)
             #endif
         }
-        .padding(.horizontal, PlozzTheme.Metrics.screenPadding)
+        .padding(.horizontal, MusicLayout.screenPadding)
     }
 }
 
@@ -357,7 +384,7 @@ struct MusicGridView: View {
                     LazyVGrid(columns: columns, spacing: metrics.gridSpacing) {
                         content
                     }
-                    .padding(.horizontal, PlozzTheme.Metrics.screenPadding)
+                    .padding(.horizontal, MusicLayout.screenPadding)
                     if viewModel.hasMore {
                         ProgressView()
                             .onAppear { Task { await viewModel.loadMore() } }

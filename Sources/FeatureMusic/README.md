@@ -121,7 +121,16 @@ stack. Mozz downloads, radio, library synchronization and account storage are
 not imported.
 
 Mobile browsing reuses the tvOS view models and provider aggregation with
-touch-sized cards and vertically scrolling detail pages. Reduced-motion and
+touch-sized cards and vertically scrolling detail pages. The landing page uses
+20-point content margins, Dynamic Type section headings, and one horizontally
+scrolling row of compact native category pills. The pills use the theme's neutral
+foreground (white in dark themes), not the app accent; they still open their
+existing grids rather than behaving as selection filters. Rail headings and
+first/last artwork align with those margins; tvOS keeps its title-safe insets
+and focus clearance. Category grids share the mobile content margin.
+`--music-landing-fixture` previews this layout in the presentation host, including
+the `--music-light`, `--music-oled`, and `--music-large-text` variants.
+Reduced-motion and
 reduced-transparency preferences remain effective. The port's source copy is
 not yet part of the reviewed translation pipeline.
 

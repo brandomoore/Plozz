@@ -224,7 +224,13 @@ struct PresentationHostApp: App {
 
     var body: some Scene {
         WindowGroup {
-            if ProcessInfo.processInfo.arguments.contains("--music-detail-fixture") {
+            if ProcessInfo.processInfo.arguments.contains("--music-landing-fixture") {
+                MusicLandingFixture(
+                    palette: ProcessInfo.processInfo.arguments.contains("--music-light") ? .light :
+                        ProcessInfo.processInfo.arguments.contains("--music-oled") ? .pureBlack : .dark,
+                    textSize: ProcessInfo.processInfo.arguments.contains("--music-large-text") ? .accessibility3 : .large
+                )
+            } else if ProcessInfo.processInfo.arguments.contains("--music-detail-fixture") {
                 MusicDetailFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--music-player-fixture") {
                 MusicPlayerFixture()
