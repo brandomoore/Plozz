@@ -69,7 +69,7 @@ final class PlaybackVersionChoiceTests: XCTestCase {
     }
 
     func testColdSingleVersionSeedWaitsForInventoryBeforeFirstAndEveryTimePicker() async throws {
-        for mode: PlaybackVersionSelectionMode? in [nil, .askEveryTime, .automatic] {
+        for mode: PlaybackVersionSelectionMode? in [nil, .askEveryTime, .automatic, .serverOrder] {
             settings.settings.versionSelectionMode = mode
             let full = item()
             var seed = full
@@ -88,9 +88,9 @@ final class PlaybackVersionChoiceTests: XCTestCase {
             XCTAssertTrue(model.isPreparing, "A seed's single version is not a complete inventory.")
             XCTAssertNil(model.prompt, "Do not show an incomplete picker either.")
             await gate.release()
-            if mode == .automatic {
+            if mode == .automatic || mode == .serverOrder {
                 let selected = try await task.value
-                XCTAssertEqual(selected.selectedVersionID, full.versions[1].id)
+                XCTAssertEqual(selected.selectedVersionID, full.versions[mode == .serverOrder ? 0 : 1].id)
             } else {
                 let prompt = try await pending()
                 XCTAssertEqual(prompt.versions.count, 2)
@@ -328,11 +328,148 @@ final class PlaybackVersionChoiceTests: XCTestCase {
                 XCTAssertNil(preferences.preferredVersionID(forTitle: key))
             }
             let selected = try await task.value
-            XCTAssertEqual(selected.selectedVersionID, movie.versions[1].id)
+            XCTAssertEqual(selected.selectedVersionID, movie.versions[mode == .serverOrder ? 0 : 1].id)
             XCTAssertEqual(selected.sourceAccountID, "server")
             XCTAssertEqual(selected.explicitSourceSelection, mode == .askEveryTime)
             XCTAssertNil(model.prompt)
         }
+    }
+
+    func testServerOrderIgnoresQualityDefaultAndRememberedChoicesForMoviesAndEpisodes() async throws {
+        settings.settings.versionSelectionMode = .serverOrder
+        for original in [item(), item("episode-1", series: "show"), item("episode-2", series: "show")] {
+            var video = original
+            video.versions[0].videoCodec = "unknown-codec"
+            video.versions[0].sizeBytes = 10
+            video.versions[1].sizeBytes = 100
+            video.versions[1].isDefault = true
+            preferences.rememberVersion(
+                video.versions[1], forTitle: DetailPlaybackSelection.versionPreferenceKey(for: video)
+            )
+            video.selectedVersionID = video.versions[1].id
+            XCTAssertEqual(PlayerVersionSelection.versions(for: video).first?.id, video.versions[1].id)
+            let selected = try await start(video).value
+            XCTAssertEqual(selected.selectedVersionID, video.versions[0].id)
+            XCTAssertFalse(selected.explicitSourceSelection)
+            XCTAssertNil(model.prompt)
+        }
+    }
+
+    func testServerOrderPreservesAnExplicitManualVersion() async throws {
+        settings.settings.versionSelectionMode = .serverOrder
+        let original = item()
+        let video = try XCTUnwrap(PlayerVersionSelection.selecting(original.versions[1].id, in: original))
+        let selected = try await start(video).value
+        XCTAssertEqual(selected.selectedVersionID, video.versions[1].id)
+        XCTAssertTrue(selected.explicitSourceSelection)
+        XCTAssertTrue(selected.explicitVersionSelection)
+    }
+
+    func testServerOrderRecomputesSourceOnlyPinsAtIntroductionAndAfterInventoryRefresh() async throws {
+        for atIntroduction in [true, false] {
+            settings.settings.versionSelectionMode = atIntroduction ? nil : .serverOrder
+            let original = item()
+            let pinned = DetailPlaybackSelection.playItem(
+                for: original, sources: original.sources, activeAccountID: original.sourceAccountID,
+                versionID: original.versions[1].id, explicit: true, explicitVersion: false
+            )
+            XCTAssertTrue(pinned.explicitSourceSelection)
+            XCTAssertFalse(pinned.explicitVersionSelection)
+            let task = start(pinned)
+            defer { task.cancel() }
+            if atIntroduction {
+                let prompt = try await pending()
+                model.chooseMode(.serverOrder, promptID: prompt.id)
+            }
+            let selected = try await task.value
+            XCTAssertEqual(selected.selectedVersionID, original.versions[0].id)
+            XCTAssertTrue(selected.explicitSourceSelection)
+            XCTAssertFalse(selected.explicitVersionSelection)
+
+            var fresh = original
+            fresh.versions.reverse()
+            let refreshed = try await start(selected, provider: FakeMediaProvider(allItems: [fresh])).value
+            XCTAssertEqual(refreshed.selectedVersionID, fresh.versions[0].id)
+            XCTAssertTrue(refreshed.explicitSourceSelection)
+            XCTAssertFalse(refreshed.explicitVersionSelection)
+        }
+    }
+
+    func testServerOrderKeepsOpenedItemAheadOfDiscoveredEditionsAndForeignServers() async throws {
+        settings.settings.versionSelectionMode = .serverOrder
+        var video = item()
+        var alternate = item("alternate")
+        alternate.versions = video.versions
+        video.sources = [
+            .init(accountID: "foreign", itemID: "foreign", kind: .movie, versions: Array(video.versions.reversed())),
+            .init(accountID: "server", itemID: alternate.id, kind: .movie, versions: alternate.versions),
+            .init(accountID: "server", itemID: video.id, kind: .movie, versions: video.versions)
+        ]
+        let selected = try await start(video, provider: FakeMediaProvider(allItems: [video, alternate])).value
+        XCTAssertEqual(selected.id, video.id)
+        XCTAssertEqual(selected.sourceAccountID, "server")
+        XCTAssertEqual(selected.selectedVersionID, video.versions[0].id)
+        XCTAssertNil(model.prompt)
+    }
+
+    func testServerOrderPreselectionUsesTheActiveServersUnsortedInventory() throws {
+        settings.settings.versionSelectionMode = .serverOrder
+        let video = item()
+        let source = MediaSourceRef(
+            accountID: "other", itemID: "other-item", kind: .movie,
+            versions: [.init(id: "first", height: 720), .init(id: "second", height: 2160)]
+        )
+        let versions = DetailPlaybackSelection.versions(
+            for: video, sources: [source], activeAccountID: source.accountID
+        )
+        XCTAssertEqual(versions.first?.playbackMediaSourceID, "second")
+        let selected = DetailPlaybackSelection.preferredVersionID(
+            for: video, versions: versions, versionOverride: nil,
+            preferences: preferences, capabilities: .default, sources: [source]
+        )
+        XCTAssertEqual(selected, source.selectableVersions[0].id)
+        let routed = DetailPlaybackSelection.playItem(
+            for: video, sources: [source], activeAccountID: source.accountID,
+            versionID: selected, explicit: true
+        )
+        XCTAssertEqual(routed.sourceAccountID, "other")
+        XCTAssertEqual(routed.id, "other-item")
+        XCTAssertEqual(routed.selectedVersionID, "first")
+    }
+
+    func testServerOrderKeepsManualFilesWhenEditionsReuseRawVersionIDs() async throws {
+        settings.settings.versionSelectionMode = .serverOrder
+        var video = item()
+        var alternate = item("alternate")
+        alternate.versions = video.versions
+        video.sources = [
+            .init(accountID: "server", itemID: video.id, kind: .movie, versions: video.versions),
+            .init(accountID: "server", itemID: alternate.id, kind: .movie, versions: alternate.versions)
+        ]
+        let provider = FakeMediaProvider(allItems: [video, alternate])
+        for source in video.sources {
+            let selectedID = source.selectableVersions[1].id
+            let manual = try XCTUnwrap(PlayerVersionSelection.selecting(selectedID, in: video))
+            XCTAssertTrue(manual.explicitVersionSelection)
+            let selected = try await start(manual, provider: provider).value
+            XCTAssertEqual(selected.id, source.itemID)
+            XCTAssertEqual(selected.selectedVersionID, video.versions[1].id)
+            XCTAssertTrue(selected.explicitVersionSelection)
+        }
+    }
+
+    func testServerOrderPlaybackReadyReplacesIncidentalRecommendationWithoutChangingManualSelection() {
+        settings.settings.versionSelectionMode = .serverOrder
+        var video = item()
+        video.selectedVersionID = video.versions[1].id
+        let prepared = DetailPlaybackSelection.playbackReady(video, preferences: preferences, capabilities: .default)
+        XCTAssertEqual(prepared.selectedVersionID, video.versions[0].id)
+        video.explicitSourceSelection = true
+        video.explicitVersionSelection = true
+        XCTAssertEqual(
+            DetailPlaybackSelection.playbackReady(video, preferences: preferences, capabilities: .default).selectedVersionID,
+            video.versions[1].id
+        )
     }
 
     func testDiscoveredPrimaryCannotMaskOrCollapseAuthoritativeVersionsAfterSelection() async throws {
@@ -526,7 +663,7 @@ final class PlaybackVersionChoiceTests: XCTestCase {
                 URL(fileURLWithPath: "/fixture/download.mkv")
             }
         }
-        for mode: PlaybackVersionSelectionMode? in [nil, .askEveryTime, .automatic] {
+        for mode: PlaybackVersionSelectionMode? in [nil, .askEveryTime, .automatic, .serverOrder] {
             settings.settings.versionSelectionMode = mode
             var movie = item()
             movie.selectedVersionID = movie.versions[1].id

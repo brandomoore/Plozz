@@ -55,6 +55,7 @@ private struct PlaybackVersionChoicePresentation: ViewModifier {
 
 public struct PlaybackVersionChoiceView: View {
     let model: PlaybackVersionChoiceModel
+    @Environment(\.themePalette) private var palette
 
     public init(model: PlaybackVersionChoiceModel) { self.model = model }
 
@@ -73,6 +74,7 @@ public struct PlaybackVersionChoiceView: View {
                         }
                     }
             }
+            .tint(palette.accent)
             #else
             VStack(spacing: 0) {
                 PlaybackVersionChoiceContent(model: model, prompt: prompt)
@@ -97,17 +99,22 @@ private struct PlaybackVersionChoiceContent: View {
         if prompt.needsIntroduction {
             FirstUseChoiceView(
                 symbol: "square.stack",
-                title: "Do you want to choose a version every time?",
-                message: "Some videos have more than one version. Choose before each video, including the next episode, or let Plozz choose automatically.",
-                firstAction: "Ask every time",
-                secondAction: "Choose automatically",
+                title: "How should versions be selected?",
+                message: "Ask each time, let Plozz choose, or use the server's first version.",
+                actions: [
+                    .init("Ask every time", identifier: "version-choice-ask") {
+                        model.chooseMode(.askEveryTime, promptID: prompt.id)
+                    },
+                    .init("Choose automatically", identifier: "version-choice-automatic") {
+                        model.chooseMode(.automatic, promptID: prompt.id)
+                    },
+                    .init("Server order", identifier: "version-choice-server-order") {
+                        model.chooseMode(.serverOrder, promptID: prompt.id)
+                    }
+                ],
                 footer: "Change this any time in Settings > Playback > Version selection.",
-                firstIdentifier: "version-choice-ask",
-                secondIdentifier: "version-choice-automatic",
                 messageAccessory: AnyView(AutomaticVersionInfoButton())
-            ) { ask in
-                model.chooseMode(ask ? .askEveryTime : .automatic, promptID: prompt.id)
-            }
+            )
         } else {
             PlaybackVersionChoiceList(prompt: prompt) {
                 model.chooseVersion($0, promptID: prompt.id)

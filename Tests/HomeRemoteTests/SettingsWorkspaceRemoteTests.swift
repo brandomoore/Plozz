@@ -22,7 +22,7 @@ final class SettingsWorkspaceRemoteTests: XCTestCase {
         XCTAssertEqual(ask.frame.maxX, automatic.frame.maxX, accuracy: 1,
                        "Both choices must retain the same full-width selection area.")
         let description = app.staticTexts.matching(NSPredicate(
-            format: "label BEGINSWITH %@", "Ask before each multi-version video"
+            format: "label BEGINSWITH %@", "Ask each time, let Plozz choose"
         )).firstMatch
         XCTAssertTrue(description.exists)
         XCTAssertLessThan(description.frame.minY, info.frame.maxY)

@@ -390,6 +390,15 @@ Settings choice; `rememberVersionPerSeries` defaults on. Legacy `rememberChoice`
 decodes as `automatic`. `VersionPreferenceStore` reads the live playback policy
 from its own namespace, so all existing request/detail resolvers honor the toggle
 without another unscoped preference. Automatic resolution never writes a memory.
+`serverOrder` selects the first non-external version in the selected server's
+fresh inventory, without quality ranking or remembered movie/series choices.
+Explicit file selections still win. The opened item's files precede discovered
+same-server editions; other accounts remain separate. Manual picker ordering and
+download recommendations are unchanged.
+Transient `explicitVersionSelection` distinguishes a manual file choice from
+`explicitSourceSelection`, which can also mean a pinned server/library/edition.
+Source-only pins must not freeze a recommendation across inventory refreshes or
+the first-use mode choice.
 
 ## Artwork and profile presentation
 

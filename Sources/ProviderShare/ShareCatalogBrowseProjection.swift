@@ -471,6 +471,7 @@ struct ShareCatalogBrowseProjection {
         item.selectedVersionID = live.selectedVersionID
         item.selectedSourceAccountID = live.selectedSourceAccountID
         item.explicitSourceSelection = live.explicitSourceSelection
+        item.explicitVersionSelection = live.explicitVersionSelection
         return item
     }
 

@@ -7,6 +7,10 @@ system green appearance instead of inheriting the page's monochrome navigation t
 
 The Settings screen and its detail pages. Profile-aware and integration-aware.
 
+Version selection offers Ask every time, Choose automatically, and Server order
+on both platforms and at first use. Server order uses the selected server's first
+version and ignores remembered choices; a manual file selection still wins.
+
 Automatic version selection has a shared information button beside the TV
 description below the choices, beside the selected mobile value, and beside the
 first-use description. TV choice rows keep their full-width checkmark layout.

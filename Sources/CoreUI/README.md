@@ -463,6 +463,9 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   playback-version introduction heading, native actions, and Settings reminder.
   Hosts own persistence and cancellation; dismissing a version prompt never
   records a mode. Mobile uses a vertically stacked, scrolling adaptation.
+  The shared prompt supplies the palette's accent tint to its native controls,
+  including the focused TV fill, rather than relying on a host's inherited tint.
+  Description accessories center beside the text without shrinking their hit target.
 
 - **Settings row typography** — `SettingsRowMetrics.titleFont` is the shared
   body-size label for navigation rows, TV switch variants, and labeled controls.

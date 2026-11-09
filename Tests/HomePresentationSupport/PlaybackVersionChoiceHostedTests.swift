@@ -157,6 +157,20 @@ final class PlaybackVersionChoiceHostedTests: XCTestCase {
             _ = try await visibleText(in: window, name: "\(name)-back")
             let requestsAfterBack = await server.requestCount
             XCTAssertEqual(requestsAfterBack, requestsAfterChoices)
+
+            let suite = "server-order-provider-\(UUID())"
+            let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+            defer { defaults.removePersistentDomain(forName: suite) }
+            let settings = PlaybackSettingsModel(store: PlaybackSettingsStore(defaults: defaults))
+            settings.settings.versionSelectionMode = .serverOrder
+            let model = PlaybackVersionChoiceModel()
+            defer { model.cancel() }
+            let selected = try await model.prepare(
+                item, provider: provider, settings: settings,
+                preferences: VersionPreferenceStore(defaults: defaults)
+            )
+            XCTAssertEqual(selected.selectedVersionID, kind == .plex ? "10" : "file-0")
+            XCTAssertNil(model.prompt)
         }
         let evidence = XCTAttachment(string: """
         provider=\(kind.rawValue) serverFiles=\(sourceCount) decodedChoices=\(item.versions.count)
@@ -289,9 +303,9 @@ final class PlaybackVersionChoiceHostedTests: XCTestCase {
 
     func testAutomaticIntroductionStartsPlaybackWithoutShowingVersionChoices() async throws {
         #if os(tvOS)
-        try await exercise(width: 1920, typeSize: .large, automaticAtIntroduction: true)
+        try await exercise(width: 1920, typeSize: .large, introductionMode: .automatic)
         #else
-        try await exercise(width: 390, typeSize: .large, automaticAtIntroduction: true)
+        try await exercise(width: 390, typeSize: .large, introductionMode: .automatic)
         #endif
     }
 
@@ -411,10 +425,18 @@ final class PlaybackVersionChoiceHostedTests: XCTestCase {
         }
     }
 
+    func testServerOrderIntroductionStartsTheFirstServerVersionWithoutShowingChoices() async throws {
+        #if os(tvOS)
+        try await exercise(width: 1920, typeSize: .large, introductionMode: .serverOrder)
+        #else
+        try await exercise(width: 390, typeSize: .large, introductionMode: .serverOrder)
+        #endif
+    }
+
     private func exercise(
         width: CGFloat, typeSize: DynamicTypeSize, versionCount: Int = 2, reduceTransparency: Bool = false,
         colorScheme: ColorScheme = .dark, closeInsteadOfSelect: Bool = false,
-        automaticAtIntroduction: Bool = false
+        introductionMode: PlaybackVersionSelectionMode = .askEveryTime
     ) async throws {
         try await waitUntil {
             UIApplication.shared.connectedScenes.contains { $0.activationState == .foregroundActive }
@@ -442,6 +464,7 @@ final class PlaybackVersionChoiceHostedTests: XCTestCase {
         for index in 2..<versionCount {
             versions.append(.init(id: "extra-\(index)", fileName: "Alternative-\(index).mkv", height: 1080))
         }
+        if introductionMode == .serverOrder { versions.swapAt(0, 1) }
         let item = MediaItem(id: "movie", title: "Version fixture", kind: .movie, versions: versions)
         let window = UIWindow(windowScene: scene)
         window.frame = CGRect(x: 0, y: 0, width: width, height: width >= 768 ? 1080 : 844)
@@ -472,10 +495,13 @@ final class PlaybackVersionChoiceHostedTests: XCTestCase {
         XCTAssertNil(probe.selected)
         XCTAssertNil(probe.error)
         let introduction = try await visibleText(in: window, name: "version-introduction-\(Int(width))-\(typeSize)")
-        for label in ["choose a version every time", "Ask every time", "Choose automatically", "Settings"] {
+        for label in ["How should versions be selected", "Ask every time", "Choose automatically", "Server order", "Settings"] {
             XCTAssertTrue(introduction.localizedCaseInsensitiveContains(label), "Missing \(label): \(introduction)")
         }
         XCTAssertFalse(introduction.contains("Remember"), "Remembering is a separate default-on setting, not a first-use choice.")
+        if introductionMode == .serverOrder {
+            try assertIntroductionContrast(in: window)
+        }
         #if os(tvOS)
         XCTAssertTrue(introduction.contains("Cancel"))
         XCTAssertNotNil(UIFocusSystem(for: window)?.focusedItem, "An introduction action must own native focus.")
@@ -485,14 +511,15 @@ final class PlaybackVersionChoiceHostedTests: XCTestCase {
         _ = try assertCloseToolbar(in: window)
         #endif
         let id = try XCTUnwrap(model.prompt?.id)
-        if automaticAtIntroduction {
-            model.chooseMode(.automatic, promptID: id)
+        if introductionMode != .askEveryTime {
+            model.chooseMode(introductionMode, promptID: id)
             XCTAssertNil(model.prompt)
             try await waitUntil { probe.selected != nil }
             XCTAssertNil(probe.error)
             XCTAssertFalse(probe.disappeared)
             XCTAssertTrue(settings.settings.rememberVersionPerSeries)
-            XCTAssertEqual(settings.settings.versionSelectionMode, .automatic)
+            XCTAssertEqual(settings.settings.versionSelectionMode, introductionMode)
+            XCTAssertEqual(probe.selected?.selectedVersionID, introductionMode == .serverOrder ? "1080" : "4k")
             XCTAssertNil(preferences.preferredVersionID(forTitle: DetailPlaybackSelection.versionPreferenceKey(for: item)))
             return
         }
@@ -541,6 +568,59 @@ final class PlaybackVersionChoiceHostedTests: XCTestCase {
         XCTAssertEqual(settings.settings.versionSelectionMode, .askEveryTime)
         XCTAssertFalse(probe.disappeared)
         XCTAssertNil(probe.error)
+    }
+
+    private func assertIntroductionContrast(in window: UIWindow) throws {
+        let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+            XCTAssertTrue(window.drawHierarchy(in: window.bounds, afterScreenUpdates: true))
+        }
+        let bitmap = try XCTUnwrap(image.cgImage)
+        let request = VNRecognizeTextRequest()
+        request.recognitionLevel = .accurate
+        request.recognitionLanguages = ["en-US"]
+        try VNImageRequestHandler(cgImage: bitmap).perform([request])
+        var pixels = [UInt8](repeating: 0, count: bitmap.width * bitmap.height * 4)
+        try pixels.withUnsafeMutableBytes { bytes in
+            let context = try XCTUnwrap(CGContext(
+                data: bytes.baseAddress, width: bitmap.width, height: bitmap.height,
+                bitsPerComponent: 8, bytesPerRow: bitmap.width * 4,
+                space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue
+            ))
+            context.draw(bitmap, in: CGRect(x: 0, y: 0, width: bitmap.width, height: bitmap.height))
+        }
+        func rgb(_ x: Int, _ y: Int) -> [Double] {
+            let offset = (y * bitmap.width + x) * 4
+            return (0..<3).map { Double(pixels[offset + $0]) / 255 }
+        }
+        func luminance(_ rgb: [Double]) -> Double {
+            let linear = rgb.map { $0 <= 0.04045 ? $0 / 12.92 : pow(($0 + 0.055) / 1.055, 2.4) }
+            return linear[0] * 0.2126 + linear[1] * 0.7152 + linear[2] * 0.0722
+        }
+        for label in ["Ask every time", "Choose automatically", "Server order"] {
+            let observation = try XCTUnwrap(request.results?.first {
+                $0.topCandidates(1).first?.string == label
+            }, "Missing choice for contrast measurement: \(label)")
+            let box = observation.boundingBox
+            let rect = CGRect(
+                x: box.minX * CGFloat(bitmap.width), y: (1 - box.maxY) * CGFloat(bitmap.height),
+                width: box.width * CGFloat(bitmap.width), height: box.height * CGFloat(bitmap.height)
+            ).integral
+            let background = luminance(rgb(max(0, Int(rect.minX) - 8), Int(rect.midY)))
+            var readableNeutralPixels = 0
+            for y in Int(rect.minY)..<min(bitmap.height, Int(rect.maxY)) {
+                for x in Int(rect.minX)..<min(bitmap.width, Int(rect.maxX)) {
+                    let color = rgb(x, y)
+                    let ink = luminance(color)
+                    let contrast = (max(ink, background) + 0.05) / (min(ink, background) + 0.05)
+                    if contrast >= 4.5, (color.max() ?? 0) - (color.min() ?? 0) < 0.1 {
+                        readableNeutralPixels += 1
+                    }
+                }
+            }
+            XCTAssertGreaterThan(readableNeutralPixels, 100,
+                                 "\(label) must have neutral, readable text against its native button surface.")
+        }
     }
 
     #if os(iOS)

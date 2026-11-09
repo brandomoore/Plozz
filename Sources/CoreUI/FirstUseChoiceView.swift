@@ -3,16 +3,24 @@ import SwiftUI
 
 /// Shared first-use introduction; persistence and Back behavior belong to its host.
 public struct FirstUseChoiceView: View {
+    public struct Action: Identifiable {
+        public let id: String
+        let title: LocalizedStringResource
+        let perform: () -> Void
+
+        public init(_ title: LocalizedStringResource, identifier: String, perform: @escaping () -> Void) {
+            self.id = identifier
+            self.title = title
+            self.perform = perform
+        }
+    }
+
     let symbol: String
     let title: LocalizedStringResource
     let message: LocalizedStringResource
-    let firstAction: LocalizedStringResource
-    let secondAction: LocalizedStringResource
+    let actions: [Action]
     let footer: LocalizedStringResource
-    let firstIdentifier: String
-    let secondIdentifier: String
     let messageAccessory: AnyView?
-    let choose: (Bool) -> Void
     @Environment(\.themePalette) private var palette
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -23,27 +31,33 @@ public struct FirstUseChoiceView: View {
         messageAccessory: AnyView? = nil,
         choose: @escaping (Bool) -> Void
     ) {
+        self.init(
+            symbol: symbol, title: title, message: message,
+            actions: [
+                Action(firstAction, identifier: firstIdentifier) { choose(true) },
+                Action(secondAction, identifier: secondIdentifier) { choose(false) }
+            ],
+            footer: footer, messageAccessory: messageAccessory
+        )
+    }
+
+    public init(
+        symbol: String, title: LocalizedStringResource, message: LocalizedStringResource,
+        actions: [Action], footer: LocalizedStringResource, messageAccessory: AnyView? = nil
+    ) {
         self.symbol = symbol
         self.title = title
         self.message = message
-        self.firstAction = firstAction
-        self.secondAction = secondAction
+        self.actions = actions
         self.footer = footer
-        self.firstIdentifier = firstIdentifier
-        self.secondIdentifier = secondIdentifier
         self.messageAccessory = messageAccessory
-        self.choose = choose
     }
 
     public var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 36) {
                 FirstUseChoiceHeading(symbol: symbol, title: title, message: message, accessory: messageAccessory)
-                FirstUseChoiceActions(
-                    first: firstAction, second: secondAction,
-                    firstIdentifier: firstIdentifier, secondIdentifier: secondIdentifier,
-                    choose: choose
-                )
+                FirstUseChoiceActions(actions: actions)
                 Text(footer)
                     .font(.callout)
                     .foregroundStyle(palette.secondaryText)
@@ -59,6 +73,7 @@ public struct FirstUseChoiceView: View {
             .frame(maxWidth: .infinity)
         }
         .defaultScrollAnchor(.center)
+        .tint(palette.accent)
         .environment(\.colorScheme, palette.isLight ? .light : .dark)
         .transaction { if reduceMotion { $0.disablesAnimations = true } }
     }
@@ -86,7 +101,7 @@ private struct FirstUseChoiceHeading: View {
                 #endif
                 .foregroundStyle(palette.primaryText)
                 .accessibilityAddTraits(.isHeader)
-            HStack(alignment: .top, spacing: 12) {
+            HStack(alignment: .center, spacing: 12) {
                 Text(message)
                     .font(.body)
                     .foregroundStyle(palette.secondaryText)
@@ -98,35 +113,28 @@ private struct FirstUseChoiceHeading: View {
 }
 
 private struct FirstUseChoiceActions: View {
-    let first: LocalizedStringResource
-    let second: LocalizedStringResource
-    let firstIdentifier: String
-    let secondIdentifier: String
-    let choose: (Bool) -> Void
-    @FocusState private var focused: Bool?
+    let actions: [FirstUseChoiceView.Action]
+    @FocusState private var focused: String?
 
     var body: some View {
         #if os(tvOS)
-        let layout = AnyLayout(HStackLayout(spacing: 28))
+        let layout = actions.count > 2
+            ? AnyLayout(VStackLayout(spacing: 20)) : AnyLayout(HStackLayout(spacing: 28))
         #else
         let layout = AnyLayout(VStackLayout(spacing: 16))
         #endif
         layout {
-            Button { choose(true) } label: {
-                Text(first).frame(maxWidth: .infinity)
+            ForEach(actions) { action in
+                Button(action: action.perform) {
+                    Text(action.title).frame(maxWidth: .infinity)
+                }
+                .plozzActionButton(role: .secondary)
+                .focused($focused, equals: action.id)
+                .accessibilityIdentifier(action.id)
             }
-            .plozzActionButton(role: .secondary)
-            .focused($focused, equals: true)
-            .accessibilityIdentifier(firstIdentifier)
-            Button { choose(false) } label: {
-                Text(second).frame(maxWidth: .infinity)
-            }
-            .plozzActionButton(role: .secondary)
-            .focused($focused, equals: false)
-            .accessibilityIdentifier(secondIdentifier)
         }
         #if os(tvOS)
-        .defaultFocus($focused, true, priority: .userInitiated)
+        .defaultFocus($focused, actions.first?.id, priority: .userInitiated)
         #endif
     }
 }

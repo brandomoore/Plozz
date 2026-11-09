@@ -851,7 +851,8 @@ private struct PlozziOSCanonicalItemDetailView: View {
             versions: versions,
             versionOverride: versionOverride,
             preferences: appModel.versionPreferences,
-            capabilities: capabilities
+            capabilities: capabilities,
+            sources: available
         )
         return DetailPlaybackOptions(
             sources: sources,
@@ -967,7 +968,8 @@ private struct PlozziOSCanonicalItemDetailView: View {
             versions: versions,
             versionOverride: versionOverride,
             preferences: appModel.versionPreferences,
-            capabilities: capabilities
+            capabilities: capabilities,
+            sources: sources
         )
         if choices.count > 1 || versions.count > 1 {
             PlozziOSSourceVersionControls(
@@ -1099,7 +1101,8 @@ private struct PlozziOSCanonicalItemDetailView: View {
             versions: versions,
             versionOverride: versionOverride,
             preferences: appModel.versionPreferences,
-            capabilities: capabilities
+            capabilities: capabilities,
+            sources: sources
         )
         let selected = DetailPlaybackSelection.playItem(
             for: item,
@@ -1108,7 +1111,8 @@ private struct PlozziOSCanonicalItemDetailView: View {
             versionID: versionID,
             explicit: viewModel.isLibraryOriginPinned
                 || sourceOverride != nil
-                || versionOverride != nil
+                || versionOverride != nil,
+            explicitVersion: versionOverride != nil || item.explicitVersionSelection
         )
         return PlaybackSourceSelection.bestPlayItem(
             selected,
