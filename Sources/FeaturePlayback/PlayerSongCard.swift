@@ -161,21 +161,27 @@ struct PlayerSongCard: View {
 
 struct SongServiceLink: Identifiable, Equatable {
     enum Service: String {
-        case appleMusic, spotify, youtube
+        case spotify, appleMusic, youtubeMusic, amazonMusic, deezer, tidal
 
         var title: LocalizedStringResource {
             switch self {
             case .appleMusic: "Apple Music"
             case .spotify: "Search Spotify"
-            case .youtube: "Search YouTube"
+            case .youtubeMusic: "Search YouTube Music"
+            case .amazonMusic: "Search Amazon Music"
+            case .deezer: "Search Deezer"
+            case .tidal: "Search TIDAL"
             }
         }
 
-        var imageName: String {
+        var image: Image {
             switch self {
-            case .appleMusic: "SongAppleMusic"
-            case .spotify: "SongSpotify"
-            case .youtube: "SongYouTube"
+            case .appleMusic: Image("SongAppleMusic", bundle: .module)
+            case .spotify: Image("SongSpotify", bundle: .module)
+            case .youtubeMusic: Image("SongYouTubeMusic", bundle: .module)
+            case .amazonMusic: Image(systemName: "music.note")
+            case .deezer: Image("SongDeezer", bundle: .module)
+            case .tidal: Image("SongTidal", bundle: .module)
             }
         }
     }
@@ -185,12 +191,18 @@ struct SongServiceLink: Identifiable, Equatable {
 
     static func links(for song: SongMatch) -> [Self] {
         let query = [song.title, song.artist].compactMap { $0 }.joined(separator: " ")
-        var youtube = URLComponents(string: "https://www.youtube.com/results")!
-        youtube.queryItems = [URLQueryItem(name: "search_query", value: query)]
+        var youtube = URLComponents(string: "https://music.youtube.com/search")!
+        let unreserved = CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~")
+        youtube.percentEncodedQueryItems = [
+            URLQueryItem(name: "q", value: query.addingPercentEncoding(withAllowedCharacters: unreserved))
+        ]
         return [
-            song.appleMusicURL.map { Self(service: .appleMusic, url: $0) },
             Self(service: .spotify, url: URL(string: "https://open.spotify.com/search")!.appending(component: query)),
-            Self(service: .youtube, url: youtube.url!)
+            song.appleMusicURL.map { Self(service: .appleMusic, url: $0) },
+            Self(service: .youtubeMusic, url: youtube.url!),
+            Self(service: .amazonMusic, url: URL(string: "https://music.amazon.com/search")!.appending(component: query)),
+            Self(service: .deezer, url: URL(string: "https://www.deezer.com/search")!.appending(component: query)),
+            Self(service: .tidal, url: URL(string: "https://listen.tidal.com/search")!.appending(component: query))
         ].compactMap { $0 }
     }
 }
@@ -404,7 +416,7 @@ private struct SongServiceButton: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 16) {
-                Image(link.service.imageName, bundle: .module)
+                link.service.image
                     .renderingMode(.template)
                     .resizable()
                     .scaledToFit()

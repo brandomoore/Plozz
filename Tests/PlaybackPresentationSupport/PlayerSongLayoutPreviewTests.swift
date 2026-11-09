@@ -65,7 +65,9 @@ final class PlayerSongLayoutPreviewTests: XCTestCase {
             try VNImageRequestHandler(cgImage: XCTUnwrap(image.cgImage)).perform([request])
             let observations = request.results ?? []
             let text = observations.compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ")
-            for label in ["Open song", "Six Days", "DJ Shadow", "Apple Music", "Search Spotify", "Search YouTube"] {
+            let serviceTitles = ["Search Spotify", "Apple Music", "Search YouTube Music",
+                                 "Search Amazon Music", "Search Deezer", "Search TIDAL"]
+            for label in ["Open song", "Six Days", "DJ Shadow"] + serviceTitles {
                 XCTAssertTrue(text.contains(label), "\(name): keep \(label) visible and readable: \(text)")
                 let frame = try XCTUnwrap(observations.first {
                     $0.topCandidates(1).first?.string.contains(label) == true
@@ -73,12 +75,13 @@ final class PlayerSongLayoutPreviewTests: XCTestCase {
                 try assertSongTextContrast(in: XCTUnwrap(image.cgImage), normalizedFrame: frame,
                                           message: "\(name): \(label)")
             }
-            let serviceFrames = try ["Apple Music", "Search Spotify", "Search YouTube"].map { title in
+            let serviceFrames = try serviceTitles.map { title in
                 try XCTUnwrap(observations.first { $0.topCandidates(1).first?.string.contains(title) == true }?.boundingBox)
             }
-            XCTAssertGreaterThan(serviceFrames[0].minY, serviceFrames[1].maxY)
-            XCTAssertGreaterThan(serviceFrames[1].minY, serviceFrames[2].maxY,
-                                 "Each service needs a separate full-width row, not adjacent inline links.")
+            for (previous, next) in zip(serviceFrames, serviceFrames.dropFirst()) {
+                XCTAssertGreaterThan(previous.minY, next.maxY,
+                                     "Keep services in popularity order with a separate full-width row for each.")
+            }
             #if os(tvOS)
             let heading = try XCTUnwrap(observations.first {
                 $0.topCandidates(1).first?.string == "Open song"
@@ -96,7 +99,8 @@ final class PlayerSongLayoutPreviewTests: XCTestCase {
         defer { previous?.makeKeyAndVisible() }
         let song = SongMatch(title: "A long song title with a remix and featured performers",
                              artist: "An artist with a long name", artworkURL: nil, appleMusicURL: nil)
-        XCTAssertEqual(SongServiceLink.links(for: song).map(\.service), [.spotify, .youtube])
+        XCTAssertEqual(SongServiceLink.links(for: song).map(\.service),
+                       [.spotify, .youtubeMusic, .amazonMusic, .deezer, .tidal])
         for size in [DynamicTypeSize.large, .accessibility2] {
             #if os(tvOS)
             let width: CGFloat = 740
@@ -143,8 +147,9 @@ final class PlayerSongLayoutPreviewTests: XCTestCase {
                 .joined(separator: " ").replacingOccurrences(of: "- ", with: "")
             XCTAssertTrue(text.contains(song.title), text)
             XCTAssertTrue(text.contains(try XCTUnwrap(song.artist)), text)
-            XCTAssertTrue(text.contains("Search Spotify"), text)
-            XCTAssertTrue(text.contains("Search YouTube"), text)
+            for title in ["Search Spotify", "Search YouTube Music", "Search Amazon Music", "Search Deezer", "Search TIDAL"] {
+                XCTAssertTrue(text.contains(title), text)
+            }
         }
     }
 
