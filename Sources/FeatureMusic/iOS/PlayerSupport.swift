@@ -22,6 +22,7 @@ extension EnvironmentValues {
 }
 
 extension Color {
+    static var musicPlayerAccent: Color { Color("MusicPlayerAccent", bundle: .module) }
     static var mozzBackground: Color { Color(uiColor: .systemBackground) }
     static var mozzChrome: Color { Color(uiColor: .secondarySystemBackground) }
     static var mozzArtworkPlaceholder: Color { Color(uiColor: .tertiarySystemFill) }

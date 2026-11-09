@@ -85,6 +85,8 @@ The original morphing island/drawer, artwork transitions, press feedback,
 transport glyph motion, scrubbing, queue reordering and immersive lyrics
 presentation are retained. The host remains Plozz's native navigation rather
 than Mozz's separate split tab bar.
+Its light/dark monochrome accent is scoped to the player, including navigation
+menus and active controls; the surrounding app keeps its own accent color.
 
 `MusicPlayerSession` bridges the presentation to Plozz's audio controller,
 profile-scoped appearance and shared artwork/lyrics services. Plex exposes
@@ -101,10 +103,11 @@ reduced-transparency preferences remain effective. The port's source copy is
 not yet part of the reviewed translation pipeline.
 
 `MusicPlayerPresentationTests` covers feedback rollback and delayed authorization,
-mobile navigation gating, and mounted expand/collapse/skip presentation. For a
+mobile navigation gating, player accent isolation, and mounted expand/collapse/skip presentation. For a
 local visual check, launch `PlozziOSPresentationHost` with
-`--music-player-fixture` (add `--music-expanded` to start expanded). The fixture
-uses generated silent audio and never connects to a media server.
+`--music-player-fixture` (add `--music-expanded` to start expanded). Add
+`--music-light` or `--music-oled` to inspect those player appearances. The fixture
+uses generated silent audio and navigable track labels without connecting to a media server.
 
 ## Where to look first
 

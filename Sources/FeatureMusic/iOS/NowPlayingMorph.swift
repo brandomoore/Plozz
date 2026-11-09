@@ -2611,7 +2611,7 @@ private struct IslandContent: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(label)
-        .foregroundStyle(active ? AnyShapeStyle(Color.accentColor)
+        .foregroundStyle(active ? AnyShapeStyle(Color.musicPlayerAccent)
                                 : AnyShapeStyle(Color.secondary))
         .opacity(Double(1 - collapse))
         .frame(width: 30 * (1 - collapse))

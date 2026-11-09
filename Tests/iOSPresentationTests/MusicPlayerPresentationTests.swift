@@ -10,6 +10,24 @@ import XCTest
 
 @MainActor
 final class MusicPlayerPresentationTests: XCTestCase {
+    func testPlayerAccentMatchesMozzInLightAndDarkAppearance() {
+        let cases: [(UIUserInterfaceStyle, [CGFloat])] = [
+            (.light, [28 / 255, 28 / 255, 30 / 255]),
+            (.dark, [242 / 255, 242 / 255, 242 / 255])
+        ]
+        for (style, expected) in cases {
+            let color = UIColor(Color.musicPlayerAccent).resolvedColor(with: UITraitCollection(userInterfaceStyle: style))
+            var red: CGFloat = 0
+            var green: CGFloat = 0
+            var blue: CGFloat = 0
+            var alpha: CGFloat = 0
+            XCTAssertTrue(color.getRed(&red, green: &green, blue: &blue, alpha: &alpha))
+            XCTAssertEqual(red, expected[0], accuracy: 0.001)
+            XCTAssertEqual(green, expected[1], accuracy: 0.001)
+            XCTAssertEqual(blue, expected[2], accuracy: 0.001)
+        }
+    }
+
     func testMobileNavigationOnlyIncludesMusicWhenEnabled() {
         let music = NavigationLibraryLayout.musicKey
         XCTAssertFalse(NavigationDestinationDefaults.iOS(visibleLibraries: []).contains(music))
@@ -122,8 +140,8 @@ final class MusicPlayerPresentationTests: XCTestCase {
         }
         player.controller.play(
             tracks: [
-                CoreModels.MusicTrack(id: "one", title: "The First Song", albumTitle: "Evening Light", artistName: "Test Artist", duration: 10),
-                CoreModels.MusicTrack(id: "two", title: "Another Song", albumTitle: "Evening Light", artistName: "Test Artist", duration: 10),
+                CoreModels.MusicTrack(id: "one", title: "The First Song", albumTitle: "Evening Light", albumID: "album", artistName: "Test Artist", artistID: "artist", duration: 10, sourceAccountID: "fixture"),
+                CoreModels.MusicTrack(id: "two", title: "Another Song", albumTitle: "Evening Light", albumID: "album", artistName: "Test Artist", artistID: "artist", duration: 10, sourceAccountID: "fixture"),
                 CoreModels.MusicTrack(id: "unavailable", title: "Unavailable", duration: 10)
             ],
             startIndex: 0,
@@ -139,6 +157,7 @@ final class MusicPlayerPresentationTests: XCTestCase {
                 Color(uiColor: .systemBackground).ignoresSafeArea()
                 MusicPlayerOverlay(session: player, hasBottomBar: false)
             }
+            .tint(.blue)
         )
         window.rootViewController = host
         window.makeKeyAndVisible()
@@ -146,7 +165,8 @@ final class MusicPlayerPresentationTests: XCTestCase {
         attach(window, name: "Music mini player")
         player.isPresented = true
         try await Task.sleep(for: .milliseconds(900))
-        attach(window, name: "Music expanded player")
+        let expanded = attach(window, name: "Music expanded player")
+        XCTAssertLessThan(try brightBluePixelCount(in: expanded), 10, "Player menus must not inherit the host's blue tint")
         XCTAssertTrue(player.isPresented)
         player.controller.pause()
         await player.controller.seek(to: 2)
@@ -177,7 +197,30 @@ final class MusicPlayerPresentationTests: XCTestCase {
         XCTAssertFalse(player.controller.isBuffering)
     }
 
-    private func attach(_ window: UIWindow, name: String) {
+    private func brightBluePixelCount(in image: UIImage) throws -> Int {
+        let source = try XCTUnwrap(image.cgImage)
+        let colorSpace = try XCTUnwrap(CGColorSpace(name: CGColorSpace.sRGB))
+        var bytes = [UInt8](repeating: 0, count: source.width * source.height * 4)
+        return try bytes.withUnsafeMutableBytes { pixels in
+            let context = try XCTUnwrap(CGContext(
+                data: pixels.baseAddress, width: source.width, height: source.height,
+                bitsPerComponent: 8, bytesPerRow: source.width * 4,
+                space: colorSpace,
+                bitmapInfo: CGBitmapInfo.byteOrder32Big.rawValue | CGImageAlphaInfo.premultipliedLast.rawValue
+            ))
+            context.draw(source, in: CGRect(x: 0, y: 0, width: source.width, height: source.height))
+            var count = 0
+            for offset in stride(from: 0, to: pixels.count, by: 4) {
+                if pixels[offset] < 80, pixels[offset + 1] > 90, pixels[offset + 2] > 210 {
+                    count += 1
+                }
+            }
+            return count
+        }
+    }
+
+    @discardableResult
+    private func attach(_ window: UIWindow, name: String) -> UIImage {
         window.layoutIfNeeded()
         let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
             window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
@@ -186,6 +229,7 @@ final class MusicPlayerPresentationTests: XCTestCase {
         attachment.name = name
         attachment.lifetime = .keepAlways
         add(attachment)
+        return image
     }
 }
 

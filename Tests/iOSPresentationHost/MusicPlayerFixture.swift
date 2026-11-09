@@ -7,6 +7,13 @@ struct MusicPlayerFixture: View {
     @State private var player = MusicPlayerSession()
     @State private var failure: String?
 
+    private var appearance: MusicPlayerAppearance {
+        let arguments = ProcessInfo.processInfo.arguments
+        if arguments.contains("--music-light") { return .light }
+        if arguments.contains("--music-oled") { return .pureBlack }
+        return .matchTheme
+    }
+
     var body: some View {
         TabView {
             NavigationStack {
@@ -25,7 +32,7 @@ struct MusicPlayerFixture: View {
             Text("Library").tabItem { Label("Library", systemImage: "square.stack") }
         }
         .overlay {
-            MusicPlayerOverlay(session: player, hasBottomBar: true)
+            MusicPlayerOverlay(session: player, hasBottomBar: true, appearance: appearance)
         }
         .task {
             let file = FileManager.default.temporaryDirectory.appendingPathComponent("music-fixture.caf")
@@ -47,8 +54,8 @@ struct MusicPlayerFixture: View {
                 }
                 player.controller.play(
                     tracks: [
-                        MusicTrack(id: "one", title: "The First Song", albumTitle: "Evening Light", artistName: "Test Artist", duration: 60),
-                        MusicTrack(id: "two", title: "Another Song", albumTitle: "Evening Light", artistName: "Test Artist", duration: 60)
+                        MusicTrack(id: "one", title: "The First Song", albumTitle: "Evening Light", albumID: "album", artistName: "Test Artist", artistID: "artist", duration: 60, sourceAccountID: "fixture"),
+                        MusicTrack(id: "two", title: "Another Song", albumTitle: "Evening Light", albumID: "album", artistName: "Test Artist", artistID: "artist", duration: 60, sourceAccountID: "fixture")
                     ],
                     startIndex: 0,
                     resolveStreamURL: { _ in .init(url: file) }

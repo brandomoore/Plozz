@@ -359,6 +359,7 @@ public struct MusicPlayerOverlay: View {
                 }
             }
         }
+        .tint(.musicPlayerAccent)
     }
 }
 
