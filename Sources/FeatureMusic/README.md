@@ -55,6 +55,14 @@ music runtime or probe music libraries.
   Retry transient discovery failures twice (2s/8s); foreground activation and
   credential changes trigger a fresh probe. Cancelled/superseded probes cannot
   publish late results.
+- **Landing failures are not empty content.** A cold landing retries temporary
+  request failures twice (2s/8s), then shows the existing error/retry state.
+  Authorization and rate-limit failures are not retried. Successful partial or
+  cached content stays usable, with request failures logged. Cancelled or
+  superseded loads cannot publish/cache their fetch results; re-entering the
+  page starts a fresh load even if an old cancelled request is still unwinding.
+  Account, credential, profile and library-scope changes replace the retained
+  landing model instead of keeping its original provider context.
 - **Playlist occurrences are distinct.** Preserve authored order and repeated
   songs. `MusicTrack.playlistEntryID` identifies a loaded occurrence for selection
   and shuffle; `id` remains the provider media ID used for playback/reporting.

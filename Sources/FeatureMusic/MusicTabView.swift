@@ -43,6 +43,7 @@ public struct MusicTabView: View {
     private let appTheme: AppTheme
     private let musicPlayer: MusicPlayerSettingsModel
     private let onNavigateBack: (() -> Void)?
+    private let namespace: String?
 
     @State private var navigation: MusicNavigation
     /// The shell's chrome model, present only under the custom navigation rail.
@@ -65,11 +66,18 @@ public struct MusicTabView: View {
         self.appTheme = appTheme
         self.musicPlayer = musicPlayer
         self.onNavigateBack = onNavigateBack
+        self.namespace = namespace
         self._showNowPlaying = showNowPlaying
         self._navigation = State(initialValue: navigation ?? MusicNavigation())
         self._layoutModel = State(initialValue: MusicLandingLayoutModel(store: MusicLandingLayoutStore(namespace: namespace)))
     }
 
+    private var landingID: [String] {
+        [namespace ?? ""] + context.accounts.flatMap {
+            [$0.account.id, $0.account.server.identityKey, $0.credentialRevision.rawValue.uuidString,
+             $0.provider.session.userID, $0.plexHomeUserID ?? ""]
+        } + [MusicLandingCache.key(visibleLibraryIDs: context.visibleLibraryIDs ?? [:])]
+    }
 
     public var body: some View {
         @Bindable var navigation = navigation
@@ -81,6 +89,7 @@ public struct MusicTabView: View {
                 onPlayTrack: { playTrack($0) },
                 layout: layoutModel.layout
             )
+            .id(landingID)
             .navigationDestination(for: MusicRoute.self) { route in
                 destination(for: route)
             }

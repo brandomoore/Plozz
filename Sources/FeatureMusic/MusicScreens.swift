@@ -23,20 +23,21 @@ private enum MusicLayout {
 
 struct MusicLandingView: View {
     @State var viewModel: MusicLandingViewModel
+    @State private var retryRevision = 0
     let controller: AudioPlaybackController
     let onSelectRoute: (MusicRoute) -> Void
     let onPlayTrack: (MusicTrack) -> Void
     var layout: MusicLandingLayout = .default
 
     var body: some View {
-        ContentStateView(state: viewModel.state, emptyMessage: "No music found in your libraries.", onRetry: { Task { await viewModel.load() } }) { content in
+        ContentStateView(state: viewModel.state, emptyMessage: "No music found in your libraries.", onRetry: { retryRevision += 1 }) { content in
             MusicLandingContent(
                 content: content, controller: controller, onSelectRoute: onSelectRoute,
                 onPlayTrack: onPlayTrack, layout: layout
             )
         }
         .navigationEntryFocus(viewModel.state == .idle || viewModel.state.isLoading ? .pending : nil)
-        .task { if case .idle = viewModel.state { await viewModel.load() } }
+        .task(id: retryRevision) { await viewModel.load() }
         // Refresh the rails once a play has actually been recorded on the server,
         // so "Recently Played" reflects what was just listened to without needing
         // an app relaunch. `.task(id:)` coalesces a burst of finished tracks into a
@@ -45,7 +46,7 @@ struct MusicLandingView: View {
         // server a moment to index the play before we re-query.
         .task(id: controller.recentPlayReportToken) {
             guard controller.recentPlayReportToken > 0 else { return }
-            try? await Task.sleep(for: .seconds(1.5))
+            do { try await Task.sleep(for: .seconds(1.5)) } catch { return }
             await viewModel.load()
         }
     }
