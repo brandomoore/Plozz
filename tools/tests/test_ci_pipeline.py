@@ -148,7 +148,7 @@ class WorkflowTests(unittest.TestCase):
         )
         self.assertNotIn("pull_request_target", WORKFLOW)
         self.assertNotIn("secrets.", WORKFLOW + PREPARE + SAVE)
-        self.assertEqual(WORKFLOW.count("uses: actions/checkout@v5"), 4)
+        self.assertEqual(WORKFLOW.count("uses: actions/checkout@v7"), 4)
         self.assertEqual(WORKFLOW.count("persist-credentials: false"), 4)
 
     def test_expensive_lanes_are_independent_after_preflight(self):
@@ -257,7 +257,7 @@ class WorkflowTests(unittest.TestCase):
         self.assertIn("inputs.seed-packages == 'true'", SAVE)
         self.assertIn("inputs.build-hit != 'true'", SAVE)
         self.assertIn("inputs.package-hit != 'true'", SAVE)
-        self.assertEqual(SAVE.count("uses: actions/cache/save@v4"), 2)
+        self.assertEqual(SAVE.count("uses: actions/cache/save@v6"), 2)
         self.assertNotIn("actions/cache/save", PREPARE)
         self.assertNotIn("uses: actions/cache@", WORKFLOW + PREPARE + SAVE)
 
@@ -291,7 +291,7 @@ class WorkflowTests(unittest.TestCase):
     def test_all_lanes_retain_unique_diagnostics_even_on_failure(self):
         names = []
         for lane in ("guards", *CACHE.LANES):
-            artifact = JOBS[lane].split("uses: actions/upload-artifact@v4")[1]
+            artifact = JOBS[lane].split("uses: actions/upload-artifact@v7")[1]
             name = re.search(r"(?m)^          name: (.+)$", artifact)[1]
             names.append(name)
             self.assertTrue(name.startswith(f"{lane}-diagnostics-"))

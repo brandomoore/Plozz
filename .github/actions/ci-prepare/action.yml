@@ -76,7 +76,7 @@ runs:
     # workspace. No live directory is shared with another lane or workflow.
     - name: Restore compressed SwiftPM repositories and artifacts
       id: packages
-      uses: actions/cache/restore@v4
+      uses: actions/cache/restore@v6
       with:
         path: |
           .build/ci/swiftpm-cache/repositories
@@ -85,7 +85,7 @@ runs:
 
     - name: Restore lane-private compilation and package workspace
       id: build
-      uses: actions/cache/restore@v4
+      uses: actions/cache/restore@v6
       with:
         path: ${{ steps.keys.outputs.build-paths }}
         key: ${{ steps.keys.outputs.build-key }}
