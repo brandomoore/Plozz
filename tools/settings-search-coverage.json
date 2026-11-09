@@ -894,7 +894,12 @@
     }
   },
   "derived_anchors": {
-    "entry.anchorID": "Live TV subtitle variants reuse the ordinary style anchors; exhaustive CoreModels tests verify the mapping and exclude dual subtitles."
+    "entry.anchorID": "Live TV subtitle variants reuse the ordinary style anchors; exhaustive CoreModels tests verify the mapping and exclude dual subtitles.",
+    "PlayerOptionalTab.chapters.searchAnchor": "Player tabs own one stable settings anchor per section; the generated switch group and CoreModels catalog test keep the mapping in sync.",
+    "PlayerOptionalTab.cast.searchAnchor": "Player tabs own one stable settings anchor per section; the generated switch group and CoreModels catalog test keep the mapping in sync.",
+    "PlayerOptionalTab.episodes.searchAnchor": "Player tabs own one stable settings anchor per section; the generated switch group and CoreModels catalog test keep the mapping in sync.",
+    "PlayerOptionalTab.playlist.searchAnchor": "Player tabs own one stable settings anchor per section; the generated switch group and CoreModels catalog test keep the mapping in sync.",
+    "PlayerOptionalTab.continueWatching.searchAnchor": "Player tabs own one stable settings anchor per section; the generated switch group and CoreModels catalog test keep the mapping in sync."
   },
   "exclusions": {
     "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSSettingsSearchDestination|authorizationPrompt|Button|Text(KidsProfileCopy.parentalPIN)": {
@@ -2700,14 +2705,7 @@
       "count": 1
     },
     "Sources/FeatureSettings/PlayerTabSettingsControls.swift|PlayerTabSettingsControls|controls|Toggle|<dynamic>": {
-      "reason": "Player-tab switches are generated from PlayerOptionalTab; each tab's explicit catalog entry owns its search anchor and the CoreModels tests require one per case.",
-      "covered_by": [
-        "player-tab-chapters",
-        "player-tab-cast",
-        "player-tab-episodes",
-        "player-tab-playlist",
-        "continue-watching-in-player"
-      ],
+      "reason": "Player-tab switches are generated from PlayerOptionalTab; each tab owns its derived search anchor and the CoreModels tests require one catalog entry per case.",
       "count": 1
     },
     "Sources/FeatureSettings/SkipMarkerSettingsControl.swift|SkipMarkerSettingsControl|body|Button|<dynamic>": {
