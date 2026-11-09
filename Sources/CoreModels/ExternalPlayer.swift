@@ -1,5 +1,32 @@
 import Foundation
 
+/// Providers negotiate independent delivery by default. Local file fallback
+/// requires explicit runtime opt-in and must preserve streaming limits.
+public protocol ExternalPlaybackProviding: MediaProvider {
+    func externalPlaybackInfo(
+        for itemID: String, mediaSourceID: String?, player: ExternalPlayer,
+        streaming: StreamingPlaybackOptions?
+    ) async throws -> PlaybackRequest
+
+    func externalPlaybackInfo(
+        for itemID: String, mediaSourceID: String?, player: ExternalPlayer,
+        streaming: StreamingPlaybackOptions?, allowLocalRelay: Bool
+    ) async throws -> PlaybackRequest
+}
+
+public extension ExternalPlaybackProviding {
+    func externalPlaybackInfo(
+        for itemID: String, mediaSourceID: String?, player: ExternalPlayer,
+        streaming: StreamingPlaybackOptions?, allowLocalRelay: Bool
+    ) async throws -> PlaybackRequest {
+        try await externalPlaybackInfo(for: itemID, mediaSourceID: mediaSourceID, player: player, streaming: streaming)
+    }
+
+    func externalPlaybackInfo(for itemID: String, mediaSourceID: String?) async throws -> PlaybackRequest {
+        try await externalPlaybackInfo(for: itemID, mediaSourceID: mediaSourceID, player: .infuse, streaming: nil)
+    }
+}
+
 public enum ExternalPlayer: String, Codable, CaseIterable, Sendable {
     case builtIn, nativePlayer, infuse, vlc, custom
 
@@ -23,6 +50,17 @@ public enum ExternalPlayer: String, Codable, CaseIterable, Sendable {
     }
 
     public var returnsProgress: Bool { self == .nativePlayer || self == .infuse }
+
+    public var supportsDASH: Bool { self == .vlc }
+
+    public func supportsDirectMediaScheme(_ scheme: String?) -> Bool {
+        let scheme = scheme?.lowercased() ?? ""
+        return ["http", "https"].contains(scheme) || (self == .vlc && scheme == "ftp")
+    }
+
+    public var supportsHTTPPasswordAuthentication: Bool {
+        self == .nativePlayer || self == .infuse || self == .vlc
+    }
 
     public static var supported: [Self] {
         #if os(tvOS)
@@ -68,7 +106,7 @@ public enum ExternalPlayerError: Error, Equatable, Sendable {
         case .unavailable:
             "The selected player isn't available on this device. You can play this video in Plozz instead."
         case .unsupportedSource:
-            "This source needs Plozz's built-in player. External players require a directly accessible HTTP or HTTPS video without a separate audio stream or server conversion."
+            "This source needs Plozz's built-in player. The selected app must be able to access the video without Plozz's local connection or a separate audio stream."
         case .invalidTemplate:
             "Enter an app URL with exactly one {url} placeholder, such as myplayer://play?url={url}. Web, file, and Plozz URLs aren't supported."
         case .invalidCallback:
@@ -91,16 +129,30 @@ public enum ExternalPlayerError: Error, Equatable, Sendable {
 
 /// App links contain authenticated media URLs. Never persist or log the result.
 public enum ExternalPlayerURL {
-    public static func isSupportedMediaURL(_ url: URL) -> Bool {
+    public static func isSupportedMediaURL(
+        _ url: URL, player: ExternalPlayer = .infuse, allowPassword: Bool = false
+    ) -> Bool {
         guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
-              ["http", "https"].contains(components.scheme?.lowercased() ?? ""),
-              let host = components.host, !host.isEmpty,
-              components.user == nil, components.password == nil else { return false }
+              player.supportsDirectMediaScheme(components.scheme),
+              let host = components.host, !host.isEmpty else { return false }
+        // FTP uses the same explicit share-provider opt-in as password URLs.
+        if components.scheme?.lowercased() == "ftp", !allowPassword { return false }
+        if components.user != nil || components.password != nil {
+            guard allowPassword, player.supportsHTTPPasswordAuthentication,
+                  let user = components.user, !user.isEmpty, !user.contains(":"),
+                  components.password != nil else { return false }
+            // Infuse and Native Player reject escaped passwords in tested playback
+            // links. Refuse before opening rather than send a login they cannot use.
+            if player != .vlc,
+               components.percentEncodedPassword != components.password || components.password?.contains(":") == true {
+                return false
+            }
+        }
         let normalizedHost = host.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "[]"))
         return !["localhost", "::1", "0.0.0.0", "0", "2130706433"].contains(normalizedHost)
             && !normalizedHost.hasPrefix("127.") && !normalizedHost.hasPrefix("::ffff:127.")
             && !normalizedHost.hasSuffix(".localhost")
-            && url.pathExtension.lowercased() != "mpd"
+            && (url.pathExtension.lowercased() != "mpd" || player.supportsDASH)
     }
 
     public static func validateCustomTemplate(_ template: String) throws {
@@ -122,9 +174,21 @@ public enum ExternalPlayerURL {
 
     public static func make(
         settings: ExternalPlayerSettings, mediaURL: URL, title: String,
-        position: TimeInterval, subtitles: [URL] = [], callbackScheme: String, nonce: UUID
+        position: TimeInterval, subtitles: [URL] = [], callbackScheme: String, nonce: UUID,
+        allowPassword: Bool = false, ownedLocalURLs: Set<URL> = []
     ) throws -> URL {
-        guard isSupportedMediaURL(mediaURL), position.isFinite, position >= 0,
+        func supported(_ url: URL) -> Bool {
+            if ownedLocalURLs.contains(url), settings.player != .custom,
+               let parts = URLComponents(url: url, resolvingAgainstBaseURL: false),
+               parts.scheme == "http", parts.host == "127.0.0.1",
+               let port = parts.port, (1...65535).contains(port),
+               parts.user == nil, parts.password == nil, parts.query == nil, parts.fragment == nil {
+                return true
+            }
+            return isSupportedMediaURL(url, player: settings.player, allowPassword: allowPassword)
+        }
+        guard supported(mediaURL),
+              position.isFinite, position >= 0,
               position < Double(Int.max) else { throw ExternalPlayerError.unsupportedSource }
         if settings.player == .custom {
             try validateCustomTemplate(settings.customURLTemplate)
@@ -155,7 +219,9 @@ public enum ExternalPlayerURL {
                 query.append(URLQueryItem(name: "x-" + outcome, value: url.absoluteString))
             }
         }
-        let supportedSubtitles = subtitles.filter(isSupportedMediaURL)
+        let supportedSubtitles = subtitles.filter {
+            supported($0)
+        }
         for url in supportedSubtitles.prefix(settings.player == .vlc ? 1 : 8) {
             query.append(URLQueryItem(name: "sub", value: url.absoluteString))
         }

@@ -506,6 +506,114 @@ ETag or modification time. Missing, incomplete or ambiguous entries retain the
 ordinary opening-stat fallback. This avoids a redundant metadata round trip,
 not the final source-open/prepared-claim revalidation. Listings are never reused
 across Play requests, and detail preparation still does no sidecar discovery.
+
+External WebDAV playback opts into `MediaTransportExternalPlaybackFileSystem`;
+it never converts a network-file locator into a guessed URL in the app shell.
+The WebDAV adapter reuses ordinary opening metadata, representation/size checks,
+root-safe URL construction and a two-byte range probe without prefetching media.
+Under system TLS trust, anonymous URLs and configured password authentication
+can be handed off to supported players. The transport, not the app shell,
+adds percent-encoded credentials to an exact-origin URL for Native Player,
+Infuse or VLC. This follows the existing configured-HTTP LAN policy; it does not
+permit HTTPS downgrades. Custom templates cannot opt into password handoff.
+Infuse and Native Player accepted unreserved ASCII and raw `+&=!$'()*,;` password
+characters in physical playback-link probes, but rejected colon and escaped
+characters (including `@`, `/`, `?`, `#`, `%` and non-ASCII text). Keep legal
+punctuation raw inside the media URL and encode that entire URL once into the
+app-link query; overencoding the password also fails. Incompatible passwords
+cannot use this direct handoff; VLC retains
+standard escaped userinfo. Additional Basic-authentication probes confirmed
+that both tested players sent percent-escaped passwords literally instead of
+decoding them. Native Player's documented short link did not change that result;
+anonymous bootstrap redirects did not provide a working alternative in either
+player. A separate, explicitly admitted iOS file-streaming fallback is described
+below; there is no user-hosted relay requirement.
+If the delivered media still needs Digest-only policy, bearer/custom headers
+or a certificate pin, it cannot use direct handoff; those requirements are
+never dropped.
+Server-issued HTTPS delivery redirects retain isolated anonymous sessions;
+share credentials are never added to independently readable delivery URLs.
+Same-origin HTTPS delivery grants are also checked in an isolated anonymous
+session with a conditional two-byte read against the already-probed validator
+and size. This avoids unnecessarily exporting a reusable password, and lets
+header-authenticated or receiver-incompatible logins resolve independent media.
+Only a 401 permits falling back to an already-supported password contract;
+changed representations, redirects, authorization failures and other errors
+are not hidden behind that fallback.
+
+A pinned DAV origin can resolve a foreign HTTPS delivery grant: the original
+metadata and GET still enforce its pin, while the independent delivery uses
+system trust. Direct playback or anonymous redirects returning to the pinned
+origin cannot use direct handoff; no pin is removed to make a connection work.
+Media and matching SRT URLs are ephemeral and excluded from callback receipts
+and logs. Callback
+resource digests omit userinfo so a sanitized return URL still matches, while
+nonce, profile, account and credential-revision checks retain ownership.
+VLC also accepts plain FTP files and SRT sidecars through its stream action.
+The transport revalidates the selected file and bounded byte access, retains the
+configured port, and uses `//absolute/path` to avoid VLC resolving a different
+file under the login directory. Anonymous and URL-unreserved ASCII password
+credentials are enabled; FTPS endpoints, TLS requirements and pins never become
+plain FTP. See [the FTP contract](../Sources/MediaTransportFTP/README.md#external-playback).
+
+Other share transports need the app-owned handoff below; without it they keep
+their built-in path. Disc folders and conversion policies remain internal.
+An external player cannot renew an expired server-issued URL.
+
+### App-owned network-share file handoff
+
+On iOS/iPadOS 26, unsupported direct delivery can opt into a loopback-only
+file server backed by `MediaTransportNetworkFileResolver`. WebDAV, SMB, NFS,
+SFTP and FTP/FTPS all reuse their registered transport; no parallel authentication
+implementation is introduced. Source leases retain existing
+credential/trust revisions, representation validation and playback admission.
+SMB signing, SSH host keys/private keys and FTPS certificate policies stay with
+Plozz's transport rather than being dropped to satisfy a receiver's URL interface.
+The provider keeps the exact selected locator when direct delivery is
+unsupported; permission, authentication and changed-source errors are never
+converted into successful local delivery. SRT sidecars remain typed locators
+and stream without copying files into another app.
+
+The runtime waits for a started `BGContinuedProcessingTask`, not merely a
+successful submission. Submission uses the immediate-or-fail strategy, and
+admission has a five-second deadline. There is no background-audio workaround.
+Missing admission keeps playback internal; tvOS, older iOS and custom URL
+templates never opt into this capability.
+
+The endpoint binds only `127.0.0.1`, exposes opaque per-session resource paths,
+and accepts only GET/HEAD for the authorized file set. Exact Host and path
+matching, bounded request headers, eight concurrent connections, 30-second
+connection inactivity limits and single byte ranges prevent arbitrary upstream
+requests. Transport-aware reads are capped at 4 MiB per connection (32 MiB of
+application payload across eight connections, excluding transport/system
+buffers), then written in backpressured 256-KiB pieces. This avoids paying an
+upstream HTTP round trip for every socket write without buffering whole videos. Neither
+credentials nor the endpoint URL enter callback receipts or logs. Ordinary
+provider-supplied loopback URLs remain rejected: link construction accepts only
+the exact URLs belonging to the runtime's live session.
+
+Terminal source/authentication/trust failures revoke the whole capability rather
+than leaving an unusable source and execution grant alive. Client disconnects
+and transient timeouts do not terminate the playback session.
+Background expiration, new playback, account/profile changes, matched callbacks
+and foreground return revoke the endpoint and drain source cursors. Every
+chunk also checks current ownership and the execution grant. A session is
+bounded to 24 hours. System activity progress counts unique byte ranges served;
+seeking does not double-count, and bytes delivered never update watch state.
+Only the existing validated external-player callback can report playback
+progress.
+
+The OS can still expire admitted work, and the user can cancel it. This is not
+a full-film execution guarantee. Regression coverage exercises real loopback
+range/HEAD requests, short reads, cancellation, ownership and grant rejection;
+physical iOS external-player playback and long-duration system background
+admission remain unverified. The earlier Apple TV probes below validate direct
+password handoff only, not this new path.
+
+Physical Apple TV probes with disposable LAN HTTP fixtures verified Basic and
+Digest media retrieval and rendered video in Infuse 8.5.9 and Native Player
+2.0.1. Both fetched authenticated SRT sidecars; rendered SRT was observed in
+Infuse only. These probes are not HTTPS, certificate-pinning or iOS evidence.
 Other share transports retain opening-stat metadata; their directory-listing and
 file-stat representations need not carry the same precision or completeness.
 

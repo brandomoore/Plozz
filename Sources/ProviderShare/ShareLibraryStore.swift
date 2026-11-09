@@ -62,6 +62,10 @@ actor ShareLibraryStore {
         try await browser.statForOpening(relativePath)
     }
 
+    func externalPlaybackURL(for locator: NetworkFileLocator, player: ExternalPlayer) async throws -> URL {
+        try await browser.externalPlaybackURL(for: locator, player: player)
+    }
+
     /// Read a file's bytes off the share (share-relative path). Used to pull small
     /// sidecar subtitles into a local temp for the overlay.
     func readFile(_ relPath: String, maximumBytes: Int = 16 * 1_024 * 1_024) async throws -> Data {

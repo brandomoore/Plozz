@@ -43,6 +43,8 @@ struct FocusHostApp: App {
                 ServerAddressNavigationFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--read-ahead-settings-fixture") {
                 PlaybackReadAheadFixture()
+            } else if ProcessInfo.processInfo.arguments.contains("--external-player-settings-fixture") {
+                ExternalPlayerSettingsFixtureHost()
             } else if ProcessInfo.processInfo.arguments.contains("--skip-settings-fixture") {
                 SkipSettingsFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--iptv-organization-fixture") {
@@ -119,6 +121,116 @@ struct FocusHostApp: App {
                 Color.black
             }
         }
+    }
+}
+
+private struct ExternalPlayerSettingsFixtureHost: UIViewControllerRepresentable {
+    func makeUIViewController(context: Context) -> ExternalPlayerFixtureController {
+        ExternalPlayerFixtureController(rootView: ExternalPlayerSettingsFixture())
+    }
+
+    func updateUIViewController(_ controller: ExternalPlayerFixtureController, context: Context) {}
+}
+
+private final class ExternalPlayerFixtureController: UIHostingController<ExternalPlayerSettingsFixture> {
+    var target: (any UIFocusEnvironment)?
+    override var preferredFocusEnvironments: [any UIFocusEnvironment] {
+        target.map { [$0] } ?? super.preferredFocusEnvironments
+    }
+}
+
+private struct ExternalPlayerSettingsFixture: View {
+    @State private var model: ExternalPlayerSettingsModel = {
+        let defaults = UserDefaults(suiteName: "external-player-settings-fixture")!
+        defaults.removePersistentDomain(forName: "external-player-settings-fixture")
+        let model = ExternalPlayerSettingsModel(defaults: defaults)
+        model.settings.player = .nativePlayer
+        return model
+    }()
+    @State private var failure: String?
+
+    var body: some View {
+        SettingsFormLayout(
+            title: Text("External player"),
+            rows: Array(ExternalPlayerSettingsRows.external(
+                model: model, installedPlayers: Set(ExternalPlayer.supported)
+            ).prefix(1))
+        )
+        .frame(width: SettingsFormMetrics.pageWidth)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .environment(\.themePalette, .dark)
+        .environment(\.locale, Locale(identifier: "en_US"))
+        .background(.black)
+        .overlay(alignment: .top) {
+            if let failure { Text(failure).foregroundStyle(.red) }
+        }
+        .task {
+            do { try await verifyFocusPreview() }
+            catch { failure = "Focus fixture failed: \(error)" }
+        }
+    }
+
+    @MainActor private func verifyFocusPreview() async throws {
+        let player: ExternalPlayer = ProcessInfo.processInfo.arguments.contains("--external-player-vlc") ? .vlc
+            : ProcessInfo.processInfo.arguments.contains("--external-player-infuse") ? .infuse
+            : ProcessInfo.processInfo.arguments.contains("--external-player-built-in") ? .builtIn : .nativePlayer
+        let deadline = ContinuousClock.now + .seconds(5)
+        while ContinuousClock.now < deadline {
+            if let window = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene })
+                .flatMap(\.windows).first(where: \.isKeyWindow),
+               let system = UIFocusSystem.focusSystem(for: window) {
+                var containers: [any UIFocusItemContainer] = [window]
+                var visited = Set<ObjectIdentifier>()
+                var items: [ObjectIdentifier: any UIFocusItem] = [:]
+                while let container = containers.popLast() {
+                    guard visited.insert(ObjectIdentifier(container)).inserted else { continue }
+                    for item in container.focusItems(in: container.coordinateSpace.convert(window.bounds, from: window)) {
+                        if let child = item.focusItemContainer { containers.append(child) }
+                        if let view = item as? UIView { containers.append(view) }
+                        if item.canBecomeFocused, !(item is UIScrollView) { items[ObjectIdentifier(item)] = item }
+                    }
+                }
+                let targets = items.values.compactMap { item -> ((any UIFocusItem), CGFloat)? in
+                    var environment: (any UIFocusEnvironment)? = item
+                    while let current = environment {
+                        if let container = current.focusItemContainer {
+                            return (item, container.coordinateSpace.convert(item.frame, to: window).minY)
+                        }
+                        environment = current.parentFocusEnvironment
+                    }
+                    return nil
+                }.sorted { $0.1 < $1.1 }
+                if targets.count == ExternalPlayer.supported.count,
+                   let index = ExternalPlayer.supported.firstIndex(of: player),
+                   let host = focusHost(in: window.rootViewController) {
+                    let target = targets[index].0
+                    host.target = target
+                    system.requestFocusUpdate(to: host)
+                    system.updateFocusIfNeeded()
+                    try await Task.sleep(for: .milliseconds(400))
+                    host.target = nil
+                    guard system.focusedItem === target, model.settings.player == .nativePlayer else {
+                        throw NSError(domain: "PlayerFocusFixture", code: 1, userInfo: [
+                            NSLocalizedDescriptionKey: "Focus did not reach \(player.rawValue) or selection changed."
+                        ])
+                    }
+                    let report: [String: String] = ["focused": player.rawValue, "selected": model.settings.player.rawValue]
+                    let url = URL.documentsDirectory.appendingPathComponent("external-player-focus.json")
+                    try JSONEncoder().encode(report).write(to: url, options: .atomic)
+                    return
+                }
+            }
+            try await Task.sleep(for: .milliseconds(100))
+        }
+        throw NSError(domain: "PlayerFocusFixture", code: 2, userInfo: [
+            NSLocalizedDescriptionKey: "Player focus targets were not ready."
+        ])
+    }
+
+    private func focusHost(in controller: UIViewController?) -> ExternalPlayerFixtureController? {
+        guard let controller else { return nil }
+        if let host = controller as? ExternalPlayerFixtureController { return host }
+        return controller.children.lazy.compactMap { focusHost(in: $0) }.first
     }
 }
 

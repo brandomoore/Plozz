@@ -29,6 +29,7 @@ private struct ExternalPlayerSupport: ViewModifier {
                 )
             })
             .task(id: context().identity + (runtime.returnID?.uuidString ?? "") + String(describing: scenePhase)) {
+                runtime.updateRelayContext(context(), isActive: scenePhase == .active, isBackground: scenePhase == .background)
                 guard scenePhase == .active else { return }
                 if context().isAuthorized {
                     ExternalPlayerSettingsModel.shared.migrateIfNeeded(from: legacySettings())

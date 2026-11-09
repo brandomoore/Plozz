@@ -5748,6 +5748,226 @@
         }
       }
     },
+    "%@ limitations" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "قيود %@"
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ограничения на %@"
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Limitacions de %@"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Omezení %@"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Begrænsninger i %@"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Einschränkungen von %@"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Περιορισμοί του %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Limitaciones de %@"
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "محدودیت‌های %@"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@: rajoitukset"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Limites de %@"
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "מגבלות של %@"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ की सीमाएँ"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ograničenja aplikacije %@"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ korlátai"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Batasan %@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Limitazioni di %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@の制限事項"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ 제한 사항"
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Had %@"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Begrensninger i %@"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Beperkingen van %@"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ograniczenia %@"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Limitações do %@"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Limitări: %@"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ограничения: %@"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Obmedzenia: %@"
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Omejitve: %@"
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ograničenja: %@"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Begränsningar för %@"
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ข้อจำกัดของ %@"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ sınırlamaları"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Обмеження %@"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Giới hạn của %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ 的限制"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ 的限制"
+          }
+        }
+      }
+    },
     "%@ of %@" : {
       "comment" : "Share enrichment progress: items enriched so far out of the pass's total. `done` arrives pre-padded to a fixed width; `total` must stay ungrouped to match.",
       "localizations" : {
@@ -246237,6 +246457,226 @@
         }
       }
     },
+    "Compatible library videos open in the selected app, including server-converted streams. Unsupported sources and Live TV play in Plozz." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "تُفتح فيديوهات المكتبة المتوافقة في التطبيق المحدد، بما فيها التدفقات التي يحوّلها الخادم. تُشغَّل المصادر غير المدعومة والبث التلفزيوني المباشر في Plozz."
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Съвместимите видеа от библиотеката се отварят в избраното приложение, включително потоците, преобразувани от сървъра. Неподдържаните източници и телевизията на живо се възпроизвеждат в Plozz."
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Els vídeos compatibles de la biblioteca s'obren a l'app seleccionada, inclosos els fluxos convertits pel servidor. Les fonts no compatibles i la TV en directe es reprodueixen a Plozz."
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Kompatibilní videa z knihovny se otevírají ve vybrané aplikaci, včetně streamů převáděných serverem. Nepodporované zdroje a živá TV se přehrávají v Plozz."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Kompatible videoer fra biblioteket åbnes i den valgte app, også streams, der er konverteret af serveren. Ikke-understøttede kilder og live-tv afspilles i Plozz."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Kompatible Videos aus der Mediathek werden in der ausgewählten App geöffnet, auch vom Server konvertierte Streams. Nicht unterstützte Quellen und Live-TV werden in Plozz wiedergegeben."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Τα συμβατά βίντεο της βιβλιοθήκης ανοίγουν στην επιλεγμένη εφαρμογή, μαζί με ροές που μετατρέπει ο διακομιστής. Οι μη υποστηριζόμενες πηγές και η ζωντανή τηλεόραση αναπαράγονται στο Plozz."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Los vídeos compatibles de la biblioteca se abren en la app seleccionada, incluidas las transmisiones convertidas por el servidor. Las fuentes no compatibles y la TV en directo se reproducen en Plozz."
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ویدیوهای سازگار کتابخانه، از جمله جریان‌های تبدیل‌شده توسط سرور، در برنامهٔ انتخاب‌شده باز می‌شوند. منابع پشتیبانی‌نشده و تلویزیون زنده در Plozz پخش می‌شوند."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Kirjaston yhteensopivat videot, myös palvelimen muuntamat videovirrat, avautuvat valitussa sovelluksessa. Lähteet, joita ei tueta, ja suorat TV-lähetykset toistetaan Plozzissa."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Les vidéos compatibles de la bibliothèque s’ouvrent dans l’app choisie, y compris les flux convertis par le serveur. Les sources non prises en charge et la TV en direct sont lues dans Plozz."
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "סרטונים תואמים מהספרייה נפתחים ביישום שנבחר, כולל הזרמות שהשרת ממיר. מקורות שאינם נתמכים ושידורי טלוויזיה חיים מופעלים ב-Plozz."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "लाइब्रेरी के संगत वीडियो चुने गए ऐप में खुलते हैं, जिनमें सर्वर पर रूपांतरित स्ट्रीम भी शामिल हैं। असमर्थित स्रोत और लाइव टीवी Plozz में चलते हैं।"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Kompatibilni videozapisi iz biblioteke otvaraju se u odabranoj aplikaciji, uključujući streamove koje pretvara poslužitelj. Nepodržani izvori i TV uživo reproduciraju se u aplikaciji Plozz."
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "A médiatár kompatibilis videói a kiválasztott appban nyílnak meg, a szerver által átalakított streameket is beleértve. A nem támogatott forrásokat és az élő TV-t a Plozz játssza le."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Video pustaka yang kompatibel dibuka di aplikasi yang dipilih, termasuk streaming yang dikonversi oleh server. Sumber yang tidak didukung dan TV langsung diputar di Plozz."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "I video compatibili della libreria si aprono nell'app selezionata, inclusi i flussi convertiti dal server. Le sorgenti non supportate e la TV in diretta vengono riprodotte in Plozz."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ライブラリ内の対応する動画は、サーバーで変換されたストリームを含め、選択したアプリで開きます。非対応のソースとライブTVはPlozzで再生されます。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "호환되는 라이브러리 동영상은 서버에서 변환한 스트림을 포함하여 선택한 앱에서 열립니다. 지원되지 않는 소스와 실시간 TV는 Plozz에서 재생됩니다."
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Video pustaka yang serasi dibuka dalam aplikasi yang dipilih, termasuk strim yang ditukar oleh pelayan. Sumber yang tidak disokong dan TV langsung dimainkan dalam Plozz."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Kompatible videoer i biblioteket åpnes i den valgte appen, inkludert strømmer som er konvertert av serveren. Kilder som ikke støttes, og direkte-TV spilles av i Plozz."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Compatibele video's uit de bibliotheek worden geopend in de geselecteerde app, inclusief streams die door de server zijn geconverteerd. Niet-ondersteunde bronnen en live-tv worden afgespeeld in Plozz."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Obsługiwane filmy z biblioteki, w tym strumienie przekonwertowane przez serwer, są otwierane w wybranej aplikacji. Nieobsługiwane źródła i telewizja na żywo są odtwarzane w Plozz."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Vídeos compatíveis da biblioteca são abertos no app selecionado, incluindo fluxos convertidos pelo servidor. Fontes não compatíveis e TV ao vivo são reproduzidas no Plozz."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Videourile compatibile din bibliotecă se deschid în aplicația selectată, inclusiv fluxurile convertite de server. Sursele neacceptate și TV în direct sunt redate în Plozz."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Совместимые видео из медиатеки открываются в выбранном приложении, включая потоки, преобразованные сервером. Неподдерживаемые источники и прямой эфир воспроизводятся в Plozz."
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Kompatibilné videá z knižnice sa otvárajú vo vybranej aplikácii vrátane streamov konvertovaných serverom. Nepodporované zdroje a živé TV vysielanie sa prehrávajú v aplikácii Plozz."
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Združljivi videoposnetki iz knjižnice se odprejo v izbrani aplikaciji, vključno s tokovi, pretvorjenimi na strežniku. Nepodprti viri in televizija v živo se predvajajo v aplikaciji Plozz."
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Kompatibilni video-snimci iz biblioteke otvaraju se u izabranoj aplikaciji, uključujući strimove koje je server konvertovao. Nepodržani izvori i TV uživo reprodukuju se u aplikaciji Plozz."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Kompatibla videor i biblioteket öppnas i den valda appen, även strömmar som konverterats av servern. Källor som inte stöds och direktsänd tv spelas upp i Plozz."
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "วิดีโอในคลังที่รองรับจะเปิดในแอปที่เลือก รวมถึงสตรีมที่เซิร์ฟเวอร์แปลงแล้ว แหล่งที่ไม่รองรับและทีวีสดจะเล่นใน Plozz"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Uyumlu kitaplık videoları, sunucunun dönüştürdüğü akışlar da dahil olmak üzere seçilen uygulamada açılır. Desteklenmeyen kaynaklar ve Canlı TV, Plozz'da oynatılır."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Сумісні відео з медіатеки відкриваються у вибраній програмі, зокрема й потоки, перетворені сервером. Непідтримувані джерела та пряме телебачення відтворюються в Plozz."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Video tương thích trong thư viện được mở bằng ứng dụng đã chọn, kể cả luồng do máy chủ chuyển đổi. Các nguồn không được hỗ trợ và TV trực tiếp được phát trong Plozz."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "兼容的媒体库视频会在所选 App 中打开，包括经服务器转换的流媒体。不支持的来源和直播电视会在 Plozz 中播放。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "相容的媒體庫影片會在所選 App 中開啟，包括由伺服器轉換的串流。不支援的來源和直播電視會在 Plozz 中播放。"
+          }
+        }
+      }
+    },
     "Completed: %@ of %@" : {
       "comment" : "Compact download Live Activity completion count. First placeholder is the localized number fully finished; second is the total. Keep an explicit completion label, including when zero have finished. This is not the current download's position.",
       "localizations" : {
@@ -461350,6 +461790,446 @@
         }
       }
     },
+    "Live TV and downloads play in Plozz." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "يُشغَّل البث التلفزيوني المباشر والتنزيلات في Plozz."
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Телевизията на живо и изтегленото съдържание се възпроизвеждат в Plozz."
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "La TV en directe i les descàrregues es reprodueixen a Plozz."
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Živá TV a stažený obsah se přehrávají v Plozz."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Live-tv og downloads afspilles i Plozz."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Live-TV und Downloads werden in Plozz wiedergegeben."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Η ζωντανή τηλεόραση και τα ληφθέντα αρχεία αναπαράγονται στο Plozz."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "La TV en directo y las descargas se reproducen en Plozz."
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "تلویزیون زنده و فایل‌های دانلودشده در Plozz پخش می‌شوند."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Suorat TV-lähetykset ja ladatut tiedostot toistetaan Plozzissa."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "La TV en direct et les téléchargements sont lus dans Plozz."
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "שידורי טלוויזיה חיים וקבצים שהורדו מופעלים ב-Plozz."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "लाइव टीवी और डाउनलोड की गई सामग्री Plozz में चलती है।"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "TV uživo i preuzeti sadržaji reproduciraju se u aplikaciji Plozz."
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Az élő TV-t és a letöltéseket a Plozz játssza le."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "TV langsung dan unduhan diputar di Plozz."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "La TV in diretta e i contenuti scaricati vengono riprodotti in Plozz."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ライブTVとダウンロード済みコンテンツはPlozzで再生されます。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "실시간 TV와 다운로드한 콘텐츠는 Plozz에서 재생됩니다."
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "TV langsung dan kandungan yang dimuat turun dimainkan dalam Plozz."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Direkte-TV og nedlastet innhold spilles av i Plozz."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Live-tv en gedownloade inhoud worden afgespeeld in Plozz."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Telewizja na żywo i pobrane treści są odtwarzane w Plozz."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "TV ao vivo e conteúdos baixados são reproduzidos no Plozz."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "TV în direct și conținutul descărcat sunt redate în Plozz."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Прямой эфир и загруженные видео воспроизводятся в Plozz."
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Živé TV vysielanie a stiahnutý obsah sa prehrávajú v aplikácii Plozz."
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Televizija v živo in prenesena vsebina se predvajata v aplikaciji Plozz."
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "TV uživo i preuzeti sadržaj reprodukuju se u aplikaciji Plozz."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Direktsänd tv och hämtat innehåll spelas upp i Plozz."
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ทีวีสดและเนื้อหาที่ดาวน์โหลดไว้จะเล่นใน Plozz"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Canlı TV ve indirilenler Plozz'da oynatılır."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Пряме телебачення та завантажені файли відтворюються в Plozz."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "TV trực tiếp và nội dung đã tải xuống được phát trong Plozz."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "直播电视和已下载内容会在 Plozz 中播放。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "直播電視和已下載內容會在 Plozz 中播放。"
+          }
+        }
+      }
+    },
+    "Live TV and non-WebDAV network shares play in Plozz." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "يُشغَّل البث التلفزيوني المباشر والملفات المشتركة عبر الشبكة بغير WebDAV في Plozz."
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Телевизията на живо и споделените мрежови ресурси, които не използват WebDAV, се възпроизвеждат в Plozz."
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "La TV en directe i els recursos compartits de xarxa que no utilitzen WebDAV es reprodueixen a Plozz."
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Živá TV a síťová sdílení, která nepoužívají WebDAV, se přehrávají v Plozz."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Live-tv og netværksdelinger, der ikke bruger WebDAV, afspilles i Plozz."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Live-TV und Netzwerkfreigaben ohne WebDAV werden in Plozz wiedergegeben."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Η ζωντανή τηλεόραση και τα αρχεία σε κοινόχρηστους πόρους δικτύου εκτός WebDAV αναπαράγονται στο Plozz."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "La TV en directo y los recursos compartidos de red que no usan WebDAV se reproducen en Plozz."
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "تلویزیون زنده و منابع اشتراکی شبکه که از WebDAV استفاده نمی‌کنند در Plozz پخش می‌شوند."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Suorat TV-lähetykset ja muut kuin WebDAV-verkkojaot toistetaan Plozzissa."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "La TV en direct et les partages réseau autres que WebDAV sont lus dans Plozz."
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "שידורי טלוויזיה חיים ושיתופי קבצים ברשת שאינם משתמשים ב-WebDAV מופעלים ב-Plozz."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "लाइव टीवी और WebDAV का उपयोग न करने वाले साझा नेटवर्क फ़ोल्डरों की सामग्री Plozz में चलती है।"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "TV uživo i sadržaj dijeljenih mrežnih mapa koje ne koriste WebDAV reproduciraju se u aplikaciji Plozz."
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Az élő TV-t és a nem WebDAV-alapú hálózati megosztások tartalmát a Plozz játssza le."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "TV langsung dan isi folder bersama non-WebDAV di jaringan diputar di Plozz."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "La TV in diretta e i contenuti delle condivisioni di rete non WebDAV vengono riprodotti in Plozz."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ライブTVとWebDAV以外のネットワーク共有はPlozzで再生されます。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "실시간 TV와 WebDAV가 아닌 네트워크 공유의 콘텐츠는 Plozz에서 재생됩니다."
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "TV langsung dan kandungan perkongsian fail rangkaian bukan WebDAV dimainkan dalam Plozz."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Direkte-TV og innhold fra nettverksdelinger som ikke bruker WebDAV, spilles av i Plozz."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Live-tv en inhoud van netwerkshares die geen WebDAV gebruiken, worden afgespeeld in Plozz."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Telewizja na żywo i treści z udziałów sieciowych innych niż WebDAV są odtwarzane w Plozz."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "TV ao vivo e conteúdos de compartilhamentos de rede que não usam WebDAV são reproduzidos no Plozz."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "TV în direct și resursele partajate în rețea care nu folosesc WebDAV sunt redate în Plozz."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Прямой эфир и общие сетевые ресурсы, не использующие WebDAV, воспроизводятся в Plozz."
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Živé TV vysielanie a zdieľané sieťové zdroje cez iné protokoly než WebDAV sa prehrávajú v aplikácii Plozz."
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Televizija v živo in omrežni viri v skupni rabi brez WebDAV se predvajajo v aplikaciji Plozz."
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "TV uživo i deljeni mrežni resursi koji ne koriste WebDAV reprodukuju se u aplikaciji Plozz."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Direktsänd tv och nätverksdelningar som inte använder WebDAV spelas upp i Plozz."
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ทีวีสดกับไฟล์และโฟลเดอร์ที่แชร์บนเครือข่ายโดยไม่ใช้ WebDAV จะเล่นใน Plozz"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Canlı TV ve WebDAV dışındaki ağ paylaşımları Plozz'da oynatılır."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Пряме телебачення та спільні мережеві файли й папки, що не використовують WebDAV, відтворюються в Plozz."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "TV trực tiếp và các tệp, thư mục chia sẻ qua mạng không dùng WebDAV được phát trong Plozz."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "直播电视和非 WebDAV 网络共享文件与文件夹会在 Plozz 中播放。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "直播電視和非 WebDAV 的網路共用檔案與資料夾會在 Plozz 中播放。"
+          }
+        }
+      }
+    },
     "Live TV buffer" : {
       "localizations" : {
         "ar" : {
@@ -465527,6 +466407,446 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "直播電視無法使用"
+          }
+        }
+      }
+    },
+    "Live TV, SMB, NFS, SFTP, FTPS and unsupported share logins play in Plozz." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "يُشغَّل في Plozz البث التلفزيوني المباشر ومصادر SMB وNFS وSFTP وFTPS والملفات المشتركة ذات طرق تسجيل الدخول غير المدعومة."
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Телевизията на живо, SMB, NFS, SFTP, FTPS и споделените ресурси с неподдържани начини за вход се възпроизвеждат в Plozz."
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "La TV en directe, SMB, NFS, SFTP, FTPS i els recursos compartits amb mètodes d'inici de sessió no compatibles es reprodueixen a Plozz."
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Živá TV, SMB, NFS, SFTP, FTPS a sdílení s nepodporovanými způsoby přihlášení se přehrávají v Plozz."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Live-tv, SMB, NFS, SFTP, FTPS og delinger med ikke-understøttede loginmetoder afspilles i Plozz."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Live-TV, SMB, NFS, SFTP, FTPS und Freigaben mit nicht unterstützten Anmeldeverfahren werden in Plozz wiedergegeben."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Η ζωντανή τηλεόραση, τα αρχεία μέσω SMB, NFS, SFTP, FTPS και οι κοινόχρηστοι πόροι με μη υποστηριζόμενο τρόπο σύνδεσης αναπαράγονται στο Plozz."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "La TV en directo, SMB, NFS, SFTP, FTPS y los recursos compartidos con métodos de acceso no compatibles se reproducen en Plozz."
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "تلویزیون زنده، SMB، NFS، SFTP، FTPS و منابع اشتراکی با روش‌های ورود پشتیبانی‌نشده در Plozz پخش می‌شوند."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Suorat TV-lähetykset, SMB-, NFS-, SFTP- ja FTPS-jaot sekä jaot, joiden kirjautumistapaa ei tueta, toistetaan Plozzissa."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "La TV en direct, SMB, NFS, SFTP, FTPS et les partages dont le mode d’authentification n’est pas pris en charge sont lus dans Plozz."
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "שידורי טלוויזיה חיים, SMB, NFS, SFTP, FTPS ושיתופי קבצים עם שיטות התחברות שאינן נתמכות מופעלים ב-Plozz."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "लाइव टीवी, SMB, NFS, SFTP, FTPS और असमर्थित लॉगिन वाले साझा नेटवर्क फ़ोल्डरों की सामग्री Plozz में चलती है।"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "TV uživo, SMB, NFS, SFTP, FTPS i sadržaj dijeljenih mapa s nepodržanim načinima prijave reproduciraju se u aplikaciji Plozz."
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Az élő TV-t, az SMB-, NFS-, SFTP- és FTPS-megosztások és a nem támogatott bejelentkezést igénylő megosztások tartalmát a Plozz játssza le."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "TV langsung, SMB, NFS, SFTP, FTPS, dan isi folder bersama dengan metode login yang tidak didukung diputar di Plozz."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "La TV in diretta e i contenuti delle condivisioni SMB, NFS, SFTP, FTPS o con modalità di accesso non supportate vengono riprodotti in Plozz."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ライブTV、SMB、NFS、SFTP、FTPS、非対応のログイン方式を使うネットワーク共有はPlozzで再生されます。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "실시간 TV, SMB, NFS, SFTP, FTPS 공유의 콘텐츠와 지원되지 않는 로그인 방식을 사용하는 공유 콘텐츠는 Plozz에서 재생됩니다."
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "TV langsung, kandungan SMB, NFS, SFTP dan FTPS serta kandungan perkongsian fail dengan log masuk yang tidak disokong dimainkan dalam Plozz."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Direkte-TV, innhold via SMB, NFS, SFTP og FTPS og innhold fra delinger med pålogging som ikke støttes, spilles av i Plozz."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Live-tv, inhoud via SMB, NFS, SFTP en FTPS en inhoud van shares met een niet-ondersteunde aanmeldmethode worden afgespeeld in Plozz."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Telewizja na żywo oraz treści z udziałów SMB, NFS, SFTP, FTPS i udziałów z nieobsługiwaną metodą logowania są odtwarzane w Plozz."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "TV ao vivo e conteúdos de compartilhamentos SMB, NFS, SFTP, FTPS e de compartilhamentos com métodos de login não compatíveis são reproduzidos no Plozz."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "TV în direct, SMB, NFS, SFTP, FTPS și resursele partajate cu autentificare neacceptată sunt redate în Plozz."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Прямой эфир, SMB, NFS, SFTP, FTPS и общие сетевые ресурсы с неподдерживаемыми способами входа воспроизводятся в Plozz."
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Živé TV vysielanie, SMB, NFS, SFTP, FTPS a zdieľané sieťové zdroje s nepodporovaným prihlasovaním sa prehrávajú v aplikácii Plozz."
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Televizija v živo, SMB, NFS, SFTP, FTPS in omrežni viri v skupni rabi z nepodprto prijavo se predvajajo v aplikaciji Plozz."
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "TV uživo, SMB, NFS, SFTP, FTPS i deljeni mrežni resursi sa nepodržanim načinom prijavljivanja reprodukuju se u aplikaciji Plozz."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Direktsänd tv, SMB, NFS, SFTP, FTPS och nätverksdelningar med inloggningsmetoder som inte stöds spelas upp i Plozz."
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ทีวีสด ไฟล์ที่แชร์ผ่าน SMB, NFS, SFTP, FTPS และไฟล์ที่แชร์ซึ่งใช้วิธีเข้าสู่ระบบที่ไม่รองรับจะเล่นใน Plozz"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Canlı TV ile SMB, NFS, SFTP, FTPS veya desteklenmeyen oturum açma yöntemlerini kullanan paylaşımlardaki içerikler Plozz'da oynatılır."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Пряме телебачення та вміст спільних ресурсів, що використовують SMB, NFS, SFTP, FTPS або непідтримувані способи входу, відтворюються в Plozz."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "TV trực tiếp, tệp chia sẻ qua SMB, NFS, SFTP, FTPS và tệp chia sẻ dùng cách đăng nhập không được hỗ trợ đều được phát trong Plozz."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "直播电视、通过 SMB、NFS、SFTP、FTPS 共享的内容，以及使用不受支持的登录方式的共享内容会在 Plozz 中播放。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "直播電視、透過 SMB、NFS、SFTP、FTPS 共用的內容，以及使用不支援的登入方式的共用內容會在 Plozz 中播放。"
+          }
+        }
+      }
+    },
+    "Live TV, non-WebDAV network shares and links needing passwords play in Plozz." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "يُشغَّل في Plozz البث التلفزيوني المباشر والملفات المشتركة عبر الشبكة بغير WebDAV والروابط التي تتطلب كلمات مرور."
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Телевизията на живо, споделените мрежови ресурси, които не използват WebDAV, и връзките, изискващи пароли, се възпроизвеждат в Plozz."
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "La TV en directe, els recursos compartits de xarxa que no utilitzen WebDAV i els enllaços que requereixen contrasenya es reprodueixen a Plozz."
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Živá TV, síťová sdílení, která nepoužívají WebDAV, a odkazy vyžadující heslo se přehrávají v Plozz."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Live-tv, netværksdelinger, der ikke bruger WebDAV, og links, der kræver adgangskode, afspilles i Plozz."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Live-TV, Netzwerkfreigaben ohne WebDAV und Links, die ein Passwort erfordern, werden in Plozz wiedergegeben."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Η ζωντανή τηλεόραση, τα αρχεία σε κοινόχρηστους πόρους δικτύου εκτός WebDAV και οι σύνδεσμοι που απαιτούν κωδικό αναπαράγονται στο Plozz."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "La TV en directo, los recursos compartidos de red que no usan WebDAV y los enlaces que requieren contraseña se reproducen en Plozz."
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "تلویزیون زنده، منابع اشتراکی شبکه که از WebDAV استفاده نمی‌کنند و پیوندهای نیازمند رمز عبور در Plozz پخش می‌شوند."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Suorat TV-lähetykset, muut kuin WebDAV-verkkojaot ja salasanaa vaativat linkit toistetaan Plozzissa."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "La TV en direct, les partages réseau autres que WebDAV et les liens nécessitant un mot de passe sont lus dans Plozz."
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "שידורי טלוויזיה חיים, שיתופי קבצים ברשת שאינם משתמשים ב-WebDAV וקישורים הדורשים סיסמה מופעלים ב-Plozz."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "लाइव टीवी, WebDAV का उपयोग न करने वाले साझा नेटवर्क फ़ोल्डरों की सामग्री और पासवर्ड की ज़रूरत वाले लिंक Plozz में चलते हैं।"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "TV uživo, sadržaj dijeljenih mrežnih mapa koje ne koriste WebDAV i poveznice koje zahtijevaju lozinke reproduciraju se u aplikaciji Plozz."
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Az élő TV-t, a nem WebDAV-alapú hálózati megosztások és a jelszót igénylő hivatkozások tartalmát a Plozz játssza le."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "TV langsung, isi folder bersama non-WebDAV di jaringan, dan tautan yang memerlukan kata sandi diputar di Plozz."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "La TV in diretta, i contenuti delle condivisioni di rete non WebDAV e i link che richiedono password vengono riprodotti in Plozz."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ライブTV、WebDAV以外のネットワーク共有、パスワードが必要なリンクはPlozzで再生されます。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "실시간 TV, WebDAV가 아닌 네트워크 공유의 콘텐츠와 비밀번호가 필요한 링크는 Plozz에서 재생됩니다."
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "TV langsung, kandungan perkongsian fail rangkaian bukan WebDAV dan pautan yang memerlukan kata laluan dimainkan dalam Plozz."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Direkte-TV, innhold fra nettverksdelinger som ikke bruker WebDAV, og lenker som krever passord, spilles av i Plozz."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Live-tv, inhoud van netwerkshares die geen WebDAV gebruiken, en links waarvoor een wachtwoord nodig is, worden afgespeeld in Plozz."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Telewizja na żywo, treści z udziałów sieciowych innych niż WebDAV i linki wymagające hasła są odtwarzane w Plozz."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "TV ao vivo, conteúdos de compartilhamentos de rede que não usam WebDAV e links que exigem senha são reproduzidos no Plozz."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "TV în direct, resursele partajate în rețea care nu folosesc WebDAV și linkurile care necesită parole sunt redate în Plozz."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Прямой эфир, общие сетевые ресурсы, не использующие WebDAV, и ссылки, требующие паролей, воспроизводятся в Plozz."
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Živé TV vysielanie, zdieľané sieťové zdroje cez iné protokoly než WebDAV a odkazy vyžadujúce heslá sa prehrávajú v aplikácii Plozz."
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Televizija v živo, omrežni viri v skupni rabi brez WebDAV in povezave, ki zahtevajo gesla, se predvajajo v aplikaciji Plozz."
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "TV uživo, deljeni mrežni resursi koji ne koriste WebDAV i linkovi koji zahtevaju lozinke reprodukuju se u aplikaciji Plozz."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Direktsänd tv, nätverksdelningar som inte använder WebDAV och länkar som kräver lösenord spelas upp i Plozz."
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ทีวีสด ไฟล์และโฟลเดอร์ที่แชร์บนเครือข่ายโดยไม่ใช้ WebDAV และลิงก์ที่ต้องใช้รหัสผ่านจะเล่นใน Plozz"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Canlı TV, WebDAV dışındaki ağ paylaşımları ve parola gerektiren bağlantılar Plozz'da oynatılır."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Пряме телебачення, спільні мережеві файли й папки, що не використовують WebDAV, і посилання, що потребують пароля, відтворюються в Plozz."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "TV trực tiếp, tệp và thư mục chia sẻ qua mạng không dùng WebDAV, cùng các liên kết cần mật khẩu đều được phát trong Plozz."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "直播电视、非 WebDAV 网络共享文件与文件夹，以及需要密码的链接会在 Plozz 中播放。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "直播電視、非 WebDAV 的網路共用檔案與資料夾，以及需要密碼的連結會在 Plozz 中播放。"
           }
         }
       }
@@ -548344,6 +549664,226 @@
         }
       }
     },
+    "Non-WebDAV network shares and links needing passwords also play in Plozz." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "تُشغَّل أيضًا في Plozz الملفات المشتركة عبر الشبكة بغير WebDAV والروابط التي تتطلب كلمات مرور."
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Споделените мрежови ресурси, които не използват WebDAV, и връзките, изискващи пароли, също се възпроизвеждат в Plozz."
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Els recursos compartits de xarxa que no utilitzen WebDAV i els enllaços que requereixen contrasenya també es reprodueixen a Plozz."
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Síťová sdílení, která nepoužívají WebDAV, a odkazy vyžadující heslo se také přehrávají v Plozz."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Netværksdelinger, der ikke bruger WebDAV, og links, der kræver adgangskode, afspilles også i Plozz."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Netzwerkfreigaben ohne WebDAV und Links, die ein Passwort erfordern, werden ebenfalls in Plozz wiedergegeben."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Τα αρχεία σε κοινόχρηστους πόρους δικτύου εκτός WebDAV και οι σύνδεσμοι που απαιτούν κωδικό αναπαράγονται επίσης στο Plozz."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Los recursos compartidos de red que no usan WebDAV y los enlaces que requieren contraseña también se reproducen en Plozz."
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "منابع اشتراکی شبکه که از WebDAV استفاده نمی‌کنند و پیوندهای نیازمند رمز عبور نیز در Plozz پخش می‌شوند."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Myös muut kuin WebDAV-verkkojaot ja salasanaa vaativat linkit toistetaan Plozzissa."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Les partages réseau autres que WebDAV et les liens nécessitant un mot de passe sont aussi lus dans Plozz."
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "גם שיתופי קבצים ברשת שאינם משתמשים ב-WebDAV וקישורים הדורשים סיסמה מופעלים ב-Plozz."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "WebDAV का उपयोग न करने वाले साझा नेटवर्क फ़ोल्डरों की सामग्री और पासवर्ड की ज़रूरत वाले लिंक भी Plozz में चलते हैं।"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Sadržaj dijeljenih mrežnih mapa koje ne koriste WebDAV i poveznice koje zahtijevaju lozinke također se reproduciraju u aplikaciji Plozz."
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "A nem WebDAV-alapú hálózati megosztások és a jelszót igénylő hivatkozások tartalmát is a Plozz játssza le."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Isi folder bersama non-WebDAV di jaringan dan tautan yang memerlukan kata sandi juga diputar di Plozz."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Anche i contenuti delle condivisioni di rete non WebDAV e i link che richiedono password vengono riprodotti in Plozz."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "WebDAV以外のネットワーク共有やパスワードが必要なリンクもPlozzで再生されます。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "WebDAV가 아닌 네트워크 공유의 콘텐츠와 비밀번호가 필요한 링크도 Plozz에서 재생됩니다."
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Kandungan perkongsian fail rangkaian bukan WebDAV dan pautan yang memerlukan kata laluan juga dimainkan dalam Plozz."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Innhold fra nettverksdelinger som ikke bruker WebDAV, og lenker som krever passord, spilles også av i Plozz."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Inhoud van netwerkshares die geen WebDAV gebruiken, en links waarvoor een wachtwoord nodig is, worden ook afgespeeld in Plozz."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Treści z udziałów sieciowych innych niż WebDAV i linki wymagające hasła również są odtwarzane w Plozz."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Conteúdos de compartilhamentos de rede que não usam WebDAV e links que exigem senha também são reproduzidos no Plozz."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Resursele partajate în rețea care nu folosesc WebDAV și linkurile care necesită parole sunt redate, de asemenea, în Plozz."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Общие сетевые ресурсы, не использующие WebDAV, и ссылки, требующие паролей, также воспроизводятся в Plozz."
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zdieľané sieťové zdroje cez iné protokoly než WebDAV a odkazy vyžadujúce heslá sa tiež prehrávajú v aplikácii Plozz."
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Omrežni viri v skupni rabi brez WebDAV in povezave, ki zahtevajo gesla, se prav tako predvajajo v aplikaciji Plozz."
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Deljeni mrežni resursi koji ne koriste WebDAV i linkovi koji zahtevaju lozinke takođe se reprodukuju u aplikaciji Plozz."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nätverksdelningar som inte använder WebDAV och länkar som kräver lösenord spelas också upp i Plozz."
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ไฟล์และโฟลเดอร์ที่แชร์บนเครือข่ายโดยไม่ใช้ WebDAV และลิงก์ที่ต้องใช้รหัสผ่านก็จะเล่นใน Plozz เช่นกัน"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "WebDAV dışındaki ağ paylaşımları ve parola gerektiren bağlantılar da Plozz'da oynatılır."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Спільні мережеві файли й папки, що не використовують WebDAV, і посилання, що потребують пароля, також відтворюються в Plozz."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Các tệp và thư mục chia sẻ qua mạng không dùng WebDAV, cùng các liên kết cần mật khẩu cũng được phát trong Plozz."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "非 WebDAV 网络共享文件与文件夹和需要密码的链接也会在 Plozz 中播放。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "非 WebDAV 的網路共用檔案與資料夾和需要密碼的連結也會在 Plozz 中播放。"
+          }
+        }
+      }
+    },
     "None" : {
       "comment" : "Label used for settings options that disable an effect or select no value, and as the provider summary in diagnostics when no media providers are connected.",
       "localizations" : {
@@ -599323,7 +600863,228 @@
         }
       }
     },
+    "Playable links may include server access tokens or network-share passwords. Only choose an app you trust." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "قد تتضمن روابط التشغيل رموز وصول إلى الخادم أو كلمات مرور الملفات المشتركة عبر الشبكة. اختر تطبيقًا تثق به فقط."
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Връзките за възпроизвеждане може да съдържат токени за достъп до сървъра или пароли за споделени мрежови ресурси. Изберете само приложение, на което имате доверие."
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Els enllaços de reproducció poden incloure testimonis d'accés al servidor o contrasenyes dels recursos compartits de xarxa. Tria només una app de confiança."
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Odkazy pro přehrávání mohou obsahovat přístupové tokeny serveru nebo hesla k síťovým sdílením. Vyberte jen aplikaci, které důvěřujete."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Afspilningslinks kan indeholde adgangstokens til serveren eller adgangskoder til netværksdelinger. Vælg kun en app, du har tillid til."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Wiedergabelinks können Server-Zugriffstokens oder Passwörter für Netzwerkfreigaben enthalten. Wähle nur eine App, der du vertraust."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Οι σύνδεσμοι αναπαραγωγής μπορεί να περιέχουν διακριτικά πρόσβασης στον διακομιστή ή κωδικούς κοινόχρηστων πόρων δικτύου. Επιλέξτε μόνο εφαρμογή που εμπιστεύεστε."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Los enlaces de reproducción pueden incluir tokens de acceso al servidor o contraseñas de recursos compartidos de red. Elige solo una app de confianza."
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "پیوندهای پخش ممکن است شامل توکن‌های دسترسی به سرور یا رمزهای عبور منابع اشتراکی شبکه باشند. فقط برنامه‌ای را انتخاب کنید که به آن اعتماد دارید."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Toistolinkit voivat sisältää palvelimen käyttöoikeustunnuksia tai verkkojakojen salasanoja. Valitse vain sovellus, johon luotat."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Les liens de lecture peuvent contenir des jetons d’accès au serveur ou des mots de passe de partages réseau. Choisissez uniquement une app de confiance."
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "קישורי הפעלה עשויים לכלול אסימוני גישה לשרת או סיסמאות לשיתופי קבצים ברשת. יש לבחור רק ביישום מהימן."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "चलाने योग्य लिंक में सर्वर के ऐक्सेस टोकन या साझा नेटवर्क फ़ोल्डरों के पासवर्ड हो सकते हैं। केवल भरोसेमंद ऐप चुनें।"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Poveznice za reprodukciju mogu sadržavati pristupne tokene poslužitelja ili lozinke za dijeljene mrežne mape. Odaberite samo aplikaciju kojoj vjerujete."
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "A lejátszható hivatkozások szerver-hozzáférési tokeneket vagy hálózati megosztásokhoz tartozó jelszavakat tartalmazhatnak. Csak megbízható appot válasszon."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Tautan yang dapat diputar mungkin menyertakan token akses server atau kata sandi folder bersama di jaringan. Pilih hanya aplikasi yang Anda percayai."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "I link di riproduzione possono includere token di accesso al server o password delle condivisioni di rete. Scegli solo un'app di cui ti fidi."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "再生用リンクには、サーバーのアクセストークンやネットワーク共有のパスワードが含まれる場合があります。信頼できるアプリだけを選んでください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "재생 가능한 링크에는 서버 액세스 토큰이나 네트워크 공유 비밀번호가 포함될 수 있습니다. 신뢰하는 앱만 선택하세요."
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Pautan yang boleh dimainkan mungkin mengandungi token akses pelayan atau kata laluan perkongsian fail rangkaian. Pilih hanya aplikasi yang anda percayai."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Avspillbare lenker kan inneholde tilgangstokener for serveren eller passord til nettverksdelinger. Velg bare en app du stoler på."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Afspeelbare links kunnen toegangstokens voor de server of wachtwoorden voor netwerkshares bevatten. Kies alleen een app die je vertrouwt."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Linki do odtwarzania mogą zawierać tokeny dostępu do serwera lub hasła do udziałów sieciowych. Wybieraj tylko aplikację, której ufasz."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Links de reprodução podem incluir tokens de acesso ao servidor ou senhas de compartilhamentos de rede. Escolha apenas um app em que você confie."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Linkurile de redare pot include tokenuri de acces la server sau parole pentru resursele partajate în rețea. Alegeți doar o aplicație în care aveți încredere."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ссылки для воспроизведения могут содержать токены доступа к серверу или пароли общих сетевых ресурсов. Выбирайте только приложение, которому доверяете."
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Odkazy na prehrávanie môžu obsahovať prístupové tokeny servera alebo heslá zdieľaných sieťových zdrojov. Vyberte si iba aplikáciu, ktorej dôverujete."
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Povezave za predvajanje lahko vsebujejo žetone za dostop do strežnika ali gesla omrežnih virov v skupni rabi. Izberite le aplikacijo, ki ji zaupate."
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Linkovi za reprodukciju mogu sadržati tokene za pristup serveru ili lozinke deljenih mrežnih resursa. Izaberite samo aplikaciju kojoj verujete."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Länkar för uppspelning kan innehålla åtkomsttoken till servern eller lösenord för nätverksdelningar. Välj bara en app du litar på."
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ลิงก์สำหรับเล่นอาจมีโทเค็นเข้าถึงเซิร์ฟเวอร์หรือรหัสผ่านของไฟล์และโฟลเดอร์ที่แชร์บนเครือข่าย เลือกเฉพาะแอปที่คุณเชื่อถือเท่านั้น"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Oynatılabilir bağlantılar, sunucu erişim belirteçleri veya ağ paylaşımı parolaları içerebilir. Yalnızca güvendiğiniz bir uygulamayı seçin."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Посилання для відтворення можуть містити токени доступу до сервера або паролі до спільних мережевих файлів і папок. Вибирайте лише програму, якій довіряєте."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Liên kết phát có thể chứa mã thông báo truy cập máy chủ hoặc mật khẩu truy cập tệp, thư mục chia sẻ qua mạng. Chỉ chọn ứng dụng bạn tin cậy."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "可播放链接可能包含服务器访问令牌或网络共享文件与文件夹的密码。请只选择你信任的 App。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "可播放連結可能包含伺服器存取權杖或網路共用檔案與資料夾的密碼。請只選擇你信任的 App。"
+          }
+        }
+      }
+    },
     "Playable links, including server access tokens when required, are shared with the selected app. Only choose an app you trust." : {
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -675827,45 +677588,9 @@
     },
     "Remove %lld Downloads" : {
       "localizations" : {
-        "en" : {
-          "variations" : {
-            "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "Remove %lld Download"
-                }
-              },
-              "other" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "Remove %lld Downloads"
-                }
-              }
-            }
-          }
-        },
         "ar" : {
           "variations" : {
             "plural" : {
-              "zero" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "إزالة %lld تنزيلات"
-                }
-              },
-              "one" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "إزالة تنزيل واحد (%lld)"
-                }
-              },
-              "two" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "إزالة تنزيلين (%lld)"
-                }
-              },
               "few" : {
                 "stringUnit" : {
                   "state" : "needs_review",
@@ -675878,10 +677603,28 @@
                   "value" : "إزالة %lld تنزيلًا"
                 }
               },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "إزالة تنزيل واحد (%lld)"
+                }
+              },
               "other" : {
                 "stringUnit" : {
                   "state" : "needs_review",
                   "value" : "إزالة %lld تنزيل"
+                }
+              },
+              "two" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "إزالة تنزيلين (%lld)"
+                }
+              },
+              "zero" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "إزالة %lld تنزيلات"
                 }
               }
             }
@@ -675908,16 +677651,16 @@
         "ca" : {
           "variations" : {
             "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "Elimina %lld baixada"
-                }
-              },
               "many" : {
                 "stringUnit" : {
                   "state" : "needs_review",
                   "value" : "Elimina %lld baixades"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "Elimina %lld baixada"
                 }
               },
               "other" : {
@@ -675932,12 +677675,6 @@
         "cs" : {
           "variations" : {
             "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "Smazat %lld stažení"
-                }
-              },
               "few" : {
                 "stringUnit" : {
                   "state" : "needs_review",
@@ -675945,6 +677682,12 @@
                 }
               },
               "many" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "Smazat %lld stažení"
+                }
+              },
+              "one" : {
                 "stringUnit" : {
                   "state" : "needs_review",
                   "value" : "Smazat %lld stažení"
@@ -676013,19 +677756,37 @@
             }
           }
         },
-        "es" : {
+        "en" : {
           "variations" : {
             "plural" : {
               "one" : {
                 "stringUnit" : {
                   "state" : "needs_review",
-                  "value" : "Eliminar %lld descarga"
+                  "value" : "Remove %lld Download"
                 }
               },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "Remove %lld Downloads"
+                }
+              }
+            }
+          }
+        },
+        "es" : {
+          "variations" : {
+            "plural" : {
               "many" : {
                 "stringUnit" : {
                   "state" : "needs_review",
                   "value" : "Eliminar %lld descargas"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "Eliminar %lld descarga"
                 }
               },
               "other" : {
@@ -676076,16 +677837,16 @@
         "fr" : {
           "variations" : {
             "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "Supprimer %lld téléchargement"
-                }
-              },
               "many" : {
                 "stringUnit" : {
                   "state" : "needs_review",
                   "value" : "Supprimer %lld téléchargements"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "Supprimer %lld téléchargement"
                 }
               },
               "other" : {
@@ -676106,13 +677867,13 @@
                   "value" : "הסר הורדה (%lld)"
                 }
               },
-              "two" : {
+              "other" : {
                 "stringUnit" : {
                   "state" : "needs_review",
                   "value" : "הסר הורדות (%lld)"
                 }
               },
-              "other" : {
+              "two" : {
                 "stringUnit" : {
                   "state" : "needs_review",
                   "value" : "הסר הורדות (%lld)"
@@ -676142,16 +677903,16 @@
         "hr" : {
           "variations" : {
             "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "Izbriši %lld preuzimanje"
-                }
-              },
               "few" : {
                 "stringUnit" : {
                   "state" : "needs_review",
                   "value" : "Izbriši %lld preuzimanja"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "Izbriši %lld preuzimanje"
                 }
               },
               "other" : {
@@ -676196,13 +677957,13 @@
         "it" : {
           "variations" : {
             "plural" : {
-              "one" : {
+              "many" : {
                 "stringUnit" : {
                   "state" : "needs_review",
                   "value" : "Rimuovi %lld download"
                 }
               },
-              "many" : {
+              "one" : {
                 "stringUnit" : {
                   "state" : "needs_review",
                   "value" : "Rimuovi %lld download"
@@ -676292,12 +678053,6 @@
         "pl" : {
           "variations" : {
             "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "Usuń %lld pobrany plik"
-                }
-              },
               "few" : {
                 "stringUnit" : {
                   "state" : "needs_review",
@@ -676308,6 +678063,12 @@
                 "stringUnit" : {
                   "state" : "needs_review",
                   "value" : "Usuń %lld pobranych plików"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "Usuń %lld pobrany plik"
                 }
               },
               "other" : {
@@ -676322,16 +678083,16 @@
         "pt-BR" : {
           "variations" : {
             "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "Remover %lld download"
-                }
-              },
               "many" : {
                 "stringUnit" : {
                   "state" : "needs_review",
                   "value" : "Remover %lld downloads"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "Remover %lld download"
                 }
               },
               "other" : {
@@ -676346,16 +678107,16 @@
         "ro" : {
           "variations" : {
             "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "Elimină %lld descărcare"
-                }
-              },
               "few" : {
                 "stringUnit" : {
                   "state" : "needs_review",
                   "value" : "Elimină %lld descărcări"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "Elimină %lld descărcare"
                 }
               },
               "other" : {
@@ -676370,12 +678131,6 @@
         "ru" : {
           "variations" : {
             "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "Удалить %lld загрузку"
-                }
-              },
               "few" : {
                 "stringUnit" : {
                   "state" : "needs_review",
@@ -676386,6 +678141,12 @@
                 "stringUnit" : {
                   "state" : "needs_review",
                   "value" : "Удалить %lld загрузок"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "Удалить %lld загрузку"
                 }
               },
               "other" : {
@@ -676400,12 +678161,6 @@
         "sk" : {
           "variations" : {
             "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "Vymazať %lld stiahnutú položku"
-                }
-              },
               "few" : {
                 "stringUnit" : {
                   "state" : "needs_review",
@@ -676416,6 +678171,12 @@
                 "stringUnit" : {
                   "state" : "needs_review",
                   "value" : "Vymazať %lld stiahnutej položky"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "Vymazať %lld stiahnutú položku"
                 }
               },
               "other" : {
@@ -676430,28 +678191,28 @@
         "sl" : {
           "variations" : {
             "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "Izbriši %lld prenos"
-                }
-              },
-              "two" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "Izbriši %lld prenosa"
-                }
-              },
               "few" : {
                 "stringUnit" : {
                   "state" : "needs_review",
                   "value" : "Izbriši %lld prenose"
                 }
               },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "Izbriši %lld prenos"
+                }
+              },
               "other" : {
                 "stringUnit" : {
                   "state" : "needs_review",
                   "value" : "Izbriši %lld prenosov"
+                }
+              },
+              "two" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "Izbriši %lld prenosa"
                 }
               }
             }
@@ -676460,16 +678221,16 @@
         "sr-Latn" : {
           "variations" : {
             "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "Ukloni %lld preuzimanje"
-                }
-              },
               "few" : {
                 "stringUnit" : {
                   "state" : "needs_review",
                   "value" : "Ukloni %lld preuzimanja"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "Ukloni %lld preuzimanje"
                 }
               },
               "other" : {
@@ -676532,12 +678293,6 @@
         "uk" : {
           "variations" : {
             "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "Видалити %lld завантаження"
-                }
-              },
               "few" : {
                 "stringUnit" : {
                   "state" : "needs_review",
@@ -676548,6 +678303,12 @@
                 "stringUnit" : {
                   "state" : "needs_review",
                   "value" : "Видалити %lld завантажень"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "Видалити %lld завантаження"
                 }
               },
               "other" : {
@@ -816613,6 +818374,226 @@
         }
       }
     },
+    "Some WebDAV passwords, extra login headers and pinned certificates also require Plozz." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "تتطلب أيضًا بعض كلمات مرور WebDAV ورؤوس HTTP الإضافية للمصادقة وتثبيت الشهادات استخدام Plozz."
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Някои пароли за WebDAV, допълнителните HTTP заглавки за удостоверяване и фиксирането на сертификати също изискват Plozz."
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Algunes contrasenyes de WebDAV, les capçaleres HTTP d'autenticació addicionals i la fixació de certificats també requereixen Plozz."
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Některá hesla pro WebDAV, dodatečné HTTP hlavičky pro ověřování a připnuté certifikáty také vyžadují Plozz."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nogle WebDAV-adgangskoder, ekstra HTTP-headere til godkendelse og certifikatfastlåsning kræver også Plozz."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Einige WebDAV-Passwörter, zusätzliche HTTP-Authentifizierungsheader und Zertifikat-Pinning erfordern ebenfalls Plozz."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ορισμένοι κωδικοί WebDAV, πρόσθετες κεφαλίδες ελέγχου ταυτότητας HTTP και καρφιτσωμένα πιστοποιητικά απαιτούν επίσης το Plozz."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Algunas contraseñas de WebDAV, las cabeceras de autenticación HTTP adicionales y los certificados fijados también requieren Plozz."
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "برخی رمزهای عبور WebDAV، سرآیندهای اضافی احراز هویت HTTP و گواهی‌های پین‌شده نیز به Plozz نیاز دارند."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Myös jotkin WebDAV-salasanat, ylimääräiset HTTP-todennusotsakkeet ja kiinnitetyt varmenteet vaativat Plozzin."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Certains mots de passe WebDAV, les en-têtes d’authentification HTTP supplémentaires et les certificats épinglés nécessitent aussi Plozz."
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "גם חלק מסיסמאות WebDAV, כותרות אימות HTTP נוספות ותעודות מוצמדות דורשים את Plozz."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "कुछ WebDAV पासवर्ड, अतिरिक्त HTTP प्रमाणीकरण हेडर और पिन किए गए प्रमाणपत्रों के लिए भी Plozz ज़रूरी है।"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Neke WebDAV lozinke, dodatna HTTP zaglavlja za autentifikaciju i prikvačeni certifikati također zahtijevaju Plozz."
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Egyes WebDAV-jelszavak, további HTTP-hitelesítési fejlécek és rögzített tanúsítványok használatához is a Plozz szükséges."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Beberapa kata sandi WebDAV, header autentikasi HTTP tambahan, dan pinning sertifikat juga memerlukan Plozz."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Anche alcune password WebDAV, le intestazioni HTTP di autenticazione aggiuntive e i certificati con pinning richiedono Plozz."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "一部のWebDAVパスワード、追加のHTTP認証ヘッダー、証明書ピンニングにもPlozzが必要です。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "일부 WebDAV 비밀번호, 추가 HTTP 인증 헤더 및 인증서 고정을 사용하는 경우에도 Plozz가 필요합니다."
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Sesetengah kata laluan WebDAV, pengepala pengesahan HTTP tambahan dan penyematan sijil juga memerlukan Plozz."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Enkelte WebDAV-passord, ekstra HTTP-autentiseringshoder og sertifikatpinning krever også Plozz."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Sommige WebDAV-wachtwoorden, extra HTTP-authenticatieheaders en certificaatpinning vereisen ook Plozz."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Niektóre hasła WebDAV, dodatkowe nagłówki uwierzytelniania HTTP i przypinanie certyfikatów również wymagają Plozz."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Algumas senhas WebDAV, cabeçalhos adicionais de autenticação HTTP e a fixação de certificados também exigem o Plozz."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Unele parole WebDAV, antetele HTTP suplimentare de autentificare și certificatele fixate necesită și ele Plozz."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Некоторые пароли WebDAV, дополнительные HTTP-заголовки аутентификации и закреплённые сертификаты также требуют Plozz."
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Niektoré heslá WebDAV, dodatočné autentifikačné hlavičky HTTP a pripnuté certifikáty tiež vyžadujú Plozz."
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nekatera gesla WebDAV, dodatne glave HTTP za preverjanje pristnosti in pripeti certifikati prav tako zahtevajo Plozz."
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Neke WebDAV lozinke, dodatna HTTP zaglavlja za autentifikaciju i vezivanje sertifikata takođe zahtevaju Plozz."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Vissa WebDAV-lösenord, extra HTTP-huvuden för autentisering och certifikatpinning kräver också Plozz."
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "รหัสผ่าน WebDAV บางแบบ เฮดเดอร์ HTTP เพิ่มเติมสำหรับการยืนยันตัวตน และการตรึงใบรับรองก็ต้องใช้ Plozz เช่นกัน"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Bazı WebDAV parolaları, ek HTTP kimlik doğrulama başlıkları ve sertifika sabitleme de Plozz gerektirir."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Деякі паролі WebDAV, додаткові HTTP-заголовки автентифікації та закріплення сертифікатів також потребують Plozz."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Một số mật khẩu WebDAV, tiêu đề xác thực HTTP bổ sung và việc ghim chứng chỉ cũng cần Plozz."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "某些 WebDAV 密码、额外的 HTTP 身份验证标头和证书固定也需要 Plozz。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "某些 WebDAV 密碼、額外的 HTTP 驗證標頭和憑證釘選也需要 Plozz。"
+          }
+        }
+      }
+    },
     "Some channels in this Multiview are unavailable. Check its sources and try again." : {
       "localizations" : {
         "ar" : {
@@ -817710,6 +819691,226 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "部分媒體庫排程變更需要先檢查才能套用。"
+          }
+        }
+      }
+    },
+    "Some network shares stay in Plozz when background streaming is unavailable." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "يبقى تشغيل بعض الملفات المشتركة عبر الشبكة في Plozz عندما لا يتوفر البث في الخلفية."
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Някои споделени мрежови ресурси остават в Plozz, когато поточното предаване във фонов режим не е налично."
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Alguns recursos compartits de xarxa es continuen reproduint a Plozz quan la transmissió en segon pla no està disponible."
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Některá síťová sdílení se dál přehrávají v Plozz, když není dostupné streamování na pozadí."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nogle netværksdelinger afspilles fortsat i Plozz, når streaming i baggrunden ikke er tilgængelig."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Einige Netzwerkfreigaben werden weiterhin in Plozz wiedergegeben, wenn Hintergrundstreaming nicht verfügbar ist."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Η αναπαραγωγή από ορισμένους κοινόχρηστους πόρους δικτύου παραμένει στο Plozz όταν δεν είναι διαθέσιμη η ροή στο παρασκήνιο."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Algunos recursos compartidos de red se siguen reproduciendo en Plozz cuando la transmisión en segundo plano no está disponible."
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "وقتی پخش جریانی در پس‌زمینه در دسترس نباشد، پخش از برخی منابع اشتراکی شبکه همچنان در Plozz انجام می‌شود."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Joidenkin verkkojakojen toisto pysyy Plozzissa, kun suoratoisto taustalla ei ole käytettävissä."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "La lecture de certains partages réseau reste dans Plozz lorsque la diffusion en arrière-plan n’est pas disponible."
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "הניגון מחלק משיתופי הקבצים ברשת נשאר ב-Plozz כשהזרמה ברקע אינה זמינה."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "बैकग्राउंड स्ट्रीमिंग उपलब्ध न होने पर कुछ साझा नेटवर्क फ़ोल्डरों की सामग्री Plozz में ही चलती है।"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Sadržaj nekih dijeljenih mrežnih mapa i dalje se reproducira u aplikaciji Plozz kada streaming u pozadini nije dostupan."
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Egyes hálózati megosztások tartalmát továbbra is a Plozz játssza le, ha a háttérben történő streamelés nem érhető el."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Isi beberapa folder bersama di jaringan tetap diputar di Plozz saat streaming latar belakang tidak tersedia."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "I contenuti di alcune condivisioni di rete continuano a essere riprodotti in Plozz quando lo streaming in background non è disponibile."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "バックグラウンドストリーミングを利用できない場合、一部のネットワーク共有は引き続きPlozzで再生されます。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "백그라운드 스트리밍을 사용할 수 없으면 일부 네트워크 공유의 콘텐츠는 Plozz에서 계속 재생됩니다."
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Kandungan daripada sesetengah perkongsian fail rangkaian terus dimainkan dalam Plozz apabila penstriman latar belakang tidak tersedia."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Innhold fra noen nettverksdelinger spilles fortsatt av i Plozz når strømming i bakgrunnen ikke er tilgjengelig."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Inhoud van sommige netwerkshares wordt in Plozz afgespeeld als streamen op de achtergrond niet beschikbaar is."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Treści z niektórych udziałów sieciowych są nadal odtwarzane w Plozz, gdy strumieniowanie w tle jest niedostępne."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "O conteúdo de alguns compartilhamentos de rede continua sendo reproduzido no Plozz quando a transmissão em segundo plano está indisponível."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Unele resurse partajate în rețea rămân în Plozz când redarea în flux în fundal nu este disponibilă."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Некоторые общие сетевые ресурсы остаются в Plozz, когда фоновая потоковая передача недоступна."
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Niektoré zdieľané sieťové zdroje zostávajú v aplikácii Plozz, keď streamovanie na pozadí nie je dostupné."
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nekateri omrežni viri v skupni rabi ostanejo v aplikaciji Plozz, ko pretakanje v ozadju ni na voljo."
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Neki deljeni mrežni resursi ostaju u aplikaciji Plozz kada strimovanje u pozadini nije dostupno."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Vissa nätverksdelningar stannar i Plozz när strömning i bakgrunden inte är tillgänglig."
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ไฟล์และโฟลเดอร์ที่แชร์บนเครือข่ายบางรายการยังคงเล่นใน Plozz หากไม่สามารถสตรีมเบื้องหลังได้"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Arka planda akış kullanılamadığında bazı ağ paylaşımları Plozz'da oynatılmaya devam eder."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Деякі спільні мережеві файли й папки й надалі відтворюються в Plozz, коли фонове потокове передавання недоступне."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Một số tệp và thư mục chia sẻ qua mạng vẫn được phát trong Plozz khi không thể truyền phát trong nền."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "无法在后台流式播放时，某些网络共享文件与文件夹仍会在 Plozz 中播放。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "無法在背景串流播放時，某些網路共用檔案與資料夾仍會在 Plozz 中播放。"
           }
         }
       }
@@ -844153,6 +846354,7 @@
       }
     },
     "Supported movies and episodes open in the selected app. Everything else plays in Plozz automatically." : {
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -932351,6 +934553,7 @@
       }
     },
     "This player doesn't return watch progress to Plozz." : {
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -946472,6 +948675,7 @@
       }
     },
     "This source needs Plozz's built-in player. External players require a directly accessible HTTP or HTTPS video without a separate audio stream or server conversion." : {
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -946687,6 +948891,226 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "此來源需要使用 Plozz 內建播放器。外部播放器要求影片可透過 HTTP 或 HTTPS 直接存取，且不含獨立音訊串流，也不需由伺服器轉換。"
+          }
+        }
+      }
+    },
+    "This source needs Plozz's built-in player. The selected app must be able to access the video without Plozz's local connection or a separate audio stream." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "يتطلب هذا المصدر مشغّل Plozz المدمج. يجب أن يتمكن التطبيق المحدد من الوصول إلى الفيديو دون اتصال Plozz المحلي أو تدفق صوتي منفصل."
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Този източник изисква вградения плейър на Plozz. Избраното приложение трябва да има достъп до видеото без локалната връзка на Plozz или отделен аудиопоток."
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Aquesta font requereix el reproductor integrat de Plozz. L'app seleccionada ha de poder accedir al vídeo sense la connexió local de Plozz ni un flux d'àudio separat."
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Tento zdroj vyžaduje vestavěný přehrávač Plozz. Vybraná aplikace musí mít přístup k videu bez místního připojení Plozz nebo samostatného zvukového streamu."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Denne kilde kræver Plozz' indbyggede afspiller. Den valgte app skal kunne tilgå videoen uden Plozz' lokale forbindelse eller en separat lydstream."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Diese Quelle erfordert den integrierten Player von Plozz. Die ausgewählte App muss ohne die lokale Verbindung von Plozz oder einen separaten Audiostream auf das Video zugreifen können."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Αυτή η πηγή χρειάζεται το ενσωματωμένο πρόγραμμα αναπαραγωγής του Plozz. Η επιλεγμένη εφαρμογή πρέπει να μπορεί να προσπελάσει το βίντεο χωρίς την τοπική σύνδεση του Plozz ή ξεχωριστή ροή ήχου."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Esta fuente necesita el reproductor integrado de Plozz. La app seleccionada debe poder acceder al vídeo sin la conexión local de Plozz ni una transmisión de audio independiente."
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "این منبع به پخش‌کنندهٔ داخلی Plozz نیاز دارد. برنامهٔ انتخاب‌شده باید بتواند بدون اتصال محلی Plozz یا جریان صوتی جداگانه به ویدیو دسترسی داشته باشد."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Tämä lähde tarvitsee Plozzin sisäisen soittimen. Valitun sovelluksen on pystyttävä käyttämään videota ilman Plozzin paikallista yhteyttä tai erillistä äänivirtaa."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Cette source nécessite le lecteur intégré de Plozz. L’app choisie doit pouvoir accéder à la vidéo sans la connexion locale de Plozz ni un flux audio séparé."
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "מקור זה דורש את הנגן המובנה של Plozz. היישום שנבחר חייב להיות מסוגל לגשת לסרטון ללא החיבור המקומי של Plozz או זרם שמע נפרד."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "इस स्रोत के लिए Plozz का अंतर्निहित प्लेयर ज़रूरी है। चुना गया ऐप Plozz के स्थानीय कनेक्शन या अलग ऑडियो स्ट्रीम के बिना वीडियो तक पहुँचने में सक्षम होना चाहिए।"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ovaj izvor zahtijeva ugrađeni reproduktor aplikacije Plozz. Odabrana aplikacija mora moći pristupiti videozapisu bez lokalne veze aplikacije Plozz ili zasebnog zvučnog toka."
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ehhez a forráshoz a Plozz beépített lejátszója szükséges. A kiválasztott appnak a Plozz helyi kapcsolata vagy külön hangfolyam nélkül is el kell tudnia érni a videót."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Sumber ini memerlukan pemutar bawaan Plozz. Aplikasi yang dipilih harus dapat mengakses video tanpa koneksi lokal Plozz atau streaming audio terpisah."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Questa sorgente richiede il lettore integrato di Plozz. L'app selezionata deve poter accedere al video senza la connessione locale di Plozz né un flusso audio separato."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "このソースにはPlozzの内蔵プレーヤーが必要です。選択したアプリは、Plozzのローカル接続や別の音声ストリームに頼らずに動画にアクセスできる必要があります。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "이 소스는 Plozz의 내장 플레이어가 필요합니다. 선택한 앱은 Plozz의 로컬 연결이나 별도의 오디오 스트림 없이 동영상에 접근할 수 있어야 합니다."
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Sumber ini memerlukan pemain terbina dalam Plozz. Aplikasi yang dipilih mesti dapat mengakses video tanpa sambungan setempat Plozz atau strim audio yang berasingan."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Denne kilden krever den innebygde spilleren i Plozz. Den valgte appen må kunne få tilgang til videoen uten den lokale tilkoblingen i Plozz eller en separat lydstrøm."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Deze bron vereist de ingebouwde speler van Plozz. De geselecteerde app moet toegang hebben tot de video zonder de lokale verbinding van Plozz of een aparte audiostream."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "To źródło wymaga wbudowanego odtwarzacza Plozz. Wybrana aplikacja musi mieć dostęp do filmu bez lokalnego połączenia Plozz i bez osobnego strumienia audio."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Esta fonte precisa do reprodutor integrado do Plozz. O app selecionado deve conseguir acessar o vídeo sem a conexão local do Plozz ou um fluxo de áudio separado."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Această sursă necesită playerul integrat în Plozz. Aplicația selectată trebuie să poată accesa videoul fără conexiunea locală a aplicației Plozz sau un flux audio separat."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Для этого источника нужен встроенный плеер Plozz. Выбранное приложение должно иметь доступ к видео без локального подключения Plozz или отдельного аудиопотока."
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Tento zdroj potrebuje vstavaný prehrávač aplikácie Plozz. Vybraná aplikácia musí mať prístup k videu bez lokálneho pripojenia aplikácie Plozz alebo samostatného zvukového streamu."
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ta vir potrebuje vgrajeni predvajalnik aplikacije Plozz. Izbrana aplikacija mora imeti dostop do videoposnetka brez lokalne povezave aplikacije Plozz ali ločenega zvočnega toka."
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ovaj izvor zahteva ugrađeni plejer aplikacije Plozz. Izabrana aplikacija mora da može da pristupi video-snimku bez lokalne veze aplikacije Plozz ili zasebnog audio-strima."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Den här källan kräver Plozz inbyggda spelare. Den valda appen måste kunna komma åt videon utan Plozz lokala anslutning eller en separat ljudström."
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "แหล่งนี้ต้องใช้เครื่องเล่นในตัวของ Plozz แอปที่เลือกต้องเข้าถึงวิดีโอได้โดยไม่ต้องใช้การเชื่อมต่อภายในเครื่องของ Plozz หรือสตรีมเสียงแยก"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Bu kaynak Plozz'un yerleşik oynatıcısını gerektirir. Seçilen uygulama, Plozz'un yerel bağlantısı veya ayrı bir ses akışı olmadan videoya erişebilmelidir."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Це джерело потребує вбудованого програвача Plozz. Вибрана програма має отримувати доступ до відео без локального з’єднання Plozz або окремого аудіопотоку."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nguồn này cần trình phát tích hợp của Plozz. Ứng dụng đã chọn phải truy cập được video mà không cần kết nối cục bộ của Plozz hoặc luồng âm thanh riêng."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "此来源需要使用 Plozz 的内置播放器。所选 App 必须能够在不使用 Plozz 的本地连接或独立音频流的情况下访问视频。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "此來源需要使用 Plozz 的內建播放器。所選 App 必須能在不使用 Plozz 的本機連線或獨立音訊串流的情況下存取影片。"
           }
         }
       }
@@ -1013374,6 +1015798,226 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "在 YouTube 上觀看"
+          }
+        }
+      }
+    },
+    "Watch progress isn't returned to Plozz." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "لا يُرسَل موضع المشاهدة إلى Plozz."
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Позицията на възпроизвеждане не се връща в Plozz."
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "La posició de reproducció no es retorna a Plozz."
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Pozice přehrávání se do Plozz nevrací."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Afspilningspositionen sendes ikke tilbage til Plozz."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Die Wiedergabeposition wird nicht an Plozz zurückgemeldet."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Η θέση αναπαραγωγής δεν επιστρέφεται στο Plozz."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "La posición de reproducción no se devuelve a Plozz."
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "موقعیت پخش به Plozz برگردانده نمی‌شود."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Toistokohtaa ei palauteta Plozziin."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "La position de lecture n’est pas renvoyée à Plozz."
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "מיקום הניגון אינו נשלח בחזרה ל-Plozz."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "वीडियो कहाँ तक देखा गया है, यह जानकारी Plozz को वापस नहीं भेजी जाती।"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Pozicija reprodukcije ne šalje se natrag u Plozz."
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "A lejátszási pozíció nem kerül vissza a Plozzhoz."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Posisi pemutaran tidak dikirim kembali ke Plozz."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "La posizione di riproduzione non viene restituita a Plozz."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "再生位置はPlozzに返されません。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "재생 위치는 Plozz로 전달되지 않습니다."
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Kedudukan main balik tidak dihantar semula ke Plozz."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Avspillingsposisjonen sendes ikke tilbake til Plozz."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "De afspeelpositie wordt niet teruggestuurd naar Plozz."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Pozycja odtwarzania nie jest przekazywana z powrotem do Plozz."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "A posição de reprodução não é enviada de volta ao Plozz."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Poziția de redare nu este transmisă înapoi către Plozz."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Позиция воспроизведения не передаётся обратно в Plozz."
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Pozícia prehrávania sa neodosiela späť do aplikácie Plozz."
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Položaj predvajanja se ne pošlje nazaj v aplikacijo Plozz."
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Pozicija reprodukcije se ne vraća u aplikaciju Plozz."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Uppspelningspositionen skickas inte tillbaka till Plozz."
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ความคืบหน้าการรับชมจะไม่ถูกส่งกลับไปยัง Plozz"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "İzleme ilerlemesi Plozz'a geri iletilmez."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Позиція відтворення не передається назад у Plozz."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Vị trí phát không được gửi lại cho Plozz."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "观看进度不会传回 Plozz。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "觀看進度不會傳回 Plozz。"
           }
         }
       }

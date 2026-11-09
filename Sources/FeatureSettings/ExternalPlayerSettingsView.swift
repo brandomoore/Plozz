@@ -46,11 +46,17 @@ struct ExternalPlayerSettingsRows {
         ]
     }
 
-    static func external(model: ExternalPlayerSettingsModel) -> [SettingsSplitRow] {
+    static func external(
+        model: ExternalPlayerSettingsModel, installedPlayers: Set<ExternalPlayer>? = nil
+    ) -> [SettingsSplitRow] {
         [
                     SettingsSplitRow(id: "default-player", title: "Default player") {
+                        #if os(tvOS)
+                        ExternalPlayerConfiguration(model: model, installedPlayers: installedPlayers)
+                        #else
                         ExternalPlayerChoices(model: model)
-                    },
+                        #endif
+                    }.groupedContent(),
                     SettingsSplitRow(id: "external-player-help", title: "About external playback") {
                         ExternalPlayerHelp()
                     }.page(),
@@ -84,6 +90,11 @@ public struct ExternalPlayerSettingsView: View {
         List {
             SettingsSectionGroup("Default player") {
                 ExternalPlayerChoices(model: model)
+            }
+            if model.settings.player != .builtIn {
+                SettingsSectionGroup("\(model.settings.player.name) limitations") {
+                    ExternalPlayerSupportSummary(player: model.settings.player)
+                }
             }
             SettingsSectionGroup {
                 Button { showsAbout = true } label: {
@@ -131,9 +142,37 @@ public struct ExternalPlayerSettingsView: View {
     }
 }
 
+#if os(tvOS)
+private struct ExternalPlayerConfiguration: View {
+    @Bindable var model: ExternalPlayerSettingsModel
+    let installedPlayers: Set<ExternalPlayer>?
+    @FocusState private var focusedPlayer: ExternalPlayer?
+
+    private var previewPlayer: ExternalPlayer { focusedPlayer ?? model.settings.player }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: SettingsFormMetrics.sectionSpacing) {
+            SettingsControlGroup {
+                ExternalPlayerChoices(model: model, installedPlayers: installedPlayers, focus: $focusedPlayer)
+            }
+            if previewPlayer != .builtIn {
+                SettingsFormGroup(title: Text("\(previewPlayer.name) limitations")) {
+                    ExternalPlayerSupportSummary(player: previewPlayer)
+                }
+                .accessibilityIdentifier("external-player-support-section")
+            }
+        }
+    }
+}
+#endif
+
 private struct ExternalPlayerChoices: View {
     @Environment(\.scenePhase) private var scenePhase
     @Bindable var model: ExternalPlayerSettingsModel
+    #if os(tvOS)
+    let installedPlayers: Set<ExternalPlayer>?
+    let focus: FocusState<ExternalPlayer?>.Binding
+    #endif
     @State private var installed: Set<ExternalPlayer> = [.builtIn]
 
     private var choices: [ExternalPlayer] {
@@ -157,6 +196,7 @@ private struct ExternalPlayerChoices: View {
                         model.settings.player = player
                     }
                     .disabled(!isAvailable(player))
+                    .focused(focus, equals: player)
                     .accessibilityIdentifier("external-player-\(player.rawValue)")
                 }
             }
@@ -182,10 +222,6 @@ private struct ExternalPlayerChoices: View {
             .accessibilityValue(title(model.settings.player))
             .accessibilityIdentifier("external-player-selection").settingsSearchAnchor("external-player")
             #endif
-            if model.settings.player == .vlc || model.settings.player == .custom {
-                Text("This player doesn't return watch progress to Plozz.")
-                    .settingsHelperText()
-            }
             if let error = model.error { Text(error.message).settingsHelperText() }
         }
         .task { refreshInstalledPlayers() }
@@ -195,7 +231,10 @@ private struct ExternalPlayerChoices: View {
     }
 
     private func isAvailable(_ player: ExternalPlayer) -> Bool {
-        player == .custom || installed.contains(player)
+        #if os(tvOS)
+        if let installedPlayers { return player == .custom || installedPlayers.contains(player) }
+        #endif
+        return player == .custom || installed.contains(player)
     }
 
     private func title(_ player: ExternalPlayer) -> Text {
@@ -212,11 +251,42 @@ private struct ExternalPlayerChoices: View {
     }
 }
 
+private struct ExternalPlayerSupportSummary: View {
+    let player: ExternalPlayer
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            #if os(tvOS)
+            if player == .nativePlayer || player == .infuse {
+                Text("Live TV and non-WebDAV network shares play in Plozz.")
+                Text("Some WebDAV passwords, extra login headers and pinned certificates also require Plozz.")
+            } else if player == .vlc {
+                Text("Live TV, SMB, NFS, SFTP, FTPS and unsupported share logins play in Plozz.")
+            } else if player == .custom {
+                Text("Live TV, non-WebDAV network shares and links needing passwords play in Plozz.")
+            }
+            #else
+            Text("Live TV and downloads play in Plozz.")
+            if player == .custom {
+                Text("Non-WebDAV network shares and links needing passwords also play in Plozz.")
+            } else {
+                Text("Some network shares stay in Plozz when background streaming is unavailable.")
+            }
+            #endif
+            if player == .vlc || player == .custom {
+                Text("Watch progress isn't returned to Plozz.")
+            }
+        }
+        .settingsHelperText()
+        .accessibilityIdentifier("external-player-support")
+    }
+}
+
 private struct ExternalPlayerHelp: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Supported movies and episodes open in the selected app. Everything else plays in Plozz automatically.")
-            Text("Playable links, including server access tokens when required, are shared with the selected app. Only choose an app you trust.")
+            Text("Compatible library videos open in the selected app, including server-converted streams. Unsupported sources and Live TV play in Plozz.")
+            Text("Playable links may include server access tokens or network-share passwords. Only choose an app you trust.")
             Text("Native Player and Infuse 8.4.7 or later can return progress when their player closes. Plozz's controls, skip markers, and autoplay aren't available in another app.")
             Text("This choice stays on this device. Watch progress still belongs to the active viewer.")
         }
