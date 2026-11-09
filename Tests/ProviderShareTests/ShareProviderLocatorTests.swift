@@ -292,6 +292,7 @@ final class ShareProviderLocatorTests: XCTestCase {
             XCTAssertEqual(request.sourceFileName, "movie.mkv")
             XCTAssertTrue(request.subtitleTracks.isEmpty)
         }
+
         let paths = await fileSystem.externalPaths
         XCTAssertEqual(paths, Array(repeating: "movie.mkv", count: 3))
         let players = await fileSystem.externalPlayers
@@ -302,6 +303,31 @@ final class ShareProviderLocatorTests: XCTestCase {
         }
         XCTAssertEqual(locator.relativePath, "movie.mkv")
         XCTAssertNil(internalRequest.streamURL)
+    }
+
+    func testExternalFTPCarriesVLCMediaAndSRTWithoutLocalRelay() async throws {
+        let entry = try RemoteFileEntry(relativePath: "movie.mkv", kind: .file, size: 4096, strongETag: "\"video\"")
+        let subtitle = try RemoteFileEntry(relativePath: "movie.en.srt", kind: .file, size: 80, strongETag: "\"sub\"")
+        let url = URL(string: "ftp://nas.example.com:2121//media/movie.mkv")!
+        let files = LocatorFakeFileSystem(
+            statEntry: entry, listedEntries: [entry, subtitle], externalURL: url,
+            openingEntries: [subtitle.relativePath: subtitle]
+        )
+        let provider = makeProvider(
+            stat: entry, fileSystem: files, baseURL: URL(string: "ftp://nas.example.com:2121/media")!
+        )
+        addTeardownBlock { await provider.teardown() }
+        let request = try await provider.externalPlaybackInfo(
+            for: "f:movie.mkv", mediaSourceID: "movie.mkv", player: .vlc, streaming: nil
+        )
+        XCTAssertEqual(request.streamURL, url)
+        XCTAssertNil(request.playbackSource)
+        XCTAssertEqual(request.sourceProvider, .mediaShare)
+        XCTAssertEqual(request.externalSubtitleURLs, [url])
+        let paths = await files.externalPaths
+        XCTAssertEqual(paths, ["movie.mkv", "movie.en.srt"])
+        let reads = await files.fileReads
+        XCTAssertEqual(reads, 0)
     }
 
     func testExternalWebDAVPassesMatchingSRTWithoutDownloadingOrSharingLocalFiles() async throws {
@@ -425,21 +451,27 @@ final class ShareProviderLocatorTests: XCTestCase {
     func testAdmittedLocalHandoffPreservesExactLocatorAndSRTWithoutCopyingFiles() async throws {
         let entry = try RemoteFileEntry(relativePath: "movie.mkv", kind: .file, size: 4096, strongETag: "\"video\"")
         let subtitle = try RemoteFileEntry(relativePath: "movie.en.srt", kind: .file, size: 80, strongETag: "\"sub\"")
-        let files = LocatorFakeFileSystem(
-            statEntry: entry, listedEntries: [entry, subtitle], openingEntries: [subtitle.relativePath: subtitle]
-        )
-        let provider = makeProvider(stat: entry, fileSystem: files)
-        addTeardownBlock { await provider.teardown() }
-        let request = try await provider.externalPlaybackInfo(
-            for: "f:movie.mkv", mediaSourceID: "movie.mkv", player: .infuse, streaming: nil, allowLocalRelay: true
-        )
-        guard case .networkFile(let locator) = request.playbackSource else { return XCTFail("Expected exact typed source") }
-        XCTAssertEqual(locator.relativePath, entry.relativePath)
-        XCTAssertNil(request.streamURL)
-        XCTAssertEqual(request.externalSubtitleLocators.map(\.relativePath), ["movie.en.srt"])
-        XCTAssertTrue(request.subtitleTracks.isEmpty)
-        let reads = await files.fileReads
-        XCTAssertEqual(reads, 0)
+        for scheme in ["https", "http", "smb", "nfs", "sftp", "ftp", "ftps"] {
+            let files = LocatorFakeFileSystem(
+                statEntry: entry, listedEntries: [entry, subtitle], openingEntries: [subtitle.relativePath: subtitle]
+            )
+            let provider = makeProvider(
+                stat: entry, fileSystem: files, baseURL: URL(string: "\(scheme)://nas.example.com/media")!
+            )
+            addTeardownBlock { await provider.teardown() }
+            let request = try await provider.externalPlaybackInfo(
+                for: "f:movie.mkv", mediaSourceID: "movie.mkv", player: .infuse, streaming: nil, allowLocalRelay: true
+            )
+            guard case .networkFile(let locator) = request.playbackSource else {
+                return XCTFail("\(scheme): expected exact typed source")
+            }
+            XCTAssertEqual(locator.relativePath, entry.relativePath)
+            XCTAssertNil(request.streamURL)
+            XCTAssertEqual(request.externalSubtitleLocators.map(\.relativePath), ["movie.en.srt"])
+            XCTAssertTrue(request.subtitleTracks.isEmpty)
+            let reads = await files.fileReads
+            XCTAssertEqual(reads, 0)
+        }
     }
 
     func testLocalHandoffOptInCannotHideFailuresOrOverrideDirectDelivery() async throws {

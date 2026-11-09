@@ -129,7 +129,13 @@ private struct ExternalPlayerSettingsFixture: View {
         let defaults = UserDefaults(suiteName: "external-player-settings-fixture")!
         defaults.removePersistentDomain(forName: "external-player-settings-fixture")
         let model = ExternalPlayerSettingsModel(defaults: defaults)
-        model.settings.player = .nativePlayer
+        if ProcessInfo.processInfo.arguments.contains("--external-player-vlc") {
+            model.settings.player = .vlc
+        } else if ProcessInfo.processInfo.arguments.contains("--external-player-infuse") {
+            model.settings.player = .infuse
+        } else {
+            model.settings.player = .nativePlayer
+        }
         return model
     }()
 

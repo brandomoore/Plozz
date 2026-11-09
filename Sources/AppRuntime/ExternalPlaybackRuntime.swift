@@ -232,9 +232,13 @@ public final class ExternalPlaybackRuntime {
               [.jellyfin, .emby, .plex].contains(account.provider.kind)
                 || (Self.supportsIndependentHandoff(account.provider)
                     && account.provider is any ExternalPlaybackProviding) else { return [] }
+        guard ExternalPlayer.supported.contains(where: {
+            $0 != .builtIn && supportsShareHandoff(account.provider, player: $0, context: context)
+        }) else { return [] }
         return ExternalPlayer.supported.filter { player in
             guard player != selection.player else { return false }
             if player == .builtIn { return true }
+            guard supportsShareHandoff(account.provider, player: player, context: context) else { return false }
             guard let scheme = player.scheme, let url = URL(string: scheme + "://") else { return false }
             return canOpen(url)
         }
@@ -245,9 +249,15 @@ public final class ExternalPlaybackRuntime {
     }
 
     private static func supportsIndependentHandoff(_ provider: any MediaProvider) -> Bool {
-        [.iptv, .silo].contains(provider.kind)
-            || (provider.kind == .mediaShare
-                && ["http", "https"].contains(provider.session.server.baseURL.scheme?.lowercased() ?? ""))
+        [.iptv, .silo, .mediaShare].contains(provider.kind)
+    }
+
+    private func supportsShareHandoff(
+        _ provider: any MediaProvider, player: ExternalPlayer, context: ExternalPlaybackContext
+    ) -> Bool {
+        provider.kind != .mediaShare
+            || player.supportsDirectMediaScheme(provider.session.server.baseURL.scheme)
+            || (relayAvailable && context.networkFileResolver != nil && player != .custom)
     }
 
     private func launchIfSupported(
@@ -278,6 +288,7 @@ public final class ExternalPlaybackRuntime {
         case .jellyfin, .emby, .plex:
             break
         }
+        guard supportsShareHandoff(account.provider, player: selection.player, context: initial) else { return false }
         guard selection.player == .custom || ExternalPlayer.supported.contains(selection.player) else {
             throw ExternalPlayerError.unavailable
         }

@@ -426,7 +426,8 @@ See [spatial audio](../../docs/playback-engines.md#spatial-audio) for limitation
 Playback > Advanced > External player is a device-only, default-off preference
 shared by all profiles on that device. It stays inside Playback rather than
 adding an Everyone category. The picker shows a short support summary for the
-selected external player. On tvOS, Native Player and Infuse also explain WebDAV
+selected external player. On tvOS, VLC identifies its HTTP(S)/plain-FTP path;
+Native Player and Infuse also explain WebDAV
 password-character, extra-header and certificate-pin limitations and the built-in
 fallback. About external playback retains credential-sharing and progress details;
 custom configuration is a separate drill-in.
@@ -457,19 +458,27 @@ validator and size before sending it without share credentials. A pinned DAV
 connection can also resolve a separate, system-trusted HTTPS delivery server;
 the pin is still enforced on the DAV connection and is never dropped on a
 direct handoff to that origin.
-When direct WebDAV handoff is unsupported, iOS/iPadOS 26 can instead serve the
+VLC can also receive plain FTP files and matching SRTs directly, preserving the
+exact absolute server path, port and selected representation. Only anonymous or
+URL-unreserved ASCII password credentials are enabled; FTPS/TLS and pinned-trust
+configurations never become plaintext links. See the
+[FTP transport](../MediaTransportFTP/README.md#external-playback) for the verified
+receiver contract. Other direct share protocols are not enabled: an installed
+player's saved-share browser does not establish support for its app-link API.
+When direct network-share handoff is unsupported, iOS/iPadOS 26 can instead serve the
 exact selected file and matching SRTs through an app-owned loopback endpoint.
-This keeps password/bearer authentication, Digest-only policy and certificate
-pins inside the existing transport. It requires actual admission of a
+This covers WebDAV, SMB, NFS, SFTP and FTP/FTPS through their existing transport
+resolvers, retaining password/key authentication, signing, host-key and certificate
+policies rather than handing those policies to an external app.
+It requires actual admission of a
 `BGContinuedProcessingTask` before opening the player; a denied or delayed grant
 keeps playback in Plozz. The system activity reports unique file bytes served,
 not watched progress. Cancellation/expiration stops the endpoint, and the next
 return to Plozz presents any execution-expiration error. No server setup,
 duplicate library configuration, downloaded-video export or background-audio
 keepalive is involved. This fallback is unavailable on tvOS and older iOS;
-those platforms retain direct handoff or built-in playback. Disc folders and
-other share transports remain internal.
-WebDAV cannot satisfy
+those platforms retain direct handoff or built-in playback. Disc folders
+remain internal. Network shares cannot satisfy
 conversion requests or reduced streaming-quality limits. Matching SRT sidecars
 use the same player-specific authentication policy, without copying local
 subtitle files to another app. Plozz keeps playback URLs in memory, not callback
@@ -492,9 +501,9 @@ On iPhone/iPad, downloaded movies and episodes play inside Plozz. Downloads
 menus do not export files to other apps, regardless of the external-player
 preference. External playback remains available for supported online sources.
 
-Direct external playback requires independently accessible HTTP(S) media: original
+Apart from VLC's plain FTP route, direct external playback requires independently accessible HTTP(S) media: original
 files, remote HLS, and server remux/transcode streams are eligible. Except for
-the explicitly admitted WebDAV file endpoint above, app-local proxies,
+the explicitly admitted network-share file endpoint above, app-local proxies,
 downloaded files, share connections requiring app-owned authentication
 or trust, and separate audio streams
 remain internal. DASH can open in VLC; other players retain the built-in fallback.
@@ -517,7 +526,8 @@ completion, so cleanup waits for another playback intent or server expiry.
 Returning to Plozz without a callback is not treated as completion: the other
 app may still be playing in PiP.
 
-Plozz does not run a background keepalive or local relay after handoff. The
+For independently delivered server streams, Plozz does not run a background
+keepalive or local relay after handoff. The
 external app's media requests must sustain the server stream; servers may expire
 long-paused conversions. Silo's native session can expire after 45 seconds without
 media activity (subject to its startup/proxy grace); external players cannot send

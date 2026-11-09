@@ -221,12 +221,19 @@ private struct ExternalPlayerSupportSummary: View {
             VStack(alignment: .leading, spacing: 12) {
                 Text("Plays compatible library videos, including server-converted streams.")
                 #if os(tvOS)
-                Text("Live TV and non-WebDAV network shares use Plozz.")
-                if player == .nativePlayer || player == .infuse {
-                    Text("Supports compatible WebDAV links. Password links with characters such as @ or : use Plozz because this player misreads them. Links requiring extra login headers or a pinned certificate also use Plozz.")
+                Text("Live TV and unsupported sources use Plozz.")
+                if player == .nativePlayer {
+                    Text("Native Player accepts HTTP(S) links only. Some WebDAV passwords and advanced authentication aren't supported; affected videos play in Plozz.")
+                } else if player == .infuse {
+                    Text("Infuse opens HTTP(S) links from Plozz. Some WebDAV passwords and advanced authentication aren't supported; affected videos play in Plozz.")
+                } else if player == .vlc {
+                    Text("VLC opens HTTP(S) and plain FTP links from Plozz. Other network shares and unsupported logins play in Plozz.")
                 }
                 #else
                 Text("Live TV, downloads and unsupported sources use Plozz.")
+                if player != .custom {
+                    Text("Network shares may need background streaming on iOS/iPadOS 26; otherwise they play in Plozz.")
+                }
                 #endif
             }
             .settingsHelperText()
@@ -239,7 +246,7 @@ private struct ExternalPlayerHelp: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Compatible library videos open in the selected app, including server-converted streams. Unsupported sources and Live TV play in Plozz.")
-            Text("Playable links may include server access tokens or WebDAV passwords. Only choose an app you trust.")
+            Text("Playable links may include server access tokens or network-share passwords. Only choose an app you trust.")
             Text("Native Player and Infuse 8.4.7 or later can return progress when their player closes. Plozz's controls, skip markers, and autoplay aren't available in another app.")
             Text("This choice stays on this device. Watch progress still belongs to the active viewer.")
         }

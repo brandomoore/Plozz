@@ -713,7 +713,8 @@ public struct ShareProvider: MediaLibraryQueryProviding, MediaFileBrowsing, Exte
         streaming: StreamingPlaybackOptions?, allowLocalRelay: Bool
     ) async throws -> PlaybackRequest {
         try streaming?.quality.validate()
-        guard ["http", "https"].contains(session.server.baseURL.scheme?.lowercased() ?? ""),
+        let canRelay = allowLocalRelay && player != .custom
+        guard player.supportsDirectMediaScheme(session.server.baseURL.scheme) || canRelay,
               streaming?.requiresConversionPolicy != true else {
             throw ExternalPlayerError.unsupportedSource
         }
@@ -723,7 +724,7 @@ public struct ShareProvider: MediaLibraryQueryProviding, MediaFileBrowsing, Exte
         }
         return try await preparePlaybackInfo(
             for: itemID, mediaSourceID: mediaSourceID, externalPlayer: player,
-            allowLocalRelay: allowLocalRelay && player != .custom
+            allowLocalRelay: canRelay
         )
     }
 
@@ -841,7 +842,7 @@ public struct ShareProvider: MediaLibraryQueryProviding, MediaFileBrowsing, Exte
                 externalURL = url
             } catch MediaTransportError.unsupportedCapability where allowLocalRelay {
                 try Task.checkCancellation()
-                PlozzLog.playback.info("share.external using an app-owned source for unsupported direct authentication")
+                PlozzLog.playback.info("share.external using an app-owned source for unsupported direct delivery")
                 externalURL = nil
             }
         } else {

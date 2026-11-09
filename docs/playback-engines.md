@@ -549,15 +549,26 @@ Media and matching SRT URLs are ephemeral and excluded from callback receipts
 and logs. Callback
 resource digests omit userinfo so a sanitized return URL still matches, while
 nonce, profile, account and credential-revision checks retain ownership.
-Other share transports, disc folders and conversion policies keep their built-in
-path. An external player cannot renew an expired server-issued URL.
+VLC also accepts plain FTP files and SRT sidecars through its stream action.
+The transport revalidates the selected file and bounded byte access, retains the
+configured port, and uses `//absolute/path` to avoid VLC resolving a different
+file under the login directory. Anonymous and URL-unreserved ASCII password
+credentials are enabled; FTPS endpoints, TLS requirements and pins never become
+plain FTP. See [the FTP contract](../Sources/MediaTransportFTP/README.md#external-playback).
 
-### App-owned WebDAV file handoff
+Other share transports need the app-owned handoff below; without it they keep
+their built-in path. Disc folders and conversion policies remain internal.
+An external player cannot renew an expired server-issued URL.
 
-On iOS/iPadOS 26, unsupported direct authentication can opt into a loopback-only
-file server backed by `MediaTransportNetworkFileResolver`. This is not a
-second WebDAV authentication implementation: source leases retain existing
+### App-owned network-share file handoff
+
+On iOS/iPadOS 26, unsupported direct delivery can opt into a loopback-only
+file server backed by `MediaTransportNetworkFileResolver`. WebDAV, SMB, NFS,
+SFTP and FTP/FTPS all reuse their registered transport; no parallel authentication
+implementation is introduced. Source leases retain existing
 credential/trust revisions, representation validation and playback admission.
+SMB signing, SSH host keys/private keys and FTPS certificate policies stay with
+Plozz's transport rather than being dropped to satisfy a receiver's URL interface.
 The provider keeps the exact selected locator when direct delivery is
 unsupported; permission, authentication and changed-source errors are never
 converted into successful local delivery. SRT sidecars remain typed locators

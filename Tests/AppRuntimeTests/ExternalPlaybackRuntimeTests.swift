@@ -7,6 +7,28 @@ import XCTest
 
 @MainActor
 final class ExternalPlaybackRuntimeTests: XCTestCase {
+    func testAdmittedRelaySupportsEveryRegisteredShareTransport() async throws {
+        for scheme in ["smb", "nfs", "sftp", "ftp", "ftps"] {
+            let fixture = ExternalPlaybackFixture()
+            defer { fixture.cleanup() }
+            let resolver = try fixture.enableLocalRelay()
+            fixture.baseURL = URL(string: "\(scheme)://nas.test/media")!
+            let players = fixture.runtime.availablePlayers(
+                for: fixture.item, context: fixture.context, selection: .init(player: .builtIn)
+            )
+            XCTAssertTrue(players.contains(.infuse))
+            let opened = try await fixture.launch()
+            XCTAssertTrue(opened, scheme)
+            let query = try XCTUnwrap(URLComponents(url: try XCTUnwrap(fixture.opened.last),
+                                                   resolvingAgainstBaseURL: false)?.queryItems)
+            let media = try XCTUnwrap(query.first { $0.name == "url" }?.value.flatMap(URL.init(string:)))
+            let (bytes, _) = try await URLSession.shared.data(from: media)
+            XCTAssertEqual(bytes, Data(repeating: 42, count: 1000))
+            fixture.runtime.beginPlaybackIntent(context: fixture.context)
+            await resolver.source.waitForShutdown()
+        }
+    }
+
     func testOwnedRelayOpensExactFileAndCallbackRevokesItWithoutPersistingCapability() async throws {
         let fixture = ExternalPlaybackFixture()
         defer { fixture.cleanup() }
@@ -269,6 +291,34 @@ final class ExternalPlaybackRuntimeTests: XCTestCase {
                 XCTAssertEqual(fixture.installationChecks, 0)
                 XCTAssertNil(fixture.runtime.receipt)
                 XCTAssertNil(fixture.runtime.error)
+            }
+        }
+    }
+
+    func testFTPDirectHandoffIsVLCOnlyAndDoesNotNeedLocalExecution() async throws {
+        for player in [ExternalPlayer.nativePlayer, .infuse, .vlc, .custom] {
+            let fixture = ExternalPlaybackFixture()
+            defer { fixture.cleanup() }
+            fixture.kind = .mediaShare
+            fixture.baseURL = URL(string: "ftp://nas.test:2121/media")!
+            fixture.media = URL(string: "ftp://nas.test:2121//media/clip%2520.mp4")!
+            fixture.request.sourceProvider = .mediaShare
+            fixture.request.externalSubtitleURLs = [fixture.media]
+            fixture.selection.player = player
+            let players = fixture.runtime.availablePlayers(
+                for: fixture.item, context: fixture.context, selection: .init(player: .builtIn)
+            )
+            XCTAssertEqual(players, [.vlc])
+            let opened = try await fixture.launch()
+            XCTAssertEqual(opened, player == .vlc)
+            if player == .vlc {
+                let query = try XCTUnwrap(URLComponents(url: fixture.opened[0], resolvingAgainstBaseURL: false)?.queryItems)
+                XCTAssertEqual(query.first { $0.name == "url" }?.value, fixture.media.absoluteString)
+                XCTAssertEqual(query.first { $0.name == "sub" }?.value, fixture.media.absoluteString)
+                XCTAssertEqual(fixture.selectedVersion, "version-one")
+            } else {
+                XCTAssertEqual(fixture.externalRequests, 0)
+                XCTAssertTrue(fixture.opened.isEmpty)
             }
         }
     }

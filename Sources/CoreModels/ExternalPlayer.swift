@@ -53,6 +53,11 @@ public enum ExternalPlayer: String, Codable, CaseIterable, Sendable {
 
     public var supportsDASH: Bool { self == .vlc }
 
+    public func supportsDirectMediaScheme(_ scheme: String?) -> Bool {
+        let scheme = scheme?.lowercased() ?? ""
+        return ["http", "https"].contains(scheme) || (self == .vlc && scheme == "ftp")
+    }
+
     public var supportsHTTPPasswordAuthentication: Bool {
         self == .nativePlayer || self == .infuse || self == .vlc
     }
@@ -128,8 +133,10 @@ public enum ExternalPlayerURL {
         _ url: URL, player: ExternalPlayer = .infuse, allowPassword: Bool = false
     ) -> Bool {
         guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
-              ["http", "https"].contains(components.scheme?.lowercased() ?? ""),
+              player.supportsDirectMediaScheme(components.scheme),
               let host = components.host, !host.isEmpty else { return false }
+        // FTP uses the same explicit share-provider opt-in as password URLs.
+        if components.scheme?.lowercased() == "ftp", !allowPassword { return false }
         if components.user != nil || components.password != nil {
             guard allowPassword, player.supportsHTTPPasswordAuthentication,
                   let user = components.user, !user.isEmpty, !user.contains(":"),

@@ -39,20 +39,27 @@ final class PlaybackSettingsHostedTests: XCTestCase {
         try await Task.sleep(for: .milliseconds(400))
         let native = try visibleText(in: window, attachment: "External-player-Native-support")
         for phrase in ["Native Player", "library videos", "server-converted", "Live TV",
-                       "WebDAV", "Password links", "this player misreads them",
-                       "extra login headers", "pinned certificate"] {
+                       "HTTP(S)", "WebDAV passwords", "advanced authentication", "affected videos play in Plozz"] {
             XCTAssertTrue(native.contains(phrase), native)
         }
+        model.settings.player = .infuse
+        try await Task.sleep(for: .milliseconds(200))
+        let infuse = try visibleText(in: window, attachment: "External-player-Infuse-support")
+        XCTAssertTrue(infuse.contains("Infuse opens HTTP(S)"), infuse)
+        XCTAssertTrue(infuse.contains("WebDAV passwords"), infuse)
+        XCTAssertFalse(infuse.contains("Native Player accepts"), infuse)
         model.settings.player = .vlc
         try await Task.sleep(for: .milliseconds(200))
         let vlc = try visibleText(in: window, attachment: "External-player-VLC-support")
         XCTAssertTrue(vlc.contains("library videos"), vlc)
+        XCTAssertTrue(vlc.contains("plain FTP"), vlc)
+        XCTAssertTrue(vlc.contains("Other network shares"), vlc)
         XCTAssertFalse(vlc.contains("misreads"), vlc)
         model.settings.player = .builtIn
         try await Task.sleep(for: .milliseconds(200))
         let builtIn = try visibleText(in: window, attachment: "External-player-built-in")
         XCTAssertFalse(builtIn.contains("server-converted"), builtIn)
-        XCTAssertFalse(builtIn.contains("misreads"), builtIn)
+        XCTAssertFalse(builtIn.contains("advanced authentication"), builtIn)
     }
 
     func testPlayerTabsShareOneSettingsGroupWithoutAnInfoToggle() async throws {

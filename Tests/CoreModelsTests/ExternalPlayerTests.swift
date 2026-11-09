@@ -64,6 +64,31 @@ final class ExternalPlayerTests: XCTestCase {
         XCTAssertEqual(query, [.init(name: "video", value: media.absoluteString), .init(name: "mode", value: "1")])
     }
 
+    func testFTPRequiresVLCAndExplicitShareOptInAndPreservesNestedPaths() throws {
+        let media = try XCTUnwrap(URL(string: "ftp://nas.test:2121//media/clip%2520%20%23.mp4"))
+        for player in ExternalPlayer.allCases {
+            XCTAssertFalse(ExternalPlayerURL.isSupportedMediaURL(media, player: player))
+            XCTAssertEqual(
+                ExternalPlayerURL.isSupportedMediaURL(media, player: player, allowPassword: true), player == .vlc
+            )
+        }
+        let link = try ExternalPlayerURL.make(
+            settings: .init(player: .vlc), mediaURL: media, title: "Movie", position: 0,
+            subtitles: [media], callbackScheme: "test", nonce: nonce, allowPassword: true
+        )
+        let query = try XCTUnwrap(URLComponents(url: link, resolvingAgainstBaseURL: false)?.queryItems)
+        XCTAssertEqual(query.first { $0.name == "url" }?.value, media.absoluteString)
+        XCTAssertEqual(query.first { $0.name == "sub" }?.value, media.absoluteString)
+        for scheme in ["ftps", "smb", "nfs", "sftp"] {
+            XCTAssertFalse(ExternalPlayerURL.isSupportedMediaURL(
+                URL(string: "\(scheme)://nas.test/media/movie.mp4")!, player: .vlc, allowPassword: true
+            ))
+        }
+        XCTAssertFalse(ExternalPlayerURL.isSupportedMediaURL(
+            URL(string: "ftp://127.0.0.1//movie.mp4")!, player: .vlc, allowPassword: true
+        ))
+    }
+
     func testInvalidCustomTemplatesFailClosed() {
         for template in [
             "", "testplayer://play", "testplayer://{url}/{url}", "testplayer://{url}/{title}",
