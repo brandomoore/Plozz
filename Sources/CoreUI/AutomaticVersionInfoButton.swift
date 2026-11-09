@@ -26,7 +26,7 @@ public struct AutomaticVersionInfoButton: View {
         .alert("How automatic selection works", isPresented: $showsInformation) {
             Button("Done", role: .cancel) {}
         } message: {
-            Text("With Remember series version choices on, Plozz tries to pick something similar to what you've chosen before for that show. Pick 1080p for one episode, for example, and it'll look for a similar version next time.\n\nOtherwise, it weighs up what can play, resolution, HDR and bitrate. HDR can win over a higher-resolution SDR version when HDR playback is available, so it won't always pick the first or biggest file.")
+            Text("Plozz picks a version for you based on what can play, resolution, HDR and bitrate, so you don't have to choose each time. It won't always pick the first or biggest file. For example, HDR can take priority over a higher-resolution SDR version when HDR playback is available.\n\nIf Remember series version choices is on, Plozz checks for a match to your previous choice first. So if you picked a 1080p version for one episode, it'll try to pick a similar version for the next.")
         }
     }
 }
