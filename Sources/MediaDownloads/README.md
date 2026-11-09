@@ -92,7 +92,9 @@ saved record identifies a connected source. These actions open the source's
 detail page without interrupting the transfer. The downloaded-show page keeps
 its title in the scrolling content, below the navigation bar. Edit enables native
 episode multiselect, Select All, and confirmed removal of the selected downloads.
-Cancel leaves downloads untouched and clears the selection. Episode menus remain
+The native Edit/Done button stays in the horizontal action group alongside
+Select All and Remove, including on iPhone Duo; Back retains its native placement.
+Done leaves downloads untouched and clears the selection. Episode menus remain
 available in either mode, including Play for completed downloads, Go to Show, and
 Remove Download. Tapping an episode while editing selects it instead of navigating.
 

@@ -40,7 +40,7 @@ struct PlozziOSDownloadedShowView: View {
                                 .listRowSeparator(.hidden)
                                 .listRowBackground(Color.clear)
                                 .listRowInsets(EdgeInsets(
-                                    top: 8, leading: horizontalInset, bottom: 8, trailing: horizontalInset
+                                    top: 0, leading: horizontalInset, bottom: 0, trailing: horizontalInset
                                 ))
                             ForEach(show.seasons) { season in
                                 PlozziOSDownloadedSeasonRows(
@@ -70,7 +70,6 @@ struct PlozziOSDownloadedShowView: View {
                 .background { AppBackground(palette: palette) }
                 .navigationTitle("")
                 .navigationBarTitleDisplayMode(.inline)
-                .navigationBarBackButtonHidden(editMode.isEditing)
                 // Capturing this view's dismiss environment creates an iOS 18 navigation update loop.
                 .navigationDestination(item: $detailNav) { [appModel] nav in
                     if let provider = appModel.provider(for: nav.item) {
@@ -91,14 +90,8 @@ struct PlozziOSDownloadedShowView: View {
                     }
                 }
                 .toolbar {
-                    if editMode.isEditing {
-                        ToolbarItem(placement: .cancellationAction) {
-                            Button("Cancel", systemImage: "xmark") {
-                                endEditing()
-                            }
-                            .accessibilityIdentifier("download-edit-cancel")
-                        }
-                        ToolbarItemGroup(placement: .topBarTrailing) {
+                    ToolbarItemGroup(placement: .topBarTrailing) {
+                        if editMode.isEditing {
                             Button("Select All") {
                                 selectedIDs = Set(show.records.map(\.id))
                             }
@@ -110,12 +103,8 @@ struct PlozziOSDownloadedShowView: View {
                             .disabled(selectedIDs.isEmpty)
                             .accessibilityIdentifier("download-remove-selected")
                         }
-                    } else {
-                        ToolbarItem(placement: .topBarTrailing) {
-                            Button("Edit") {
-                                editMode = .active
-                            }
-                        }
+                        EditButton()
+                            .environment(\.editMode, $editMode)
                     }
                 }
             } else {
@@ -155,6 +144,12 @@ struct PlozziOSDownloadedShowView: View {
         }
         .onChange(of: currentShow?.records.map(\.id)) { _, ids in
             selectedIDs.formIntersection(ids ?? [])
+        }
+        .onChange(of: editMode) { _, mode in
+            if !mode.isEditing {
+                selectedIDs.removeAll()
+                pendingBulkDeletion = nil
+            }
         }
         .onChange(of: appModel.profiles.activeProfileID) { _, _ in
             endEditing()

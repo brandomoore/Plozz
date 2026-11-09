@@ -89,7 +89,7 @@ final class DownloadsInteractionTests: XCTestCase {
         title.tap()
         XCTAssertFalse(app.buttons["download-remove-selected"].isEnabled,
                        "The page title must not be selectable.")
-        app.buttons["download-edit-cancel"].tap()
+        app.buttons["Done"].tap()
         XCTAssertTrue(app.buttons["Edit"].waitForExistence(timeout: 3))
         XCTAssertGreaterThanOrEqual(app.staticTexts["Season 2"].frame.minY, title.frame.maxY)
         XCTAssertTrue(app.buttons["More actions for Episode 12"].isHittable)
@@ -131,6 +131,7 @@ final class DownloadsInteractionTests: XCTestCase {
         remove.tap()
         XCTAssertTrue(app.buttons["Remove 2 Downloads"].waitForExistence(timeout: 3))
         dismissRemovalConfirmation()
+        XCTAssertTrue(app.buttons["Remove 2 Downloads"].waitForNonExistence(timeout: 3))
         XCTAssertTrue(app.staticTexts["E1 · One Year Later"].exists)
         remove.tap()
         app.buttons["Remove 2 Downloads"].tap()
@@ -145,37 +146,51 @@ final class DownloadsInteractionTests: XCTestCase {
         XCTAssertTrue(app.staticTexts["No Downloads"].waitForExistence(timeout: 5))
     }
 
-    func testDownloadedShowCancelStaysOnTheNativeNavigationEdge() {
+    func testDownloadedShowEditDoneKeepsSelectionActionsTogether() {
         openEditableShow()
         let back = backButton(to: "Downloads")
         XCTAssertTrue(back.isHittable, app.debugDescription)
-        let navigationIsOnRight = back.frame.midX > app.frame.midX
+        let edit = app.buttons["Edit"]
+        let editFrame = edit.frame
+        let titleFrame = showPage("Andor").frame
         let normal = XCTAttachment(screenshot: app.screenshot())
-        normal.name = "download-native-back"
+        normal.name = "download-native-edit"
         normal.lifetime = .keepAlways
         add(normal)
-        app.buttons["Edit"].tap()
-        let cancel = app.buttons["download-edit-cancel"]
-        XCTAssertTrue(cancel.waitForExistence(timeout: 3))
-        XCTAssertTrue(cancel.isHittable)
-        XCTAssertEqual(cancel.frame.midX > app.frame.midX, navigationIsOnRight,
-                       "Cancel must use the same native navigation edge as Back.")
-        XCTAssertFalse(cancel.frame.intersects(showPage("Andor").frame))
+        edit.tap()
+        let done = app.buttons["Done"]
+        XCTAssertTrue(done.waitForExistence(timeout: 3))
+        XCTAssertTrue(done.isHittable)
+        XCTAssertEqual(done.frame.midY, editFrame.midY, accuracy: 3)
+        XCTAssertEqual(done.frame.maxX, editFrame.maxX, accuracy: 3)
+        let selectAll = app.buttons["Select All"]
+        let remove = app.buttons["download-remove-selected"]
+        XCTAssertTrue(selectAll.isHittable)
+        XCTAssertTrue(remove.exists)
+        XCTAssertEqual(selectAll.frame.midY, done.frame.midY, accuracy: 3)
+        XCTAssertEqual(remove.frame.midY, done.frame.midY, accuracy: 3)
+        XCTAssertFalse(selectAll.frame.intersects(remove.frame))
+        XCTAssertFalse(remove.frame.intersects(done.frame))
+        XCTAssertTrue(back.isHittable)
+        XCTAssertFalse(back.frame.intersects(done.frame))
+        XCTAssertEqual(showPage("Andor").frame.minY, titleFrame.minY, accuracy: 3)
+        XCTAssertGreaterThanOrEqual(titleFrame.minY, done.frame.maxY)
         let editing = XCTAttachment(screenshot: app.screenshot())
-        editing.name = "download-native-cancel"
+        editing.name = "download-native-done"
         editing.lifetime = .keepAlways
         add(editing)
-        cancel.tap()
+        done.tap()
+        XCTAssertTrue(edit.waitForExistence(timeout: 3))
         XCTAssertTrue(back.waitForExistence(timeout: 3))
         back.tap()
         XCTAssertTrue(app.navigationBars["Downloads"].waitForExistence(timeout: 3))
     }
 
-    func testEditCancelClearsSelectionAndItemRemovalKeepsOtherDownloads() {
+    func testEditDoneClearsSelectionAndItemRemovalKeepsOtherDownloads() {
         openEditableShow()
         app.buttons["Edit"].tap()
         app.buttons["Select All"].tap()
-        app.buttons["download-edit-cancel"].tap()
+        app.buttons["Done"].tap()
         XCTAssertTrue(app.buttons["Edit"].waitForExistence(timeout: 3))
         app.buttons["Edit"].tap()
         XCTAssertFalse(app.buttons["download-remove-selected"].isEnabled)
@@ -406,7 +421,8 @@ final class DownloadsInteractionTests: XCTestCase {
         if app.buttons["Cancel"].exists {
             app.buttons["Cancel"].tap()
         } else {
-            app.otherElements["PopoverDismissRegion"].tap()
+            // The popover covers the title; its dismiss region's center overlaps a selectable row.
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.1, dy: 0.9)).tap()
         }
     }
 
