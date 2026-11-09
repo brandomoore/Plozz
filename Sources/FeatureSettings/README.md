@@ -425,8 +425,11 @@ See [spatial audio](../../docs/playback-engines.md#spatial-audio) for limitation
 
 Playback > Advanced > External player is a device-only, default-off preference
 shared by all profiles on that device. It stays inside Playback rather than
-adding an Everyone category. The picker has one short scope label; About external
-playback and custom configuration are separate drill-ins.
+adding an Everyone category. The picker shows a short support summary for the
+selected external player. On tvOS, Native Player and Infuse also explain WebDAV
+password-character, extra-header and certificate-pin limitations and the built-in
+fallback. About external playback retains credential-sharing and progress details;
+custom configuration is a separate drill-in.
 Choosing an installed player redirects compatible movies, episodes, server videos,
 trailers and extras:
 Native Player on tvOS, Infuse 8.4.7+ on both platforms, and VLC on both platforms.

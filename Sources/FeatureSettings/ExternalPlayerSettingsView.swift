@@ -182,6 +182,7 @@ private struct ExternalPlayerChoices: View {
             .accessibilityValue(title(model.settings.player))
             .accessibilityIdentifier("external-player-selection").settingsSearchAnchor("external-player")
             #endif
+            ExternalPlayerSupportSummary(player: model.settings.player)
             if model.settings.player == .vlc || model.settings.player == .custom {
                 Text("This player doesn't return watch progress to Plozz.")
                     .settingsHelperText()
@@ -212,11 +213,33 @@ private struct ExternalPlayerChoices: View {
     }
 }
 
+private struct ExternalPlayerSupportSummary: View {
+    let player: ExternalPlayer
+
+    var body: some View {
+        if player != .builtIn {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Plays compatible library videos, including server-converted streams.")
+                #if os(tvOS)
+                Text("Live TV and non-WebDAV network shares use Plozz.")
+                if player == .nativePlayer || player == .infuse {
+                    Text("Supports compatible WebDAV links. Password links with characters such as @ or : use Plozz because this player misreads them. Links requiring extra login headers or a pinned certificate also use Plozz.")
+                }
+                #else
+                Text("Live TV, downloads and unsupported sources use Plozz.")
+                #endif
+            }
+            .settingsHelperText()
+            .accessibilityIdentifier("external-player-support")
+        }
+    }
+}
+
 private struct ExternalPlayerHelp: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Compatible library videos open in the selected app, including server-converted streams. Unsupported sources and Live TV play in Plozz.")
-            Text("Playable links, including server access tokens when required, are shared with the selected app. Only choose an app you trust.")
+            Text("Playable links may include server access tokens or WebDAV passwords. Only choose an app you trust.")
             Text("Native Player and Infuse 8.4.7 or later can return progress when their player closes. Plozz's controls, skip markers, and autoplay aren't available in another app.")
             Text("This choice stays on this device. Watch progress still belongs to the active viewer.")
         }

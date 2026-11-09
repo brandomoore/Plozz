@@ -43,6 +43,8 @@ struct FocusHostApp: App {
                 ServerAddressNavigationFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--read-ahead-settings-fixture") {
                 PlaybackReadAheadFixture()
+            } else if ProcessInfo.processInfo.arguments.contains("--external-player-settings-fixture") {
+                ExternalPlayerSettingsFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--skip-settings-fixture") {
                 SkipSettingsFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--iptv-organization-fixture") {
@@ -119,6 +121,28 @@ struct FocusHostApp: App {
                 Color.black
             }
         }
+    }
+}
+
+private struct ExternalPlayerSettingsFixture: View {
+    @State private var model: ExternalPlayerSettingsModel = {
+        let defaults = UserDefaults(suiteName: "external-player-settings-fixture")!
+        defaults.removePersistentDomain(forName: "external-player-settings-fixture")
+        let model = ExternalPlayerSettingsModel(defaults: defaults)
+        model.settings.player = .nativePlayer
+        return model
+    }()
+
+    var body: some View {
+        SettingsFormLayout(
+            title: Text("External player"),
+            rows: Array(ExternalPlayerSettingsRows.external(model: model).prefix(1))
+        )
+        .frame(width: SettingsFormMetrics.pageWidth)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .environment(\.themePalette, .dark)
+        .environment(\.locale, Locale(identifier: "en_US"))
+        .background(.black)
     }
 }
 
