@@ -605,23 +605,23 @@ struct PlaybackDetailView: View {
                             .settingsHelperText()
                     }
                     ForEach(PlaybackVersionSelectionMode.allCases, id: \.self) { mode in
-                        HStack {
-                            SettingsCheckableRow(
-                                title: Text(mode.title), titleLineLimit: nil,
-                                isChecked: playback.settings.versionSelectionMode == mode
-                            ) {
-                                playback.settings.versionSelectionMode = mode
-                            }
-                            if mode == .automatic {
-                                AutomaticVersionInfoButton()
-                            }
+                        SettingsCheckableRow(
+                            title: Text(mode.title), titleLineLimit: nil,
+                            isChecked: playback.settings.versionSelectionMode == mode
+                        ) {
+                            playback.settings.versionSelectionMode = mode
                         }
-                        .focusSection()
                     }
                     .settingsSearchAnchor("version-selection")
                 }
                 #else
                 PlaybackVersionPreferencePicker(model: playback)
+                #endif
+            }.descriptionAccessory {
+                #if os(tvOS)
+                return AnyView(AutomaticVersionInfoButton())
+                #else
+                return nil
                 #endif
             },
             SettingsSplitRow(

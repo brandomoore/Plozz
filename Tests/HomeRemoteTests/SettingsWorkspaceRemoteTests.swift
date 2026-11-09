@@ -12,8 +12,21 @@ final class SettingsWorkspaceRemoteTests: XCTestCase {
         try focus(ask, in: app)
         XCUIRemote.shared.press(.select)
         XCTAssertTrue(ask.isSelected)
+        let automatic = app.buttons.matching(NSPredicate(
+            format: "label BEGINSWITH %@", "Choose automatically"
+        )).firstMatch
         let info = app.buttons["How automatic selection works"]
         try focus(info, in: app)
+        XCTAssertGreaterThanOrEqual(info.frame.minY, automatic.frame.maxY,
+                                    "Help belongs below the choices, not in the checkmark column.")
+        XCTAssertEqual(ask.frame.maxX, automatic.frame.maxX, accuracy: 1,
+                       "Both choices must retain the same full-width selection area.")
+        let description = app.staticTexts.matching(NSPredicate(
+            format: "label BEGINSWITH %@", "Ask before each multi-version video"
+        )).firstMatch
+        XCTAssertTrue(description.exists)
+        XCTAssertLessThan(description.frame.minY, info.frame.maxY)
+        XCTAssertGreaterThan(description.frame.maxY, info.frame.minY)
         capture("automatic-version-setting", in: app)
         XCUIRemote.shared.press(.select)
         let help = app.alerts["How automatic selection works"]
@@ -26,6 +39,17 @@ final class SettingsWorkspaceRemoteTests: XCTestCase {
         XCTAssertTrue(help.waitForNonExistence(timeout: 5))
         XCTAssertTrue(ask.isSelected, "Reading help must not change the playback mode.")
         XCTAssertTrue(info.exists)
+        try focus(automatic, in: app)
+        XCUIRemote.shared.press(.select)
+        XCTAssertTrue(automatic.isSelected)
+        XCTAssertFalse(ask.isSelected)
+        try focus(info, in: app)
+        capture("automatic-version-selected", in: app)
+        XCUIRemote.shared.press(.select)
+        XCTAssertTrue(help.waitForExistence(timeout: 5))
+        XCUIRemote.shared.press(.select)
+        XCTAssertTrue(help.waitForNonExistence(timeout: 5))
+        XCTAssertTrue(automatic.isSelected, "Help must also preserve the Automatic selection.")
     }
 
     func testGeneralSourceEntryPointsOpenTheSharedChooser() throws {

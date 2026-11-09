@@ -7,8 +7,9 @@ system green appearance instead of inheriting the page's monochrome navigation t
 
 The Settings screen and its detail pages. Profile-aware and integration-aware.
 
-Automatic version selection has a shared information button beside its TV
-option, beside the selected mobile value, and beside the first-use description.
+Automatic version selection has a shared information button beside the TV
+description below the choices, beside the selected mobile value, and beside the
+first-use description. TV choice rows keep their full-width checkmark layout.
 The native help dialog explains remembered series choices and metadata-based
 ranking with examples; opening or dismissing it never selects a playback mode.
 
