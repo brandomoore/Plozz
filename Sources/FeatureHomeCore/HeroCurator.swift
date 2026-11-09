@@ -586,7 +586,7 @@ enum HeroDedupe {
         // apart. A show's own parts must NOT be separated that way, though: the hero
         // shows one slide per *show*, and Continue Watching offers an episode where
         // Watchlist offers the series, so scoping by kind let the same show appear
-        // twice — once with "Play S3, E1", once with a bookmark.
+        // twice — once with "Play S3 · E1", once with a bookmark.
         let scope = showScope(for: item)
         let accountScope = item.sourceAccountID ?? "unscoped"
         var tokens: Set<String> = ["id:\(scope):\(accountScope):\(item.id)"]

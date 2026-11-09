@@ -17,7 +17,7 @@ public struct EpisodeReleaseDisplay: Equatable, Sendable {
     /// present episode (ordinary content, no badge). Pure copy — always our own
     /// wording, never server content.
     public var badge: LocalizedStringResource?
-    /// The numbering label, e.g. `"S1 E2"` or `"Ep 1075"`; `nil` when unknown.
+    /// The numbering label, e.g. `"S1 · E2"` or `"Ep 1075"`; `nil` when unknown.
     public var numberLabel: String?  // l10n:content — formatted numbering scheme, not prose copy
     /// The formatted air date (date, or date + time for exact schedules); `nil` for a
     /// present episode.
@@ -112,10 +112,12 @@ public struct EpisodeReleaseDisplay: Equatable, Sendable {
         }
     }
 
-    /// `"S1 E2"` for a per-season schedule, `"Ep 1075"` for an absolute one, else `nil`.
+    /// `"S1 · E2"` for a per-season schedule, `"Ep 1075"` for an absolute one, else `nil`.
     static func numberLabel(for upcoming: UpcomingEpisode) -> String? {  // l10n:content — formatted numbering scheme, not prose copy
-        if let season = upcoming.seasonNumber, let episode = upcoming.episodeNumber {
-            return "S\(season) E\(episode)"
+        if let label = MediaItem.seasonEpisodeLabel(
+            season: upcoming.seasonNumber, episode: upcoming.episodeNumber
+        ) {
+            return label
         }
         if let absolute = upcoming.absoluteEpisodeNumber {
             return "Ep \(absolute)"

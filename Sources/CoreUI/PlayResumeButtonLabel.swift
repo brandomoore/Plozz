@@ -58,7 +58,7 @@ public struct ResumeProgressCapsule: View {
     /// Off by default: the hero Play buttons want an exact, stable gauge. The
     /// Continue Watching chip turns it on because there the bar shares one line
     /// with the label naming the episode, and how much room that label needs
-    /// changes completely from "2h 2m" to "S1, E12 · 1h 21m". A fixed bar is
+    /// changes completely from "2h 2m" to "S1 · E12 · 1h 21m". A fixed bar is
     /// either a stub beside the short one or a slab crowding out the long one;
     /// a flexible bar is right for both.
     public var flexesToFitRow: Bool
@@ -133,7 +133,7 @@ public struct ResumeProgressCapsule: View {
 /// inherit the ambient `.font`, so each caller keeps its own type scale; the
 /// progress bar is a fixed size.
 public struct PlayResumeButtonLabel: View {
-    /// How much of the resume trailing (`S5 E12 • 43m`) to show. Callers can offer
+    /// How much of the resume trailing (`S5 · E12 • 43m`) to show. Callers can offer
     /// the same button in decreasing widths (inside a `ViewThatFits`) so the row
     /// shrinks the Play pill before wrapping: full → season/episode only (drop the
     /// remaining time) → hidden (progress bar only). The bar always stays.
@@ -151,7 +151,7 @@ public struct PlayResumeButtonLabel: View {
     /// Remaining-time text (e.g. "20m") shown after the bar in the resume form.
     public let remainingText: String?
     /// The episode the button will play, as `S{n} E{m}` — appended to the plain
-    /// title ("Play S21 E8") and prefixed to the resume trailing ("S5 E12 • 43m").
+    /// title ("Play S21 · E8") and prefixed to the resume trailing ("S5 · E12 • 43m").
     /// `nil` for movies/series, which keep their plain label.
     public var seasonEpisodeText: String?
     /// Whether the label sits on a light background, forwarded to the progress bar.
@@ -219,8 +219,8 @@ public struct PlayResumeButtonLabel: View {
         return progress
     }
 
-    /// The resume trailing string for the current width style: `S5 E12 • 43m`,
-    /// `S5 E12`, or `nil` (bar only).
+    /// The resume trailing string for the current width style: `S5 · E12 • 43m`,
+    /// `S5 · E12`, or `nil` (bar only).
     private var resumeTrailing: String? {
         switch resumeTrailingStyle {
         case .hidden:
@@ -236,10 +236,10 @@ public struct PlayResumeButtonLabel: View {
     }
 
     /// The plain (non-resume) label: the base title with the season/episode appended
-    /// when present — "Play S21 E8" — else just the base title ("Play").
+    /// when present — "Play S21 · E8" — else just the base title ("Play").
     ///
     /// Composed as `Text` rather than an interpolated `String`: the base title is
-    /// localized copy while "S21 E8" is generated content, so joining them as a
+    /// localized copy while "S21 · E8" is generated content, so joining them as a
     /// String would drop the title's localization on the floor.
     private var plainTitle: Text {
         guard let seasonEpisodeText else { return Text(title) }

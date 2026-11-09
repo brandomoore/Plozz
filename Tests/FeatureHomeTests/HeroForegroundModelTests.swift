@@ -194,10 +194,10 @@ final class HeroForegroundModelTests: XCTestCase {
 
     func testStartWatchingPillNamesTheFirstEpisode() {
         let pill = Builder.pill(for: .init(
-            kind: .play, isStarting: true, seasonEpisodeText: "S1 E1"
+            kind: .play, isStarting: true, seasonEpisodeText: "S1 · E1"
         ))
         XCTAssertNotNil(pill.localizedTitle)
-        XCTAssertEqual(pill.text, " · S1 E1")
+        XCTAssertEqual(pill.text, " · S1 · E1")
     }
 
 #if canImport(UIKit)
@@ -261,13 +261,13 @@ final class HeroForegroundModelTests: XCTestCase {
     @MainActor
     func testStartWatchingPillResolvesCopyAtTheUIKitBoundary() {
         let pill = Builder.pill(for: .init(
-            kind: .play, isStarting: true, seasonEpisodeText: "S1 E1"
+            kind: .play, isStarting: true, seasonEpisodeText: "S1 · E1"
         ))
         let view = HeroForegroundPillView(frame: .zero)
         view.configure(pill, selected: false, locale: Locale(identifier: "en"))
         XCTAssertEqual(
             view.subviews.compactMap { $0 as? UILabel }.first?.text,
-            "Start watching · S1 E1"
+            "Start watching · S1 · E1"
         )
     }
 #endif
@@ -275,9 +275,9 @@ final class HeroForegroundModelTests: XCTestCase {
     func testInProgressFirstEpisodeKeepsTheResumePill() {
         let pill = Builder.pill(for: .init(
             kind: .play, resumeProgress: 0.3, isResume: true, isStarting: true,
-            resumeRemainingText: "35m", seasonEpisodeText: "S1 E1"
+            resumeRemainingText: "35m", seasonEpisodeText: "S1 · E1"
         ))
-        XCTAssertEqual(pill.text, "S1 E1 • 35m")
+        XCTAssertEqual(pill.text, "S1 · E1 • 35m")
         XCTAssertEqual(pill.progress, 0.3)
     }
 
@@ -299,7 +299,7 @@ final class HeroForegroundModelTests: XCTestCase {
     }
 
     func testSeasonEpisodeButtonTextFormatsEpisode() {
-        XCTAssertEqual(Builder.seasonEpisodeButtonText(for: episode(season: 12, number: 2)), "S12 E2")
+        XCTAssertEqual(Builder.seasonEpisodeButtonText(for: episode(season: 12, number: 2)), "S12 · E2")
     }
 
     func testSeasonEpisodeButtonTextNilForMovie() {
@@ -325,7 +325,7 @@ final class HeroForegroundModelTests: XCTestCase {
             slideCount: 1,
             slideIndex: 0
         )
-        XCTAssertEqual(model.pills.first?.text, "Play S3 E7")
+        XCTAssertEqual(model.pills.first?.text, "Play S3 · E7")
     }
 
     func testEpisodeTextFallbackUsesSeriesTitle() {
@@ -381,27 +381,27 @@ final class HeroForegroundModelTests: XCTestCase {
 
     // MARK: - season/episode in the Play pill
 
-    func testSeasonEpisodeButtonTextUsesSpaceSeparatedForm() {
-        XCTAssertEqual(Builder.seasonEpisodeButtonText(for: episode(season: 1, number: 22)), "S1 E22")
-        XCTAssertEqual(Builder.seasonEpisodeButtonText(for: episode(season: 21, number: 8)), "S21 E8")
+    func testSeasonEpisodeButtonTextUsesDottedForm() {
+        XCTAssertEqual(Builder.seasonEpisodeButtonText(for: episode(season: 1, number: 22)), "S1 · E22")
+        XCTAssertEqual(Builder.seasonEpisodeButtonText(for: episode(season: 21, number: 8)), "S21 · E8")
         XCTAssertNil(Builder.seasonEpisodeButtonText(for: movie()))
         XCTAssertNil(Builder.seasonEpisodeButtonText(for: episode(season: nil, number: 8)))
     }
 
     func testPlainPlayPillAppendsSeasonEpisode() {
         let pill = Builder.pill(for: PillInput(
-            kind: .play, resumeProgress: nil, isResume: false, seasonEpisodeText: "S21 E8"
+            kind: .play, resumeProgress: nil, isResume: false, seasonEpisodeText: "S21 · E8"
         ))
-        XCTAssertEqual(pill.text, "Play S21 E8")
+        XCTAssertEqual(pill.text, "Play S21 · E8")
         XCTAssertNil(pill.progress)
     }
 
     func testResumePlayPillPrefixesSeasonEpisodeOntoRemaining() {
         let pill = Builder.pill(for: PillInput(
             kind: .play, resumeProgress: 0.42, isResume: true,
-            resumeRemainingText: "43m", seasonEpisodeText: "S5 E12"
+            resumeRemainingText: "43m", seasonEpisodeText: "S5 · E12"
         ))
-        XCTAssertEqual(pill.text, "S5 E12 • 43m")
+        XCTAssertEqual(pill.text, "S5 · E12 • 43m")
         XCTAssertEqual(pill.progress, 0.42)
     }
 

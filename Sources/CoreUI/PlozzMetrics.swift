@@ -90,11 +90,11 @@ public struct PlozzMetrics: Equatable, Sendable {
     /// ``ContinueWatchingCardShape/widthScale``) — but unlike every other card
     /// size it also grows with **Dynamic Type**.
     ///
-    /// It has to. This card carries its text *inside* the artwork ("S1, E12 ·
+    /// It has to. This card carries its text *inside* the artwork ("S1 · E12 ·
     /// 17m", on one line, beside a play glyph and a progress bar) rather than in
     /// a caption underneath that can wrap or grow. The text tracks the reader's
     /// chosen size while a density-scaled card does not, so at a large text size
-    /// the label simply ran out of card and truncated to "S1, E1 · 4…" — the
+    /// the label simply ran out of card and truncated to "S1 · E1 · 4…" — the
     /// episode you are being told about, cut off. A card whose contents are fixed
     /// to the text they hold has to be sized by that text.
     public private(set) var continueWatchingWidth: CGFloat

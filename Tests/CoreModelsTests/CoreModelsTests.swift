@@ -593,13 +593,13 @@ final class SeasonEpisodeLabelTests: XCTestCase {
         )
     }
 
-    /// Comma-separated, not dotted. The chip already joins with `·` to attach the
-    /// duration, so the dotted `subtitle` form would render "S4 · E1 · 22m" and
-    /// read as three unrelated facts — while a bare space runs the two numbers
-    /// together as "S4 E1 · 22m".
-    func testPairsTheNumbersWithACommaSoTheyReadAsOneDesignation() {
-        XCTAssertEqual(episode(season: 4, number: 1).seasonEpisodeLabel, "S4, E1")
-        XCTAssertEqual(episode(season: 4, number: 1).subtitle, "S4 · E1", "subtitle keeps its dotted form")
+    /// Season and episode numbers share the app-wide dotted designation, and
+    /// `subtitle` delegates to the same owner.
+    func testSeasonEpisodeLabelUsesTheSharedDottedDesignation() {
+        XCTAssertEqual(episode(season: 4, number: 1).seasonEpisodeLabel, "S4 · E1")
+        XCTAssertEqual(episode(season: 4, number: 1).subtitle, "S4 · E1")
+        XCTAssertEqual(MediaItem.seasonEpisodeLabel(season: 4, episode: 1), "S4 · E1")
+        XCTAssertNil(MediaItem.seasonEpisodeLabel(season: nil, episode: 1))
     }
 
     /// A half-built "S4" says nothing useful, so both numbers are required.

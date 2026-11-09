@@ -2388,7 +2388,7 @@ public struct JellyfinProvider: LibraryItemBatchProviding, ServerRatingsProvidin
         // already told us the runtime even when it omits `RunTimeTicks`. Recover
         // it rather than dropping it: the card draws its progress bar from the
         // percentage alone, so without this it shows a bar it cannot label — which
-        // is how a Continue Watching card ended up reading "S1, E2" with no
+        // is how a Continue Watching card ended up reading "S1 · E2" with no
         // duration beside a bar showing real progress.
         //
         // Containers are untouched by design. A series' percentage is a count of

@@ -813,7 +813,7 @@ struct PlayerControls: View {
 
     // MARK: Title (episode line above the series title, bottom-left)
 
-    /// The episode line ("S1, E2 • Episode Title") sits *above* the prominent
+    /// The episode line ("S1 · E2 • Episode Title") sits *above* the prominent
     /// series/movie title, Apple-TV style. The whole block lives at the bottom
     /// just above the scrub bar and fades out fast while scrubbing so the scrub
     /// surface stays uncluttered (the times stay).

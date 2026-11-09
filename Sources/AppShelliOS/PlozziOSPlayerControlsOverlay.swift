@@ -787,7 +787,7 @@ struct PlozziOSPlayerTransport<PlaybackControls: View>: View {
         VStack(spacing: 0) {
             HStack(alignment: .bottom, spacing: 16) {
                 // Episode line ABOVE the title, matching `titleBlock` on tvOS:
-                // "S1, E2 · Episode Title" reads as a qualifier of the series
+                // "S1 · E2 · Episode Title" reads as a qualifier of the series
                 // name, so it belongs above the thing it qualifies. This had the
                 // two the other way round.
                 VStack(alignment: .leading, spacing: 1) {

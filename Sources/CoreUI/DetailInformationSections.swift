@@ -400,11 +400,8 @@ public struct DetailInformationSections: View {
 
     /// `S1 · E1` for an episode, `nil` for anything else.
     private var seasonEpisodeLocator: String? {
-        guard item.kind == .episode,
-              let season = item.seasonNumber,
-              let episode = item.episodeNumber
-        else { return nil }
-        return "S\(season) · E\(episode)"
+        guard item.kind == .episode else { return nil }
+        return item.seasonEpisodeLabel
     }
 
     @ViewBuilder

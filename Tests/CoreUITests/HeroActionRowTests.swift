@@ -80,7 +80,7 @@ final class HeroActionRowTests: XCTestCase {
             title: "Start watching this season",
             progress: nil,
             remainingText: nil,
-            seasonEpisodeText: "S20, E100",
+            seasonEpisodeText: "S20 · E100",
             onLight: false,
             wrapsText: true
         )

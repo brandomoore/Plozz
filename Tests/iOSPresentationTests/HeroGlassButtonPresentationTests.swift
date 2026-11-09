@@ -156,7 +156,7 @@ final class HeroGlassButtonPresentationTests: XCTestCase {
         Button {} label: {
             PlayResumeButtonLabel(
                 title: "Resume", progress: 0.4, remainingText: "43m",
-                seasonEpisodeText: "S20, E100", onLight: true,
+                seasonEpisodeText: "S20 · E100", onLight: true,
                 spacing: 10, capsuleWidth: 60, wrapsText: wraps
             )
         }

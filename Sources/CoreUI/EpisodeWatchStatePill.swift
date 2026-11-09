@@ -33,7 +33,7 @@ public struct EpisodeWatchStatePill: View {
 
     /// - Parameters:
     ///   - detailText: a short qualifier shown immediately before the duration
-    ///     (e.g. `S4 E1`), joined with `·`. Continue Watching uses it so a card
+    ///     (e.g. `S4 · E1`), joined with `·`. Continue Watching uses it so a card
     ///     whose artwork is the *show* still says which episode you are on.
     ///   - showsPlayGlyphWhenIdle: draws the play glyph on the not-started form
     ///     too. An unstarted episode has no progress to draw, so the bar is
@@ -191,7 +191,7 @@ public struct EpisodeWatchStatePill: View {
         }
     }
 
-    /// `detailText` and a duration as one dotted run — "S4 E1 · 22m" — dropping
+    /// `detailText` and a duration as one dotted run — "S4 · E1 · 22m" — dropping
     /// either side when it is absent.
     private func joined(_ duration: String?) -> String? {  // l10n:content — joins a hand-built S/E designation with a formatted duration
         let parts = [detailText, duration].compactMap { $0 }.filter { !$0.isEmpty }
@@ -274,7 +274,7 @@ public struct ResumeChipOverlay: View {
     ///   - showsMenu: draws the visible "…" actions menu. A press-and-hold menu is
     ///     discoverable on tvOS (cards focus before they're chosen) but hidden on a
     ///     touch card, so touch surfaces opt in.
-    ///   - detailText: a short qualifier shown before the duration (e.g. `S4 E1`).
+    ///   - detailText: a short qualifier shown before the duration (e.g. `S4 · E1`).
     ///   - showsPlayGlyphWhenIdle: give the not-started form a play glyph and no
     ///     progress bar.
     ///   - bottomScrimStart: where the legibility scrim starts darkening, as a
@@ -363,8 +363,8 @@ public struct ResumeChipOverlay: View {
                             // The card grows with Dynamic Type to keep this label
                             // whole (see `PlozzMetrics.continueWatchingWidth`),
                             // but that growth is capped so a card can't outgrow a
-                            // phone. Past the cap this is what keeps "S1, E1 ·
-                            // 43m" readable instead of "S1, E1 · 4…": a smaller
+                            // phone. Past the cap this is what keeps "S1 · E1 ·
+                            // 43m" readable instead of "S1 · E1 · 4…": a smaller
                             // label still says which episode, a truncated one
                             // does not.
                             .minimumScaleFactor(0.6)

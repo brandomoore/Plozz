@@ -72,7 +72,7 @@ public enum PlozzTheme {
         /// is the thing you actually see: the card's shape falls out of it (see
         /// ``ContinueWatchingCardShape/aspectRatio``). The card is taller than its
         /// 16:9 art so the chrome along the bottom — play glyph, progress bar,
-        /// "S1, E12 · 17m" — sits in a band of its own rather than on top of the
+        /// "S1 · E12 · 17m" — sits in a band of its own rather than on top of the
         /// subject, and this says how deep that band is.
         ///
         /// Kept modest. Height is what a rail spends, and past a point the
