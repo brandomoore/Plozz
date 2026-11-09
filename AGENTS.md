@@ -32,6 +32,39 @@ configuration and credentials out of committed guidance.
   reduced-effects fallbacks. Finalize UI behavior and source copy with the
   maintainer before starting translation work.
 
+## Where code goes
+
+- Shared behavior belongs in `CoreModels`, the relevant `Feature*Core`, or
+  `AppRuntime`. Keep app shells thin.
+- Views live in `Feature*`; view models, coordinators, and policies live in
+  `Feature*Core`.
+- One primary model per new file. Tightly related value types that form a single
+  vocabulary may share it; do not scatter one concept across many files.
+- Tests mirror the module. Shared fixtures and harnesses live in
+  `Tests/TestSupport*`.
+- Follow the [Swift/SwiftUI guidelines](docs/swiftui-guidelines.md) and the
+  [state-management scaffold](docs/state-management.md).
+- Do not add ad-hoc foreground/background refresh decisions to view bodies; use
+  the shared coordinator and platform profile.
+
+## Swift/SwiftUI norms
+
+- Use `@Observable` with `@MainActor` for new shared UI state. Use `@State` for
+  ownership and `@Bindable`/`@Environment` for passing.
+- Do not add new `ObservableObject`, `@Published`, `@StateObject`,
+  `@ObservedObject`, or `@EnvironmentObject`.
+- Prefer modern Swift concurrency and Foundation APIs; do not add GCD or legacy
+  user-facing formatters.
+- Use the shared theme and metrics. Do not add hard-coded font sizes, padding, or
+  stack spacing without a design reason.
+- Use the state/lifecycle coordinator instead of view-local refresh logic.
+- Tests use named constants or shared fixtures. The owner of a formatted value
+  owns the literal assertion; unrelated tests reference the owner.
+- Comments explain why and invariants. Do not duplicate current formatted output
+  in comments or tests; reference the owning symbol instead.
+- Keep PRs focused. A shared format/helper change should touch the owner and call
+  sites, not unrelated comments.
+
 ## Build and verify
 
 Use `tools/generate-project.sh`, not bare XcodeGen. `project.yml` and
