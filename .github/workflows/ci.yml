@@ -62,8 +62,12 @@ jobs:
         run: python3 -m unittest discover -s tools/tests -p 'test_unsigned_ipa.py'
 
       - name: Fastlane pipeline regression tests
-        if: github.repository == 'brandomoore/Plozz'
-        run: python3 -m unittest discover -s tools/tests -p 'test_fastlane_pipeline.py'
+        run: |
+          if [ "$GITHUB_REPOSITORY" != "brandomoore/Plozz" ]; then
+            echo "Skipping canonical release-tooling tests in a fork."
+            exit 0
+          fi
+          python3 -m unittest discover -s tools/tests -p 'test_fastlane_pipeline.py'
 
       - name: CI simulator regression tests
         run: python3 -m unittest discover -s tools/tests -p 'test_ci_simulator.py'
