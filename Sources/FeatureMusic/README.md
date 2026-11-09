@@ -95,6 +95,11 @@ Shuffle actions keep the existing provider/account-scoped playback path.
 `iOS/MobileMusicDetail.swift` caps content width at 1,000 points and stacks the
 hero/actions at accessibility text sizes. Page headings scroll with content;
 Plozz's native navigation bar and back gesture remain in place.
+As in Mozz, compact heroes extend through the top safe area; wide framed heroes
+fade from the deep page color into the artwork color. Only foreground content
+clears the native navigation inset, avoiding a separate dark navigation band.
+Native back controls remain, without an additional navigation-bar background or
+iOS 26 top-edge scrim over the hero.
 
 The detail backdrop uses the same policy-resolved, cached bitmap as its hero,
 with a dark two-tone palette that keeps text legible. These immersive pages use

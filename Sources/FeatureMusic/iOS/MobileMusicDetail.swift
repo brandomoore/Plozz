@@ -193,9 +193,9 @@ private struct MobileMusicDetailScaffold<Actions: View, Content: View>: View {
             ScrollView {
                 VStack(spacing: 0) {
                     if isArtist && !wide && !isBlack && !dynamicTypeSize.isAccessibilitySize {
-                        artistHero(width: geometry.size.width)
+                        artistHero(width: geometry.size.width, topInset: geometry.safeAreaInsets.top)
                     } else {
-                        framedHero(width: geometry.size.width, wide: wide)
+                        framedHero(width: geometry.size.width, wide: wide, topInset: geometry.safeAreaInsets.top)
                     }
                     content()
                         .padding(.horizontal, wide ? 32 : 20)
@@ -211,13 +211,16 @@ private struct MobileMusicDetailScaffold<Actions: View, Content: View>: View {
                 }
             }
             .coordinateSpace(name: "musicDetailScroll")
+            .modifier(MusicDetailScrollEdge())
+            // The hero paints under native chrome; its foreground clears the top inset.
+            .ignoresSafeArea(.container, edges: .top)
             .background(deepColor.ignoresSafeArea())
         }
         .environment(\.colorScheme, .dark)
         .environment(\.themePalette, isBlack ? .pureBlack : .dark)
         .tint(.musicPlayerAccent)
         .toolbarColorScheme(.dark, for: .navigationBar)
-        .toolbarBackground(heroColor, for: .navigationBar)
+        .toolbarBackground(.hidden, for: .navigationBar)
         .navigationBarTitleDisplayMode(.inline)
         .task(id: PaletteRequest(resolution: resolvedArtwork, identity: artworkID, policy: artworkPolicy.forArea(.music).identity, isBlack: isBlack)) {
             colors = .neutral
@@ -246,7 +249,7 @@ private struct MobileMusicDetailScaffold<Actions: View, Content: View>: View {
         .accessibilityHidden(true)
     }
 
-    private func framedHero(width: CGFloat, wide: Bool) -> some View {
+    private func framedHero(width: CGFloat, wide: Bool, topInset: CGFloat) -> some View {
         let edge = wide ? min(width * 0.32, 300) : min(240, max(0, width - 80))
         let layout = wide
             ? AnyLayout(HStackLayout(alignment: .bottom, spacing: 28))
@@ -258,17 +261,20 @@ private struct MobileMusicDetailScaffold<Actions: View, Content: View>: View {
             heading(centered: !wide)
         }
         .padding(.horizontal, wide ? 32 : 20)
-        .padding(.top, 20)
+        .padding(.top, topInset + 20)
         .padding(.bottom, 8)
         .frame(maxWidth: 1_000)
         .frame(maxWidth: .infinity)
-        .background(heroColor)
+        .background {
+            LinearGradient(colors: [wide ? deepColor : heroColor, heroColor],
+                           startPoint: .top, endPoint: .bottom)
+        }
     }
 
-    private func artistHero(width: CGFloat) -> some View {
+    private func artistHero(width: CGFloat, topInset: CGFloat) -> some View {
         heading(centered: false)
             .padding(24)
-            .frame(maxWidth: .infinity, minHeight: 460, alignment: .bottomLeading)
+            .frame(maxWidth: .infinity, minHeight: 460 + topInset, alignment: .bottomLeading)
             .background {
                 GeometryReader { geometry in
                     let pull = reduceMotion ? 0 : max(0, geometry.frame(in: .named("musicDetailScroll")).minY)
@@ -316,6 +322,16 @@ private struct MobileMusicDetailScaffold<Actions: View, Content: View>: View {
         let identity: String
         let policy: String
         let isBlack: Bool
+    }
+}
+
+private struct MusicDetailScrollEdge: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(iOS 26.0, *) {
+            content.scrollEdgeEffectHidden(true, for: .top)
+        } else {
+            content
+        }
     }
 }
 
