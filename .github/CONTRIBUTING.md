@@ -163,22 +163,15 @@ products, unsigned IPA, and a checksum/provenance receipt under
 `.build/unsigned-ipa/<platform>/run-*`. It never installs, signs, uploads, or
 creates a release. Builds in the same checkout run serially.
 
-For hosted builds, enable Actions in your fork and manually run **Unsigned IPA**
-(the workflow must be present on the fork's default branch to appear in Actions).
-Select iOS, tvOS, or both, and an available macOS runner label with Xcode 27 or
-later selected. The default `xcode-27` matches this repository's CI; it is not
-guaranteed to be available to every fork. Configure a suitable runner or use the
-local commands if your account has no compatible hosted image. No signing or
-App Store Connect secrets are required. Download the IPA and receipt from the
-completed run's artifacts (retained for seven days).
-
-To publish the unsigned IPAs as release assets, enter an existing release tag in
-the **Release tag** field. The IPA is attached to that release in the repository
-running the workflow; the receipt remains in the run artifacts. Leave the field
-blank to keep the current artifacts-only behavior. The release job needs
-`contents: write`, so enable read/write workflow permissions in a fork before
-using it. A tag that does not already have a release fails the upload instead of
-creating one.
+When a GitHub release is published, the **Unsigned IPA** workflow builds the iOS
+(iPhone and iPad) and tvOS apps in parallel and attaches both IPAs to that
+release automatically. The workflow must be present on the repository's default
+branch, and the release job requests `contents: write`; enable read/write workflow
+permissions if the repository restricts the default token. It uses the
+repository's `xcode-27` runner and needs no signing or App Store Connect secrets.
+The checksum/provenance receipts remain in the run artifacts (retained for seven
+days), not in the release assets. A fork can test the workflow by publishing a
+release in the fork; its IPAs attach to that fork's release.
 
 **An unsigned IPA is not directly installable.** Sign the app, embedded frameworks,
 and tvOS Top Shelf extension with your own compatible identity/provisioning before

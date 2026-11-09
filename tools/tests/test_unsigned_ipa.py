@@ -176,20 +176,24 @@ class UnsignedIPATests(unittest.TestCase):
             app, "ios", self.fake_run(link=link, archs="arm64 arm64e")
         )["binaries"]), 3)
 
-    def test_workflow_is_manual_and_uploads_only_exact_outputs(self):
+    def test_workflow_runs_on_published_releases_and_uploads_only_exact_outputs(self):
         workflow = (ROOT / ".github/workflows/unsigned-ipa.yml").read_text()
-        self.assertIn("workflow_dispatch:", workflow)
+        self.assertIn("release:\n    types: [published]", workflow)
+        self.assertNotIn("workflow_dispatch:", workflow)
         self.assertNotIn("pull_request:", workflow)
         self.assertNotIn("push:", workflow)
+        self.assertNotIn("inputs.", workflow)
+        self.assertNotIn("release_tag:", workflow)
         self.assertNotIn("secrets.", workflow)
+        self.assertIn("runs-on: xcode-27", workflow)
+        self.assertIn("platform: [ios, tvos]", workflow)
         self.assertIn("persist-credentials: false", workflow)
         self.assertIn("${{ steps.build.outputs.ipa_path }}", workflow)
         self.assertIn("${{ steps.build.outputs.receipt_path }}", workflow)
 
-    def test_workflow_attaches_unsigned_ipas_only_when_a_release_is_named(self):
+    def test_workflow_always_attaches_unsigned_ipas_to_the_published_release(self):
         workflow = (ROOT / ".github/workflows/unsigned-ipa.yml").read_text()
-        self.assertIn("release_tag:", workflow)
-        self.assertIn("if: ${{ inputs.release_tag != '' }}", workflow)
+        self.assertIn("RELEASE_TAG: ${{ github.event.release.tag_name }}", workflow)
         self.assertIn("permissions:\n      contents: write", workflow)
         self.assertIn("gh release upload \"$RELEASE_TAG\" \"${ipas[@]}\" --clobber", workflow)
         self.assertIn("find dist -type f -name '*.ipa'", workflow)

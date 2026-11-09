@@ -1,23 +1,8 @@
 name: Unsigned IPA
 
 on:
-  workflow_dispatch:
-    inputs:
-      platform:
-        description: Device platform
-        type: choice
-        options: [both, ios, tvos]
-        default: both
-      runner:
-        description: Available macOS runner label with Xcode 27 or later
-        type: string
-        default: xcode-27
-        required: true
-      release_tag:
-        description: Existing release tag to attach the unsigned IPA to (blank keeps artifacts only)
-        type: string
-        default: ""
-        required: false
+  release:
+    types: [published]
 
 permissions:
   contents: read
@@ -25,12 +10,12 @@ permissions:
 jobs:
   build:
     name: Unsigned ${{ matrix.platform }}
-    runs-on: ${{ inputs.runner }}
+    runs-on: xcode-27
     timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
-        platform: ${{ inputs.platform == 'both' && fromJSON('["ios","tvos"]') || fromJSON(format('["{0}"]', inputs.platform)) }}
+        platform: [ios, tvos]
     steps:
       - uses: actions/checkout@v5
         with:
@@ -56,14 +41,13 @@ jobs:
   release:
     name: Attach unsigned IPAs to release
     needs: build
-    if: ${{ inputs.release_tag != '' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
       contents: write
     env:
       GH_TOKEN: ${{ github.token }}
-      RELEASE_TAG: ${{ inputs.release_tag }}
+      RELEASE_TAG: ${{ github.event.release.tag_name }}
     steps:
       - name: Download unsigned IPAs
         uses: actions/download-artifact@v4
