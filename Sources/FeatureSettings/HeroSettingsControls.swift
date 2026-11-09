@@ -243,6 +243,7 @@ public struct TrailersAndMusicSettingsView: View {
                 Text($0.displayName).tag($0)
             }
         }
+        .settingsSearchAnchor("trailer-sources")
         #if os(tvOS)
         return SettingsMenuRow(title: "Trailers", value: Text(background.settings.trailerSources.displayName)) {
             picker.pickerStyle(.inline)
@@ -263,6 +264,7 @@ public struct TrailersAndMusicSettingsView: View {
                 Text($0.displayName).tag($0)
             }
         }
+        .settingsSearchAnchor("detail-background")
         #if os(tvOS)
         return SettingsMenuRow(title: "Detail background", value: Text(background.settings.effectiveDetailMode.displayName)) {
             picker.pickerStyle(.inline)
