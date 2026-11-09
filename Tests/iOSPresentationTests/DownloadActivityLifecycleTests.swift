@@ -233,7 +233,7 @@ final class DownloadActivityLifecycleTests: XCTestCase {
         let registry = DownloadedMediaRegistry(store: InMemoryDownloadedMediaStore())
         let engine = PlozziOSBackgroundHTTPDownloadEngine(
             profileID: profile, registry: registry,
-            resolveURL: { _, _, _ in
+            resolveURL: { _, _, _, _ in
                 .init(url: url, expectedDuration: nil, cleanupURL: nil, expectedBytes: Int64(bytes.count))
             }
         )
@@ -457,7 +457,7 @@ final class DownloadActivityLifecycleTests: XCTestCase {
             providerKind: { _ in .emby }, preferredAudioLanguages: { _ in [] },
             activityScheduler: scheduler,
             notificationClient: DownloadNotificationClientStub(authorization: .denied),
-            managedURLResolver: { source, _, _ in
+            managedURLResolver: { source, _, _, _ in
                 try await videoGate.wait()
                 if source.itemID == "next" { try await Task.sleep(for: .seconds(30)) }
                 return .init(url: url, expectedDuration: nil, cleanupURL: nil, expectedBytes: Int64(bytes.count))

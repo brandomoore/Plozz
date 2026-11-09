@@ -56,7 +56,7 @@ struct PlozziOSSettingsView: View {
                         onSwitchTo: onSwitchTo
                     )
                     .toolbar {
-                        ToolbarItem(placement: .topBarTrailing) {
+                        ToolbarItem(placement: .cancellationAction) {
                             Button("Close", systemImage: "xmark", action: onClose)
                                 .labelStyle(.iconOnly)
                         }
@@ -690,7 +690,7 @@ private struct PlozziOSSettingsSplitView: View {
             }
             .toolbar(removing: .sidebarToggle)
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItem(placement: .cancellationAction) {
                     Button("Close", systemImage: "xmark", action: onClose)
                         .labelStyle(.iconOnly)
                 }

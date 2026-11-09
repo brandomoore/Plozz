@@ -2,6 +2,75 @@ import XCTest
 
 @MainActor
 final class ProductionHomeNavigationTests: XCTestCase {
+    func testSelectingHomeAgainReturnsToTopAcrossNavigationStylesAndLayouts() throws {
+        continueAfterFailure = false
+        for navigation in ["--native-sidebar-home", "--pinned-home", "--top-bar-home"] {
+            for layout in [[], ["--hero-showcase-home"], ["--immersive-home"], ["--hero-disabled-home"]] {
+                let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.FocusHost")
+                app.launchArguments = ["--production-home-fixture", navigation] + layout
+                app.launch()
+                defer { app.terminate() }
+                let first = app.buttons[layout.contains("--immersive-home") || layout.contains("--hero-disabled-home")
+                    ? "Fixture movie 0" : "home-hero-action-row"]
+                func waitForFocus(_ element: XCUIElement) {
+                    XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(
+                        predicate: NSPredicate { _, _ in element.exists && element.hasFocus }, object: nil
+                    )], timeout: 15), .completed, "\(navigation) \(layout)\n\(app.debugDescription)")
+                }
+                func settledY(_ element: XCUIElement) -> CGFloat {
+                    var previous: CGFloat?
+                    var changed = Date()
+                    XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(
+                        predicate: NSPredicate { _, _ in
+                            guard element.exists else { return false }
+                            let y = element.frame.minY
+                            if previous == nil || abs(y - (previous ?? y)) > 0.5 {
+                                changed = Date()
+                                previous = y
+                            }
+                            return Date().timeIntervalSince(changed) > 0.3
+                        }, object: nil
+                    )], timeout: 5), .completed)
+                    return element.frame.minY
+                }
+                waitForFocus(first)
+                let originalY = settledY(first)
+                for _ in 0..<4 { XCUIRemote.shared.press(.down) }
+                XCTAssertFalse(first.exists && first.hasFocus, "The regression must start below the first Home item.")
+                let home = navigation == "--native-sidebar-home"
+                    ? app.cells.containing(.button, identifier: "Home").firstMatch
+                    : app.buttons[navigation == "--top-bar-home" ? "top-navigation-home" : "Home"]
+                let openNavigation: XCUIRemote.Button = navigation == "--native-sidebar-home" ? .left : .menu
+                if navigation == "--pinned-home" {
+                    let focused = app.buttons.matching(NSPredicate(format: "hasFocus == true")).firstMatch
+                    var label = focused.label
+                    var position = settledY(focused)
+                    for _ in 0..<10 {
+                        if home.exists && home.hasFocus { break }
+                        label = focused.label
+                        position = settledY(focused)
+                        XCUIRemote.shared.press(openNavigation)
+                    }
+                    waitForFocus(home)
+                    XCUIRemote.shared.press(.right)
+                    let returned = app.buttons[label]
+                    waitForFocus(returned)
+                    XCTAssertEqual(settledY(returned), position, accuracy: 3)
+                }
+                for _ in 0..<10 {
+                    if home.exists && home.hasFocus { break }
+                    XCUIRemote.shared.press(openNavigation)
+                }
+                waitForFocus(home)
+                XCUIRemote.shared.press(.select)
+                waitForFocus(first)
+                XCTAssertEqual(settledY(first), originalY, accuracy: 3,
+                               "Home must return to its original top position: \(navigation) \(layout)")
+                captureNavigation("Home reselection \(navigation) \(layout)", app: app)
+            }
+        }
+    }
+
     func testColdLaunchEntersFirstItemAcrossNavigationStylesAndHomeLayouts() throws {
         #if targetEnvironment(simulator)
         continueAfterFailure = false

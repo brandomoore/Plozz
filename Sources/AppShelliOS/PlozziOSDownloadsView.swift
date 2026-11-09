@@ -220,6 +220,9 @@ struct PlozziOSDownloadsView: View {
         let record = movie.record
         DownloadCompactCard(
             menu: {
+                PlozziOSDownloadNavigationAction(
+                    records: [record], model: model, appModel: appModel
+                ) { detailNav = PlozziOSDownloadDetailNav(item: $0) }
                 transferMenuActions(for: record)
                 Button("Remove", systemImage: "trash", role: .destructive) {
                     Task { await model.remove(record) }
@@ -248,6 +251,9 @@ struct PlozziOSDownloadsView: View {
     private func showRow(_ show: PlozziOSDownloadedShow) -> some View {
         DownloadCompactCard(
             menu: {
+                PlozziOSDownloadNavigationAction(
+                    records: show.records, model: model, appModel: appModel
+                ) { detailNav = PlozziOSDownloadDetailNav(item: $0) }
                 if show.records.contains(where: { $0.status.isActive }) {
                     Button("Pause Show", systemImage: "pause.fill") {
                         Task { await model.pause(show.records) }
@@ -295,6 +301,43 @@ struct PlozziOSDownloadsView: View {
             }
         case .completed:
             PlozziOSDownloadSubtitleAction(record: record, model: model)
+        }
+    }
+}
+
+struct PlozziOSDownloadNavigationAction: View {
+    let records: [DownloadedMediaRecord]
+    let model: PlozziOSDownloadsModel
+    let appModel: PlozziOSAppModel
+    let open: (MediaItem) -> Void
+
+    var body: some View {
+        if let navigation = records.lazy.compactMap({ record in
+            model.detailItem(for: record).flatMap(Self.navigation(for:))
+        }).first(where: { appModel.provider(for: $0.item) != nil }) {
+            Button {
+                open(navigation.item)
+            } label: {
+                Label {
+                    Text(navigation.action.title)
+                } icon: {
+                    Image(systemName: navigation.action.systemImage)
+                }
+            }
+        }
+    }
+
+    static func navigation(for item: MediaItem) -> (action: MediaItemAction, item: MediaItem)? {
+        switch item.kind {
+        case .movie:
+            return (.goToMovie, item)
+        case .series:
+            return (.goToSeason, item)
+        case .episode, .season:
+            guard let target = item.navigationTarget(for: .goToSeason) else { return nil }
+            return (.goToSeason, target)
+        default:
+            return nil
         }
     }
 }
@@ -1095,6 +1138,16 @@ struct PlozziOSDownloadsBulkDeletion: Identifiable {
     /// transfers instead of trusting `records` — so a download that completes
     /// while the dialog is on screen is not deleted (honoring "completed kept").
     var reevaluatesActiveAtConfirm = false
+
+    static func selection(_ records: [DownloadedMediaRecord]) -> Self {
+        Self(
+            id: "selection",
+            title: "Remove Downloads?",
+            message: "This removes the selected downloads from this device.",
+            confirmLabel: "Remove \(records.count) Downloads",
+            records: records
+        )
+    }
 
     static func show(_ show: PlozziOSDownloadedShow) -> Self {
         Self(

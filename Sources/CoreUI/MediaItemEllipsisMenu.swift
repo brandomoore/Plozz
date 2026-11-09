@@ -106,6 +106,13 @@ public struct MediaArtworkChromeScrim: View, Equatable {
     private let hasBottomChrome: Bool
     private let bottomStart: CGFloat
     private let bottomDepth: CGFloat
+    private var edgeOutset: CGFloat = 0
+
+    func extendingEdges(by outset: CGFloat) -> Self {
+        var result = self
+        result.edgeOutset = max(0, outset)
+        return result
+    }
 
     /// - Parameter bottomStart: where the bottom ramp begins, as a fraction of
     ///   the artwork's height. The default half-way point suits a card whose
@@ -128,8 +135,22 @@ public struct MediaArtworkChromeScrim: View, Equatable {
     }
 
     public var body: some View {
-        LinearGradient(stops: stops, startPoint: .top, endPoint: .bottom)
-            .allowsHitTesting(false)
+        Group {
+            if edgeOutset > 0 {
+                GeometryReader { geometry in
+                    let height = geometry.size.height + 2 * edgeOutset
+                    // Extend edge colors without shifting the fade inside the artwork.
+                    LinearGradient(stops: stops.map {
+                        .init(color: $0.color, location: ($0.location * geometry.size.height + edgeOutset) / height)
+                    }, startPoint: .top, endPoint: .bottom)
+                    .frame(width: geometry.size.width + 2 * edgeOutset, height: height)
+                    .frame(width: geometry.size.width, height: geometry.size.height)
+                }
+            } else {
+                LinearGradient(stops: stops, startPoint: .top, endPoint: .bottom)
+            }
+        }
+        .allowsHitTesting(false)
     }
 
     /// The bottom stop has to be dark enough that chrome sitting on it reads the

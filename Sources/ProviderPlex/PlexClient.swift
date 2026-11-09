@@ -15,7 +15,8 @@ public enum PlexOfflineTranscodeURLBuilder {
         maximumHeight: Int,
         audioStreamID: Int?,
         textSubtitleStreamID: Int?,
-        includesTextSubtitle: Bool
+        includesTextSubtitle: Bool,
+        includesAllAudioTracks: Bool = false
     ) -> URL? {
         guard var components = URLComponents(
             url: hlsURL,
@@ -75,9 +76,13 @@ public enum PlexOfflineTranscodeURLBuilder {
         setQueryItem("X-Plex-Client-Profile-Name", "Generic")
         setQueryItem(
             "X-Plex-Client-Profile-Extra",
-            "add-transcode-target(type=videoProfile&context=static&protocol=http&container=mp4&videoCodec=h264&audioCodec=aac&subtitleCodec=mov_text&replace=true)"
+            clientProfile(context: "static", includesAllAudioTracks: includesAllAudioTracks)
         )
-        if let audioStreamID {
+        if includesAllAudioTracks {
+            items.removeAll {
+                $0.name.caseInsensitiveCompare("audioStreamID") == .orderedSame
+            }
+        } else if let audioStreamID {
             setQueryItem("audioStreamID", String(audioStreamID))
         }
         if includesTextSubtitle, let textSubtitleStreamID {
@@ -92,6 +97,17 @@ public enum PlexOfflineTranscodeURLBuilder {
         }
         components.queryItems = items
         return components.url
+    }
+
+    public static func downloadQueueProfile(includesAllAudioTracks: Bool) -> String {
+        clientProfile(context: "all", includesAllAudioTracks: includesAllAudioTracks)
+    }
+
+    private static func clientProfile(context: String, includesAllAudioTracks: Bool) -> String {
+        let target = "add-transcode-target(type=videoProfile&context=\(context)&protocol=http&container=mp4&videoCodec=h264&audioCodec=aac&subtitleCodec=mov_text&replace=true)"
+        return includesAllAudioTracks
+            ? target + "+add-settings(DirectPlayStreamSelection=true)"
+            : target
     }
 
     public static func makeDownloadQueueURL(from progressiveURL: URL) -> URL? {

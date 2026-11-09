@@ -31,6 +31,8 @@ struct NativeSidebarNavigation<Content: View>: View {
                 )
             }
         }
+        // The native TabView owns overscan insets; its focus host must fill the window.
+        .ignoresSafeArea()
         .onAppear {
             guard !hasStarted else { return }
             hasStarted = true
@@ -43,10 +45,11 @@ struct NativeSidebarNavigation<Content: View>: View {
             handoff.cancel()
             if allowed { handoff.begin(selection) }
         }
-        .onChange(of: handoff.request) { previous, current in
-            if startupFocusAllowed, current == nil, previous?.destination == startupDestination,
-               startupDestination == selection {
-                contentRequest = previous?.generation
+        .onChange(of: handoff.completedRequest) { _, completed in
+            guard startupDestination == nil || startupFocusAllowed else { return }
+            if let completed, completed.destination == selection, completed.focusTarget == .content,
+               startupDestination == selection || selection == .home {
+                contentRequest = completed.generation
             }
         }
         .onChange(of: selection) { _, _ in
@@ -82,5 +85,6 @@ struct NativeSidebarFocusDestination<Content: View>: View {
                 )
             }
     }
+
 }
 #endif

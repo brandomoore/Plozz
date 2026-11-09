@@ -7,6 +7,42 @@ import CoreModels
 final class SongRecognitionTests: XCTestCase {
     private let start: TimeInterval = 1_000
 
+    func testMusicServiceSearchesPreserveTitleAndArtistWithoutInventingTrackIDs() throws {
+        let song = SongMatch(title: "A/B? & #夏", artist: "Artist + guest", artworkURL: nil,
+                             appleMusicURL: URL(string: "https://music.apple.com/album/example?i=123"))
+        let links = SongServiceLink.links(for: song)
+        XCTAssertEqual(links.map(\.service), [.spotify, .appleMusic, .youtubeMusic, .amazonMusic, .deezer, .tidal])
+        XCTAssertEqual(links.first { $0.service == .appleMusic }?.url, song.appleMusicURL)
+        let paths: [(SongServiceLink.Service, String)] = [
+            (.spotify, "open.spotify.com"), (.amazonMusic, "music.amazon.com"),
+            (.deezer, "www.deezer.com"), (.tidal, "listen.tidal.com")
+        ]
+        for (service, host) in paths {
+            let url = try XCTUnwrap(links.first { $0.service == service }?.url)
+            XCTAssertEqual(url.host, host)
+            XCTAssertEqual(url.deletingLastPathComponent().path, "/search")
+            XCTAssertEqual(url.lastPathComponent, "A/B? & #夏 Artist + guest")
+            XCTAssertNil(url.query)
+        }
+        let youtube = try XCTUnwrap(URLComponents(
+            url: XCTUnwrap(links.first { $0.service == .youtubeMusic }?.url), resolvingAgainstBaseURL: false
+        ))
+        XCTAssertEqual(youtube.host, "music.youtube.com")
+        XCTAssertEqual(youtube.path, "/search")
+        XCTAssertEqual(youtube.queryItems, [URLQueryItem(name: "q", value: "A/B? & #夏 Artist + guest")])
+        let encodedSearch = try XCTUnwrap(youtube.percentEncodedQueryItems?.first?.value)
+        XCTAssertEqual(encodedSearch.replacingOccurrences(of: "+", with: " ").removingPercentEncoding,
+                       "A/B? & #夏 Artist + guest", "Form-style query decoding must preserve a literal plus.")
+        XCTAssertTrue(links.allSatisfy { $0.url.scheme == "https" && $0.url.fragment == nil })
+        let withoutApple = SongMatch(title: "Song", artist: nil, artworkURL: nil, appleMusicURL: nil)
+        let searches = SongServiceLink.links(for: withoutApple)
+        XCTAssertEqual(searches.map(\.service), [.spotify, .youtubeMusic, .amazonMusic, .deezer, .tidal])
+        XCTAssertTrue(searches.filter { $0.service != .youtubeMusic }.allSatisfy { $0.url.lastPathComponent == "Song" })
+        let titleOnly = try XCTUnwrap(searches.first { $0.service == .youtubeMusic }?.url)
+        XCTAssertEqual(URLComponents(url: titleOnly, resolvingAgainstBaseURL: false)?.queryItems,
+                       [URLQueryItem(name: "q", value: "Song")])
+    }
+
     func testOfflineModeDoesNotStartARecognitionSession() async {
         let previous = OfflineMode.shared.isEnabled
         OfflineMode.shared.setEnabled(true)

@@ -23,6 +23,206 @@ final class DownloadsInteractionTests: XCTestCase {
         try await super.tearDown()
     }
 
+    func testDownloadingShowLongPressOpensShowDetails() {
+        app.terminate()
+        app.launchArguments = ["--downloads-interaction-fixture", "--download-details"]
+        app.launch()
+        let show = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Andor")).firstMatch
+        let list = app.collectionViews.firstMatch
+        XCTAssertTrue(list.waitForExistence(timeout: 10))
+        for _ in 0..<8 {
+            if show.isHittable { break }
+            list.swipeUp()
+        }
+        XCTAssertTrue(show.isHittable, app.debugDescription)
+        show.press(forDuration: 1)
+        let goToShow = app.buttons["Go to Show"]
+        XCTAssertTrue(goToShow.waitForExistence(timeout: 3), app.debugDescription)
+        goToShow.tap()
+        XCTAssertTrue(app.staticTexts["Downloaded show fixture details."].waitForExistence(timeout: 5))
+        backButton(to: "Downloads").tap()
+        let menu = app.buttons["More actions for Andor"]
+        XCTAssertTrue(menu.waitForExistence(timeout: 3))
+        menu.tap()
+        XCTAssertTrue(app.buttons["Pause Show"].waitForExistence(timeout: 3),
+                      "Navigation must not pause the active download.")
+    }
+
+    func testMovieLongPressOpensDetailsDuringAndAfterDownload() {
+        for active in [true, false] {
+            app.terminate()
+            app.launchArguments = ["--downloads-interaction-fixture", "--download-details", "--download-movie"]
+            if active { app.launchArguments.append("--download-active") }
+            app.launch()
+            let movie = app.buttons.matching(NSPredicate(
+                format: "label BEGINSWITH %@", "Downloaded Movie"
+            )).firstMatch
+            XCTAssertTrue(movie.waitForExistence(timeout: 10), app.debugDescription)
+            movie.press(forDuration: 1)
+            let goToMovie = app.buttons["Go to Movie"]
+            XCTAssertTrue(goToMovie.waitForExistence(timeout: 3), app.debugDescription)
+            goToMovie.tap()
+            XCTAssertTrue(app.staticTexts["Downloaded movie fixture details."].waitForExistence(timeout: 5))
+            backButton(to: "Downloads").tap()
+            if active { XCTAssertTrue(app.buttons["Pause All"].exists) }
+        }
+    }
+
+    func testDownloadedShowEpisodeMenusOpenShowDetailsInBothModes() {
+        app.terminate()
+        app.launchArguments = ["--downloads-interaction-fixture", "--download-details"]
+        app.launch()
+        let show = app.buttons.matching(NSPredicate(
+            format: "label BEGINSWITH %@", "Downloaded Show 12"
+        )).firstMatch
+        XCTAssertTrue(show.waitForExistence(timeout: 10), app.debugDescription)
+        show.tap()
+        XCTAssertTrue(app.buttons["Edit"].waitForExistence(timeout: 3), app.debugDescription)
+        let title = showPage("Downloaded Show 12")
+        XCTAssertTrue(title.exists)
+        XCTAssertFalse(title.frame.intersects(backButton(to: "Downloads").frame))
+        let navigationBar = app.navigationBars.firstMatch
+        if navigationBar.frame.width > navigationBar.frame.height {
+            XCTAssertGreaterThanOrEqual(title.frame.minY, navigationBar.frame.maxY)
+        }
+        app.buttons["Edit"].tap()
+        title.tap()
+        XCTAssertFalse(app.buttons["download-remove-selected"].isEnabled,
+                       "The page title must not be selectable.")
+        app.buttons["Done"].tap()
+        XCTAssertTrue(app.buttons["Edit"].waitForExistence(timeout: 3))
+        XCTAssertGreaterThanOrEqual(app.staticTexts["Season 2"].frame.minY, title.frame.maxY)
+        XCTAssertTrue(app.buttons["More actions for Episode 12"].isHittable)
+        let hierarchy = XCTAttachment(string: app.debugDescription)
+        hierarchy.name = "download-show-normal-hierarchy"
+        hierarchy.lifetime = .keepAlways
+        add(hierarchy)
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = "download-show-scrolling-title"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+        for editing in [false, true] {
+            if editing { app.buttons["Edit"].tap() }
+            app.buttons["More actions for Episode 12"].tap()
+            let goToShow = app.buttons["Go to Show"]
+            XCTAssertTrue(goToShow.waitForExistence(timeout: 3), app.debugDescription)
+            XCTAssertTrue(app.buttons["Play"].exists)
+            XCTAssertTrue(app.buttons["Remove Download"].exists)
+            goToShow.tap()
+            XCTAssertTrue(app.staticTexts["Downloaded show fixture details."].waitForExistence(timeout: 5))
+            backButton(to: "Downloaded Show 12").tap()
+            XCTAssertTrue(app.staticTexts["E12 · Episode 12"].waitForExistence(timeout: 3))
+        }
+    }
+
+    func testEditSelectsAcrossSeasonsAndConfirmsOnlySelectedDownloads() {
+        openEditableShow()
+        app.buttons["Edit"].tap()
+        let remove = app.buttons["download-remove-selected"]
+        XCTAssertTrue(remove.waitForExistence(timeout: 3))
+        XCTAssertFalse(remove.isEnabled)
+        app.staticTexts["E1 · One Year Later"].tap()
+        app.staticTexts["E3 · Episode 3"].tap()
+        XCTAssertTrue(remove.isEnabled)
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = "download-edit-multiselect"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+        remove.tap()
+        XCTAssertTrue(app.buttons["Remove 2 Downloads"].waitForExistence(timeout: 3))
+        dismissRemovalConfirmation()
+        XCTAssertTrue(app.buttons["Remove 2 Downloads"].waitForNonExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["E1 · One Year Later"].exists)
+        remove.tap()
+        app.buttons["Remove 2 Downloads"].tap()
+        XCTAssertTrue(app.staticTexts["E1 · One Year Later"].waitForNonExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts["E3 · Episode 3"].exists)
+        XCTAssertTrue(app.staticTexts["E2 · Episode 2"].exists)
+        XCTAssertFalse(remove.isEnabled)
+        app.buttons["Select All"].tap()
+        remove.tap()
+        XCTAssertTrue(app.buttons["Remove 1 Download"].waitForExistence(timeout: 3))
+        app.buttons["Remove 1 Download"].tap()
+        XCTAssertTrue(app.staticTexts["No Downloads"].waitForExistence(timeout: 5))
+    }
+
+    func testDownloadedShowEditDoneKeepsSelectionActionsTogether() {
+        openEditableShow()
+        let back = backButton(to: "Downloads")
+        XCTAssertTrue(back.isHittable, app.debugDescription)
+        let edit = app.buttons["Edit"]
+        let editFrame = edit.frame
+        let titleFrame = showPage("Andor").frame
+        let normal = XCTAttachment(screenshot: app.screenshot())
+        normal.name = "download-native-edit"
+        normal.lifetime = .keepAlways
+        add(normal)
+        edit.tap()
+        let done = app.buttons["Done"]
+        XCTAssertTrue(done.waitForExistence(timeout: 3))
+        XCTAssertTrue(done.isHittable)
+        XCTAssertEqual(done.frame.midY, editFrame.midY, accuracy: 3)
+        XCTAssertEqual(done.frame.maxX, editFrame.maxX, accuracy: 3)
+        let selectAll = app.buttons["Select All"]
+        let remove = app.buttons["download-remove-selected"]
+        XCTAssertTrue(selectAll.isHittable)
+        XCTAssertTrue(remove.exists)
+        XCTAssertEqual(selectAll.frame.midY, done.frame.midY, accuracy: 3)
+        XCTAssertEqual(remove.frame.midY, done.frame.midY, accuracy: 3)
+        XCTAssertFalse(selectAll.frame.intersects(remove.frame))
+        XCTAssertFalse(remove.frame.intersects(done.frame))
+        XCTAssertTrue(back.isHittable)
+        XCTAssertFalse(back.frame.intersects(done.frame))
+        XCTAssertEqual(showPage("Andor").frame.minY, titleFrame.minY, accuracy: 3)
+        XCTAssertGreaterThanOrEqual(titleFrame.minY, done.frame.maxY)
+        let editing = XCTAttachment(screenshot: app.screenshot())
+        editing.name = "download-native-done"
+        editing.lifetime = .keepAlways
+        add(editing)
+        done.tap()
+        XCTAssertTrue(edit.waitForExistence(timeout: 3))
+        XCTAssertTrue(back.waitForExistence(timeout: 3))
+        back.tap()
+        XCTAssertTrue(app.navigationBars["Downloads"].waitForExistence(timeout: 3))
+    }
+
+    func testEditDoneClearsSelectionAndItemRemovalKeepsOtherDownloads() {
+        openEditableShow()
+        app.buttons["Edit"].tap()
+        app.buttons["Select All"].tap()
+        app.buttons["Done"].tap()
+        XCTAssertTrue(app.buttons["Edit"].waitForExistence(timeout: 3))
+        app.buttons["Edit"].tap()
+        XCTAssertFalse(app.buttons["download-remove-selected"].isEnabled)
+        app.staticTexts["E2 · Episode 2"].tap()
+        app.buttons["More actions for Episode 2"].tap()
+        XCTAssertTrue(app.buttons["Play"].waitForExistence(timeout: 3))
+        app.buttons["Remove Download"].tap()
+        XCTAssertTrue(app.staticTexts["E2 · Episode 2"].waitForNonExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["download-remove-selected"].isEnabled)
+        XCTAssertTrue(app.staticTexts["E1 · One Year Later"].exists)
+        XCTAssertTrue(app.staticTexts["E3 · Episode 3"].exists)
+        app.buttons["Select All"].tap()
+        app.buttons["download-remove-selected"].tap()
+        XCTAssertTrue(app.buttons["Remove 2 Downloads"].waitForExistence(timeout: 3))
+    }
+
+    func testEpisodePlayMenuPresentsPlayerInBothModes() {
+        openEditableShow()
+        for editing in [false, true] {
+            if editing { app.buttons["Edit"].tap() }
+            app.buttons["More actions for Episode 2"].tap()
+            let play = app.buttons["Play"]
+            XCTAssertTrue(play.waitForExistence(timeout: 3))
+            XCTAssertTrue(play.isEnabled)
+            play.tap()
+            let close = app.buttons["Close player"]
+            XCTAssertTrue(close.waitForExistence(timeout: 10), app.debugDescription)
+            close.tap()
+            XCTAssertTrue(showPage("Andor").waitForExistence(timeout: 5))
+        }
+    }
+
     func testLibraryMenuAndShowNavigationHaveSeparateTapTargets() {
         XCTAssertTrue(app.buttons["Pause All"].waitForExistence(timeout: 10), app.debugDescription)
         XCTAssertLessThanOrEqual(app.buttons["Pause All"].frame.height, 60)
@@ -39,11 +239,15 @@ final class DownloadsInteractionTests: XCTestCase {
         menu.tap()
         XCTAssertTrue(app.buttons["Pause Show"].waitForExistence(timeout: 3))
         XCTAssertFalse(app.buttons["download-open-in"].exists, "Show menus must not export multiple files.")
-        XCTAssertFalse(app.navigationBars["Andor"].exists, "Opening the menu must not navigate.")
+        XCTAssertFalse(showPage("Andor").exists, "Opening the menu must not navigate.")
         app.buttons["Pause Show"].tap()
         XCTAssertTrue(app.navigationBars["Downloads"].exists)
+        for _ in 0..<8 {
+            if show.isHittable { break }
+            list.swipeDown()
+        }
         show.tap()
-        XCTAssertTrue(app.navigationBars["Andor"].waitForExistence(timeout: 3), app.debugDescription)
+        XCTAssertTrue(showPage("Andor").waitForExistence(timeout: 3), app.debugDescription)
         XCTAssertTrue(app.staticTexts["Season 2"].exists)
         XCTAssertTrue(app.staticTexts["E1 · One Year Later"].exists)
         backButton(to: "Downloads").tap()
@@ -64,7 +268,7 @@ final class DownloadsInteractionTests: XCTestCase {
         XCTAssertFalse(list.images["chevron.right"].exists)
         XCTAssertFalse(list.images["chevron.forward"].exists)
         row.tap()
-        XCTAssertTrue(app.navigationBars["Downloaded Show 12"].waitForExistence(timeout: 3))
+        XCTAssertTrue(showPage("Downloaded Show 12").waitForExistence(timeout: 3))
         let episode = app.buttons.matching(NSPredicate(
             format: "label BEGINSWITH %@", "E12 · Episode 12"
         )).firstMatch
@@ -84,10 +288,10 @@ final class DownloadsInteractionTests: XCTestCase {
         let menu = app.buttons["More actions for Episode 12"]
         XCTAssertTrue(menu.waitForExistence(timeout: 3), app.debugDescription)
         menu.tap()
-        XCTAssertTrue(app.buttons["Remove"].waitForExistence(timeout: 3), app.debugDescription)
+        XCTAssertTrue(app.buttons["Remove Download"].waitForExistence(timeout: 3), app.debugDescription)
         XCTAssertFalse(app.buttons["download-open-in"].exists, "Downloaded episodes must not offer file export.")
         XCTAssertFalse(app.buttons["Open in…"].exists)
-        XCTAssertTrue(app.navigationBars["Downloaded Show 12"].exists)
+        XCTAssertTrue(showPage("Downloaded Show 12").exists)
     }
 
     func testCompletedMovieMenuKeepsDownloadsInPlozzWithoutOpeningDetails() {
@@ -150,9 +354,9 @@ final class DownloadsInteractionTests: XCTestCase {
             NSPredicate(format: "label == %@", "Pause")
         ).allElementsBoundByIndex.last(where: \.isHittable))
         pause.tap()
-        XCTAssertTrue(app.navigationBars["Andor"].exists)
+        XCTAssertTrue(showPage("Andor").exists)
         XCTAssertTrue(app.staticTexts["E2 · Episode 2"].exists)
-        app.buttons["More actions"].tap()
+        app.collectionViews.buttons["More actions"].tap()
         app.buttons["Remove"].tap()
         XCTAssertTrue(app.buttons["Remove 3 Episodes"].waitForExistence(timeout: 3), app.debugDescription)
         if app.buttons["Cancel"].exists {
@@ -161,7 +365,7 @@ final class DownloadsInteractionTests: XCTestCase {
             app.otherElements["PopoverDismissRegion"].tap()
         }
         XCTAssertTrue(app.staticTexts["E2 · Episode 2"].exists)
-        app.buttons["More actions"].tap()
+        app.collectionViews.buttons["More actions"].tap()
         app.buttons["Remove"].tap()
         let confirmation = app.buttons["Remove 3 Episodes"]
         XCTAssertTrue(confirmation.waitForExistence(timeout: 3))
@@ -180,7 +384,7 @@ final class DownloadsInteractionTests: XCTestCase {
             )).firstMatch
             XCTAssertTrue(show.waitForExistence(timeout: 10), app.debugDescription)
             show.tap()
-            XCTAssertTrue(app.navigationBars["Downloaded Show 12"].waitForExistence(timeout: 3))
+            XCTAssertTrue(showPage("Downloaded Show 12").waitForExistence(timeout: 3))
             let episode = app.buttons.matching(NSPredicate(
                 format: "label BEGINSWITH %@", "E12 · Episode 12"
             )).firstMatch
@@ -191,14 +395,39 @@ final class DownloadsInteractionTests: XCTestCase {
                 app.debugDescription
             )
             backButton(to: "Downloaded Show 12").tap()
-            XCTAssertTrue(app.navigationBars["Downloaded Show 12"].waitForExistence(timeout: 3))
+            XCTAssertTrue(showPage("Downloaded Show 12").waitForExistence(timeout: 3))
             backButton(to: "Downloads").tap()
             XCTAssertTrue(app.navigationBars["Downloads"].waitForExistence(timeout: 3))
         }
     }
 
+    private func openEditableShow() {
+        app.terminate()
+        app.launchArguments = ["--downloads-interaction-fixture", "--download-details", "--download-edit"]
+        app.launch()
+        let show = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Andor")).firstMatch
+        XCTAssertTrue(show.waitForExistence(timeout: 10))
+        show.tap()
+        XCTAssertTrue(showPage("Andor").waitForExistence(timeout: 5), app.debugDescription)
+    }
+
+    private func showPage(_ title: String) -> XCUIElement {
+        app.staticTexts.matching(NSPredicate(
+            format: "identifier == %@ AND label == %@", "download-show-title", title
+        )).firstMatch
+    }
+
+    private func dismissRemovalConfirmation() {
+        if app.buttons["Cancel"].exists {
+            app.buttons["Cancel"].tap()
+        } else {
+            // The popover covers the title; its dismiss region's center overlaps a selectable row.
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.1, dy: 0.9)).tap()
+        }
+    }
+
     private func backButton(to title: String) -> XCUIElement {
-        app.navigationBars.buttons.matching(NSPredicate(
+        app.buttons.matching(NSPredicate(
             format: "identifier == %@ OR label == %@ OR label == %@",
             "BackButton", title, "Back"
         )).firstMatch

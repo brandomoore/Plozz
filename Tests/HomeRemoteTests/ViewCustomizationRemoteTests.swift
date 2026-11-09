@@ -1,4 +1,5 @@
 import XCTest
+import UIKit
 
 @MainActor
 final class ViewCustomizationRemoteTests: XCTestCase {
@@ -241,7 +242,35 @@ final class ViewCustomizationRemoteTests: XCTestCase {
         let episodes = app.buttons["card-label-view-episodes"]
         XCTAssertEqual(episodes.value as? String, "On")
         focus(episodes, in: app)
+        let episodeControlSize = episodes.frame.size
+        let descriptions = app.buttons["episode-descriptions-on-focus"]
+        XCTAssertTrue(descriptions.exists)
+        XCTAssertEqual(descriptions.value as? String, "Off")
+        focus(descriptions, in: app)
+        XCTAssertEqual(descriptions.frame.height, episodeControlSize.height, accuracy: 2)
+        XCTAssertEqual(descriptions.frame.width, episodeControlSize.width, accuracy: 2)
+        let help = app.descendants(matching: .any)["view-customization-help"]
+        XCTAssertTrue(help.exists, "The description preference must retain its live preview.")
+        func previewPixels() -> Data? {
+            let image = help.screenshot().image
+            let scale = image.scale
+            guard let crop = image.cgImage?.cropping(to: CGRect(
+                x: 24 * scale, y: 24 * scale, width: 420 * scale,
+                height: max(1, help.frame.height - 48) * scale
+            )) else { return nil }
+            return UIImage(cgImage: crop).pngData()
+        }
+        let alwaysVisible = previewPixels()
+        XCTAssertNotNil(alwaysVisible)
+        XCUIRemote.shared.press(.select)
+        XCTAssertTrue(waitUntil { descriptions.value as? String == "On" })
+        XCTAssertTrue(waitUntil { help.label.contains("Only the focused episode") })
+        XCTAssertTrue(waitUntil { previewPixels() != alwaysVisible },
+                      "Changing the preference must redraw the diagram, not just its help text.")
+        capture(app, "episode-description-shared-control-and-live-preview")
+        focus(episodes, in: app, direction: .up)
         cycle(episodes, expecting: "Off")
+        XCTAssertFalse(descriptions.isEnabled)
         capture(app, "labels-selected-detail-page")
         focus(page, in: app, direction: .up)
         XCUIRemote.shared.press(.select)
@@ -249,6 +278,7 @@ final class ViewCustomizationRemoteTests: XCTestCase {
         XCUIRemote.shared.press(.menu)
         XCTAssertTrue(waitUntil { self.hasFocus(page) && page.value as? String == "Movie & show details" })
         XCTAssertEqual(episodes.value as? String, "Off")
+        XCTAssertEqual(descriptions.value as? String, "On")
         XCUIRemote.shared.press(.select)
         focus(pageMenuChoice("Home", in: app), in: app, direction: .up)
         XCUIRemote.shared.press(.select)

@@ -13,7 +13,7 @@ final class HTTPServerTrustFailureTests: XCTestCase {
         defer { session.invalidateAndCancel() }
         let http = URLSessionHTTPClient(session: session)
         for code in [
-            URLError.Code.serverCertificateHasBadDate, .serverCertificateUntrusted,
+            URLError.Code.secureConnectionFailed, .serverCertificateHasBadDate, .serverCertificateUntrusted,
             .serverCertificateHasUnknownRoot, .serverCertificateNotYetValid,
             .clientCertificateRejected, .clientCertificateRequired
         ] {
@@ -31,20 +31,23 @@ final class HTTPServerTrustFailureTests: XCTestCase {
         }
     }
 
-    func testDiscoveryKeepsNonTrustTransportFailuresEligibleForFallback() async {
+    func testDiscoveryPreservesNonTrustTransportCodesWithoutChangingOrdinaryMapping() async {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [TrustFailureProtocol.self]
         let session = URLSession(configuration: configuration)
         defer { session.invalidateAndCancel() }
         let http = URLSessionHTTPClient(session: session)
-        for code in [URLError.Code.cannotConnectToHost, .secureConnectionFailed, .timedOut, .cancelled] {
-            var endpoint = Endpoint(path: "/\(code.rawValue)")
-            endpoint.reportsServerTrustFailures = true
-            do {
-                _ = try await http.send(endpoint, baseURL: URL(string: "https://fixture.invalid")!)
-                XCTFail("Expected a transport failure")
-            } catch {
-                XCTAssertEqual(error as? AppError, code == .cancelled ? .cancelled : .serverUnreachable)
+        for code in [URLError.Code.cannotConnectToHost, .timedOut, .cancelled] {
+            for reportsTrust in [true, false] {
+                var endpoint = Endpoint(path: "/\(code.rawValue)")
+                endpoint.reportsServerTrustFailures = reportsTrust
+                do {
+                    _ = try await http.send(endpoint, baseURL: URL(string: "https://fixture.invalid")!)
+                    XCTFail("Expected a transport failure")
+                } catch {
+                    if reportsTrust { XCTAssertEqual((error as? URLError)?.code, code) }
+                    else { XCTAssertEqual(error as? AppError, code == .cancelled ? .cancelled : .serverUnreachable) }
+                }
             }
         }
     }

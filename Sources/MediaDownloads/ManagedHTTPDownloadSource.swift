@@ -26,12 +26,17 @@ public struct ManagedHTTPDownloadSource: Codable, Sendable, Hashable {
     public let itemID: String
     public let mediaSourceID: String?
     public let quality: DownloadQuality
-    /// Saved request flags, retained for existing downloads. New requests use
-    /// preferred audio and available text subtitles; Original keeps its file intact.
+    /// Saved request flags are preserved on retry; Original keeps its file intact.
     public let includesAllAudioTracks: Bool
     public let includesTextSubtitleTracks: Bool
     public let preferredAudioLanguages: [String]
     public let preparationReference: ManagedHTTPPreparationReference?
+    public let audioPreparationReferences: [Int: ManagedHTTPPreparationReference]
+
+    public var requiresUncappedRenditionTransfer: Bool {
+        quality != .original
+            && (provider == .jellyfin || (provider == .emby && !includesAllAudioTracks))
+    }
 
     public init(
         provider: ProviderKind,
@@ -42,7 +47,8 @@ public struct ManagedHTTPDownloadSource: Codable, Sendable, Hashable {
         includesAllAudioTracks: Bool = false,
         includesTextSubtitleTracks: Bool = true,
         preferredAudioLanguages: [String] = [],
-        preparationReference: ManagedHTTPPreparationReference? = nil
+        preparationReference: ManagedHTTPPreparationReference? = nil,
+        audioPreparationReferences: [Int: ManagedHTTPPreparationReference] = [:]
     ) {
         self.provider = provider
         self.accountID = accountID
@@ -53,6 +59,7 @@ public struct ManagedHTTPDownloadSource: Codable, Sendable, Hashable {
         self.includesTextSubtitleTracks = includesTextSubtitleTracks
         self.preferredAudioLanguages = preferredAudioLanguages
         self.preparationReference = preparationReference
+        self.audioPreparationReferences = audioPreparationReferences
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -65,6 +72,7 @@ public struct ManagedHTTPDownloadSource: Codable, Sendable, Hashable {
         case includesTextSubtitleTracks
         case preferredAudioLanguages
         case preparationReference
+        case audioPreparationReferences
     }
 
     public init(from decoder: any Decoder) throws {
@@ -90,6 +98,26 @@ public struct ManagedHTTPDownloadSource: Codable, Sendable, Hashable {
         preparationReference = try container.decodeIfPresent(
             ManagedHTTPPreparationReference.self,
             forKey: .preparationReference
+        )
+        audioPreparationReferences = try container.decodeIfPresent(
+            [Int: ManagedHTTPPreparationReference].self,
+            forKey: .audioPreparationReferences
+        ) ?? [:]
+    }
+
+    public func replacingPreparationReference(
+        _ reference: ManagedHTTPPreparationReference?, audioTrackID: Int? = nil
+    ) -> Self {
+        var audioReferences = audioPreparationReferences
+        if let audioTrackID { audioReferences[audioTrackID] = reference }
+        return Self(
+            provider: provider, accountID: accountID, itemID: itemID,
+            mediaSourceID: mediaSourceID, quality: quality,
+            includesAllAudioTracks: includesAllAudioTracks,
+            includesTextSubtitleTracks: includesTextSubtitleTracks,
+            preferredAudioLanguages: preferredAudioLanguages,
+            preparationReference: audioTrackID == nil ? reference : preparationReference,
+            audioPreparationReferences: audioReferences
         )
     }
 }

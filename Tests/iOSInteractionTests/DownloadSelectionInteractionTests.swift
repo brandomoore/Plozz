@@ -45,7 +45,7 @@ final class DownloadSelectionInteractionTests: XCTestCase {
         second.tap()
         XCTAssertEqual(second.value as? String, "Selected")
         capture("episode-download-versions")
-        app.navigationBars.buttons.element(boundBy: 0).tap()
+        app.buttons["BackButton"].tap()
         XCTAssertTrue(app.staticTexts["2 versions selected"].waitForExistence(timeout: 3))
         app.buttons["select-episode-1-2"].tap()
         XCTAssertFalse(app.buttons["download-version-1"].exists, "The checkbox must not open the version page.")

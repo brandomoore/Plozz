@@ -26,6 +26,38 @@ final class SettingsInteractionTests: XCTestCase {
         verifyNavigationRetention(directPresentation: false)
     }
 
+    func testSettingsClosePreservesNestedNativeBackNavigation() {
+        launchNavigation()
+        let open = app.buttons.matching(NSPredicate(
+            format: "label BEGINSWITH %@", "Settings for "
+        )).firstMatch
+        XCTAssertTrue(open.waitForExistence(timeout: 10))
+        open.tap()
+        let close = app.buttons["Close"]
+        XCTAssertTrue(close.wait(for: \.isHittable, toEqual: true, timeout: 5))
+        let playback = categoryButton("Playback")
+        reveal(playback, settingsMenu: true)
+        playback.tap()
+        let advanced = app.buttons["playback-advanced"]
+        reveal(advanced)
+        advanced.tap()
+        XCTAssertTrue(app.navigationBars["Advanced"].waitForExistence(timeout: 5))
+        let back = app.buttons["BackButton"].firstMatch
+        XCTAssertTrue(back.wait(for: \.isHittable, toEqual: true, timeout: 5), app.debugDescription)
+        capture("settings-native-nested-back")
+        back.tap()
+        XCTAssertTrue(app.navigationBars["Playback"].waitForExistence(timeout: 5))
+        if !close.exists {
+            XCTAssertTrue(back.isHittable)
+            back.tap()
+        }
+        XCTAssertTrue(close.wait(for: \.isHittable, toEqual: true, timeout: 5), app.debugDescription)
+        capture("settings-native-close")
+        close.tap()
+        XCTAssertTrue(open.wait(for: \.isHittable, toEqual: true, timeout: 5))
+        XCTAssertFalse(close.exists)
+    }
+
     func testTabletSidebarSwitchesCategoriesFromPushedSettingsPages() throws {
         try XCTSkipUnless(UIDevice.current.userInterfaceIdiom == .pad)
         launchNavigation(directPresentation: true)

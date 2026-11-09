@@ -51,6 +51,11 @@ and every provider/feature that talks to a remote server.
   sessions are paused by their download owner rather than a URL protocol.
   This is not an internet-reachability heuristic: normal mode still permits
   saved LAN routes when the public internet is unavailable.
+- `SubtitleFileLoader`: bounded, uncached text-subtitle delivery with redirect,
+  byte-limit, cancellation, and network-policy safeguards. Ordinary sidecars use
+  a 30-second request / 60-second resource budget. Embedded-track extraction opts
+  into a separate 120-second request/resource budget for a server's initial scan;
+  it does not add automatic retries or extend ordinary sidecar requests.
 - `PlozzLog` (and the `PlozzLogger` category facade): the **single** logging
   entry point. Backed by `OSLog` on Apple platforms, no-op on non-Apple
   hosts. Must never log tokens, Quick Connect secrets, or full

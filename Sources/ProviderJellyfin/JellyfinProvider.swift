@@ -1557,6 +1557,9 @@ public struct JellyfinProvider: LibraryItemBatchProviding, ServerRatingsProvidin
         let confirmsAtmos = cachedProbe.completed
             && cachedProbe.facts?.audioIsAtmos == true
         var mappedItem = map(item: detail)
+        // A title's runtime may describe another cut, so it cannot validate this file.
+        mappedItem.runtime = JellyfinTicks.seconds(fromTicks: originalSource.RunTimeTicks)
+            .flatMap { $0 > 0 ? $0 : nil }
 
         let streams = source.MediaStreams ?? fallbackStreams
         var audio = streams.filter { $0.`Type` == "Audio" }.map(map(stream:))

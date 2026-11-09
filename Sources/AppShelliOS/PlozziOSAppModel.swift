@@ -20,6 +20,7 @@ import MediaDownloads
 import MediaTransportCore
 import MetadataKit
 import Observation
+import ProviderJellyfin
 import ProviderPlex
 import ProviderSilo
 import ProviderShare
@@ -2470,6 +2471,7 @@ final class PlozziOSAppModel {
                 },
                 managedURLResolver: {
                     source,
+                    sourceUserID,
                     updateSource,
                     updatePreparationProgress in
                     let provider: (any MediaProvider)? = await MainActor.run {
@@ -2485,6 +2487,33 @@ final class PlozziOSAppModel {
                     guard let provider else {
                         throw MediaTransportError.authentication(
                             reason: "inactive managed download account"
+                        )
+                    }
+                    if source.provider == .emby, source.includesAllAudioTracks,
+                       source.quality != .original {
+                        guard let sourceUserID else { throw CancellationError() }
+                        let authorize: @Sendable () async throws -> Void = {
+                            try Task.checkCancellation()
+                            let permitted = await MainActor.run {
+                                !OfflineMode.shared.isEnabled
+                                    && accountsProviders.downloadUserID(
+                                        for: source.accountID, profileID: namespace
+                                    ) == sourceUserID
+                            }
+                            guard permitted else { throw CancellationError() }
+                        }
+                        return try await EmbyOfflineAudioDownload.prepare(
+                            source: source, authorize: authorize,
+                            provider: {
+                                try await authorize()
+                                let current = await MainActor.run {
+                                    accountsProviders.provider(forAccountID: source.accountID) as? JellyfinProvider
+                                }
+                                guard let current, current.kind == .emby else { throw AppError.unauthorized }
+                                return current
+                            },
+                            resolve: { try await authenticatedHTTPResolver.resolve($0) },
+                            updateSource: updateSource
                         )
                     }
                     if let silo = provider as? SiloProvider {
@@ -2532,11 +2561,6 @@ final class PlozziOSAppModel {
                         }
                         switch source.provider {
                         case .plex:
-                            guard !source.includesAllAudioTracks else {
-                                throw MediaTransportError.unsupportedCapability(
-                                    "Plex reduced-quality downloads support one audio track. Choose Original quality to keep every embedded track."
-                                )
-                            }
                             let audioStreamID = playback.audioTracks.first {
                                 track in
                                 source.preferredAudioLanguages.contains {
@@ -2568,7 +2592,9 @@ final class PlozziOSAppModel {
                                         textSubtitleStreamID:
                                             textSubtitleStreamID,
                                         includesTextSubtitle:
-                                            source.includesTextSubtitleTracks
+                                            source.includesTextSubtitleTracks,
+                                        includesAllAudioTracks:
+                                            source.includesAllAudioTracks
                                     ) else {
                                 throw MediaTransportError.unsupportedCapability(
                                     "This Plex server did not provide a compatible offline rendition."
@@ -2578,6 +2604,8 @@ final class PlozziOSAppModel {
                                 progressiveURL: constrainedURL,
                                 source: source,
                                 expectedDuration: playback.item.runtime,
+                                expectedAudioLanguages: source.includesAllAudioTracks
+                                    ? playback.audioTracks.map(\.language) : nil,
                                 updateSource: updateSource,
                                 updatePreparationProgress:
                                     updatePreparationProgress
@@ -3475,6 +3503,7 @@ private enum PlexOfflineDownloadQueue {
         progressiveURL: URL,
         source: ManagedHTTPDownloadSource,
         expectedDuration: TimeInterval?,
+        expectedAudioLanguages: [String?]?,
         updateSource: @escaping PlozziOSBackgroundHTTPDownloadEngine.SourceUpdater,
         updatePreparationProgress:
             @escaping PlozziOSBackgroundHTTPDownloadEngine.PreparationProgressUpdater
@@ -3602,7 +3631,8 @@ private enum PlexOfflineDownloadQueue {
                 return .init(
                     url: mediaURL,
                     expectedDuration: expectedDuration,
-                    cleanupURL: cleanupURL
+                    cleanupURL: cleanupURL,
+                    expectedAudioLanguages: expectedAudioLanguages
                 )
             case "failed", "error", "cancelled", "expired":
                 await discard(
@@ -3683,11 +3713,12 @@ private enum PlexOfflineDownloadQueue {
             ),
             URLQueryItem(
                 name: "X-Plex-Client-Profile-Extra",
-                value:
-                    "add-transcode-target(type=videoProfile&context=all&protocol=http&container=mp4&videoCodec=h264&audioCodec=aac&subtitleCodec=mov_text&replace=true)"
+                value: PlexOfflineTranscodeURLBuilder.downloadQueueProfile(
+                    includesAllAudioTracks: source.includesAllAudioTracks
+                )
             )
         ]
-        if let audioStreamID = value("audioStreamID") {
+        if !source.includesAllAudioTracks, let audioStreamID = value("audioStreamID") {
             queryItems.append(
                 URLQueryItem(name: "audioStreamID", value: audioStreamID)
             )
