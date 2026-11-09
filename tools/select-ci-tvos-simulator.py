@@ -31,25 +31,9 @@ def healthy_runtimes(runtimes: dict | None) -> set[str]:
     }
 
 
-def best_device(devices: list[dict]) -> dict | None:
-    candidates = [
-        device for device in devices
-        if device.get("isAvailable") and "Apple TV" in device.get("name", "")
-    ]
-    if not candidates:
-        return None
-    candidates.sort(key=lambda device: (
-        "1080p" not in device["name"],
-        "4K" not in device["name"],
-        device["name"],
-        device["udid"],
-    ))
-    return candidates[0]
-
-
-def select_device(
+def select_candidates(
     devices: dict, sdk_version: str, runtimes: dict | None = None,
-) -> tuple[str, str]:
+) -> list[tuple[str, str]]:
     requested = tuple(int(part) for part in sdk_version.split(".") if part.isdigit())
     available = {
         runtime: members
@@ -75,11 +59,29 @@ def select_device(
             tuple(-part for part in (runtime_version(runtime) or ())),
         ),
     )
+    candidates: list[tuple[str, str]] = []
     for runtime in ordered:
-        device = best_device(available[runtime])
-        if device is not None:
-            return device["udid"], device["name"]
-    raise ValueError(f"No available Apple TV simulator for {sdk_version}")
+        members = [
+            device for device in available[runtime]
+            if device.get("isAvailable") and "Apple TV" in device.get("name", "")
+        ]
+        members.sort(key=lambda device: (
+            "1080p" not in device["name"],
+            "4K" not in device["name"],
+            device["name"],
+            device["udid"],
+        ))
+        candidates.extend((device["udid"], device["name"]) for device in members)
+    return candidates
+
+
+def select_device(
+    devices: dict, sdk_version: str, runtimes: dict | None = None,
+) -> tuple[str, str]:
+    candidates = select_candidates(devices, sdk_version, runtimes)
+    if not candidates:
+        raise ValueError(f"No available Apple TV simulator for {sdk_version}")
+    return candidates[0]
 
 
 def main() -> int:
@@ -95,13 +97,29 @@ def main() -> int:
             ["xcrun", "simctl", "list", "runtimes", "--json"],
             capture_output=True, text=True, check=True, timeout=300,
         ).stdout)
-        identifier, name = select_device(devices, args.sdk_version, runtimes)
+        candidates = select_candidates(devices, args.sdk_version, runtimes)
     except (ValueError, OSError, subprocess.SubprocessError) as error:
         print(f"CI simulator selection failed: {error}", file=sys.stderr)
         return 1
-    print(f"Selected tvOS {args.sdk_version}: {name} ({identifier})", file=sys.stderr)
-    print(identifier)
-    return 0
+
+    failures: list[str] = []
+    for identifier, name in candidates:
+        try:
+            subprocess.run(
+                ["xcrun", "simctl", "bootstatus", identifier, "-b"],
+                capture_output=True, text=True, check=True, timeout=300,
+            )
+        except (OSError, subprocess.SubprocessError) as error:
+            failures.append(f"{name} ({identifier}): {error}")
+            continue
+        print(f"Selected tvOS {args.sdk_version}: {name} ({identifier})", file=sys.stderr)
+        print(identifier)
+        return 0
+    print(
+        "CI simulator selection failed: no bootable tvOS simulator; " + "; ".join(failures),
+        file=sys.stderr,
+    )
+    return 1
 
 
 if __name__ == "__main__":

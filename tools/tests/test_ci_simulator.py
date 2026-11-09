@@ -44,6 +44,10 @@ class CISimulatorTests(unittest.TestCase):
             "com.apple.CoreSimulator.SimRuntime.tvOS-27-2": [self.device("newest")],
         }}
         self.assertEqual(MODULE.select_device(devices, "27.0")[0], "newest")
+        self.assertEqual(
+            MODULE.select_candidates(devices, "27.0"),
+            [("newest", "Apple TV 4K"), ("old", "Apple TV 4K")],
+        )
 
     def test_malformed_runtime_is_skipped(self):
         devices = {"devices": {
