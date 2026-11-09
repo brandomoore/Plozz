@@ -1178,13 +1178,11 @@ struct PlozziOSTabShell: View {
         } ?? false
         if destination == .music {
             destinationContent(for: destination, keepsNavigationBar: isOverflow)
-                .safeAreaPadding(.bottom, appModel.music?.player.controller.hasActivePlayback == true ? 64 : 0)
                 .environment(\.plozziOSIsOverflowDestination, isOverflow)
                 .environment(\.plozziOSOverflowNavigation, overflowNavigation)
         } else {
             NavigationStack {
                 destinationContent(for: destination, keepsNavigationBar: isOverflow)
-                    .safeAreaPadding(.bottom, appModel.music?.player.controller.hasActivePlayback == true ? 64 : 0)
                     .toolbar {
                         if isOverflow, destination != .downloads {
                             PlozziOSOverflowBackToolbarItem(action: overflowNavigation.returnToMore)
@@ -1442,6 +1440,9 @@ struct PlozziOSTabShell: View {
                 onOverflowVisibilityChange: { isShowingMorePage = $0 },
                 onSettingsVisibilityChange: { hasVisibleSettingsNavigationEntry = $0 },
                 onBottomBarVisibilityChange: { hasVisibleBottomTabBar = $0 },
+                reservesMusicDockSpace: appModel.music?.authorizationID != nil
+                    && appModel.music?.player.controller.hasActivePlayback == true,
+                musicDockUsesBottomBar: !usesVerticalToolbar,
                 overflowNavigation: overflowNavigation
             )
             .frame(width: 0, height: 0)
@@ -1814,6 +1815,8 @@ struct PlozziOSSettingsTabAction: UIViewControllerRepresentable {
     var onOverflowVisibilityChange: ((Bool) -> Void)?
     var onSettingsVisibilityChange: ((Bool) -> Void)?
     var onBottomBarVisibilityChange: ((Bool) -> Void)?
+    var reservesMusicDockSpace = false
+    var musicDockUsesBottomBar = true
     var overflowNavigation: PlozziOSOverflowNavigation?
 
     func makeUIViewController(context: Context) -> Controller { Controller() }
@@ -1824,6 +1827,8 @@ struct PlozziOSSettingsTabAction: UIViewControllerRepresentable {
         controller.onOverflowVisibilityChange = onOverflowVisibilityChange
         controller.onSettingsVisibilityChange = onSettingsVisibilityChange
         controller.onBottomBarVisibilityChange = onBottomBarVisibilityChange
+        controller.reservesMusicDockSpace = reservesMusicDockSpace
+        controller.musicDockUsesBottomBar = musicDockUsesBottomBar
         controller.overflowNavigation = overflowNavigation
         controller.install()
     }
@@ -1843,6 +1848,19 @@ struct PlozziOSSettingsTabAction: UIViewControllerRepresentable {
         var onOverflowVisibilityChange: ((Bool) -> Void)?
         var onSettingsVisibilityChange: ((Bool) -> Void)?
         var onBottomBarVisibilityChange: ((Bool) -> Void)?
+        var reservesMusicDockSpace = false
+        var musicDockUsesBottomBar = true
+        private final class MusicInset {
+            weak var controller: UIViewController?
+            var amount: CGFloat = 0
+            var nativeBottom: CGFloat = 0
+            var bottomGap: CGFloat = 0
+            var windowBounds = CGRect.zero
+            var hasBottomBar = false
+
+            init(controller: UIViewController) { self.controller = controller }
+        }
+        private var musicInsets: [ObjectIdentifier: MusicInset] = [:]
         var overflowNavigation: PlozziOSOverflowNavigation?
         private var reportedSettingsVisibility: Bool?
         private var reportedBottomBarVisibility: Bool?
@@ -1854,6 +1872,7 @@ struct PlozziOSSettingsTabAction: UIViewControllerRepresentable {
         private weak var previousMoreDelegate: (any UINavigationControllerDelegate)?
         private var previousMoreNavigationBarHidden: Bool?
         private let bottomBarObserver = BottomBarObservationView()
+        private let musicContentObserver = BottomBarObservationView()
 
         private final class BottomBarObservationView: UIView {
             var onChange: (() -> Void)?
@@ -1887,7 +1906,7 @@ struct PlozziOSSettingsTabAction: UIViewControllerRepresentable {
         }
 
         func install() {
-            guard tabIndex != nil || onOverflowVisibilityChange != nil || onBottomBarVisibilityChange != nil else {
+            guard tabIndex != nil || onOverflowVisibilityChange != nil || onBottomBarVisibilityChange != nil || reservesMusicDockSpace else {
                 restore()
                 return
             }
@@ -1907,7 +1926,7 @@ struct PlozziOSSettingsTabAction: UIViewControllerRepresentable {
                         previousDelegate = tabs.delegate
                         tabs.delegate = self
                     }
-                    if onBottomBarVisibilityChange != nil, bottomBarObserver.superview !== tabs.tabBar {
+                    if onBottomBarVisibilityChange != nil || reservesMusicDockSpace, bottomBarObserver.superview !== tabs.tabBar {
                         bottomBarObserver.isUserInteractionEnabled = false
                         bottomBarObserver.accessibilityElementsHidden = true
                         bottomBarObserver.frame = tabs.tabBar.bounds
@@ -1938,6 +1957,9 @@ struct PlozziOSSettingsTabAction: UIViewControllerRepresentable {
         }
 
         func restore() {
+            restoreMusicInset()
+            musicContentObserver.onChange = nil
+            musicContentObserver.removeFromSuperview()
             bottomBarObserver.onChange = nil
             bottomBarObserver.removeFromSuperview()
             if owner?.moreNavigationController.delegate === self {
@@ -1963,6 +1985,16 @@ struct PlozziOSSettingsTabAction: UIViewControllerRepresentable {
             guard let owner, owner.isViewLoaded else { return }
             Task { @MainActor [weak self, weak owner] in
                 guard let self, let owner, self.owner === owner, owner.isViewLoaded else { return }
+                if self.reservesMusicDockSpace,
+                   let content = owner.selectedViewController?.view,
+                   self.musicContentObserver.superview !== content {
+                    self.musicContentObserver.isUserInteractionEnabled = false
+                    self.musicContentObserver.accessibilityElementsHidden = true
+                    self.musicContentObserver.frame = content.bounds
+                    self.musicContentObserver.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+                    self.musicContentObserver.onChange = { [weak self] in self?.reportBottomBarVisibility() }
+                    content.insertSubview(self.musicContentObserver, at: 0)
+                }
                 // The parent can move or detach its tab bar after this child's layout callback.
                 let bar = owner.tabBar
                 let frame = bar.convert(bar.bounds, to: owner.view)
@@ -1970,10 +2002,54 @@ struct PlozziOSSettingsTabAction: UIViewControllerRepresentable {
                     && bar.window != nil && frame.height > 0
                     && frame.minY >= owner.view.bounds.midY
                     && frame.intersects(owner.view.bounds)
+                self.updateMusicInset(in: owner, hasBottomBar: visible && self.musicDockUsesBottomBar)
                 guard self.reportedBottomBarVisibility != visible else { return }
                 self.reportedBottomBarVisibility = visible
                 self.onBottomBarVisibilityChange?(visible)
             }
+        }
+
+        private func updateMusicInset(in tabs: UITabBarController, hasBottomBar: Bool) {
+            func navigation(in controller: UIViewController) -> UINavigationController? {
+                if let nav = controller as? UINavigationController { return nav }
+                return controller.children.lazy.compactMap { navigation(in: $0) }.first
+            }
+            guard let selected = tabs.selectedViewController,
+                  let window = tabs.view.window else { return }
+            let target = navigation(in: selected) ?? selected
+            if target.viewIfLoaded?.window != nil {
+                let id = ObjectIdentifier(target)
+                let inset = musicInsets[id] ?? MusicInset(controller: target)
+                if inset.amount == 0 || inset.windowBounds != window.bounds || inset.hasBottomBar != hasBottomBar {
+                    inset.nativeBottom = max(0, target.view.safeAreaInsets.bottom - inset.amount)
+                    inset.bottomGap = window.bounds.maxY - target.view.convert(target.view.bounds, to: window).maxY
+                    inset.windowBounds = window.bounds
+                    inset.hasBottomBar = hasBottomBar
+                }
+                musicInsets[id] = inset
+            }
+            let clearance = reservesMusicDockSpace
+                ? MusicPlayerOverlay.contentClearance(hasBottomBar: hasBottomBar) : 0
+            musicInsets = musicInsets.filter { $0.value.controller != nil }
+            // Keep visited tabs current while hidden: programmatic tab selection
+            // need not deliver a delegate callback or relayout an existing page.
+            for inset in musicInsets.values {
+                guard let controller = inset.controller else { continue }
+                let required = clearance > 0
+                    ? max(0, clearance - inset.bottomGap - inset.nativeBottom) : 0
+                guard abs(required - inset.amount) > 0.5 else { continue }
+                controller.additionalSafeAreaInsets.bottom += required - inset.amount
+                inset.amount = required
+            }
+        }
+
+        private func restoreMusicInset() {
+            for inset in musicInsets.values {
+                if let controller = inset.controller {
+                    controller.additionalSafeAreaInsets.bottom -= inset.amount
+                }
+            }
+            musicInsets.removeAll()
         }
 
         private func reportSettingsVisibility() {
@@ -2065,6 +2141,7 @@ struct PlozziOSSettingsTabAction: UIViewControllerRepresentable {
             )
             if let owner { installOverflowAction(in: owner) }
             reportOverflowVisibility()
+            reportBottomBarVisibility()
         }
 
         func tableView(_ tableView: UITableView, willSelectRowAt indexPath: IndexPath) -> IndexPath? {
@@ -2106,12 +2183,14 @@ struct PlozziOSSettingsTabAction: UIViewControllerRepresentable {
         func tabBarController(_ tabBarController: UITabBarController, didSelectTab selectedTab: UITab, previousTab: UITab?) {
             previousDelegate?.tabBarController?(tabBarController, didSelectTab: selectedTab, previousTab: previousTab)
             reportOverflowVisibility()
+            reportBottomBarVisibility()
         }
 
         func tabBarController(_ tabBarController: UITabBarController, didSelect viewController: UIViewController) {
             previousDelegate?.tabBarController?(tabBarController, didSelect: viewController)
             installOverflowAction(in: tabBarController)
             reportOverflowVisibility()
+            reportBottomBarVisibility()
         }
 
         func tabBarController(_ tabBarController: UITabBarController, shouldSelectTab tab: UITab) -> Bool {

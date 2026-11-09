@@ -28,7 +28,6 @@ struct MusicPlayerFixture: View {
                     if let failure { Text(failure) }
                 }
                 .navigationTitle("Music")
-                .safeAreaPadding(.bottom, 64)
             }
             .tabItem { Label("Music", systemImage: "music.note") }
             Text("Library").tabItem { Label("Library", systemImage: "square.stack") }
@@ -37,7 +36,8 @@ struct MusicPlayerFixture: View {
         .background {
             PlozziOSSettingsTabAction(
                 tabIndex: nil, action: {},
-                onBottomBarVisibilityChange: { hasBottomBar = $0 }
+                onBottomBarVisibilityChange: { hasBottomBar = $0 },
+                reservesMusicDockSpace: player.controller.hasActivePlayback
             )
             .frame(width: 0, height: 0)
         }

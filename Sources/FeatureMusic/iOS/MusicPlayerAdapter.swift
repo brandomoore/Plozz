@@ -314,6 +314,10 @@ public struct MusicPlayerOverlay: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.plozzArtworkPolicy) private var artworkPolicy
 
+    public static func contentClearance(hasBottomBar: Bool) -> CGFloat {
+        BottomBar.contentClearance(hasBottomBar: hasBottomBar)
+    }
+
     public init(session: MusicPlayerSession, hasBottomBar: Bool, contentLeft: CGFloat = 0, appearance: MusicPlayerAppearance = .matchTheme) {
         self.session = session
         self.hasBottomBar = hasBottomBar

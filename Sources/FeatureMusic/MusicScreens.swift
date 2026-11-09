@@ -815,6 +815,19 @@ struct PlaylistDetailView: View {
     @FocusState private var playFocused: Bool
 
     var body: some View {
+        #if os(iOS)
+        MobileMusicPlaylistDetail(
+            playlist: viewModel.playlist,
+            tracks: viewModel.tracks,
+            nowPlayingTrack: controller.currentTrack,
+            isPlaying: controller.isPlaying,
+            onPlay: { play(from: nil) },
+            onShuffle: shuffle,
+            onPlayTrack: { play(from: $0) }
+        )
+        .task { await viewModel.load() }
+        .detailOpenFeedback()
+        #else
         MusicDetailLayout(
             tracks: viewModel.tracks,
             artworkFallback: viewModel.playlist.artworkURL,
@@ -837,6 +850,7 @@ struct PlaylistDetailView: View {
             try? await Task.sleep(for: .milliseconds(50))
             if !viewModel.tracks.isEmpty { playFocused = true }
         }
+        #endif
     }
 
     private let columnWidth = MusicLayout.artworkWidth
@@ -1099,7 +1113,9 @@ struct TrackListView: View {
     /// Whether the player is actively playing (vs paused) — drives whether the
     /// equalizer bars animate or sit still.
     var isPlaying: Bool = false
+    var nowPlayingTint: Color = .accentColor
     let onPlayTrack: (MusicTrack) -> Void
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         // LazyVStack so only the on-screen rows are built — playlists can hold
@@ -1114,10 +1130,11 @@ struct TrackListView: View {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(track.title)
                                 .font(.headline)
-                                .foregroundStyle(isCurrent ? Color.accentColor : .primary)
-                                .lineLimit(1)
+                                .foregroundStyle(isCurrent ? nowPlayingTint : .primary)
+                                .lineLimit(MusicLayout.isMobile ? nil : 1)
                             if showArtist, let artist = track.artistName {
-                                Text(artist).font(.subheadline).plozzForeground(.secondary).lineLimit(1)
+                                Text(artist).font(.subheadline).plozzForeground(.secondary)
+                                    .lineLimit(MusicLayout.isMobile ? nil : 1)
                             }
                         }
                         Spacer()
@@ -1182,14 +1199,14 @@ struct TrackListView: View {
                     ZStack {
                         RoundedRectangle(cornerRadius: 8, style: .continuous)
                             .fill(.black.opacity(0.45))
-                        NowPlayingEqualizer(isAnimating: isPlaying)
+                        NowPlayingEqualizer(isAnimating: isPlaying && !reduceMotion, tint: nowPlayingTint)
                     }
                 }
             }
         } else {
             Group {
                 if isCurrent {
-                    NowPlayingEqualizer(isAnimating: isPlaying)
+                    NowPlayingEqualizer(isAnimating: isPlaying && !reduceMotion, tint: nowPlayingTint)
                 } else {
                     Text(track.trackNumber.map(String.init) ?? "\(index + 1)")
                         .font(.headline.monospacedDigit())

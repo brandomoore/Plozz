@@ -6,7 +6,7 @@ import XCTest
 
 @MainActor
 final class MusicPlayerMotionTests: XCTestCase {
-    func testDockPlayPauseScalesBetweenGlyphsAtBothSizes() async throws {
+    func testPlayPauseScalesBetweenGlyphsAtDockAndExpandedSizes() async throws {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
         let previous = scene.windows.first(where: \.isKeyWindow)
         let window = UIWindow(windowScene: scene)
@@ -16,7 +16,7 @@ final class MusicPlayerMotionTests: XCTestCase {
             previous?.makeKeyAndVisible()
         }
         window.frame = CGRect(x: 100, y: 100, width: 80, height: 80)
-        for size in [20.0, 30.0] {
+        for size in [30.0, 60.0] {
             for reducedMotion in [false, true] {
                 let state = PlayPauseMotionState()
                 window.rootViewController = UIHostingController(rootView:
@@ -134,7 +134,9 @@ private struct PlayPauseMotionFixture: View {
     let state: PlayPauseMotionState
     let size: CGFloat
     var body: some View {
-        PlayPauseButton(playing: state.playing, glyphSize: size, hitSize: 30) { state.playing.toggle() }
+        PlayPauseButton(playing: state.playing, glyphSize: size, hitSize: size == 30 ? 30 : 72) {
+            state.playing.toggle()
+        }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(.white)
             .ignoresSafeArea()

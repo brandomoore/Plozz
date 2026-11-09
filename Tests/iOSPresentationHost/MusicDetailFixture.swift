@@ -20,8 +20,9 @@ struct MusicDetailFixture: View {
     private var tracks: [MusicTrack] {
         ["A New Beginning", "Coastlines", "After the Rain", "Slow Motion", "Midnight Drive",
          "City Lights", "Another Day", "The Long Way Home"].enumerated().map { index, title in
-            MusicTrack(id: "\(index)", title: title, trackNumber: index + 1,
-                       duration: 230 + Double(index * 17), sourceAccountID: "fixture")
+            MusicTrack(id: "\(index)", title: title, artistName: index.isMultiple(of: 2) ? "The Night Signals" : "Coastline",
+                       trackNumber: index + 1, duration: 230 + Double(index * 17),
+                       artworkURL: album.artworkURL, sourceAccountID: "fixture")
         }
     }
 
@@ -38,6 +39,16 @@ struct MusicDetailFixture: View {
                                 albums: [album, MusicAlbum(id: "second", title: "Blue Hour", year: 2024,
                                                            artworkURL: album.artworkURL, sourceAccountID: "fixture")],
                                 onSelectAlbum: { selection = $0 }
+                            )
+                        } else if arguments.contains("--music-playlist") {
+                            MobileMusicPlaylistDetail(
+                                playlist: MusicPlaylist(id: "playlist", title: "Late Night Favorites",
+                                                        artworkURL: album.artworkURL, trackCount: tracks.count,
+                                                        sourceAccountID: "fixture"),
+                                tracks: tracks, nowPlayingTrack: selectedTrack, isPlaying: false,
+                                onPlay: { selectedTrack = tracks.first },
+                                onShuffle: { selectedTrack = tracks.last },
+                                onPlayTrack: { selectedTrack = $0 }
                             )
                         } else {
                             albumPage(album)

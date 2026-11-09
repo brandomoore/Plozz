@@ -56,8 +56,12 @@ enum BottomBar {
     static let tabHeight: CGFloat = 63
     static let islandHeight: CGFloat = 56
     static let islandGap: CGFloat = 8
+    static let islandTapSlopTop: CGFloat = 12
     static let minElementH: CGFloat = 48
     static let dockMaxWidth: CGFloat = 640
+    static func contentClearance(hasBottomBar: Bool) -> CGFloat {
+        edgeMargin + islandHeight + islandTapSlopTop + (hasBottomBar ? tabHeight + islandGap : 0)
+    }
     static func barCenterY(inHeight height: CGFloat) -> CGFloat { height - edgeMargin - tabHeight / 2 }
     static func centerGap(inWidth width: CGFloat) -> (centerX: CGFloat, width: CGFloat) {
         (width / 2, max(width - 2 * (28 + 48 + 13), 90))

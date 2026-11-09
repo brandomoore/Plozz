@@ -294,8 +294,13 @@ final class MusicPlayerPresentationTests: XCTestCase {
                     XCTAssertGreaterThan(playHeight, 19)
                     XCTAssertLessThan(playHeight, 25)
                 } else {
-                    XCTAssertEqual(playHeight, playing ? 20 * 16 / 24 : 20 * 18 / 24, accuracy: 1.5,
-                                   "Compact dock glyphs keep their existing size")
+                    XCTAssertEqual(playHeight, playing ? 30 * 16 / 24 : 30 * 18 / 24, accuracy: 1.5,
+                                   "Compact dock play/pause must use the same prominent size as the wide dock")
+                    let nextHeight = try dockGlyphHeight(
+                        in: controls, center: CGPoint(x: lastControlX, y: centerY)
+                    )
+                    XCTAssertGreaterThan(playHeight, nextHeight * 1.15,
+                                         "Both play and pause must be visibly larger than the compact dock's next control")
                 }
             }
         }

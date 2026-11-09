@@ -45,6 +45,42 @@ struct MobileMusicAlbumDetail: View {
     }
 }
 
+struct MobileMusicPlaylistDetail: View {
+    let playlist: MusicPlaylist
+    let tracks: [MusicTrack]
+    let nowPlayingTrack: MusicTrack?
+    let isPlaying: Bool
+    let onPlay: () -> Void
+    let onShuffle: () -> Void
+    let onPlayTrack: (MusicTrack) -> Void
+
+    var body: some View {
+        MobileMusicDetailScaffold(
+            title: playlist.title,
+            subtitle: String(localized: "Playlist"),
+            metadata: String(localized: "\(tracks.count) tracks"),
+            artworkURL: playlist.artworkURL,
+            artworkID: "\(playlist.sourceAccountID ?? ""):playlist:\(playlist.id)",
+            artworkFallback: nil,
+            isArtist: false,
+            artworkPlaceholder: "music.note.list"
+        ) {
+            MobileMusicDetailActions(isEmpty: tracks.isEmpty, onPlay: onPlay, onShuffle: onShuffle)
+        } content: {
+            TrackListView(
+                tracks: tracks,
+                artworkFallback: playlist.artworkURL,
+                showArtist: true,
+                showArtwork: true,
+                nowPlayingTrack: nowPlayingTrack,
+                isPlaying: isPlaying,
+                nowPlayingTint: .primary,
+                onPlayTrack: onPlayTrack
+            )
+        }
+    }
+}
+
 struct MobileMusicArtistDetail: View {
     let artist: MusicArtist
     let albums: [MusicAlbum]
@@ -174,6 +210,7 @@ private struct MobileMusicDetailScaffold<Actions: View, Content: View>: View {
     let artworkID: String
     let artworkFallback: (@Sendable () async -> URL?)?
     let isArtist: Bool
+    var artworkPlaceholder: String = "opticaldisc"
     @ViewBuilder let actions: () -> Actions
     @ViewBuilder let content: () -> Content
     @Environment(\.themePalette) private var theme
@@ -236,7 +273,7 @@ private struct MobileMusicDetailScaffold<Actions: View, Content: View>: View {
     private func artwork(cornerRadius: CGFloat) -> some View {
         MusicArtworkImage(
             url: artworkURL,
-            systemPlaceholder: isArtist ? "music.mic" : "opticaldisc",
+            systemPlaceholder: isArtist ? "music.mic" : artworkPlaceholder,
             cornerRadius: cornerRadius,
             variant: .heroBackdrop,
             showsMediaEdge: false,

@@ -2562,7 +2562,7 @@ private struct IslandContent: View {
             PlayPauseButton(
                 playing: playback.snapshot.status == .playing,
                 buffering: playback.snapshot.status == .buffering,
-                glyphSize: wide ? 30 : 20,
+                glyphSize: 30,
                 hitSize: 30
             ) { playback.togglePlayPause() }
 
@@ -3102,7 +3102,7 @@ private struct Morph {
     // pill so edge taps don't "fall through" to the page/tab-bar behind (Apple's
     // hit targets are likewise larger than their visual bounds). Bottom is kept
     // under `islandBottomGap` (8pt) so it can't steal tab-bar taps.
-    static let islandTapSlopTop: CGFloat = 12
+    static let islandTapSlopTop: CGFloat = BottomBar.islandTapSlopTop
     static let islandTapSlopBottom: CGFloat = 6
     static let islandTapSlopH: CGFloat = 8
 

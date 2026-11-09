@@ -102,17 +102,27 @@ bar, measured from its actual placement. iPad top tabs and sidebars leave the
 dock near the bottom edge; compact windows with bottom tabs retain clearance.
 The bridge observes the native bar's attachment and layout, including detachments
 that occur after its child controller's layout callback during window resizing.
-The wide dock emphasizes play/pause (30-point glyph) over previous/next (22)
-and shuffle/repeat (18), without changing control spacing or hit regions.
+Every mobile tab's navigation container reserves the dock's full bottom
+obstruction, including its tap area, after subtracting the native safe-area
+inset. The reservation follows pushed detail pages as well as root lists and
+grids, and disappears when playback stops or the music session is unauthorized.
+The overlay stays outside that reservation so its position does not move.
+Both docks emphasize play/pause (30-point glyph) over previous/next (22 in the
+wide dock, 24 in the compact dock) and shuffle/repeat (18), without changing
+control spacing or hit regions.
 Both dock sizes reuse the expanded player's scaling play/pause transition and
-press feedback. Measured artwork positions retain the panel spring when lyrics
+press feedback. Play/pause retains its press scaling and haptics without a
+circular background highlight, in both the docks and expanded player.
+Measured artwork positions retain the panel spring when lyrics
 or the queue shifts the wide player, rather than snapping after layout. The
 existing Reduce Motion path keeps these transitions immediate.
 
-Mobile album and artist details borrow Mozz's artwork-led presentation:
-centered album covers on compact screens, horizontal heroes on wider screens,
+Mobile album, artist and playlist details borrow Mozz's artwork-led presentation:
+centered album/playlist covers on compact screens, horizontal heroes on wider screens,
 an image-led artist header, and compact divided album tracks. Native Play and
 Shuffle actions keep the existing provider/account-scoped playback path.
+Playlists retain lazy artwork-and-artist rows, bounded thumbnail prefetch,
+playlist-entry selection identity, and a neutral current-track highlight.
 `iOS/MobileMusicDetail.swift` caps content width at 1,000 points and stacks the
 hero/actions at accessibility text sizes. Page headings scroll with content;
 Plozz's native navigation bar and back gesture remain in place.

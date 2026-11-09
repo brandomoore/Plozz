@@ -105,7 +105,7 @@ struct PlayerIconButton: View {
 }
 
 /// A tactile press style shared by every player button: a firm scale-down, a
-/// soft wash behind the glyph, and a haptic tap on press-down, springing back
+/// optional soft wash behind the glyph, and a haptic tap on press-down, springing back
 /// on release.
 ///
 /// The press deliberately does **not** follow `isPressed` directly. A real tap
@@ -119,6 +119,7 @@ struct PlayerIconButton: View {
 /// animation is feedback enough) without losing the press animation.
 struct PlayerButtonStyle: ButtonStyle {
     var haptic: Bool = true
+    var showsWash: Bool = true
     /// Diameter of the wash drawn behind the glyph while the finger is down.
     /// `nil` lets it fill the button's own hit target.
     var washDiameter: CGFloat?
@@ -155,13 +156,14 @@ struct PlayerButtonStyle: ButtonStyle {
     static let washInset: CGFloat = 10
 
     func makeBody(configuration: Configuration) -> some View {
-        PressBody(configuration: configuration, haptic: haptic, washDiameter: washDiameter)
+        PressBody(configuration: configuration, haptic: haptic, showsWash: showsWash, washDiameter: washDiameter)
     }
 
     /// A real `View` rather than a modifier chain, so it can own the latch state.
     private struct PressBody: View {
         let configuration: ButtonStyleConfiguration
         let haptic: Bool
+        let showsWash: Bool
         let washDiameter: CGFloat?
 
         /// What the animation follows — deliberately not `isPressed` (see above).
@@ -173,7 +175,7 @@ struct PlayerButtonStyle: ButtonStyle {
             configuration.label
                 .scaleEffect(down ? PlayerButtonStyle.pressScale : 1)
                 .opacity(down ? PlayerButtonStyle.pressOpacity : 1)
-                .background { wash }
+                .background { if showsWash { wash } }
                 .animation(PlayerButtonStyle.spring(down: down), value: down)
                 .onChange(of: configuration.isPressed) { _, pressed in
                     if pressed { press() } else { lift() }
@@ -501,7 +503,7 @@ struct PlayPauseButton: View {
             .animation(.easeInOut(duration: 0.2), value: buffering)
             .playerHitTarget(hitSize)
         }
-        .buttonStyle(PlayerButtonStyle(washDiameter: glyphSize + 22))
+        .buttonStyle(PlayerButtonStyle(showsWash: false))
         .foregroundStyle(.primary)
         .accessibilityLabel(buffering ? "Loading" : (playing ? "Pause" : "Play"))
     }

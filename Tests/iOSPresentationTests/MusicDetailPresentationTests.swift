@@ -28,14 +28,20 @@ final class MusicDetailPresentationTests: XCTestCase {
         XCTAssertNotNil(loaded)
 
         for size in [CGSize(width: 390, height: 844), CGSize(width: 834, height: 1_194)] {
-            for artist in [false, true] {
+            for kind in ["album", "artist", "playlist"] {
                 let page = NavigationStack(path: .constant([0])) {
                     Text("Music")
                         .navigationDestination(for: Int.self) { _ in
-                            if artist {
+                            if kind == "artist" {
                                 MobileMusicArtistDetail(
                                     artist: MusicArtist(id: "artist", name: "Artist", artworkURL: url),
                                     albums: [], onSelectAlbum: { _ in }
+                                )
+                            } else if kind == "playlist" {
+                                MobileMusicPlaylistDetail(
+                                    playlist: MusicPlaylist(id: "playlist", title: "Playlist", artworkURL: url),
+                                    tracks: [], nowPlayingTrack: nil, isPlaying: false,
+                                    onPlay: {}, onShuffle: {}, onPlayTrack: { _ in }
                                 )
                             } else {
                                 MobileMusicAlbumDetail(
@@ -48,7 +54,7 @@ final class MusicDetailPresentationTests: XCTestCase {
                 }
                 .environment(\.themePalette, .light)
                 .tint(.blue)
-                try await mount(page, size: size, name: "Navigation seam \(Int(size.width)) artist \(artist)") { host, window in
+                try await mount(page, size: size, name: "Navigation seam \(Int(size.width)) \(kind)") { host, window in
                     let bar = try XCTUnwrap(self.navigationBar(in: host.view))
                     let barFrame = bar.convert(bar.bounds, to: window)
                     let boundary = barFrame.maxY
@@ -71,11 +77,11 @@ final class MusicDetailPresentationTests: XCTestCase {
                         XCTAssertEqual(above[channel], below[channel], accuracy: 0.06,
                                        "The native navigation edge must continue the hero, not expose the deep page base")
                     }
-                    if !artist && size.width < 700 {
+                    if kind != "artist" && size.width < 700 {
                         let middle = try self.pixel(in: image, at: CGPoint(x: size.width - 12, y: barFrame.midY))
                         for channel in 0..<3 {
                             XCTAssertEqual(middle[channel], below[channel], accuracy: 0.04,
-                                           "Compact album headers must not acquire a second navigation scrim")
+                                           "Compact artwork headers must not acquire a second navigation scrim")
                         }
                     }
                 }
@@ -151,6 +157,52 @@ final class MusicDetailPresentationTests: XCTestCase {
                     let scroll = try XCTUnwrap(self.scrollViews(in: host.view).first)
                     XCTAssertLessThanOrEqual(scroll.contentSize.width, scroll.bounds.width + 1)
                     XCTAssertGreaterThan(scroll.contentSize.height, 400, "The hero must not collapse on a short page")
+                }
+            }
+        }
+    }
+
+    func testPlaylistLayoutsKeepArtworkRowsScrollableAndHandleEmptyPlaylists() async throws {
+        let tracks = (1...24).map { index in
+            var track = MusicTrack(
+                id: "repeated-track", title: "A long song title that should remain readable",
+                artistName: "An Artist With a Longer Name", duration: 230,
+                sourceAccountID: "account"
+            )
+            track.playlistEntryID = "playlist:\(index)"
+            return track
+        }
+        let playlist = MusicPlaylist(id: "playlist", title: "A Long Playlist Title for an Evening by the Sea",
+                                     trackCount: tracks.count, sourceAccountID: "account")
+        for size in [CGSize(width: 390, height: 844), CGSize(width: 834, height: 1_194)] {
+            for typeSize in [DynamicTypeSize.large, .accessibility3] {
+                for empty in [false, true] {
+                    let view = MobileMusicPlaylistDetail(
+                        playlist: playlist, tracks: empty ? [] : tracks,
+                        nowPlayingTrack: tracks[1], isPlaying: false,
+                        onPlay: {}, onShuffle: {}, onPlayTrack: { _ in }
+                    )
+                    .environment(\.themePalette, empty ? .pureBlack : .light)
+                    .environment(\.dynamicTypeSize, typeSize)
+                    try await mount(view, size: size, name: "Playlist \(Int(size.width)) \(typeSize) empty \(empty)") { host, window in
+                        let scroll = try XCTUnwrap(self.scrollViews(in: host.view).first)
+                        XCTAssertLessThanOrEqual(scroll.contentSize.width, scroll.bounds.width + 1,
+                                                 "Playlist titles and artists must wrap without horizontal overflow")
+                        if empty {
+                            let artworkHeight = size.width >= 700 && !typeSize.isAccessibilitySize
+                                ? min(size.width * 0.32, 300) : 240
+                            XCTAssertGreaterThan(scroll.contentSize.height, artworkHeight,
+                                                 "An empty playlist must retain its artwork hero")
+                        } else {
+                            XCTAssertGreaterThan(scroll.contentSize.height, scroll.bounds.height)
+                            scroll.setContentOffset(
+                                CGPoint(x: 0, y: max(0, scroll.contentSize.height - scroll.bounds.height)),
+                                animated: false
+                            )
+                            host.view.layoutIfNeeded()
+                            self.attach(window, name: "Playlist final rows \(Int(size.width)) \(typeSize)")
+                        }
+                    }
                 }
             }
         }
