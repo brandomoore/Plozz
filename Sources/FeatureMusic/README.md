@@ -123,7 +123,10 @@ not imported.
 Mobile browsing reuses the tvOS view models and provider aggregation with
 touch-sized cards and vertically scrolling detail pages. The landing page uses
 20-point content margins, Dynamic Type section headings, and one horizontally
-scrolling row of compact native category pills. The pills use the theme's neutral
+scrolling row of compact native Liquid Glass category pills on iOS 26+.
+Older systems and reduced-transparency/panel-glass settings retain the native
+bordered fallback. Glass appearance follows the system preference without a
+custom material, fill, or border. The pills use the theme's neutral
 foreground (white in dark themes), not the app accent; they still open their
 existing grids rather than behaving as selection filters. Rail headings and
 first/last artwork align with those margins; tvOS keeps its title-safe insets

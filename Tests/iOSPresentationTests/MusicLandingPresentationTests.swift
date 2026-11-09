@@ -63,8 +63,26 @@ final class MusicLandingPresentationTests: XCTestCase {
         }
     }
 
+    func testReducedEffectsKeepReadableTouchSizedBrowsePills() async throws {
+        for (reducePanelGlass, reduceTransparency) in [(true, false), (false, true)] {
+            try await mount(
+                width: 430, reducePanelGlass: reducePanelGlass, reduceTransparency: reduceTransparency
+            ) { window, scrolls in
+                let pills = try XCTUnwrap(scrolls.first { $0.bounds.height < 100 })
+                XCTAssertGreaterThanOrEqual(pills.bounds.height, 44)
+                let image = self.capture(window)
+                let labels = try self.textFrames(image)
+                for title in ["Playlists", "Albums", "Artists", "Genres"] {
+                    XCTAssertNotNil(labels[title])
+                }
+                try self.assertNeutral(image, in: pills.convert(pills.bounds, to: window))
+            }
+        }
+    }
+
     private func mount(
         width: CGFloat, palette: ThemePalette = .dark, textSize: DynamicTypeSize = .large,
+        reducePanelGlass: Bool = false, reduceTransparency: Bool = false,
         inspect: (UIWindow, [UIScrollView]) async throws -> Void
     ) async throws {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
@@ -72,13 +90,19 @@ final class MusicLandingPresentationTests: XCTestCase {
         let window = UIWindow(windowScene: scene)
         window.frame = CGRect(x: 0, y: 0, width: width, height: 1_194)
         let controller = AudioPlaybackController()
+        let content = MusicLandingFixture.content
+        let artworkURL = try XCTUnwrap(content.albums.first?.artworkURL)
+        let artwork = await ArtworkImageCache.shared.image(for: artworkURL, variant: .original)
+        XCTAssertNotNil(artwork, "Resolve fixture artwork before measuring its edge")
         let view = MusicLandingContent(
-            content: MusicLandingFixture.content, controller: controller,
+            content: content, controller: controller,
             onSelectRoute: { _ in }, onPlayTrack: { _ in }
         )
         .environment(\.themePalette, palette)
         .environment(\.colorScheme, palette == .light ? .light : .dark)
         .environment(\.dynamicTypeSize, textSize)
+        .environment(\.plozzReducePanelGlass, reducePanelGlass)
+        .environment(\.plozzReduceTransparency, reduceTransparency)
         .tint(.blue)
         .background(palette.backgroundBase.ignoresSafeArea())
         let host = UIHostingController(rootView: view)

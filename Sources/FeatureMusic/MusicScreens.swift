@@ -225,7 +225,7 @@ private struct BrowseButton: View {
             Text(title).font(.subheadline.weight(.medium))
                 .fixedSize(horizontal: true, vertical: false)
         }
-        .buttonStyle(.bordered)
+        .modifier(MobileMusicBrowseStyle())
         .buttonBorderShape(.capsule)
         .controlSize(.large)
         .tint(palette.primaryText)
@@ -250,6 +250,22 @@ private struct BrowseButton: View {
             .plozzCardFocusTransition(isFocused: isFocused)
     }
 }
+
+#if os(iOS)
+private struct MobileMusicBrowseStyle: ViewModifier {
+    @Environment(\.plozzReducePanelGlass) private var reducePanelGlass
+    @Environment(\.plozzReduceTransparency) private var reduceTransparency
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if reducePanelGlass || reduceTransparency {
+            content.buttonStyle(.bordered)
+        } else {
+            content.plozzActionButton(role: .secondary)
+        }
+    }
+}
+#endif
 
 #if os(tvOS)
 private struct NativeMusicBrowseButton: View {
