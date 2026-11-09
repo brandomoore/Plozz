@@ -45,16 +45,21 @@ final class PlayerEpisodeRowRemoteTests: XCTestCase {
         XCUIRemote.shared.press(.select)
         let spotify = app.buttons["song-service-spotify"]
         XCTAssertTrue(spotify.waitForExistence(timeout: 5))
-        // The native sheet begins on its leading service action.
+        // Service actions are a vertical native menu below the song header.
         for _ in 0..<5 {
             if spotify.hasFocus { break }
-            XCUIRemote.shared.press(.right)
+            XCUIRemote.shared.press(.down)
         }
         focused(spotify)
         XCUIRemote.shared.press(.select)
         XCTAssertTrue(app.staticTexts["This app couldn’t open the link. Scan with your phone."].waitForExistence(timeout: 5))
         Thread.sleep(forTimeInterval: 0.8)
-        let image = try XCTUnwrap(app.screenshot().image.cgImage)
+        let fallbackScreenshot = app.screenshot()
+        let fallbackCapture = XCTAttachment(screenshot: fallbackScreenshot)
+        fallbackCapture.name = "Song service phone fallback"
+        fallbackCapture.lifetime = .keepAlways
+        add(fallbackCapture)
+        let image = try XCTUnwrap(fallbackScreenshot.image.cgImage)
         let detector = try XCTUnwrap(CIDetector(
             ofType: CIDetectorTypeQRCode, context: CIContext(options: [.useSoftwareRenderer: true]),
             options: [CIDetectorAccuracy: CIDetectorAccuracyHigh]

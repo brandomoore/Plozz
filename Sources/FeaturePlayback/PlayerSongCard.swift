@@ -74,7 +74,7 @@ struct PlayerSongLayout<Content: View>: View {
         .plozzSheet(item: $selection, onDismiss: {
             focus = .button(.info)
             optionsPresented = false
-        }) {
+        }, style: SongServiceChooser.presentationStyle) {
             SongServiceChooser(song: $0.song)
         }
         .onChange(of: optionsPresented) { _, presented in onOptionsPresented(presented) }
@@ -170,6 +170,14 @@ struct SongServiceLink: Identifiable, Equatable {
             case .youtube: "Search YouTube"
             }
         }
+
+        var imageName: String {
+            switch self {
+            case .appleMusic: "SongAppleMusic"
+            case .spotify: "SongSpotify"
+            case .youtube: "SongYouTube"
+            }
+        }
     }
     let service: Service
     let url: URL
@@ -187,7 +195,7 @@ struct SongServiceLink: Identifiable, Equatable {
     }
 }
 
-private struct SongServiceChooser: View {
+struct SongServiceChooser: View {
     private struct Request {
         let id = UUID()
         let link: SongServiceLink
@@ -197,66 +205,246 @@ private struct SongServiceChooser: View {
     @Environment(\.openURL) private var openURL
     @State private var request: Request?
     @State private var phoneLink: SongServiceLink?
+    @State private var contentHeight: CGFloat = 0
+    #if os(iOS)
+    @State private var presentationInsets: CGFloat = 0
+    #endif
+
+    static var presentationStyle: PlozzSheetStyle {
+        #if os(tvOS)
+        .floatingCard
+        #else
+        .standard
+        #endif
+    }
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(spacing: 24) {
-                    Text(verbatim: song.title).font(.title2)
-                    if let artist = song.artist { Text(verbatim: artist).foregroundStyle(.secondary) }
-                    ViewThatFits {
-                        HStack { serviceButtons }
-                        VStack { serviceButtons }
-                    }
-                    if let phoneLink {
-                        Text("This app couldn’t open the link. Scan with your phone.")
-                            .multilineTextAlignment(.center)
-                        QRCodeView(phoneLink.url.absoluteString)
-                            .padding(16)
-                            .background(.white, in: RoundedRectangle(cornerRadius: 16))
-                            .frame(width: 260, height: 260)
-                            .accessibilityIdentifier("song-service-qr")
-                        Text(phoneLink.service.title).font(.caption)
+        presentation
+            .task(id: request?.id) {
+                guard let link = request?.link else { return }
+                #if os(tvOS)
+                let opened = await UIApplication.shared.open(link.url, options: [.universalLinksOnly: true])
+                guard !Task.isCancelled else { return }
+                if !opened {
+                    PlozzLog.app.info("Song service has no available app handler; showing phone link")
+                    phoneLink = link
+                }
+                #else
+                openURL(link.url) { accepted in
+                    if !accepted {
+                        PlozzLog.app.error("Unable to open song service link")
+                        phoneLink = link
                     }
                 }
-                .frame(maxWidth: .infinity)
-                .padding(32)
+                #endif
             }
+    }
+
+    @ViewBuilder private var presentation: some View {
+        #if os(tvOS)
+        GeometryReader { geometry in
+            ZStack {
+                PlozzDialogBackdrop()
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 24) {
+                        HStack {
+                            Text("Open song")
+                                .font(.title2.bold())
+                                .accessibilityAddTraits(.isHeader)
+                            Spacer()
+                            Button("Done") { dismiss() }
+                                .buttonStyle(.bordered)
+                        }
+                        SongServiceChooserContent(song: song, phoneLink: phoneLink, select: select)
+                            .padding(12)
+                    }
+                    .padding(32)
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { contentHeight = $0 }
+                }
+                .scrollBounceBehavior(.basedOnSize)
+                .frame(
+                    width: min(phoneLink == nil ? 820 : 1180, max(0, geometry.size.width - 96)),
+                    height: min(max(contentHeight, 300), max(0, geometry.size.height - 96))
+                )
+                .plozzSurface(.overlay, cornerRadius: 32)
+                .accessibilityIdentifier("song-service-chooser")
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .onExitCommand { dismiss() }
+        #else
+        NavigationStack {
+            ScrollView {
+                SongServiceChooserContent(song: song, phoneLink: phoneLink, select: select)
+                    .padding(24)
+                    .frame(maxWidth: 560)
+                    .frame(maxWidth: .infinity)
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { contentHeight = $0 }
+            }
+            .onGeometryChange(for: CGFloat.self) {
+                $0.safeAreaInsets.top + $0.safeAreaInsets.bottom
+            } action: {
+                presentationInsets = $0
+            }
+            .scrollBounceBehavior(.basedOnSize)
             .navigationTitle("Open song")
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Done") { dismiss() }
                 }
             }
         }
-        .task(id: request?.id) {
-            guard let link = request?.link else { return }
-            #if os(tvOS)
-            let opened = await UIApplication.shared.open(link.url, options: [.universalLinksOnly: true])
-            guard !Task.isCancelled else { return }
-            if !opened {
-                PlozzLog.app.info("Song service has no available app handler; showing phone link")
-                phoneLink = link
-            }
-            #else
-            openURL(link.url) { accepted in
-                if !accepted {
-                    PlozzLog.app.error("Unable to open song service link")
-                    phoneLink = link
-                }
-            }
-            #endif
-        }
+        .frame(idealHeight: contentHeight + presentationInsets)
+        .presentationDetents([.height(max(300, contentHeight + presentationInsets)), .large])
+        .presentationDragIndicator(.visible)
+        .presentationSizing(.form.fitted(horizontal: false, vertical: true))
+        .accessibilityIdentifier("song-service-chooser")
+        #endif
     }
 
-    private var serviceButtons: some View {
-        ForEach(SongServiceLink.links(for: song)) { link in
-            Button {
-                phoneLink = nil
-                request = Request(link: link)
-            } label: { Text(link.service.title) }
-                .accessibilityIdentifier("song-service-\(link.service.rawValue)")
+    private func select(_ link: SongServiceLink) {
+        phoneLink = nil
+        request = Request(link: link)
+    }
+}
+
+struct SongServiceChooserContent: View {
+    let song: SongMatch
+    let phoneLink: SongServiceLink?
+    let select: (SongServiceLink) -> Void
+
+    var body: some View {
+        #if os(tvOS)
+        HStack(alignment: .top, spacing: 32) {
+            SongServiceOptions(song: song, select: select)
+            if let phoneLink {
+                SongServicePhoneLink(link: phoneLink)
+                    .frame(width: 300)
+            }
         }
+        #else
+        VStack(alignment: .leading, spacing: 24) {
+            SongServiceOptions(song: song, select: select)
+            if let phoneLink {
+                SongServicePhoneLink(link: phoneLink)
+            }
+        }
+        #endif
+    }
+}
+
+private struct SongServiceOptions: View {
+    let song: SongMatch
+    let select: (SongServiceLink) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 24) {
+            SongServiceHeader(song: song)
+            VStack(spacing: 12) {
+                ForEach(SongServiceLink.links(for: song)) { link in
+                    SongServiceButton(link: link) { select(link) }
+                }
+            }
+        }
+    }
+}
+
+private struct SongServiceHeader: View {
+    let song: SongMatch
+    @ScaledMetric(relativeTo: .title3) private var artworkSize: CGFloat = 88
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    var body: some View {
+        let layout = dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 16))
+            : AnyLayout(HStackLayout(alignment: .center, spacing: 20))
+        layout {
+            AsyncImage(url: song.artworkURL) { image in
+                image.resizable().scaledToFill()
+            } placeholder: {
+                Image(systemName: "music.note")
+                    .font(.title)
+                    .plozzForeground(.secondary)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(.quaternary)
+            }
+            .frame(width: min(artworkSize, 112), height: min(artworkSize, 112))
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 6) {
+                Text(verbatim: song.title)
+                    .font(.headline)
+                    .plozzForeground(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
+                if let artist = song.artist {
+                    Text(verbatim: artist)
+                        .font(.subheadline)
+                        .plozzForeground(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .accessibilityElement(children: .combine)
+    }
+}
+
+private struct SongServiceButton: View {
+    let link: SongServiceLink
+    let action: () -> Void
+    @ScaledMetric(relativeTo: .body) private var logoSize: CGFloat = 28
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 16) {
+                Image(link.service.imageName, bundle: .module)
+                    .renderingMode(.template)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: logoSize, height: logoSize)
+                    .accessibilityHidden(true)
+                Text(link.service.title)
+                    .font(.body.weight(.medium))
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Image(systemName: link.service == .appleMusic ? "arrow.up.right" : "magnifyingglass")
+                    .font(.body)
+                    .accessibilityHidden(true)
+            }
+            .padding(8)
+            .frame(minHeight: 44)
+            .contentShape(Rectangle())
+        }
+        #if os(tvOS)
+        .buttonStyle(.bordered)
+        #else
+        .plozzActionButton(role: .secondary)
+        #endif
+        .buttonBorderShape(.roundedRectangle(radius: 16))
+        .accessibilityIdentifier("song-service-\(link.service.rawValue)")
+    }
+}
+
+private struct SongServicePhoneLink: View {
+    let link: SongServiceLink
+
+    var body: some View {
+        VStack(spacing: 16) {
+            Text("This app couldn’t open the link. Scan with your phone.")
+                .font(.callout)
+                .plozzForeground(.primary)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+            QRCodeView(link.url.absoluteString)
+                .padding(16)
+                .background(.white, in: RoundedRectangle(cornerRadius: 16))
+                .frame(width: 260, height: 260)
+                .accessibilityIdentifier("song-service-qr")
+            Text(link.service.title).font(.caption).plozzForeground(.secondary)
+        }
+        .frame(maxWidth: .infinity)
     }
 }
 #endif

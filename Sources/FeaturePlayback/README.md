@@ -118,7 +118,14 @@ bounded language-match/accessibility flags without track titles or URLs.
   panel still clips its shadow. Song titles and artists wrap rather than
   truncating to fixed line counts. Mobile retains the shared Info panel surface.
   Selecting a song offers its exact Apple Music link (when supplied), a Spotify
-  search, or a YouTube search. Searches use the title and artist, not inferred
+  search, or a YouTube search. The chooser pairs album artwork with wrapping song
+  metadata above full-width native service buttons, rather than inline text links.
+  TV uses a compact floating card with scroll fallback; iPhone/iPad use an inline
+  navigation title and native sheet sizing. Bundled monochrome service marks inherit
+  the native control's contrast. Apple Music, Spotify and YouTube marks come from
+  [Simple Icons](https://github.com/simple-icons/simple-icons/tree/1bb2f6e6ea50f920de8d2f3d273ae48564a5eaee/icons)
+  under CC0 (see `Resources/SongServiceIconsLicense.txt`); trademarks remain their
+  owners' property. Searches use the title and artist, not inferred
   service track IDs, and need no catalog API or account connection. TV attempts
   an installed universal-link handler; if unavailable, it shows a locally
   generated QR code for the selected service. App routing depends on that app's
