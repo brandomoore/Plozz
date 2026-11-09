@@ -30,6 +30,13 @@ class CISimulatorTests(unittest.TestCase):
         }}
         self.assertEqual(MODULE.select_device(devices, "26.2")[0], "matching")
 
+    def test_newest_healthy_runtime_wins_over_a_broken_sdk_match(self):
+        devices = {"devices": {
+            "com.apple.CoreSimulator.SimRuntime.tvOS-26-2": [self.device("sdk-match")],
+            "com.apple.CoreSimulator.SimRuntime.tvOS-27-2": [self.device("newest")],
+        }}
+        self.assertEqual(MODULE.select_device(devices, "26.2")[0], "newest")
+
     def test_prefers_available_1080p_4k_device(self):
         devices = {"devices": {"com.apple.CoreSimulator.SimRuntime.tvOS-26-2": [
             self.device("unavailable", "Apple TV 4K (at 1080p)", False),
