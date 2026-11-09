@@ -10,6 +10,87 @@ import XCTest
 
 @MainActor
 final class AppearanceSettingsPresentationTests: XCTestCase {
+    func testThemeSwatchesMatchActualFlatAndGradientBackgrounds() throws {
+        for (theme, palette) in [(AppTheme.light, ThemePalette.light), (.dark, .dark), (.pureBlack, .pureBlack)] {
+            var samples: [[UInt8]] = []
+            for enabled in [false, true] {
+                let preview = ImageRenderer(content:
+                    ThemeSwatch(theme: theme, cornerRadius: 0)
+                        .frame(width: 200, height: 125)
+                        .environment(\.gradientBackgroundsEnabled, enabled)
+                )
+                let actual = ImageRenderer(content:
+                    AppBackground(palette: palette)
+                        .frame(width: 200, height: 125)
+                        .environment(\.gradientBackgroundsEnabled, enabled)
+                )
+                preview.scale = 1
+                actual.scale = 1
+                let image = try XCTUnwrap(preview.cgImage)
+                let reference = try XCTUnwrap(actual.cgImage)
+                var sample: [UInt8] = []
+                for x in [30, 100, 170] {
+                    let pixel = try self.pixel(image, x: x, y: 8)
+                    let expected = try self.pixel(reference, x: x, y: 8)
+                    for channel in 0..<3 {
+                        XCTAssertEqual(Int(pixel[channel]), Int(expected[channel]), accuracy: 2)
+                    }
+                    sample += pixel
+                }
+                samples.append(sample)
+            }
+            XCTAssertNotEqual(samples[0], samples[1], "\(theme) preview must visibly reflect the toggle")
+        }
+        for enabled in [false, true] {
+            let system = ImageRenderer(content:
+                ThemeSwatch(theme: .system, cornerRadius: 0)
+                    .frame(width: 200, height: 125)
+                    .environment(\.gradientBackgroundsEnabled, enabled)
+            )
+            system.scale = 1
+            let image = try XCTUnwrap(system.cgImage)
+            XCTAssertGreaterThan(try pixel(image, x: 30, y: 8)[0], try pixel(image, x: 170, y: 8)[0])
+        }
+    }
+
+    func testMountedThemePreviewsUpdateWhenGradientPreferenceChanges() async throws {
+        try await mount(width: 390, palette: .dark) { window, theme in
+            func capturePreviews() throws -> Data {
+                let format = UIGraphicsImageRendererFormat()
+                format.scale = 1
+                let image = UIGraphicsImageRenderer(bounds: window.bounds, format: format).image { _ in
+                    XCTAssertTrue(window.drawHierarchy(in: window.bounds, afterScreenUpdates: true))
+                }
+                let crop = try XCTUnwrap(image.cgImage?.cropping(to: CGRect(x: 40, y: 180, width: 310, height: 270)))
+                return try XCTUnwrap(UIImage(cgImage: crop).pngData())
+            }
+            theme.gradientEnabled = false
+            try await Task.sleep(for: .milliseconds(150))
+            let flat = try capturePreviews()
+            theme.gradientEnabled = true
+            try await Task.sleep(for: .milliseconds(150))
+            XCTAssertNotEqual(flat, try capturePreviews())
+            theme.gradientEnabled = false
+            try await Task.sleep(for: .milliseconds(150))
+            XCTAssertEqual(flat, try capturePreviews())
+        }
+    }
+
+    private func pixel(_ image: CGImage, x: Int, y: Int) throws -> [UInt8] {
+        var bytes = [UInt8](repeating: 0, count: image.width * image.height * 4)
+        try bytes.withUnsafeMutableBytes { buffer in
+            let context = try XCTUnwrap(CGContext(
+                data: buffer.baseAddress, width: image.width, height: image.height,
+                bitsPerComponent: 8, bytesPerRow: image.width * 4,
+                space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            ))
+            context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+        }
+        let offset = (y * image.width + x) * 4
+        return Array(bytes[offset..<(offset + 4)])
+    }
+
     func testThemePreviewsLeadAppearanceAndMusicPrecedesOtherPages() async throws {
         for width: CGFloat in [320, 390, 834] {
             for palette in [ThemePalette.dark, .light] {

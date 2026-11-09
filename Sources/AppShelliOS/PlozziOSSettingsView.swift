@@ -2031,6 +2031,7 @@ struct PlozziOSAppearanceSettingsView: View {
         List {
             SettingsSectionGroup("Theme") {
                 CompactThemePicker(selection: $theme.theme)
+                    .environment(\.gradientBackgroundsEnabled, theme.gradientEnabled)
                     .settingsSearchAnchor("theme")
                 Toggle("Gradient Backgrounds", isOn: $theme.gradientEnabled)
                     .settingsSearchAnchor("gradient-backgrounds")

@@ -10,6 +10,9 @@ The Settings screen and its detail pages. Profile-aware and integration-aware.
 On mobile, Appearance starts with the shared visual theme cards, Gradient
 Backgrounds and Liquid Glass. Cards, Artwork and Circadian Mode form a separate
 group below. Theme search results open Appearance directly.
+Theme previews on mobile and TV update immediately with Gradient Backgrounds,
+using the app's shared ambient mesh or the theme's flat background. System
+continues to preview both light and dark.
 
 On mobile beta builds, Appearance → Music player sits beneath the theme controls
 in the same group and exposes the existing
