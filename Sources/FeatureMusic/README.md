@@ -69,6 +69,16 @@ music runtime or probe music libraries.
   completion without advancing away from the requested selection. End events
   must belong to the actual current player item; the newly playing track still
   advances normally after the handoff.
+- **Local mobile selections retire the old song immediately.** Stop/report the
+  outgoing song before resetting progress, including explicit queue replacements.
+  Keep the pending target's scrubber at zero until its item is installed; failed
+  resolution and pause/resume must not revive the outgoing item. Local mobile
+  output advances immediately without the HomePod prebuffer/debounce/session
+  restart. tvOS (including invisible home-theater forwarding) and explicit mobile
+  AirPlay retain the buffered route-preserving handoff.
+- **Metadata is not playback readiness.** Mobile system artwork loads off the
+  transport path. Duration and artwork completions cannot publish across a newer
+  selection; cancelled readiness waits exit instead of spinning until timeout.
 - **Queue edits preserve the playing occurrence.** Reordering uses final
   positions relative to Up Next. Clearing history or upcoming tracks also
   updates the unshuffled order, and invalidates only the prepared next item.
@@ -90,6 +100,14 @@ menus and active controls; the surrounding app keeps its own accent color.
 The mobile shell reserves dock clearance only for a visible native bottom tab
 bar, measured from its actual placement. iPad top tabs and sidebars leave the
 dock near the bottom edge; compact windows with bottom tabs retain clearance.
+The bridge observes the native bar's attachment and layout, including detachments
+that occur after its child controller's layout callback during window resizing.
+The wide dock emphasizes play/pause (30-point glyph) over previous/next (22)
+and shuffle/repeat (18), without changing control spacing or hit regions.
+Both dock sizes reuse the expanded player's scaling play/pause transition and
+press feedback. Measured artwork positions retain the panel spring when lyrics
+or the queue shifts the wide player, rather than snapping after layout. The
+existing Reduce Motion path keeps these transitions immediate.
 
 Mobile album and artist details borrow Mozz's artwork-led presentation:
 centered album covers on compact screens, horizontal heroes on wider screens,

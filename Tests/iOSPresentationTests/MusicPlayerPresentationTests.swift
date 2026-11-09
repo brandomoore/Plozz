@@ -221,14 +221,17 @@ final class MusicPlayerPresentationTests: XCTestCase {
             try audio.write(from: buffer)
         }
         player.controller.play(
-            tracks: [CoreModels.MusicTrack(id: "dock", title: "Dock probe", artistName: "Artist", duration: 60)],
-            startIndex: 0, resolveStreamURL: { _ in .init(url: file) }
+            tracks: (0..<3).map {
+                CoreModels.MusicTrack(id: "dock-\($0)", title: "Dock probe", artistName: "Artist", duration: 60)
+            },
+            startIndex: 1, resolveStreamURL: { _ in .init(url: file) }
         )
         player.controller.pause()
         var reportedBottomBar: Bool?
         let host = UIHostingController(rootView: MusicDockNavigationFixture(
             player: player, onBottomBarChange: { reportedBottomBar = $0 }
         ))
+        host.overrideUserInterfaceStyle = .light
         window.rootViewController = host
         for width in [834.0, 430.0, 834.0] {
             window.frame = CGRect(x: 0, y: 0, width: width, height: 1_194)
@@ -237,13 +240,17 @@ final class MusicPlayerPresentationTests: XCTestCase {
             try await Task.sleep(for: .milliseconds(700))
             window.layoutIfNeeded()
             let tabs = try XCTUnwrap(tabController(in: host))
-            let expectedBottom = UIDevice.current.userInterfaceIdiom != .pad || width < 600
+            let nativeBarFrame = tabs.tabBar.convert(tabs.tabBar.bounds, to: tabs.view)
+            let expectedBottom = !tabs.isTabBarHidden && !tabs.tabBar.isHidden
+                && tabs.tabBar.alpha > 0 && tabs.tabBar.window != nil
+                && nativeBarFrame.height > 0 && nativeBarFrame.minY >= tabs.view.bounds.midY
+                && nativeBarFrame.intersects(tabs.view.bounds)
             let deadline = Date().addingTimeInterval(3)
             while reportedBottomBar != expectedBottom && Date() < deadline {
                 try await Task.sleep(for: .milliseconds(20))
             }
             XCTAssertEqual(reportedBottomBar, expectedBottom,
-                           "Regular iPad top tabs must not reserve a phantom bottom bar")
+                           "Native bar \(tabs.tabBar.frame), hidden \(tabs.tabBar.isHidden), alpha \(tabs.tabBar.alpha), attached \(tabs.tabBar.window != nil), traits \(tabs.traitCollection.horizontalSizeClass.rawValue), width \(width)")
             XCTAssertEqual(host.view.bounds.width, width, accuracy: 1)
             let image = attach(window, name: "Music dock \(Int(width)) bottom bar \(expectedBottom)")
             let request = VNRecognizeTextRequest()
@@ -261,6 +268,63 @@ final class MusicPlayerPresentationTests: XCTestCase {
                 XCTAssertLessThan(distanceFromBottom, 90, "No extra tab-bar height below the iPad dock")
             }
             XCTAssertFalse(tabs.isTabBarHidden, "Measure top-vs-bottom placement, not a deliberately hidden bar")
+            for playing in [false, true] {
+                if playing { player.controller.resume() } else { player.controller.pause() }
+                let readyDeadline = Date().addingTimeInterval(5)
+                while player.playback.snapshot.status != (playing ? .playing : .paused), Date() < readyDeadline {
+                    try await Task.sleep(for: .milliseconds(20))
+                }
+                try await Task.sleep(for: .milliseconds(600))
+                XCTAssertEqual(player.playback.snapshot.status, playing ? .playing : .paused)
+                let controls = attach(window, name: "Dock controls \(Int(width)) playing \(playing)")
+                let wide = width > 600
+                let dockWidth = min(width - 44, 640)
+                let lastControlX = (width + dockWidth) / 2 - 12 - 15
+                let centerY = controls.size.height - 22 - (expectedBottom ? 71 : 0) - 28
+                let playX = lastControlX - (wide ? 80 : 40)
+                let playHeight = try dockGlyphHeight(in: controls, center: CGPoint(x: playX, y: centerY))
+                if wide {
+                    for offset in [0.0, 40.0, 120.0, 160.0] {
+                        let secondaryHeight = try dockGlyphHeight(
+                            in: controls, center: CGPoint(x: lastControlX - offset, y: centerY)
+                        )
+                        XCTAssertGreaterThan(playHeight, secondaryHeight * 1.15,
+                                             "Both play and pause must be visibly larger than the other wide-dock controls")
+                    }
+                    XCTAssertGreaterThan(playHeight, 19)
+                    XCTAssertLessThan(playHeight, 25)
+                } else {
+                    XCTAssertEqual(playHeight, playing ? 20 * 16 / 24 : 20 * 18 / 24, accuracy: 1.5,
+                                   "Compact dock glyphs keep their existing size")
+                }
+            }
+        }
+    }
+
+    private func dockGlyphHeight(in image: UIImage, center: CGPoint) throws -> CGFloat {
+        let source = try XCTUnwrap(image.cgImage)
+        let scale = image.scale
+        let rect = CGRect(x: (center.x - 15) * scale, y: (center.y - 15) * scale,
+                          width: 30 * scale, height: 30 * scale).integral
+        let glyph = try XCTUnwrap(source.cropping(to: rect))
+        var bytes = [UInt8](repeating: 0, count: glyph.width * glyph.height * 4)
+        return try bytes.withUnsafeMutableBytes { pixels in
+            let context = try XCTUnwrap(CGContext(
+                data: pixels.baseAddress, width: glyph.width, height: glyph.height,
+                bitsPerComponent: 8, bytesPerRow: glyph.width * 4,
+                space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGBitmapInfo.byteOrder32Big.rawValue | CGImageAlphaInfo.premultipliedLast.rawValue
+            ))
+            context.draw(glyph, in: CGRect(x: 0, y: 0, width: glyph.width, height: glyph.height))
+            let inkRows = (0..<glyph.height).filter { row in
+                (0..<glyph.width).contains { column in
+                    let offset = (row * glyph.width + column) * 4
+                    return max(pixels[offset], pixels[offset + 1], pixels[offset + 2]) < 190
+                }
+            }
+            let first = try XCTUnwrap(inkRows.first, "Expected visible dock glyph at \(center)")
+            let last = try XCTUnwrap(inkRows.last)
+            return CGFloat(last - first + 1) / scale
         }
     }
 

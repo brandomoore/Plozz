@@ -596,7 +596,10 @@ struct NowPlayingMorphContainer: View {
                 // the body keeps this fixed full-screen frame through the
                 // collapse, so a measured slot never moves under the morph.
                 .coordinateSpace(name: Self.artSlotSpace)
-                .onPreferenceChange(ArtSlotKey.self) { artSlotRect = $0 }
+                .modifier(PlayerArtworkSlotObserver(
+                    rect: $artSlotRect,
+                    animation: wide && ui.isFullPresented && !reduceMotion ? Self.panelSpring : nil
+                ))
                 // Drag-to-dismiss anywhere the content doesn't claim the touch:
                 // a clear, hit-testable layer directly behind the body. Interactive
                 // children (buttons, scrubber, the queue scroll) sit in front and
@@ -1804,8 +1807,8 @@ struct NowPlayingMorphContainer: View {
     private static let panelTimeScale: CGFloat = 1.4
 
     /// Shared open/close spring for the queue transition (× `panelTimeScale`).
-    private static let panelSpring = Animation.spring(response: 0.48 * panelTimeScale,
-                                                      dampingFraction: 0.86)
+    static let panelSpring = Animation.spring(response: 0.48 * panelTimeScale,
+                                             dampingFraction: 0.86)
 
     /// Gentler, longer spring for the queue BODY's rise/fade on OPEN only, so its
     /// climb visibly takes longer than the fast `panelSpring` hand-off (artwork dock +
@@ -2278,10 +2281,23 @@ private struct MarqueeLine: View {
 /// drag-reorder.
 /// Where the expanded artwork's reserved slot actually landed, in the drawer
 /// body's coordinate space. See `artSlot`.
-private struct ArtSlotKey: PreferenceKey {
+struct ArtSlotKey: PreferenceKey {
     static var defaultValue: CGRect? = nil
     static func reduce(value: inout CGRect?, nextValue: () -> CGRect?) {
         if let next = nextValue() { value = next }
+    }
+}
+
+struct PlayerArtworkSlotObserver: ViewModifier {
+    @Binding var rect: CGRect?
+    let animation: Animation?
+
+    func body(content: Content) -> some View {
+        content.onPreferenceChange(ArtSlotKey.self) { target in
+            // Preference delivery loses the layout's spring transaction.
+            // Restore it for the separately positioned cover, but not its first placement.
+            withAnimation(rect == nil ? nil : animation) { rect = target }
+        }
     }
 }
 
@@ -2532,8 +2548,8 @@ private struct IslandContent: View {
                     commitTick &+= 1
                     changeTrack(goNext: false, from: 0)
                 } label: {
-                    Image(mozz: "backward.fill")
-                        .font(.title3).frame(width: 30, height: 30).contentShape(Rectangle())
+                    AppIcon.skipBack.styled(size: 22)
+                        .frame(width: 30, height: 30).contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .disabled(!playback.snapshot.hasPrevious)
@@ -2543,30 +2559,20 @@ private struct IslandContent: View {
                 .allowsHitTesting(collapse < 0.5)
             }
 
-            Button { playback.togglePlayPause() } label: {
-                // A spinner while a play is waiting for sound, so a cold-launch
-                // tap visibly does something (see PlayPauseButton.buffering).
-                Group {
-                    if playback.snapshot.status == .buffering {
-                        ProgressView().controlSize(.small)
-                    } else {
-                        (playback.snapshot.status == .playing ? AppIcon.pause : AppIcon.play)
-                            .styled(size: 20)
-                    }
-                }
-                .frame(width: 30, height: 30).contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(playback.snapshot.status == .buffering ? "Loading"
-                                : (playback.snapshot.status == .playing ? "Pause" : "Play"))
+            PlayPauseButton(
+                playing: playback.snapshot.status == .playing,
+                buffering: playback.snapshot.status == .buffering,
+                glyphSize: wide ? 30 : 20,
+                hitSize: 30
+            ) { playback.togglePlayPause() }
 
             Button {
                 // Skip button runs the same slide as a swipe (from rest).
                 commitTick &+= 1
                 changeTrack(goNext: true, from: 0)
             } label: {
-                Image(mozz: "forward.fill")
-                    .font(.title3).frame(width: 30, height: 30).contentShape(Rectangle())
+                AppIcon.skipForward.styled(size: wide ? 22 : 24)
+                    .frame(width: 30, height: 30).contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .disabled(!playback.snapshot.hasNext)

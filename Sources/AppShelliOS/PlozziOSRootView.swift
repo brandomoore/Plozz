@@ -1853,6 +1853,21 @@ struct PlozziOSSettingsTabAction: UIViewControllerRepresentable {
         private weak var previousOverflowDelegate: (any UITableViewDelegate)?
         private weak var previousMoreDelegate: (any UINavigationControllerDelegate)?
         private var previousMoreNavigationBarHidden: Bool?
+        private let bottomBarObserver = BottomBarObservationView()
+
+        private final class BottomBarObservationView: UIView {
+            var onChange: (() -> Void)?
+
+            override func didMoveToWindow() {
+                super.didMoveToWindow()
+                onChange?()
+            }
+
+            override func layoutSubviews() {
+                super.layoutSubviews()
+                onChange?()
+            }
+        }
 
         override func didMove(toParent parent: UIViewController?) {
             super.didMove(toParent: parent)
@@ -1892,6 +1907,14 @@ struct PlozziOSSettingsTabAction: UIViewControllerRepresentable {
                         previousDelegate = tabs.delegate
                         tabs.delegate = self
                     }
+                    if onBottomBarVisibilityChange != nil, bottomBarObserver.superview !== tabs.tabBar {
+                        bottomBarObserver.isUserInteractionEnabled = false
+                        bottomBarObserver.accessibilityElementsHidden = true
+                        bottomBarObserver.frame = tabs.tabBar.bounds
+                        bottomBarObserver.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+                        bottomBarObserver.onChange = { [weak self] in self?.reportBottomBarVisibility() }
+                        tabs.tabBar.addSubview(bottomBarObserver)
+                    }
                     installOverflowAction(in: tabs)
                     reportSettingsVisibility()
                     reportBottomBarVisibility()
@@ -1915,6 +1938,8 @@ struct PlozziOSSettingsTabAction: UIViewControllerRepresentable {
         }
 
         func restore() {
+            bottomBarObserver.onChange = nil
+            bottomBarObserver.removeFromSuperview()
             if owner?.moreNavigationController.delegate === self {
                 owner?.moreNavigationController.delegate = previousMoreDelegate
                 if let previousMoreNavigationBarHidden {
@@ -1936,17 +1961,17 @@ struct PlozziOSSettingsTabAction: UIViewControllerRepresentable {
 
         private func reportBottomBarVisibility() {
             guard let owner, owner.isViewLoaded else { return }
-            let bar = owner.tabBar
-            let frame = bar.convert(bar.bounds, to: owner.view)
-            let visible = !owner.isTabBarHidden && !bar.isHidden && bar.alpha > 0
-                && bar.window != nil && frame.height > 0
-                && frame.minY >= owner.view.bounds.midY
-                && frame.intersects(owner.view.bounds)
-            guard reportedBottomBarVisibility != visible else { return }
-            reportedBottomBarVisibility = visible
             Task { @MainActor [weak self, weak owner] in
-                guard let self, let owner, self.owner === owner,
-                      self.reportedBottomBarVisibility == visible else { return }
+                guard let self, let owner, self.owner === owner, owner.isViewLoaded else { return }
+                // The parent can move or detach its tab bar after this child's layout callback.
+                let bar = owner.tabBar
+                let frame = bar.convert(bar.bounds, to: owner.view)
+                let visible = !owner.isTabBarHidden && !bar.isHidden && bar.alpha > 0
+                    && bar.window != nil && frame.height > 0
+                    && frame.minY >= owner.view.bounds.midY
+                    && frame.intersects(owner.view.bounds)
+                guard self.reportedBottomBarVisibility != visible else { return }
+                self.reportedBottomBarVisibility = visible
                 self.onBottomBarVisibilityChange?(visible)
             }
         }

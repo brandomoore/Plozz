@@ -361,7 +361,7 @@ public final class AudioPlaybackController {
     private var startTask: Task<Void, Never>?
     /// An outgoing end must not replace a selection still resolving or buffering.
     private var pendingStartOutgoingItemID: ObjectIdentifier?
-    /// True while a debounced skip is pending — the UI shows the target track but
+    /// True while a buffered skip or local mobile selection is pending — the UI shows the target track but
     /// the player is still on the outgoing one, so the time observer freezes the
     /// scrubber at 0 instead of showing the old track's position under the new
     /// title. Cleared once the pending `startCurrent()` completes.
@@ -370,6 +370,16 @@ public final class AudioPlaybackController {
     /// player. Long enough to coalesce a burst of presses, short enough that a
     /// single deliberate skip still feels responsive.
     private static let skipDebounce: Duration = .milliseconds(350)
+    private var requiresBufferedRouteTransition: Bool {
+        #if os(tvOS)
+        // Home-theater forwarding is invisible to the app's HDMI route.
+        true
+        #elseif os(iOS)
+        AVAudioSession.sharedInstance().currentRoute.outputs.contains { $0.portType == .airPlay }
+        #else
+        false
+        #endif
+    }
     /// How long the player must stay stranded on a dead item before the watchdog
     /// reloads it. Long enough that a brief transition/buffering blip is never
     /// mistaken for a genuine freeze, short enough to recover on its own quickly.
@@ -860,6 +870,8 @@ public final class AudioPlaybackController {
     /// the generation here supersedes any start still resolving so it bails
     /// instead of transitioning to a track the user has already skipped past.
     private func scheduleStart(debounced: Bool) {
+        let bufferedRoute = requiresBufferedRouteTransition
+        let debounced = debounced && bufferedRoute
         enableRemoteCommands()
         diag("skip", "scheduleStart debounced=\(debounced) index=\(index) track=\"\(currentTrack?.title ?? "nil")\" route=\(routeSummary())")
         startTask?.cancel()
@@ -868,7 +880,13 @@ public final class AudioPlaybackController {
         isWaitingForData = true
         isResolving = true
         playbackFailed = false
-        if debounced {
+        if !bufferedRoute {
+            reportStopIfNeeded(position: currentTime)
+            player.pause()
+            isPlaying = true
+            currentQuality = nil
+        }
+        if debounced || !bufferedRoute {
             startPending = true
             currentTime = 0
             duration = currentTrack?.duration ?? 0
@@ -886,7 +904,7 @@ public final class AudioPlaybackController {
             // keeps the plain treadmill hand-off with no session reactivation.
             await self.startCurrent(reactivateRoute: debounced)
             if !Task.isCancelled {
-                self.startPending = false
+                if bufferedRoute { self.startPending = false }
                 self.isResolving = false
                 self.startTask = nil
             }
@@ -938,7 +956,7 @@ public final class AudioPlaybackController {
             enableRemoteCommands()
             currentQuality = prepared.quality
             preparedNext = nil
-            if reactivateRoute {
+            if reactivateRoute && requiresBufferedRouteTransition {
                 // MANUAL SKIP hand-off (the skip-drop fix). `advanceToNextItem()`
                 // on a progressive-download item makes the HomePod re-negotiate its
                 // AirPlay 2 stream; a plain `play()` into that still-renegotiating
@@ -963,7 +981,11 @@ public final class AudioPlaybackController {
                 // audible gap between album tracks).
                 player.advanceToNextItem()
                 observeEnd(of: item)
-                player.play()
+                if requiresBufferedRouteTransition {
+                    player.play()
+                } else {
+                    player.playImmediately(atRate: 1.0)
+                }
                 diag("start", "FAST-PATH natural gapless hand-off route=\(routeSummary()) state=[\(playerStateSummary())]")
             }
             // Restore normal buffering now that this item is the one playing.
@@ -995,7 +1017,17 @@ public final class AudioPlaybackController {
         // pass here, so keep activation idempotent rather than install another
         // set of command handlers on every track transition.
         enableRemoteCommands()
-        if let current = player.currentItem {
+        if !requiresBufferedRouteTransition {
+            reportStopIfNeeded(position: currentTime)
+            clearPreparedNext(removeFromPlayer: true)
+            let item = AVPlayerItem(url: resolved.url)
+            let outgoing = player.currentItem
+            player.insert(item, after: outgoing)
+            if outgoing != nil { player.advanceToNextItem() }
+            observeEnd(of: item)
+            player.playImmediately(atRate: 1.0)
+            diag("start", "LOCAL-HANDOFF gen=\(generation) state=[\(playerStateSummary())]")
+        } else if let current = player.currentItem {
             // Insert-and-buffer with a bounded retry. A rapid-skip burst (or any
             // transient network blip) can make the freshly-inserted item fail to
             // load — the on-device log caught `itemStatus=.failed
@@ -1090,9 +1122,13 @@ public final class AudioPlaybackController {
     /// opens the server-side now-playing session, and — importantly — pre-enqueues
     /// the *following* track so the next advance can take the seamless fast path.
     private func finishStart(track: MusicTrack) async {
+        let generation = trackTransitionGeneration
         isPlaying = true
         currentTime = 0
         duration = track.duration ?? 0
+        startPending = false
+        isResolving = false
+        isWaitingForData = player.timeControlStatus == .waitingToPlayAtSpecifiedRate
         // The new track is now playing — open its server-side now-playing session.
         reportStart(track)
         // Warm the treadmill: resolve + enqueue the upcoming track right away so it
@@ -1105,18 +1141,21 @@ public final class AudioPlaybackController {
         // top-corner Now Playing banner (a one-shot snapshot taken when audio
         // starts) shows the album art, like Apple Music/Spotify. Bounded so a
         // slow artwork download never holds up the Now Playing card itself.
-        #if canImport(UIKit)
+        #if canImport(UIKit) && os(tvOS)
         let policy = artworkPolicy
         if let image = await bannerArtworkImage(track, policy: policy),
+           !Task.isCancelled, generation == trackTransitionGeneration,
            artworkPolicy == policy,
            currentTrack?.id == track.id {
             currentArtwork = Self.makeArtwork(from: image)
         }
         #endif
+        guard !Task.isCancelled, generation == trackTransitionGeneration else { return }
         updateNowPlayingInfo()
         #endif
         loadArtwork(for: track)
         await refreshDuration()
+        guard !Task.isCancelled, generation == trackTransitionGeneration else { return }
         #if canImport(MediaPlayer)
         updateNowPlayingInfo()
         #endif
@@ -1166,7 +1205,7 @@ public final class AudioPlaybackController {
             // Buffer further ahead than the default so the pre-enqueued track has a
             // deep cushion of audio ready to keep flowing to the HomePod across the
             // AirPlay stream renegotiation that `advanceToNextItem()` triggers.
-            item.preferredForwardBufferDuration = 30
+            item.preferredForwardBufferDuration = self.requiresBufferedRouteTransition ? 30 : 0
             guard self.player.canInsert(item, after: self.player.currentItem) else {
                 self.clearPreparedNext()
                 return
@@ -1193,7 +1232,7 @@ public final class AudioPlaybackController {
     /// the route. Runs on the main actor; `Task.sleep` suspends without blocking.
     private func waitUntilReadyToPlay(_ item: AVPlayerItem, timeout: TimeInterval = 8.0) async {
         let deadline = Date().addingTimeInterval(timeout)
-        while Date() < deadline {
+        while !Task.isCancelled, Date() < deadline {
             if item.status == .failed { return }
             if item.status == .readyToPlay,
                item.isPlaybackLikelyToKeepUp || item.isPlaybackBufferFull {
@@ -1378,11 +1417,13 @@ public final class AudioPlaybackController {
 
     private func refreshDuration() async {
         guard let item = player.currentItem else { return }
+        let generation = trackTransitionGeneration
         let deadline = Date().addingTimeInterval(5)
-        while item.status != .readyToPlay, Date() < deadline {
+        while !Task.isCancelled, item.status != .readyToPlay, Date() < deadline {
             if item.status == .failed { return }
             try? await Task.sleep(nanoseconds: 50_000_000)
         }
+        guard !Task.isCancelled, generation == trackTransitionGeneration, player.currentItem === item else { return }
         let seconds = item.duration.seconds
         if seconds.isFinite, seconds > 0 {
             duration = seconds
@@ -1477,7 +1518,7 @@ public final class AudioPlaybackController {
         // Sample 4×/sec so synced-lyric highlighting tracks the music closely.
         // A 1s interval makes the active line trail the vocal by up to a second.
         let interval = CMTime(value: 1, timescale: 4)
-        timeObserver = player.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] time in
+        timeObserver = player.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] _ in
             // The callback is delivered on the main queue; hop to the main actor
             // to satisfy strict concurrency.
             MainActor.assumeIsolated {
@@ -1499,7 +1540,8 @@ public final class AudioPlaybackController {
                 // playing, but the UI already shows the target track — so don't
                 // let the old item's position drive the scrubber; keep it at 0.
                 guard !self.startPending else { return }
-                let seconds = time.seconds
+                // A queued callback can belong to the item replaced by a selection.
+                let seconds = self.player.currentTime().seconds
                 if seconds.isFinite { self.currentTime = seconds }
                 if self.duration == 0, let d = self.player.currentItem?.duration.seconds, d.isFinite, d > 0 {
                     self.duration = d
@@ -1816,7 +1858,7 @@ public final class AudioPlaybackController {
     /// Re-activates the audio session and resumes the player when we still intend
     /// to be playing but the render pipeline parked after a route disruption.
     private func attemptPlaybackRecovery() {
-        guard hasActivePlayback, isPlaying else {
+        guard hasActivePlayback, isPlaying, !isResolving, !startPending else {
             diag("recover", "skipped (hasActivePlayback=\(hasActivePlayback) isPlaying=\(isPlaying))")
             return
         }
@@ -1842,7 +1884,7 @@ public final class AudioPlaybackController {
             for attempt in 1...8 {
                 try? await Task.sleep(nanoseconds: 600_000_000) // 0.6s between tries
                 guard let self, !Task.isCancelled else { return }
-                guard self.isPlaying, self.hasActivePlayback else {
+                guard self.isPlaying, self.hasActivePlayback, !self.isResolving, !self.startPending else {
                     self.diag("recover", "began-recovery stop (isPlaying=\(self.isPlaying) hasActivePlayback=\(self.hasActivePlayback))")
                     return
                 }

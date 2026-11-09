@@ -475,19 +475,21 @@ struct PlayPauseButton: View {
     /// reads as "nothing happened" and a pause glyph over silence reads as
     /// broken. Tapping still cancels.
     var buffering: Bool = false
+    var glyphSize: CGFloat = PlayerControlMetrics.playGlyph
+    var hitSize: CGFloat = PlayerControlMetrics.playHit
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
             ZStack {
-                AppIcon.play.styled(size: PlayerControlMetrics.playGlyph)
+                AppIcon.play.styled(size: glyphSize)
                     .opacity(playing || buffering ? 0 : 1)
                     .scaleEffect(playing || buffering ? 0.62 : 1)
-                AppIcon.pause.styled(size: PlayerControlMetrics.playGlyph)
+                AppIcon.pause.styled(size: glyphSize)
                     .opacity(playing && !buffering ? 1 : 0)
                     .scaleEffect(playing && !buffering ? 1 : 0.62)
                 ProgressView()
-                    .controlSize(.large)
+                    .controlSize(hitSize < PlayerControlMetrics.playHit ? .small : .large)
                     .opacity(buffering ? 1 : 0)
             }
             // Enough bounce to feel alive; the incoming glyph settles just past
@@ -497,9 +499,9 @@ struct PlayPauseButton: View {
             // tracks. Close enough that the row still reads as one family.
             .animation(.spring(response: 0.4, dampingFraction: 0.62), value: playing)
             .animation(.easeInOut(duration: 0.2), value: buffering)
-            .playerHitTarget(PlayerControlMetrics.playHit)
+            .playerHitTarget(hitSize)
         }
-        .buttonStyle(PlayerButtonStyle(washDiameter: PlayerControlMetrics.playGlyph + 22))
+        .buttonStyle(PlayerButtonStyle(washDiameter: glyphSize + 22))
         .foregroundStyle(.primary)
         .accessibilityLabel(buffering ? "Loading" : (playing ? "Pause" : "Play"))
     }
