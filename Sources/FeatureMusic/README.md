@@ -87,6 +87,9 @@ presentation are retained. The host remains Plozz's native navigation rather
 than Mozz's separate split tab bar.
 Its light/dark monochrome accent is scoped to the player, including navigation
 menus and active controls; the surrounding app keeps its own accent color.
+The mobile shell reserves dock clearance only for a visible native bottom tab
+bar, measured from its actual placement. iPad top tabs and sidebars leave the
+dock near the bottom edge; compact windows with bottom tabs retain clearance.
 
 Mobile album and artist details borrow Mozz's artwork-led presentation:
 centered album covers on compact screens, horizontal heroes on wider screens,

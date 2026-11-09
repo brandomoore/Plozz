@@ -973,6 +973,7 @@ struct PlozziOSTabShell: View {
     @State private var isShowingMorePage = false
     @State private var overflowNavigation = PlozziOSOverflowNavigation()
     @State private var hasVisibleSettingsNavigationEntry = false
+    @State private var hasVisibleBottomTabBar = false
     @State private var lastContentDestination: PlozziOSDestination = .home
     @State private var retainsExplicitLiveTVEntry = false
     @State private var retainsExplicitHomeEntry = false
@@ -1440,6 +1441,7 @@ struct PlozziOSTabShell: View {
                 action: showSettings,
                 onOverflowVisibilityChange: { isShowingMorePage = $0 },
                 onSettingsVisibilityChange: { hasVisibleSettingsNavigationEntry = $0 },
+                onBottomBarVisibilityChange: { hasVisibleBottomTabBar = $0 },
                 overflowNavigation: overflowNavigation
             )
             .frame(width: 0, height: 0)
@@ -1500,7 +1502,7 @@ struct PlozziOSTabShell: View {
                     .overlay {
                         if let music = appModel.music, music.authorizationID != nil {
                             MusicPlayerOverlay(
-                                session: music.player, hasBottomBar: !usesVerticalToolbar,
+                                session: music.player, hasBottomBar: hasVisibleBottomTabBar && !usesVerticalToolbar,
                                 contentLeft: sidebarGeometry.isVisible ? sidebarGeometry.coveredWidth : 0,
                                 appearance: music.settings.appearance
                             )
@@ -1811,6 +1813,7 @@ struct PlozziOSSettingsTabAction: UIViewControllerRepresentable {
     let action: () -> Void
     var onOverflowVisibilityChange: ((Bool) -> Void)?
     var onSettingsVisibilityChange: ((Bool) -> Void)?
+    var onBottomBarVisibilityChange: ((Bool) -> Void)?
     var overflowNavigation: PlozziOSOverflowNavigation?
 
     func makeUIViewController(context: Context) -> Controller { Controller() }
@@ -1820,6 +1823,7 @@ struct PlozziOSSettingsTabAction: UIViewControllerRepresentable {
         controller.action = action
         controller.onOverflowVisibilityChange = onOverflowVisibilityChange
         controller.onSettingsVisibilityChange = onSettingsVisibilityChange
+        controller.onBottomBarVisibilityChange = onBottomBarVisibilityChange
         controller.overflowNavigation = overflowNavigation
         controller.install()
     }
@@ -1829,6 +1833,7 @@ struct PlozziOSSettingsTabAction: UIViewControllerRepresentable {
         controller.action = nil
         controller.onOverflowVisibilityChange = nil
         controller.onSettingsVisibilityChange = nil
+        controller.onBottomBarVisibilityChange = nil
         controller.overflowNavigation = nil
     }
 
@@ -1837,8 +1842,10 @@ struct PlozziOSSettingsTabAction: UIViewControllerRepresentable {
         var action: (() -> Void)?
         var onOverflowVisibilityChange: ((Bool) -> Void)?
         var onSettingsVisibilityChange: ((Bool) -> Void)?
+        var onBottomBarVisibilityChange: ((Bool) -> Void)?
         var overflowNavigation: PlozziOSOverflowNavigation?
         private var reportedSettingsVisibility: Bool?
+        private var reportedBottomBarVisibility: Bool?
         private var reportedOverflowVisibility: Bool?
         private weak var owner: UITabBarController?
         private weak var previousDelegate: (any UITabBarControllerDelegate)?
@@ -1861,10 +1868,11 @@ struct PlozziOSSettingsTabAction: UIViewControllerRepresentable {
             install()
             reportOverflowVisibility()
             reportSettingsVisibility()
+            reportBottomBarVisibility()
         }
 
         func install() {
-            guard tabIndex != nil || onOverflowVisibilityChange != nil else {
+            guard tabIndex != nil || onOverflowVisibilityChange != nil || onBottomBarVisibilityChange != nil else {
                 restore()
                 return
             }
@@ -1886,6 +1894,7 @@ struct PlozziOSSettingsTabAction: UIViewControllerRepresentable {
                     }
                     installOverflowAction(in: tabs)
                     reportSettingsVisibility()
+                    reportBottomBarVisibility()
                     return
                 }
                 ancestor = container.parent
@@ -1922,6 +1931,24 @@ struct PlozziOSSettingsTabAction: UIViewControllerRepresentable {
             previousDelegate = nil
             reportedOverflowVisibility = nil
             reportedSettingsVisibility = nil
+            reportedBottomBarVisibility = nil
+        }
+
+        private func reportBottomBarVisibility() {
+            guard let owner, owner.isViewLoaded else { return }
+            let bar = owner.tabBar
+            let frame = bar.convert(bar.bounds, to: owner.view)
+            let visible = !owner.isTabBarHidden && !bar.isHidden && bar.alpha > 0
+                && bar.window != nil && frame.height > 0
+                && frame.minY >= owner.view.bounds.midY
+                && frame.intersects(owner.view.bounds)
+            guard reportedBottomBarVisibility != visible else { return }
+            reportedBottomBarVisibility = visible
+            Task { @MainActor [weak self, weak owner] in
+                guard let self, let owner, self.owner === owner,
+                      self.reportedBottomBarVisibility == visible else { return }
+                self.onBottomBarVisibilityChange?(visible)
+            }
         }
 
         private func reportSettingsVisibility() {

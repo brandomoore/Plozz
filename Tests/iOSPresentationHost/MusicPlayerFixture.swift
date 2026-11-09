@@ -1,4 +1,5 @@
 import AVFoundation
+@testable import AppShelliOS
 import CoreModels
 import FeatureMusic
 import SwiftUI
@@ -6,6 +7,7 @@ import SwiftUI
 struct MusicPlayerFixture: View {
     @State private var player = MusicPlayerSession()
     @State private var failure: String?
+    @State private var hasBottomBar = false
 
     private var appearance: MusicPlayerAppearance {
         let arguments = ProcessInfo.processInfo.arguments
@@ -31,8 +33,16 @@ struct MusicPlayerFixture: View {
             .tabItem { Label("Music", systemImage: "music.note") }
             Text("Library").tabItem { Label("Library", systemImage: "square.stack") }
         }
+        .tabViewStyle(.sidebarAdaptable)
+        .background {
+            PlozziOSSettingsTabAction(
+                tabIndex: nil, action: {},
+                onBottomBarVisibilityChange: { hasBottomBar = $0 }
+            )
+            .frame(width: 0, height: 0)
+        }
         .overlay {
-            MusicPlayerOverlay(session: player, hasBottomBar: true, appearance: appearance)
+            MusicPlayerOverlay(session: player, hasBottomBar: hasBottomBar, appearance: appearance)
         }
         .task {
             let file = FileManager.default.temporaryDirectory.appendingPathComponent("music-fixture.caf")

@@ -1,11 +1,13 @@
 #if os(iOS)
 import AVFoundation
+@testable import AppShelliOS
 import CoreModels
 import CoreNetworking
 @testable import FeatureMusic
 import ProviderPlex
 import SwiftUI
 import UIKit
+import Vision
 import XCTest
 
 @MainActor
@@ -197,6 +199,76 @@ final class MusicPlayerPresentationTests: XCTestCase {
         XCTAssertFalse(player.controller.isBuffering)
     }
 
+    func testDockClearsOnlyAnActualBottomTabBarAcrossWindowSizes() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        let player = MusicPlayerSession()
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".caf")
+        defer {
+            player.stop()
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+            try? FileManager.default.removeItem(at: file)
+        }
+        let format = try XCTUnwrap(AVAudioFormat(standardFormatWithSampleRate: 44_100, channels: 1))
+        let buffer = try XCTUnwrap(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 2_646_000))
+        buffer.frameLength = buffer.frameCapacity
+        try XCTUnwrap(buffer.floatChannelData)[0].initialize(repeating: 0, count: Int(buffer.frameLength))
+        do {
+            let audio = try AVAudioFile(forWriting: file, settings: format.settings)
+            try audio.write(from: buffer)
+        }
+        player.controller.play(
+            tracks: [CoreModels.MusicTrack(id: "dock", title: "Dock probe", artistName: "Artist", duration: 60)],
+            startIndex: 0, resolveStreamURL: { _ in .init(url: file) }
+        )
+        player.controller.pause()
+        var reportedBottomBar: Bool?
+        let host = UIHostingController(rootView: MusicDockNavigationFixture(
+            player: player, onBottomBarChange: { reportedBottomBar = $0 }
+        ))
+        window.rootViewController = host
+        for width in [834.0, 430.0, 834.0] {
+            window.frame = CGRect(x: 0, y: 0, width: width, height: 1_194)
+            host.traitOverrides.horizontalSizeClass = width > 600 ? .regular : .compact
+            window.makeKeyAndVisible()
+            try await Task.sleep(for: .milliseconds(700))
+            window.layoutIfNeeded()
+            let tabs = try XCTUnwrap(tabController(in: host))
+            let expectedBottom = UIDevice.current.userInterfaceIdiom != .pad || width < 600
+            let deadline = Date().addingTimeInterval(3)
+            while reportedBottomBar != expectedBottom && Date() < deadline {
+                try await Task.sleep(for: .milliseconds(20))
+            }
+            XCTAssertEqual(reportedBottomBar, expectedBottom,
+                           "Regular iPad top tabs must not reserve a phantom bottom bar")
+            XCTAssertEqual(host.view.bounds.width, width, accuracy: 1)
+            let image = attach(window, name: "Music dock \(Int(width)) bottom bar \(expectedBottom)")
+            let request = VNRecognizeTextRequest()
+            request.recognitionLevel = .accurate
+            try VNImageRequestHandler(cgImage: XCTUnwrap(image.cgImage)).perform([request])
+            let title = try XCTUnwrap(request.results?.first {
+                $0.topCandidates(1).first?.string == "Dock probe"
+            })
+            let distanceFromBottom = title.boundingBox.minY * image.size.height
+            if expectedBottom {
+                XCTAssertGreaterThan(distanceFromBottom, 100, "The dock must still clear phone/compact navigation")
+                XCTAssertLessThan(distanceFromBottom, 170)
+            } else {
+                XCTAssertGreaterThan(distanceFromBottom, 30)
+                XCTAssertLessThan(distanceFromBottom, 90, "No extra tab-bar height below the iPad dock")
+            }
+            XCTAssertFalse(tabs.isTabBarHidden, "Measure top-vs-bottom placement, not a deliberately hidden bar")
+        }
+    }
+
+    private func tabController(in controller: UIViewController) -> UITabBarController? {
+        if let tabs = controller as? UITabBarController { return tabs }
+        return controller.children.lazy.compactMap { self.tabController(in: $0) }.first
+    }
+
     private func brightBluePixelCount(in image: UIImage) throws -> Int {
         let source = try XCTUnwrap(image.cgImage)
         let colorSpace = try XCTUnwrap(CGColorSpace(name: CGColorSpace.sRGB))
@@ -230,6 +302,35 @@ final class MusicPlayerPresentationTests: XCTestCase {
         attachment.lifetime = .keepAlways
         add(attachment)
         return image
+    }
+}
+
+private struct MusicDockNavigationFixture: View {
+    let player: MusicPlayerSession
+    let onBottomBarChange: (Bool) -> Void
+    @State private var hasBottomBar = false
+
+    var body: some View {
+        TabView {
+            Tab("Music", systemImage: "music.note") {
+                NavigationStack { Text("Library content").navigationTitle("Music") }
+            }
+            Tab("Library", systemImage: "square.stack") { Text("Library") }
+        }
+        .tabViewStyle(.sidebarAdaptable)
+        .background {
+            PlozziOSSettingsTabAction(
+                tabIndex: nil, action: {},
+                onBottomBarVisibilityChange: {
+                    hasBottomBar = $0
+                    onBottomBarChange($0)
+                }
+            )
+            .frame(width: 0, height: 0)
+        }
+        .overlay {
+            MusicPlayerOverlay(session: player, hasBottomBar: hasBottomBar)
+        }
     }
 }
 
