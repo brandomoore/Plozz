@@ -48,6 +48,14 @@ runs:
       shell: bash
       run: brew install xcodegen
 
+    - name: Install disc interpreter build tools
+      if: ${{ inputs.lane != 'package-tests' }}
+      shell: bash
+      run: |
+        for formula in autoconf automake libtool pkg-config meson; do
+          brew list --formula "$formula" >/dev/null 2>&1 || brew install "$formula"
+        done
+
     - name: Generate Xcode project
       shell: bash
       run: tools/generate-project.sh
