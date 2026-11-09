@@ -17,7 +17,7 @@ jobs:
       matrix:
         platform: [ios, tvos]
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -29,7 +29,7 @@ jobs:
           PLATFORM: ${{ matrix.platform }}
         run: tools/build-unsigned-ipa.sh "$PLATFORM"
       - name: Upload unsigned IPA and provenance
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: Plozz-${{ matrix.platform }}-unsigned
           path: |
@@ -41,7 +41,7 @@ jobs:
   release:
     name: Attach unsigned IPAs to release
     needs: build
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     permissions:
       contents: write
@@ -50,7 +50,7 @@ jobs:
       RELEASE_TAG: ${{ github.event.release.tag_name }}
     steps:
       - name: Download unsigned IPAs
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: Plozz-*-unsigned
           merge-multiple: true
