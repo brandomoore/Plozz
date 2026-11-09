@@ -387,7 +387,7 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
                 // Stable pane IDs retain renderers through single/multiple layouts and promotion.
                 ForEach(multiview.panes) { pane in
                     if let prepared = pane.preparation.current {
-                        let videoFrame = showingMultiview
+                        let slotFrame = showingMultiview
                             ? LiveTVMultiviewGeometry.frame(
                                 for: pane.id, panes: multiview.panes.map(\.id),
                                 primary: multiview.primaryPaneID, layout: multiview.layout,
@@ -399,6 +399,17 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
                             )
                             .offsetBy(dx: layout.bounds.minX, dy: layout.bounds.minY)
                             : (expanded ? layout.bounds : layout.videoFrame)
+                        #if os(tvOS)
+                        let roundsPicture = showingMultiview && multiview.expandedPaneID == nil
+                        let videoFrame = roundsPicture
+                            ? LiveTVMultiviewGeometry.contentFrame(
+                                in: slotFrame, aspectRatio: pane.videoAspectRatio.map { CGFloat($0) })
+                            : slotFrame
+                        let cornerRadius: CGFloat = roundsPicture ? 10 : 0
+                        #else
+                        let videoFrame = slotFrame
+                        let cornerRadius: CGFloat = showingMultiview && multiview.isEditingLayout ? 10 : 0
+                        #endif
                         let reflectionHeight = !expanded && !showingMultiview && !reduceTransparency
                             ? layout.videoReflectionHeight : 0
                         let topReflectionHeight = reflectionHeight > 0 ? layout.videoTopReflectionHeight : 0
@@ -412,13 +423,15 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
                     .environment(\.playbackReflectionColorScheme, palette.isLight ? .light : .dark)
                     .environment(\.themePalette, ThemePalette.dark)
                     .environment(\.colorScheme, .dark)
+                    #if os(iOS)
                     .frame(width: videoFrame.width, height: videoFrame.height)
+                    #endif
                     .clipShape(PrototypeVideoClip(
                         reflectionHeight: reflectionHeight,
                         topReflectionHeight: topReflectionHeight,
                         leftReflectionWidth: layoutDirection == .rightToLeft ? trailingReflectionWidth : leadingReflectionWidth,
                         rightReflectionWidth: layoutDirection == .rightToLeft ? leadingReflectionWidth : trailingReflectionWidth,
-                        cornerRadius: showingMultiview && multiview.isEditingLayout ? 10 : 0))
+                        cornerRadius: cornerRadius))
                     .overlay {
                         #if os(tvOS)
                         LinearGradient(
@@ -434,15 +447,19 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
                         .accessibilityHidden(true)
                         #endif
                     }
+                    #if os(tvOS)
+                    .modifier(PrototypeVideoPlacement(frame:
+                        !showingMultiview && layoutDirection == .rightToLeft
+                            ? CGRect(x: geometry.size.width - videoFrame.maxX, y: videoFrame.minY,
+                                     width: videoFrame.width, height: videoFrame.height)
+                            : videoFrame))
+                    #else
                     .position(
                         x: !showingMultiview && layoutDirection == .rightToLeft
                             ? geometry.size.width - videoFrame.midX : videoFrame.midX,
                         y: videoFrame.midY
                     )
-                    #if os(iOS)
                     .animation(playerTransition, value: videoFrame)
-                    #else
-                    .animation(playerTransition, value: preview.isExpanded)
                     #endif
                     #if os(iOS)
                     .zIndex(showingMultiview
@@ -460,8 +477,19 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
                     .allowsHitTesting(expanded || layout.heroHeight > 0)
                     .accessibilityHidden(!expanded && layout.heroHeight == 0)
                     #endif
+                    #if os(tvOS)
+                    .transition(reduceMotion ? .identity : .scale(scale: 0.94).combined(with: .opacity))
+                    .animation(playerTransition, value: multiview.expandedPaneID)
+                    .animation(playerTransition, value: cornerRadius)
+                    .animation(playerTransition, value: showingMultiview ? videoFrame : nil)
+                    .animation(playerTransition, value: preview.isExpanded)
+                    #endif
                     }
                 }
+                #if os(tvOS)
+                .animation(playerTransition, value: multiview.panes.map(\.id))
+                .animation(playerTransition, value: multiview.panes.map { $0.preparation.current != nil })
+                #endif
 
                 #if os(tvOS)
                 PrototypePreviewScrim(layout: layout, reduceTransparency: reduceTransparency)

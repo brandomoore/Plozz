@@ -7,9 +7,19 @@ import FeaturePlayback
 
 @main
 struct FocusHostApp: App {
+    init() {
+        if ProcessInfo.processInfo.arguments.contains("--live-root-fixture") {
+            URLProtocol.registerClass(SourceSmokeNetworkBlocker.self)
+        }
+    }
+
     var body: some Scene {
         WindowGroup {
-            if ProcessInfo.processInfo.arguments.contains("--disc-review-fixture") {
+            if ProcessInfo.processInfo.arguments.contains("--live-root-fixture") {
+                LiveTVRootFixture()
+            } else if ProcessInfo.processInfo.arguments.contains("--multiview-fixture") {
+                MultiviewFixture()
+            } else if ProcessInfo.processInfo.arguments.contains("--disc-review-fixture") {
                 DiscReviewFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--detail-information-fixture") {
                 DetailInformationFixture()

@@ -156,6 +156,9 @@ struct MultiviewFixture: View {
                             isAudible: pane.id == coordinator.audiblePaneID,
                             countsAsWatching: coordinator.isEnabled,
                             isMultiview: coordinator.isEnabled,
+                            displayTransitionSettings: {
+                                PlaybackSettings(fadeOnDynamicRangeChange: false, fadeOnFrameRateChange: false)
+                            },
                             program: state.guide.currentProgram(for: prepared.channel.id)?.playerInfo,
                             loadOnNow: { state.playerItems(withPrograms: true) },
                             onTuneChannel: { _ in },
@@ -208,6 +211,7 @@ struct MultiviewFixture: View {
                         Text(verbatim: state.metrics)
                             .font(.caption2)
                             .accessibilityIdentifier("multiview-fixture-metrics")
+                            .accessibilityValue(state.engines.first?.motionWidths ?? "")
                         Spacer()
                     }
                     .frame(maxWidth: .infinity)
@@ -338,6 +342,9 @@ struct LiveTVRootFixture: View {
                     onMultiview: playback.canOpenMultiview ? playback.openMultiview : nil,
                     outputGroup: state.output, outputID: playback.paneID, isAudible: playback.isAudible,
                     countsAsWatching: playback.countsAsWatching, isMultiview: playback.isMultiview,
+                    displayTransitionSettings: {
+                        PlaybackSettings(fadeOnDynamicRangeChange: false, fadeOnFrameRateChange: false)
+                    },
                     isAuthorized: playback.isAuthorized
                 )
             }
@@ -360,6 +367,7 @@ struct LiveTVRootFixture: View {
                 Text(verbatim: state.metrics)
                     .font(.caption2)
                     .accessibilityIdentifier("multiview-fixture-metrics")
+                    .accessibilityValue(state.engines.first?.motionWidths ?? "")
             }
             .padding(.top, 16)
             .allowsHitTesting(false)
@@ -500,9 +508,23 @@ private struct LiveTVRootFixtureLoader: LiveTVSourceLoading {
 }
 
 @MainActor
+private final class MultiviewMotionOutput: UIView {
+    private var widths: [CGFloat] = []
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        guard ProcessInfo.processInfo.arguments.contains("--motion-fixture"),
+              widths.last != bounds.width else { return }
+        widths.append(bounds.width)
+        accessibilityValue = widths.map { String(format: "%.2f", Double($0)) }.joined(separator: ",")
+    }
+}
+
+@MainActor
 private final class MultiviewFixtureEngine: LiveChannelEngine {
     let number: Int
-    private let output = UIView()
+    private let output = MultiviewMotionOutput()
+    var motionWidths: String { output.accessibilityValue ?? "" }
     private let label = UILabel()
     var status: VideoEngineStatus = .ready
     var isPaused = false
@@ -521,6 +543,9 @@ private final class MultiviewFixtureEngine: LiveChannelEngine {
     var onLiveSourceReset: (@MainActor () -> Void)?
     var supportsConcurrentPlayback: Bool { true }
     var capabilities: PlayerEngineCapabilities { [.videoZoom] }
+    var probedSourceFacts: EngineProbedSourceFacts? {
+        .init(range: .sdr, videoWidth: 1920, videoHeight: 1080)
+    }
     var loads = 0
     var stops = 0
     var audible = false

@@ -124,6 +124,7 @@ public struct LiveChannelPlayerView: View {
     @State private var fullscreenPresented = false
     @State private var fullscreenOwnsSurface = false
     @State private var returnsToGuideAfterFullscreen = false
+    @State private var opensMultiviewAfterFullscreen = false
     @State private var engineInitializationFailed = false
     @State private var controlsVisible = true
     @State private var touchGestures = PlayerTouchGestureState()
@@ -471,7 +472,8 @@ public struct LiveChannelPlayerView: View {
                             onPlayPause: togglePlayPause,
                             onGoLive: goLive,
                             onNext: channelNext,
-                            onMultiview: model.engine.supportsConcurrentPlayback ? onMultiview : nil,
+                            onMultiview: model.engine.supportsConcurrentPlayback && onMultiview != nil
+                                ? openMultiview : nil,
                             guideContent: guideOverlay,
                             pendingGuideOpen: pendingGuideOpen,
                             consumeGuideOpen: { pendingGuideOpen = false },
@@ -707,6 +709,15 @@ public struct LiveChannelPlayerView: View {
                 .liveChannelSystemOverlays()
                 #endif
         }
+        .task(id: !fullscreenOwnsSurface && isActive && isAuthorized) {
+            guard !fullscreenOwnsSurface, opensMultiviewAfterFullscreen else { return }
+            // Reattach the retained renderer at full size before shrinking its canvas.
+            await Task.yield()
+            guard !Task.isCancelled, !fullscreenOwnsSurface else { return }
+            opensMultiviewAfterFullscreen = false
+            guard isActive, isAuthorized else { return }
+            onMultiview?()
+        }
         .onChange(of: wantsNativeFullscreen, initial: true) { _, presented in
             if presented { updateSource() }
             returnsToGuideAfterFullscreen = presented
@@ -857,6 +868,17 @@ public struct LiveChannelPlayerView: View {
         withTransaction(transaction) {
             if presented { fullscreenOwnsSurface = true }
             fullscreenPresented = presented
+        }
+    }
+
+    private func openMultiview() {
+        guard isActive, isAuthorized, onMultiview != nil else { return }
+        if fullscreenOwnsSurface {
+            opensMultiviewAfterFullscreen = true
+            returnsToGuideAfterFullscreen = false
+            updateFullscreenPresentation(false)
+        } else {
+            onMultiview?()
         }
     }
 

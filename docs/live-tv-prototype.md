@@ -1753,6 +1753,15 @@ right, without overlap. Corner mode retains its overlaid inset column.
 Each renderer fits its source without cropping. Edit layout returns to setup;
 ordinary viewing never reserves permanent space for controls.
 
+Apple TV animates the retained video surfaces into Multiview and between layouts,
+including pane entry/removal, setup/watch, promotion and expansion. Native
+full-screen playback first hands its existing renderer back to the full-size
+inline canvas, then shrinks it; no replacement player or screenshot stands in
+for the video. Rounded corners clip each fitted picture, not its letterbox slot,
+and disappear when a picture is expanded. Reduce Motion makes these changes
+immediate. Removing a pane still retires its stream immediately; visual removal
+never delays authorization or tuner cleanup.
+
 On Apple TV, native pane focus selects that channel's audio once its source is
 prepared. Moving into the controls keeps the last selected audio. Select opens
 the focused picture full-screen; Back restores all retained players without

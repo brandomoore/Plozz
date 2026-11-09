@@ -4,6 +4,90 @@ import Vision
 
 final class LiveTVMultiviewRemoteTests: XCTestCase {
     @MainActor
+    private func fixtureApplication() -> XCUIApplication {
+        if Bundle(for: Self.self).bundleIdentifier == "com.thatcube.Plozz.HomeRemoteTests" {
+            return XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.FocusHost")
+        }
+        return XCUIApplication()
+    }
+
+    @MainActor
+    func testProductionNativeFullscreenShrinksTheActualRetainedVideoIntoMultiview() throws {
+        let app = fixtureApplication()
+        app.launchArguments = ["--live-root-fixture", "--visual-focus-fixture", "--motion-fixture"]
+        app.launch()
+        defer { app.terminate() }
+        XCTAssertTrue(app.buttons["live-tv-channel-channels-1"].waitForExistence(timeout: 10))
+        startProductionChannel(in: app)
+        select(app.buttons["live-channel-timeline"], in: app)
+        select(app.buttons["live-channel-multiview"], in: app)
+        XCTAssertTrue(app.buttons["live-multiview-watch"].waitForExistence(timeout: 5), app.debugDescription)
+        let video = app.staticTexts["multiview-fixture-metrics"]
+        func widths() -> [Double] {
+            (video.value as? String ?? "").split(separator: ",").compactMap { Double($0) }
+        }
+        func waitForGrowth(after baseline: [Double]) throws -> [Double] {
+            let original = try XCTUnwrap(baseline.last)
+            let animated = NSPredicate { _, _ in
+                widths().dropFirst(baseline.count).filter { $0 > original + 1 }.count >= 4
+            }
+            XCTAssertEqual(XCTWaiter.wait(for: [
+                XCTNSPredicateExpectation(predicate: animated, object: nil)
+            ], timeout: 5), .completed, "Wait for the renderer history, not just menu dismissal.")
+            return widths()
+        }
+        let after = widths()
+        let diagnostics = XCTAttachment(string: video.value as? String ?? "Missing output history")
+        diagnostics.lifetime = .keepAlways
+        add(diagnostics)
+        let fullscreenWidth = try XCTUnwrap(after.max())
+        XCTAssertEqual(fullscreenWidth, app.frame.width, accuracy: 1)
+        let setupWidth = try XCTUnwrap(after.last)
+        XCTAssertLessThan(setupWidth, fullscreenWidth - 100)
+        XCTAssertGreaterThan(after.filter {
+            $0 > setupWidth + 1 && $0 < fullscreenWidth - 1
+        }.count, 2, "Native fullscreen must return its actual renderer before the shrink animation starts.")
+        assertMetrics("Engines 1 loads 1 stops 0 audible 1", in: app)
+        let screenshot = capture("production-multiview-rounded-picture", in: app)
+        let image = try XCTUnwrap(screenshot.cgImage)
+        let center = try XCTUnwrap(image.cropping(to: CGRect(
+            x: image.width / 2 - 200, y: image.height / 2 - 150, width: 1, height: 1)))
+        var pixel = [UInt8](repeating: 0, count: 4)
+        try pixel.withUnsafeMutableBytes { bytes in
+            let context = try XCTUnwrap(CGContext(
+                data: bytes.baseAddress, width: 1, height: 1, bitsPerComponent: 8,
+                bytesPerRow: 4, space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+            context.draw(center, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+        }
+        XCTAssertGreaterThan(pixel[2], 200, "The retained blue video must remain visible after native handoff.")
+        select(app.buttons["live-multiview-add"], in: app)
+        chooseGuideChannel(2, in: app)
+        assertMetrics("Engines 2 loads 2 stops 0 audible 1", in: app)
+        let grid = widths()
+        select(app.buttons["live-multiview-layout"], in: app)
+        selectMenuItem("Main and stack", in: app)
+        let stack = try waitForGrowth(after: grid)
+        let gridWidth = try XCTUnwrap(grid.last)
+        let stackWidth = try XCTUnwrap(stack.last)
+        XCTAssertGreaterThan(stackWidth, gridWidth)
+        XCTAssertGreaterThan(stack.dropFirst(grid.count).filter { $0 > gridWidth + 1 && $0 < stackWidth - 1 }.count, 2)
+        select(app.buttons["live-multiview-layout"], in: app)
+        selectMenuItem("Grid", in: app)
+        focusAudio("Sports 2", in: app)
+        let beforeRemoval = widths()
+        select(app.buttons["live-multiview-remove"], in: app)
+        assertMetrics("Engines 2 loads 2 stops 1 audible 1", in: app)
+        let afterRemoval = try waitForGrowth(after: beforeRemoval)
+        let smallWidth = try XCTUnwrap(beforeRemoval.last)
+        let largeWidth = try XCTUnwrap(afterRemoval.last)
+        XCTAssertGreaterThan(largeWidth, smallWidth)
+        XCTAssertGreaterThan(afterRemoval.dropFirst(beforeRemoval.count).filter {
+            $0 > smallWidth + 1 && $0 < largeWidth - 1
+        }.count, 2)
+    }
+
+    @MainActor
     func testGlassPlaybackAndMultiviewControlsHaveFocusedContrastAndNativeHeight() throws {
         try assertPlaybackControlAppearance(reduceGlass: false)
     }
@@ -15,7 +99,7 @@ final class LiveTVMultiviewRemoteTests: XCTestCase {
 
     @MainActor
     func testProductionGuideDoesNotOverrideNativePlaybackAndMultiviewContrast() throws {
-        let app = XCUIApplication()
+        let app = fixtureApplication()
         app.launchArguments = ["--live-root-fixture", "--visual-focus-fixture"]
         app.launch()
         defer { app.terminate() }
@@ -337,7 +421,7 @@ final class LiveTVMultiviewRemoteTests: XCTestCase {
     @MainActor
     func testProductionRootRetainsThePromotedPlayer() {
         continueAfterFailure = false
-        let app = XCUIApplication()
+        let app = fixtureApplication()
         app.launchArguments = ["--live-root-fixture"]
         app.launch()
         defer { app.terminate() }
@@ -378,7 +462,7 @@ final class LiveTVMultiviewRemoteTests: XCTestCase {
     @MainActor
     func testNativeFullscreenMultiviewLayoutsAndReturnKeepExistingPlayers() {
         continueAfterFailure = false
-        let app = XCUIApplication()
+        let app = fixtureApplication()
         app.launchArguments = ["--multiview-fixture"]
         app.launch()
         defer { app.terminate() }
@@ -502,7 +586,7 @@ final class LiveTVMultiviewRemoteTests: XCTestCase {
     @MainActor
     func testFocusedPendingPaneKeepsExistingAudioUntilItsSourceIsPrepared() {
         continueAfterFailure = false
-        let app = XCUIApplication()
+        let app = fixtureApplication()
         app.launchArguments = ["--multiview-fixture", "--pending-multiview-fixture"]
         app.launch()
         defer { app.terminate() }
@@ -777,7 +861,7 @@ final class LiveTVMultiviewRemoteTests: XCTestCase {
 
     @MainActor
     private func launchProductionGuide() -> XCUIApplication {
-        let app = XCUIApplication()
+        let app = fixtureApplication()
         app.launchArguments = ["--live-root-fixture"]
         app.launch()
         XCTAssertTrue(app.buttons["live-tv-channel-channels-1"].waitForExistence(timeout: 10))
@@ -804,7 +888,12 @@ final class LiveTVMultiviewRemoteTests: XCTestCase {
     }
 
     @MainActor
-    private func assertVideoFrame(_ engine: Int, equals expected: CGRect, in app: XCUIApplication) {
+    private func assertVideoFrame(_ engine: Int, equals slot: CGRect, in app: XCUIApplication) {
+        let width = min(slot.width, slot.height * 16 / 9)
+        let height = width * 9 / 16
+        let expected = app.launchArguments.contains("--live-root-fixture")
+            ? CGRect(x: slot.midX - width / 2, y: slot.midY - height / 2, width: width, height: height)
+            : slot
         let video = app.otherElements["multiview-fixture-video-\(engine)"]
         let matches = NSPredicate { _, _ in
             guard video.exists else { return false }
@@ -983,7 +1072,7 @@ final class LiveTVMultiviewRemoteTests: XCTestCase {
 
     @MainActor
     private func launchVisualFixture(reduceGlass: Bool = false) -> XCUIApplication {
-        let app = XCUIApplication()
+        let app = fixtureApplication()
         app.launchArguments = ["--multiview-fixture", "--visual-focus-fixture"]
         if reduceGlass { app.launchArguments.append("--reduce-panel-glass") }
         app.launch()

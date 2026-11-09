@@ -449,6 +449,7 @@ private struct LiveTVMultiviewPaneViewport: View {
     let activate: (UUID) -> Void
     let editing: () -> Void
     let replace: (UUID) -> Void
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         // Revealing controls must not reshape the native focus section under the current picture.
@@ -492,6 +493,10 @@ private struct LiveTVMultiviewPaneViewport: View {
                     .frame(width: frame.width, height: frame.height)
                     .position(x: frame.midX - viewport.minX, y: frame.midY - viewport.minY)
                     .zIndex(pane.id == coordinator.primaryPaneID ? 0 : 1)
+                    #if os(tvOS)
+                    .animation(reduceMotion ? nil : .easeInOut(duration: 0.32), value: frame)
+                    .animation(reduceMotion ? nil : .easeInOut(duration: 0.32), value: focusFrame)
+                    #endif
                 }
             }
         }
@@ -502,6 +507,9 @@ private struct LiveTVMultiviewPaneViewport: View {
         .focusScope(focusScope)
         #endif
         .position(x: viewport.midX, y: viewport.midY)
+        #if os(tvOS)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.32), value: viewport)
+        #endif
     }
 }
 
