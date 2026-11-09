@@ -1196,6 +1196,17 @@ do not establish a supported remote-input path.
 Native-only capability profiles remain separate. Server conversion profiles,
 quality budgets, selected versions/tracks and session maintenance are unchanged.
 
+Automatic version selection uses that same Plozzigen input list rather than the
+native passthrough heuristic. Single-server and merged-source recommendations
+share the assessment; explicit and remembered selections still take priority.
+The existing resolution/bitrate weights and equal HDR-format bonus remain.
+Only a usable HDR hint earns the bonus, with Profile 7 treated as HDR10 under
+the current base-layer policy. OS-reported HDR playback ineligibility suppresses
+the bonus without rejecting an otherwise supported input. HDR eligibility is
+not proof of a particular Dolby Vision/HDR10+ output mode. This does not probe
+every candidate, promise real-time software decoding, add audio-quality bonuses,
+or change the largest-file-first picker order.
+
 ## Deliberate native exceptions
 
 - An `AVAssetDownload` package is an OS-managed asset, not an ordinary file.

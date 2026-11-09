@@ -894,18 +894,17 @@ final class MediaVersionTests: XCTestCase {
 
     // MARK: - Recommended selection (smart default)
 
-    func testRecommendedSelectionPicksBestDirectPlayable() {
-        // On a default (non-DoVi) profile, the conservative recommended default is
-        // the highest-quality known-native version — the 1080p.
+    func testRecommendedSelectionSeparatesNativeAndEngineSupport() {
         let versions = [
             MediaVersion(id: "4k", height: 2160, isDefault: true, videoCodec: "hevc", videoRange: "DOVI", audioCodec: "aac"),
             MediaVersion(id: "1080", height: 1080, videoCodec: "h264", videoRange: "SDR", audioCodec: "aac")
         ]
-        XCTAssertEqual(versions.recommendedSelection(for: .default)?.id, "1080")
+        XCTAssertEqual(versions.recommendedSelection(for: .default, engine: .native)?.id, "1080")
+        XCTAssertEqual(versions.recommendedSelection(for: .default)?.id, "4k")
     }
 
     func testRecommendedSelectionPrefersDirectPlayUHDWhenCapable() {
-        // A DoVi-capable device direct-plays the 4K, so it wins.
+        // Usable HDR and higher resolution favor this supported input.
         let versions = [
             MediaVersion(id: "4k", height: 2160, videoCodec: "hevc", videoRange: "DOVI", audioCodec: "aac"),
             MediaVersion(id: "1080", height: 1080, videoCodec: "h264", videoRange: "SDR", audioCodec: "aac")
@@ -920,7 +919,7 @@ final class MediaVersionTests: XCTestCase {
             MediaVersion(id: "a", height: 2160, videoCodec: "hevc", videoRange: "SDR", audioCodec: "aac"),
             MediaVersion(id: "b", height: 2160, isDefault: true, videoCodec: "hevc", videoRange: "SDR", audioCodec: "aac")
         ]
-        XCTAssertEqual(versions.recommendedSelection(for: caps)?.id, "b")
+        XCTAssertEqual(versions.recommendedSelection(for: caps, engine: .native)?.id, "b")
     }
 
     func testRecommendedSelectionEmptyIsNil() {

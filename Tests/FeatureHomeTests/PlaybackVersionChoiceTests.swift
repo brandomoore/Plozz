@@ -599,19 +599,19 @@ final class PlaybackVersionChoiceTests: XCTestCase {
         XCTAssertEqual(preferences.preferredVersionDescriptor(forTitle: key)?.height, 1080)
     }
 
-    func testAutomaticHonorsManualSelectionAndNativeCapabilityRecommendation() async throws {
+    func testAutomaticUsesEngineSupportAndStillHonorsManualSelection() async throws {
         settings.settings.versionSelectionMode = .automatic
         var movie = item()
         movie.versions = [
-            .init(id: "hdr", height: 2160, videoCodec: "hevc", videoRange: "DOVI", audioCodec: "aac"),
+            .init(id: "hdr", height: 2160, videoCodec: "hevc", videoRange: "HDR10", audioCodec: "dts"),
             .init(id: "sdr", height: 1080, videoCodec: "h264", videoRange: "SDR", audioCodec: "aac")
         ]
         let recommended = try await start(movie).value
-        XCTAssertEqual(recommended.selectedVersionID, "sdr")
+        XCTAssertEqual(recommended.selectedVersionID, "hdr")
         XCTAssertFalse(recommended.explicitSourceSelection)
-        let manual = try XCTUnwrap(PlayerVersionSelection.selecting("hdr", in: movie))
+        let manual = try XCTUnwrap(PlayerVersionSelection.selecting("sdr", in: movie))
         let honored = try await start(manual).value
-        XCTAssertEqual(honored.selectedVersionID, "hdr")
+        XCTAssertEqual(honored.selectedVersionID, "sdr")
         XCTAssertTrue(honored.explicitSourceSelection)
     }
 

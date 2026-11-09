@@ -125,6 +125,20 @@ language every other module speaks.
 
 ## Public surface, at a glance
 
+Automatic version and cross-server recommendations share
+`VersionSelectionAssessment`. Plozzigen uses the linked decoder-backed input
+list, not native passthrough eligibility: DTS/TrueHD bridging and software video
+decode do not make a version unsupported. Rich source-local metadata precedes
+flattened facts. Native-only callers can explicitly request the native policy.
+The existing quality weights remain, but the HDR bonus requires a usable range
+hint and is suppressed when AVPlayer reports HDR playback ineligible. Profile 7
+is evaluated as HDR10 under the adapter's base-layer policy; other Dolby Vision
+base layers require explicit compatibility metadata. No extra points promise
+FEL reconstruction, height-channel conversion or lossless passthrough.
+This is a metadata estimate, not a playback/performance or display-format test.
+Remembered/explicit choices, source locality/provider precedence, displayed
+file-size ordering and provider negotiation remain independent and unchanged.
+
 Technical badges use the same stream classifier for detail heroes, version
 pickers, and cached share facts. Confirmed Dolby Vision compatibility is one
 badge (`DV HDR10+`, `DV HDR10`, or `DV HLG`), with the full format names retained
