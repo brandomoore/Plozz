@@ -247,8 +247,10 @@ public struct TrailersAndMusicSettingsView: View {
         return SettingsMenuRow(title: "Trailers", value: Text(background.settings.trailerSources.displayName)) {
             picker.pickerStyle(.inline)
         }
+        .settingsSearchAnchor("trailer-sources")
         #else
         return picker.pickerStyle(.menu)
+            .settingsSearchAnchor("trailer-sources")
         #endif
     }
 
@@ -265,8 +267,10 @@ public struct TrailersAndMusicSettingsView: View {
         return SettingsMenuRow(title: "Detail background", value: Text(background.settings.effectiveDetailMode.displayName)) {
             picker.pickerStyle(.inline)
         }
+        .settingsSearchAnchor("detail-background")
         #else
         return picker.pickerStyle(.menu)
+            .settingsSearchAnchor("detail-background")
         #endif
     }
 }

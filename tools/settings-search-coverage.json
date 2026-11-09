@@ -23,7 +23,6 @@
     "CustomExternalPlayerControls",
     "DetailHeaderRatingsSettingsForm",
     "DetailPageDetailView",
-    "DolbyVisionFELControl",
     "ExternalPlayerChoices",
     "HelpDiagnosticsDetailView",
     "HeroAutomaticChangeControls",
@@ -35,7 +34,6 @@
     "HeroSettingsScreen",
     "HeroTitleControls",
     "HeroTitleSources",
-    "HeroTrailerControls",
     "HomeFilteringSettingsView",
     "HomeHeroSettingsView",
     "HomeHeroEnabledPicker",
@@ -110,7 +108,6 @@
     "SkipMarkerEnableControl",
     "SkipMarkerRuleControls",
     "SkipMarkerSettingsView",
-    "SpatialAudioLayoutControl",
     "SpoilerRowsBuilder",
     "StreamingCustomQualityEditor",
     "StreamingQualityPicker",
@@ -218,8 +215,6 @@
     "Sources/FeatureSettings/SettingsSplitLayout.swift",
     "Sources/FeatureSettings/SettingsView.swift",
     "Sources/FeatureSettings/SkipMarkerSettingsControl.swift",
-    "Sources/FeatureSettings/SpatialAudioControl.swift",
-    "Sources/FeatureSettings/SpatialAudioLayoutControl.swift",
     "Sources/FeatureSettings/ThemeMusicVolumeControl.swift",
     "Sources/FeatureSettings/TopShelfSettingsView.swift",
     "Sources/FeatureSettings/TopShelfStylePicker.swift",
@@ -253,7 +248,6 @@
     "SettingsSegmentedPicker",
     "SettingsStepper",
     "SettingsSwitchButton",
-    "SpatialAudioControl",
     "StreamingQualityPicker",
     "ViewCustomizationMenu",
     "ViewCustomizationRow",
@@ -344,13 +338,6 @@
       "reason": "Reusable preference input; coverage belongs to each configured call site. Its internal control contract is checked separately.",
       "controls": {
         "Sources/FeatureSettings/LosslessAudioControl.swift|LosslessAudioControl|body|Toggle|<dynamic>": 1
-      }
-    },
-    "SpatialAudioControl": {
-      "kind": "input",
-      "reason": "Reusable preference input; coverage belongs to each configured call site. Its internal control contract is checked separately.",
-      "controls": {
-        "Sources/FeatureSettings/SpatialAudioControl.swift|SpatialAudioControl|body|Toggle|\"Spatial audio (height channel support)\"": 1
       }
     },
     "StreamingQualityPicker": {
@@ -1022,14 +1009,6 @@
       ],
       "count": 1
     },
-    "Sources/AppShelliOS/PlozziOSServerSettingsViews.swift|PlozziOSMyLibrariesSettingsView|body|Button|<dynamic>": {
-      "count": 1,
-      "reason": "Explicit navigation, confirmation, reset, connection or diagnostic action; not a preference input."
-    },
-    "Sources/AppShelliOS/PlozziOSServerSettingsViews.swift|PlozziOSMyLibrariesSettingsView|serverGroup|Button|\"Sign In Again\"": {
-      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
-      "count": 1
-    },
     "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSArtworkSettingsView|body|SettingsPageLink|SettingsDisclosureLabel { Text(\"Metadata Providers (TMDB, TheTVDB…)\") }": {
       "reason": "Navigation to an existing editor; its controls are independently discovered.",
       "count": 1
@@ -1469,10 +1448,6 @@
       "count": 1,
       "reason": "credential: Generic TMDB-key setup page only; never key values."
     },
-    "Sources/FeatureSettings/MyLibrariesDetailView.swift|MyLibrariesDetailView|libraryStatusMessage|Button|\"Sign In Again\"": {
-      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
-      "count": 1
-    },
     "Sources/FeatureSettings/NightShiftDetailView.swift|CircadianDetail|previewButton|Button|HStack(spacing: 10) { Image(systemName: \"moon.stars.fill\") Text(model.previewProgress == nil ? \"Preview a day\" : model.previewClockText) .monospacedDigit() } .font(SettingsRowMetrics.titleFont) .padding(.horizontal, 4)": {
       "count": 1,
       "reason": "preview_action: Preview timeline is not a preference."
@@ -1569,10 +1544,6 @@
       "reason": "Confirms the selected servers during explicit Plex account setup.",
       "count": 1
     },
-    "Sources/AppShelliOS/AddServerView.swift|PlexServerSignInView|body|Button|if isNavigationRoot { Text(\"Cancel\") } else { Label(\"Back\", systemImage: \"chevron.backward\").labelStyle(.iconOnly) }": {
-      "reason": "Leaves the current Plex setup step, retaining its existing cancellation confirmation.",
-      "count": 1
-    },
     "Sources/AppShelliOS/AddServerView.swift|PlexServerSignInView|body|Button|\"Start Over\"": {
       "reason": "Confirms discarding the incomplete Plex connection setup; not a preference value.",
       "count": 1
@@ -1655,18 +1626,6 @@
       "covered_by": [
         "seerr-profile-user"
       ],
-      "count": 1
-    },
-    "Sources/AppShelliOS/PlozziOSServerSettingsViews.swift|PlozziOSMyLibrariesSettingsView|serverGroup|Button|\"Edit connection\"": {
-      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
-      "count": 1
-    },
-    "Sources/AppShelliOS/PlozziOSServerSettingsViews.swift|PlozziOSMyLibrariesSettingsView|serverGroup|Button|Label(\"Retry\", systemImage: \"arrow.clockwise\")": {
-      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
-      "count": 1
-    },
-    "Sources/AppShelliOS/PlozziOSServerSettingsViews.swift|PlozziOSMyLibrariesSettingsView|addUserButton|Button|Label( group.providerKind == .plex ? \"Add Another Plex Account\" : \"Add Another User\", systemImage: \"person.badge.plus\" )": {
-      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
       "count": 1
     },
     "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSAccountDetailView|body|SettingsPageLink|Label(\"Plex User\", systemImage: \"person.crop.circle\")": {
@@ -2447,22 +2406,6 @@
       "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
       "count": 1
     },
-    "Sources/FeatureSettings/MyLibrariesDetailView.swift|MyLibrariesDetailView|addServerSection|Button|<dynamic>": {
-      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
-      "count": 1
-    },
-    "Sources/FeatureSettings/MyLibrariesDetailView.swift|MyLibrariesDetailView|librarySection|Button|Label(\"Retry\", systemImage: \"arrow.clockwise\")": {
-      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
-      "count": 1
-    },
-    "Sources/FeatureSettings/MyLibrariesDetailView.swift|MyLibrariesDetailView|libraryStatusMessage|Button|\"Edit connection\"": {
-      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
-      "count": 1
-    },
-    "Sources/FeatureSettings/MyLibrariesDetailView.swift|MyLibrariesDetailView|libraryStatusMessage|Button|Label(\"Retry\", systemImage: \"arrow.clockwise\")": {
-      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
-      "count": 1
-    },
     "Sources/FeatureSettings/NavigationLibrariesDetailView.swift|NavigationLibrariesDetailView|content|Button|Label { Text(Self.resetTitle) } icon: { Image(systemName: \"arrow.uturn.backward\") } .frame(maxWidth: .infinity)": {
       "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
       "count": 1
@@ -2714,13 +2657,6 @@
     },
     "Sources/FeatureSettings/SkipMarkerSettingsControl.swift|SkipMarkerSettingsView|content|Button|SettingsDisclosureLabel { Text(kind.settingsTitle) }": {
       "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
-      "count": 1
-    },
-    "Sources/FeatureSettings/SpatialAudioLayoutControl.swift|SpatialAudioLayoutControl|body|Picker|\"Rendering layout\"": {
-      "reason": "Configured renderer or contextual choice for the indexed control family; the containing editor owns reveal and selection.",
-      "covered_by": [
-        "spatial-layout"
-      ],
       "count": 1
     },
     "Sources/AppShelliOS/AddServerView.swift|PlozziOSAccountReauthenticationView|recoveryContent|Button|\"Cancel\"": {
@@ -2978,6 +2914,78 @@
       "count": 1
     },
     "Sources/FeatureSettings/ThemeMusicVolumeControl.swift|ThemeMusicVolumeControl|body|Button|if ownsPreview { Label(\"Stop preview\", systemImage: \"stop.fill\") } else { Label(\"Play preview\", systemImage: \"play.fill\") }": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/AddServerView.swift|PlexServerSignInView|body|Button|if isNavigationRoot { Label(\"Cancel\", systemImage: \"xmark\") } else { Label(\"Back\", systemImage: \"chevron.backward\").labelStyle(.iconOnly) }": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSServerSettingsViews.swift|PlozziOSMyLibrariesContent|body|Button|<dynamic>": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSServerSettingsViews.swift|PlozziOSMyLibrariesContent|libraryFailure|Button|\"Sign In Again\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSServerSettingsViews.swift|PlozziOSMyLibrariesContent|libraryFailure|Button|\"Edit connection\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSServerSettingsViews.swift|PlozziOSMyLibrariesContent|libraryFailure|Button|Label(\"Retry\", systemImage: \"arrow.clockwise\")": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSServerSettingsViews.swift|PlozziOSMyLibrariesContent|addUserButton|Button|Label( group.providerKind == .plex ? \"Add Another Plex Account\" : \"Add Another User\", systemImage: \"person.badge.plus\" )": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSDetailPageSettingsView|body|SettingsPageLink|SettingsDisclosureLabel { Text(\"Trailers & music\") }": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeatureSettings/CardCaptionCustomizationContent.swift|CardCaptionCustomizationContent|defaultSection.controls|ViewCustomizationRow|\"Only show descriptions on focus\"": {
+      "reason": "Contextual Home, collection or caption editor control; the owning page or its catalog entry carries search coverage.",
+      "count": 1
+    },
+    "Sources/FeatureSettings/CollectionSectionSettingsView.swift|CollectionSectionSettingsView|body|SettingsMenuRow|\"Layout\"": {
+      "reason": "Contextual Home, collection or caption editor control; the owning page or its catalog entry carries search coverage.",
+      "count": 1
+    },
+    "Sources/FeatureSettings/CollectionSectionSettingsView.swift|CollectionSectionSettingsView|body|SettingsMenuRow|\"Logo\"": {
+      "reason": "Contextual Home, collection or caption editor control; the owning page or its catalog entry carries search coverage.",
+      "count": 1
+    },
+    "Sources/FeatureSettings/CollectionSectionSettingsView.swift|CollectionSectionSettingsView|body|Picker|\"Logo\"": {
+      "reason": "Contextual Home, collection or caption editor control; the owning page or its catalog entry carries search coverage.",
+      "count": 1
+    },
+    "Sources/FeatureSettings/HomeSectionSettingsViews.swift|HomeSectionSettingsView|body|Button|\"Show empty message\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeatureSettings/MyLibrariesDetailView.swift|MyLibrariesContentView|addServerSection|Button|<dynamic>": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeatureSettings/MyLibrariesDetailView.swift|MyLibrariesContentView|librarySection|Button|Label(\"Retry\", systemImage: \"arrow.clockwise\")": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeatureSettings/MyLibrariesDetailView.swift|MyLibrariesContentView|libraryStatusMessage|Button|\"Sign In Again\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeatureSettings/MyLibrariesDetailView.swift|MyLibrariesContentView|libraryStatusMessage|Button|\"Edit connection\"": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeatureSettings/MyLibrariesDetailView.swift|MyLibrariesContentView|libraryStatusMessage|Button|Label(\"Retry\", systemImage: \"arrow.clockwise\")": {
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/FeatureSettings/PreferenceDetailViews.swift|DetailPageDetailView|heroRows.rows|SettingsPageLink|SettingsDisclosureLabel { Text(\"Trailers & music\") }": {
       "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
       "count": 1
     }
