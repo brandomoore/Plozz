@@ -113,6 +113,13 @@ control spacing or hit regions.
 Both dock sizes reuse the expanded player's scaling play/pause transition and
 press feedback. Play/pause retains its press scaling and haptics without a
 circular background highlight, in both the docks and expanded player.
+Mobile player appearance is configured under Settings → Screens & Navigation →
+Music player. Explicit choices override the app theme; Match Theme resolves the
+active palette, including Pure Black and system/circadian light or dark changes.
+The collapsed dock always inherits the app's color scheme and native regular
+Liquid Glass, matching the tab bar. Player-specific colors apply only to the
+expanded backdrop and controls, not the dock's glass or text. Existing reduced
+transparency and low-power fallbacks remain unchanged.
 Measured artwork positions retain the panel spring when lyrics
 or the queue shifts the wide player, rather than snapping after layout. The
 existing Reduce Motion path keeps these transitions immediate.

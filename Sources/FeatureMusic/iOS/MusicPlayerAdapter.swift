@@ -313,9 +313,16 @@ public struct MusicPlayerOverlay: View {
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.plozzArtworkPolicy) private var artworkPolicy
+    @Environment(\.themePalette) private var palette
 
     public static func contentClearance(hasBottomBar: Bool) -> CGFloat {
         BottomBar.contentClearance(hasBottomBar: hasBottomBar)
+    }
+
+    static func resolvedAppearance(_ appearance: MusicPlayerAppearance, palette: ThemePalette) -> MusicPlayerAppearance {
+        guard appearance == .matchTheme else { return appearance }
+        if palette == .pureBlack { return .pureBlack }
+        return palette == .light ? .light : .dark
     }
 
     public init(session: MusicPlayerSession, hasBottomBar: Bool, contentLeft: CGFloat = 0, appearance: MusicPlayerAppearance = .matchTheme) {
@@ -326,20 +333,18 @@ public struct MusicPlayerOverlay: View {
     }
 
     public var body: some View {
+        let appearance = Self.resolvedAppearance(appearance, palette: palette)
         Group {
             if session.controller.hasActivePlayback {
                 NowPlayingMorphContainer(
                     playback: session.playback, ui: session.ui,
                     contentLeft: contentLeft, hasBottomBar: hasBottomBar,
-                    wide: sizeClass == .regular
+                    wide: sizeClass == .regular,
+                    surfaceColorScheme: appearance == .light ? .light : .dark
                 )
                 .environmentObject(session.environment)
                 .environmentObject(session.toasts)
                 .environment(\.musicPlayerBackground, appearance == .pureBlack ? .oled : appearance == .light ? .theme : .adaptive)
-                .transformEnvironment(\.colorScheme) { scheme in
-                    if appearance == .light { scheme = .light }
-                    if appearance == .dark || appearance == .pureBlack { scheme = .dark }
-                }
                 .transaction { if reduceMotion { $0.disablesAnimations = true } }
                 .task(id: session.playback.currentTrack?.id) {
                     await session.environment.loadFeedback()

@@ -1,6 +1,7 @@
 import AVFoundation
 @testable import AppShelliOS
 import CoreModels
+import CoreUI
 import FeatureMusic
 import SwiftUI
 
@@ -17,6 +18,7 @@ struct MusicPlayerFixture: View {
     }
 
     var body: some View {
+        let lightApp = ProcessInfo.processInfo.arguments.contains("--music-app-light")
         TabView {
             NavigationStack {
                 List {
@@ -44,6 +46,8 @@ struct MusicPlayerFixture: View {
         .overlay {
             MusicPlayerOverlay(session: player, hasBottomBar: hasBottomBar, appearance: appearance)
         }
+        .environment(\.themePalette, lightApp ? .light : .dark)
+        .preferredColorScheme(lightApp ? .light : nil)
         .task {
             let file = FileManager.default.temporaryDirectory.appendingPathComponent("music-fixture.caf")
             defer {

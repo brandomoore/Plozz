@@ -53,15 +53,19 @@ struct NowPlayingMorphContainer: View {
     /// Whether the window has room for two columns, which is what decides
     /// between a panel *beside* the artwork and one *instead* of it.
     var wide: Bool = false
+    // Expanded content only; the dock and glass inherit the app's color scheme.
+    let surfaceColorScheme: ColorScheme
 
     init(playback: MusicPlayerAdapter, ui: PlayerUIModel, minimize: CGFloat = 0,
-         contentLeft: CGFloat = 0, hasBottomBar: Bool = true, wide: Bool = false) {
+         contentLeft: CGFloat = 0, hasBottomBar: Bool = true, wide: Bool = false,
+         surfaceColorScheme: ColorScheme) {
         self.playback = playback
         self.ui = ui
         self.minimize = minimize
         self.contentLeft = contentLeft
         self.hasBottomBar = hasBottomBar
         self.wide = wide
+        self.surfaceColorScheme = surfaceColorScheme
         // Seeded here rather than lazily, because the controller owns tasks and a
         // ticker that must belong to exactly one instance for the player's lifetime.
         _lyrics = State(initialValue: LyricsController(playback: playback))
@@ -219,7 +223,6 @@ struct NowPlayingMorphContainer: View {
     // Observed so the island/player chrome token re-resolves live when the dark
     // flavor (Dim↔Black) toggles; see `MozzScreenBackground`.
     @Environment(\.musicPlayerBlackout) private var blackout
-    @Environment(\.colorScheme) private var systemColorScheme
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     /// Colors sampled from the current artwork for the adaptive backdrop.
     @State private var artGrid: ArtworkColorGrid?
@@ -228,22 +231,6 @@ struct NowPlayingMorphContainer: View {
     /// drag-reorder in the queue, or the lyrics' idle takeover.
     private var chromeHidden: Bool { reorderChromeHidden || lyricsImmersive }
 
-    /// True when the Black dark style is in effect.
-    ///
-    /// Black is not a darker Dark. It is the mode where nothing takes its colour
-    /// from the artwork: every background in the app is black, and a cover is
-    /// only ever seen inside its own frame. The player's drifting artwork field
-    /// is the largest thing that rule applies to.
-    /// The color scheme the player surface presents its content in: forced dark on
-    /// the artwork/OLED backdrops (the surface is dark regardless of the app's
-    /// appearance), or the system scheme in `theme` mode. Applied to the drawer body
-    /// AND the root-level traveling star cluster so the star/overflow keep the same
-    /// on-surface color as they hand off between the two (otherwise the traveling
-    /// cluster — which lives outside the surface — would resolve `.primary` to black
-    /// on a light-appearance device and pop to white the instant the card takes over).
-    private var surfaceColorScheme: ColorScheme {
-        bgStyle == .theme ? systemColorScheme : .dark
-    }
     /// Identity for the palette task: re-derive when the artwork changes.
     private var artworkToken: String {
         (playback.currentTrack?.artwork?.key) ?? (playback.currentTrack?.id ?? "none")
@@ -587,6 +574,7 @@ struct NowPlayingMorphContainer: View {
                     PlayerBackdrop(style: bgStyle, grid: artGrid, animated: settled && useGlassSurface)
                 }
                 .clipShape(RoundedRectangle(cornerRadius: m.radius, style: .continuous))
+                .environment(\.colorScheme, surfaceColorScheme)
                 .opacity(m.solidBgOpacity)
 
             drawerBody(m)
@@ -614,9 +602,6 @@ struct NowPlayingMorphContainer: View {
                 )
                 .opacity(m.bodyOpacity)
                 .allowsHitTesting(m.p > 0.5)
-                // On the adaptive/OLED backdrop the surface is dark-colored, so
-                // render the drawer content light (matches the detail pages). In
-                // `theme` mode it follows the system scheme.
                 .environment(\.colorScheme, surfaceColorScheme)
         }
         .frame(width: m.surfaceW, height: m.surfaceH, alignment: .top)

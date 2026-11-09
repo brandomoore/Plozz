@@ -1640,7 +1640,13 @@ private struct PlozziOSSettingsSearchDestination: View {
             PlozziOSDiagnosticsSettingsView(
                 appModel: appModel, model: appModel.settings.diagnostics, crashReporting: appModel.crashReporting
             )
-        case .musicPlayer, .topShelf:
+        case .musicPlayer:
+            if let music = appModel.music {
+                PlozziOSMusicPlayerSettingsView(model: music.settings)
+            } else {
+                ContentUnavailableView("Setting unavailable", systemImage: "magnifyingglass")
+            }
+        case .topShelf:
             ContentUnavailableView("Setting unavailable", systemImage: "magnifyingglass")
         case .releaseNotes:
             ReleaseNotesSettingsView(model: .shared)
@@ -2125,7 +2131,7 @@ private struct PlozziOSScreensNavigationSettingsView: View {
     @State private var destination: Page?
 
     private enum Page: String, CaseIterable, Identifiable {
-        case home, libraries, navigation, detail, allScreens
+        case home, libraries, navigation, detail, allScreens, musicPlayer
         var id: Self { self }
         var title: LocalizedStringResource {
             switch self {
@@ -2134,6 +2140,7 @@ private struct PlozziOSScreensNavigationSettingsView: View {
             case .navigation: "App navigation"
             case .detail: "Movie & show details"
             case .allScreens: "All screens"
+            case .musicPlayer: "Music player"
             }
         }
     }
@@ -2153,7 +2160,7 @@ private struct PlozziOSScreensNavigationSettingsView: View {
                 .accessibilityIdentifier("screens-all-screens")
             }
             SettingsSectionGroup {
-                ForEach([Page.home, .libraries, .detail]) { page in
+                ForEach([Page.home, .libraries, .detail] + (appModel.music != nil ? [.musicPlayer] : [])) { page in
                     Button { destination = page } label: {
                         SettingsDisclosureLabel { Text(page.title) }
                     }
@@ -2198,8 +2205,33 @@ private struct PlozziOSScreensNavigationSettingsView: View {
                     heroBackground: appModel.settings.heroBackground,
                     themeMusic: appModel.settings.themeMusic, detailPage: appModel.settings.detailPage
                 )
+            case .musicPlayer:
+                if let music = appModel.music {
+                    PlozziOSMusicPlayerSettingsView(model: music.settings)
+                }
             }
         }
+    }
+}
+
+struct PlozziOSMusicPlayerSettingsView: View {
+    @Bindable var model: MusicPlayerSettingsModel
+
+    var body: some View {
+        List {
+            SettingsSectionGroup {
+                Picker("Appearance", selection: $model.appearance) {
+                    ForEach(MusicPlayerAppearance.pickerOrder) { appearance in
+                        Label(appearance.displayName, systemImage: appearance.symbolName).tag(appearance)
+                    }
+                }
+                .settingsSearchAnchor("music-style")
+                .accessibilityIdentifier("music-player-appearance")
+            }
+            .settingsSearchGroup(["music-style"])
+        }
+        .settingsPageSurface()
+        .navigationTitle("Music player")
     }
 }
 

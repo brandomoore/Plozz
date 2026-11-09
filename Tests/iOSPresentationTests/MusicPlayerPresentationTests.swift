@@ -306,6 +306,94 @@ final class MusicPlayerPresentationTests: XCTestCase {
         }
     }
 
+    func testDockGlassFollowsAppAppearanceInsteadOfPlayerPreference() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        let player = MusicPlayerSession()
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".caf")
+        defer {
+            player.stop()
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+            try? FileManager.default.removeItem(at: file)
+        }
+        let format = try XCTUnwrap(AVAudioFormat(standardFormatWithSampleRate: 44_100, channels: 1))
+        let buffer = try XCTUnwrap(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 441_000))
+        buffer.frameLength = buffer.frameCapacity
+        try XCTUnwrap(buffer.floatChannelData)[0].initialize(repeating: 0, count: Int(buffer.frameLength))
+        do {
+            let audio = try AVAudioFile(forWriting: file, settings: format.settings)
+            try audio.write(from: buffer)
+        }
+        player.controller.play(
+            tracks: [CoreModels.MusicTrack(id: "glass", title: "Dock probe", artistName: "Artist", duration: 10)],
+            startIndex: 0, resolveStreamURL: { _ in .init(url: file) }
+        )
+        player.controller.pause()
+        window.frame = CGRect(x: 0, y: 0, width: 430, height: 932)
+        var bottomBar = false
+        let host = UIHostingController(rootView: MusicDockNavigationFixture(
+            player: player, onBottomBarChange: { bottomBar = $0 }
+        ))
+        host.traitOverrides.horizontalSizeClass = .compact
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        for dark in [false, true] {
+            host.overrideUserInterfaceStyle = dark ? .dark : .light
+            var reference: [UInt8]?
+            for appearance: MusicPlayerAppearance in [.matchTheme, .dark, .pureBlack, .light] {
+                host.rootView = MusicDockNavigationFixture(
+                    player: player, onBottomBarChange: { bottomBar = $0 },
+                    appearance: appearance, dark: dark
+                )
+                try await Task.sleep(for: .milliseconds(700))
+                let image = attach(window, name: "Dock glass \(dark ? "dark" : "light") player \(appearance.rawValue)")
+                let centerY = image.size.height - 22 - (bottomBar ? 71 : 0) - 28
+                let background = try pixel(in: image, at: CGPoint(x: image.size.width / 2, y: centerY))
+                if let reference {
+                    for channel in 0..<3 {
+                        XCTAssertEqual(Double(background[channel]), Double(reference[channel]), accuracy: 10,
+                                       "The expanded-player preference must not recolor the collapsed native glass: dark \(dark), player \(appearance)")
+                    }
+                } else {
+                    reference = background
+                }
+                if !dark {
+                    XCTAssertGreaterThan(background.prefix(3).min() ?? 0, 210, "Light dock glass must not use a dark scrim")
+                    let lastControlX = image.size.width - 22 - 12 - 15
+                    XCTAssertEqual(try dockGlyphHeight(in: image, center: CGPoint(x: lastControlX - 40, y: centerY)),
+                                   22.5, accuracy: 1.5, "Light glass needs a dark, readable play glyph")
+                }
+                if bottomBar {
+                    let native = try pixel(in: image, at: CGPoint(x: image.size.width / 2, y: image.size.height - 53.5))
+                    for channel in 0..<3 {
+                        XCTAssertEqual(Double(background[channel]), Double(native[channel]), accuracy: 40,
+                                       "Dock and native tab-bar glass must have comparable tone on the same plain background")
+                    }
+                }
+            }
+        }
+    }
+
+    private func pixel(in image: UIImage, at point: CGPoint) throws -> [UInt8] {
+        let source = try XCTUnwrap(image.cgImage)
+        let crop = try XCTUnwrap(source.cropping(to: CGRect(
+            x: point.x * image.scale, y: point.y * image.scale, width: 1, height: 1
+        )))
+        var rgba = [UInt8](repeating: 0, count: 4)
+        try rgba.withUnsafeMutableBytes { bytes in
+            let context = try XCTUnwrap(CGContext(
+                data: bytes.baseAddress, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4,
+                space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGBitmapInfo.byteOrder32Big.rawValue | CGImageAlphaInfo.premultipliedLast.rawValue
+            ))
+            context.draw(crop, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+        }
+        return rgba
+    }
+
     private func dockGlyphHeight(in image: UIImage, center: CGPoint) throws -> CGFloat {
         let source = try XCTUnwrap(image.cgImage)
         let scale = image.scale
@@ -377,6 +465,8 @@ final class MusicPlayerPresentationTests: XCTestCase {
 private struct MusicDockNavigationFixture: View {
     let player: MusicPlayerSession
     let onBottomBarChange: (Bool) -> Void
+    var appearance: MusicPlayerAppearance = .matchTheme
+    var dark = false
     @State private var hasBottomBar = false
 
     var body: some View {
@@ -398,8 +488,10 @@ private struct MusicDockNavigationFixture: View {
             .frame(width: 0, height: 0)
         }
         .overlay {
-            MusicPlayerOverlay(session: player, hasBottomBar: hasBottomBar)
+            MusicPlayerOverlay(session: player, hasBottomBar: hasBottomBar, appearance: appearance)
         }
+        .environment(\.themePalette, dark ? .dark : .light)
+        .environment(\.colorScheme, dark ? .dark : .light)
     }
 }
 

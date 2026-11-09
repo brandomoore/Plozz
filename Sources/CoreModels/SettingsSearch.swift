@@ -157,7 +157,7 @@ public enum SettingsSearchPage: String, CaseIterable, Sendable {
     public var platform: SettingsSearchEntry.Platform? {
         switch self {
         case .downloads, .streamingAdvanced, .detailRatingSources: .mobile
-        case .topShelf, .musicPlayer: .television
+        case .topShelf: .television
         default: nil
         }
     }
@@ -221,10 +221,12 @@ public struct SettingsSearchEntry: Identifiable, Hashable, Sendable {
 
     public func isAvailable(
         on platform: Platform, osVersion: Int = ProcessInfo.processInfo.operatingSystemVersion.majorVersion,
-        isKids: Bool = false, featureFlags: RuntimeFeatureFlags = .buildDefault
+        isKids: Bool = false, featureFlags: RuntimeFeatureFlags = .buildDefault,
+        releaseChannel: AppReleaseChannel = .current
     ) -> Bool {
         osVersion >= minimumOSVersion && !(isKids && requiresAdultProfile)
             && (id != "offline-mode" || featureFlags.isEnabled(.offlineMode))
+            && (page != .musicPlayer || platform == .television || releaseChannel.isBeta)
             && (self.platform == nil || self.platform == platform
                 || (self.platform == .mobile && platform != .television))
     }
@@ -683,8 +685,11 @@ public enum SettingsSearchCatalog {
     public static func entries(
         on platform: SettingsSearchEntry.Platform,
         osVersion: Int = ProcessInfo.processInfo.operatingSystemVersion.majorVersion, isKids: Bool = false,
-        featureFlags: RuntimeFeatureFlags = .buildDefault
+        featureFlags: RuntimeFeatureFlags = .buildDefault, releaseChannel: AppReleaseChannel = .current
     ) -> [SettingsSearchEntry] {
-        entries.filter { $0.isAvailable(on: platform, osVersion: osVersion, isKids: isKids, featureFlags: featureFlags) }
+        entries.filter {
+            $0.isAvailable(on: platform, osVersion: osVersion, isKids: isKids,
+                           featureFlags: featureFlags, releaseChannel: releaseChannel)
+        }
     }
 }

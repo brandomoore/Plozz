@@ -7,6 +7,13 @@ system green appearance instead of inheriting the page's monochrome navigation t
 
 The Settings screen and its detail pages. Profile-aware and integration-aware.
 
+On mobile beta builds, Screens & Navigation → Music player exposes the existing
+per-profile Appearance preference: Dark, Pure Black, Light, and Match Theme.
+The native picker updates the active player's settings model directly, without
+changing the app theme or music browsing pages. Settings search reaches the same
+control; production mobile builds hide both entry points. The TV-only track
+details toggle is not offered on mobile.
+
 Disc playback lives in a dedicated Discs section near the bottom of Playback,
 just before Advanced, on TV and mobile. It uses the shared labeled menu row on TV, showing the setting name
 and current choice rather than an unlabeled segmented picker.
