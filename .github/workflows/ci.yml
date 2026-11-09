@@ -240,7 +240,7 @@ jobs:
     name: Build and test tvOS app
     needs: [guards, app-build, package-tests, hosted-focus]
     if: ${{ always() }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     steps:
       - name: Require every CI lane to succeed
