@@ -677,6 +677,13 @@ watch history and planning-list behavior are documented in
   Home and its row-browse pages use these headings; dedicated destinations such as
   Watchlist and other library pages keep their original names.
   Collection rows retain their existing name editor.
+  On iPhone and iPad, long-press a Home row's combined title/chevron target and
+  choose **Edit** to open that same row editor directly. Ordinary taps still browse;
+  rows without a browse action also expose Edit. The shortcut is scoped to the
+  active profile and is available through VoiceOver actions.
+  Row-name fields have a persistent label on mobile and a separate native save action.
+  Done dismisses the keyboard and saves ordinary row names; collection rows retain
+  their existing Save changes action for the whole draft.
   Source-specific rows and their settings
   use the shared provider brand mark, including the transport badge for shares.
   In the editor, Add row, and reorder rows, the mark sits beside the

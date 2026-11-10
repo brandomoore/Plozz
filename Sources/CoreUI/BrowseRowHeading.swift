@@ -1,6 +1,11 @@
 import SwiftUI
 
+public extension EnvironmentValues {
+    @Entry var homeRowEditAction: (() -> Void)? = nil
+}
+
 public struct BrowseRowHeading: View {
+    @Environment(\.homeRowEditAction) private var editAction
     private let title: Text
     private let action: (() -> Void)?
 
@@ -31,6 +36,27 @@ public struct BrowseRowHeading: View {
                     .accessibilityLabel(title)
                     .accessibilityAddTraits(.isHeader)
                     .accessibilityIdentifier("home-row-see-all")
+                    .contextMenu {
+                        if let editAction {
+                            Button("Edit", systemImage: "pencil", action: editAction)
+                        }
+                    }
+                    .accessibilityActions {
+                        if let editAction { Button("Edit", action: editAction) }
+                    }
+                }
+        } else if let editAction {
+            label.hidden()
+                .overlay {
+                    label
+                        .frame(minHeight: 44, alignment: .leading)
+                        .contentShape(Rectangle())
+                        .accessibilityElement(children: .combine)
+                        .accessibilityAddTraits(.isHeader)
+                        .contextMenu {
+                            Button("Edit", systemImage: "pencil", action: editAction)
+                        }
+                        .accessibilityActions { Button("Edit", action: editAction) }
                 }
         } else {
             label.accessibilityAddTraits(.isHeader)

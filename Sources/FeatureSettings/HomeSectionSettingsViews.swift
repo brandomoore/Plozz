@@ -183,6 +183,7 @@ struct HomeRowNameEditor: View {
     let choice: HomeRowChoice
     let visibility: HomeLibraryVisibilityModel
     @State private var name: String
+    @FocusState private var isNameFocused: Bool
 
     init(choice: HomeRowChoice, visibility: HomeLibraryVisibilityModel) {
         self.choice = choice
@@ -193,24 +194,37 @@ struct HomeRowNameEditor: View {
     private var trimmedName: String { name.trimmingCharacters(in: .whitespacesAndNewlines) }
 
     var body: some View {
+        #if os(iOS)
+        SettingsSectionGroup("Row name") {
+            nameField
+        }
+        Button("Save changes", action: save)
+            .plozzActionButton(role: .primary)
+            .disabled(trimmedName == (visibility.visibility.homeRowName(for: choice.id) ?? ""))
+            .accessibilityIdentifier("home-section-name-save")
+        #else
         SettingsSectionGroup {
-            TextField("Row name", text: $name, prompt: choice.homeEditorTitle)
-                .accessibilityIdentifier("home-section-name")
-                .onSubmit(save)
+            nameField
             Button("Save changes", action: save)
-                #if os(tvOS)
                 .buttonStyle(SettingsFormButtonStyle())
-                #else
-                .settingsActionRow()
-                #endif
                 .disabled(trimmedName == (visibility.visibility.homeRowName(for: choice.id) ?? ""))
                 .accessibilityIdentifier("home-section-name-save")
         }
+        #endif
+    }
+
+    private var nameField: some View {
+        TextField("Row name", text: $name, prompt: choice.homeEditorTitle)
+            .focused($isNameFocused)
+            .submitLabel(.done)
+            .accessibilityIdentifier("home-section-name")
+            .onSubmit(save)
     }
 
     private func save() {
         visibility.setHomeRowName(name, for: choice.id)
         name = visibility.visibility.homeRowName(for: choice.id) ?? ""
+        isNameFocused = false
     }
 }
 

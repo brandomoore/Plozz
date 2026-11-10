@@ -3,6 +3,43 @@ import SwiftUI
 import CoreModels
 import CoreUI
 
+/// Opens the same editor from Home or its settings list.
+public struct HomeRowSettingsView: View {
+    private let choice: HomeRowChoice
+    private let libraries: [AggregatedLibrary]
+    private let accounts: [ResolvedAccount]
+    private let visibility: HomeLibraryVisibilityModel
+    private let spoilerSettings: SpoilerSettings
+    @State private var inventory: HomeSectionCatalogModel
+
+    public init(
+        choice: HomeRowChoice, libraries: [AggregatedLibrary],
+        accounts: [ResolvedAccount], visibility: HomeLibraryVisibilityModel,
+        spoilerSettings: SpoilerSettings = .default, inventory: HomeSectionCatalogModel? = nil
+    ) {
+        self.choice = choice
+        self.libraries = libraries
+        self.accounts = accounts
+        self.visibility = visibility
+        self.spoilerSettings = spoilerSettings
+        _inventory = State(initialValue: inventory ?? HomeSectionCatalogModel())
+    }
+
+    public var body: some View {
+        if let section = choice.collectionSection {
+            CollectionSectionSettingsView(
+                section: section, inventory: inventory, visibility: visibility,
+                libraries: libraries, accounts: accounts, spoilerSettings: spoilerSettings
+            )
+        } else {
+            HomeSectionSettingsView(
+                choice: choice, inventory: inventory, visibility: visibility,
+                libraries: libraries, accounts: accounts
+            )
+        }
+    }
+}
+
 /// Home customization destinations share the active profile's existing settings.
 public struct HomeRowsSettingsView: View {
     public let libraries: [AggregatedLibrary]
@@ -299,19 +336,11 @@ struct HomeSectionsSettingsView: View {
                 ForEach(sections.enabled, id: \.self) { id in
                     if let choice = choices.first(where: { $0.id == id }) {
                         HomeEditorLink {
-                            if let section = choice.collectionSection {
-                                CollectionSectionSettingsView(
-                                    section: section, inventory: inventory, visibility: visibility,
-                                    libraries: libraries, accounts: accounts, spoilerSettings: spoilerSettings
-                                )
-                                .environment(cards)
-                            } else {
-                                HomeSectionSettingsView(
-                                    choice: choice, inventory: inventory, visibility: visibility,
-                                    libraries: libraries, accounts: accounts
-                                )
-                                .environment(cards)
-                            }
+                            HomeRowSettingsView(
+                                choice: choice, libraries: libraries, accounts: accounts,
+                                visibility: visibility, spoilerSettings: spoilerSettings, inventory: inventory
+                            )
+                            .environment(cards)
                         } label: {
                             HomeSectionChoiceLabel(choice: choice, accounts: accounts, visibility: arrangement)
                         }

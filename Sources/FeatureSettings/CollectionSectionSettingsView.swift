@@ -43,6 +43,7 @@ struct CollectionSectionSettingsView: View {
     @State private var retry = 0
     @State private var choosingSource = false
     @State private var saveFailed = false
+    @FocusState private var isNameFocused: Bool
     @Environment(CardStyleSettingsModel.self) private var cards
     @Environment(\.plozzMetrics) private var metrics
     @SettingsPageDismiss private var dismiss
@@ -120,8 +121,13 @@ struct CollectionSectionSettingsView: View {
             }
             .buttonStyle(SettingsFormButtonStyle())
             .accessibilityIdentifier("collection-section-source")
-            TextField("Row name", text: $draft.name, prompt: Text(verbatim: draft.source.title))
-                .accessibilityIdentifier("collection-section-name")
+            SettingsSectionGroup("Row name") {
+                TextField("Row name", text: $draft.name, prompt: Text(verbatim: draft.source.title))
+                    .focused($isNameFocused)
+                    .submitLabel(.done)
+                    .onSubmit { isNameFocused = false }
+                    .accessibilityIdentifier("collection-section-name")
+            }
             Button {
                 do {
                     guard accounts.contains(where: draft.source.matches) else { throw AppError.notFound }

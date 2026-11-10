@@ -769,6 +769,125 @@ final class HomeRowArrangementHostedTests: XCTestCase {
             XCTAssertLessThanOrEqual(headingFrame.width, 350)
         }
     }
+
+    func testHomeRowHeadingHasOneContextMenuAcrossTitleAndChevron() async throws {
+        for browsable in [true, false] {
+            var browsingCount = 0
+            var headingFrame = CGRect.zero
+            try await withWindow(size: CGSize(width: 390, height: 844)) {
+                BrowseRowHeading(
+                    title: Text("Movie night"), action: browsable ? { browsingCount += 1 } : nil
+                )
+                .font(.title3.weight(.semibold))
+                .environment(\.homeRowEditAction, {})
+                .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { headingFrame = $0 }
+            } inspect: { window in
+                func views(_ view: UIView) -> [UIView] { [view] + view.subviews.flatMap(views) }
+                let lines = try await self.capture(window, name: "Editable Home heading \(browsable)")
+                let title = try XCTUnwrap(lines.first { $0.0.contains("Movie night") }).1
+                let point = CGPoint(x: title.midX * window.bounds.width, y: (1 - title.midY) * window.bounds.height)
+                let menus = views(window).flatMap { view in
+                    view.interactions.compactMap { $0 as? UIContextMenuInteraction }
+                }.filter { interaction in
+                    guard let view = interaction.view else { return false }
+                    return view.convert(view.bounds, to: window).contains(point)
+                }
+                let menu = try XCTUnwrap(menus.first)
+                XCTAssertEqual(menus.count, 1, "The title and chevron share one context menu.")
+                let view = try XCTUnwrap(menu.view)
+                let titlePoint = view.convert(point, from: window)
+                let trailingPoint = view.convert(
+                    CGPoint(x: headingFrame.maxX - 2, y: headingFrame.midY), from: window
+                )
+                XCTAssertNotNil(menu.delegate?.contextMenuInteraction(menu, configurationForMenuAtLocation: titlePoint))
+                XCTAssertNotNil(menu.delegate?.contextMenuInteraction(menu, configurationForMenuAtLocation: trailingPoint))
+                for offset in [-21.0, 21.0] {
+                    let edge = view.convert(CGPoint(x: headingFrame.midX, y: headingFrame.midY + offset), from: window)
+                    XCTAssertNotNil(menu.delegate?.contextMenuInteraction(menu, configurationForMenuAtLocation: edge),
+                                    "The menu target must be at least 44pt tall.")
+                }
+                XCTAssertEqual(browsingCount, 0, "Requesting Edit must not also browse.")
+            }
+        }
+    }
+
+    func testHomeRowEditDestinationResolvesOriginalNamesAndSourceIdentity() throws {
+        let first = AggregatedLibrary(
+            accountID: "one", accountName: "One", serverName: "Server",
+            providerKind: .plex, library: .init(id: "movies", title: "Movies", kind: .movie)
+        )
+        let second = AggregatedLibrary(
+            accountID: "two", accountName: "Two", serverName: "Server",
+            providerKind: .jellyfin, library: .init(id: "movies", title: "Movies", kind: .movie)
+        )
+        let section = LibrarySection(id: "picks", title: "Original picks", items: [])
+        var content = HomeViewModel.Content(
+            libraries: [first, second],
+            librarySections: [.init(library: first, sections: [section]), .init(library: second, sections: [section])]
+        )
+        let id = HomeRowID.library(key: second.key, section: section.id)
+        var visibility = HomeLibraryVisibility()
+        visibility.setHomeRowName("Movie night", for: id)
+        let choice = try XCTUnwrap(PlozziOSHomeRowSettingsDestination.choice(for: id, content: content, visibility: visibility))
+        XCTAssertEqual(choice.library?.accountID, "two")
+        XCTAssertEqual(choice.title, "Original picks", "The default-name placeholder is not the custom heading.")
+        let server = HomeServerRowDefinition(
+            accountID: "one", serverName: "Server", providerKind: .plex,
+            section: .init(id: "offline", kind: .recommendations, title: "Offline picks")
+        )
+        content.sectionIssues = [.init(choice: HomeRowChoice(serverRow: server), reason: .empty)]
+        XCTAssertEqual(PlozziOSHomeRowSettingsDestination.choice(
+            for: server.id, content: content, visibility: visibility
+        )?.serverRow, server)
+        XCTAssertEqual(PlozziOSHomeRowSettingsDestination.choice(
+            for: .global(.watchlist), content: content, visibility: visibility
+        )?.id, .global(.watchlist))
+        let collection = CollectionSection(
+            source: .init(accountID: "one", collectionID: "weekend", title: "Weekend")
+        )
+        visibility.collectionSections = [collection]
+        XCTAssertEqual(PlozziOSHomeRowSettingsDestination.choice(
+            for: collection.rowID, content: content, visibility: visibility
+        )?.collectionSection, collection)
+        XCTAssertNil(PlozziOSHomeRowSettingsDestination.choice(
+            for: .section("removed"), content: content, visibility: visibility
+        ))
+    }
+
+    func testHomeRowEditDestinationRejectsAnOldProfile() async throws {
+        let suite = "HomeRowEditRoute.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let app = PlozziOSAppModel(
+            accountStore: AccountStore(secureStore: InMemorySecureStore()),
+            profileStore: ProfileStore(defaults: defaults)
+        )
+        let otherProfile = HomeLibraryVisibilityModel(store: HomeLibraryVisibilityStore(defaults: defaults))
+        let choice = try XCTUnwrap(HomeRowChoice.shared.first { $0.id == .global(.watchlist) })
+        for currentProfile in [true, false] {
+            let route = PlozziOSHomeRowSettingsRoute(
+                rowID: choice.id,
+                profile: ObjectIdentifier(currentProfile ? app.settings.homeVisibility : otherProfile),
+                choice: choice, libraries: []
+            )
+            try await withWindow {
+                NavigationStack {
+                    PlozziOSHomeRowSettingsDestination(route: route, appModel: app)
+                }
+            } inspect: { window in
+                func fields(_ view: UIView) -> [UITextField] {
+                    (view as? UITextField).map { [$0] } ?? view.subviews.flatMap(fields)
+                }
+                let lines = try await self.capture(window, name: "Home row edit profile \(currentProfile)")
+                XCTAssertEqual(fields(window).count, currentProfile ? 1 : 0)
+                if currentProfile {
+                    XCTAssertTrue(lines.contains { $0.0.localizedCaseInsensitiveContains("Row name") })
+                } else {
+                    XCTAssertTrue(lines.contains { $0.0.contains("Setting unavailable") })
+                }
+            }
+        }
+    }
     #endif
 
     func testExhaustedRowsHideBothBrowseAndLegacyActions() async throws {
@@ -2006,9 +2125,8 @@ final class HomeRowArrangementHostedTests: XCTestCase {
         let choice = try XCTUnwrap(HomeRowChoice.shared.first { $0.id == .global(.watchlist) })
         model.setHomeRowName("Movie night", for: choice.id)
         try await withWindow {
-            let page = HomeSectionSettingsView(
-                choice: choice, inventory: HomeSectionCatalogModel(),
-                visibility: model, libraries: [], accounts: []
+            let page = HomeRowSettingsView(
+                choice: choice, libraries: [], accounts: [], visibility: model
             )
             #if os(tvOS)
             page.environment(\.settingsPageBackButton, AnyView(SettingsBackButton {}))
@@ -2023,8 +2141,10 @@ final class HomeRowArrangementHostedTests: XCTestCase {
             XCTAssertTrue(lines.contains { $0.0.contains("Movie night") }, lines.map(\.0).joined(separator: " | "))
             XCTAssertTrue(lines.contains { $0.0.contains("Save changes") })
             #if os(iOS)
+            XCTAssertTrue(lines.contains { $0.0.localizedCaseInsensitiveContains("Row name") })
             let field = try XCTUnwrap(fields(window).first)
             XCTAssertEqual(field.text, "Movie night")
+            XCTAssertEqual(field.returnKeyType, .done)
             XCTAssertTrue(field.becomeFirstResponder())
             field.selectAll(nil)
             field.insertText("  Weekend picks  ")
@@ -2033,12 +2153,15 @@ final class HomeRowArrangementHostedTests: XCTestCase {
             try await Task.sleep(for: .milliseconds(100))
             XCTAssertEqual(model.visibility.homeRowName(for: choice.id), "Weekend picks")
             XCTAssertEqual(field.text, "Weekend picks")
+            XCTAssertFalse(field.isFirstResponder)
+            XCTAssertTrue(field.becomeFirstResponder())
             field.selectAll(nil)
             field.insertText("   ")
             try await Task.sleep(for: .milliseconds(100))
             field.sendActions(for: .editingDidEndOnExit)
             try await Task.sleep(for: .milliseconds(100))
             XCTAssertNil(model.visibility.homeRowName(for: choice.id))
+            XCTAssertFalse(field.isFirstResponder)
             field.resignFirstResponder()
             #else
             model.setHomeRowName("", for: choice.id)
