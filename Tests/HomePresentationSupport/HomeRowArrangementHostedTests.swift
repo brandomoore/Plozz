@@ -2147,7 +2147,6 @@ final class HomeRowArrangementHostedTests: XCTestCase {
         } inspect: { window in
             let lines = try await self.capture(window, name: "Navigation name editor")
             XCTAssertTrue(lines.contains { $0.0.contains("Movie night") })
-            #if os(iOS)
             func fields(_ view: UIView) -> [UITextField] {
                 (view as? UITextField).map { [$0] } ?? view.subviews.flatMap(fields)
             }
@@ -2157,18 +2156,31 @@ final class HomeRowArrangementHostedTests: XCTestCase {
             field.insertText("Weekend queue")
             try await Task.sleep(for: .milliseconds(100))
             field.sendActions(for: .editingDidEndOnExit)
+            #if os(tvOS)
+            field.resignFirstResponder()
+            #endif
             try await Task.sleep(for: .milliseconds(100))
             XCTAssertEqual(visibility.visibility.homeRowName(for: .global(.watchlist)), "Weekend queue")
+            #if os(iOS)
             XCTAssertFalse(field.isFirstResponder)
+            #else
+            field.resignFirstResponder()
+            #endif
             XCTAssertTrue(field.becomeFirstResponder())
             field.selectAll(nil)
             field.insertText("   ")
             try await Task.sleep(for: .milliseconds(100))
             field.sendActions(for: .editingDidEndOnExit)
+            #if os(tvOS)
+            field.resignFirstResponder()
+            #endif
             try await Task.sleep(for: .milliseconds(100))
             XCTAssertNil(visibility.visibility.homeRowName(for: .global(.watchlist)))
             XCTAssertEqual(field.text, "")
+            #if os(iOS)
             XCTAssertFalse(field.isFirstResponder)
+            #else
+            field.resignFirstResponder()
             #endif
         }
     }
@@ -2366,28 +2378,143 @@ final class HomeRowArrangementHostedTests: XCTestCase {
             XCTAssertFalse(field.isFirstResponder)
             field.resignFirstResponder()
             #else
-            XCTAssertTrue(lines.contains { $0.0.contains("Save changes") })
-            model.setHomeRowName("", for: choice.id)
+            XCTAssertFalse(lines.contains { $0.0.contains("Save changes") })
+            let field = try XCTUnwrap(fields(window).first)
+            XCTAssertTrue(field.becomeFirstResponder())
+            field.selectAll(nil)
+            field.insertText("Weekend picks")
+            try await Task.sleep(for: .milliseconds(100))
+            XCTAssertEqual(model.visibility.homeRowName(for: choice.id), "Movie night")
+            field.resignFirstResponder()
+            try await Task.sleep(for: .milliseconds(100))
+            XCTAssertEqual(model.visibility.homeRowName(for: choice.id), "Weekend picks")
+            let saved = try await self.capture(window, name: "Home row autosaved name")
+            XCTAssertTrue(saved.contains { $0.0.contains("Saved") })
+            XCTAssertTrue(field.becomeFirstResponder())
+            field.selectAll(nil)
+            field.insertText("   ")
+            try await Task.sleep(for: .milliseconds(100))
+            field.sendActions(for: .editingDidEndOnExit)
+            field.resignFirstResponder()
+            try await Task.sleep(for: .milliseconds(100))
+            XCTAssertNil(model.visibility.homeRowName(for: choice.id))
+            field.resignFirstResponder()
             #endif
             let reset = try await self.capture(window, name: "Home row default heading")
             XCTAssertTrue(reset.contains { $0.0.contains("Watchlist") })
-            #if os(tvOS)
-            let label = try XCTUnwrap(reset.first { $0.0.contains("Save changes") }).1
-            let point = CGPoint(x: label.midX * window.bounds.width, y: (1 - label.midY) * window.bounds.height)
-            let item = try XCTUnwrap(self.focusableItem(at: point, in: window))
-            let host = try XCTUnwrap(window.rootViewController as? HomeRowsFocusHost)
-            host.target = item
-            let system = try XCTUnwrap(UIFocusSystem(for: window))
-            system.requestFocusUpdate(to: host)
-            system.updateFocusIfNeeded()
-            let focused = XCTNSPredicateExpectation(
-                predicate: NSPredicate { _, _ in system.focusedItem === item }, object: nil
-            )
-            await self.fulfillment(of: [focused], timeout: 2)
-            _ = try await self.snapshot(window, name: "Home row Save changes focused")
-            #endif
         }
     }
+
+    #if os(tvOS)
+    func testTVNameAutosaveFailureRetryAndFieldIsolation() async throws {
+        var attempts = 0
+        var shouldFail = true
+        var persisted = "Original"
+        try await withWindow {
+            HomeEditorPage(title: Text("Watchlist"), showsHeader: true) {
+                SettingsSectionGroup {
+                    HomeEditorAutosavingNameInput(
+                        "Row name", name: persisted, prompt: Text("Watchlist"), identifier: "autosave-test"
+                    ) { name in
+                        attempts += 1
+                        if shouldFail { throw AppError.notFound }
+                        persisted = name
+                    }
+                    TextField("Unrelated", text: .constant("Other"))
+                }
+            }
+            .environment(\.settingsPageBackButton, AnyView(SettingsBackButton {}))
+        } inspect: { window in
+            _ = try await self.snapshot(window, name: "TV autosave fields")
+            func fields(_ view: UIView) -> [UITextField] {
+                (view as? UITextField).map { [$0] } ?? view.subviews.flatMap(fields)
+            }
+            let input = try XCTUnwrap(fields(window).first { $0.text == "Original" })
+            let unrelated = try XCTUnwrap(fields(window).first { $0.text == "Other" })
+            func endEditing(_ field: UITextField) async throws {
+                field.resignFirstResponder()
+                window.rootViewController?.dismiss(animated: false)
+                try await Task.sleep(for: .milliseconds(600))
+            }
+            XCTAssertTrue(unrelated.becomeFirstResponder())
+            try await Task.sleep(for: .milliseconds(600))
+            try await endEditing(unrelated)
+            XCTAssertEqual(attempts, 0)
+            XCTAssertTrue(input.becomeFirstResponder())
+            try await Task.sleep(for: .milliseconds(600))
+            try await endEditing(input)
+            XCTAssertEqual(attempts, 0, "Opening and closing an unchanged field must not write.")
+            XCTAssertTrue(input.becomeFirstResponder())
+            input.selectAll(nil)
+            input.insertText("  Weekend  ")
+            try await Task.sleep(for: .milliseconds(600))
+            try await endEditing(input)
+            XCTAssertEqual(attempts, 1)
+            XCTAssertEqual(persisted, "Original")
+            XCTAssertEqual(input.text, "Weekend")
+            let failure = try await self.capture(window, name: "TV autosave failure and retry")
+            XCTAssertTrue(failure.contains { $0.0.contains("Couldn't save") })
+            XCTAssertTrue(failure.contains { $0.0.contains("Retry") })
+            XCTAssertFalse(failure.contains { $0.0.contains("Saved") })
+            shouldFail = false
+            XCTAssertTrue(input.becomeFirstResponder())
+            try await Task.sleep(for: .milliseconds(600))
+            input.sendActions(for: .editingDidEndOnExit)
+            try await Task.sleep(for: .milliseconds(100))
+            try await endEditing(input)
+            XCTAssertEqual(attempts, 2, "Submit and end-editing must not duplicate the save.")
+            XCTAssertEqual(persisted, "Weekend")
+            let saved = try await self.capture(window, name: "TV autosave recovered")
+            XCTAssertTrue(saved.contains { $0.0.contains("Saved") })
+            XCTAssertFalse(saved.contains { $0.0.contains("Retry") })
+        }
+    }
+
+    func testTVCollectionNameAutosavesWithoutCreatingDraftRows() async throws {
+        let suite = "TVCollectionAutosave.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let visibility = HomeLibraryVisibilityModel(store: HomeLibraryVisibilityStore(defaults: defaults))
+        let inventory = HomeSectionCatalogModel()
+        let provider = HomeSettingsLibraryProvider(name: "Collection server")
+        let account = ResolvedAccount(account: Account(from: provider.session), provider: provider)
+        let section = CollectionSection(source: .init(
+            accountID: account.account.id, collectionID: "weekend",
+            title: "Weekend picks", serverUserID: account.provider.session.userID
+        ))
+        for isNew in [true, false] {
+            if !isNew { try visibility.saveCollectionSection(section, catalog: HomeSectionCatalog(libraries: [])) }
+            try await withWindow {
+                CollectionSectionSettingsView(
+                    section: section, isNew: isNew, inventory: inventory, visibility: visibility,
+                    libraries: [], accounts: [account]
+                )
+            } inspect: { window in
+                _ = try await self.snapshot(window, name: "TV collection editor")
+                func fields(_ view: UIView) -> [UITextField] {
+                    (view as? UITextField).map { [$0] } ?? view.subviews.flatMap(fields)
+                }
+                let input = try XCTUnwrap(fields(window).first)
+                XCTAssertTrue(input.becomeFirstResponder())
+                input.selectAll(nil)
+                input.insertText("Movie night")
+                try await Task.sleep(for: .milliseconds(100))
+                input.resignFirstResponder()
+                try await Task.sleep(for: .milliseconds(100))
+                if isNew {
+                    XCTAssertTrue(visibility.visibility.collectionSections.isEmpty)
+                } else {
+                    XCTAssertEqual(visibility.visibility.collectionSections.first?.name, "Movie night")
+                    let reloaded = HomeLibraryVisibilityModel(store: HomeLibraryVisibilityStore(defaults: defaults))
+                    XCTAssertEqual(reloaded.visibility.collectionSections.first?.name, "Movie night")
+                }
+                let lines = try await self.capture(window, name: "TV collection \(isNew ? "draft" : "autosaved")")
+                XCTAssertEqual(lines.contains { $0.0.contains("Add to Home") }, isNew)
+                XCTAssertFalse(lines.contains { $0.0.contains("Save changes") })
+            }
+        }
+    }
+    #endif
 
     #if os(iOS)
     func testMobileNameEditorsSaveFromToolbarAndReturn() async throws {

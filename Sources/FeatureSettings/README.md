@@ -685,7 +685,7 @@ watch history and planning-list behavior are documented in
   libraries for those controls must not restore a separate management list.
 - **Home rows** is one shared arrangement editor on TV, iPhone and iPad.
   Normal rows open their own settings with a **Row name** field.
-  Save changes applies a profile-specific heading,
+  Saving applies a profile-specific heading,
   and clearing it restores the original heading. Names survive hiding, reordering,
   preset changes, and temporary source unavailability without renaming server content.
   Home and its row-browse pages use these headings. Watchlist also uses its shared
@@ -702,7 +702,20 @@ watch history and planning-list behavior are documented in
   shows progress while saving, and returns to the previous page after success.
   Keyboard Done uses the same save path. Failures retain the draft and show an
   alert; leaving cancels pending work. Immediate appearance/behavior preferences
-  remain immediate, and TV keeps its existing in-content actions.
+  remain immediate.
+  On TV, ordinary row names, existing collection names, and navigation names save
+  when native text editing ends, whether through Done or keyboard Back. Back
+  closes the keyboard without also leaving the editor. There is no second Save
+  action. A secondary checkmark and **Saved** appear beside the field label only
+  after a changed name saves; the status remains until editing starts again.
+  It adds no remote focus stop and announces success to VoiceOver.
+  A failed name save retains the draft and shows **Couldn't save** with Retry.
+  The shared name input observes its own native text-field editing lifecycle:
+  remote focus can stay on the input after the keyboard closes, and Back does
+  not submit the field. The observer never reacts to another input's editing.
+  Existing collection layout, logo, and content choices apply on selection and
+  preserve the saved name independently; failures expose Retry. New collection
+  rows remain drafts until the explicit **Add to Home** action on both platforms.
   Remove from Home is a separate, full-width destructive action group below the
   row's editing controls, shared by ordinary and collection rows.
   Onboarding keeps the shared large native page actions; editor toolbar actions

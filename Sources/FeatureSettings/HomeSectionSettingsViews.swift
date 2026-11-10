@@ -261,6 +261,15 @@ struct HomeRowNameEditor: View {
             isEnabled: trimmedName != (visibility.visibility.homeRowName(for: choice.id) ?? ""),
             identifier: "home-section-name-save", action: save
         ))
+        #elseif os(tvOS)
+        SettingsSectionGroup {
+            HomeEditorAutosavingNameInput(
+                "Row name", name: name, prompt: choice.homeEditorTitle,
+                identifier: "home-section-name"
+            ) { value in
+                visibility.setHomeRowName(value, for: choice.id)
+            }
+        }
         #else
         SettingsSectionGroup {
             SettingsInputRow("Row name") { nameField }

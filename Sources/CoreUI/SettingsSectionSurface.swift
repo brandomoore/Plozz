@@ -81,20 +81,29 @@ public struct SettingsMenuValue: View {
 /// A persistent label for a native settings input. The surrounding group owns its surface and insets.
 public struct SettingsInputRow<Input: View>: View {
     private let title: LocalizedStringResource
+    private let status: Text?
     private let input: Input
 
-    public init(_ title: LocalizedStringResource, @ViewBuilder input: () -> Input) {
+    public init(_ title: LocalizedStringResource, status: Text? = nil, @ViewBuilder input: () -> Input) {
         self.title = title
+        self.status = status
         self.input = input()
     }
 
     public var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(title)
-                .font(SettingsRowMetrics.descriptionFont)
-                .plozzForeground(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-                .accessibilityHidden(true)
+            HStack(alignment: .firstTextBaseline) {
+                Text(title)
+                    .plozzForeground(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityHidden(true)
+                if let status {
+                    Spacer()
+                    status
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .font(SettingsRowMetrics.descriptionFont)
             input
                 .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
                 .accessibilityLabel(Text(title))
