@@ -1,11 +1,11 @@
 #if canImport(SwiftUI)
 import SwiftUI
 
-#if os(iOS)
-private extension ContainerValues {
+extension ContainerValues {
     @Entry var settingsActionOwnsInsets = false
 }
 
+#if os(iOS)
 private struct SettingsActionRowStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
@@ -244,13 +244,8 @@ public struct SettingsSectionGroup<Content: View, Footer: View>: View {
                     ForEach(subviews) { subview in
                         subview
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            #if os(iOS)
                             .padding(.horizontal, subview.containerValues.settingsActionOwnsInsets ? 0 : 16)
                             .padding(.vertical, subview.containerValues.settingsActionOwnsInsets ? 0 : 12)
-                            #else
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 12)
-                            #endif
                             .contentShape(Rectangle())
                             #if os(iOS)
                             .modifier(SettingsSearchRowHighlight(

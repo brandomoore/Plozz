@@ -743,6 +743,12 @@ watch history and planning-list behavior are documented in
   existing cross-source identity and playback references. Unavailable saved
   sources remain visible and removable. An existing row cannot lose its last
   source; a new empty draft cannot be saved.
+  The picker uses standard grouped Settings choice rows. A separate compact
+  Selected summary includes nested sources and their library/server context,
+  with explicit remove buttons instead of duplicate checkmarks. Collection and
+  playlist drill-ins do not repeat that summary. Done returns one level without
+  saving a new row: mobile retains the editor's toolbar save, TV existing rows
+  autosave, and TV new rows still require Add to Home.
   The editor separates Content from Layout (see [Home terminology](../../CONTEXT.md)).
   Name the row and choose Posters, Landscape or Featured presentation. A live
   real-title preview leads the editor, with compact native **Layout** and **Logo**

@@ -54,6 +54,8 @@ private struct ContinueWatchingChannelsProvider: MediaProvider {
 @Observable
 private final class ContentPickerSelectionFixture {
     var sources: [HomeContentSource] = []
+    var path: [String] = ["content"]
+    var returns = 0
 }
 
 @MainActor
@@ -67,14 +69,22 @@ extension HomeRowArrangementHostedTests {
         let account = ResolvedAccount(account: provider.account, provider: provider)
         let selected = ContentPickerSelectionFixture()
         try await withWindow {
+            @Bindable var selected = selected
             let picker = HomeContentPickerView(
                 selections: Binding(get: { selected.sources }, set: { selected.sources = $0 }),
                 inventory: HomeSectionCatalogModel(), visibility: visibility, libraries: [], accounts: [account]
             )
             #if os(iOS)
-            NavigationStack { picker }
+            NavigationStack(path: $selected.path) {
+                Text("Row editor").navigationDestination(for: String.self) { _ in picker }
+            }
             #else
             picker
+                .environment(\.settingsPageContext, SettingsPageContext(
+                    isCurrent: true, depth: 1, requestsEntryFocus: false, returnSourceID: nil,
+                    returnGeneration: 0, pageIDs: [], push: { _, _, _ in }, remove: { _ in },
+                    pop: { selected.returns += 1 }
+                ))
             #endif
         } inspect: { window in
             let initial = try await self.capture(window, name: "Multi-source picker")
@@ -91,14 +101,51 @@ extension HomeRowArrangementHostedTests {
             #endif
             selected.sources = [.init(home: .watchlist)]
             selected.sources.append(.init(home: .continueWatching))
+            selected.sources.append(.init(
+                feed: .collection("weekend"), accountID: provider.account.id,
+                serverUserID: provider.session.userID, title: "Weekend picks"
+            ))
             let changed = try await self.capture(window, name: "Multi-source selected feeds")
             XCTAssertTrue(changed.contains { $0.0.localizedCaseInsensitiveContains("Selected") })
-            XCTAssertEqual(selected.sources.map(\.home), [.watchlist, .continueWatching])
+            XCTAssertTrue(changed.contains { $0.0.contains("Weekend picks") })
+            XCTAssertTrue(changed.contains { $0.0.contains("Fixture") })
             #if os(tvOS)
             XCTAssertNotNil(UIFocusSystem.focusSystem(for: window)?.focusedItem)
+            XCTAssertTrue(changed.contains { $0.0 == "Done" })
+            #else
+            try self.activateEditorSave(in: window)
+            try await self.waitForEditor { selected.path.isEmpty }
             #endif
+            XCTAssertEqual(selected.sources.map(\.home), [.watchlist, .continueWatching, nil],
+                           "Done returns without clearing or resaving the selected content.")
         }
     }
+
+    func testGroupedContentChoiceMatchesSettingsNavigationHeight() async throws {
+        var choiceHeight: CGFloat = 0
+        var navigationHeight: CGFloat = 0
+        try await withWindow {
+            VStack {
+                SettingsSectionGroup {
+                    SettingsCheckableRow(
+                        title: Text("Watchlist"), isChecked: true, flushLeading: false,
+                        size: .contained, usesGroupInsets: true, action: {}
+                    )
+                }
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { choiceHeight = $0 }
+                SettingsSectionGroup {
+                    Button {} label: { HomeEditorRowLabel(title: Text("Collections")) }
+                }
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { navigationHeight = $0 }
+            }
+        } inspect: { window in
+            _ = try await self.capture(window, name: "Standard grouped choice height")
+            XCTAssertGreaterThan(choiceHeight, 0)
+            XCTAssertEqual(choiceHeight, navigationHeight, accuracy: 1,
+                           "Checkable and navigation rows must have the same single-line content height.")
+        }
+    }
+
 }
 
 #if os(tvOS)

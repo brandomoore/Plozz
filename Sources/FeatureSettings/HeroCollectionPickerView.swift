@@ -9,6 +9,7 @@ public struct HeroCollectionPickerView: View {
     private let accounts: [ResolvedAccount]
     private let onSelect: ((HeroCollectionSelection) -> Void)?
     private let playlists: Bool
+    private let showsSelectionSummary: Bool
     @State private var sourceID: HeroCollectionPickerSource.ID?
     @SettingsPageDismiss private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -18,13 +19,15 @@ public struct HeroCollectionPickerView: View {
         selections: Binding<[HeroCollectionSelection]>,
         libraries: [AggregatedLibrary],
         accounts: [ResolvedAccount],
-        playlists: Bool = false, onSelect: ((HeroCollectionSelection) -> Void)? = nil
+        playlists: Bool = false, showsSelectionSummary: Bool = true,
+        onSelect: ((HeroCollectionSelection) -> Void)? = nil
     ) {
         _selections = selections
         self.libraries = libraries
         self.accounts = accounts
         self.onSelect = onSelect
         self.playlists = playlists
+        self.showsSelectionSummary = showsSelectionSummary
     }
 
     public var body: some View {
@@ -37,7 +40,7 @@ public struct HeroCollectionPickerView: View {
             title: playlists ? "Choose playlists" : onSelect == nil ? "Choose collections" : "Choose collection",
             initialRowID: source?.id.focusID ?? "hero-collection-done"
         ) {
-            if onSelect == nil && !selections.isEmpty {
+            if showsSelectionSummary && onSelect == nil && !selections.isEmpty {
                 HeroCollectionSection(title: playlists ? "Selected playlists" : "Selected collections") {
                     ForEach(selections) { selection in
                         let selectedSource = sources.first {
@@ -70,20 +73,36 @@ public struct HeroCollectionPickerView: View {
                         account.provider.session.userID, account.plexHomeUserID ?? ""
                     ])
                 }
+                #if os(tvOS)
+                if !showsSelectionSummary && onSelect == nil { HomeContentPickerDoneButton() }
+                #endif
             } else {
                 if playlists { Text("No available playlist sources.") }
                 else { Text("No available collection sources.") }
-                Button("Done") {
-                    if let detailNavigation {
-                        detailNavigation.pop(animated: !reduceMotion)
-                    } else {
-                        dismiss()
+                if !showsSelectionSummary && onSelect == nil {
+                    #if os(tvOS)
+                    HomeContentPickerDoneButton()
+                    #endif
+                } else {
+                    Button("Done") {
+                        if let detailNavigation {
+                            detailNavigation.pop(animated: !reduceMotion)
+                        } else {
+                            dismiss()
+                        }
                     }
+                    .plozzActionButton(role: .secondary)
+                    .modifier(ViewCustomizationRowFocus(id: "hero-collection-done"))
                 }
-                .plozzActionButton(role: .secondary)
-                .modifier(ViewCustomizationRowFocus(id: "hero-collection-done"))
             }
         }
+        #if os(iOS)
+        .toolbar {
+            if !showsSelectionSummary && onSelect == nil {
+                ToolbarItem(placement: .confirmationAction) { HomeContentPickerDoneButton() }
+            }
+        }
+        #endif
         .onAppear { if sourceID == nil { sourceID = source?.id } }
     }
 }

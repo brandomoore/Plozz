@@ -17,10 +17,13 @@ struct HomeContentPickerView: View {
     var body: some View {
         let groupedFeeds = Dictionary(grouping: feedChoices, by: \.libraryKey)
         HomeEditorPage(title: Text("Content"), showsHeader: true) {
+            HomeContentPickerDoneButton()
+        } content: {
             if !selections.isEmpty {
-                SettingsSectionGroup("Selected") {
-                    ForEach(selections) { source in choice(source, selectedSummary: true) }
-                }
+                HomeContentSelectionSummary(
+                    selections: $selections, libraries: libraries, accounts: accounts,
+                    visibility: visibility.visibility, allowsEmpty: allowsEmpty
+                )
             }
             SettingsSectionGroup {
                 Button { choosingCollections = true } label: { HomeEditorRowLabel(title: Text("Collections")) }
@@ -60,15 +63,21 @@ struct HomeContentPickerView: View {
                 Button("Retry") { revision += 1 }.plozzActionButton(role: .secondary)
             }
         }
+        #if os(iOS)
+        .toolbar {
+            ToolbarItem(placement: .confirmationAction) { HomeContentPickerDoneButton() }
+        }
+        #endif
         .settingsPageDestination(isPresented: $choosingCollections) {
             HeroCollectionPickerView(
-                selections: containerSelections(playlists: false), libraries: availableLibraries, accounts: accounts
+                selections: containerSelections(playlists: false), libraries: availableLibraries,
+                accounts: accounts, showsSelectionSummary: false
             )
         }
         .settingsPageDestination(isPresented: $choosingPlaylists) {
             HeroCollectionPickerView(
                 selections: containerSelections(playlists: true), libraries: availableLibraries,
-                accounts: accounts, playlists: true
+                accounts: accounts, playlists: true, showsSelectionSummary: false
             )
         }
         .task(id: HomeSectionCatalogModel.loadID(
@@ -105,7 +114,7 @@ struct HomeContentPickerView: View {
         }
     }
 
-    private func choice(_ source: HomeContentSource, selectedSummary: Bool = false) -> some View {
+    private func choice(_ source: HomeContentSource) -> some View {
         let selected = selections.contains { $0.id == source.id }
         let account = accounts.first(where: source.matches)
         let available = source.isAvailable(accounts: accounts, visibility: visibility.visibility)
@@ -114,13 +123,14 @@ struct HomeContentPickerView: View {
             subtitle: !available ? Text("Unavailable source") : source.home != nil ? nil
                 : account.map { Text(verbatim: $0.account.server.name) },
             subtitleProvider: account?.provider.kind,
-            titleLineLimit: nil, subtitleLineLimit: nil, isChecked: selected, flushLeading: false
+            titleLineLimit: nil, subtitleLineLimit: nil, isChecked: selected,
+            isEnabled: allowsEmpty || !selected || selections.count > 1,
+            flushLeading: false, size: .contained, usesGroupInsets: true
         ) {
             if selected { selections.removeAll { $0.id == source.id } }
             else { selections.append(source) }
         }
-        .disabled(!allowsEmpty && selected && selections.count == 1)
-        .accessibilityIdentifier("home-content-\(selectedSummary ? "selected" : "choice")-\(source.home?.rawValue ?? "server")")
+        .accessibilityIdentifier("home-content-choice-\(source.home?.rawValue ?? "server")")
     }
 
     private func containerSelections(playlists: Bool) -> Binding<[HeroCollectionSelection]> {
@@ -159,6 +169,76 @@ struct HomeContentPickerView: View {
                 if allowsEmpty || !result.isEmpty { selections = result }
             }
         )
+    }
+}
+
+private struct HomeContentSelectionSummary: View {
+    @Binding var selections: [HomeContentSource]
+    let libraries: [AggregatedLibrary]
+    let accounts: [ResolvedAccount]
+    let visibility: HomeLibraryVisibility
+    let allowsEmpty: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 8) {
+                Text("Selected")
+                Text(selections.count, format: .number)
+            }
+            .font(.footnote.weight(.semibold))
+            .plozzForeground(.secondary)
+            ForEach(selections) { source in
+                HStack(spacing: 12) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        (source.localizedTitle.map(Text.init) ?? Text(verbatim: source.title))
+                            .font(.callout)
+                        if !source.isAvailable(accounts: accounts, visibility: visibility) {
+                            Text("Unavailable source")
+                                .font(.footnote)
+                                .plozzForeground(.secondary)
+                        } else if let account = accounts.first(where: source.matches) {
+                            let library = libraries.first {
+                                $0.accountID == source.accountID && $0.library.id == source.libraryID
+                            }
+                            Text(verbatim: [library?.library.title, account.account.server.name]
+                                .compactMap { $0 }.joined(separator: " / "))
+                                .font(.footnote)
+                                .plozzForeground(.secondary)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    Button {
+                        selections.removeAll { $0.id == source.id }
+                    } label: {
+                        Label("Remove", systemImage: "xmark")
+                            .labelStyle(.iconOnly)
+                            .settingsControlTarget()
+                    }
+                    #if os(tvOS)
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    #else
+                    .buttonStyle(.borderless)
+                    #endif
+                    .accessibilityLabel(Text("Remove \(source.displayTitle)"))
+                    .accessibilityIdentifier("home-content-remove-\(source.home?.rawValue ?? "server")")
+                    .disabled(!allowsEmpty && selections.count == 1)
+                }
+            }
+        }
+        .padding(.horizontal, 16)
+    }
+}
+
+struct HomeContentPickerDoneButton: View {
+    @SettingsPageDismiss private var dismiss
+
+    var body: some View {
+        Button("Done") { dismiss() }
+            #if os(tvOS)
+            .buttonStyle(.bordered)
+            #endif
+            .accessibilityIdentifier("home-content-done")
     }
 }
 #endif
