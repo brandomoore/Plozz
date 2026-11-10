@@ -35,6 +35,8 @@ cannot cross-fade the single live renderer they share. Geometry still animates.
 Only focus clearance has its own interpolation. The video reads the container's
 current animated size directly, rather than starting a second size animation
 for every layout frame.
+Preserve the native button's animation transaction: clearing it snaps the live
+video on focus gain/loss even though the system focus decoration still animates.
 
 `homeResponsivenessDiagnostics` passively observes visible mobile Home in
 opted-in diagnostic builds. Its cancellable 100 ms main-actor wake-up sampler

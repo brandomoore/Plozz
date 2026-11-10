@@ -9,6 +9,78 @@ import XCTest
 
 @MainActor
 final class LiveTVMultiviewMotionHostedTests: XCTestCase {
+    func testNativeFocusGainAndLossAnimateTheActualVideoFrame() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let model = FocusMotionModel()
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
+        window.rootViewController = UIHostingController(rootView: FocusMotionPage(model: model))
+        window.makeKeyAndVisible()
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        try await Task.sleep(for: .seconds(1))
+        func presentedWidths() -> [CGFloat] {
+            model.engines.map {
+                let layer = $0.output.layer.presentation() ?? $0.output.layer
+                return layer.convert(layer.bounds, to: window.layer.presentation() ?? window.layer).width
+            }
+        }
+        for selected in [1, 0] {
+            let before = presentedWidths()
+            model.selected = selected
+            var samples: [[CGFloat]] = []
+            let deadline = ContinuousClock.now + .milliseconds(700)
+            while ContinuousClock.now < deadline {
+                try await Task.sleep(for: .milliseconds(16))
+                window.layoutIfNeeded()
+                samples.append(presentedWidths())
+            }
+            let after = presentedWidths()
+            XCTAssertGreaterThan(after[selected], after[1 - selected] + 10)
+            for index in 0...1 {
+                let low = min(before[index], after[index])
+                let high = max(before[index], after[index])
+                XCTAssertGreaterThan(samples.filter { $0[index] > low + 1 && $0[index] < high - 1 }.count, 2,
+                                     "Both gaining and losing native focus must animate the live video, not snap its bounds.")
+                XCTAssertTrue(model.engines[index].output.window === window)
+                XCTAssertEqual(model.engines[index].stops, 0)
+            }
+        }
+    }
+
+    @Observable
+    final class FocusMotionModel {
+        let engines = [MotionEngine(), MotionEngine()]
+        var selected = 0
+    }
+
+    private struct FocusMotionPage: View {
+        let model: FocusMotionModel
+        var body: some View {
+            HStack(spacing: 100) {
+                ForEach(0..<2) { index in
+                    VideoSurfaceContainer(engine: model.engines[index])
+                        .videoCardFocusSurface()
+                        .environment(\.videoCardFocus, VideoCardFocus(
+                            identifier: "focus-motion-\(index)", title: "Video \(index)",
+                            audible: index == model.selected, presentsEffect: true,
+                            cornerRadius: 20, horizontalInset: 28, request: model.selected,
+                            prefersFocus: index == model.selected, focused: { _ in },
+                            activate: {}, promote: {}, replace: {}))
+                        .frame(width: 720, height: 405)
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(.black)
+            .ignoresSafeArea()
+        }
+    }
+
     func testCardRendererAndItsContainerResizeInTheSameFrames() async throws {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
             .first { $0.activationState == .foregroundActive })

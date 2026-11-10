@@ -166,7 +166,6 @@ private struct VideoCardInset: ViewModifier, Animatable {
             content
                 .frame(width: width, height: height)
                 .position(x: geometry.size.width / 2, y: geometry.size.height / 2)
-                .transaction { $0.animation = nil }
         }
     }
 }
