@@ -289,6 +289,9 @@ assets live under `App/Resources/Assets.xcassets/…brandassets`.
 
 ## Architecture
 
+For proposed, incremental maintainability and performance work, see the
+[architecture roadmap](../docs/architecture-roadmap.md).
+
 Plozz is a Swift Package with one library per concern, consumed by thin app
 targets generated with [XcodeGen](https://github.com/yonaskolb/XcodeGen).
 
