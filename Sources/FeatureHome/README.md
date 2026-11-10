@@ -35,10 +35,22 @@ First appearance does not duplicate loading. Failed series refreshes preserve th
 previous context, and cancellation/source-generation checks reject late responses.
 Each mounted page owns its registration, including repeated pushes of one title;
 the modifier cancels refresh work when the page is hidden or the profile resets.
+Single-source playback uses the current detail model's `playbackSources`, not
+the opening card's watch state, so refreshed progress reaches the mobile Play
+button even when no server picker is shown.
 
 App activation is delivered by `ContentRefreshLifecycleReader` rather than a
 view-local `scenePhase` check, so suspend/resume and a long-idle return to Home
 use the same path. See [state management](../../docs/state-management.md).
+
+`ContentRefreshReturnInteractionTests` runs the production movie and series
+detail views in the TV and mobile test hosts. It changes fixture-provider data,
+backgrounds/reactivates the app or pushes/pops another page, then checks the
+rendered progress and episode Play target. Only the provider and absence
+threshold are substituted; actual UIKit/SwiftUI lifecycle delivery is exercised.
+`ContentRefreshSurfaceHostedTests` separately covers request cancellation on
+cover, background, profile reset, identity change, and unmount on both platforms.
+The deterministic coordinator suite owns the exact production timing boundaries.
 
 ## Related loading
 

@@ -4936,6 +4936,43 @@ final class ThemeMusicSourceResolutionTests: XCTestCase {
 
 @MainActor
 final class DetailReturnRefreshTests: XCTestCase {
+    func testSingleSourcePlaybackUsesRefreshedProgressInsteadOfOpeningCard() async throws {
+        let item = MediaItem(id: "movie", title: "Movie", kind: .movie,
+                             runtime: 1800, sourceAccountID: "account")
+        let provider = FakeMediaProvider(allItems: [item], accountID: "account")
+        let vm = ItemDetailViewModel(
+            provider: provider, itemID: item.id, initialItem: item,
+            sourceAccountID: "account", onlineTrailerResolver: { _ in [] },
+            initialSources: [MediaSourceRef(accountID: "account", itemID: item.id, kind: .movie)]
+        )
+        defer { vm.suspendEnrichment() }
+        await vm.load()
+        XCTAssertTrue(vm.sources.isEmpty, "A single source does not need a server picker.")
+        var updated = item
+        updated.resumePosition = 600
+        updated.playedPercentage = 1.0 / 3
+        updated.hasBeenPlayed = true
+        provider.allItems = [updated]
+        await vm.refreshWatchStateOnly()
+        let detail = try XCTUnwrap(vm.state.value)
+        let selected = DetailPlaybackSelection.playItem(
+            for: detail.item,
+            sources: vm.playbackSources, activeAccountID: "account", versionID: nil, explicit: false
+        )
+        XCTAssertEqual(selected.resumePosition, 600)
+        XCTAssertEqual(selected.playedPercentage, 1.0 / 3)
+        XCTAssertTrue(selected.hasBeenPlayed)
+        XCTAssertEqual(selected.sourceAccountID, "account")
+        XCTAssertEqual(selected.id, item.id)
+
+        provider.allItems = [item]
+        await vm.refreshWatchStateOnly()
+        let cleared = try XCTUnwrap(vm.playbackSources.first)
+        XCTAssertNil(cleared.resumePosition)
+        XCTAssertNil(cleared.playedPercentage)
+        XCTAssertFalse(cleared.hasBeenPlayed)
+    }
+
     func testRefreshWatchStateOnlyUpdatesProgressWithoutReloadingChildren() async {
         var episode = MediaItem(id: "episode", title: "Episode", kind: .episode)
         episode.resumePosition = 30

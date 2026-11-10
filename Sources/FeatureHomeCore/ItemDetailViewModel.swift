@@ -432,6 +432,14 @@ public final class ItemDetailViewModel {
     /// resolve. Empty for a single-server title (no picker shown).
     public private(set) var sources: [MediaSourceRef] = []
 
+    /// Single-source pages have no picker entries, but playback still needs
+    /// their opening source stamped with the current detail, not the old card.
+    public var playbackSources: [MediaSourceRef] {
+        guard sources.isEmpty else { return sources }
+        guard let item = state.value?.item else { return initialSources }
+        return initialSources.map { stampedPrimarySource($0, from: item) }
+    }
+
     /// Accounts whose alternate-source enrichment fetch **failed** (server offline
     /// / unreachable), so the server picker can grey them out as "Offline" and
     /// block selecting a copy that can't load. Populated off the critical path as
@@ -3102,6 +3110,7 @@ public final class ItemDetailViewModel {
             seeded.playedPercentage = primary.playedPercentage
             seeded.unwatchedEpisodeCount = primary.unwatchedEpisodeCount
             seeded.isPlayed = primary.isPlayed
+            seeded.hasBeenPlayed = primary.hasBeenPlayed
             seeded.isFavorite = primary.isFavorite
             seeded.lastPlayedAt = primary.lastPlayedAt
         }

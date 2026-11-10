@@ -220,7 +220,6 @@ private struct PlozziOSCanonicalItemDetailView: View {
     @State private var heroPullDistance: CGFloat = 0
     private let seerService: SeerService?
     private var isDiscoveryItem: Bool { viewModel.isDiscoveryItem }
-    private let initialSources: [MediaSourceRef]
     private let initialSeasonID: String?
     private let initialEpisode: MediaItem?
     private let playlistOrigin: VideoPlaylistPlaybackOrigin?
@@ -284,7 +283,6 @@ private struct PlozziOSCanonicalItemDetailView: View {
         let selectedProvider = selectedSource.flatMap {
             appModel.accountsProviders.provider(forAccountID: $0.accountID)
         } ?? provider
-        self.initialSources = initialSources
         let accounts = appModel.accountsProviders.homeAccounts
         _viewModel = State(
             initialValue: ItemDetailViewModel(
@@ -1116,7 +1114,7 @@ private struct PlozziOSCanonicalItemDetailView: View {
     }
 
     private var availableSources: [MediaSourceRef] {
-        viewModel.sources.isEmpty ? initialSources : viewModel.sources
+        viewModel.playbackSources
     }
 
     private func playbackItem(for item: MediaItem) -> MediaItem {

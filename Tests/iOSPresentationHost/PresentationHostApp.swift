@@ -224,7 +224,9 @@ struct PresentationHostApp: App {
 
     var body: some Scene {
         WindowGroup {
-            if ProcessInfo.processInfo.arguments.contains("--offline-review-fixture") {
+            if ProcessInfo.processInfo.arguments.contains("--content-refresh-return-fixture") {
+                ContentRefreshReturnFixture()
+            } else if ProcessInfo.processInfo.arguments.contains("--offline-review-fixture") {
                 OfflineModeReviewFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--home-empty-fixture") {
                 let palette = ProcessInfo.processInfo.arguments.contains("--light") ? ThemePalette.light : .dark
