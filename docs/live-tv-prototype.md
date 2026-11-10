@@ -1769,6 +1769,11 @@ opaque backing rectangle. On tvOS, 20-point rounded corners clip each fitted pic
 and disappear when a picture is expanded. Reduce Motion makes these changes
 immediate. Removing a pane still retires its stream immediately; visual removal
 never delays authorization or tuner cleanup.
+The renderer follows the container's size in the same animation frames when
+shrinking or growing; only focus clearance animates independently.
+The close confirmation and playback errors share `playerPlatformAppearance`
+with transport controls, preserving native focused-label contrast without a
+dialog-specific button style.
 
 On Apple TV, native pane focus selects that channel's audio once its source is
 prepared. Moving into the controls keeps the last selected audio. Select opens

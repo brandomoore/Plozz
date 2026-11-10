@@ -32,6 +32,9 @@ platforms leave the content unchanged. Renderer hosts must preserve a single
 windowed output when SwiftUI prepares replacement labels offscreen.
 Label and style replacements use identity transitions: cross-fading two hosts
 cannot cross-fade the single live renderer they share. Geometry still animates.
+Only focus clearance has its own interpolation. The video reads the container's
+current animated size directly, rather than starting a second size animation
+for every layout frame.
 
 `homeResponsivenessDiagnostics` passively observes visible mobile Home in
 opted-in diagnostic builds. Its cancellable 100 ms main-actor wake-up sampler
@@ -573,6 +576,8 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   progress over a subdued track even in the light-theme fallback.
   `playerPlatformAppearance` scopes tvOS playback chrome to dark regular glass,
   as in build 57, without changing the surrounding browsing or window appearance.
+  Apply it outside playback alerts and confirmation dialogs too, so their native
+  focused buttons do not inherit a white browsing tint and lose their labels.
   It is a no-op on iOS.
 - **Settings steppers** — TV makes the whole labeled row one focus target using
   the existing `SettingsFormButtonStyle`, including its helper, persistent minus/plus cues and

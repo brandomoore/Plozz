@@ -85,15 +85,10 @@ private struct VideoCardSurface<Content: View>: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        GeometryReader { geometry in
-            let width = max(1, geometry.size.width - configuration.horizontalInset * 2)
-            let height = geometry.size.height * width / max(1, geometry.size.width)
-            button
+        button
             .buttonStyle(VideoCardButtonStyle(presentsEffect: configuration.presentsEffect))
-            .modifier(VideoCardFrame(size: CGSize(width: width, height: height)))
-            .position(x: geometry.size.width / 2, y: geometry.size.height / 2)
-            .animation(reduceMotion ? nil : .easeInOut(duration: 0.32), value: width)
-        }
+            .modifier(VideoCardInset(horizontalInset: configuration.horizontalInset))
+            .animation(reduceMotion ? nil : .easeInOut(duration: 0.32), value: configuration.horizontalInset)
         .focusSection()
         .onChange(of: focused) { _, value in configuration.focused(value) }
         .task(id: FocusRequest(revision: configuration.request, effect: configuration.presentsEffect)) {
@@ -156,16 +151,23 @@ private struct VideoCardButtonStyle: PrimitiveButtonStyle {
     }
 }
 
-private struct VideoCardFrame: ViewModifier, Animatable {
-    var size: CGSize
+private struct VideoCardInset: ViewModifier, Animatable {
+    var horizontalInset: CGFloat
 
-    var animatableData: AnimatablePair<CGFloat, CGFloat> {
-        get { AnimatablePair(size.width, size.height) }
-        set { size = CGSize(width: newValue.first, height: newValue.second) }
+    var animatableData: CGFloat {
+        get { horizontalInset }
+        set { horizontalInset = newValue }
     }
 
     func body(content: Content) -> some View {
-        content.frame(width: size.width, height: size.height)
+        GeometryReader { geometry in
+            let width = max(1, geometry.size.width - horizontalInset * 2)
+            let height = geometry.size.height * width / max(1, geometry.size.width)
+            content
+                .frame(width: width, height: height)
+                .position(x: geometry.size.width / 2, y: geometry.size.height / 2)
+                .transaction { $0.animation = nil }
+        }
     }
 }
 #endif

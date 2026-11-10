@@ -368,6 +368,7 @@ struct LiveTVMultiviewOverlay: View {
                 Text("This Multiview will close. Favorite it first if you want to open this setup again.")
             }
         }
+        .playerPlatformAppearance()
         #if os(tvOS)
         .onExitCommand(perform: back)
         .onChange(of: backRequest) { _, _ in back() }

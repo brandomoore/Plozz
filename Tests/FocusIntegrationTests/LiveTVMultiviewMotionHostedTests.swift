@@ -9,6 +9,86 @@ import XCTest
 
 @MainActor
 final class LiveTVMultiviewMotionHostedTests: XCTestCase {
+    func testCardRendererAndItsContainerResizeInTheSameFrames() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let model = SynchronizedCardModel()
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
+        window.rootViewController = UIHostingController(rootView: SynchronizedCardPage(model: model))
+        window.makeKeyAndVisible()
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        try await Task.sleep(for: .milliseconds(500))
+        for width in [CGFloat(640), 1600] {
+            model.frame = CGRect(x: 100, y: 60, width: width, height: width * 9 / 16)
+            var samples: [(container: CGFloat, video: CGFloat)] = []
+            let deadline = ContinuousClock.now + .milliseconds(550)
+            while ContinuousClock.now < deadline {
+                try await Task.sleep(for: .milliseconds(16))
+                window.layoutIfNeeded()
+                samples.append((model.viewport.bounds.width, model.engine.output.bounds.width))
+            }
+            let differences = samples.map { abs($0.video - max(1, $0.container - 56)) }
+            XCTAssertLessThan(try XCTUnwrap(differences.max()), 2,
+                              "The video must follow the container in each frame, not start another resize behind it.")
+            XCTAssertGreaterThan(Set(samples.map { Int($0.container) }).count, 3)
+            XCTAssertEqual(model.engine.output.bounds.width, width - 56, accuracy: 1)
+            XCTAssertEqual(model.engine.stops, 0)
+        }
+        for inset in [CGFloat(0), 28] {
+            model.inset = inset
+            var widths: [CGFloat] = []
+            let deadline = ContinuousClock.now + .milliseconds(500)
+            while ContinuousClock.now < deadline {
+                try await Task.sleep(for: .milliseconds(16))
+                window.layoutIfNeeded()
+                widths.append(model.engine.output.bounds.width)
+            }
+            let intermediate = widths.filter { $0 > 1545 && $0 < 1599 }
+            XCTAssertGreaterThan(intermediate.count, 2)
+            XCTAssertEqual(model.engine.output.bounds.width, 1600 - inset * 2, accuracy: 1)
+        }
+    }
+
+    @Observable
+    final class SynchronizedCardModel {
+        let engine = MotionEngine()
+        let viewport = UIView()
+        var frame = CGRect(x: 0, y: 0, width: 1600, height: 900)
+        var inset: CGFloat = 28
+    }
+
+    private struct SynchronizedCardPage: View {
+        let model: SynchronizedCardModel
+        var body: some View {
+            ZStack(alignment: .topLeading) {
+                Color.black
+                VideoSurfaceContainer(engine: model.engine)
+                    .videoCardFocusSurface()
+                    .environment(\.videoCardFocus, VideoCardFocus(
+                        identifier: "synchronized-video", title: "Video", audible: true,
+                        presentsEffect: false, cornerRadius: 20, horizontalInset: model.inset,
+                        request: 0, prefersFocus: true, focused: { _ in },
+                        activate: {}, promote: {}, replace: {}))
+                    .background { ViewportProbe(view: model.viewport) }
+                    .modifier(PrototypeVideoPlacement(frame: model.frame))
+                    .animation(.easeInOut(duration: 0.32), value: model.frame)
+            }
+            .ignoresSafeArea()
+        }
+    }
+
+    private struct ViewportProbe: UIViewRepresentable {
+        let view: UIView
+        func makeUIView(context: Context) -> UIView { view }
+        func updateUIView(_ uiView: UIView, context: Context) {}
+    }
+
     func testFullscreenHandoffKeepsTheActualOutputVisibleUntilTheInlineHostLaysOut() async throws {
         let fixture = try await makeFixture()
         defer { fixture.close() }

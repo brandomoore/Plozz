@@ -4,6 +4,34 @@ import Vision
 
 final class LiveTVMultiviewRemoteTests: XCTestCase {
     @MainActor
+    func testCloseMultiviewDialogKeepsFocusedCancelLegible() throws {
+        try assertCloseDialogContrast(reduceGlass: false)
+    }
+
+    @MainActor
+    func testCloseMultiviewDialogKeepsFocusedCancelLegibleWithReducedGlass() throws {
+        try assertCloseDialogContrast(reduceGlass: true)
+    }
+
+    @MainActor
+    private func assertCloseDialogContrast(reduceGlass: Bool) throws {
+        let app = launchVisualFixture(reduceGlass: reduceGlass)
+        defer { app.terminate() }
+        select(app.buttons["live-channel-multiview"], in: app)
+        finishSetup(in: app)
+        XCUIRemote.shared.press(.menu)
+        let dialog = app.sheets["Close Multiview?"]
+        let keepWatching = dialog.buttons.matching(NSPredicate(format: "label == %@", "Keep watching")).firstMatch
+        XCTAssertTrue(keepWatching.waitForExistence(timeout: 5))
+        select(keepWatching, in: app, activate: false)
+        try assertFocusedControl(
+            keepWatching, name: "close-dialog-focused-cancel-\(reduceGlass)", showsTitle: true, in: app)
+        select(keepWatching, in: app)
+        XCTAssertFalse(dialog.exists)
+        assertMetrics("Engines 1 loads 1 stops 0 audible 1", in: app)
+    }
+
+    @MainActor
     func testProductionNativeFocusAndAutomaticWatchingPreserveEveryStream() async throws {
         continueAfterFailure = false
         let app = fixtureApplication()
