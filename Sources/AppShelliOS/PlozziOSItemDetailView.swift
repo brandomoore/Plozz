@@ -333,6 +333,32 @@ private struct PlozziOSCanonicalItemDetailView: View {
         )
     }
 
+    private var contentRefreshSurfaceID: ContentRefreshSurfaceID? {
+        guard !viewModel.isDiscoveryItem, let item = viewModel.state.value?.item else { return nil }
+        let kind: ContentRefreshSurfaceKind
+        switch item.kind {
+        case .series: kind = .seriesDetail
+        case .episode: kind = .episodeDetail
+        case .movie, .video: kind = .movieDetail
+        default: return nil
+        }
+        return ContentRefreshSurfaceID(
+            kind: kind,
+            accountID: item.sourceAccountID,
+            itemID: item.id
+        )
+    }
+
+    private var contentRefreshSurfaceIsVisible: Bool {
+        guard isPageVisible, playbackRequest == nil, pendingResumeRequest == nil,
+              !presentsSeriesDownloads,
+              let kind = viewModel.state.value?.item.kind else { return false }
+        switch kind {
+        case .series, .episode, .movie, .video: return true
+        default: return false
+        }
+    }
+
     var body: some View {
         Group {
             switch viewModel.state {
@@ -456,6 +482,19 @@ private struct PlozziOSCanonicalItemDetailView: View {
             if isPresented { seasonRequestRetryToken &+= 1 }
         }
         .task { await viewModel.load() }
+        .contentRefreshSurface(
+            id: contentRefreshSurfaceID,
+            isVisible: contentRefreshSurfaceIsVisible
+        ) { request in
+            switch request.action {
+            case .reloadSeriesContext:
+                await viewModel.refreshSeriesContextAfterReturn()
+            case .refreshWatchStateOnly:
+                await viewModel.refreshWatchStateOnly()
+            case .reloadHome:
+                break
+            }
+        }
         .detailPlaybackPreparation(
             for: preparationItem,
             isActive: isPageVisible && playbackRequest == nil && pendingResumeRequest == nil
@@ -1767,7 +1806,10 @@ struct PlozziOSInlineSeriesBrowser: View {
     /// The season the resting target was settled from, so browsing elsewhere
     /// leaves the hero where the viewer actually is.
     @State private var resolvedSeasonID: String?
-    @State private var hasInteractedWithEpisodeBrowser = false
+    /// Set only for an explicit opening route or a season-tab tap. Scrolling the
+    /// episode rail is browsing, not a season choice, so a return refresh may
+    /// still move to the server's current resume season.
+    @State private var hasExplicitSeasonSelection: Bool
 
     let viewModel: ItemDetailViewModel
     let seasons: [MediaItem]
@@ -1801,6 +1843,9 @@ struct PlozziOSInlineSeriesBrowser: View {
             )
         )
         _railTargetID = State(initialValue: initialEpisode?.id)
+        _hasExplicitSeasonSelection = State(
+            initialValue: initialSeasonID != nil || initialEpisode != nil
+        )
     }
 
     var body: some View {
@@ -1813,7 +1858,7 @@ struct PlozziOSInlineSeriesBrowser: View {
                         title: { Text(verbatim: $0.title) },
                         tabIdentifier: { "season-\($0.id)" }
                     ) { season in
-                        hasInteractedWithEpisodeBrowser = true
+                        hasExplicitSeasonSelection = true
                         selectedSeasonID = season.id
                     }
                     .accessibilityLabel("Season")
@@ -1826,7 +1871,7 @@ struct PlozziOSInlineSeriesBrowser: View {
                         && selectedSeasonID != nil
                         && displayedEpisodes == nil,
                     currentEpisodeID: railTargetID,
-                    onInteraction: { hasInteractedWithEpisodeBrowser = true },
+                    onInteraction: {},
                     onPlay: onPlay
                 )
             }
@@ -1836,7 +1881,7 @@ struct PlozziOSInlineSeriesBrowser: View {
                     seasons: seasons,
                     episodes: looseEpisodes,
                     selectedSeasonID: selectedSeasonID,
-                    preserveSelection: hasInteractedWithEpisodeBrowser,
+                    preserveSelection: hasExplicitSeasonSelection,
                     initialSeasonID: initialSeasonID,
                     initialEpisode: initialEpisode,
                     resumeEpisode: viewModel.serverResumeEpisode
@@ -1850,14 +1895,17 @@ struct PlozziOSInlineSeriesBrowser: View {
                     resolvedSeasonID = nil
                     railTargetID = nil
                 }
-                if !hasInteractedWithEpisodeBrowser, initialEpisode == nil,
-                   let series = viewModel.state.value?.item,
-                   let seed = SeriesEpisodeEntry.openingSeed(
-                       for: series, initialEpisode: initialEpisode,
-                       initialSeasonID: initialSeasonID, resumeEpisode: viewModel.serverResumeEpisode
-                   ) {
+                if !hasExplicitSeasonSelection, initialEpisode == nil {
                     resolvedSeasonID = nil
-                    onPlayTargetChange(seed)
+                    if let series = viewModel.state.value?.item,
+                       let seed = SeriesEpisodeEntry.openingSeed(
+                           for: series, initialEpisode: initialEpisode,
+                           initialSeasonID: initialSeasonID, resumeEpisode: viewModel.serverResumeEpisode
+                       ) {
+                        onPlayTargetChange(seed)
+                    } else {
+                        publishPlayTarget()
+                    }
                 }
             }
             .task(id: selectedSeasonID) {

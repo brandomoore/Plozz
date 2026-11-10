@@ -26,6 +26,7 @@ public struct PlozziOSRootView: View {
     private var systemReduceTransparency
     @State private var appModel: PlozziOSAppModel
     @State private var homeViewModelBox = LazyViewState<HomeViewModel>()
+    @State private var contentRefreshCoordinator = ContentRefreshCoordinator(profile: .iOS)
     @State private var heroTrailerController = HeroTrailerController()
     @State private var themeMusicController = ThemeMusicController()
     @State private var isLiveTVSelected = false
@@ -173,6 +174,7 @@ public struct PlozziOSRootView: View {
         }
         .onChange(of: appModel.profiles.activeProfileID) { _, _ in
             providerSetupRouter.reauthenticationAccount = nil
+            contentRefreshCoordinator.reset()
         }
         .onChange(of: providerSetupRouter.request?.id) { _, _ in
             guard let request = providerSetupRouter.request else { return }
@@ -319,6 +321,8 @@ public struct PlozziOSRootView: View {
 
     private var appContent: some View {
         setupPresentationContent
+        .environment(contentRefreshCoordinator)
+        .background(ContentRefreshLifecycleReader(coordinator: contentRefreshCoordinator))
         .environment(\.familyGuidanceProvider, appModel.familyGuidance)
         .detailPlaybackPreparationEnvironment(
             appModel.detailPlaybackPreparation,

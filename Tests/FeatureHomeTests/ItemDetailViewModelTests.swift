@@ -4932,6 +4932,233 @@ final class ThemeMusicSourceResolutionTests: XCTestCase {
         XCTAssertEqual(resolver.locator, locator)
     }
 
+}
+
+@MainActor
+final class DetailReturnRefreshTests: XCTestCase {
+    func testRefreshWatchStateOnlyUpdatesProgressWithoutReloadingChildren() async {
+        var episode = MediaItem(id: "episode", title: "Episode", kind: .episode)
+        episode.resumePosition = 30
+        episode.playedPercentage = 0.1
+        let provider = FakeMediaProvider(allItems: [episode])
+        let vm = ItemDetailViewModel(
+            provider: provider, itemID: episode.id, initialItem: episode,
+            onlineTrailerResolver: { _ in [] }
+        )
+        defer { vm.suspendEnrichment() }
+        await vm.load()
+        XCTAssertEqual(vm.state.value?.item.resumePosition, 30)
+
+        var refreshed = episode
+        refreshed.resumePosition = 120
+        refreshed.playedPercentage = 0.4
+        provider.allItems = [refreshed]
+        let childCalls = provider.childrenCallCount
+        let trailerCalls = provider.trailerCallCount
+
+        await vm.refreshWatchStateOnly()
+
+        XCTAssertEqual(vm.state.value?.item.resumePosition, 120)
+        XCTAssertEqual(vm.state.value?.item.playedPercentage, 0.4)
+        XCTAssertEqual(vm.state.value?.childrenLoaded, true)
+        XCTAssertEqual(provider.childrenCallCount, childCalls)
+        XCTAssertEqual(provider.trailerCallCount, trailerCalls)
+    }
+
+    func testRefreshSeriesContextAfterReturnRefreshesResumeAndPreservesExplicitSeason() async {
+        let series = MediaItem(id: "series", title: "Series", kind: .series)
+        var season1 = MediaItem(id: "s1", title: "Season 1", kind: .season)
+        season1.seriesID = series.id
+        season1.seasonNumber = 1
+        var season2 = MediaItem(id: "s2", title: "Season 2", kind: .season)
+        season2.seriesID = series.id
+        season2.seasonNumber = 2
+        func episode(_ id: String) -> MediaItem {
+            var episode = MediaItem(id: id, title: id, kind: .episode)
+            episode.seriesID = series.id
+            episode.seasonID = season2.id
+            episode.seasonNumber = 2
+            episode.episodeNumber = 1
+            return episode
+        }
+        let firstResume = episode("s2e1")
+        var secondResume = episode("s2e2")
+        secondResume.episodeNumber = 2
+        let updatedResume = secondResume
+        let provider = SeriesResumeFakeProvider(allItems: [series, season1, season2, firstResume])
+        provider.childrenByParent = [
+            series.id: [season1, season2],
+            season1.id: [],
+            season2.id: [firstResume]
+        ]
+        provider.resumeHandler = { _ in firstResume }
+
+        let vm = ItemDetailViewModel(
+            provider: provider, itemID: season1.id, initialItem: season1,
+            onlineTrailerResolver: { _ in [] }
+        )
+        defer { vm.suspendEnrichment() }
+        await vm.load()
+
+        XCTAssertEqual(vm.state.value?.item.kind, .series)
+        XCTAssertEqual(vm.preselectedSeasonID, season1.id)
+        XCTAssertEqual(vm.serverResumeEpisode?.id, firstResume.id)
+
+        provider.resumeHandler = { _ in updatedResume }
+        await vm.refreshSeriesContextAfterReturn()
+
+        XCTAssertEqual(vm.serverResumeEpisode?.id, secondResume.id)
+        XCTAssertEqual(vm.preselectedSeasonID, season1.id)
+    }
+
+    func testFailedSeriesRefreshPreservesContextButSuccessfulEmptyResumeClearsIt() async {
+        let series = MediaItem(id: "series", title: "Series", kind: .series)
+        let episode = MediaItem(id: "episode", title: "Episode", kind: .episode, seriesID: series.id)
+        let provider = SeriesResumeFakeProvider(allItems: [series, episode])
+        provider.childrenByParent = [series.id: [episode]]
+        provider.resumeHandler = { _ in episode }
+        let vm = ItemDetailViewModel(
+            provider: provider, itemID: series.id, onlineTrailerResolver: { _ in [] }
+        )
+        defer { vm.suspendEnrichment() }
+        await vm.load()
+        provider.resumeHandler = { _ in throw AppError.serverUnreachable }
+        await vm.refreshSeriesContextAfterReturn()
+        XCTAssertEqual(vm.serverResumeEpisode?.id, episode.id)
+        XCTAssertEqual(vm.state.value?.children.map(\.id), [episode.id])
+        XCTAssertFalse(vm.isResolvingServerResume)
+        provider.resumeHandler = { _ in nil }
+        await vm.refreshSeriesContextAfterReturn()
+        XCTAssertNil(vm.serverResumeEpisode)
+        XCTAssertFalse(vm.isResolvingServerResume)
+    }
+
+    func testCancelledWatchRefreshCannotPublish() async {
+        let item = MediaItem(id: "movie", title: "Movie", kind: .movie, resumePosition: 30)
+        let provider = FakeMediaProvider(allItems: [item])
+        let vm = ItemDetailViewModel(provider: provider, itemID: item.id, onlineTrailerResolver: { _ in [] })
+        defer { vm.suspendEnrichment() }
+        await vm.load()
+        let entered = expectation(description: "Refresh entered provider")
+        let gate = AsyncGate()
+        var updated = item
+        updated.resumePosition = 200
+        provider.allItems = [updated]
+        provider.itemGate = [item.id: { entered.fulfill(); await gate.wait() }]
+        let task = Task { await vm.refreshWatchStateOnly() }
+        await fulfillment(of: [entered], timeout: 2)
+        task.cancel()
+        gate.open()
+        await task.value
+        XCTAssertEqual(vm.state.value?.item.resumePosition, 30)
+    }
+
+    func testLateWatchResponseCannotCrossSameIDSourceSwitch() async {
+        let oldItem = MediaItem(id: "movie", title: "Movie", kind: .movie,
+                                resumePosition: 30, sourceAccountID: "old")
+        let newItem = MediaItem(id: "movie", title: "Movie", kind: .movie,
+                                resumePosition: 60, sourceAccountID: "new")
+        let old = FakeMediaProvider(allItems: [oldItem], accountID: "old")
+        let new = FakeMediaProvider(allItems: [newItem], accountID: "new")
+        let vm = ItemDetailViewModel(
+            provider: old, itemID: oldItem.id, sourceAccountID: "old",
+            onlineTrailerResolver: { _ in [] },
+            initialSources: [
+                MediaSourceRef(accountID: "old", itemID: oldItem.id),
+                MediaSourceRef(accountID: "new", itemID: newItem.id)
+            ],
+            alternateProviderResolver: { $0 == "new" ? new : old }
+        )
+        defer { vm.suspendEnrichment() }
+        await vm.load()
+        let entered = expectation(description: "Old source refresh entered")
+        let gate = AsyncGate()
+        old.itemGate = [oldItem.id: { entered.fulfill(); await gate.wait() }]
+        let task = Task { await vm.refreshWatchStateOnly() }
+        await fulfillment(of: [entered], timeout: 2)
+        await vm.switchToSource(accountID: "new")
+        let switched = vm.state.value?.item
+        gate.open()
+        await task.value
+        XCTAssertEqual(vm.state.value?.item, switched)
+        XCTAssertEqual(vm.state.value?.item.sourceAccountID, "new")
+    }
+
+    func testLocalWatchMutationWinsOverLateRefresh() async {
+        let item = MediaItem(id: "movie", title: "Movie", kind: .movie,
+                             resumePosition: 30, sourceAccountID: "account")
+        let provider = FakeMediaProvider(allItems: [item], accountID: "account")
+        let vm = ItemDetailViewModel(
+            provider: provider, itemID: item.id, sourceAccountID: "account",
+            onlineTrailerResolver: { _ in [] }
+        )
+        defer { vm.suspendEnrichment() }
+        await vm.load()
+        let entered = expectation(description: "Watch refresh entered")
+        let gate = AsyncGate()
+        provider.itemGate = [item.id: { entered.fulfill(); await gate.wait() }]
+        let task = Task { await vm.refreshWatchStateOnly() }
+        await fulfillment(of: [entered], timeout: 2)
+        vm.applyWatchedState(MediaItemMutation(itemIDs: [item.id], scopedItemIDs: ["account:\(item.id)"], played: true))
+        gate.open()
+        await task.value
+        XCTAssertEqual(vm.state.value?.item.isPlayed, true)
+    }
+
+    func testSeriesRefreshCannotAdoptOldResumeAfterSourceSwitch() async {
+        let oldSeries = MediaItem(id: "series", title: "Series", kind: .series, sourceAccountID: "old")
+        let newSeries = MediaItem(id: "series", title: "Series", kind: .series, sourceAccountID: "new")
+        let episode = MediaItem(id: "episode", title: "Episode", kind: .episode,
+                                seriesID: oldSeries.id, sourceAccountID: "old")
+        let old = SeriesResumeFakeProvider(allItems: [oldSeries], accountID: "old")
+        let new = SeriesResumeFakeProvider(allItems: [newSeries], accountID: "new")
+        old.childrenByParent = [oldSeries.id: []]
+        new.childrenByParent = [newSeries.id: []]
+        let vm = ItemDetailViewModel(
+            provider: old, itemID: oldSeries.id, sourceAccountID: "old",
+            onlineTrailerResolver: { _ in [] },
+            initialSources: [
+                MediaSourceRef(accountID: "old", itemID: oldSeries.id),
+                MediaSourceRef(accountID: "new", itemID: newSeries.id)
+            ],
+            alternateProviderResolver: { $0 == "new" ? new : old }
+        )
+        defer { vm.suspendEnrichment() }
+        await vm.load()
+        let entered = expectation(description: "Old series resume entered")
+        let gate = AsyncGate()
+        old.resumeHandler = { _ in entered.fulfill(); await gate.wait(); return episode }
+        let task = Task { await vm.refreshSeriesContextAfterReturn() }
+        await fulfillment(of: [entered], timeout: 2)
+        await vm.switchToSource(accountID: "new")
+        gate.open()
+        await task.value
+        XCTAssertEqual(vm.state.value?.item.sourceAccountID, "new")
+        XCTAssertNil(vm.serverResumeEpisode)
+        XCTAssertFalse(vm.isResolvingServerResume)
+    }
+
+    func testWatchRefreshRejectsWrongAccountResponse() async {
+        let item = MediaItem(id: "movie", title: "Movie", kind: .movie,
+                             resumePosition: 30, sourceAccountID: "account")
+        let provider = FakeMediaProvider(allItems: [item], accountID: "account")
+        let vm = ItemDetailViewModel(
+            provider: provider, itemID: item.id, sourceAccountID: "account",
+            onlineTrailerResolver: { _ in [] }
+        )
+        defer { vm.suspendEnrichment() }
+        await vm.load()
+        let before = vm.state.value?.item
+        var foreign = item
+        foreign.sourceAccountID = "another-account"
+        foreign.resumePosition = 200
+        provider.allItems = [foreign]
+        await vm.refreshWatchStateOnly()
+        XCTAssertEqual(vm.state.value?.item, before)
+    }
+}
+
+extension ThemeMusicSourceResolutionTests {
     func testPublicThemeDoesNotRequireAuthenticatedResolver() async throws {
         let expected = URL(string: "https://themes.example/movie.mp3")!
         let theme = ThemeMusic(

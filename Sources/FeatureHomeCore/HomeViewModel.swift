@@ -723,9 +723,11 @@ public final class HomeViewModel {
     /// detail), so binding `load()` directly to the task would reload on every
     /// back-navigation — flashing the skeleton and resetting focus to the top.
     /// This guard makes the reappearance a no-op while still reacting to a genuine
-    /// This guard makes the reappearance a no-op while still reacting to a genuine
     /// change: hiding/showing/disabling a library, or flipping the merge switch.
-    public func loadIfNeeded(for visibility: HomeLibraryVisibility) async {
+    public func loadIfNeeded(
+        for visibility: HomeLibraryVisibility,
+        trigger: String = "appear"
+    ) async {
         guard canLoadContent else { return }
         if isLoading {
             if !Task.isCancelled { retryCancelledPreparation = true }
@@ -760,9 +762,9 @@ public final class HomeViewModel {
                 // reloading there would reshuffle the row under the viewer for
                 // nothing.
                 let age = lastLoadedAt.map { Date().timeIntervalSince($0) }
-                let isStale = (age ?? .infinity) > policy.refreshAfter
+                let isStale = (age ?? .infinity) >= policy.refreshAfter
                 ContinueWatchingDiagnostics.emit(ContinueWatchingDiagnostics.refreshLine(
-                    trigger: "appear",
+                    trigger: trigger,
                     willReload: isStale,
                     reason: isStale
                         ? "stale age=\(age.map { String(format: "%.0fs", $0) } ?? "never") > \(Int(policy.refreshAfter))s"
@@ -783,7 +785,7 @@ public final class HomeViewModel {
             break
         }
         ContinueWatchingDiagnostics.emit(ContinueWatchingDiagnostics.refreshLine(
-            trigger: "appear",
+            trigger: trigger,
             willReload: true,
             reason: "visibility-changed-or-not-loaded"
         ))

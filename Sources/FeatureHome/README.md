@@ -18,6 +18,28 @@ an empty provider feed from local curation without recording media or account ID
 Home rows, item detail, series/season experience, and the online-trailer
 fallback when the user's server has no attached trailer.
 
+## Foreground and return refresh
+
+Home and movie/series/episode detail register a visible surface with
+`ContentRefreshCoordinator`. Platform timing and action choice live in
+`ContentRefreshProfile`; views only perform the typed action they receive.
+
+The top surface is the only one refreshed. Home refreshes silently when the
+existing Continue Watching policy says it is stale. A series return re-fetches
+the item, seasons, and server resume episode so the page can move to the current
+season/episode; an explicit season choice is preserved. An episode return updates
+only the loaded item's watch state — it does not reload children, change seasons,
+or navigate. The parent series page refreshes when revealed after a long absence.
+Home uses a 15-second return threshold; detail uses five minutes on both platforms.
+First appearance does not duplicate loading. Failed series refreshes preserve the
+previous context, and cancellation/source-generation checks reject late responses.
+Each mounted page owns its registration, including repeated pushes of one title;
+the modifier cancels refresh work when the page is hidden or the profile resets.
+
+App activation is delivered by `ContentRefreshLifecycleReader` rather than a
+view-local `scenePhase` check, so suspend/resume and a long-idle return to Home
+use the same path. See [state management](../../docs/state-management.md).
+
 ## Related loading
 
 Library-only Related rows use the active profile's identity index to locate a
@@ -679,10 +701,11 @@ records on both platforms; error dialogs, playback routing and timeouts are unch
 - **Home** — `HomeView` + `HomeViewModel` render the focused tvOS rows:
   Continue Watching, Latest, Recently Added (per library). `HomeLayout`
   centralises sizing/spacing so all rows feel uniform.
-  Share polling and scan/foreground-triggered row reloads only run while Home
-  is frontmost and the scene is active, never behind playback or a pushed page.
-  Hidden catalog changes and app-foreground refreshes coalesce until Home returns;
-  overdue polls resume once rather than catching up in a burst. Ordinary catalog
+  Share polling and scan-triggered row reloads only run while Home is frontmost
+  and the scene is active, never behind playback or a pushed page. The shared
+  content coordinator separately handles foreground/retained-page returns.
+  Hidden catalog changes coalesce until Home returns; overdue polls resume once
+  rather than catching up in a burst. Ordinary catalog
   changes still respect the trailer and navigation-idle guards. This does not
   disable background synchronization or discard pending library updates.
   On mobile, a root-owned `LazyViewState` retains the shared Home/Watchlist

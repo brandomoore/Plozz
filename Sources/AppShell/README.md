@@ -49,6 +49,13 @@ registry.
 
 ## Invariants
 
+- **Each root owns content-refresh coordination.** `RootView` and
+  `PlozziOSRootView` inject `ContentRefreshCoordinator`, reset it on profile
+  changes, and mount
+  `ContentRefreshLifecycleReader`; app shells do not decide refresh timing.
+  Home/detail views register their visible surface and perform the typed action.
+  Follow [state management](../../docs/state-management.md).
+
 - **Discover is optional and adult-profile-only.** Every navigation style uses
   the shared navigation policy: Seerr configuration enables Discover by default,
   while explicit Show/Hide choices survive connection changes. Child profiles
