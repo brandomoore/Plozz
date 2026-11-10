@@ -61,7 +61,7 @@ extension Image {
 
 extension Label where Title == Text, Icon == Image {
     /// `Label` whose icon is resolved through the Tabler map (see `Image(mozz:)`).
-    init(_ title: String, mozz sfName: String) {
+    init(_ title: LocalizedStringResource, mozz sfName: String) {
         self.init { Text(title) } icon: { Image(mozz: sfName) }
     }
 }

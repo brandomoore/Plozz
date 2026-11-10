@@ -176,7 +176,7 @@ struct SeekBar: View {
 }
 
 private struct AudioFormatBadge: View {
-    let label: String
+    let label: String // l10n:content — codec/quality metadata
 
     var body: some View {
         Text(label)

@@ -24,7 +24,7 @@ struct Track: Equatable {
         let account = source.sourceAccountID ?? ""
         return "\(account.utf8.count):\(account)\(source.id)"
     }
-    var title: String { source.title }
+    var title: String { source.title } // l10n:content — provider track title
     var artistName: String { source.artistName ?? "" }
     var albumTitle: String? { source.albumTitle }
     var albumID: String? { source.albumID }
@@ -121,8 +121,8 @@ struct MusicPlayerArtworkResolver {
 
 @MainActor
 final class ToastCenter: ObservableObject {
-    @Published var message: String?
-    func confirm(_ message: String, icon: String) { self.message = message }
+    @Published var message: LocalizedStringResource?
+    func confirm(_ message: LocalizedStringResource, icon: String) { self.message = message }
 }
 
 @MainActor
@@ -375,6 +375,7 @@ public struct MusicPlayerOverlay: View {
 
 private struct PlayerStatusMessage: View {
     @ObservedObject var toasts: ToastCenter
+    @Environment(\.locale) private var locale
     var body: some View {
         if let message = toasts.message {
             Text(message)
@@ -382,7 +383,14 @@ private struct PlayerStatusMessage: View {
                 .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
                 .padding()
                 .accessibilityAddTraits(.updatesFrequently)
-                .onAppear { UIAccessibility.post(notification: .announcement, argument: message) }
+                .onAppear {
+                    var announcement = message
+                    announcement.locale = locale
+                    UIAccessibility.post(
+                        notification: .announcement,
+                        argument: String(localized: announcement) // l10n:content — spoken immediately at the UIKit boundary
+                    )
+                }
                 .onTapGesture { toasts.message = nil }
                 .task(id: message) {
                     try? await Task.sleep(for: .seconds(5))

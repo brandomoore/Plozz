@@ -333,15 +333,15 @@ final class MusicPlayerPresentationTests: XCTestCase {
         )
         player.controller.pause()
         window.frame = CGRect(x: 0, y: 0, width: 430, height: 932)
-        var bottomBar = false
-        let host = UIHostingController(rootView: MusicDockNavigationFixture(
-            player: player, onBottomBarChange: { bottomBar = $0 }
-        ))
-        host.traitOverrides.horizontalSizeClass = .compact
-        window.rootViewController = host
-        window.makeKeyAndVisible()
         for dark in [false, true] {
+            var bottomBar = false
+            let host = UIHostingController(rootView: MusicDockNavigationFixture(
+                player: player, onBottomBarChange: { bottomBar = $0 }, dark: dark
+            ))
+            host.traitOverrides.horizontalSizeClass = .compact
             host.overrideUserInterfaceStyle = dark ? .dark : .light
+            window.rootViewController = host
+            window.makeKeyAndVisible()
             var reference: [UInt8]?
             for appearance: MusicPlayerAppearance in [.matchTheme, .dark, .pureBlack, .light] {
                 host.rootView = MusicDockNavigationFixture(

@@ -281,7 +281,7 @@ struct RatingBubbleContent: View {
             )
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("Rating")
-            .accessibilityValue(current.map { "\(LikeControl.format($0)) stars" } ?? "No rating")
+            .accessibilityValue(current.map { Text("\(LikeControl.format($0)) stars") } ?? Text("No rating"))
             .accessibilityAdjustableAction { direction in
                 adjust(direction)
             }
@@ -467,7 +467,7 @@ struct FluidRatingControl: View {
                         value: (hostReveal && isDragging) ? RatingReveal(preview: preview) : nil)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("Rating")
-            .accessibilityValue(rating.map { "\(LikeControl.format($0)) stars" } ?? "No rating")
+            .accessibilityValue(rating.map { Text("\(LikeControl.format($0)) stars") } ?? Text("No rating"))
             .accessibilityAdjustableAction { direction in accessibilityAdjust(direction) }
     }
 

@@ -16,10 +16,8 @@ struct MobileMusicAlbumDetail: View {
     var body: some View {
         MobileMusicDetailScaffold(
             title: album.title,
-            subtitle: album.artistName,
-            metadata: [album.year.map(String.init), album.trackCount.map {
-                String(localized: "\($0) tracks · \(MusicFormat.duration(album.totalDuration))")
-            }].compactMap { $0 }.joined(separator: " · "),
+            subtitle: album.artistName.flatMap { $0.isEmpty ? nil : Text(verbatim: $0) },
+            metadata: metadata,
             artworkURL: album.artworkURL,
             artworkID: "\(album.sourceAccountID ?? ""):album:\(album.id)",
             artworkFallback: MusicArtworkFallback.albumCover(title: album.title, artist: album.artistName),
@@ -40,8 +38,22 @@ struct MobileMusicAlbumDetail: View {
                         Divider().padding(.leading, 44)
                     }
                 }
+
             }
         }
+    }
+}
+
+private extension MobileMusicAlbumDetail {
+    var metadata: Text? {
+        guard let count = album.trackCount else {
+            return album.year.map { Text(verbatim: String($0)) }
+        }
+        let tracks = Text("\(count) tracks · \(MusicFormat.duration(album.totalDuration))")
+        if let year = album.year {
+            return Text(verbatim: "\(year) · ") + tracks
+        }
+        return tracks
     }
 }
 
@@ -57,8 +69,8 @@ struct MobileMusicPlaylistDetail: View {
     var body: some View {
         MobileMusicDetailScaffold(
             title: playlist.title,
-            subtitle: String(localized: "Playlist"),
-            metadata: String(localized: "\(tracks.count) tracks"),
+            subtitle: Text("Playlist"),
+            metadata: Text("\(tracks.count) tracks"),
             artworkURL: playlist.artworkURL,
             artworkID: "\(playlist.sourceAccountID ?? ""):playlist:\(playlist.id)",
             artworkFallback: nil,
@@ -90,7 +102,7 @@ struct MobileMusicArtistDetail: View {
         MobileMusicDetailScaffold(
             title: artist.name,
             subtitle: nil,
-            metadata: GenreDisplayFormatter.displayNames(for: artist.genres).joined(separator: " · "),
+            metadata: artist.genres.isEmpty ? nil : Text(verbatim: GenreDisplayFormatter.displayNames(for: artist.genres).joined(separator: " · ")),
             artworkURL: artist.artworkURL,
             artworkID: "\(artist.sourceAccountID ?? ""):artist:\(artist.id)",
             artworkFallback: MusicArtworkFallback.artistImage(name: artist.name),
@@ -204,9 +216,9 @@ private struct MobileMusicDetailTrackRow: View {
 }
 
 private struct MobileMusicDetailScaffold<Actions: View, Content: View>: View {
-    let title: String
-    let subtitle: String?
-    let metadata: String
+    let title: String // l10n:content — provider album, artist or playlist title
+    let subtitle: Text?
+    let metadata: Text?
     let artworkURL: URL?
     let artworkID: String
     let artworkFallback: (@Sendable () async -> URL?)?
@@ -339,11 +351,11 @@ private struct MobileMusicDetailScaffold<Actions: View, Content: View>: View {
         VStack(alignment: centered ? .center : .leading, spacing: 8) {
             Text(title).font(.title.bold()).foregroundStyle(.primary).accessibilityAddTraits(.isHeader)
                 .accessibilityIdentifier("music.detail.title")
-            if let subtitle, !subtitle.isEmpty {
-                Text(subtitle).font(.title3).foregroundStyle(.primary.opacity(0.8))
+            if let subtitle {
+                subtitle.font(.title3).foregroundStyle(.primary.opacity(0.8))
             }
-            if !metadata.isEmpty {
-                Text(metadata).font(.caption).foregroundStyle(.primary.opacity(0.8))
+            if let metadata {
+                metadata.font(.caption).foregroundStyle(.primary.opacity(0.8))
             }
             actions().padding(.top, 12).frame(maxWidth: 520)
         }

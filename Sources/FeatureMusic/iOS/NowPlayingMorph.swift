@@ -1131,7 +1131,7 @@ struct NowPlayingMorphContainer: View {
             } label: {
                 lines.contentShape(Rectangle())
             }
-            .accessibilityLabel("\(track.title), \(track.artistName)")
+            .accessibilityLabel(Text(verbatim: "\(track.title), \(track.artistName)"))
             .accessibilityHint("Opens artist and album")
         } else {
             lines
@@ -1992,7 +1992,7 @@ struct NowPlayingMorphContainer: View {
         // The same 0.35 `PlayerIconButton` dims a disabled control to, applied
         // from outside so the button stays tappable.
         .opacity(missing ? 0.35 : 1)
-        .accessibilityHint(missing ? "No lyrics for this song" : "")
+        .accessibilityHint(missing ? Text("No lyrics for this song") : Text(verbatim: ""))
     }
 
     private var queueToggle: some View {
@@ -2593,7 +2593,7 @@ private struct IslandContent: View {
     /// One of the wide pill's extra controls. Same 30pt box as the transport
     /// buttons beside it, dimmed when the mode is off, and collapsing away with
     /// them if the pill ever drops into the tab bar.
-    private func islandExtra(_ icon: AppIcon, active: Bool, label: String,
+    private func islandExtra(_ icon: AppIcon, active: Bool, label: LocalizedStringResource,
                              action: @escaping () -> Void) -> some View {
         Button(action: action) {
             icon.styled(size: 18)
@@ -2601,7 +2601,7 @@ private struct IslandContent: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(label)
+        .accessibilityLabel(Text(label))
         .foregroundStyle(active ? AnyShapeStyle(Color.musicPlayerAccent)
                                 : AnyShapeStyle(Color.secondary))
         .opacity(Double(1 - collapse))

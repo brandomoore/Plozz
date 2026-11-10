@@ -125,7 +125,7 @@ final class AudioRouteMonitor: ObservableObject {
     /// choice validates against the runtime so an unknown/too-new symbol falls
     /// back to a known-good AirPods glyph rather than rendering blank. `name` is
     /// already lowercased.
-    private static func airPodsIcon(name n: String) -> String {
+    private static func airPodsIcon(name n: String) -> String { // l10n:content — device-name matching returns an SF Symbol identifier
         if n.contains("max") {
             return firstAvailableSymbol(["airpods.max", "airpodsmax", "airpods"])
         }
@@ -1784,7 +1784,7 @@ private struct QueueSnapBehavior: ScrollTargetBehavior {
 /// the same tint.
 struct QueuePill: View {
     let glyph: AppIcon
-    let label: String
+    let label: LocalizedStringResource
     var active: Bool
     var badge: String? = nil
     let action: () -> Void
