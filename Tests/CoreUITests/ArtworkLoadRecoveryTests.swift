@@ -251,6 +251,7 @@ final class ArtworkLoadRecoveryTests: XCTestCase {
         let replacement = Task { await cache.image(for: reference, variant: .posterCard) }
         await loader.waitUntilStarted(2)
         XCTAssertEqual(cache.pendingWaiterCount, 1)
+        try await waitUntil { deadlines.count == 2 }
         XCTAssertEqual(deadlines.count, 2)
         deadlines.fire(at: 0)
         XCTAssertEqual(cache.pendingWaiterCount, 1, "An old deadline must not retire a replacement load.")
