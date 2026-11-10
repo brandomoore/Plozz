@@ -1046,6 +1046,10 @@ public final class PlayerViewModel {
     }
 
     private func configureChaptersCallback(for request: PlaybackRequest, loadGeneration: UInt) {
+        guard playbackSettings.chaptersInPlayer else {
+            controls.infoCard.chapters = []
+            return
+        }
         let callbackEngineToken = engineToken
         engine.onChaptersChanged = { [weak self] in
             guard let self, !self.didStop,
@@ -1056,6 +1060,10 @@ public final class PlayerViewModel {
     }
 
     private func updateChapters(for request: PlaybackRequest) {
+        guard playbackSettings.chaptersInPlayer else {
+            controls.infoCard.chapters = []
+            return
+        }
         let provided = MediaChapter.normalized(request.chapters, duration: request.item.runtime)
         controls.infoCard.chapters = provided.isEmpty
             ? MediaChapter.normalized(engine.chapters, duration: engine.duration)
@@ -2008,7 +2016,9 @@ public final class PlayerViewModel {
         var request = request
         dynamicRangeLoadGeneration &+= 1
         let rangeLoadGeneration = dynamicRangeLoadGeneration
-        controls.infoCard.chapters = MediaChapter.normalized(request.chapters, duration: request.item.runtime)
+        controls.infoCard.chapters = playbackSettings.chaptersInPlayer
+            ? MediaChapter.normalized(request.chapters, duration: request.item.runtime)
+            : []
         inheritedPreservedDynamicRange =
             engineKind != .native ? pendingPreservedDynamicRange : nil
         pendingPreservedDynamicRange = nil
@@ -2888,14 +2898,24 @@ public final class PlayerViewModel {
 
     /// Seeds the transport overlay with title/subtitle/duration facts when a
     /// stream resolves, so the controls are correct from the first frame.
+    /// Publishes only the section payloads this profile has enabled. The tab
+    /// filter already hides disabled cards; this keeps their data out of the
+    /// controls model as well so a hidden section has no lingering payload.
+    func applyPlayerSectionVisibility(cast: [MediaPerson], chapters: [MediaChapter]) {
+        controls.infoCard.cast = playbackSettings.castInPlayer ? cast : []
+        controls.infoCard.chapters = playbackSettings.chaptersInPlayer ? chapters : []
+    }
+
     private func configureControls(for request: PlaybackRequest) {
         let lines = Self.titleLines(for: request.item)
         controls.title = lines.primary
         controls.subtitle = lines.secondary
         controls.infoCard.overview = request.item.overview ?? ""
         controls.infoCard.headline = request.item.title
-        controls.infoCard.cast = request.item.people.filter(\.isCast)
-        controls.infoCard.chapters = MediaChapter.normalized(request.chapters, duration: request.item.runtime)
+        applyPlayerSectionVisibility(
+            cast: request.item.people.filter(\.isCast),
+            chapters: MediaChapter.normalized(request.chapters, duration: request.item.runtime)
+        )
         controls.infoCard.sourceAccountID = request.item.sourceAccountID
         controls.infoCard.sourceItemID = request.item.id
         controls.infoCard.episodeTag = Self.episodeTag(for: request.item)

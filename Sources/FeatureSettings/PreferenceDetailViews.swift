@@ -952,7 +952,9 @@ struct PlaybackDetailView: View {
                                 Text($0.title).tag($0)
                             }
                         }
+                        .settingsSearchAnchor("disc-playback")
                     }
+                    .settingsSearchAnchor("disc-playback")
                     Text(DiscPlaybackBehavior.settingsNotice)
                         .settingsHelperText()
                         .fixedSize(horizontal: false, vertical: true)

@@ -2725,6 +2725,7 @@ struct PlozziOSPlaybackSettingsView: View {
                             Text($0.title).tag($0)
                         }
                     }
+                    .settingsSearchAnchor("disc-playback")
                     Text(DiscPlaybackBehavior.settingsNotice)
                         .font(.caption)
                         .foregroundStyle(.secondary)

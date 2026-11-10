@@ -123,7 +123,7 @@ jobs:
   format-triage-comments:
     needs: [safe_outputs, detection]
     if: vars.PLOZZ_TRIAGE_PUBLISH == 'true' && github.ref == 'refs/heads/main' && needs.detection.result == 'success'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     permissions:
       contents: read

@@ -14,33 +14,24 @@ public struct PlayerTabSettingsControls: View {
         SettingsControlRows { controls }
         #else
         SettingsSectionGroup("Player tabs") { controls }
-            .settingsSearchGroup([
-                "player-tab-chapters", "player-tab-cast", "player-tab-episodes",
-                "player-tab-playlist", "continue-watching-in-player"
-            ])
+            .settingsSearchGroup(PlayerOptionalTab.allCases.map(\.searchAnchor))
         #endif
     }
 
     @ViewBuilder private var controls: some View {
-        Toggle(isOn: $model.settings.chaptersInPlayer) {
-            Text(PlayerOptionalTab.chapters.title)
+        ForEach(PlayerOptionalTab.allCases, id: \.self) { tab in
+            Toggle(isOn: binding(for: tab)) {
+                Text(tab.title)
+            }
+            .settingsSearchAnchor(tab.searchAnchor)
+            .accessibilityIdentifier(tab.searchAnchor)
         }
-        .settingsSearchAnchor("player-tab-chapters")
-        Toggle(isOn: $model.settings.castInPlayer) {
-            Text(PlayerOptionalTab.cast.title)
-        }
-        .settingsSearchAnchor("player-tab-cast")
-        Toggle(isOn: $model.settings.episodesInPlayer) {
-            Text(PlayerOptionalTab.episodes.title)
-        }
-        .settingsSearchAnchor("player-tab-episodes")
-        Toggle(isOn: $model.settings.playlistInPlayer) {
-            Text(PlayerOptionalTab.playlist.title)
-        }
-        .settingsSearchAnchor("player-tab-playlist")
-        Toggle(isOn: $model.settings.continueWatchingInPlayer) {
-            Text(PlayerOptionalTab.continueWatching.title)
-        }
-        .settingsSearchAnchor("continue-watching-in-player")
+    }
+
+    private func binding(for tab: PlayerOptionalTab) -> Binding<Bool> {
+        Binding(
+            get: { model.settings[keyPath: tab.visibilityKeyPath] },
+            set: { model.settings[keyPath: tab.visibilityKeyPath] = $0 }
+        )
     }
 }

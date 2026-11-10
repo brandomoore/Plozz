@@ -23,7 +23,7 @@ jobs:
     runs-on: xcode-27
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
 
@@ -62,7 +62,12 @@ jobs:
         run: python3 -m unittest discover -s tools/tests -p 'test_unsigned_ipa.py'
 
       - name: Fastlane pipeline regression tests
-        run: python3 -m unittest discover -s tools/tests -p 'test_fastlane_pipeline.py'
+        run: |
+          if [ "$GITHUB_REPOSITORY" != "brandomoore/Plozz" ]; then
+            echo "Skipping canonical release-tooling tests in a fork."
+            exit 0
+          fi
+          python3 -m unittest discover -s tools/tests -p 'test_fastlane_pipeline.py'
 
       - name: CI simulator regression tests
         run: python3 -m unittest discover -s tools/tests -p 'test_ci_simulator.py'
@@ -86,7 +91,7 @@ jobs:
 
       - name: Retain preflight diagnostics
         if: ${{ always() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: guards-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
           path: .build/ci-scratch/plozz-l10n-delta.json
@@ -99,7 +104,7 @@ jobs:
     runs-on: xcode-27
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
 
@@ -141,7 +146,7 @@ jobs:
 
       - name: Retain build diagnostics
         if: ${{ always() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: app-build-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
           path: .build/ci-logs/app-build
@@ -154,7 +159,7 @@ jobs:
     runs-on: xcode-27
     timeout-minutes: 80
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
 
@@ -178,7 +183,7 @@ jobs:
 
       - name: Retain test diagnostics
         if: ${{ always() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: package-tests-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
@@ -193,7 +198,7 @@ jobs:
     runs-on: xcode-27
     timeout-minutes: 170
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
 
@@ -220,7 +225,7 @@ jobs:
 
       - name: Retain test diagnostics
         if: ${{ always() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: hosted-focus-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
@@ -235,7 +240,7 @@ jobs:
     name: Build and test tvOS app
     needs: [guards, app-build, package-tests, hosted-focus]
     if: ${{ always() }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     steps:
       - name: Require every CI lane to succeed

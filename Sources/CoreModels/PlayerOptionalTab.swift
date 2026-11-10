@@ -1,7 +1,7 @@
 import Foundation
 
 /// Optional player cards in display order. Info is always available.
-public enum PlayerOptionalTab: CaseIterable, Sendable {
+public enum PlayerOptionalTab: CaseIterable, Hashable, Sendable {
     case chapters, cast, episodes, playlist, continueWatching
 
     public var visibilityKeyPath: WritableKeyPath<PlaybackSettings, Bool> {
@@ -31,6 +31,18 @@ public enum PlayerOptionalTab: CaseIterable, Sendable {
                 defaultValue: "Continue Watching",
                 comment: "Tab beneath the in-player scrub bar listing titles to switch to and resume."
             )
+        }
+    }
+
+    /// Stable settings/search anchor for this section. Kept explicit so adding a
+    /// case cannot silently change an existing deep link or saved search target.
+    public var searchAnchor: String {
+        switch self {
+        case .chapters: "player-tab-chapters"
+        case .cast: "player-tab-cast"
+        case .episodes: "player-tab-episodes"
+        case .playlist: "player-tab-playlist"
+        case .continueWatching: "continue-watching-in-player"
         }
     }
 }

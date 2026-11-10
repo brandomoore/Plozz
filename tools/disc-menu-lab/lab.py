@@ -75,12 +75,15 @@ class Lab:
                 # Also reap them on cancellation, not only on a deadline.
                 try:
                     os.killpg(process.pid, signal.SIGTERM)
-                except ProcessLookupError:
+                except (ProcessLookupError, PermissionError):
                     pass
                 try:
                     process.wait(timeout=5)
                 except subprocess.TimeoutExpired:
-                    os.killpg(process.pid, signal.SIGKILL)
+                    try:
+                        os.killpg(process.pid, signal.SIGKILL)
+                    except (ProcessLookupError, PermissionError):
+                        pass
                     process.wait()
         if status:
             print("\n".join(log.read_text(errors="replace").splitlines()[-65:]), file=sys.stderr)

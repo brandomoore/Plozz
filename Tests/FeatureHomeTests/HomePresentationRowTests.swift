@@ -124,8 +124,10 @@ final class HomePresentationRowTests: XCTestCase {
             XCTAssertEqual(rows.map(\.id), [unscoped.id])
             guard case let .library(row) = rows.first?.source else { return XCTFail("Missing retained row") }
             XCTAssertEqual(row.section.items.map(\.id), ["shown"])
-            XCTAssertEqual(row.isLoading, failure == nil)
-            XCTAssertEqual(row.failure, failure)
+            // Usable cards remain interactive during a refresh or after a
+            // recoverable failure; the source row owns that refresh state.
+            XCTAssertFalse(row.isLoading)
+            XCTAssertNil(row.failure)
         }
         let allHidden = HomeViewModel.Content(serverRows: [.init(definition: unscoped, items: [hidden])])
         XCTAssertTrue(HomePresentationRow.resolve(rows: [], content: allHidden, visibility: visibility).isEmpty)

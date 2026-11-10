@@ -81,9 +81,15 @@ final class ContinueWatchingInPlayerSettingsTests: XCTestCase {
         XCTAssertEqual(PlaybackSettingsModel(store: primary).settings, model.settings)
     }
 
+    func testEveryPlayerTabHasACatalogEntry() {
+        let catalog = SettingsSearchCatalog.targets(on: .playback)
+        for tab in PlayerOptionalTab.allCases {
+            XCTAssertTrue(catalog.contains(tab.searchAnchor), tab.searchAnchor)
+        }
+    }
+
     func testPlayerTabsAreSearchableOnEveryPlatform() {
-        let expected = ["player-tab-chapters", "player-tab-cast", "player-tab-episodes",
-                        "player-tab-playlist", "continue-watching-in-player"]
+        let expected = PlayerOptionalTab.allCases.map(\.searchAnchor)
         for platform: SettingsSearchEntry.Platform in [.phone, .tablet, .television] {
             let index = SettingsSearchIndex(
                 entries: SettingsSearchCatalog.entries(on: platform), locale: Locale(identifier: "en_US")

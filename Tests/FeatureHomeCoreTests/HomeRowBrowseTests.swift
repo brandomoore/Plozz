@@ -345,15 +345,22 @@ final class HomeRowBrowseTests: XCTestCase {
         XCTAssertFalse(row.canBrowse)
         let choice = try XCTUnwrap(shared.first { $0.id == .global(.recentlyAdded) })
         let section = LibrarySection(id: "shelf", title: "Shelf", items: items(20), hasMore: true)
+        let empty = LibrarySection(id: "shelf", title: "Shelf", items: [], hasMore: true)
         for (loading, failure): (Bool, AppError?) in [(true, nil), (false, .serverUnreachable)] {
             let row = HomePresentationRow(
-                choice: choice, source: .library(.init(section: section, isLoading: loading, failure: failure))
+                choice: choice, source: .library(.init(section: empty, isLoading: loading, failure: failure))
             )
             XCTAssertFalse(row.canBrowse)
         }
         XCTAssertTrue(HomePresentationRow(
             choice: choice, source: .library(.init(section: section, isLoading: false, failure: nil))
         ).canBrowse)
+        // Loaded cards stay interactive while a refresh is in flight or fails.
+        for (loading, failure): (Bool, AppError?) in [(true, nil), (false, .serverUnreachable)] {
+            XCTAssertTrue(HomePresentationRow(
+                choice: choice, source: .library(.init(section: section, isLoading: loading, failure: failure))
+            ).canBrowse)
+        }
     }
 
     func testDefaultOrderLoadsBeyondHomePreviewAndStopsAtExhaustion() async {
