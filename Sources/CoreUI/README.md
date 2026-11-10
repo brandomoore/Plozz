@@ -61,7 +61,7 @@ styling settings.
 
 Mobile full-width page actions use `plozzPageActionLabel()` inside a native
 `plozzPageActionButton`. The label owns body typography, multiline expansion, and a
-24-point minimum height; primary and secondary actions differ in prominence,
+32-point minimum label height; primary and secondary actions differ in prominence,
 not sizing. On iOS 26, disabled page actions use the same native glass treatment
 as secondary actions instead of a separate prominent-button outline.
 Toolbar actions and native form rows retain their system metrics.

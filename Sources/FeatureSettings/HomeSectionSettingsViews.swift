@@ -198,8 +198,10 @@ struct HomeRowNameEditor: View {
         SettingsSectionGroup {
             SettingsInputRow("Row name") { nameField }
         }
-        Button("Save changes", action: save)
-            .plozzActionButton(role: .primary)
+        Button(action: save) {
+            Text("Save changes").plozzPageActionLabel()
+        }
+            .plozzPageActionButton()
             .disabled(trimmedName == (visibility.visibility.homeRowName(for: choice.id) ?? ""))
             .accessibilityIdentifier("home-section-name-save")
         #else

@@ -140,10 +140,13 @@ struct CollectionSectionSettingsView: View {
                     PlozzLog.app.error("Could not save collection section")
                 }
             } label: {
-                if isNew { Text("Add to Home") }
-                else { Text("Save changes") }
+                Group {
+                    if isNew { Text("Add to Home") }
+                    else { Text("Save changes") }
+                }
+                .plozzPageActionLabel()
             }
-            .plozzActionButton(role: .primary)
+            .plozzPageActionButton()
             .disabled(!accounts.contains(where: draft.source.matches))
             .accessibilityIdentifier("collection-section-save")
             if !isNew {

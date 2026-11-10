@@ -386,6 +386,7 @@ public struct PlozziOSRootView: View {
         .offlineStatusOverlay(appModel: appModel, palette: resolvedPalette, isEnabled: !showsLaunchProfilePicker)
         .environment(appModel)
         .environment(appModel.settings.navigation)
+        .environment(appModel.settings.homeVisibility)
         .environment(appModel.guidePreparation)
         .environment(heroTrailerController)
         .themeMusicScope(
@@ -906,6 +907,11 @@ enum PlozziOSDestination: Identifiable, Hashable {
         }
     }
 
+    var navigationKey: String {
+        if case let .library(key) = self { return key }
+        return "plozz.navigation.\(rawValue)"
+    }
+
     var systemImage: String {
         switch self {
         case .home: "house"
@@ -1308,7 +1314,7 @@ struct PlozziOSTabShell: View {
             }
         case .settings:
             VStack(spacing: 24) {
-                Label("Settings", systemImage: "gearshape")
+                Label { destinationTitle(.settings) } icon: { Image(systemName: "gearshape") }
                     .font(.largeTitle)
                 Button("Open Settings", action: showSettings)
                     .buttonStyle(.borderedProminent)
@@ -1320,6 +1326,11 @@ struct PlozziOSTabShell: View {
     }
 
     private func destinationTitle(_ destination: PlozziOSDestination) -> Text {
+        if let name = appModel.settings.navigation.libraryLayout.customName(
+            for: destination.navigationKey, homeVisibility: appModel.settings.homeVisibility.visibility
+        ) {
+            return Text(verbatim: name)
+        }
         guard case let .library(key) = destination,
               let library = appModel.visibleNavigationLibraries.first(where: { $0.key == key }) else {
             return Text(destination.title)
@@ -1373,13 +1384,10 @@ struct PlozziOSTabShell: View {
             ForEach(tabDestinations) { destination in
                 if destination == .search && tabDestinations.last == .search {
                     // Preserve native trailing Search until the viewer moves it.
-                    Tab(
-                        "Search",
-                        systemImage: "magnifyingglass",
-                        value: PlozziOSDestination.search,
-                        role: .search
-                    ) {
+                    Tab(value: PlozziOSDestination.search, role: .search) {
                         tabContent(for: destination)
+                    } label: {
+                        Label { destinationTitle(destination) } icon: { Image(systemName: "magnifyingglass") }
                     }
                 } else if destination == .downloads {
                     Tab(value: destination) {
@@ -1686,11 +1694,12 @@ struct PlozziOSTabShell: View {
 }
 
 struct PlozziOSDownloadsTabLabel: View {
+    private var navigationTitles = NavigationTitles()
     let model: PlozziOSDownloadsModel
 
     var body: some View {
         Label {
-            Text("Downloads")
+            navigationTitles(NavigationLibraryLayout.downloadsKey, default: Text("Downloads"))
         } icon: {
             downloadsTabIcon
         }
@@ -2123,6 +2132,7 @@ private struct PlozziOSDestinationView: View {
 }
 
 struct PlozziOSWatchlistLandingView: View {
+    private var navigationTitles = NavigationTitles()
     @Environment(\.plozzMetrics) private var metrics
     @Environment(\.mediaItemArtworkNavigator) private var navigateToItem
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
@@ -2204,7 +2214,7 @@ struct PlozziOSWatchlistLandingView: View {
         ) { _ in
             watchlistIntentRevision &+= 1
         }
-        .navigationTitle("Watchlist")
+        .navigationTitle(navigationTitles(NavigationLibraryLayout.watchlistKey, default: Text("Watchlist")))
         .environment(\.plozzCardCaptionView, .watchlist)
         .toolbarTitleDisplayMode(isOverflowDestination ? .inline : .large)
         .toolbar {
@@ -2272,6 +2282,7 @@ struct PlozziOSWatchlistLandingView: View {
 }
 
 private struct PlozziOSHomeLandingView: View {
+    private var navigationTitles = NavigationTitles()
     @Environment(\.plozziOSIsOverflowDestination) private var isOverflowDestination
     let appModel: PlozziOSAppModel
     let viewModel: HomeViewModel
@@ -2285,7 +2296,7 @@ private struct PlozziOSHomeLandingView: View {
                 hasAccounts: false, onAddSource: onAddServer,
                 onReceiveSetup: { showingReceive = true }, isOfflineMode: appModel.isOfflineMode
             )
-            .navigationTitle("Home")
+            .navigationTitle(navigationTitles(NavigationLibraryLayout.homeKey, default: Text("Home")))
             .toolbarTitleDisplayMode(isOverflowDestination ? .inline : .large)
             .toolbar {
                 PlozziOSSettingsToolbarItem(action: onShowSettings)

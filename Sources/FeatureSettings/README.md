@@ -670,6 +670,11 @@ watch history and planning-list behavior are documented in
   its Hidden divider, native focus/drag behavior, and scoped reset actions.
   Navigation library rows use the shared content-kind glyph, with the provider
   mark and server name below the library name rather than beside the drag handle.
+  Hold any navigation item and choose Rename to change its profile-specific
+  navigation label and destination heading. Empty names restore localized defaults;
+  names survive arrangement resets and offline libraries without changing route,
+  provider, or library identity. Watchlist shares its name with the Home row,
+  so either editor updates the row, navigation label, and page together.
   `LibraryPresentationLoading` connects the settings UI to the existing browse
   and discovery pipeline through AppRuntime, without a feature-to-feature
   dependency. Identity changes cancel pending discovery and replace row editors.
@@ -683,8 +688,9 @@ watch history and planning-list behavior are documented in
   Save changes applies a profile-specific heading,
   and clearing it restores the original heading. Names survive hiding, reordering,
   preset changes, and temporary source unavailability without renaming server content.
-  Home and its row-browse pages use these headings; dedicated destinations such as
-  Watchlist and other library pages keep their original names.
+  Home and its row-browse pages use these headings. Watchlist also uses its shared
+  name on its navigation item and dedicated page; other row names remain separate
+  from navigation naming.
   Collection rows retain their existing name editor.
   On iPhone and iPad, long-press a Home row's combined title/chevron target and
   choose **Edit** to open that same row editor directly. Ordinary taps still browse;
@@ -695,6 +701,9 @@ watch history and planning-list behavior are documented in
   their existing Save changes action for the whole draft.
   Remove from Home is a separate, full-width destructive action group below the
   row's editing controls, shared by ordinary and collection rows.
+  Mobile Add to Home and Save changes use the shared large, full-width native
+  page action also used by onboarding. Toolbar and inline actions keep their
+  existing compact sizing.
   Source-specific rows and their settings
   use the shared provider brand mark, including the transport badge for shares.
   In the editor, Add row, and reorder rows, the mark sits beside the

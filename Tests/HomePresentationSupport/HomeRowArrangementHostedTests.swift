@@ -2124,6 +2124,84 @@ final class HomeRowArrangementHostedTests: XCTestCase {
         }
     }
 
+    func testNavigationNameEditorSharesWatchlistNameAndRestoresDefault() async throws {
+        let suite = "NavigationNameEditor.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let visibility = HomeLibraryVisibilityModel(store: HomeLibraryVisibilityStore(defaults: defaults))
+        let navigation = NavigationStyleSettingsModel(
+            store: NavigationStyleSettingsStore(defaults: defaults),
+            layoutStore: NavigationLibraryLayoutStore(defaults: defaults)
+        )
+        visibility.setHomeRowName("Movie night", for: .global(.watchlist))
+        try await withWindow {
+            let editor = NavigationNameEditor(
+                key: NavigationLibraryLayout.watchlistKey, defaultTitle: Text("Watchlist"),
+                navigation: navigation, visibility: visibility
+            )
+            #if os(iOS)
+            NavigationStack { editor }
+            #else
+            editor.environment(\.settingsPageBackButton, AnyView(SettingsBackButton {}))
+            #endif
+        } inspect: { window in
+            let lines = try await self.capture(window, name: "Navigation name editor")
+            XCTAssertTrue(lines.contains { $0.0.contains("Movie night") })
+            #if os(iOS)
+            func fields(_ view: UIView) -> [UITextField] {
+                (view as? UITextField).map { [$0] } ?? view.subviews.flatMap(fields)
+            }
+            let field = try XCTUnwrap(fields(window).first)
+            XCTAssertTrue(field.becomeFirstResponder())
+            field.selectAll(nil)
+            field.insertText("Weekend queue")
+            try await Task.sleep(for: .milliseconds(100))
+            field.sendActions(for: .editingDidEndOnExit)
+            try await Task.sleep(for: .milliseconds(100))
+            XCTAssertEqual(visibility.visibility.homeRowName(for: .global(.watchlist)), "Weekend queue")
+            XCTAssertFalse(field.isFirstResponder)
+            XCTAssertTrue(field.becomeFirstResponder())
+            field.selectAll(nil)
+            field.insertText("   ")
+            try await Task.sleep(for: .milliseconds(100))
+            field.sendActions(for: .editingDidEndOnExit)
+            try await Task.sleep(for: .milliseconds(100))
+            XCTAssertNil(visibility.visibility.homeRowName(for: .global(.watchlist)))
+            XCTAssertEqual(field.text, "")
+            XCTAssertFalse(field.isFirstResponder)
+            #endif
+        }
+    }
+
+    func testPageActionsHaveLargerFullWidthGeometry() async throws {
+        #if os(iOS)
+        var addFrame = CGRect.zero
+        var continueFrame = CGRect.zero
+        for size in [DynamicTypeSize.large, .accessibility3] {
+            try await withWindow(size: CGSize(width: 390, height: 844)) {
+                VStack(spacing: 16) {
+                    Button {} label: { Text("Add to Home").plozzPageActionLabel() }
+                        .plozzPageActionButton()
+                        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { addFrame = $0 }
+                    Button {} label: { Text("Continue").plozzPageActionLabel() }
+                        .plozzPageActionButton(role: .secondary)
+                        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { continueFrame = $0 }
+                }
+                .padding(.horizontal, 24)
+                .environment(\.dynamicTypeSize, size)
+            } inspect: { window in
+                let lines = try await self.capture(window, name: "Large native page actions \(size)")
+                XCTAssertTrue(lines.contains { $0.0.contains("Add to Home") })
+                XCTAssertTrue(lines.contains { $0.0.contains("Continue") })
+                XCTAssertGreaterThanOrEqual(addFrame.height, 52)
+                XCTAssertGreaterThanOrEqual(continueFrame.height, 52)
+                XCTAssertEqual(addFrame.width, 342, accuracy: 1)
+                XCTAssertEqual(continueFrame.width, addFrame.width, accuracy: 1)
+            }
+        }
+        #endif
+    }
+
     func testSettingsInputsKeepLabelsAndNativeEditingTraits() async throws {
         let state = SettingsInputFixtureState()
         try await withWindow {

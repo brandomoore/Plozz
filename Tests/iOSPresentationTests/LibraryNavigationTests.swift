@@ -12,6 +12,34 @@ import XCTest
 
 @MainActor
 final class LibraryNavigationTests: XCTestCase {
+    func testNativeNavigationNamesUpdateWithoutChangingDestinations() async throws {
+        let app = try makeApp()
+        app.settings.navigation.showsWatchlist = true
+        let destinations = PlozziOSTabShell.configuredDestinations(appModel: app)
+        try await withTabs(app: app) { tabs, window in
+            for (key, name) in [
+                (NavigationLibraryLayout.homeKey, "Start"),
+                (NavigationLibraryLayout.downloadsKey, "Offline"),
+                (NavigationLibraryLayout.searchKey, "Find"),
+                (NavigationLibraryLayout.watchlistKey, "Queue")
+            ] {
+                app.settings.navigation.renameDestination(key, to: name, homeVisibility: app.settings.homeVisibility)
+            }
+            try await self.waitUntil(window: window) {
+                Set(self.tabTitles(tabs)) == Set(["Start", "Offline", "Find", "Queue"])
+            }
+            XCTAssertEqual(PlozziOSTabShell.configuredDestinations(appModel: app), destinations)
+            app.settings.homeVisibility.setHomeRowName("Saved", for: .global(.watchlist))
+            try await self.waitUntil(window: window) { self.tabTitles(tabs).contains("Saved") }
+            for key in destinations.map(\.navigationKey) {
+                app.settings.navigation.renameDestination(key, to: "", homeVisibility: app.settings.homeVisibility)
+            }
+            try await self.waitUntil(window: window) {
+                Set(self.tabTitles(tabs)) == Set(["Home", "Downloads", "Search", "Watchlist"])
+            }
+        }
+    }
+
     func testNewProfileImmediatelyShowsTwentyCachedServersWhileRefreshIsBlocked() async throws {
         let fixture = LibraryNavigationFixture(libraryCount: 6)
         let app = try makeApp(fixture: fixture, extraServers: 18)
@@ -586,6 +614,8 @@ final class LibraryNavigationTests: XCTestCase {
             let host = UIHostingController(rootView:
                 makeShell(app: app)
                 .environment(app)
+                .environment(app.settings.navigation)
+                .environment(app.settings.homeVisibility)
                 .environment(HeroTrailerController())
                 .environment(PlozziOSSidebarGeometryModel())
                 .environment(\.themePalette, .dark)
