@@ -52,6 +52,24 @@ threshold are substituted; actual UIKit/SwiftUI lifecycle delivery is exercised.
 cover, background, profile reset, identity change, and unmount on both platforms.
 The deterministic coordinator suite owns the exact production timing boundaries.
 
+`LiveContentRefreshInteractionTests` is a separate opt-in tvOS simulator smoke
+test for Plex and Jellyfin. It mounts production Home/detail views with real
+providers, backgrounds the host, changes the dedicated test user's history
+through an independent client, and waits the production 15-second Home or
+five-minute detail threshold before returning. It checks movie progress,
+series Next Up, and Continue Watching; it does not play media or install on
+physical devices.
+
+The runner requires `PLOZZ_LIVE_REFRESH_BROKER`, a loopback-only broker base URL.
+`GET /{provider}/configuration/{scope}` supplies the in-memory session and
+selected item IDs; `POST /{provider}/prepare/{scope}` establishes the initial
+state, and `POST /{provider}/advance/{scope}` changes it while the app is away.
+Providers are `jellyfin` or `plex`; scopes are `movie`, `series`, or `home`.
+Only explicitly authorized test identities may be used. Credentials must stay
+out of launch arguments, result attachments, logs, and committed configuration.
+Without that opt-in, the live tests skip rather than impersonating a passing
+server check.
+
 ## Related loading
 
 Library-only Related rows use the active profile's identity index to locate a

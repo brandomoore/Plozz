@@ -9,7 +9,9 @@ import FeaturePlayback
 struct FocusHostApp: App {
     var body: some Scene {
         WindowGroup {
-            if ProcessInfo.processInfo.arguments.contains("--content-refresh-return-fixture") {
+            if ProcessInfo.processInfo.arguments.contains("--live-content-refresh-fixture") {
+                LiveContentRefreshFixture()
+            } else if ProcessInfo.processInfo.arguments.contains("--content-refresh-return-fixture") {
                 ContentRefreshReturnFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--disc-review-fixture") {
                 DiscReviewFixture()
