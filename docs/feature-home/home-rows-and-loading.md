@@ -54,6 +54,43 @@ cover shape resolved from new metadata can also change the document. Reserving
 known row layouts does not promise immutable whole-page geometry or prove
 physical-device frame pacing.
 
+### Opt-in live-data row verification
+
+`HomeLoadingLayoutTests.testLiveJellyfinLibraryRows`,
+`testLivePlexLibraryRows`, and `testLiveCombinedLibraryRows` run in the
+`PlozziOSPresentationTests` hosted target. They load real provider Home data,
+resolve and mount the production library-row/slot/scroll components, browse up
+to three shelves through the production browse model, and refresh the loaded
+rows. The mounted sample is bounded to eight nonempty library rows; it is not
+a full-library scan or the complete signed-in app shell.
+
+The checks cover independently decoded equivalent inputs, deep metadata
+invalidation, account attribution, native horizontal/vertical scrolling,
+caption observation, and loading/error/recovery geometry. Metadata edits and
+failure transitions are local controls over real rows, not server mutations or
+simulated network outages. Persistence decoding normalizes some fields and omits
+transient selection state, so equivalence compares two independent decodes,
+not a persisted snapshot against every live in-memory field.
+
+Without `PLOZZ_LIVE_HOME_ROWS_BROKER`, these tests explicitly skip. An authorized
+local broker supplies an in-memory configuration from `GET <broker>/jellyfin`
+and `GET <broker>/plex`: `baseURL`, `serverID`, `userID`, `username`, `deviceID`,
+and `token`. The broker must use `http://127.0.0.1:<port>/<unguessable-route>`;
+the tests reject URL credentials, queries and fragments. Pass only that loopback
+address into the hosted test environment. Keep real credentials, authenticated
+responses, and account inventories out of source, arguments, logs and attachments.
+Use dedicated internal accounts, not personal owner or external review identities.
+The test HTTP adapter rejects non-GET, Plex action, playback-info, session and
+transcoding requests. No playback or watched/resume writes are required.
+
+Use the existing leased, bounded simulator build/test procedure with these
+three explicit selectors and inspect structured results: all three must pass,
+with zero skips, on each selected device. A shelf that fits in the viewport
+does not require vertical scrolling; horizontal movement is always required
+and completed target counts are reported. This verifies row behavior, not
+physical-device FPS, actual playback, artwork fidelity, or a button-driven
+browse-navigation journey.
+
 ## Recently Added watched filtering
 
 Screens & Navigation > Home > Filtering offers **Recently Added** under

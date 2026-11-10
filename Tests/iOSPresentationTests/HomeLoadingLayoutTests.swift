@@ -1,10 +1,13 @@
 #if os(iOS)
 import CoreModels
+import CoreNetworking
 import CoreUI
 import FeatureAuth
 @testable import FeatureHomeCore
 import HeroUI
 import Observation
+import ProviderJellyfin
+import ProviderPlex
 import SwiftUI
 import UIKit
 import XCTest
@@ -12,6 +15,240 @@ import XCTest
 
 @MainActor
 final class HomeLoadingLayoutTests: XCTestCase {
+    func testLiveJellyfinLibraryRows() async throws {
+        try await exerciseLiveRows(kinds: [.jellyfin])
+    }
+
+    func testLivePlexLibraryRows() async throws {
+        try await exerciseLiveRows(kinds: [.plex])
+    }
+
+    func testLiveCombinedLibraryRows() async throws {
+        try await exerciseLiveRows(kinds: [.jellyfin, .plex])
+    }
+
+    private func exerciseLiveRows(kinds: [ProviderKind]) async throws {
+        guard let address = ProcessInfo.processInfo.environment["PLOZZ_LIVE_HOME_ROWS_BROKER"] else {
+            throw XCTSkip("Requires an authorized, read-only internal Home broker.")
+        }
+        guard let broker = URL(string: address),
+              broker.scheme == "http", broker.host == "127.0.0.1", broker.port != nil,
+              broker.user == nil, broker.password == nil, broker.query == nil, broker.fragment == nil else {
+            throw AppError.invalidResponse
+        }
+        let http = LiveHomeReadOnlyHTTP()
+        var accounts: [ResolvedAccount] = []
+        for kind in kinds {
+            let (data, response) = try await URLSession.shared.data(for: URLRequest(
+                url: broker.appendingPathComponent(kind.rawValue), timeoutInterval: 15
+            ))
+            guard (response as? HTTPURLResponse)?.statusCode == 200 else { throw AppError.invalidResponse }
+            let config = try JSONDecoder().decode(LiveHomeConfiguration.self, from: data)
+            guard ["http", "https"].contains(config.baseURL.scheme),
+                  config.baseURL.host != nil, config.baseURL.user == nil, config.baseURL.password == nil,
+                  config.baseURL.query == nil, config.baseURL.fragment == nil, !config.token.isEmpty else {
+                throw AppError.invalidResponse
+            }
+            let session = UserSession(
+                server: .init(id: config.serverID, name: "Internal Home", baseURL: config.baseURL, provider: kind),
+                userID: config.userID, userName: config.username, deviceID: config.deviceID, accessToken: config.token
+            )
+            let provider: any MediaProvider = kind == .plex
+                ? PlexProvider(session: session, http: http) : JellyfinProvider(session: session, http: http)
+            accounts.append(.init(account: Account(id: "live-\(kind.rawValue)", from: session), provider: provider))
+        }
+        let fixture = try Fixture()
+        defer { fixture.close() }
+        let metadata = fixture.app.metadataProviderSettingsModel.settings
+        fixture.app.metadataProviderSettingsModel.settings = MetadataProviderSettings(
+            orderMode: .custom, preferOnlineArtwork: false, disabledOrder: MetadataSourceAttribution.all.map(\.id)
+        )
+        defer { fixture.app.metadataProviderSettingsModel.settings = metadata }
+        let visibility = fixture.app.settings.homeVisibility
+        await visibility.prepareServerDefaults(accounts: accounts)
+        XCTAssertTrue(visibility.serverMatchFailures.isEmpty, "Live server layout discovery must succeed.")
+        let model = HomeViewModel(
+            accounts: accounts, profileNamespace: fixture.profileID,
+            layoutStore: InMemoryHomeLayoutStore(), contentStore: NoOpHomeContentStore(),
+            currentVisibility: { visibility.visibility }
+        )
+        defer { model.invalidate() }
+        await model.load()
+        let content = try XCTUnwrap(model.state.value)
+        XCTAssertFalse(content.libraries.isEmpty)
+        XCTAssertTrue(content.serverRows.allSatisfy { !$0.isLoading && $0.failure == nil })
+        let presentations = HomePresentationRow.resolve(rows: [], content: content, visibility: visibility.visibility)
+        let libraryRows = presentations.filter { if case .library = $0.source { true } else { false } }
+        XCTAssertGreaterThan(libraryRows.count, 1, "Real data must exercise multiple library rows.")
+        let coordinator = FeaturedTrailerCoordinator()
+        let controller = HeroTrailerController()
+        var sampled: [(HomeRowChoice, RowState)] = []
+        var checkedItems = 0
+        var browsePages = 0
+        for presentation in libraryRows.prefix(8) {
+            guard case let .library(row) = presentation.source, !row.section.items.isEmpty else { continue }
+            checkedItems += row.section.items.count
+            let encoded = try JSONEncoder().encode(row.section.items)
+            let copy = try JSONDecoder().decode([MediaItem].self, from: encoded)
+            var decoded = row.section
+            decoded.items = copy
+            func view(_ value: HomeLibrarySectionGroup.Row) -> PlozziOSHomeLibraryPresentationRow {
+                .init(choice: presentation.choice, row: value, appModel: fixture.app, viewModel: model,
+                      coordinator: coordinator, controller: controller, isActive: false,
+                      rowBrowser: .constant(nil), showingHomeCustomization: .constant(false))
+            }
+            // Boolean assertions keep real media and authenticated URLs out of failure logs.
+            func decodedRow() -> HomeLibrarySectionGroup.Row {
+                .init(section: decoded, isLoading: row.isLoading, failure: row.failure,
+                      browseItem: row.browseItem, issue: row.issue, collectionCardStyle: row.collectionCardStyle)
+            }
+            XCTAssertTrue(view(row) == view(row))
+            // Decoding normalizes persisted fields and omits transient selection state.
+            let left = decodedRow()
+            decoded.items = try JSONDecoder().decode([MediaItem].self, from: encoded)
+            XCTAssertTrue(view(left) == view(decodedRow()), "Independently decoded live data must remain equal.")
+            let last = decoded.items.count - 1
+            if decoded.items[last].people.isEmpty {
+                decoded.items[last].people = [
+                    MediaPerson(id: "local-control", name: "Local control", role: "Actor",
+                                kind: "Actor", biography: "Changed")
+                ]
+            } else {
+                decoded.items[last].people[0].biography = "Local metadata invalidation control"
+            }
+            XCTAssertFalse(view(left) == view(decodedRow()), "Same identity must not hide a metadata change.")
+            let rebuilt = HomePresentationRow(choice: presentation.choice, source: .library(row))
+            XCTAssertTrue(rebuilt == presentation)
+            if presentation.canBrowse && browsePages < 3 {
+                let browse = model.browseRow(rebuilt)
+                await browse.load()
+                XCTAssertNil(browse.error)
+                XCTAssertFalse(browse.items.isEmpty)
+                let allowed = Set(accounts.map(\.account.id))
+                XCTAssertTrue(browse.items.allSatisfy { $0.sourceAccountID.map(allowed.contains) == true })
+                browsePages += 1
+                browse.invalidate()
+            }
+            sampled.append((presentation.choice, RowState(row: row)))
+        }
+        XCTAssertGreaterThan(checkedItems, 0)
+        XCTAssertGreaterThan(browsePages, 0, "At least one real paged shelf must be browsed.")
+        let represented = Set(sampled.flatMap { $0.1.row.section.items.compactMap(\.sourceAccountID) })
+        XCTAssertTrue(Set(accounts.map(\.account.id)).isSubset(of: represented),
+                      "Mounted rows must contain data from every requested provider.")
+        let width: CGFloat = UIDevice.current.userInterfaceIdiom == .pad ? 1024 : 390
+        fixture.mount(PlozziOSHomeScrollView(heroActive: false) {
+            EmptyView()
+        } rows: {
+            ForEach(sampled.indices, id: \.self) { index in
+                ReservedLibraryRow(
+                    choice: sampled[index].0, state: sampled[index].1, app: fixture.app,
+                    model: model, coordinator: coordinator, controller: controller
+                )
+            }
+        }, width: width)
+        try await fixture.settle()
+        let layoutDeadline = ContinuousClock.now + .seconds(5)
+        var mountedScroll: UIScrollView?
+        repeat {
+            mountedScroll = fixture.scrollViews().first
+            if mountedScroll?.contentSize.height == 0 { mountedScroll = nil }
+            if mountedScroll == nil { try await fixture.settle() }
+        } while mountedScroll == nil && ContinuousClock.now < layoutDeadline
+        let scroll = try XCTUnwrap(mountedScroll)
+        let height = scroll.contentSize.height
+        let bottom = max(0, height - scroll.bounds.height + scroll.adjustedContentInset.bottom)
+        let verticalTargets: [CGFloat] = bottom > 1 ? [0.5, 1, 0.25, 0] : []
+        for fraction in verticalTargets {
+            let target = bottom * fraction
+            scroll.setContentOffset(CGPoint(x: 0, y: target), animated: true)
+            let deadline = ContinuousClock.now + .seconds(3)
+            while abs(scroll.contentOffset.y - target) > 1, ContinuousClock.now < deadline {
+                try await Task.sleep(for: .milliseconds(30))
+            }
+            XCTAssertEqual(scroll.contentOffset.y, target, accuracy: 1)
+            XCTAssertEqual(scroll.contentSize.height, height, accuracy: 1)
+        }
+        let rail = try XCTUnwrap(fixture.scrollViews().first { $0.contentSize.width > $0.bounds.width + 1 })
+        let right = rail.contentSize.width - rail.bounds.width + rail.adjustedContentInset.right
+        for fraction: CGFloat in [0.5, 1, 0] {
+            let target = right * fraction
+            rail.setContentOffset(CGPoint(x: target, y: rail.contentOffset.y), animated: true)
+            let deadline = ContinuousClock.now + .seconds(3)
+            while abs(rail.contentOffset.x - target) > 1, ContinuousClock.now < deadline {
+                try await Task.sleep(for: .milliseconds(30))
+            }
+            XCTAssertEqual(rail.contentOffset.x, target, accuracy: 1)
+            XCTAssertEqual(scroll.contentSize.height, height, accuracy: 1)
+        }
+        let first = try XCTUnwrap(sampled.first)
+        let original = first.1.row
+        var loading = original.section
+        loading.items = []
+        first.1.row = .init(section: loading, isLoading: true, failure: nil)
+        try await fixture.settle()
+        XCTAssertEqual(scroll.contentSize.height, height, accuracy: 1)
+        first.1.row = .init(section: loading, isLoading: false, failure: .serverUnreachable)
+        try await fixture.settle()
+        XCTAssertEqual(scroll.contentSize.height, height, accuracy: 1)
+        first.1.row = original
+        try await fixture.settle()
+        XCTAssertEqual(scroll.contentSize.height, height, accuracy: 1)
+        fixture.app.settings.cardStyle.captions = CardCaptionSettings(showsLabels: false)
+        try await fixture.settle()
+        XCTAssertLessThan(scroll.contentSize.height, height)
+        fixture.app.settings.cardStyle.captions = CardCaptionSettings(showsLabels: true)
+        try await fixture.settle()
+        XCTAssertEqual(scroll.contentSize.height, height, accuracy: 1)
+        await model.load(showLoadingState: false)
+        let refreshed = try XCTUnwrap(model.state.value)
+        XCTAssertTrue(refreshed.serverRows.allSatisfy { !$0.isLoading && $0.failure == nil })
+        XCTAssertFalse(refreshed.libraries.isEmpty)
+        let refreshedRows = HomePresentationRow.resolve(rows: [], content: refreshed, visibility: visibility.visibility)
+        for (choice, state) in sampled {
+            guard let next = refreshedRows.first(where: { $0.id == choice.id }),
+                  case let .library(row) = next.source else {
+                XCTFail("Previously mounted live shelf must survive this read-only refresh.")
+                continue
+            }
+            state.row = row
+        }
+        try await fixture.settle()
+        let counts = await http.counts()
+        XCTAssertEqual(counts.blocked, 0, "Home/browse must never attempt a write or playback request.")
+        XCTAssertGreaterThan(counts.reads, 0)
+        print("LIVE_HOME_ROWS providers=\(kinds.count) rows=\(sampled.count) items=\(checkedItems) browsePages=\(browsePages) reads=\(counts.reads) blocked=\(counts.blocked) width=\(Int(width)) height=\(Int(height)) verticalTargets=\(verticalTargets.count) horizontalTargets=3")
+    }
+
+    private struct LiveHomeConfiguration: Decodable {
+        let baseURL: URL
+        let serverID: String
+        let userID: String
+        let username: String
+        let deviceID: String
+        let token: String
+    }
+
+    private actor LiveHomeReadOnlyHTTP: HTTPClient {
+        private let wrapped = URLSessionHTTPClient()
+        private var reads = 0
+        private var blocked = 0
+
+        func counts() -> (reads: Int, blocked: Int) { (reads, blocked) }
+
+        func send(_ endpoint: Endpoint, baseURL: URL) async throws -> (Data, HTTPURLResponse) {
+            let path = endpoint.path.lowercased()
+            guard endpoint.method == .get, endpoint.body == nil,
+                  !path.contains("/:/"), !path.contains("playbackinfo"),
+                  !path.contains("transcode"), !path.contains("/sessions") else {
+                blocked += 1
+                throw AppError.invalidResponse
+            }
+            reads += 1
+            return try await wrapped.send(endpoint, baseURL: baseURL)
+        }
+    }
+
     func testFramedLandscapeCardsFitNarrowGridAndNormalRailSlots() async throws {
         let fixture = try Fixture()
         defer { fixture.close() }

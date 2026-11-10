@@ -197,6 +197,28 @@ offscreen geometry, and native animated scrolling. The performance runner's
 39 Python tests also passed. This is scoped coverage, not a clean full Home
 suite or physical-device result; the unrelated B-stage failures remain separate.
 
+**Live-data follow-up:** read-only Plex, Jellyfin, and combined-provider cases
+passed on both iPhone and iPad simulators, alongside the six focused regressions
+per device: 18 passes, zero failures or skips. Dedicated internal users read
+their configured personal-library data, not the external review/demo services.
+Jellyfin mounted four rows/52 items, Plex three/42, and combined seven/94 on each
+device. Each case loaded two or three browse pages and refreshed its rows;
+the guarded provider adapter recorded no write/playback attempts.
+The [opt-in hosted tests](feature-home/home-rows-and-loading.md#opt-in-live-data-row-verification)
+also exercise local metadata/failure controls and caption changes.
+
+The final retained local run is `live-home-rows-af8893cc3b634d8ebf6db540d2eaee03`
+(Xcode 27.2, iOS 26.2). Earlier attempts failed test assumptions, not a
+demonstrated app regression: persistence decoding was incorrectly treated as
+lossless for all live fields, and the Plex phone sample was incorrectly required
+to overflow vertically. Its three rows occupy 750 points in an 844-point
+viewport. All six final cases completed three horizontal targets; the other
+five also completed four vertical targets. No performance threshold changed.
+This is mounted production-row/model coverage, not full-shell UI navigation,
+media playback, a server-outage test, or physical-device performance evidence.
+No production change was needed; owned simulators and the local broker were
+removed/stopped after verification.
+
 **Done when:** the same workload finishes with identical required content and
 no identity/focus regressions; relevant CPU, memory, I/O, network, and latency
 results are reported separately. A smaller source file is not the performance
