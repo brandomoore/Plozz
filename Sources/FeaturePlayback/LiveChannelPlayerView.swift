@@ -115,6 +115,9 @@ public struct LiveChannelPlayerView: View {
     private let guideOverlay: ((LiveChannelGuideEmbedding) -> AnyView)?
 
     @Environment(\.dismiss) private var dismiss
+    #if os(tvOS)
+    @Environment(\.retainedFullscreenWorkspace) private var workspace
+    #endif
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.plozzReduceTransparency) private var reduceTransparency
@@ -873,6 +876,7 @@ public struct LiveChannelPlayerView: View {
     private var wantsNativeFullscreen: Bool {
         #if os(tvOS)
         usesNativeFullscreen && isExpanded && isActive
+            && workspace?.isPresented != true && workspace?.isHostingFullscreen != true
         #else
         false
         #endif

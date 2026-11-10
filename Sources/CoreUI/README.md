@@ -37,6 +37,9 @@ host receives the physical canvas; content still owns its control-safe insets.
 The transparent full-screen container must already be presented before moving
 the host into it. Return the host inline before dismissing that empty container,
 so no displayed frame loses the live tree during a UIKit presentation.
+Native player presentation waits until the workspace's observable
+`isHostingFullscreen` flag clears after dismissal, not merely until its desired
+`isPresented` state changes; otherwise dismissal can consume the new player cover.
 
 `videoCardFocusSurface()` gives tvOS live video and its subtitles native card
 focus without wrapping player state or transport controls. Its environment
@@ -48,6 +51,9 @@ Label and style replacements use identity transitions: cross-fading two hosts
 cannot cross-fade the single live renderer they share. Geometry still animates.
 Live playback temporarily retains each renderer in a picture-sized window host
 while an idle/native label is replaced, until its new host is visibly laid out.
+While a native label is fading in, the temporary host follows its presentation
+geometry on every display tick; retaining a stationary picture until full
+opacity would make unfocused videos jump at the end of the resize.
 The caller interpolates focus clearance together with the picture's placement.
 The focus surface consumes that inset directly, without another animation
 clock. The video reads the container's current animated size rather than

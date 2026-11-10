@@ -11,6 +11,8 @@ final class VideoPresentationHandoff: UIView {
     private var completion: (() -> Void)?
     private weak var receiver: VideoPresentationView?
     private var displayLink: CADisplayLink?
+    private let retainedPicture: CGRect?
+    private let retainedViewportSize: CGSize
 
     private final class PresentationClock: NSObject {
         weak var owner: VideoPresentationHandoff?
@@ -27,6 +29,10 @@ final class VideoPresentationHandoff: UIView {
         let picture = output.convert(output.bounds, to: window)
         let viewport = output.superview.map { $0.convert($0.bounds, to: window) } ?? picture
         let center = output.convert(CGPoint(x: output.bounds.midX, y: output.bounds.midY), to: window)
+        retainedPicture = pictureCornerRadius.map { _ in
+            picture.offsetBy(dx: -viewport.minX, dy: -viewport.minY)
+        }
+        retainedViewportSize = viewport.size
         super.init(frame: pictureCornerRadius == nil ? window.bounds : viewport)
         self.output = output
         originalHost = output.superview
@@ -71,7 +77,25 @@ final class VideoPresentationHandoff: UIView {
     }
 
     private func receivePresentedOutput() {
-        guard let receiver, canReceiveOutput(in: receiver) else { return }
+        guard let receiver else { return }
+        if let retainedPicture, let output, output.superview === self,
+           let window, receiver.window === window,
+           let presented = receiver.layer.presentation(), !presented.bounds.isEmpty,
+           retainedViewportSize.width > 0, retainedViewportSize.height > 0 {
+            // Unfocused native card labels can fade in after their geometry starts moving.
+            // Keep the live bridge on that same geometry until the label is fully visible.
+            let target = presented.convert(presented.bounds, to: window.layer.presentation() ?? window.layer)
+            let scaleX = target.width / retainedViewportSize.width
+            let scaleY = target.height / retainedViewportSize.height
+            UIView.performWithoutAnimation {
+                frame = target
+                output.transform = CGAffineTransform(
+                    scaleX: retainedPicture.width * scaleX / output.bounds.width,
+                    y: retainedPicture.height * scaleY / output.bounds.height)
+                output.center = CGPoint(x: retainedPicture.midX * scaleX, y: retainedPicture.midY * scaleY)
+            }
+        }
+        guard canReceiveOutput(in: receiver) else { return }
         receiver.setNeedsLayout()
         receiver.layoutIfNeeded()
     }

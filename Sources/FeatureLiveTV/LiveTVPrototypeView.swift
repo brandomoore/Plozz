@@ -738,9 +738,7 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
             openMultiview: {
                 guard !hasAuthorizedExternalPlayback, activity.acceptsInteraction,
                       multiview.begin() else { return false }
-                #if os(tvOS)
                 beginMultiviewSelection(.add)
-                #endif
                 updatePlaybackAvailability()
                 return true
             },
@@ -802,7 +800,7 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
         }
         if multiview.isEnabled, multiview.panes.count > 1 {
             multiview.remove(paneID)
-            if multiview.panes.count == 1 { leaveMultiview() }
+            finishSinglePictureMultiview()
         } else {
             playback.stop()
             multiview.stop()
@@ -843,6 +841,16 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
         if let retained = multiview.exit() { playback.adoptPreparation(retained) }
         playback.setInteractionActive(activity.acceptsInteraction)
         updatePreviewAvailability()
+    }
+
+    private func finishSinglePictureMultiview() {
+        guard multiview.isEnabled, multiview.panes.count == 1 else { return }
+        let remaining = multiview.panes[0]
+        let pendingChannelID = remaining.preparation.current == nil ? remaining.channel?.id : nil
+        leaveMultiview()
+        if let pendingChannelID, activity.acceptsInteraction {
+            playback.watch(pendingChannelID)
+        }
     }
 
     private var sheetContent: some View {
@@ -1218,6 +1226,9 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
         }
         .onChange(of: hidesAppNavigation, initial: true) { _, hidesChrome in
             onExpandedChange(hidesChrome)
+        }
+        .onChange(of: multiview.panes.count) { previous, current in
+            if previous > 1, current == 1 { finishSinglePictureMultiview() }
         }
         #if os(tvOS)
         .onChange(of: multiview.isEnabled && isActive && isProfileAuthorized(), initial: true) { _, presented in
@@ -1964,6 +1975,7 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
         preview.completeGuideFocusRestore(preview.focusRestoreRequest, focusedChannelID: selectedChannelID)
         controlsActive = false
         multiviewSelection = nil
+        finishSinglePictureMultiview()
     }
 
     private func toggleMultiviewFavorite() {
@@ -1982,6 +1994,7 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
               let first = favorite.channelIDs.first else { return }
         updatePlaybackAvailability()
         preview.watch(first)
+        finishSinglePictureMultiview()
     }
 
     private var blocksBrowseControls: Bool {

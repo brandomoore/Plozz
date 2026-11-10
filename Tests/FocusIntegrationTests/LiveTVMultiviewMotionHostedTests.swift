@@ -1,5 +1,6 @@
 import CoreModels
 import CoreUI
+import EnginePlozzigen
 import Observation
 import SwiftUI
 import UIKit
@@ -37,6 +38,7 @@ final class LiveTVMultiviewMotionHostedTests: XCTestCase {
             workspace.isPresented = presented
             try await Task.sleep(for: .milliseconds(300))
             XCTAssertFalse(workspace.isTransferring)
+            XCTAssertEqual(workspace.isHostingFullscreen, presented)
             XCTAssertEqual(window.rootViewController?.presentedViewController != nil, presented)
             XCTAssertEqual(video.convert(video.bounds, to: window), window.bounds)
         }
@@ -279,15 +281,20 @@ final class LiveTVMultiviewMotionHostedTests: XCTestCase {
         }
     }
 
-    @Observable
+    @MainActor @Observable
     final class GroupMotionModel {
-        let engines = (0..<4).map { _ in MotionEngine() }
+        let engines: [MotionEngine]
         let viewports = (0..<4).map { _ in UIView() }
         var editing = false
+
+        init(engines: [MotionEngine]? = nil) {
+            self.engines = engines ?? (0..<4).map { _ in MotionEngine() }
+        }
     }
 
     private struct GroupMotionPage: View {
         let model: GroupMotionModel
+        var changesStyle = false
 
         var body: some View {
             ZStack(alignment: .topLeading) {
@@ -296,12 +303,11 @@ final class LiveTVMultiviewMotionHostedTests: XCTestCase {
                     let width: CGFloat = model.editing ? 800 : 960
                     let frame = CGRect(x: CGFloat(index % 2) * 960, y: CGFloat(index / 2) * 540,
                                        width: width, height: width * 9 / 16)
-                    VideoSurfaceContainer(engine: model.engines[index])
-                        .videoCardFocusSurface()
+                    GroupMotionSurface(engine: model.engines[index], presentsEffect: !changesStyle || model.editing)
                         .background { ViewportProbe(view: model.viewports[index]) }
                         .modifier(PrototypeVideoPlacement(frame: frame, focus: VideoCardFocus(
                             identifier: "group-motion-\(index)", title: "Video \(index)",
-                            audible: index == 0, presentsEffect: true,
+                            audible: index == 0, presentsEffect: !changesStyle || model.editing,
                             cornerRadius: 20, horizontalInset: model.editing ? 28 : 0,
                             request: 0, prefersFocus: index == 0, focused: { _ in },
                             activate: {}, promote: {}, replace: {})))
@@ -309,6 +315,120 @@ final class LiveTVMultiviewMotionHostedTests: XCTestCase {
                 }
             }
             .ignoresSafeArea()
+        }
+    }
+
+    private struct GroupMotionSurface: View {
+        let engine: MotionEngine
+        let presentsEffect: Bool
+        @State private var handoff: VideoPresentationHandoff?
+
+        var body: some View {
+            VideoSurfaceContainer(engine: engine)
+                .videoCardFocusSurface()
+                .onChange(of: presentsEffect) { _, _ in
+                    handoff?.cancel(restoringOutput: true)
+                    handoff = VideoPresentationHandoff(engine: engine, pictureCornerRadius: 20) {
+                        handoff = nil
+                    }
+                }
+                .onDisappear { handoff?.cancel() }
+        }
+    }
+
+    func testRealRenderersAnimateEveryPictureWhenIdleLabelsBecomeNativeCards() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let engines = try (0..<4).map { _ in try PlozzigenVideoEngine() }
+        let model = GroupMotionModel(engines: engines.map { MotionEngine(output: $0.makeVideoOutputView()) })
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
+        window.rootViewController = UIHostingController(rootView: GroupMotionPage(model: model, changesStyle: true))
+        window.makeKeyAndVisible()
+        let sampler = RenderedMotionProbe(views: model.engines.map(\.output), window: window)
+        defer {
+            sampler.stop()
+            engines.forEach { $0.stop() }
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        let url = try XCTUnwrap(Bundle(for: Self.self).url(
+            forResource: "live-continuity", withExtension: "mp4", subdirectory: "Fixtures"))
+        for (index, engine) in engines.enumerated() {
+            await engine.load(request: PlaybackRequest(
+                item: MediaItem(id: "motion-\(index)", title: "Motion", kind: .movie),
+                streamURL: url), startPosition: 0)
+        }
+        let ready = ContinuousClock.now + .seconds(15)
+        while !engines.allSatisfy({ $0.liveSnapshot.firstFrameReady }), ContinuousClock.now < ready {
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        XCTAssertTrue(engines.allSatisfy { $0.liveSnapshot.firstFrameReady })
+        try await Task.sleep(for: .milliseconds(500))
+        for editing in [true, false, true] {
+            sampler.start()
+            model.editing = editing
+            try await Task.sleep(for: .milliseconds(600))
+            sampler.stop()
+            let attachment = XCTAttachment(data: try JSONSerialization.data(withJSONObject: sampler.frames),
+                                           uniformTypeIdentifier: "public.json")
+            attachment.name = "real-renderer-motion-\(editing)"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+            XCTAssertGreaterThan(sampler.frames.count, 10)
+            for frame in sampler.frames {
+                let unfocused = frame.dropFirst()
+                XCTAssertLessThan(try XCTUnwrap(unfocused.max()) - XCTUnwrap(unfocused.min()), 1,
+                                  "Unfocused pictures must move together on each displayed frame.")
+            }
+            for index in engines.indices {
+                let widths = sampler.frames.map { $0[index] }
+                let first = try XCTUnwrap(widths.first)
+                let last = try XCTUnwrap(widths.last)
+                let low = min(first, last), high = max(first, last)
+                XCTAssertGreaterThan(high - low, 100)
+                XCTAssertGreaterThan(widths.filter { $0 > low + 2 && $0 < high - 2 }.count, 5,
+                                     "Every live picture must visibly animate, including unfocused cards.")
+                let steps = zip(widths, widths.dropFirst()).map { abs($1 - $0) }
+                XCTAssertLessThan(try XCTUnwrap(steps.max()), (high - low) * 0.3,
+                                  "A label replacement must not jump to its new size.")
+                XCTAssertTrue(model.engines[index].output.window === window)
+            }
+        }
+    }
+
+    private final class RenderedMotionProbe: NSObject {
+        let views: [UIView]
+        let window: UIWindow
+        var frames: [[CGFloat]] = []
+        private var displayLink: CADisplayLink?
+
+        init(views: [UIView], window: UIWindow) {
+            self.views = views
+            self.window = window
+        }
+
+        func start() {
+            frames = []
+            sample()
+            let link = CADisplayLink(target: self, selector: #selector(sample))
+            displayLink = link
+            link.add(to: .main, forMode: .common)
+        }
+
+        func stop() {
+            displayLink?.invalidate()
+            displayLink = nil
+        }
+
+        @objc private func sample() {
+            frames.append(views.map {
+                guard $0.window === window else { return 0 }
+                let layer = $0.layer.presentation() ?? $0.layer
+                return layer.convert(layer.bounds, to: window.layer.presentation() ?? window.layer).width
+            })
         }
     }
 
@@ -793,7 +913,8 @@ final class LiveTVMultiviewMotionHostedTests: XCTestCase {
     }
 
     final class MotionEngine: VideoEngine {
-        let output = UIView()
+        let output: UIView
+        init(output: UIView = UIView()) { self.output = output }
         var stops = 0
         var status: VideoEngineStatus { .ready }
         var isPaused: Bool { false }

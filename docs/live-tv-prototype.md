@@ -1744,8 +1744,12 @@ preview, and browsing never retunes a Multiview player. Selecting a station or
 programme adds/replaces its live channel, then returns to setup. Already-added
 channels are marked; selecting one returns to it without allocating another
 player. Cancel preserves every stream and the existing composition.
-Entering Multiview from a single channel on Apple TV opens this picker
+Entering Multiview from a single channel opens this picker
 immediately to choose the second channel; restoring a saved composition does not.
+Cancelling that first selection or selecting the already playing channel returns
+to normal single-channel playback. Removing pictures down to one also returns
+automatically, retaining the remaining player and tuner lease. The normal
+player's Multiview action opens the picker again; no separate exit is required.
 On Apple TV, the picker hides app navigation while retaining the full guide,
 category sidebar and Search. The shell's retained full-screen workspace moves
 the existing guide/player host outside the native tab focus tree, without
@@ -1785,6 +1789,10 @@ The renderer follows the container's size in the same animation frames when
 shrinking or growing. Placement and focus clearance share one interpolation,
 so all pictures shrink together instead of starting nested resize animations.
 The selected picture's lift remains the native tvOS focus effect.
+During idle/native label replacement, temporary live renderer hosts track the
+incoming labels' animated presentation geometry even before those labels reach
+full opacity. Motion coverage uses real decoders, native style replacement and
+display-link samples without forcing layout from the test.
 The close confirmation and playback errors share `playerPlatformAppearance`
 with transport controls, preserving native focused-label contrast without a
 dialog-specific button style.

@@ -1,8 +1,9 @@
 #if os(tvOS)
+import Observation
 import SwiftUI
 import UIKit
 
-@MainActor
+@MainActor @Observable
 public final class RetainedFullscreenWorkspaceState {
     public var isPresented = false {
         didSet {
@@ -10,6 +11,7 @@ public final class RetainedFullscreenWorkspaceState {
         }
     }
     public fileprivate(set) var isTransferring = false
+    public fileprivate(set) var isHostingFullscreen = false
     fileprivate var presentationChanged: (() -> Void)?
 }
 
@@ -103,6 +105,7 @@ public struct RetainedFullscreenWorkspace<Content: View>: UIViewControllerRepres
                 guard presentedViewController == nil else { return }
                 transitioning = true
                 state.isTransferring = true
+                state.isHostingFullscreen = true
                 workspace.view.backgroundColor = .clear
                 // Keep the live tree windowed while UIKit establishes the modal hierarchy.
                 present(workspace, animated: false) { [weak self] in
@@ -119,6 +122,7 @@ public struct RetainedFullscreenWorkspace<Content: View>: UIViewControllerRepres
                 workspace.dismiss(animated: false) { [weak self] in
                     guard let self, !tornDown else { return }
                     state.isTransferring = false
+                    state.isHostingFullscreen = false
                     transitioning = false
                     updatePresentation()
                 }
@@ -141,6 +145,7 @@ public struct RetainedFullscreenWorkspace<Content: View>: UIViewControllerRepres
             tornDown = true
             state.presentationChanged = nil
             state.isTransferring = false
+            state.isHostingFullscreen = false
             if workspace.presentingViewController != nil { workspace.dismiss(animated: false) }
             host.willMove(toParent: nil)
             host.view.removeFromSuperview()
