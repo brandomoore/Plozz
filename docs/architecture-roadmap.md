@@ -86,6 +86,15 @@ No application behavior changes in this batch.
 entry map without reading the whole module guide; moved links resolve; a
 baseline record exists. Do not claim token savings from document size alone.
 
+**Pilot status:** A1 is complete: the [Home entry map](../Sources/FeatureHome/README.md#where-to-look-first)
+links code owners, behavior sections, and regression files. Detailed contracts
+are retained in six topic guides, with the old README heading destinations
+preserved. A2 has a [reproducible bounded-retrieval baseline](feature-home/navigation-baseline.md)
+for all three discovery tasks. The entry is smaller, but total documentation is
+slightly larger; token savings and end-to-end investigation time remain
+unmeasured. Capture those during the code pilot before extending the pattern
+to other modules. This batch changes no application behavior.
+
 ### B. Detail source selection and Play target — first code pilot
 
 **B1: Characterize the current contract.** Trace and document the division
