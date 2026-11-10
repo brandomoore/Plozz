@@ -1744,8 +1744,17 @@ preview, and browsing never retunes a Multiview player. Selecting a station or
 programme adds/replaces its live channel, then returns to setup. Already-added
 channels are marked; selecting one returns to it without allocating another
 player. Cancel preserves every stream and the existing composition.
-On Apple TV, Back from this guide reaches its toolbar rather than leaving Live
-TV, so search and cancellation remain available without stopping the streams.
+Entering Multiview from a single channel on Apple TV opens this picker
+immediately to choose the second channel; restoring a saved composition does not.
+On Apple TV, the picker hides app navigation while retaining the full guide,
+category sidebar and Search. The shell's retained full-screen workspace moves
+the existing guide/player host outside the native tab focus tree, without
+reconstructing players. Closing Multiview restores that host to the shell.
+Filtering scrolls the guide to its first row without taking focus from categories.
+Left from the guide reaches categories; Right
+returns to the filtered guide. These directions reverse in right-to-left layouts.
+Back cancels selection and returns to Multiview
+without stopping streams; Back from Search first returns to the picker.
 
 On Apple TV, ten seconds without interaction automatically leaves setup for the
 full physical-screen canvas, including safe-area edges, and hides controls and
@@ -1788,7 +1797,13 @@ windows the dock scrolls rather than truncating labels. Setup's pictures reserve
 the measured header and dock heights so landscape and large-text controls cannot
 cover them. TV focus controls and the retained players' full-screen geometry are
 unchanged.
-Apple TV multiview's header and toolbar keep visible title-and-icon labels with
+Apple TV multiview's toolbar contains Add channel, Layout and More. More holds
+Favorite and, while expanded, Show all. Holding Select on a picture opens its
+native menu for Make main picture, Replace channel and Remove; Remove is
+available only with multiple pictures. Loading pictures retain their menu, and
+failed pictures expose removal beside recovery actions. Channel actions always
+target their own picture rather than the last audible channel.
+The header and toolbar keep visible title-and-icon labels with
 the same native button treatment as normal playback, including the Layout menu.
 Their height stays transport-sized while width follows the action's title.
 Focused labels stay dark against the bright fill in native-glass and
@@ -1813,8 +1828,8 @@ replace streams; Reduce Motion uses final layout sizes immediately.
 Reduce Motion suppresses the fade, and loading/error indicators remain separate.
 Native menu focus notifications do not write back into the pinned controls'
 activity state, avoiding an update loop that can repeatedly rebuild the menu.
-Back from a guide row still focuses Search; Back from those controls or Cancel
-returns to setup. In Multiview, Back restores all pictures if expanded, then
+Back from a picker guide row, its category controls or Cancel returns to setup.
+In Multiview, Back restores all pictures if expanded, then
 leaves setup or dismisses active controls. Apple TV has no explicit Close
 Multiview button; Back asks for confirmation when it would leave the composition
 and return to the guide. The Close control on iPhone/iPad also asks for

@@ -242,14 +242,12 @@ struct PrototypeNativeGuideList<Revision: Equatable, Content: View>: UIViewContr
         }
 
         private var isLeadingColumnFocused: Bool {
-            guard let focused = UIFocusSystem.focusSystem(for: collectionView)?.focusedItem as? UIView,
-                  focused.isDescendant(of: collectionView) else { return false }
+            guard let frame = NativeFocusRegion.frame(
+                of: UIFocusSystem.focusSystem(for: collectionView)?.focusedItem, in: collectionView)
+            else { return false }
             // Rapid remote presses can arrive before SwiftUI's FocusState catches up.
-            let center = focused.convert(
-                CGPoint(x: focused.bounds.midX, y: focused.bounds.midY), to: collectionView
-            )
             let distance = swiftUIEnvironment?.layoutDirection == .rightToLeft
-                ? collectionView.bounds.maxX - center.x : center.x - collectionView.bounds.minX
+                ? collectionView.bounds.maxX - frame.midX : frame.midX - collectionView.bounds.minX
             return distance >= 0 && distance < PrototypeLayout.stationWidth(for: collectionView.bounds.width)
         }
 
@@ -309,8 +307,8 @@ struct PrototypeNativeGuideList<Revision: Equatable, Content: View>: UIViewContr
         override func shouldUpdateFocus(in context: UIFocusUpdateContext) -> Bool {
             let leading: UIFocusHeading = swiftUIEnvironment?.layoutDirection == .rightToLeft ? .right : .left
             if context.focusHeading == leading,
-               context.previouslyFocusedView?.isDescendant(of: collectionView) == true,
-               context.nextFocusedView?.isDescendant(of: collectionView) != true,
+               NativeFocusRegion.contains(context.previouslyFocusedItem, in: collectionView),
+               !NativeFocusRegion.contains(context.nextFocusedItem, in: collectionView),
                parentView?.leadingExit != nil {
                 if !isRequestingLeadingExit {
                     isRequestingLeadingExit = true

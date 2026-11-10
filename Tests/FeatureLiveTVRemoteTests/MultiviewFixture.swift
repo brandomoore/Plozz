@@ -5,12 +5,14 @@ import SwiftUI
 import UIKit
 @testable import FeatureLiveTV
 @testable import FeatureLiveTVCore
+@testable import AppShell
 
 private enum MultiviewFixtureCatalog {
     static let delaysPreparation = ProcessInfo.processInfo.arguments.contains("--pending-multiview-fixture")
     static let channels = (1...4).map {
         LiveTVPrototypeChannel(
-            id: "sports-\($0)", number: $0, name: "Sports \($0)", category: "Sports",
+            id: "sports-\($0)", number: $0, name: "Sports \($0)",
+            category: ProcessInfo.processInfo.arguments.contains("--multiview-categories") && $0 > 2 ? "News" : "Sports",
             symbol: "tv", accent: $0, source: delaysPreparation && $0 == 2 ? .jellyfin : .iptv, tagline: "",
             streamURL: URL(string: "https://example.invalid/sports-\($0).m3u8")!,
             configuredSourceID: delaysPreparation && $0 == 2 ? "fixture" : nil
@@ -149,6 +151,7 @@ struct MultiviewFixture: View {
             },
             promote: { coordinator.promote(pane.id) },
             replace: { channelSelection = .replace(pane.id) },
+            remove: coordinator.panes.count > 1 ? { coordinator.remove(pane.id) } : nil,
             back: { backRequest &+= 1 },
             caption: AnyView(LiveTVMultiviewFocusCaption(
                 channel: pane.channel, isFocused: focusPresented && nativeFocusedPaneID == pane.id)))
@@ -188,7 +191,11 @@ struct MultiviewFixture: View {
                             onVideoAspectRatioChange: {
                                 coordinator.updateVideoAspectRatio($0, paneID: pane.id, preparedID: prepared.id)
                             },
-                            onMultiview: { coordinator.begin() },
+                            onMultiview: {
+                                guard coordinator.begin() else { return false }
+                                channelSelection = .add
+                                return true
+                            },
                             outputGroup: state.output, outputID: pane.id,
                             isAudible: pane.id == coordinator.audiblePaneID,
                             countsAsWatching: coordinator.isEnabled,
@@ -240,7 +247,8 @@ struct MultiviewFixture: View {
                         exit: { _ = coordinator.exit() },
                         returnToGuide: { _ = coordinator.exit() },
                         addChannel: { channelSelection = .add },
-                        replaceChannel: { channelSelection = .replace($0) }
+                        replaceChannel: { channelSelection = .replace($0) },
+                        isFavorite: isFavorite, toggleFavorite: { isFavorite.toggle() }
                     )
                     .frame(width: bounds.width, height: bounds.height)
                     .position(x: bounds.midX, y: bounds.midY)
@@ -350,6 +358,9 @@ struct LiveTVRootFixture: View {
     @State private var profiles = ProfilesModel(store: SourceSmokeProfiles())
     @State private var sources: SourceSmokeStore
     @State private var imports: LiveTVPrototypeImportModel
+    @State private var hidesNavigation = false
+    @State private var nativeSelection = NavigationRailDestination.liveTV
+    @State private var nativeHandoff = NavigationDestinationFocusHandoff()
 
     init() {
         let configuration = LiveTVSourcesConfiguration(playlists: [
@@ -365,7 +376,33 @@ struct LiveTVRootFixture: View {
         ))
     }
 
+    @ViewBuilder
     var body: some View {
+        if ProcessInfo.processInfo.arguments.contains("--multiview-native-sidebar") {
+            NativeSidebarNavigation(
+                selection: nativeSelection, handoff: nativeHandoff,
+                content: TabView(selection: $nativeSelection) {
+                    Tab("Home", systemImage: "house", value: NavigationRailDestination.home) {
+                        Button("Fixture home") {}
+                    }
+                    Tab("Live TV", systemImage: "tv", value: NavigationRailDestination.liveTV) {
+                        NativeSidebarFocusDestination(
+                            destination: .liveTV, selection: nativeSelection,
+                            handoff: nativeHandoff, content: guide)
+                    }
+                }.tabViewStyle(.sidebarAdaptable))
+                .environment(\.layoutDirection, ProcessInfo.processInfo.arguments.contains("--multiview-rtl")
+                    ? .rightToLeft : .leftToRight)
+        } else {
+            guide
+        }
+    }
+
+    private var guide: some View {
+        RetainedFullscreenWorkspace { guideContent }
+    }
+
+    private var guideContent: some View {
         NavigationStack {
             LiveTVPrototypeView(
                 isActive: isActive,
@@ -374,6 +411,7 @@ struct LiveTVRootFixture: View {
                 viewSettingsStore: LiveTVRootFixtureSettings(),
                 sourceStore: sources,
                 serverAuthorizationID: "fixture-\(hostRevision)",
+                onExpandedChange: { hidesNavigation = $0 },
                 importModel: imports,
                 profileID: profiles.activeProfileID,
                 preferencesNamespace: profiles.activeNamespace,
@@ -421,6 +459,8 @@ struct LiveTVRootFixture: View {
                     .font(.caption2)
                     .accessibilityIdentifier("multiview-fixture-metrics")
                     .accessibilityValue(state.engines.first?.motionWidths ?? "")
+                Text(hidesNavigation ? "Navigation hidden" : "Navigation visible")
+                    .accessibilityIdentifier("multiview-fixture-navigation")
             }
             .padding(.top, 16)
             .allowsHitTesting(false)

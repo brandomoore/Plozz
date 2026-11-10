@@ -151,6 +151,9 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.layoutDirection) private var layoutDirection
     @Environment(\.locale) private var locale
+    #if os(tvOS)
+    @Environment(\.retainedFullscreenWorkspace) private var workspace
+    #endif
     private let isActive: Bool
     private let profileID: String
     private let allowsPlayback: Bool
@@ -671,6 +674,7 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
             },
             promote: { multiview.promote(pane.id) },
             replace: { beginMultiviewSelection(.replace(pane.id)) },
+            remove: multiview.panes.count > 1 ? { multiview.remove(pane.id) } : nil,
             back: { multiviewBackRequest &+= 1 },
             caption: AnyView(LiveTVMultiviewFocusCaption(
                 channel: pane.channel,
@@ -734,6 +738,9 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
             openMultiview: {
                 guard !hasAuthorizedExternalPlayback, activity.acceptsInteraction,
                       multiview.begin() else { return false }
+                #if os(tvOS)
+                beginMultiviewSelection(.add)
+                #endif
                 updatePlaybackAvailability()
                 return true
             },
@@ -1212,11 +1219,19 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
         .onChange(of: hidesAppNavigation, initial: true) { _, hidesChrome in
             onExpandedChange(hidesChrome)
         }
+        #if os(tvOS)
+        .onChange(of: multiview.isEnabled && isActive && isProfileAuthorized(), initial: true) { _, presented in
+            workspace?.isPresented = presented
+        }
+        #endif
         .onAppear(perform: updatePlaybackAvailability)
         .onDisappear(perform: handleDisappearance)
     }
 
     private func handleDisappearance() {
+        #if os(tvOS)
+        if isActive, isProfileAuthorized(), workspace?.isTransferring == true { return }
+        #endif
         let preservesFullscreen = isActive && isProfileAuthorized() && usesNativeFullscreen && preview.isExpanded
         guard !preservesFullscreen, !hasAuthorizedExternalPlayback else { return }
         enrollment.invalidate()
@@ -1717,7 +1732,7 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
                     enterGuide: enterGuide,
                     selectCategory: { showCategory($0, enteringGuide: false) },
                     multiviews: multiviewSelection == nil ? { sheet = .multiviewFavorites } : nil,
-                    manageChannels: { sheet = .organization }
+                    manageChannels: multiviewSelection == nil ? { sheet = .organization } : nil
                 )
                 .modifier(LiveTVMultiviewGuideExit(
                     cancel: multiviewSelection == nil ? nil : finishMultiviewSelection))
@@ -1813,6 +1828,10 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
                 guard !preview.isRestoringGuideFocus else { return }
                 if isSearching {
                     closeSearch()
+                    return
+                }
+                if multiviewSelection != nil {
+                    finishMultiviewSelection()
                     return
                 }
                 controlsActive = true
@@ -1922,10 +1941,11 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
     }
 
     private var hidesAppNavigation: Bool {
-        if showingMultiview { return isActive }
         #if os(tvOS)
+        if multiview.isEnabled { return isActive }
         return preview.suppressesNavigation(isActive: isActive, isSearching: isSearching)
         #else
+        if showingMultiview { return isActive }
         return preview.suppressesNavigation(isActive: isActive)
         #endif
     }

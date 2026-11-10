@@ -816,6 +816,9 @@ public struct LiveChannelPlayerView: View {
     }
 
     struct LiveChannelActivityObserver: ViewModifier {
+        #if os(tvOS)
+        @Environment(\.retainedFullscreenWorkspace) private var workspace
+        #endif
         let isActive: Bool
         let isAuthorized: Bool
         let scenePhase: ScenePhase
@@ -842,6 +845,9 @@ public struct LiveChannelPlayerView: View {
                     if !authorized { stopPlayback() }
                 }
                 .onDisappear {
+                    #if os(tvOS)
+                    if isActive, isAuthorized, workspace?.isTransferring == true { return }
+                    #endif
                     // Fullscreen obscures its inline owner without retiring it.
                     guard !isActive || !fullscreenOwnsSurface() else { return }
                     currentModel()?.setVisible(false)
@@ -891,19 +897,8 @@ public struct LiveChannelPlayerView: View {
     }
 
     private func beginMultiview() {
-        #if os(tvOS)
-        // Installing the native card replaces the inline label too. Carry its live
-        // renderer through that replacement before animating the card's geometry.
-        if let model {
-            videoHandoff = VideoPresentationHandoff(engine: model.engine) {
-                videoHandoff = nil
-            }
-        }
-        #endif
-        if onMultiview?() != true {
-            videoHandoff?.cancel(restoringOutput: true)
-            videoHandoff = nil
-        }
+        // The channel picker keeps the inline renderer; no native card replaces it on entry.
+        _ = onMultiview?()
     }
 
     private func fullscreenDidDismiss() {

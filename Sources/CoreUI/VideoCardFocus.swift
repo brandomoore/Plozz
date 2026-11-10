@@ -14,6 +14,7 @@ public struct VideoCardFocus {
     public let activate: () -> Void
     public let promote: () -> Void
     public let replace: () -> Void
+    public let remove: (() -> Void)?
     public let back: () -> Void
     public let caption: AnyView
 
@@ -22,6 +23,7 @@ public struct VideoCardFocus {
         cornerRadius: CGFloat, horizontalInset: CGFloat, request: Int, prefersFocus: Bool,
         focused: @escaping (Bool) -> Void, activate: @escaping () -> Void,
         promote: @escaping () -> Void, replace: @escaping () -> Void,
+        remove: (() -> Void)? = nil,
         back: @escaping () -> Void = {}, caption: AnyView = AnyView(EmptyView())
     ) {
         self.identifier = identifier
@@ -36,6 +38,7 @@ public struct VideoCardFocus {
         self.activate = activate
         self.promote = promote
         self.replace = replace
+        self.remove = remove
         self.back = back
         self.caption = caption
     }
@@ -129,6 +132,9 @@ private struct VideoCardSurface<Content: View>: View {
         .contextMenu {
             Button("Make main picture", systemImage: "rectangle.inset.filled", action: configuration.promote)
             Button("Replace channel", systemImage: "arrow.triangle.2.circlepath", action: configuration.replace)
+            if let remove = configuration.remove {
+                Button("Remove", systemImage: "minus.circle", role: .destructive, action: remove)
+            }
         }
     }
 }

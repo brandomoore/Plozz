@@ -619,6 +619,7 @@ private struct LiveTVMultiviewPaneViewport: View {
                         listen: { coordinator.selectAudio(pane.id) },
                         promote: { coordinator.promote(pane.id) },
                         replace: { replace(pane.id) },
+                        remove: coordinator.panes.count > 1 ? { coordinator.remove(pane.id) } : nil,
                         retry: { coordinator.retry(pane.id) }
                     )
                     .frame(width: frame.width, height: frame.height)
@@ -701,7 +702,7 @@ private struct LiveTVMultiviewChrome: View {
                 }
             Spacer(minLength: 0)
             LiveTVMultiviewToolbar(
-                coordinator: coordinator, add: add, replace: replace,
+                coordinator: coordinator, add: add,
                 collapse: collapse, setup: setup, focusScope: focusScope,
                 restoresSetupFocus: restoresSetupFocus, setupFocused: setupFocused, editing: editing,
                 isFavorite: isFavorite, toggleFavorite: toggleFavorite
@@ -773,6 +774,7 @@ private struct LiveTVMultiviewPaneControl: View {
     let listen: () -> Void
     let promote: () -> Void
     let replace: () -> Void
+    let remove: (() -> Void)?
     let retry: () -> Void
     @FocusState private var focused: Bool
     @State private var pendingFocus = false
@@ -812,7 +814,7 @@ private struct LiveTVMultiviewPaneControl: View {
                     message: pane.preparation.playbackFailure?.message ?? failure.userDescription,
                     report: pane.preparation.playbackFailure.map(PlaybackDiagnosticReport.playback),
                     hasCurrentPicture: pane.preparation.current != nil,
-                    retry: retry, replace: replace, editing: editing
+                    retry: retry, replace: replace, remove: remove, editing: editing
                 )
                 .disabled(pane.preparation.isPreparing)
                 .frame(width: focusFrame.width, height: focusFrame.height, alignment: .top)
@@ -868,6 +870,11 @@ private struct LiveTVMultiviewPaneControl: View {
                 Button("Make main picture", systemImage: "rectangle.inset.filled") { editing(); promote() }
                     .disabled(pane.preparation.current == nil)
                 Button("Replace channel", systemImage: "arrow.triangle.2.circlepath", action: replace)
+                #if os(tvOS)
+                if let remove {
+                    Button("Remove", systemImage: "minus.circle", role: .destructive, action: remove)
+                }
+                #endif
             }
             #if os(tvOS)
             .frame(width: focusFrame.width, height: focusFrame.height)
@@ -983,6 +990,7 @@ private struct LiveTVMultiviewFailure: View {
     let hasCurrentPicture: Bool
     let retry: () -> Void
     let replace: () -> Void
+    let remove: (() -> Void)?
     let editing: () -> Void
     @State private var showsDetails = false
 
@@ -1013,6 +1021,12 @@ private struct LiveTVMultiviewFailure: View {
                 }
                 LiveTVMultiviewAction(title: "Retry", symbol: "arrow.clockwise", action: retry, editing: editing)
                 LiveTVMultiviewAction(title: "Replace", symbol: "arrow.triangle.2.circlepath", action: replace, editing: editing)
+                #if os(tvOS)
+                if let remove {
+                    Button("Remove", systemImage: "minus.circle", role: .destructive, action: remove)
+                        .playerGlassButton(prominent: false)
+                }
+                #endif
             }
             HStack {
                 if report != nil {
@@ -1020,6 +1034,11 @@ private struct LiveTVMultiviewFailure: View {
                 }
                 Button("Retry", systemImage: "arrow.clockwise", action: retry)
                 Button("Replace", systemImage: "arrow.triangle.2.circlepath", action: replace)
+                #if os(tvOS)
+                if let remove {
+                    Button("Remove", systemImage: "minus.circle", role: .destructive, action: remove)
+                }
+                #endif
             }
             .labelStyle(.iconOnly)
         }
@@ -1029,7 +1048,6 @@ private struct LiveTVMultiviewFailure: View {
 private struct LiveTVMultiviewToolbar: View {
     let coordinator: LiveTVMultiviewCoordinator
     let add: () -> Void
-    let replace: () -> Void
     let collapse: () -> Void
     let setup: () -> Void
     let focusScope: Namespace.ID
@@ -1039,103 +1057,67 @@ private struct LiveTVMultiviewToolbar: View {
     let isFavorite: Bool
     let toggleFavorite: (() -> Void)?
     @FocusState private var layoutFocused: Bool
+    @FocusState private var moreFocused: Bool
 
     var body: some View {
         ScrollView(.horizontal) {
             HStack(spacing: 16) {
-                if let toggleFavorite {
-                    LiveTVMultiviewAction(
-                        title: isFavorite ? "Unfavorite" : "Favorite",
-                        symbol: isFavorite ? "star.fill" : "star",
-                        action: toggleFavorite, editing: editing)
-                        .accessibilityIdentifier("live-multiview-favorite")
-                        .accessibilityValue(isFavorite ? "Saved" : "Not saved")
+                if coordinator.canAdd {
+                    LiveTVMultiviewAction(title: "Add channel", symbol: "plus", action: add, editing: editing)
+                        .accessibilityIdentifier("live-multiview-add")
                 }
-                if !coordinator.isEditingLayout {
-                    LiveTVMultiviewAction(
-                        title: "Edit layout", symbol: "rectangle.split.2x2",
-                        action: setup, editing: editing
-                    )
-                    .accessibilityIdentifier("live-multiview-edit")
+                Menu {
+                    LiveTVMultiviewLayoutOptions(coordinator: coordinator, setup: setup)
+                } label: {
+                    Label("Layout", systemImage: "rectangle.split.2x1")
+                    #if os(tvOS)
+                        .labelStyle(.titleAndIcon)
+                    #endif
                 }
-                if coordinator.isEditingLayout {
-                    if coordinator.canAdd {
-                        LiveTVMultiviewAction(title: "Add channel", symbol: "plus", action: add, editing: editing)
-                            .accessibilityIdentifier("live-multiview-add")
-                    }
+                .focused($layoutFocused)
+                .onChange(of: layoutFocused) { _, focused in
+                    if focused { editing(); setupFocused() }
+                }
+                #if os(tvOS)
+                .prefersDefaultFocus(true, in: focusScope)
+                .task(id: restoresSetupFocus) {
+                    guard restoresSetupFocus else { return }
+                    await Task.yield()
+                    guard !Task.isCancelled else { return }
+                    if layoutFocused { setupFocused() } else { layoutFocused = true }
+                }
+                #endif
+                #if os(tvOS)
+                .playerGlassButton(prominent: false)
+                #else
+                .plozzActionButton(role: .secondary)
+                #endif
+                .accessibilityIdentifier("live-multiview-layout")
+                .accessibilityLabel(Text("Layout"))
+                if toggleFavorite != nil || coordinator.expandedPaneID != nil {
                     Menu {
-                        LiveTVMultiviewLayoutOptions(coordinator: coordinator, setup: setup)
-                    } label: {
-                        Label("Layout", systemImage: "rectangle.split.2x1")
-                        #if os(tvOS)
-                            .labelStyle(.titleAndIcon)
-                        #endif
-                    }
-                    .focused($layoutFocused)
-                    .onChange(of: layoutFocused) { _, focused in
-                        if focused { editing(); setupFocused() }
-                    }
-                    #if os(tvOS)
-                    .prefersDefaultFocus(true, in: focusScope)
-                    .task(id: restoresSetupFocus) {
-                        guard restoresSetupFocus else { return }
-                        await Task.yield()
-                        guard !Task.isCancelled else { return }
-                        if layoutFocused { setupFocused() } else { layoutFocused = true }
-                    }
-                    #endif
-                    #if os(tvOS)
-                    .playerGlassButton(prominent: false)
-                    #else
-                    .plozzActionButton(role: .secondary)
-                    #endif
-                    .accessibilityIdentifier("live-multiview-layout")
-                    .accessibilityLabel(Text("Layout"))
-                    #if !os(tvOS)
-                    if coordinator.panes.count > 1 {
-                        Menu {
-                            ForEach(coordinator.panes) { pane in
-                                Button {
-                                    coordinator.selectAudio(pane.id)
-                                } label: {
-                                    Label {
-                                        liveTVChannelLabel(pane.channel?.name)
-                                    } icon: {
-                                        Image(systemName: coordinator.audiblePaneID == pane.id ? "checkmark" : "speaker")
-                                    }
-                                }
-                                .disabled(pane.preparation.current == nil)
-                                .accessibilityLabel(liveTVChannelLabel(pane.channel?.name))
-                                .accessibilityIdentifier("live-multiview-listen-\(pane.id.uuidString)")
-                            }
-                        } label: {
-                            Label("Audio", systemImage: "speaker.wave.2")
+                        if let toggleFavorite {
+                            Button(
+                                isFavorite ? "Unfavorite" : "Favorite",
+                                systemImage: isFavorite ? "star.fill" : "star",
+                                action: toggleFavorite)
+                                .accessibilityIdentifier("live-multiview-favorite")
                         }
-                        .plozzActionButton(role: .secondary)
-                        .accessibilityIdentifier("live-multiview-audio")
+                        if coordinator.expandedPaneID != nil {
+                            Button("Show all", systemImage: "rectangle.split.2x2", action: collapse)
+                                .accessibilityIdentifier("live-multiview-collapse")
+                        }
+                    } label: {
+                        Label("More", systemImage: "ellipsis")
+                            .labelStyle(.titleAndIcon)
                     }
-                    #endif
-                    LiveTVMultiviewAction(title: "Replace", symbol: "arrow.triangle.2.circlepath", action: replace, editing: editing)
-                        .accessibilityIdentifier("live-multiview-replace")
-                    if coordinator.panes.count > 1, coordinator.audiblePaneID != coordinator.primaryPaneID {
-                        LiveTVMultiviewAction(title: "Make main", symbol: "rectangle.inset.filled", action: {
-                            coordinator.promote(coordinator.audiblePaneID)
-                        }, editing: editing)
-                        .accessibilityIdentifier("live-multiview-promote")
+                    .focused($moreFocused)
+                    .onChange(of: moreFocused) { _, focused in
+                        if focused { editing() }
                     }
-                    if coordinator.panes.count > 1 {
-                        LiveTVMultiviewAction(title: "Remove", symbol: "minus.circle", action: {
-                            coordinator.remove(coordinator.audiblePaneID)
-                        }, editing: editing)
-                        .accessibilityIdentifier("live-multiview-remove")
-                    }
-                }
-                if coordinator.expandedPaneID != nil {
-                    LiveTVMultiviewAction(
-                        title: "Show all", symbol: "rectangle.split.2x2",
-                        action: collapse, editing: editing
-                    )
-                    .accessibilityIdentifier("live-multiview-collapse")
+                    .playerGlassButton(prominent: false)
+                    .accessibilityIdentifier("live-multiview-more")
+                    .accessibilityLabel(Text("More"))
                 }
             }
             .padding(8)

@@ -24,6 +24,15 @@ cache that every feature module reuses on tvOS and iOS/iPadOS — guarded behind
 
 ## Responsibility
 
+`RetainedFullscreenWorkspace` presents the same tvOS hosting controller outside
+app navigation, then returns it to its original container. Place the feature's
+state and focus owners inside it, and inject required app models into its content.
+It forwards public presentation values, not the presenting host's private focus
+environment. Its scoped transfer flag distinguishes reparenting from removal;
+playback may ignore disappearance during that transfer only while still active
+and authorized. Deactivation, authorization loss and teardown must still retire
+playback. Live TV uses it for the entire Multiview workspace, including its guide.
+
 `videoCardFocusSurface()` gives tvOS live video and its subtitles native card
 focus without wrapping player state or transport controls. Its environment
 configuration supplies channel actions, focus requests and interactive spacing.
