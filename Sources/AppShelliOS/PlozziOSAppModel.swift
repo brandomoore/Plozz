@@ -2205,11 +2205,13 @@ final class PlozziOSAppModel {
         watchedPercent: Double
     ) {
         guard let mutation else { return }
-        var itemIDs = Set(mutation.optimisticTargets.map(\.itemID))
+        let targets = mutation.effectiveOptimisticTargets
+        guard !targets.isEmpty else { return }
+        var itemIDs = Set(targets.map(\.itemID))
         itemIDs.insert(item.id)
         MediaItemMutation(
             itemIDs: itemIDs,
-            scopedItemIDs: Set(mutation.optimisticTargets.map(\.id)),
+            scopedItemIDs: Set(targets.map(\.id)),
             played: mutation.played,
             resumePosition: mutation.resumePosition,
             playedPercentage: mutation.played == true

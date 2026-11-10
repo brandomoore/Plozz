@@ -118,6 +118,30 @@ public struct AppShellWatchMutationApplier: WatchMutationAuthorizationEnforcing 
         try await validateServerScope(scope)
     }
 
+    public func serverPlaybackSupersedes(_ mutation: WatchMutation, on target: WatchMutationTarget) async throws -> Bool {
+        guard mutation.clearResume, mutation.resumePosition == nil,
+              mutation.isExplicitReset || mutation.played != true || mutation.attempts > 0,
+              mutation.kind == .movie || mutation.kind == .episode || mutation.kind == .video else { return false }
+        guard await isActive() else { throw AppError.serverUnreachable }
+        try await WatchMutationDeliveryAuthorization.check()
+        guard let provider = await scopedProvider(for: target.accountID) else { throw AppError.serverUnreachable }
+        guard await isActive() else { throw AppError.serverUnreachable }
+        try await WatchMutationDeliveryAuthorization.check()
+        // Local stores already arbitrate capture times atomically. Ordinary
+        // progress, first-delivery player completions and container cascades do
+        // not use this leaf read.
+        guard !(provider is any PlayedStateWriting), provider is any ResumeStateWriting else { return false }
+        let current = try await provider.item(id: target.itemID)
+        guard await isActive() else { throw AppError.serverUnreachable }
+        try await WatchMutationDeliveryAuthorization.check()
+        guard current.id == target.itemID,
+              current.sourceAccountID == nil || current.sourceAccountID == target.accountID else {
+            throw AppError.invalidResponse
+        }
+        let observed = mutation.observedLastPlayedAt[target.id] ?? .distantPast
+        return (current.lastPlayedAt ?? .distantPast) > max(mutation.capturedAt, observed)
+    }
+
     private func scopedProvider(for accountID: String) async -> (any MediaProvider)? {
         if let scope = WatchMutationDeliveryAuthorization.current?.serverScope,
            !scope.accounts.contains(where: { $0.accountID == accountID }) {

@@ -2545,7 +2545,7 @@ public final class HomeViewModel {
 
         func targetKey(_ accountID: String, _ itemID: String) -> String { accountID + "\u{1}" + itemID }
         let pendingByTarget: [String: [WatchMutation]] = pending.reduce(into: [:]) { acc, m in
-            for t in m.optimisticTargets { acc[targetKey(t.accountID, t.itemID), default: []].append(m) }
+            for t in m.effectiveOptimisticTargets { acc[targetKey(t.accountID, t.itemID), default: []].append(m) }
         }
 
         func newestMatch(for item: MediaItem) -> WatchMutation? {
@@ -2581,7 +2581,7 @@ public final class HomeViewModel {
                 : clampInflatedRecency(rawItem, appliedRecency: appliedRecency, now: now, clampFreshness: clampFreshness)
             guard let m = newestMatch(for: item) else { overlaid.append(item); continue }
             // Ignore a pending write the server has already superseded with a newer play.
-            let observedReset = m.played == false && m.clearResume
+            let observedReset = m.clearResume
                 && hasObservedPlayback(item, in: m)
             guard m.capturedAt >= (item.lastPlayedAt ?? .distantPast) || observedReset else {
                 overlaid.append(item)

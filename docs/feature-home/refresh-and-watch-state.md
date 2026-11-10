@@ -87,12 +87,74 @@ Home removes its in-progress card immediately and retains that reset while the
 account-scoped server writes are queued, including after relaunch.
 Queued resets retain the server playback timestamps already observed when the
 action was chosen, so a server clock ahead of the device cannot revive that same
-resume point. Genuinely newer server playback still takes precedence.
+resume point. The same observed-time protection applies to watched and remove
+actions. Genuinely newer server playback still takes precedence in Home.
 Other episodes are not reset; the provider's Next Up feed remains authoritative.
 Existing cross-server sync preferences apply. External tracker history is not deleted.
 
 **Remove from Continue Watching** stays separate: it dismisses the title where
 supported, or clears resume as a fallback, without changing its watched status.
+
+### Delayed writes and live verification
+
+Home admission alone is not sufficient protection against an old queued action.
+The live test reproduced a removal that failed offline, survived restoration,
+then cleared a newer server resume when retried. Before the retry, Home correctly
+showed the newer episode; after the write, the server position was zero.
+This is a demonstrated stale-write defect, not proof of the cause of #170.
+
+The shared runtime now reads current server playback before delivering an explicit
+movie/episode/video reset or retrying a failed completion. A timestamp newer than
+both the action and that target's already-observed timestamp supersedes the write.
+That target also leaves the optimistic overlay, even if another account is still
+offline. Its original identity remains available for tracker metadata recovery;
+persisted supersession flags filter UI replay, not the immutable target history.
+A newer explicit action does not inherit the older action's supersession.
+An unreadable item stays queued; authorization and profile activity are rechecked
+after the read. Skipping a superseded target does not publish an old reset as a
+confirmed server update. Ordinary progress checkpoints and first-delivery player
+completions add no metadata read. Explicit reset identity survives serialization;
+older remove/unwatch payloads are recognized without that new field.
+Local timestamp-ordered stores retain their own arbitration.
+
+This is a read-before-write guard, not a server transaction: it cannot prevent a
+simultaneous remote play between the read and write, or establish recency when the
+server omits its timestamp. Whole-season/show cascades remain server-owned;
+comparing a parent's timestamp cannot safely order every child's history.
+
+`LiveJellyfinWatchActionTests` uses the authorized loopback broker described above
+and calls the production menu coordinator, durable store codec, reconciler,
+runtime applier, Jellyfin provider and Home model. Its secure-store backing is
+isolated in memory; restoration recreates the store and reconciler, not an actual
+process termination. It covers the three episode actions, failed writes,
+restored pending suppression, later playback, newer server playback before retry,
+new local playback replacing a queued removal, and season/show cascades. It does
+not automate menu gestures or decode video.
+
+The episode-action and newer-playback cases passed on iPhone and iPad simulators.
+The expanded checks also exposed a separate unresolved server behavior: the
+registered internal Jellyfin endpoint (advertising version 12.3.0) acknowledged
+both legacy and modern whole-season/show watched endpoints without changing the
+eight selected episodes. Direct provider requests reproduced this independently
+of the outbox; clearing the parent position was not the cause. A separate
+ten-second convergence wait and an independently seeded watched episode also
+failed the intended watched/unwatched cascade checks. The opt-in cascade
+test intentionally continues to assert the intended child-state behavior, rather
+than treating HTTP success as success or hiding the failure with a skip.
+Endpoint evidence: `live-home-rows-69220b1c5bae4b3b80d11bca3324ab32`;
+bounded cascade evidence: `live-home-rows-522371b7a7c547adaeabf8224f7ca71a`.
+Do not generalize
+that endpoint's behavior to every Jellyfin installation, claim the entire live
+matrix passed, or describe it as a permanent Plozz blacklist.
+
+Final-source episode verification passed all six selected hosted cases across
+iPhone and iPad, with zero skips:
+`live-home-rows-400633da102745d3aa739d400834f6f3`. The broader tvOS package run
+recorded 4,648 passes, 15 skips and one pre-existing Home row visibility failure
+(`HomePresentationRowTests.testRetainedNativeRowsImmediatelyHonorDisabledLibraryAndItemVisibility`).
+All seven server-playback delivery regressions and all 16 Home pending-outbox
+regressions passed. Package evidence:
+`.build/private-no-clean-tests/9cf60bb0519f4185a0eecd6c22385bd1`.
 
 ## Detail watch-state updates
 

@@ -1289,7 +1289,7 @@ final class PlozziOSDownloadsModel {
             return
         }
         do {
-            for target in mutation.optimisticTargets {
+            for target in mutation.effectiveOptimisticTargets {
                 guard let viewer = scope.accounts.first(where: { $0.accountID == target.accountID })?.downloadUserID
                 else { continue }
                 try await registry.updatePlayback(
