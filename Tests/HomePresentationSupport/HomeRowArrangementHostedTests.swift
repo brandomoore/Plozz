@@ -50,6 +50,57 @@ private struct ContinueWatchingChannelsProvider: MediaProvider {
     func imageURL(itemID: String, kind: ImageKind, maxWidth: Int?) -> URL? { nil }
 }
 
+@MainActor
+@Observable
+private final class ContentPickerSelectionFixture {
+    var sources: [HomeContentSource] = []
+}
+
+@MainActor
+extension HomeRowArrangementHostedTests {
+    func testMultiSourcePickerRetainsSelectionsAndNativeFocus() async throws {
+        let suite = "ContentPicker.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let visibility = HomeLibraryVisibilityModel(store: HomeLibraryVisibilityStore(defaults: defaults))
+        let provider = ContinueWatchingChannelsProvider()
+        let account = ResolvedAccount(account: provider.account, provider: provider)
+        let selected = ContentPickerSelectionFixture()
+        try await withWindow {
+            let picker = HomeContentPickerView(
+                selections: Binding(get: { selected.sources }, set: { selected.sources = $0 }),
+                inventory: HomeSectionCatalogModel(), visibility: visibility, libraries: [], accounts: [account]
+            )
+            #if os(iOS)
+            NavigationStack { picker }
+            #else
+            picker
+            #endif
+        } inspect: { window in
+            let initial = try await self.capture(window, name: "Multi-source picker")
+            XCTAssertTrue(initial.contains { $0.0.contains("Collections") })
+            XCTAssertTrue(initial.contains { $0.0.contains("Playlists") })
+            let watchlist = try XCTUnwrap(initial.first { $0.0.contains("Watchlist") })
+            #if os(tvOS)
+            let point = CGPoint(x: watchlist.1.midX * window.bounds.width, y: (1 - watchlist.1.midY) * window.bounds.height)
+            let target = try XCTUnwrap(self.focusableItem(at: point, in: window))
+            try await self.focus(target, in: window)
+            XCTAssertTrue(UIFocusSystem.focusSystem(for: window)?.focusedItem === target)
+            #else
+            XCTAssertGreaterThan(watchlist.1.height, 0.01)
+            #endif
+            selected.sources = [.init(home: .watchlist)]
+            selected.sources.append(.init(home: .continueWatching))
+            let changed = try await self.capture(window, name: "Multi-source selected feeds")
+            XCTAssertTrue(changed.contains { $0.0.localizedCaseInsensitiveContains("Selected") })
+            XCTAssertEqual(selected.sources.map(\.home), [.watchlist, .continueWatching])
+            #if os(tvOS)
+            XCTAssertNotNil(UIFocusSystem.focusSystem(for: window)?.focusedItem)
+            #endif
+        }
+    }
+}
+
 #if os(tvOS)
 @MainActor
 extension HomeRowArrangementHostedTests {
@@ -2604,6 +2655,7 @@ final class HomeRowArrangementHostedTests: XCTestCase {
                 field.insertText(isNew ? "Movie night" : "Weekend queue")
                 try await self.waitForEditor { self.findEditorSaveItem(in: window)?.isEnabled == true }
                 field.resignFirstResponder()
+                _ = try await self.snapshot(window, name: "Collection toolbar ready to save")
                 try self.activateEditorSave(in: window)
                 try await self.waitForEditor { route.path.isEmpty }
                 XCTAssertEqual(visibility.visibility.collectionSections.count, 1)

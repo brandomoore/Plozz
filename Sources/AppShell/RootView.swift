@@ -19,6 +19,22 @@ import FeatureSettings
 import FeatureSyncCloud
 import MetadataKit
 
+@MainActor
+private struct RuntimeHomeContentSnapshot: HomeContentSnapshotProviding {
+    let appState: AppState
+    let models: LazyViewState<HomeViewModel>
+
+    func contentSnapshot(for kind: HomeGlobalRow, visibility: HomeLibraryVisibility) throws -> [MediaItem] {
+        let key = HomeRuntimeScope.homeScopeKey(
+            profileID: appState.profilesModel.activeProfileID,
+            accounts: appState.accountsProviders.homeAccounts.map(\.account),
+            plexIdentityGeneration: appState.plexHomeUsers.plexIdentityGeneration
+        )
+        guard let model = models.existingValue(forKey: key) else { throw AppError.notFound }
+        return try model.contentSnapshot(for: kind, visibility: visibility)
+    }
+}
+
 /// Composes the identity that scopes the Home tab subtree — and the retained
 /// ``HomeHeroRuntimeState`` it owns — to the active profile and Plex Home-user
 /// generation. A change to either forces SwiftUI to tear down and rebuild
@@ -915,6 +931,7 @@ public struct RootView: View {
         .environment(appState.profilesModel)
         .environment(appState.profileSettings.navigationStyleModel)
         .environment(appState.profileSettings.homeLibraryVisibilityModel)
+        .environment(\.homeContentSnapshot, RuntimeHomeContentSnapshot(appState: appState, models: homeViewModelBox))
         .environment(appState.guidePreparation)
         .environment(glassPerformance)
         .environment(displayVeil)

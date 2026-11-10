@@ -214,6 +214,7 @@ class EvidenceTests(unittest.TestCase):
             "sync-unchanged", "library-unchanged", "multi-share-scanning", "catalog-import", "watchlist-artwork-rehydration",
             "live-tv-schedule-capture", "live-tv-schedule-sync", "poster-preview-admission",
             "seek-generated-80ms", "seek-generated-180ms", "identity-unchanged-servers",
+            "home-single-collection-row", "home-multi-source-row", "home-overlapping-source-browse",
         })
         self.assertEqual(performance.select(None, ["guide-large-batches"]), ["guide-large-batches"])
         self.assertEqual(performance.select(None, ["poster-preview-admission"]),

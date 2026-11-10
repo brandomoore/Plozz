@@ -42,6 +42,7 @@ public final class HomeRowBrowseModel: Identifiable, Hashable {
     public var query = HomeRowBrowseQuery()
     public private(set) var appliedQuery = HomeRowBrowseQuery()
     @ObservationIgnored private let loaders: [PageLoader]
+    @ObservationIgnored private let contentPager: HomeContentPager?
     @ObservationIgnored private let isCurrent: @MainActor () -> Bool
     @ObservationIgnored private let merge: @Sendable ([[MediaItem]]) -> [MediaItem]
     @ObservationIgnored private let snapshotProvider: (@MainActor () -> [MediaItem]?)?
@@ -54,7 +55,7 @@ public final class HomeRowBrowseModel: Identifiable, Hashable {
     public init(
         title: String, localizedTitle: LocalizedStringResource? = nil, titleSuffix: String? = nil, // l10n:content — original Home row heading; app copy uses localizedTitle
         style: LibrarySection.Style = .poster,
-        snapshot: [MediaItem] = [], loaders: [PageLoader] = [],
+        snapshot: [MediaItem] = [], loaders: [PageLoader] = [], contentPager: HomeContentPager? = nil,
         snapshotProvider: (@MainActor () -> [MediaItem]?)? = nil, watchlistDates: Bool = false,
         isCurrent: @escaping @MainActor () -> Bool = { true },
         merge: @escaping @Sendable ([[MediaItem]]) -> [MediaItem] = { $0.flatMap { $0 } }
@@ -64,18 +65,32 @@ public final class HomeRowBrowseModel: Identifiable, Hashable {
         self.titleSuffix = titleSuffix
         self.style = style
         self.loaders = loaders
+        self.contentPager = contentPager
         self.isCurrent = isCurrent
         self.merge = merge
         self.snapshotProvider = snapshotProvider
         self.watchlistDates = watchlistDates
-        groups = loaders.isEmpty ? [snapshot] : Array(repeating: [], count: loaders.count)
+        groups = contentPager != nil ? [[]] : loaders.isEmpty ? [snapshot] : Array(repeating: [], count: loaders.count)
         offsets = Array(repeating: 0, count: loaders.count)
-        hasMore = !loaders.isEmpty
-        items = loaders.isEmpty ? snapshot : []
+        hasMore = contentPager != nil || !loaders.isEmpty
+        items = contentPager == nil && loaders.isEmpty ? snapshot : []
     }
 
     public var liveSnapshot: [MediaItem]? { snapshotProvider?() }
     public var scopeIsCurrent: Bool { isCurrent() }
+
+    func page(start: Int, limit: Int) async throws -> HomeRowPage {
+        guard start >= 0, limit > 0, start < Int.max - limit, isCurrent() else { throw AppError.notFound }
+        let end = start + limit
+        while items.count <= end && hasMore {
+            try Task.checkCancellation()
+            await load()
+            if let error { throw error }
+        }
+        try Task.checkCancellation()
+        guard isCurrent() else { throw AppError.notFound }
+        return .init(items: Array(items.dropFirst(start).prefix(limit)), nextOffset: items.count > end || hasMore ? end : nil)
+    }
 
     public func applyMutation(_ mutation: MediaItemMutation) {
         guard isCurrent() else { invalidate(); return }
@@ -100,7 +115,7 @@ public final class HomeRowBrowseModel: Identifiable, Hashable {
                 if hasMore { try await appendPage(generation: token) }
                 try Task.checkCancellation()
                 guard token == generation, isCurrent() else { throw CancellationError() }
-            } while hasMore && !requested.isDefault
+            } while hasMore && error == nil && !requested.isDefault
             let merge = merge
             let watchlistDates = watchlistDates
             while true {
@@ -141,6 +156,16 @@ public final class HomeRowBrowseModel: Identifiable, Hashable {
     }
 
     private func appendPage(generation token: Int) async throws {
+        if let contentPager {
+            let result = try await contentPager.loadNext(limit: PageRequest.defaultLimit)
+            try Task.checkCancellation()
+            guard token == generation, isCurrent() else { throw CancellationError() }
+            groups = [result.items]
+            hasMore = result.hasMore
+            error = contentPager.sources.compactMap { result.failures[$0.id] }.first
+            if error != nil { PlozzLog.app.error("Some custom Home row sources could not be loaded") }
+            return
+        }
         var nextGroups = groups
         var nextOffsets = offsets
         for index in loaders.indices {

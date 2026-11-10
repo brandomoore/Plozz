@@ -8,6 +8,7 @@ public struct HeroCollectionPickerView: View {
     private let libraries: [AggregatedLibrary]
     private let accounts: [ResolvedAccount]
     private let onSelect: ((HeroCollectionSelection) -> Void)?
+    private let playlists: Bool
     @State private var sourceID: HeroCollectionPickerSource.ID?
     @SettingsPageDismiss private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -17,26 +18,27 @@ public struct HeroCollectionPickerView: View {
         selections: Binding<[HeroCollectionSelection]>,
         libraries: [AggregatedLibrary],
         accounts: [ResolvedAccount],
-        onSelect: ((HeroCollectionSelection) -> Void)? = nil
+        playlists: Bool = false, onSelect: ((HeroCollectionSelection) -> Void)? = nil
     ) {
         _selections = selections
         self.libraries = libraries
         self.accounts = accounts
         self.onSelect = onSelect
+        self.playlists = playlists
     }
 
     public var body: some View {
-        let sources = HeroCollectionPickerSource.available(libraries: libraries, accounts: accounts)
+        let sources = HeroCollectionPickerSource.available(libraries: libraries, accounts: accounts, playlists: playlists)
         let preferred = sourceID ?? selections.first.map {
             HeroCollectionPickerSource.ID(accountID: $0.accountID, libraryID: $0.libraryID)
         }
         let source = sources.first(where: { $0.id == preferred }) ?? sources.first
         ViewCustomizationList(
-            title: onSelect == nil ? "Choose collections" : "Choose collection",
+            title: playlists ? "Choose playlists" : onSelect == nil ? "Choose collections" : "Choose collection",
             initialRowID: source?.id.focusID ?? "hero-collection-done"
         ) {
             if onSelect == nil && !selections.isEmpty {
-                HeroCollectionSection(title: "Selected collections") {
+                HeroCollectionSection(title: playlists ? "Selected playlists" : "Selected collections") {
                     ForEach(selections) { selection in
                         let selectedSource = sources.first {
                             $0.id.accountID == selection.accountID && $0.id.libraryID == selection.libraryID
@@ -61,7 +63,7 @@ public struct HeroCollectionPickerView: View {
                     HeroCollectionListView(
                         selections: $selections, source: source, provider: account.provider,
                         serverUserID: account.plexHomeUserID ?? account.provider.session.userID,
-                        onSelect: onSelect
+                        playlists: playlists, onSelect: onSelect
                     )
                     .id([
                         source.id.focusID, account.credentialRevision.rawValue.uuidString,
@@ -69,7 +71,8 @@ public struct HeroCollectionPickerView: View {
                     ])
                 }
             } else {
-                Text("No available collection sources.")
+                if playlists { Text("No available playlist sources.") }
+                else { Text("No available collection sources.") }
                 Button("Done") {
                     if let detailNavigation {
                         detailNavigation.pop(animated: !reduceMotion)
@@ -114,6 +117,7 @@ private struct HeroCollectionListView: View {
     @Binding var selections: [HeroCollectionSelection]
     let source: HeroCollectionPickerSource
     let serverUserID: String
+    let playlists: Bool
     let onSelect: ((HeroCollectionSelection) -> Void)?
     @State private var model: HeroCollectionListModel
     @State private var request = 0
@@ -123,17 +127,20 @@ private struct HeroCollectionListView: View {
         source: HeroCollectionPickerSource,
         provider: any MediaProvider,
         serverUserID: String,
-        onSelect: ((HeroCollectionSelection) -> Void)? = nil
+        playlists: Bool = false, onSelect: ((HeroCollectionSelection) -> Void)? = nil
     ) {
         _selections = selections
         self.source = source
         self.serverUserID = serverUserID
+        self.playlists = playlists
         self.onSelect = onSelect
-        _model = State(initialValue: HeroCollectionListModel(provider: provider, libraryID: source.id.libraryID))
+        _model = State(initialValue: HeroCollectionListModel(
+            provider: provider, libraryID: source.id.libraryID, playlists: playlists
+        ))
     }
 
     var body: some View {
-        HeroCollectionSection(title: "Collections") {
+        HeroCollectionSection(title: playlists ? "Playlists" : "Collections") {
             ForEach(model.items) { collection in
                 HeroCollectionChoice(
                     selections: $selections,
@@ -155,7 +162,8 @@ private struct HeroCollectionListView: View {
                     .plozzActionButton(role: .secondary)
                     .modifier(ViewCustomizationRowFocus(id: "hero-collection-more"))
             } else if model.items.isEmpty {
-                Text("No collections in this source.")
+                if playlists { Text("No playlists in this source.") }
+                else { Text("No collections in this source.") }
             }
         }
         .task(id: request) { await model.loadNextPage() }

@@ -28,14 +28,16 @@ struct HomeCollectionRefreshQueue {
     mutating func enqueue(_ sections: [CollectionSection], now: ContinuousClock.Instant) {
         revision &+= 1
         for (index, section) in sections.enumerated() {
-            let priority = Self.isWatchlistLike(section.title) || Self.isWatchlistLike(section.source.title) ? 0 : 1
-            let previous = requests[section.source.id].flatMap { $0.revision == revision ? $0 : nil }
-            requests[section.source.id] = Request(
-                source: section.source, revision: revision,
-                priority: min(previous?.priority ?? priority, priority),
-                order: previous?.order ?? index,
-                due: now.advanced(by: debounce)
-            )
+            for source in section.collectionSources {
+                let priority = Self.isWatchlistLike(section.title) || Self.isWatchlistLike(source.title) ? 0 : 1
+                let previous = requests[source.id].flatMap { $0.revision == revision ? $0 : nil }
+                requests[source.id] = Request(
+                    source: source, revision: revision,
+                    priority: min(previous?.priority ?? priority, priority),
+                    order: previous?.order ?? index,
+                    due: now.advanced(by: debounce)
+                )
+            }
         }
     }
 

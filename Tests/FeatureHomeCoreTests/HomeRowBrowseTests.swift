@@ -338,7 +338,7 @@ final class HomeRowBrowseTests: XCTestCase {
         XCTAssertFalse(try XCTUnwrap(presentation(eligible)).canBrowse, "Hidden-library overflow must not add an action")
     }
 
-    func testCompleteHistoryAndFailedRowsDoNotOfferBrowse() throws {
+    func testCompleteHistoryAndEmptyFailedRowsDoNotOfferBrowseButRetainedCardsDo() throws {
         let shared = HomeRowChoice.shared
         let history = try XCTUnwrap(shared.first { $0.id == .global(.continueWatching) })
         let row = HomePresentationRow(choice: history, source: .home(.init(kind: .continueWatching, items: items(100))))
@@ -349,7 +349,14 @@ final class HomeRowBrowseTests: XCTestCase {
             let row = HomePresentationRow(
                 choice: choice, source: .library(.init(section: section, isLoading: loading, failure: failure))
             )
-            XCTAssertFalse(row.canBrowse)
+            XCTAssertTrue(row.canBrowse, "Retained usable cards remain interactive during refresh failures.")
+            let empty = HomePresentationRow(
+                choice: choice, source: .library(.init(
+                    section: .init(id: "shelf", title: "Shelf", items: [], hasMore: true),
+                    isLoading: loading, failure: failure
+                ))
+            )
+            XCTAssertFalse(empty.canBrowse)
         }
         XCTAssertTrue(HomePresentationRow(
             choice: choice, source: .library(.init(section: section, isLoading: false, failure: nil))

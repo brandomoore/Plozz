@@ -2,6 +2,59 @@ import XCTest
 @testable import CoreModels
 
 final class CollectionSectionTests: XCTestCase {
+    func testLegacySingularSourceMigratesWithoutChangingRowIdentityOrAppearance() throws {
+        let legacy = """
+        {"id":"legacy","name":"My row","source":{"accountID":"account","libraryID":"movies",
+        "collectionID":"collection","title":"Collection","serverUserID":"viewer"},"cardStyle":"landscape","titleLogo":"on"}
+        """
+        let restored = try JSONDecoder().decode(CollectionSection.self, from: Data(legacy.utf8))
+        XCTAssertEqual(restored.id, "legacy")
+        XCTAssertEqual(restored.name, "My row")
+        XCTAssertEqual(restored.cardStyle, .landscape)
+        XCTAssertEqual(restored.titleLogo, .on)
+        XCTAssertEqual(restored.collectionSources.first?.collectionID, "collection")
+        XCTAssertEqual(restored.sources.count, 1)
+        XCTAssertEqual(try JSONDecoder().decode(CollectionSection.self, from: JSONEncoder().encode(restored)), restored)
+    }
+
+    @MainActor
+    func testMixedSourcesRoundTripInSelectionOrderAndRejectAnEmptyRow() throws {
+        let sources = section.sources + [
+            HomeContentSource(home: .watchlist),
+            .init(feed: .playlist("playlist"), accountID: "account", serverUserID: "viewer", libraryID: "movies", title: "Playlist"),
+            .init(feed: .library(.movie), accountID: "account", serverUserID: "viewer", libraryID: "movies", title: "Movies"),
+            .init(feed: .recommendation(sectionID: "popular", kind: .movie),
+                  accountID: "account", serverUserID: "viewer", libraryID: "movies", title: "Popular")
+        ]
+        let combined = CollectionSection(id: "combined", sources: sources + [sources[0]])
+        XCTAssertEqual(combined.sources, sources)
+        XCTAssertNil(combined.collectionItem)
+        XCTAssertEqual(try JSONDecoder().decode(CollectionSection.self, from: JSONEncoder().encode(combined)), combined)
+        let model = HomeLibraryVisibilityModel(store: MemoryHomeVisibilityStore())
+        try model.saveCollectionSection(combined, catalog: .init(libraries: []))
+        XCTAssertEqual(model.visibility.collectionSections, [combined])
+        XCTAssertThrowsError(try model.saveCollectionSection(.init(sources: []), catalog: .init(libraries: [])))
+        XCTAssertEqual(model.visibility.collectionSections, [combined])
+    }
+
+    func testSourceIdentityIncludesViewerAndFeedButNotDisplayName() {
+        let first = section.sources[0]
+        let renamed = HomeContentSource(
+            feed: first.feed, accountID: first.accountID, serverUserID: first.serverUserID,
+            libraryID: first.libraryID, title: "New server title"
+        )
+        XCTAssertEqual(first.id, renamed.id)
+        XCTAssertEqual(HomeContentSource.normalized([first, renamed]), [first])
+        XCTAssertNotEqual(first.id, HomeContentSource(
+            feed: first.feed, accountID: first.accountID, serverUserID: "other-viewer",
+            libraryID: first.libraryID, title: first.title
+        ).id)
+        XCTAssertNotEqual(first.id, HomeContentSource(
+            feed: .playlist("collection"), accountID: first.accountID, serverUserID: first.serverUserID,
+            libraryID: first.libraryID, title: first.title
+        ).id)
+    }
+
     private var section: CollectionSection {
         .init(id: "section", source: .init(
             accountID: "account", libraryID: "movies", collectionID: "collection",
@@ -15,12 +68,12 @@ final class CollectionSectionTests: XCTestCase {
         edited.cardStyle = .landscape
         edited.titleLogo = .off
         XCTAssertEqual(edited.title, "My movies")
-        XCTAssertEqual(edited.source, section.source)
+        XCTAssertEqual(edited.sources, section.sources)
         XCTAssertEqual(edited.rowID, .section("section"))
         XCTAssertNotEqual(edited.rowID, .server(accountID: "account", section: "section"))
-        XCTAssertEqual(edited.collectionItem.id, "collection")
-        XCTAssertEqual(edited.collectionItem.sourceAccountID, "account")
-        XCTAssertEqual(edited.collectionItem.libraryID, "movies")
+        XCTAssertEqual(edited.collectionItem?.id, "collection")
+        XCTAssertEqual(edited.collectionItem?.sourceAccountID, "account")
+        XCTAssertEqual(edited.collectionItem?.libraryID, "movies")
         XCTAssertEqual(try JSONDecoder().decode(CollectionSection.self, from: JSONEncoder().encode(edited)), edited)
         edited.name = " \n "
         XCTAssertEqual(edited.title, "Server collection")
@@ -33,7 +86,7 @@ final class CollectionSectionTests: XCTestCase {
             edited.cardStyle = style
             let restored = try JSONDecoder().decode(CollectionSection.self, from: JSONEncoder().encode(edited))
             XCTAssertEqual(restored, edited)
-            XCTAssertEqual(restored.source, section.source)
+            XCTAssertEqual(restored.sources, section.sources)
             XCTAssertEqual(restored.rowID, section.rowID)
         }
     }
@@ -47,7 +100,7 @@ final class CollectionSectionTests: XCTestCase {
         )
         XCTAssertEqual(section.titleLogo, .off)
         XCTAssertEqual(legacy.titleLogo, .off)
-        XCTAssertEqual(legacy.source, section.source)
+        XCTAssertEqual(legacy.sources, section.sources)
         XCTAssertEqual(LandscapeTitleLogo.allCases, [.on, .off])
         for mode in LandscapeTitleLogo.allCases {
             var edited = section
@@ -148,7 +201,7 @@ final class CollectionSectionTests: XCTestCase {
     func testTwoSectionsCanUseTheSameCollectionIndependently() throws {
         let model = HomeLibraryVisibilityModel(store: MemoryHomeVisibilityStore())
         let catalog = HomeSectionCatalog(libraries: [])
-        let second = CollectionSection(id: "second", name: "Featured picks", source: section.source, cardStyle: .landscape)
+        let second = CollectionSection(id: "second", name: "Featured picks", sources: section.sources, cardStyle: .landscape)
         try model.saveCollectionSection(section, catalog: catalog)
         try model.saveCollectionSection(second, catalog: catalog)
         try model.setHomeSectionVisible(false, id: section.rowID, catalog: catalog)

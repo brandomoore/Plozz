@@ -734,12 +734,17 @@ watch history and planning-list behavior are documented in
   the action from the editable rows. Edit/Done switches to native movement controls
   with no Hidden drop zone. Hero and Row style remain separate Home settings.
   Mobile uses the shared page inset without extra gutters.
-  Add row separates **From a collection** from **Available rows** not already
+  Add row separates **Custom row** from **Available rows** not already
   shown. Empty results omit the empty heading; discovery failures show source
-  errors and Retry instead of claiming no rows are available. Creation starts with
-  a library collection; the editor identifies that source as Content and its
-  presentation as Layout (see [Home terminology](../../CONTEXT.md)). Choose a source collection first,
-  then edit its name and Posters, Landscape or Featured presentation. A live
+  errors and Retry instead of claiming no rows are available. A custom row's
+  **Content** picker can combine collections, video playlists, video libraries,
+  recommendation feeds, Watchlist, Continue Watching, and Recently Added.
+  Selection order determines the interleave; duplicate titles retain their
+  existing cross-source identity and playback references. Unavailable saved
+  sources remain visible and removable. An existing row cannot lose its last
+  source; a new empty draft cannot be saved.
+  The editor separates Content from Layout (see [Home terminology](../../CONTEXT.md)).
+  Name the row and choose Posters, Landscape or Featured presentation. A live
   real-title preview leads the editor, with compact native **Layout** and **Logo**
   menu rows underneath rather than controls inside the preview.
   The preview uses the existing artwork preferences and spoiler protection.

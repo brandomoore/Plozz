@@ -105,6 +105,53 @@ publish only sanitized aggregates.
 
 ## Baseline → attribution → candidate → regression
 
+### Custom Home rows with multiple sources
+
+Select `home-single-collection-row`, `home-multi-source-row`,
+`home-overlapping-source-browse`, and `home-multi-source-presentation` on either
+platform. The first preserves the original one-collection workload. The preview
+scenario uses 2, 8, and 32 sources, each advertising 100,000 items with 1 ms
+synthetic request latency. The overlap scenario drains eight 200-item sources
+into 200 titles and verifies all eight playback references on every title.
+The presentation scenario mounts the production row with 20 merged titles and
+640 metadata credits, then completes 24 hosting-graph updates. Follow-up
+assertions verify that actual metadata changes reach the cards.
+
+Measured with Xcode 27.2, optimized Debug, one warmup and five retained samples:
+
+| Workload | tvOS 27.0 median wall / CPU | iPhone simulator, iOS 26.2 median wall / CPU | Completed work |
+| --- | --- | --- | --- |
+| One collection | 1.629 / 1.857 ms | 2.107 / 1.529 ms | 20 cards, 11 requests |
+| 2/8/32-source previews combined | 32.752 / 3.627 ms | 31.157 / 2.789 ms | 63 cards, 78 fetched records, 42 requests, maximum concurrency 3 |
+| Eight overlapping sources, complete browse | 307.756 / 308.689 ms | 468.378 / 466.146 ms | 1,600 records, 200 titles, 104 requests |
+| Mounted merged-row updates | 3.591 / 3.945 ms | 15.666 / 32.392 ms | All 24 updates, 20 cards; unchanged TV card inputs reused |
+
+The original tvOS single-collection baseline was 1.014 ms wall / 1.214 ms CPU
+with the same 20 cards and 11 requests. The extra cursor/dispatch machinery
+therefore has a small measurable cost, not a single-source speedup. An early
+multi-source implementation took about 24.5 seconds and 629 requests for the
+overlap workload; batched merging and adaptive page sizes removed repeated
+accumulated-record work. The final overlap median resident-memory increase was
+about 6.1 MiB on TV and 5.8 MiB on iOS; these are per-sample RSS deltas, not
+peak memory or leak measurements.
+
+The pager limits source requests to three concurrently, stages cursor updates
+until cancellation checks pass, and bounds sparse scans per advance. A sparse
+page may intentionally contain fewer cards while remaining pageable. Tests
+cover scan-boundary retention, cancellation, concurrent advances, partial
+failure/retry, uneven pages, shared preview requests, viewer/library scope,
+legacy persistence, and native-provider routing contracts.
+
+These are synthetic provider-contract and mounted-row measurements, not real
+server latency, artwork downloads, scroll FPS, or physical-device results.
+The UI timing excludes initial mounting and the metadata-change assertions.
+Local evidence is retained under `.build/performance/runs/`: baseline
+`b5dd691affbf411bb78377e798705c7e`, TV
+`dd6442d8f49b44a9a9ec225c9594316e`, and iOS
+`93d79c88fdaa4f228d436e5a72d3cc9b`. Compare the unchanged baseline workload
+directly: additional fixture coverage changes the whole-suite fingerprint,
+and host load varied between runs.
+
 ### Related loading while scrolling
 
 `related-cached-scroll` and `related-cold-scroll` mount the production Related row

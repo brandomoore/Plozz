@@ -461,7 +461,7 @@ public struct HomeView: View {
                 failures: viewModel.rowFailures,
                 skeletonLayout: viewModel.skeletonLayout
             )
-            let presentationRows = HomePresentationRow.resolve(
+            let presentationRows = viewModel.presentationRows(
                 rows: rows, content: content, visibility: visibility.visibility, liveTV: liveTV,
                 presentation: libraryPresentation?.settings ?? .default
             )
@@ -969,7 +969,7 @@ public struct HomeView: View {
                 isGlobalRowEnabled: visibility.isGlobalRowEnabled,
                 loadingRows: viewModel.loadingRows, failures: viewModel.rowFailures
             )
-            if HomePresentationRow.resolve(
+            if viewModel.presentationRows(
                 rows: rows, content: content, visibility: visibility.visibility, liveTV: liveTV,
                 presentation: libraryPresentation?.settings ?? .default
             ).isEmpty, visibility.visibility.rowSections(choices: choices).enabled.isEmpty {
@@ -1532,7 +1532,7 @@ public struct HomeView: View {
             )
         }
         var result: [(row: FocusHeroRow, source: FocusHomeRowSource)] = []
-        for presentation in HomePresentationRow.resolve(
+        for presentation in viewModel.presentationRows(
             rows: rows, content: content, visibility: visibility.visibility, liveTV: liveTV,
             presentation: libraryPresentation?.settings ?? .default, showsEmptySectionMessages: false
         ) {

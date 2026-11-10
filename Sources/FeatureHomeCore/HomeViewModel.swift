@@ -162,7 +162,7 @@ private final class HeroExposureState {
 /// network result is held unfiltered and toggles take effect without a reload.
 @MainActor
 @Observable
-public final class HomeViewModel {
+public final class HomeViewModel: HomeContentSnapshotProviding {
     public struct Content: Equatable, Sendable, Codable {
         public var continueWatching: [MediaItem]
         public var latest: [MediaItem]
@@ -253,6 +253,7 @@ public final class HomeViewModel {
                 collectionRows: collectionRows.map { row in
                     var row = row
                     row.items = Array(row.items.prefix(perRow))
+                    row.sourceItems = row.sourceItems.mapValues { Array($0.prefix(perRow)) }
                     return row
                 },
                 recentlyAddedCandidates: recentlyAddedCandidates.map {
@@ -300,11 +301,24 @@ public final class HomeViewModel {
                 collectionRows: collectionRows.map { row in
                     var row = row
                     row.items = row.items.map { $0.sanitizingArtworkCredentials() }
+                    row.sourceItems = row.sourceItems.mapValues { $0.map { $0.sanitizingArtworkCredentials() } }
                     return row
                 },
                 recentlyAddedCandidates: recentlyAddedCandidates?.map { $0.sanitizingArtworkCredentials() }
             )
         }
+    }
+
+    public func presentationRows(
+        rows: [HomeRow], content: Content, visibility: HomeLibraryVisibility,
+        liveTV: HomeLiveTVSnapshot = .empty, presentation: LibraryPresentationSettings = .default,
+        showsEmptySectionMessages: Bool = true
+    ) -> [HomePresentationRow] {
+        HomePresentationRow.resolve(
+            rows: rows, content: content, visibility: visibility, liveTV: liveTV, presentation: presentation,
+            showsEmptySectionMessages: showsEmptySectionMessages,
+            serverInfo: accounts.sourceServerInfo(), identitySources: identitySources
+        )
     }
 
     public private(set) var state: LoadState<Content> = .idle {
@@ -1616,11 +1630,13 @@ public final class HomeViewModel {
         _ rows: [HomeCollectionRow], previous: [HomeCollectionRow]
     ) -> [HomeCollectionRow] {
         rows.map { row in
-            guard row.isLoading || row.failure != nil,
+            guard row.items.isEmpty, row.isLoading || row.failure != nil,
                   let cached = previous.first(where: { $0.definition == row.definition }) else { return row }
             var row = row
             row.items = cached.items
             row.hasMore = cached.hasMore
+            row.sourceItems = cached.sourceItems
+            row.continuingSources = cached.continuingSources
             return row
         }
     }
@@ -1650,6 +1666,7 @@ public final class HomeViewModel {
         rows.map { row in
             var row = row
             row.items = row.items.map { apply(mutation, to: $0) }
+            row.sourceItems = row.sourceItems.mapValues { $0.map { apply(mutation, to: $0) } }
             return row
         }
     }
@@ -2036,9 +2053,28 @@ public final class HomeViewModel {
         if case let .loaded(content) = state { libraries = content.libraries } else { libraries = [] }
         return HomeRowBrowseFactory.make(
             row, accounts: accounts, visibility: visibility, libraries: libraries,
-            identitySources: identitySources, snapshotProvider: snapshot
+            identitySources: identitySources, snapshotProvider: snapshot,
+            homeSnapshot: { [weak self] kind in
+                guard let self else { throw AppError.notFound }
+                return try await self.contentSnapshot(for: kind, visibility: visibility)
+            }
         ) { [weak self] in
             self?.currentVisibility() == visibility
+        }
+    }
+
+    public func contentSnapshot(
+        for kind: HomeGlobalRow, visibility: HomeLibraryVisibility
+    ) throws -> [MediaItem] {
+        guard canLoadContent, currentVisibility() == visibility,
+              let content = state.value else { throw AppError.notFound }
+        switch kind {
+        case .continueWatching: return content.continueWatching
+        case .watchlist: return content.watchlist
+        case .recentlyAdded:
+            return HomeRecentlyAddedPolicy.items(
+                content.recentlyAddedCandidates ?? content.latest, hideWatched: visibility.hideWatchedRecentlyAdded, limit: .max
+            )
         }
     }
 
@@ -2329,10 +2365,12 @@ public final class HomeViewModel {
         guard change.profileNamespace == profileNamespace else { return }
         let visibility = currentVisibility()
         let sections = visibility.collectionSections.filter {
-            $0.source.accountID == change.accountID && $0.source.serverUserID == change.serverUserID
+            $0.collectionSources.contains {
+                $0.accountID == change.accountID && $0.serverUserID == change.serverUserID
+                    && $0.libraryKey.map(visibility.isEnabled) != false
+                    && accounts.contains(where: $0.matches)
+            }
                 && visibility.isHomeRowVisible(HomeRowChoice(collectionSection: $0))
-                && $0.source.libraryKey.map(visibility.isEnabled) != false
-                && accounts.contains(where: $0.source.matches)
         }
         guard !sections.isEmpty else { return }
         collectionRefreshQueue.enqueue(sections, now: .now)
@@ -2357,7 +2395,7 @@ public final class HomeViewModel {
         let visibility = currentVisibility()
         guard !isLoading, state.value != nil,
               visibility.collectionSections.contains(where: {
-                  $0.source.id == request.source.id
+                  $0.collectionSources.contains(where: { $0.id == request.source.id })
                       && visibility.isHomeRowVisible(HomeRowChoice(collectionSection: $0))
               }),
               request.source.libraryKey.map(visibility.isEnabled) != false,
@@ -2448,14 +2486,31 @@ public final class HomeViewModel {
         }
         collectionRefreshQueue.finish(request, now: .now)
         var changed = false
-        for index in content.collectionRows.indices where content.collectionRows[index].definition.source.id == request.source.id {
+        for index in content.collectionRows.indices where content.collectionRows[index].definition.collectionSources.contains(where: {
+            $0.id == request.source.id
+        }) {
             let previous = content.collectionRows[index]
+            guard let source = previous.definition.sources.first(where: { $0.collection?.id == request.source.id }) else {
+                continue
+            }
             switch result {
             case let .success(preview):
-                content.collectionRows[index].items = preview.items
-                content.collectionRows[index].hasMore = preview.hasMore
-                content.collectionRows[index].failure = nil
+                content.collectionRows[index].sourceItems[source] = preview.items
+                if preview.hasMore { content.collectionRows[index].continuingSources.insert(source.id) }
+                else { content.collectionRows[index].continuingSources.remove(source.id) }
+                content.collectionRows[index].sourceFailures[source.id] = nil
+                content.collectionRows[index] = content.collectionRows[index].resolving(
+                    home: [.continueWatching: content.continueWatching, .watchlist: content.watchlist,
+                           .recentlyAdded: HomeRecentlyAddedPolicy.items(
+                            content.recentlyAddedCandidates ?? content.latest,
+                            hideWatched: work.visibility.hideWatchedRecentlyAdded, limit: .max
+                           )], visibility: work.visibility, force: true,
+                    serverInfo: accounts.sourceServerInfo(), identitySources: identitySources
+                )
+                content.collectionRows[index].failure = content.collectionRows[index].definition.sources
+                    .compactMap { content.collectionRows[index].sourceFailures[$0.id] }.first
             case let .failure(error):
+                content.collectionRows[index].sourceFailures[source.id] = error
                 content.collectionRows[index].failure = error
             }
             content.collectionRows[index].isLoading = false

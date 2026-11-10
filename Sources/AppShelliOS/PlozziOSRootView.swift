@@ -1428,6 +1428,7 @@ struct PlozziOSTabShell: View {
             .frame(width: 0, height: 0)
         }
         .environment(sharedHomeViewModel)
+        .environment(\.homeContentSnapshot, sharedHomeViewModel)
         .onChange(of: appModel.allowsHomeContentLoading, initial: true) { _, allowed in
             if !allowed { sharedHomeViewModel.cancelPendingLoad() }
         }

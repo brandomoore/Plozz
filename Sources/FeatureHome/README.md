@@ -587,12 +587,24 @@ records on both platforms; error dialogs, playback routing and timeouts are unch
   Mobile library discovery follows the effective credential and Plex Home viewer,
   and cancelled lookups cannot restore another viewer's library choices.
   The section catalog enumerates optional recommendations only while the editor
-  is open. Authored collection rows have independent stable section identities,
-  names and poster, landscape or Featured presentation. Each references one account/viewer-qualified
-  collection through `MediaProvider`; its bounded preview preserves server order
-  and membership, showing supported movie and series cards without reconstructing
-  library membership. **See all** opens the existing collection browser using
-  the original provider ID. All card styles open title details.
+  is open. Authored custom rows have independent stable section identities,
+  names and poster, landscape or Featured presentation. `CollectionSection`
+  migrates its former singular collection reference to an ordered array of
+  `HomeContentSource` values. Sources can be collections, video playlists, video
+  libraries, recommendations, or shared Home feeds. Server sources retain their
+  account and exact viewer; provider requests always use native IDs.
+  `HomeContentPager` interleaves source order across uneven pages and merges
+  duplicates through `MediaItemMerger`. It serializes competing browse advances,
+  bounds provider fan-out to three, adapts page sizes for overlap, and caps scans
+  instead of draining a library to fill a preview. Cancellation commits no cursor
+  changes; partial source failures retain usable cards and remain retryable.
+  Custom Home rows share one three-request lane and reuse identical preview
+  pages during a Home load. Their work does not occupy native Home feed lanes.
+  **See all** uses the same composition in the poster grid. Recently Added
+  retains native full-feed paging rather than stopping at the Home preview;
+  Watchlist and Continue Watching use profile-curated runtime snapshots.
+  A traversal pins snapshots to prevent offset shifts, while Home presentation
+  reflects current shared-feed membership. All card styles open title details.
   This member-row layout is separate from collection **covers**. Lists and Home
   or Recommended rows containing only collection containers use a uniform
   Auto/Posters/Landscape cover layout. Overrides are profile-scoped and keyed
@@ -608,7 +620,9 @@ records on both platforms; error dialogs, playback routing and timeouts are unch
   failures remain distinct from empty collections.
   Successful Watchlist server writes (add **and** remove, including retries or
   reconciliation that actually writes) quietly refresh the affected profile/viewer's
-  configured collection rows. Read-only reconciliation, unchanged confirmations,
+  configured collections, including those inside mixed-source rows. Refreshing
+  one collection preserves the other sources' contents, failures and continuation.
+  Read-only reconciliation, unchanged confirmations,
   optimistic local intent, and navigation do not schedule this extra pass; normal
   Home loads retain their existing behavior. Watchlist/Watch Later/My List-like
   names are prioritized, not used to exclude custom names. Changes coalesce for 750 ms; one utility task

@@ -61,6 +61,25 @@ final class HeroCollectionPickerTests: XCTestCase {
     }
 
     @MainActor
+    func testVideoPlaylistModeDiscoversAndLoadsPlaylistsWithoutCollectionRequests() async {
+        let provider = PickerProvider()
+        let account = ResolvedAccount(account: Account(id: "a", from: provider.session), provider: provider)
+        let library = AggregatedLibrary(
+            accountID: "a", accountName: "Viewer", serverName: "Server", providerKind: .plex,
+            library: MediaLibrary(id: "movies", title: "Movies", kind: .movie)
+        )
+        XCTAssertEqual(
+            HeroCollectionPickerSource.available(libraries: [library], accounts: [account], playlists: true).map(\.id),
+            [.init(accountID: "a", libraryID: "movies")]
+        )
+        let model = HeroCollectionListModel(provider: provider, libraryID: "movies", playlists: true)
+        await model.loadNextPage()
+        XCTAssertEqual(model.items.map(\.id), ["video-playlist"])
+        XCTAssertFalse(model.hasMore)
+        XCTAssertNil(model.error)
+    }
+
+    @MainActor
     func testPersonalSourceUsesNativePersonalList() async {
         let model = HeroCollectionListModel(provider: PickerProvider(), libraryID: nil)
         await model.loadNextPage()
@@ -107,11 +126,15 @@ private actor PickerProvider: MediaProvider, CapabilityReporting {
         userID: "user", userName: "Viewer", deviceID: "device", accessToken: "test-token"
     )
     private var fails = true
-    nonisolated var capabilities: ProviderCapability { [.libraryCollections, .personalCollections] }
+    nonisolated var capabilities: ProviderCapability { [.libraryCollections, .personalCollections, .videoPlaylists] }
     func setFailure(_ value: Bool) { fails = value }
 
     func personalCollections(page: PageRequest) async throws -> MediaPage {
         .init(items: [.init(id: "personal", title: "Personal", kind: .collection)], startIndex: 0, totalCount: 1)
+    }
+
+    func videoPlaylists(in libraryID: String, page: PageRequest) async throws -> MediaPage {
+        .init(items: [.init(id: "video-playlist", title: "Playlist", kind: .playlist)], startIndex: 0, totalCount: 1)
     }
 
     func collections(in libraryID: String, page: PageRequest) async throws -> MediaPage {

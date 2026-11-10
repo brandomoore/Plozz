@@ -237,6 +237,27 @@ SCENARIOS = {
         "description": "Traverse 181 posters forward/backward with repeated overlapping windows across Jellyfin, Emby, Plex, and TMDB URLs.",
         "counters": ["candidateVisits", "distinctURLChecks", "queuedPreviews"],
     },
+    "home-single-collection-row": {
+        "suite": "core", "target": "FeatureHomeCoreTests",
+        "test": "CollectionSectionLoadingTests/testPerformanceSingleCollectionRow",
+        "file": "Tests/FeatureHomeCoreTests/CollectionSectionLoadingTests.swift",
+        "description": "Load a production authored Home row from a collection returning two items per page; verify twenty ordered items and bounded lookahead.",
+        "counters": ["rows", "items", "requests"],
+    },
+    "home-multi-source-row": {
+        "suite": "core", "target": "FeatureHomeCoreTests",
+        "test": "HomeContentPagerTests/testPerformanceMultipleSources",
+        "file": "Tests/FeatureHomeCoreTests/HomeContentPagerTests.swift",
+        "description": "Load 21 unique cards from 2, 8 and 32 sources of 100,000 titles, with bounded parallel requests.",
+        "counters": ["items", "requests", "fetched", "maximumConcurrent"],
+    },
+    "home-overlapping-source-browse": {
+        "suite": "core", "target": "FeatureHomeCoreTests",
+        "test": "HomeContentPagerTests/testPerformanceOverlappingSourcesBrowse",
+        "file": "Tests/FeatureHomeCoreTests/HomeContentPagerTests.swift",
+        "description": "Complete an eight-source browse of 1,600 overlapping records into 200 playable titles.",
+        "counters": ["items", "requests", "fetched", "maximumConcurrent"],
+    },
     "collection-discovery": {
         "suite": "network", "target": "ProviderJellyfinTests",
         "test": "CollectionDiscoveryPerformanceTests/testPerformanceCollectionDiscovery",
@@ -535,6 +556,12 @@ SCENARIOS = {
                      "stateNotifications", "continueWatchingItems", "metadataPeople",
                      "mainActorSchedulingSamples", "mainActorMaxSchedulingDelayMicroseconds",
                      "observedRowUpdates", "parentBodies", "cardInputBuilds"],
+    },
+    "home-multi-source-presentation": {
+        "suite": "ui", "test": "HomeMetadataPerformanceTests/testPerformanceMultiSourceRowPresentation",
+        "file": "Tests/PerformancePresentationSupport/HomeMetadataPerformanceTests.swift",
+        "description": "Update the mounted production row with 20 titles merged from eight sources and 640 metadata credits.",
+        "counters": ["rootUpdates", "parentBodies", "cardInputBuilds", "rowItems", "metadataPeople"],
     },
     "home-row-metadata-updates": {
         "suite": "ui", "test": "HomeMetadataPerformanceTests/testPerformanceProductionRowMetadataUpdates",

@@ -10,23 +10,14 @@ struct CollectionSectionCreationView: View {
     let libraries: [AggregatedLibrary]
     let accounts: [ResolvedAccount]
     var spoilerSettings: SpoilerSettings = .default
-    @State private var section: CollectionSection?
+    @State private var section = CollectionSection(sources: [])
 
     var body: some View {
-        if let section {
-            CollectionSectionSettingsView(
+        CollectionSectionSettingsView(
                 section: section, isNew: true, inventory: inventory,
                 visibility: visibility, libraries: libraries, accounts: accounts,
                 spoilerSettings: spoilerSettings
-            )
-        } else {
-            HeroCollectionPickerView(
-                selections: .constant([]),
-                libraries: libraries.filter { visibility.isEnabled($0.key) }, accounts: accounts
-            ) { selection in
-                section = CollectionSection(source: selection)
-            }
-        }
+        )
     }
 }
 
@@ -40,6 +31,7 @@ struct CollectionSectionSettingsView: View {
     let spoilerSettings: SpoilerSettings
     @State private var draft: CollectionSection
     @State private var preview: LoadState<[MediaItem]> = .idle
+    @State private var previewFailure: AppError?
     @State private var loadedRequest: PreviewRequest?
     @State private var retry = 0
     @State private var choosingSource = false
@@ -48,6 +40,7 @@ struct CollectionSectionSettingsView: View {
     @FocusState private var isNameFocused: Bool
     @Environment(CardStyleSettingsModel.self) private var cards
     @Environment(\.plozzMetrics) private var metrics
+    @Environment(\.homeContentSnapshot) private var homeSnapshot
     @SettingsPageDismiss private var dismiss
 
     init(
@@ -67,7 +60,7 @@ struct CollectionSectionSettingsView: View {
     }
 
     private struct PreviewRequest: Hashable {
-        let source: HeroCollectionSelection
+        let sources: [HomeContentSource]
         let credentials: [String]
         let disabledLibraries: Set<String>
         let profile: ObjectIdentifier
@@ -76,7 +69,7 @@ struct CollectionSectionSettingsView: View {
 
     private var request: PreviewRequest {
         PreviewRequest(
-            source: draft.source,
+            sources: draft.sources,
             credentials: accounts.flatMap {
                 [$0.account.id, $0.credentialRevision.rawValue.uuidString,
                  $0.provider.session.userID, $0.plexHomeUserID ?? ""]
@@ -128,13 +121,13 @@ struct CollectionSectionSettingsView: View {
                 #if os(tvOS)
                 if !isNew {
                     HomeEditorAutosavingNameInput(
-                        "Row name", name: draft.name, prompt: Text(verbatim: draft.source.title),
+                        "Row name", name: draft.name, prompt: Text(verbatim: draft.contentTitle),
                         identifier: "collection-section-name"
                     ) { value in
                         guard var saved = visibility.visibility.collectionSections.first(where: { $0.id == draft.id })
                         else { throw AppError.notFound }
                         saved.name = value
-                        guard accounts.contains(where: saved.source.matches) else { throw AppError.notFound }
+                        guard canSaveSources(saved) else { throw AppError.notFound }
                         try visibility.saveCollectionSection(saved, catalog: currentCatalog)
                         draft.name = value
                     }
@@ -180,16 +173,13 @@ struct CollectionSectionSettingsView: View {
         #elseif os(tvOS)
         .onChange(of: draft.cardStyle) { _, _ in saveExistingPreferences() }
         .onChange(of: draft.titleLogo) { _, _ in saveExistingPreferences() }
-        .onChange(of: draft.source) { _, _ in saveExistingPreferences() }
+        .onChange(of: draft.sources) { _, _ in saveExistingPreferences() }
         #endif
         .settingsPageDestination(isPresented: $choosingSource) {
-            HeroCollectionPickerView(
-                selections: .constant([draft.source]),
-                libraries: libraries.filter { visibility.isEnabled($0.key) }, accounts: accounts
-            ) { selection in
-                draft.source = selection
-                choosingSource = false
-            }
+            HomeContentPickerView(
+                selections: $draft.sources, inventory: inventory, visibility: visibility,
+                libraries: libraries, accounts: accounts, allowsEmpty: isNew
+            )
         }
         .task(id: request) { await loadPreview() }
         .environment(\.plozzCardCaptionView, .home)
@@ -204,7 +194,7 @@ struct CollectionSectionSettingsView: View {
 
     private var nameInput: some View {
         SettingsInputRow("Row name") {
-            TextField("Row name", text: $draft.name, prompt: Text(verbatim: draft.source.title))
+            TextField("Row name", text: $draft.name, prompt: Text(verbatim: draft.contentTitle))
                 .focused($isNameFocused)
                 .submitLabel(.done)
                 .onSubmit { isNameFocused = false }
@@ -229,7 +219,7 @@ struct CollectionSectionSettingsView: View {
             .plozzPageActionLabel()
         }
         .plozzPageActionButton()
-        .disabled(!accounts.contains(where: draft.source.matches))
+        .disabled(!canSaveSources(draft))
         .accessibilityIdentifier("collection-section-save")
     }
 
@@ -241,8 +231,8 @@ struct CollectionSectionSettingsView: View {
             else { throw AppError.notFound }
             saved.cardStyle = draft.cardStyle
             saved.titleLogo = draft.titleLogo
-            saved.source = draft.source
-            guard accounts.contains(where: saved.source.matches) else { throw AppError.notFound }
+            saved.sources = draft.sources
+            guard canSaveSources(saved) else { throw AppError.notFound }
             try visibility.saveCollectionSection(saved, catalog: currentCatalog)
             preferencesSaveFailed = false
         } catch {
@@ -257,23 +247,33 @@ struct CollectionSectionSettingsView: View {
         normalizedDraft.name = draft.name.trimmingCharacters(in: .whitespacesAndNewlines)
         var saved = visibility.visibility.collectionSections.first { $0.id == draft.id } ?? original
         saved.name = saved.name.trimmingCharacters(in: .whitespacesAndNewlines)
-        return accounts.contains(where: draft.source.matches) && (isNew || normalizedDraft != saved)
+        return canSaveSources(draft) && (isNew || normalizedDraft != saved)
     }
 
     private func save() throws {
-        guard accounts.contains(where: draft.source.matches) else { throw AppError.notFound }
+        guard canSaveSources(draft) else { throw AppError.notFound }
         try visibility.saveCollectionSection(draft, catalog: currentCatalog)
         isNameFocused = false
     }
 
+    private func canSaveSources(_ section: CollectionSection) -> Bool {
+        !section.sources.isEmpty && section.sources.allSatisfy(\.isValid)
+            && !section.availableSources(accounts: accounts, visibility: visibility.visibility).isEmpty
+    }
+
     @ViewBuilder
     private var previewContent: some View {
-        let current = loadedRequest == request ? preview : .loading
+        let current = draft.sources.isEmpty ? .empty : loadedRequest == request ? preview : .loading
+        if let previewFailure, loadedRequest == request {
+            InlineErrorMessage(Text(previewFailure.userMessage))
+            Button("Retry") { retry += 1 }.plozzActionButton(role: .secondary)
+        }
         switch current {
         case .idle, .loading:
-            ProgressView("Loading collection…")
+            ProgressView("Loading…")
         case .empty:
-            Text("No titles in this collection.").plozzForeground(.secondary)
+            if draft.sources.isEmpty { Text("Choose content for this row.").plozzForeground(.secondary) }
+            else { Text("No titles in this row.").plozzForeground(.secondary) }
         case let .failed(error):
             InlineErrorMessage(Text(error.userMessage))
             Button("Retry") { retry += 1 }.plozzActionButton(role: .secondary)
@@ -317,16 +317,35 @@ struct CollectionSectionSettingsView: View {
         let requested = request
         loadedRequest = requested
         preview = .loading
+        previewFailure = nil
+        guard !requested.sources.isEmpty else { preview = .empty; return }
         do {
-            guard let account = accounts.first(where: draft.source.matches) else { throw AppError.notFound }
-            let page = try await CollectionPreviewLoader.load(
-                selection: requested.source, limit: 20,
-                provider: account.provider, visibility: visibility.visibility
+            let accounts = accounts
+            let settings = visibility.visibility
+            let homeSnapshot = homeSnapshot
+            let sources = requested.sources.filter { $0.isAvailable(accounts: accounts, visibility: settings) }
+            guard !sources.isEmpty else { throw AppError.notFound }
+            let session = HomeContentPageLoader.Session(
+                accounts: accounts, visibility: settings, homeSnapshot: { kind in
+                    guard let homeSnapshot else { throw AppError.notFound }
+                    return try await homeSnapshot.contentSnapshot(for: kind, visibility: settings)
+                }
             )
+            let pager = HomeContentPager(sources: sources, serverInfo: accounts.sourceServerInfo()) { source, start, limit in
+                try await session.load(source, start: start, limit: limit)
+            }
+            let page = try await pager.loadNext(limit: 20)
             try Task.checkCancellation()
             guard request == requested else { return }
-            let items = page.items.filter { $0.kind == .movie || $0.kind == .series }
-            preview = items.isEmpty ? .empty : .loaded(items)
+            let items = page.items
+            previewFailure = sources.compactMap { page.failures[$0.id] }.first
+            if previewFailure != nil { PlozzLog.app.error("Some custom row preview sources could not be loaded") }
+            if items.isEmpty, let failure = previewFailure {
+                preview = .failed(failure)
+                previewFailure = nil
+            } else {
+                preview = items.isEmpty ? .empty : .loaded(items)
+            }
         } catch {
             guard !Task.isCancelled, !(error is CancellationError),
                   request == requested, (error as? AppError) != .cancelled else { return }

@@ -51,7 +51,9 @@ public struct HomePresentationRow: Identifiable, Equatable, Sendable {
         rows: [HomeRow], content: HomeViewModel.Content, visibility: HomeLibraryVisibility,
         liveTV: HomeLiveTVSnapshot = .empty,
         presentation: LibraryPresentationSettings = .default,
-        showsEmptySectionMessages: Bool = true
+        showsEmptySectionMessages: Bool = true,
+        serverInfo: [String: SourceServerInfo] = [:],
+        identitySources: (MediaItem) -> [MediaSourceRef] = { _ in [] }
     ) -> [Self] {
         let shared = HomeRowChoice.shared
         func entry(_ row: HomeRow) -> Self? {
@@ -151,10 +153,20 @@ public struct HomePresentationRow: Identifiable, Equatable, Sendable {
         }
         for var row in content.collectionRows {
             guard let definition = visibility.collectionSections.first(where: {
-                $0.id == row.definition.id && $0.source == row.definition.source
-            }), definition.source.libraryKey.map(visibility.isEnabled) != false else { continue }
+                $0.id == row.definition.id && $0.sources == row.definition.sources
+            }), definition.sources.contains(where: { $0.libraryKey.map(visibility.isEnabled) != false }) else { continue }
             row.definition = definition
-            row.items = row.items.filter { $0.isVisibleOnHome(isLibraryVisible: visibility.isEnabled) }
+            row = row.resolving(home: [
+                .continueWatching: content.continueWatching,
+                .watchlist: content.watchlist,
+                .recentlyAdded: HomeRecentlyAddedPolicy.items(
+                    content.recentlyAddedCandidates ?? content.latest,
+                    hideWatched: visibility.hideWatchedRecentlyAdded, limit: .max
+                )
+            ], visibility: visibility, serverInfo: serverInfo, identitySources: identitySources)
+            if !definition.sources.contains(where: \.isAccountWideHistory) {
+                row.items = row.items.filter { $0.isVisibleOnHome(isLibraryVisible: visibility.isEnabled) }
+            }
             available.append(Self(
                 choice: HomeRowChoice(collectionSection: definition), source: .library(row.row)
             ))
@@ -166,8 +178,8 @@ public struct HomePresentationRow: Identifiable, Equatable, Sendable {
                !visibility.isEnabled("\(source.accountID):\(library)") { continue }
             if let section = issue.choice.collectionSection {
                 guard visibility.collectionSections.contains(where: {
-                    $0.id == section.id && $0.source == section.source
-                }), section.source.libraryKey.map(visibility.isEnabled) != false else { continue }
+                    $0.id == section.id && $0.sources == section.sources
+                }), section.sources.contains(where: { $0.libraryKey.map(visibility.isEnabled) != false }) else { continue }
             }
             // Keep usable cached/partial content visible; its diagnostic remains in the editor.
             var browseItem: MediaItem?
