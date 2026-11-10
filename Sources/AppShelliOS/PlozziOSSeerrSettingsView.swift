@@ -169,7 +169,7 @@ struct PlozziOSSeerrSettingsView: View {
         }
         .settingsSearchAnchor("seerr-profile-user")
         SettingsInputRow("API key") {
-            SecureField("API key", text: $apiKey, prompt: Text(""))
+            SecureField("API key", text: $apiKey, prompt: Text(verbatim: ""))
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
         }

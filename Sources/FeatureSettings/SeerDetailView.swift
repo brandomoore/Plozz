@@ -100,7 +100,7 @@ struct SeerDetailView: View {
                 .settingsSearchAnchor("seerr-profile-user")
 
                 SettingsInputRow("Admin API key") {
-                    SecureField("Admin API key", text: $apiKeyText, prompt: Text(""))
+                    SecureField("Admin API key", text: $apiKeyText, prompt: Text(verbatim: ""))
                         .textContentType(.password)
                         #if os(tvOS) || os(iOS)
                         .autocorrectionDisabled(true)

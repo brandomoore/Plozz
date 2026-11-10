@@ -2435,6 +2435,226 @@
         }
       }
     },
+    "%@ Saved" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ تم الحفظ"
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ Запазено"
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ Desat"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ Uloženo"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ Gemt"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ Gespeichert"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ Αποθηκεύτηκε"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ Guardado"
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ ذخیره شد"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ Tallennettu"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ Enregistré"
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ נשמר"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ सहेजा गया"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ Spremljeno"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ Mentve"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ Tersimpan"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ Salvato"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ 保存済み"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ 저장됨"
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ Disimpan"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ Lagret"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ Opgeslagen"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ Zapisano"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ Salvo"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ Salvat"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ Сохранено"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ Uložené"
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ Shranjeno"
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ Sačuvano"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ Sparat"
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ บันทึกแล้ว"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ Kaydedildi"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ Збережено"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ Đã lưu"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ 已保存"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ 已儲存"
+          }
+        }
+      }
+    },
     "%@ Trending" : {
       "comment" : "Discovery feed name. The variable is the Simkl brand name; keep it unchanged and translate Trending.",
       "extractionState" : "stale",
@@ -271799,6 +272019,446 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "無法重設 iCloud 同步。請再試一次。"
+          }
+        }
+      }
+    },
+    "Couldn't save" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "تعذّر الحفظ"
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Неуспешно запазване"
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "No s’ha pogut desar"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Uložení se nezdařilo"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Kunne ikke gemme"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Speichern fehlgeschlagen"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Δεν ήταν δυνατή η αποθήκευση"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "No se pudo guardar"
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ذخیره نشد"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Tallennus epäonnistui"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Impossible d’enregistrer"
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "לא ניתן לשמור"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "सहेजा नहीं जा सका"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Spremanje nije uspjelo"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nem sikerült menteni"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Tidak dapat menyimpan"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Salvataggio non riuscito"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "保存できませんでした"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "저장하지 못함"
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Tidak dapat menyimpan"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Kunne ikke lagre"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Opslaan mislukt"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nie udało się zapisać"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Não foi possível salvar"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nu s-a putut salva"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Не удалось сохранить"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nepodarilo sa uložiť"
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Shranjevanje ni uspelo"
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Čuvanje nije uspelo"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Kunde inte spara"
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "บันทึกไม่สำเร็จ"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Kaydedilemedi"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Не вдалося зберегти"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Không thể lưu"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "无法保存"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "無法儲存"
+          }
+        }
+      }
+    },
+    "Couldn't save changes" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "تعذّر حفظ التغييرات"
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Промените не бяха запазени"
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "No s’han pogut desar els canvis"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Změny se nepodařilo uložit"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Kunne ikke gemme ændringer"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Änderungen konnten nicht gespeichert werden"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Δεν ήταν δυνατή η αποθήκευση των αλλαγών"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "No se pudieron guardar los cambios"
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "تغییرات ذخیره نشد"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Muutosten tallennus epäonnistui"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Impossible d’enregistrer les modifications"
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "לא ניתן לשמור את השינויים"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "बदलाव सहेजे नहीं जा सके"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Spremanje promjena nije uspjelo"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nem sikerült menteni a módosításokat"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Tidak dapat menyimpan perubahan"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Salvataggio delle modifiche non riuscito"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "変更を保存できませんでした"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "변경 사항을 저장하지 못함"
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Tidak dapat menyimpan perubahan"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Kunne ikke lagre endringene"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Wijzigingen opslaan mislukt"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nie udało się zapisać zmian"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Não foi possível salvar as alterações"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nu s-au putut salva modificările"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Не удалось сохранить изменения"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nepodarilo sa uložiť zmeny"
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Sprememb ni bilo mogoče shraniti"
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Čuvanje izmena nije uspelo"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Kunde inte spara ändringarna"
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "บันทึกการเปลี่ยนแปลงไม่สำเร็จ"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Değişiklikler kaydedilemedi"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Не вдалося зберегти зміни"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Không thể lưu thay đổi"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "无法保存更改"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "無法儲存變更"
           }
         }
       }
@@ -685940,6 +686600,226 @@
         }
       }
     },
+    "Rename" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "إعادة التسمية"
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Преименуване"
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Canvia el nom"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Přejmenovat"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Omdøb"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Umbenennen"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Μετονομασία"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Cambiar nombre"
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "تغییر نام"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nimeä uudelleen"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Renommer"
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "שינוי שם"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "नाम बदलें"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Preimenuj"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Átnevezés"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ubah nama"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Rinomina"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "名前を変更"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "이름 변경"
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Namakan Semula"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Gi nytt navn"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Naam wijzigen"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zmień nazwę"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Renomear"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Redenumește"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Переименовать"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Premenovať"
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Preimenuj"
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Preimenuj"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Byt namn"
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "เปลี่ยนชื่อ"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Yeniden adlandır"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Перейменувати"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Đổi tên"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "重命名"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "重新命名"
+          }
+        }
+      }
+    },
     "Rename source" : {
       "localizations" : {
         "ar" : {
@@ -732794,6 +733674,226 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "正在儲存媒體庫"
+          }
+        }
+      }
+    },
+    "Saving…" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "جارٍ الحفظ…"
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Запазване…"
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "S’està desant…"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ukládání…"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Gemmer…"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Wird gespeichert…"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Αποθήκευση…"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Guardando…"
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "در حال ذخیره…"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Tallennetaan…"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Enregistrement…"
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "מתבצעת שמירה…"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "सहेजा जा रहा है…"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Spremanje…"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Mentés…"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Menyimpan…"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Salvataggio…"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "保存中…"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "저장 중…"
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Menyimpan…"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Lagrer…"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Opslaan…"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zapisywanie…"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Salvando…"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Se salvează…"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Сохранение…"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ukladá sa…"
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Shranjevanje…"
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Čuvanje…"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Sparar…"
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "กำลังบันทึก…"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Kaydediliyor…"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Збереження…"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Đang lưu…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "正在保存…"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "儲存中…"
           }
         }
       }
@@ -966398,6 +967498,226 @@
         }
       }
     },
+    "Try again." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "حاول مرة أخرى."
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Опитайте отново."
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Torna-ho a provar."
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zkuste to znovu."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Prøv igen."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Versuche es erneut."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Δοκιμάστε ξανά."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Inténtalo de nuevo."
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "دوباره تلاش کنید."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Yritä uudelleen."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Réessayez."
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "נסו שוב."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "फिर कोशिश करें।"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Pokušajte ponovno."
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Próbálja újra."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Coba lagi."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Riprova."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "もう一度お試しください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "다시 시도하세요."
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Cuba lagi."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Prøv igjen."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Probeer het opnieuw."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Spróbuj ponownie."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Tente novamente."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Încearcă din nou."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Попробуйте ещё раз."
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Skúste to znova."
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Poskusite znova."
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Pokušajte ponovo."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Försök igen."
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ลองอีกครั้ง"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Tekrar deneyin."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Спробуйте ще раз."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Thử lại."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "请重试。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "請再試一次。"
+          }
+        }
+      }
+    },
     "Try an IPTV playlist instead." : {
       "localizations" : {
         "ar" : {
@@ -1106697,6 +1108017,7 @@
       }
     },
     "myplayer://play?url={url}" : {
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -1107143,223 +1108464,223 @@
         "ar" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "اضغط مطولًا على عنصر لإخفائه أو إظهاره أو نقله. تُخفى الصفحات التي لم تستخدمها بعد تلقائيًا ما لم تُظهرها يدويًا. تظل الإعدادات ظاهرة دائمًا."
+            "value" : "اضغط مطولًا على عنصر لإعادة تسميته أو إخفائه أو إظهاره أو نقله. تُخفى الصفحات غير المستخدمة تلقائيًا ما لم تُظهرها. تبقى الإعدادات ظاهرة دائمًا."
           }
         },
         "bg" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Натиснете и задръжте елемент, за да го скриете, покажете или преместите. Страниците, които още не сте използвали, се скриват автоматично, освен ако не ги покажете ръчно. Разделът „Настройки“ винаги остава видим."
+            "value" : "Натиснете и задръжте елемент, за да го преименувате, скриете, покажете или преместите. Неизползваните страници се скриват автоматично, освен ако не ги покажете. Настройките винаги остават видими."
           }
         },
         "ca" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Mantén premut un element per amagar-lo, mostrar-lo o moure'l. Les pàgines que encara no has utilitzat s'amaguen automàticament, tret que les mostris manualment. Configuració sempre és visible."
+            "value" : "Mantén premut un element per canviar-li el nom, amagar-lo, mostrar-lo o moure'l. Les pàgines que no fas servir s'amaguen automàticament tret que les mostris. La configuració sempre és visible."
           }
         },
         "cs" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Dlouhým stisknutím položku skryjete, zobrazíte nebo přesunete. Dosud nepoužité stránky se automaticky skrývají, pokud je sami nezobrazíte. Nastavení zůstává vždy viditelné."
+            "value" : "Podržením položky ji můžete přejmenovat, skrýt, zobrazit nebo přesunout. Nepoužívané stránky se automaticky skryjí, pokud je nezobrazíte. Nastavení zůstává vždy viditelné."
           }
         },
         "da" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Tryk og hold på et element for at skjule, vise eller flytte det. Sider, du endnu ikke har brugt, skjules automatisk, medmindre du viser dem manuelt. Siden Indstillinger er altid synlig."
+            "value" : "Tryk og hold på et element for at omdøbe, skjule, vise eller flytte det. Ubrugte sider skjules automatisk, medmindre du viser dem. Indstillinger vises altid."
           }
         },
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Halte ein Element gedrückt, um es auszublenden, einzublenden oder zu verschieben. Noch nicht genutzte Seiten werden automatisch ausgeblendet, sofern du sie nicht manuell einblendest. Die Einstellungen bleiben immer sichtbar."
+            "value" : "Halte ein Element gedrückt, um es umzubenennen, auszublenden, einzublenden oder zu verschieben. Nicht genutzte Seiten werden automatisch ausgeblendet, sofern du sie nicht einblendest. Einstellungen bleiben immer sichtbar."
           }
         },
         "el" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Πατήστε παρατεταμένα ένα στοιχείο για να το αποκρύψετε, να το εμφανίσετε ή να το μετακινήσετε. Οι σελίδες που δεν χρησιμοποιούνται αποκρύπτονται αυτόματα, εκτός αν επιλέξετε να τις εμφανίσετε. Οι Ρυθμίσεις παραμένουν πάντα ορατές."
+            "value" : "Πατήστε παρατεταμένα ένα στοιχείο για μετονομασία, απόκρυψη, εμφάνιση ή μετακίνηση. Οι σελίδες που δεν χρησιμοποιούνται αποκρύπτονται αυτόματα, εκτός αν επιλέξετε να εμφανίζονται. Οι Ρυθμίσεις παραμένουν πάντα ορατές."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Press and hold an item to hide, show, or move it. Unused pages hide automatically unless you show them. Settings always stays visible."
+            "value" : "Press and hold an item to rename, hide, show, or move it. Unused pages hide automatically unless you show them. Settings always stays visible."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Mantén pulsado un elemento para ocultarlo, mostrarlo o moverlo. Las páginas que no se usan se ocultan automáticamente, salvo que elijas mostrarlas. Ajustes siempre permanece visible."
+            "value" : "Mantén pulsado un elemento para cambiarle el nombre, ocultarlo, mostrarlo o moverlo. Las páginas que no se usan se ocultan automáticamente, a menos que elijas mostrarlas. La opción Ajustes siempre está visible."
           }
         },
         "fa" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "برای پنهان کردن، نمایش یا جابه‌جایی یک مورد، آن را فشار دهید و نگه دارید. صفحه‌های بدون استفاده خودکار پنهان می‌شوند، مگر اینکه نمایش آن‌ها را انتخاب کنید. تنظیمات همیشه نمایان می‌ماند."
+            "value" : "برای تغییر نام، پنهان کردن، نمایش دادن یا جابه‌جایی یک مورد، آن را فشار دهید و نگه دارید. صفحه‌های استفاده‌نشده به‌طور خودکار پنهان می‌شوند، مگر اینکه نمایش آن‌ها را انتخاب کنید. تنظیمات همیشه قابل مشاهده است."
           }
         },
         "fi" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Piilota, näytä tai siirrä kohde painamalla sitä pitkään. Käyttämättömät sivut piilotetaan automaattisesti, ellet valitse niiden näyttämistä. Asetukset ovat aina näkyvissä."
+            "value" : "Nimeä kohde uudelleen, piilota, näytä tai siirrä se painamalla sitä pitkään. Käyttämättömät sivut piilotetaan automaattisesti, ellet valitse niitä näytettäviksi. Asetukset pysyvät aina näkyvissä."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Appuyez longuement sur un élément pour le masquer, l’afficher ou le déplacer. Les pages inutilisées sont masquées automatiquement, sauf si vous choisissez de les afficher. Les réglages restent toujours visibles."
+            "value" : "Appuyez longuement sur un élément pour le renommer, le masquer, l’afficher ou le déplacer. Les pages inutilisées sont masquées automatiquement, sauf si vous choisissez de les afficher. Les Réglages restent toujours visibles."
           }
         },
         "he" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "לחיצה ממושכת על פריט מאפשרת להסתיר, להציג או להזיז אותו. עמודים שאינם בשימוש מוסתרים אוטומטית, אלא אם בחרת להציג אותם. ההגדרות תמיד נשארות גלויות."
+            "value" : "לחצו לחיצה ארוכה על פריט כדי לשנות את שמו, להסתיר, להציג או להזיז אותו. דפים שאינם בשימוש מוסתרים אוטומטית, אלא אם תבחרו להציג אותם. ההגדרות תמיד נשארות גלויות."
           }
         },
         "hi" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "किसी आइटम को छिपाने, दिखाने या खिसकाने के लिए उसे दबाकर रखें। इस्तेमाल न होने वाले पेज अपने-आप छिप जाते हैं, जब तक आप उन्हें मैन्युअल रूप से दिखाना न चुनें। सेटिंग्स हमेशा दिखाई देती हैं।"
+            "value" : "किसी आइटम का नाम बदलने, उसे छिपाने, दिखाने या कहीं और ले जाने के लिए उसे दबाकर रखें। इस्तेमाल न होने वाले पेज अपने-आप छिप जाते हैं, जब तक आप उन्हें दिखाना न चुनें। सेटिंग्स हमेशा दिखती हैं।"
           }
         },
         "hr" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Pritisnite i držite stavku da biste je sakrili, prikazali ili premjestili. Stranice koje ne koristite automatski se skrivaju, osim ako ih ručno postavite kao vidljive. Postavke su uvijek vidljive."
+            "value" : "Pritisnite i držite stavku da biste je preimenovali, sakrili, prikazali ili premjestili. Nekorištene stranice automatski se skrivaju osim ako ih odlučite prikazati. Postavke su uvijek vidljive."
           }
         },
         "hu" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Tartsa hosszan lenyomva az elemet az elrejtéshez, megjelenítéshez vagy áthelyezéshez. A nem használt oldalak automatikusan elrejtődnek, kivéve, ha kézzel láthatóra állítja őket. A Beállítások oldal mindig látható marad."
+            "value" : "Átnevezéshez, elrejtéshez, megjelenítéshez vagy áthelyezéshez tartsa nyomva az elemet. A nem használt oldalak automatikusan elrejtődnek, hacsak nem állítja be a megjelenítésüket. A Beállítások menüpont mindig látható."
           }
         },
         "id" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Tekan dan tahan item untuk menyembunyikan, menampilkan, atau memindahkannya. Halaman yang tidak digunakan otomatis disembunyikan, kecuali Anda memilih untuk menampilkannya secara manual. Pengaturan selalu terlihat."
+            "value" : "Tekan dan tahan item untuk mengubah nama, menyembunyikan, menampilkan, atau memindahkannya. Halaman yang tidak digunakan otomatis disembunyikan kecuali Anda memilih untuk menampilkannya. Pengaturan selalu terlihat."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Tieni premuto un elemento per nasconderlo, mostrarlo o spostarlo. Le pagine inutilizzate si nascondono automaticamente, a meno che tu non scelga di mostrarle manualmente. La pagina Impostazioni resta sempre visibile."
+            "value" : "Tieni premuto un elemento per rinominarlo, nasconderlo, mostrarlo o spostarlo. Le pagine non utilizzate vengono nascoste automaticamente, a meno che tu non scelga di mostrarle. La voce Impostazioni resta sempre visibile."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "項目を長押しすると、非表示・表示・移動ができます。手動で表示を選んだページを除き、使っていないページは自動的に非表示になります。「設定」は常に表示されます。"
+            "value" : "項目を長押しすると、名前の変更、非表示、表示、移動ができます。使用していないページは、表示するように指定しない限り自動的に非表示になります。設定は常に表示されます。"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "항목을 길게 눌러 숨기거나 표시하거나 이동하세요. 사용하지 않는 페이지는 직접 표시하도록 설정하지 않으면 자동으로 숨겨집니다. 설정은 항상 표시됩니다."
+            "value" : "항목을 길게 누르면 이름 변경, 숨기기, 표시, 이동을 할 수 있습니다. 사용하지 않는 페이지는 직접 표시하지 않으면 자동으로 숨겨집니다. 설정은 항상 표시됩니다."
           }
         },
         "ms" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Tekan dan tahan item untuk menyembunyikan, memaparkan atau memindahkannya. Halaman yang tidak digunakan disembunyikan secara automatik melainkan anda memilih untuk memaparkannya secara manual. Tetapan sentiasa dipaparkan."
+            "value" : "Tekan dan tahan item untuk menamakan semula, menyembunyikan, menunjukkan atau mengalihkannya. Halaman yang tidak digunakan disembunyikan secara automatik melainkan anda menunjukkannya. Tetapan sentiasa kelihatan."
           }
         },
         "nb" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Trykk og hold på et element for å skjule, vise eller flytte det. Ubrukte sider skjules automatisk med mindre du velger å vise dem manuelt. Innstillinger vises alltid."
+            "value" : "Trykk og hold på et element for å gi det nytt navn, skjule, vise eller flytte det. Ubrukte sider skjules automatisk med mindre du velger å vise dem. Innstillinger vises alltid."
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Houd een onderdeel ingedrukt om het te verbergen, te tonen of te verplaatsen. Ongebruikte pagina’s worden automatisch verborgen, tenzij je ervoor kiest ze handmatig te tonen. De pagina Instellingen blijft altijd zichtbaar."
+            "value" : "Houd een item ingedrukt om de naam te wijzigen, het te verbergen, zichtbaar te maken of te verplaatsen. Ongebruikte pagina’s worden automatisch verborgen, tenzij je ze zichtbaar maakt. De optie Instellingen blijft altijd zichtbaar."
           }
         },
         "pl" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Naciśnij i przytrzymaj element, aby go ukryć, pokazać lub przenieść. Nieużywane strony są automatycznie ukrywane, chyba że ręcznie włączysz ich wyświetlanie. Ustawienia są zawsze widoczne."
+            "value" : "Naciśnij i przytrzymaj element, aby zmienić jego nazwę, ukryć go, pokazać lub przenieść. Nieużywane strony są automatycznie ukrywane, chyba że je pokażesz. Ustawienia są zawsze widoczne."
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Mantenha um item pressionado para ocultar, mostrar ou mover. Páginas não utilizadas são ocultadas automaticamente, a menos que você escolha mostrá-las manualmente. A página Ajustes permanece sempre visível."
+            "value" : "Mantenha um item pressionado para renomear, ocultar, mostrar ou mover. Páginas não utilizadas são ocultadas automaticamente, a menos que você as mostre. A opção Ajustes fica sempre visível."
           }
         },
         "ro" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Apasă lung pe un element pentru a-l ascunde, afișa sau muta. Paginile nefolosite se ascund automat, cu excepția celor pe care alegi să le afișezi. Setările rămân mereu vizibile."
+            "value" : "Ține apăsat un element pentru a-l redenumi, ascunde, afișa sau muta. Paginile neutilizate se ascund automat dacă nu alegi să le afișezi. Setările rămân mereu vizibile."
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Нажмите и удерживайте элемент, чтобы скрыть, показать или переместить его. Неиспользуемые страницы скрываются автоматически, кроме тех, которые вы явно выбрали для показа. Настройки всегда остаются видимыми."
+            "value" : "Нажмите и удерживайте элемент, чтобы переименовать, скрыть, показать или переместить его. Неиспользуемые страницы скрываются автоматически, если вы не включили их отображение. Настройки всегда видны."
           }
         },
         "sk" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Podržaním položky ju môžete skryť, zobraziť alebo presunúť. Nepoužívané stránky sa skryjú automaticky, okrem tých, ktoré výslovne nastavíte ako viditeľné. Nastavenia zostávajú vždy viditeľné."
+            "value" : "Podržaním položky ju môžete premenovať, skryť, zobraziť alebo presunúť. Nepoužívané stránky sa automaticky skrývajú, ak ich nezobrazíte. Nastavenia zostávajú vždy viditeľné."
           }
         },
         "sl" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Pridržite element, da ga skrijete, prikažete ali premaknete. Neuporabljene strani se samodejno skrijejo, razen tistih, za katere izrecno izberete prikaz. Nastavitve so vedno vidne."
+            "value" : "Pridržite element, da ga preimenujete, skrijete, prikažete ali premaknete. Neuporabljene strani se samodejno skrijejo, razen če jih prikažete. Nastavitve so vedno vidne."
           }
         },
         "sr-Latn" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Pritisnite i zadržite stavku da biste je sakrili, prikazali ili premestili. Nekorišćene stranice automatski se skrivaju, osim onih koje izričito odaberete da prikažete. Podešavanja su uvek vidljiva."
+            "value" : "Pritisnite i zadržite stavku da biste je preimenovali, sakrili, prikazali ili pomerili. Stranice koje ne koristite automatski se skrivaju, osim ako ih prikažete. Podešavanja su uvek vidljiva."
           }
         },
         "sv" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Håll ned ett objekt för att dölja, visa eller flytta det. Oanvända sidor döljs automatiskt, utom de som du uttryckligen väljer att visa. Inställningar visas alltid."
+            "value" : "Håll ned ett objekt för att byta namn på, dölja, visa eller flytta det. Oanvända sidor döljs automatiskt om du inte väljer att visa dem. Inställningar visas alltid."
           }
         },
         "th" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "กดรายการค้างไว้เพื่อซ่อน แสดง หรือย้าย หน้าที่ไม่ได้ใช้จะถูกซ่อนโดยอัตโนมัติ เว้นแต่คุณจะเลือกให้แสดง การตั้งค่าจะแสดงอยู่เสมอ"
+            "value" : "กดรายการค้างไว้เพื่อเปลี่ยนชื่อ ซ่อน แสดง หรือย้าย หน้าที่ไม่ได้ใช้จะถูกซ่อนโดยอัตโนมัติ เว้นแต่คุณจะเลือกให้แสดง การตั้งค่าจะแสดงอยู่เสมอ"
           }
         },
         "tr" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Bir öğeyi gizlemek, göstermek veya taşımak için basılı tutun. Siz göstermeyi seçmedikçe kullanılmayan sayfalar otomatik olarak gizlenir. Ayarlar her zaman görünür kalır."
+            "value" : "Bir öğeyi yeniden adlandırmak, gizlemek, göstermek veya taşımak için basılı tutun. Kullanılmayan sayfalar, siz göstermediğiniz sürece otomatik olarak gizlenir. Ayarlar her zaman görünür kalır."
           }
         },
         "uk" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Натисніть і утримуйте елемент, щоб приховати, показати або перемістити його. Невикористані сторінки автоматично приховуються, крім тих, які ви показали вручну. Налаштування завжди залишаються видимими."
+            "value" : "Натисніть і утримуйте елемент, щоб перейменувати, приховати, показати або перемістити його. Сторінки, що не використовуються, автоматично приховуються, якщо ви не ввімкнете їх показ. Налаштування завжди залишаються видимими."
           }
         },
         "vi" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Nhấn và giữ một mục để ẩn, hiện hoặc di chuyển. Các trang không dùng sẽ tự động ẩn, trừ khi bạn chọn hiển thị chúng. Mục Cài đặt luôn hiển thị."
+            "value" : "Nhấn giữ một mục để đổi tên, ẩn, hiện hoặc di chuyển mục đó. Các trang không dùng sẽ tự động ẩn trừ khi bạn chọn hiện chúng. Cài đặt luôn hiển thị."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "长按项目可隐藏、显示或移动。未使用的页面会自动隐藏，除非你手动选择显示它们。“设置”始终显示。"
+            "value" : "长按项目可重命名、隐藏、显示或移动。未使用的页面会自动隐藏，除非你选择显示它们。设置始终可见。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "長按項目可隱藏、顯示或移動。未使用的頁面會自動隱藏，除非你手動選擇顯示它們。「設定」一律保持顯示。"
+            "value" : "長按項目即可重新命名、隱藏、顯示或移動。未使用的頁面會自動隱藏，除非你選擇顯示它們。設定會一直顯示。"
           }
         }
       }
@@ -1107371,223 +1108692,223 @@
         "ar" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "اضغط مطولًا لإخفاء العناصر أو إظهارها أو تغيير ترتيبها. تبقى الإعدادات ثابتة حتى تنقلها. يمكنك أيضًا الوصول إلى الإعدادات من قائمة اختيار الملف الشخصي."
+            "value" : "اضغط مطولًا لإعادة التسمية أو الإخفاء أو الإظهار أو النقل. تبقى الإعدادات ثابتة حتى تنقلها. تتوفر الإعدادات أيضًا في محدِّد الملف الشخصي."
           }
         },
         "bg" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Натиснете и задръжте, за да скриете, покажете или преместите елемент. „Настройки“ остават фиксирани, докато не ги преместите. Достъпни са и от менюто за избор на профил."
+            "value" : "Натиснете и задръжте за преименуване, скриване, показване или преместване. Настройките остават на мястото си, докато не ги преместите. Настройките са достъпни и от менюто за избор на профил."
           }
         },
         "ca" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Mantén premut per amagar, mostrar o reordenar. «Configuració» es manté fixa fins que la moguis. També hi pots accedir des del selector de perfils."
+            "value" : "Mantén premut per canviar el nom, amagar, mostrar o moure. La configuració es manté fixa fins que la mous. També és accessible des del selector de perfils."
           }
         },
         "cs" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Stisknutím a podržením můžete položky skrýt, zobrazit nebo přesunout. Nastavení zůstává připnuté, dokud ho nepřesunete. Najdete ho také v nabídce pro výběr profilu."
+            "value" : "Podržením můžete položku přejmenovat, skrýt, zobrazit nebo přesunout. Nastavení zůstává na místě, dokud ho nepřesunete. Nastavení najdete také ve výběru profilu."
           }
         },
         "da" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Tryk og hold nede for at skjule, vise eller flytte. Indstillinger forbliver fastgjort, indtil du flytter dem. Du finder også Indstillinger i profilvælgeren."
+            "value" : "Tryk og hold for at omdøbe, skjule, vise eller flytte. Indstillinger har en fast plads, indtil du flytter siden. Indstillinger findes også i profilvælgeren."
           }
         },
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Zum Ausblenden, Einblenden oder Verschieben gedrückt halten. „Einstellungen“ bleiben angeheftet, bis du sie verschiebst. Du findest sie auch in der Profilauswahl."
+            "value" : "Halte ein Element gedrückt, um es umzubenennen, auszublenden, einzublenden oder zu verschieben. Einstellungen bleiben an ihrem festen Platz, bis du sie verschiebst. Einstellungen findest du auch in der Profilauswahl."
           }
         },
         "el" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Πατήστε παρατεταμένα για απόκρυψη, εμφάνιση ή μετακίνηση. Οι Ρυθμίσεις μένουν σταθερές μέχρι να τις μετακινήσετε. Οι Ρυθμίσεις είναι επίσης διαθέσιμες στην επιλογή προφίλ."
+            "value" : "Πατήστε παρατεταμένα για μετονομασία, απόκρυψη, εμφάνιση ή μετακίνηση. Οι Ρυθμίσεις παραμένουν σε σταθερή θέση μέχρι να τις μετακινήσετε. Οι Ρυθμίσεις είναι επίσης διαθέσιμες στον επιλογέα προφίλ."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Press and hold to hide, show, or move. Settings stays fixed until moved. Settings is also in the profile picker."
+            "value" : "Press and hold to rename, hide, show, or move. Settings stays fixed until moved. Settings is also in the profile picker."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Mantén pulsado para ocultar, mostrar o mover. Ajustes permanece fijo hasta que lo muevas. También puedes acceder a Ajustes desde el selector de perfiles."
+            "value" : "Mantén pulsado para cambiar el nombre, ocultar, mostrar o mover. La opción Ajustes permanece fija hasta que la muevas. También está en el selector de perfiles."
           }
         },
         "fa" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "برای پنهان کردن، نمایش یا جابه‌جایی، فشار دهید و نگه دارید. تنظیمات تا زمانی که آن را جابه‌جا نکنید، ثابت می‌ماند. تنظیمات در بخش انتخاب نمایه نیز در دسترس است."
+            "value" : "برای تغییر نام، پنهان کردن، نمایش دادن یا جابه‌جایی، فشار دهید و نگه دارید. تنظیمات تا زمانی که آن را جابه‌جا نکنید، در جای خود ثابت می‌ماند. تنظیمات در انتخابگر نمایه نیز در دسترس است."
           }
         },
         "fi" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Piilota, näytä tai siirrä painamalla pitkään. Asetukset pysyvät paikallaan, kunnes siirrät niitä. Asetukset ovat myös profiilinvalitsimessa."
+            "value" : "Nimeä uudelleen, piilota, näytä tai siirrä painamalla pitkään. Asetukset pysyvät paikallaan, kunnes siirrät ne. Asetukset löytyvät myös profiilivalitsimesta."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Appuyez longuement pour masquer, afficher ou déplacer. La rubrique Réglages reste fixe jusqu’à ce que vous la déplaciez. Elle est aussi accessible depuis le sélecteur de profil."
+            "value" : "Appuyez longuement pour renommer, masquer, afficher ou déplacer. Les Réglages restent en place jusqu’à ce que vous les déplaciez. Ils sont aussi accessibles depuis le sélecteur de profils."
           }
         },
         "he" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "לחצו לחיצה ארוכה כדי להסתיר, להציג או להזיז. ההגדרות נשארות קבועות עד שתזיזו אותן. אפשר לגשת להגדרות גם דרך בורר הפרופילים."
+            "value" : "לחצו לחיצה ארוכה כדי לשנות שם, להסתיר, להציג או להזיז. ההגדרות נשארות במיקום קבוע עד שתזיזו אותן. ההגדרות זמינות גם בבורר הפרופילים."
           }
         },
         "hi" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "छिपाने, दिखाने या क्रम बदलने के लिए रिमोट का बटन दबाकर रखें। सेटिंग्स अपनी जगह पर स्थिर रहती हैं, जब तक आप उन्हें दूसरी जगह नहीं ले जाते। सेटिंग्स प्रोफ़ाइल चुनने के मेनू में भी मिलती हैं।"
+            "value" : "नाम बदलने, छिपाने, दिखाने या कहीं और ले जाने के लिए दबाकर रखें। सेटिंग्स तब तक अपनी जगह पर रहती हैं, जब तक आप उन्हें कहीं और न ले जाएँ। सेटिंग्स प्रोफ़ाइल चुनने वाले मेन्यू में भी उपलब्ध हैं।"
           }
         },
         "hr" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Za skrivanje, prikaz ili promjenu redoslijeda pritisnite i držite tipku na daljinskom upravljaču. Postavke ostaju na istom mjestu dok ih ne premjestite. Postavke su dostupne i u izborniku profila."
+            "value" : "Pritisnite i držite za preimenovanje, skrivanje, prikazivanje ili premještanje. Postavke ostaju na istom mjestu dok ih ne premjestite. Postavke su dostupne i u izborniku za odabir profila."
           }
         },
         "hu" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Elrejtéshez, megjelenítéshez vagy átrendezéshez tartsa lenyomva a távirányító gombját. A Beállítások menü rögzítve marad, amíg át nem helyezi. A profilválasztóból is elérhető."
+            "value" : "Átnevezéshez, elrejtéshez, megjelenítéshez vagy áthelyezéshez tartsa nyomva. A Beállítások menüpont a helyén marad, amíg át nem helyezi. A profilválasztóban is elérhető."
           }
         },
         "id" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Tekan dan tahan tombol remote untuk menyembunyikan, menampilkan, atau mengubah urutan. Pengaturan tetap di tempatnya sampai Anda memindahkannya. Pengaturan juga tersedia di pemilih profil."
+            "value" : "Tekan dan tahan untuk mengubah nama, menyembunyikan, menampilkan, atau memindahkan. Pengaturan tetap di tempatnya hingga dipindahkan. Pengaturan juga tersedia di pemilih profil."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Tieni premuto per nascondere, mostrare o riordinare. La voce Impostazioni resta fissa finché non la sposti. Puoi aprire Impostazioni anche dal selettore dei profili."
+            "value" : "Tieni premuto per rinominare, nascondere, mostrare o spostare. La voce Impostazioni resta fissa finché non la sposti. Impostazioni è disponibile anche nel selettore dei profili."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "リモコンのボタンを長押しすると、非表示・表示・並べ替えができます。「設定」は移動するまで固定されます。「設定」はプロファイル選択メニューからも開けます。"
+            "value" : "長押しすると、名前の変更、非表示、表示、移動ができます。設定は移動するまで固定されます。設定はプロファイル選択からも開けます。"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "길게 눌러 항목을 숨기거나 표시하거나 이동하세요. 설정은 직접 옮기기 전까지 고정됩니다. 프로필 선택 화면에서도 설정을 열 수 있습니다."
+            "value" : "길게 누르면 이름 변경, 숨기기, 표시, 이동을 할 수 있습니다. 설정은 이동하기 전까지 고정되어 있습니다. 프로필 선택 메뉴에서도 설정을 열 수 있습니다."
           }
         },
         "ms" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Tekan dan tahan untuk menyembunyikan, memaparkan atau mengalihkan item. Tetapan kekal di tempatnya sehingga anda mengalihkannya. Tetapan juga tersedia dalam pemilih profil."
+            "value" : "Tekan dan tahan untuk menamakan semula, menyembunyikan, menunjukkan atau mengalihkan. Tetapan kekal di tempatnya sehingga dialihkan. Tetapan juga tersedia dalam pemilih profil."
           }
         },
         "nb" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Trykk og hold for å skjule, vise eller flytte elementer. Innstillinger er festet til du flytter menypunktet. Du finner også Innstillinger i profilvelgeren."
+            "value" : "Trykk og hold for å gi nytt navn, skjule, vise eller flytte. Menyvalget Innstillinger har en fast plass til du flytter det. Innstillinger finnes også i profilvelgeren."
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Houd ingedrukt om items te verbergen, te tonen of te verplaatsen. Het item Instellingen blijft op zijn plek totdat je het verplaatst. Je kunt Instellingen ook openen via de profielkiezer."
+            "value" : "Houd ingedrukt om de naam te wijzigen, te verbergen, zichtbaar te maken of te verplaatsen. De optie Instellingen blijft op een vaste plek totdat je deze verplaatst. Je vindt Instellingen ook in de profielkiezer."
           }
         },
         "pl" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Naciśnij i przytrzymaj, aby ukryć, pokazać lub przenieść pozycję. Ustawienia są przypięte, dopóki ich nie przeniesiesz. Ustawienia są też dostępne w menu wyboru profilu."
+            "value" : "Naciśnij i przytrzymaj, aby zmienić nazwę, ukryć, pokazać lub przenieść. Ustawienia pozostają w stałym miejscu, dopóki ich nie przeniesiesz. Ustawienia są też dostępne w menu wyboru profilu."
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Mantenha pressionado para ocultar, mostrar ou mover itens. O item Ajustes fica fixo até você movê-lo. Você também pode acessar Ajustes pelo seletor de perfis."
+            "value" : "Mantenha pressionado para renomear, ocultar, mostrar ou mover. A opção Ajustes fica fixa até você movê-la. Ajustes também está no seletor de perfis."
           }
         },
         "ro" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Apasă și ține apăsat pentru a ascunde, afișa sau muta. Setările rămân fixe până când le muți. Setările sunt disponibile și în selectorul de profiluri."
+            "value" : "Ține apăsat pentru a redenumi, ascunde, afișa sau muta. Setările rămân fixe până le muți. Setările sunt disponibile și în selectorul de profiluri."
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Нажмите и удерживайте, чтобы скрыть, показать или переместить. Настройки закреплены, пока вы их не переместите. Настройки также доступны в меню выбора профиля."
+            "value" : "Нажмите и удерживайте, чтобы переименовать, скрыть, показать или переместить. Настройки остаются закреплёнными, пока вы их не переместите. Настройки также доступны в меню выбора профиля."
           }
         },
         "sk" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Stlačením a podržaním môžete položky skryť, zobraziť alebo presunúť. Nastavenia zostanú pripnuté, kým ich nepresuniete. Nastavenia nájdete aj vo výbere profilu."
+            "value" : "Podržaním môžete premenovať, skryť, zobraziť alebo presunúť položku. Nastavenia zostávajú na pevnom mieste, kým ich nepresuniete. Nastavenia nájdete aj vo výbere profilu."
           }
         },
         "sl" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Pritisnite in pridržite za skrivanje, prikaz ali premikanje. Nastavitve ostanejo pripete, dokler jih ne premaknete. Nastavitve so na voljo tudi v izbirniku profilov."
+            "value" : "Pridržite za preimenovanje, skrivanje, prikaz ali premikanje. Nastavitve ostanejo na stalnem mestu, dokler jih ne premaknete. Nastavitve so tudi v izbirniku profilov."
           }
         },
         "sr-Latn" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Pritisnite i zadržite da biste sakrili, prikazali ili premestili stavke. Podešavanja ostaju na istom mestu dok ih ne premestite. Podešavanja su dostupna i u meniju za izbor profila."
+            "value" : "Pritisnite i zadržite da biste preimenovali, sakrili, prikazali ili pomerili stavku. Podešavanja ostaju na fiksnom mestu dok ih ne pomerite. Podešavanja su dostupna i u biraču profila."
           }
         },
         "sv" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Tryck och håll ned för att dölja, visa eller flytta. Inställningar ligger kvar på samma plats tills du flyttar menyalternativet. Inställningar finns också i profilväljaren."
+            "value" : "Håll ned för att byta namn, dölja, visa eller flytta. Inställningar har en fast plats tills du flyttar alternativet. Inställningar finns också i profilväljaren."
           }
         },
         "th" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "กดค้างเพื่อซ่อน แสดง หรือย้ายรายการ การตั้งค่าจะตรึงอยู่กับที่จนกว่าจะย้าย และยังเข้าถึงได้จากเมนูเลือกโปรไฟล์"
+            "value" : "กดค้างไว้เพื่อเปลี่ยนชื่อ ซ่อน แสดง หรือย้าย การตั้งค่าจะอยู่กับที่จนกว่าคุณจะย้าย และยังเข้าถึงการตั้งค่าได้จากเมนูเลือกโปรไฟล์"
           }
         },
         "tr" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Gizlemek, göstermek veya taşımak için basılı tutun. Ayarlar, siz taşıyana kadar sabit kalır. Ayarlara profil seçicisinden de erişebilirsiniz."
+            "value" : "Yeniden adlandırmak, gizlemek, göstermek veya taşımak için basılı tutun. Ayarlar, taşınana kadar sabit kalır. Ayarlar profil seçicide de bulunur."
           }
         },
         "uk" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Натисніть і утримуйте кнопку пульта, щоб приховати, показати або перемістити. Налаштування закріплено, доки ви їх не перемістите. Вони також доступні у вікні вибору профілю."
+            "value" : "Натисніть і утримуйте, щоб перейменувати, приховати, показати або перемістити. Налаштування залишаються на місці, доки ви їх не перемістите. Налаштування також є в меню вибору профілю."
           }
         },
         "vi" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Nhấn và giữ để ẩn, hiện hoặc di chuyển. Cài đặt được ghim cho đến khi bạn di chuyển mục này. Bạn cũng có thể mở Cài đặt từ trình chọn hồ sơ."
+            "value" : "Nhấn giữ để đổi tên, ẩn, hiện hoặc di chuyển. Cài đặt giữ nguyên vị trí cho đến khi được di chuyển. Bạn cũng có thể mở Cài đặt từ bộ chọn hồ sơ."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "长按遥控器按键可隐藏、显示或移动项目。设置会固定在原位，直至手动移动。也可从个人资料选择器打开设置。"
+            "value" : "长按可重命名、隐藏、显示或移动。“设置”固定在原位，直到你移动它。也可从个人资料选择界面打开“设置”。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "長按遙控器按鍵即可隱藏、顯示或移動項目。設定會固定在原位，直到手動移動為止。也可從個人檔案選擇器開啟設定。"
+            "value" : "長按即可重新命名、隱藏、顯示或移動。「設定」會固定在原位，直到你移動它。也可從個人檔案選擇畫面開啟「設定」。"
           }
         }
       }
@@ -1107599,223 +1108920,223 @@
         "ar" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "اسحب لإعادة الترتيب. اضغط مطولًا للإخفاء أو الإظهار."
+            "value" : "اسحب لإعادة الترتيب. اضغط مطولًا لإعادة التسمية أو الإخفاء أو الإظهار."
           }
         },
         "bg" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Плъзнете за пренареждане. Натиснете продължително за скриване или показване."
+            "value" : "Плъзнете за пренареждане. Натиснете и задръжте за преименуване, скриване или показване."
           }
         },
         "ca" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Arrossega per reordenar. Mantén premut per ocultar o mostrar."
+            "value" : "Arrossega per canviar l'ordre. Mantén premut per canviar el nom, amagar o mostrar."
           }
         },
         "cs" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Přetažením změníte pořadí. Podržením skryjete nebo zobrazíte."
+            "value" : "Přetažením změníte pořadí. Podržením můžete položku přejmenovat, skrýt nebo zobrazit."
           }
         },
         "da" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Træk for at ændre rækkefølgen. Tryk og hold nede for at skjule eller vise."
+            "value" : "Træk for at ændre rækkefølgen. Tryk og hold for at omdøbe, skjule eller vise."
           }
         },
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Zum Neuanordnen ziehen. Zum Ein- oder Ausblenden gedrückt halten."
+            "value" : "Ziehe ein Element, um es umzuordnen. Halte es gedrückt, um es umzubenennen, aus- oder einzublenden."
           }
         },
         "el" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Σύρετε για αναδιάταξη. Πατήστε παρατεταμένα για απόκρυψη ή εμφάνιση."
+            "value" : "Σύρετε για αλλαγή σειράς. Πατήστε παρατεταμένα για μετονομασία, απόκρυψη ή εμφάνιση."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Drag to reorder. Hold to hide or show."
+            "value" : "Drag to reorder. Hold to rename, hide, or show."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Arrastra para reordenar. Mantén pulsado para ocultar o mostrar."
+            "value" : "Arrastra para reordenar. Mantén pulsado para cambiar el nombre, ocultar o mostrar."
           }
         },
         "fa" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "برای تغییر ترتیب، بکشید. برای پنهان یا نمایان کردن، لمس کنید و نگه دارید."
+            "value" : "برای تغییر ترتیب، بکشید. برای تغییر نام، پنهان کردن یا نمایش دادن، فشار دهید و نگه دارید."
           }
         },
         "fi" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Järjestä vetämällä. Piilota tai näytä painamalla pitkään."
+            "value" : "Muuta järjestystä vetämällä. Nimeä uudelleen, piilota tai näytä painamalla pitkään."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Faites glisser pour réorganiser. Appuyez longuement pour masquer ou afficher."
+            "value" : "Faites glisser pour réorganiser. Appuyez longuement pour renommer, masquer ou afficher."
           }
         },
         "he" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "גררו לשינוי הסדר. לחצו לחיצה ארוכה להסתרה או להצגה."
+            "value" : "גררו כדי לשנות את הסדר. לחצו לחיצה ארוכה כדי לשנות שם, להסתיר או להציג."
           }
         },
         "hi" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "क्रम बदलने के लिए खींचें। छिपाने या दिखाने के लिए दबाकर रखें।"
+            "value" : "क्रम बदलने के लिए खींचें। नाम बदलने, छिपाने या दिखाने के लिए दबाकर रखें।"
           }
         },
         "hr" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Povucite za promjenu redoslijeda. Držite pritisnuto za skrivanje ili prikaz."
+            "value" : "Povucite za promjenu redoslijeda. Pritisnite i držite za preimenovanje, skrivanje ili prikazivanje."
           }
         },
         "hu" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Húzással rendezheti át. Hosszan nyomva elrejtheti vagy megjelenítheti."
+            "value" : "Húzással rendezheti át. Átnevezéshez, elrejtéshez vagy megjelenítéshez tartsa nyomva."
           }
         },
         "id" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Seret untuk mengubah urutan. Tekan lama untuk menyembunyikan atau menampilkan."
+            "value" : "Seret untuk mengubah urutan. Tekan dan tahan untuk mengubah nama, menyembunyikan, atau menampilkan."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Trascina per riordinare. Tieni premuto per nascondere o mostrare."
+            "value" : "Trascina per riordinare. Tieni premuto per rinominare, nascondere o mostrare."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "ドラッグして並べ替え。長押しで表示・非表示を切り替え。"
+            "value" : "ドラッグして並べ替えます。長押しすると、名前の変更、非表示、表示ができます。"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "드래그하여 순서를 변경하세요. 길게 눌러 숨기거나 표시하세요."
+            "value" : "드래그하여 순서를 바꾸세요. 길게 누르면 이름 변경, 숨기기, 표시를 할 수 있습니다."
           }
         },
         "ms" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Seret untuk menyusun semula. Tekan lama untuk menyembunyikan atau memaparkan."
+            "value" : "Seret untuk menyusun semula. Tekan dan tahan untuk menamakan semula, menyembunyikan atau menunjukkan item."
           }
         },
         "nb" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Dra for å endre rekkefølge. Trykk og hold for å skjule eller vise."
+            "value" : "Dra for å endre rekkefølgen. Trykk og hold for å gi nytt navn, skjule eller vise."
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Sleep om de volgorde te wijzigen. Houd ingedrukt om te verbergen of te tonen."
+            "value" : "Sleep om de volgorde te wijzigen. Houd ingedrukt om de naam te wijzigen, te verbergen of zichtbaar te maken."
           }
         },
         "pl" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Przeciągnij, aby zmienić kolejność. Przytrzymaj, aby ukryć lub pokazać."
+            "value" : "Przeciągnij, aby zmienić kolejność. Przytrzymaj, aby zmienić nazwę, ukryć lub pokazać."
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Arraste para reordenar. Toque e segure para ocultar ou mostrar."
+            "value" : "Arraste para reordenar. Mantenha pressionado para renomear, ocultar ou mostrar."
           }
         },
         "ro" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Trage pentru a schimba ordinea. Ține apăsat pentru a ascunde sau afișa."
+            "value" : "Trage pentru a reordona. Ține apăsat pentru a redenumi, ascunde sau afișa."
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Перетащите вкладки, чтобы изменить порядок. Нажмите и удерживайте, чтобы скрыть или показать."
+            "value" : "Перетаскивайте для изменения порядка. Нажмите и удерживайте, чтобы переименовать, скрыть или показать."
           }
         },
         "sk" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Potiahnutím zmeníte poradie. Podržaním skryjete alebo zobrazíte."
+            "value" : "Poradie zmeníte potiahnutím. Podržaním môžete premenovať, skryť alebo zobraziť položku."
           }
         },
         "sl" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Povlecite za spremembo vrstnega reda. Pridržite, da skrijete ali prikažete."
+            "value" : "Povlecite za spremembo vrstnega reda. Pridržite za preimenovanje, skrivanje ali prikaz."
           }
         },
         "sr-Latn" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Prevucite da promenite redosled. Pritisnite i zadržite da sakrijete ili prikažete."
+            "value" : "Prevucite da biste promenili redosled. Pritisnite i zadržite da biste preimenovali, sakrili ili prikazali stavku."
           }
         },
         "sv" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Dra för att ändra ordningen. Håll ned för att dölja eller visa."
+            "value" : "Dra för att ändra ordningen. Håll ned för att byta namn, dölja eller visa."
           }
         },
         "th" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "ลากเพื่อจัดลำดับ กดค้างเพื่อซ่อนหรือแสดง"
+            "value" : "ลากเพื่อจัดลำดับใหม่ กดค้างไว้เพื่อเปลี่ยนชื่อ ซ่อน หรือแสดง"
           }
         },
         "tr" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Sıralamak için sürükleyin. Gizlemek veya göstermek için basılı tutun."
+            "value" : "Sıralamayı değiştirmek için sürükleyin. Yeniden adlandırmak, gizlemek veya göstermek için basılı tutun."
           }
         },
         "uk" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Перетягніть, щоб змінити порядок. Натисніть і утримуйте, щоб приховати або показати."
+            "value" : "Перетягніть, щоб змінити порядок. Натисніть і утримуйте, щоб перейменувати, приховати або показати."
           }
         },
         "vi" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Kéo để sắp xếp lại. Nhấn giữ để ẩn hoặc hiện."
+            "value" : "Kéo để sắp xếp lại. Nhấn giữ để đổi tên, ẩn hoặc hiện."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "拖动以调整顺序。长按以隐藏或显示。"
+            "value" : "拖动以重新排序。长按可重命名、隐藏或显示。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "拖移以調整順序。長按以隱藏或顯示。"
+            "value" : "拖移以重新排序。長按即可重新命名、隱藏或顯示。"
           }
         }
       }

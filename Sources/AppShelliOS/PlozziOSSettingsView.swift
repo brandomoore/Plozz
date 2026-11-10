@@ -2859,7 +2859,7 @@ private struct PlozziOSSubtitleSettingsView: View {
                                     : $0
                             }
                         ),
-                        prompt: Text("")
+                        prompt: Text(verbatim: "")
                     )
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()

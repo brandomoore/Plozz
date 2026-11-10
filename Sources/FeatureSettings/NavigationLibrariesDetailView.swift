@@ -12,7 +12,7 @@ public struct NavigationLibrariesDetailView: View {
 
     @State private var isReordering = false
     @State private var renamedKey: String?
-    @State private var renamedTitle = Text("")
+    @State private var renamedTitle = Text(verbatim: "")
     @State private var showsNameEditor = false
 
     public init(

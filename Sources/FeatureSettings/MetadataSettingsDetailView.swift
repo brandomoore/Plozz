@@ -356,7 +356,7 @@ public struct MetadataSettingsDetailView: View {
                 }
 
                 SettingsInputRow("TMDB v4 API Read Access Token") {
-                    SecureField("TMDB v4 API Read Access Token", text: draftKeyBinding, prompt: Text(""))
+                    SecureField("TMDB v4 API Read Access Token", text: draftKeyBinding, prompt: Text(verbatim: ""))
                         .textContentType(.password)
                         .autocorrectionDisabled()
                 }
