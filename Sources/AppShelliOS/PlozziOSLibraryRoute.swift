@@ -77,6 +77,10 @@ struct PlozziOSLibraryDestinationView: View {
     }
 
     private var title: String { // l10n:content - provider name or locale-scoped resource bridged to the grid's String API
+        if let accountID = route.accountID,
+           let name = appModel.settings.navigation.libraryLayout.customNames["\(accountID):\(route.containerID)"] {
+            return name
+        }
         let library = MediaLibrary(
             id: route.containerID,
             title: route.title,

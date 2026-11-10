@@ -65,6 +65,7 @@ public struct LiftableReorderList<Element: Hashable>: View {
     private let onChange: (OrderedVisibilityList.Sections<Element>) -> Void
     private let onRemove: ((Element) -> Void)?
     private let onMove: ((Element) -> Void)?
+    private let onRename: ((Element) -> Void)?
     private let initialElement: Element?
     @AccessibilityFocusState private var accessibilityFocusedElement: Element?
 
@@ -87,6 +88,7 @@ public struct LiftableReorderList<Element: Hashable>: View {
         removeTitle: LocalizedStringResource = "Remove section",
         onRemove: ((Element) -> Void)? = nil,
         onMove: ((Element) -> Void)? = nil,
+        onRename: ((Element) -> Void)? = nil,
         initialElement: Element? = nil,
         row: @escaping (Element) -> Row,
         onChange: @escaping (OrderedVisibilityList.Sections<Element>) -> Void
@@ -102,6 +104,7 @@ public struct LiftableReorderList<Element: Hashable>: View {
         self.onChange = onChange
         self.onRemove = onRemove
         self.onMove = onMove
+        self.onRename = onRename
         let target = initialElement.flatMap { sections.combined.contains($0) ? $0 : nil }
         self.initialElement = target
         #if os(tvOS)
@@ -353,6 +356,15 @@ public struct LiftableReorderList<Element: Hashable>: View {
 
     @ViewBuilder
     private func rowMenu(_ element: Element) -> some View {
+        if let onRename {
+            Button("Rename", systemImage: "pencil") {
+                #if os(tvOS)
+                liftedElement = nil
+                liftedSections = nil
+                #endif
+                onRename(element)
+            }
+        }
         if allowsHiding, sections.enabled.contains(element) {
             Button("Hide", systemImage: "eye.slash") { perform(.hide, on: element) }
                 .disabled(requiredEnabled.contains(element))

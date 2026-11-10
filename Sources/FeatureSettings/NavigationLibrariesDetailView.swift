@@ -11,6 +11,9 @@ public struct NavigationLibrariesDetailView: View {
     let excludedKeys: Set<String>
 
     @State private var isReordering = false
+    @State private var renamedKey: String?
+    @State private var renamedTitle = Text(verbatim: "")
+    @State private var showsNameEditor = false
 
     public init(
         scope: ProfileLibrariesScope,
@@ -44,6 +47,17 @@ public struct NavigationLibrariesDetailView: View {
             }
         }
         .task { await scope.reloadLibraries() }
+        .settingsPageDestination(isPresented: $showsNameEditor) {
+            [renamedKey, renamedTitle, navigation, visibility = scope.homeVisibility] in
+            if let renamedKey {
+                NavigationNameEditor(
+                    key: renamedKey,
+                    defaultTitle: renamedTitle,
+                    navigation: navigation, visibility: visibility
+                )
+                .id(ObjectIdentifier(visibility))
+            }
+        }
     }
 
     private var discoveredLibraries: [AggregatedLibrary] {
@@ -95,8 +109,19 @@ public struct NavigationLibrariesDetailView: View {
                 isLifting: $isReordering,
                 requiredEnabled: requiredEnabled,
                 onMove: { navigation.recordNavigationMove(of: $0) },
+                onRename: {
+                    renamedKey = $0
+                    renamedTitle = titles[$0]?.title ?? Text(verbatim: $0)
+                    showsNameEditor = true
+                },
                 row: { key in
-                    titles[key] ?? LiftableReorderList.Row(title: Text(verbatim: key))
+                    var row = titles[key] ?? LiftableReorderList.Row(title: Text(verbatim: key))
+                    if let name = navigation.libraryLayout.customName(
+                        for: key, homeVisibility: scope.homeVisibility.visibility
+                    ) {
+                        row.title = Text(verbatim: name)
+                    }
+                    return row
                 },
                 onChange: {
                     navigation.applyLibrarySections(
@@ -175,7 +200,7 @@ public struct NavigationLibrariesDetailView: View {
     private var footnote: LocalizedStringResource { Self.mobileFootnote }
     private static let mobileFootnote = LocalizedStringResource(
         "navigationArrangement.footnote.iOS",
-        defaultValue: "Drag to reorder. Hold to hide or show.",
+        defaultValue: "Drag to reorder. Hold to rename, hide, or show.",
         comment: "Instructions for arranging iPhone and iPad navigation tabs."
     )
     #else
@@ -184,12 +209,12 @@ public struct NavigationLibrariesDetailView: View {
     }
     private static let topBarFootnote = LocalizedStringResource(
         "navigationArrangement.footnote.horizontal",
-        defaultValue: "Press and hold to hide, show, or move. Settings stays fixed until moved. Settings is also in the profile picker.",
+        defaultValue: "Press and hold to rename, hide, show, or move. Settings stays fixed until moved. Settings is also in the profile picker.",
         comment: "Instructions for arranging the scrolling horizontal navigation."
     )
     private static let sidebarFootnote = LocalizedStringResource(
         "navigationArrangement.footnote",
-        defaultValue: "Press and hold an item to hide, show, or move it. Unused pages hide automatically unless you show them. Settings always stays visible.",
+        defaultValue: "Press and hold an item to rename, hide, show, or move it. Unused pages hide automatically unless you show them. Settings always stays visible.",
         comment: "Instructions and the always-visible Settings safety rule for navigation customization."
     )
     #endif
@@ -208,5 +233,70 @@ public struct NavigationLibrariesDetailView: View {
         defaultValue: "Couldn't load your library shortcuts. Their saved arrangement is unchanged.",
         comment: "Shown when library discovery failed while arranging the navigation."
     )
+}
+
+struct NavigationNameEditor: View {
+    let key: String
+    let defaultTitle: Text
+    let navigation: NavigationStyleSettingsModel
+    let visibility: HomeLibraryVisibilityModel
+    @State private var name: String
+    @FocusState private var isNameFocused: Bool
+
+    init(key: String, defaultTitle: Text, navigation: NavigationStyleSettingsModel, visibility: HomeLibraryVisibilityModel) {
+        self.key = key
+        self.defaultTitle = defaultTitle
+        self.navigation = navigation
+        self.visibility = visibility
+        _name = State(initialValue: navigation.libraryLayout.customName(for: key, homeVisibility: visibility.visibility) ?? "")
+    }
+
+    var body: some View {
+        HomeEditorPage(title: defaultTitle, showsHeader: true) {
+            SettingsSectionGroup {
+                #if os(tvOS)
+                HomeEditorAutosavingNameInput(
+                    "Name", name: name, prompt: defaultTitle, identifier: "navigation-name-input"
+                ) { value in
+                    navigation.renameDestination(key, to: value, homeVisibility: visibility)
+                }
+                #else
+                SettingsInputRow("Name") {
+                    TextField("Name", text: $name, prompt: defaultTitle)
+                        .focused($isNameFocused)
+                        .submitLabel(.done)
+                        #if os(iOS)
+                        .onSubmit { isNameFocused = false }
+                        #else
+                        .onSubmit(save)
+                        #endif
+                        .accessibilityIdentifier("navigation-name-input")
+                }
+                #endif
+            }
+            #if !os(iOS) && !os(tvOS)
+            Button(action: save) {
+                Text("Save changes").plozzPageActionLabel()
+            }
+            .plozzPageActionButton()
+            .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines)
+                == (navigation.libraryLayout.customName(for: key, homeVisibility: visibility.visibility) ?? ""))
+            .accessibilityIdentifier("navigation-name-save")
+            #endif
+        }
+        #if os(iOS)
+        .modifier(HomeEditorSaveAction(
+            isEnabled: name.trimmingCharacters(in: .whitespacesAndNewlines)
+                != (navigation.libraryLayout.customName(for: key, homeVisibility: visibility.visibility) ?? ""),
+            identifier: "navigation-name-save", action: save
+        ))
+        #endif
+    }
+
+    private func save() {
+        navigation.renameDestination(key, to: name, homeVisibility: visibility)
+        name = navigation.libraryLayout.customName(for: key, homeVisibility: visibility.visibility) ?? ""
+        isNameFocused = false
+    }
 }
 #endif

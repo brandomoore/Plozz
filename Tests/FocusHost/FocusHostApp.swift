@@ -239,22 +239,22 @@ private struct CollectionRowEditorFixture: View {
         store: HomeLibraryVisibilityStore(namespace: "collection-row-editor-fixture")
     )
     @State private var navigation = SettingsPageNavigation<String>()
-    @State private var provider: CollectionRowEditorProvider?
+    @State private var account: ResolvedAccount?
+    private var isNew: Bool { !ProcessInfo.processInfo.arguments.contains("--collection-row-existing") }
 
     var body: some View {
         SettingsPageStack(navigation: navigation, pageWidth: SettingsFormMetrics.pageWidth, onRootBack: {}) {
-            if let provider {
-                let account = ResolvedAccount(account: Account(from: provider.session), provider: provider)
+            if let account {
                 CollectionSectionSettingsView(
-                    section: CollectionSection(
+                    section: visibility.visibility.collectionSections.first ?? CollectionSection(
                         source: .init(
                             accountID: account.account.id, collectionID: "weekend", title: "Weekend picks",
-                            serverUserID: provider.session.userID
+                            serverUserID: account.provider.session.userID
                         ),
                         cardStyle: .landscape,
                         titleLogo: ProcessInfo.processInfo.arguments.contains("--collection-row-logo-on") ? .on : .default
                     ),
-                    isNew: true, inventory: HomeSectionCatalogModel(), visibility: visibility,
+                    isNew: isNew, inventory: HomeSectionCatalogModel(), visibility: visibility,
                     libraries: [], accounts: [account]
                 )
             } else {
@@ -267,7 +267,7 @@ private struct CollectionRowEditorFixture: View {
         .environment(\.colorScheme, .dark)
         .background { SettingsPageBackground() }
         .task {
-            guard provider == nil else { return }
+            guard account == nil else { return }
             let backgroundURL = URL(string: "https://collection-fixture.invalid/\(UUID())-background.png")!
             let logoURL = URL(string: "https://collection-fixture.invalid/\(UUID())-logo.png")!
             let background = UIGraphicsImageRenderer(size: CGSize(width: 640, height: 360)).image {
@@ -292,7 +292,21 @@ private struct CollectionRowEditorFixture: View {
                     CachedURLResponse(response: response, data: data), for: URLRequest(url: url)
                 )
             }
-            provider = CollectionRowEditorProvider(background: backgroundURL, logo: logoURL)
+            let loaded = CollectionRowEditorProvider(background: backgroundURL, logo: logoURL)
+            let resolved = ResolvedAccount(
+                account: Account(id: "collection-editor-fixture", from: loaded.session), provider: loaded
+            )
+            if !isNew && visibility.visibility.collectionSections.isEmpty {
+                do {
+                    try visibility.saveCollectionSection(CollectionSection(source: .init(
+                        accountID: resolved.account.id, collectionID: "weekend", title: "Weekend picks",
+                        serverUserID: loaded.session.userID
+                    ), cardStyle: .landscape, titleLogo: .on), catalog: HomeSectionCatalog(libraries: []))
+                } catch {
+                    preconditionFailure("Could not seed existing collection fixture")
+                }
+            }
+            account = resolved
         }
     }
 }

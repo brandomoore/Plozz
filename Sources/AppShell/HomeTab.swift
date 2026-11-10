@@ -49,6 +49,7 @@ private struct PlaylistDetailRoute: Hashable {
 /// full-screen player presentation. Every destination resolves its provider from
 /// the tapped item/library's `sourceAccountID`.
 struct HomeTab: View {
+    private var navigationTitles = NavigationTitles()
     @State private var trailerOpening = YouTubeTrailerOpening()
     @State private var externalOpening = ExternalMediaOpening()
     @Environment(ProfilesModel.self) private var profilesModel: ProfilesModel?
@@ -478,7 +479,10 @@ struct HomeTab: View {
                     settingsNamespace: libraryPreferencesNamespace,
                     presentation: libraryPresentation
                 ),
-                title: library.displayName,
+                title: navigationTitles(
+                    "\(browse.sourceAccountID ?? library.sourceAccountID ?? ""):\(library.id)",
+                    default: library.displayName
+                ),
                 isNavigationRoot: isNavigationRoot,
                 spoilerSettings: spoilerSettings,
                 continueWatchingShowsSeriesArtwork: homeVisibility.continueWatchingUsesSeriesArtwork,
@@ -519,7 +523,7 @@ struct HomeTab: View {
                     settingsNamespace: libraryPreferencesNamespace,
                     presentation: libraryPresentation
                 ),
-                title: Text(AllLibrariesBrowse.title),
+                title: navigationTitles(NavigationLibraryLayout.allLibrariesKey, default: Text(AllLibrariesBrowse.title)),
                 isNavigationRoot: true,
                 spoilerSettings: spoilerSettings,
                 onSelect: { navigate($0) }

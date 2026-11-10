@@ -1028,6 +1028,7 @@ private struct PlozziOSDeveloperInfoSection: View {
 }
 
 private struct PlozziOSSettingsCompactMenu: View {
+    private var navigationTitles = NavigationTitles()
     let appModel: PlozziOSAppModel
     let onAddServer: () -> Void
     var onAddUser: (MediaServer) -> Void = { _ in }
@@ -1074,7 +1075,7 @@ private struct PlozziOSSettingsCompactMenu: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 18) {
-                Text("Settings")
+                navigationTitles(NavigationLibraryLayout.settingsKey, default: Text("Settings"))
                     .font(.largeTitle.bold())
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .accessibilityAddTraits(.isHeader)
@@ -1337,7 +1338,8 @@ private struct PlozziOSSettingsCompactMenu: View {
             titleDisplayMode: .inline,
             horizontalInset: 16
         )
-        .navigationTitle(isHeaderCollapsed ? Text("Settings") : Text(verbatim: ""))
+        .navigationTitle(isHeaderCollapsed
+            ? navigationTitles(NavigationLibraryLayout.settingsKey, default: Text("Settings")) : Text(verbatim: ""))
         .modifier(PlozziOSSettingsSearch(
             appModel: appModel, isShowingDestination: searchSelection != nil
         ) { searchSelection = $0 })
@@ -2863,20 +2865,23 @@ private struct PlozziOSSubtitleSettingsView: View {
                     "Download subtitles automatically",
                     isOn: $behavior.settings.autoDownloadSubtitles
                 ).settingsSearchAnchor("subtitle-download")
-                TextField(
-                    "Preferred language code",
-                    text: Binding(
-                        get: { behavior.settings.preferredSubtitleLanguage ?? "" },
-                        set: {
-                            behavior.settings.preferredSubtitleLanguage =
-                                $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                                ? nil
-                                : $0
-                        }
+                SettingsInputRow("Preferred language code") {
+                    TextField(
+                        "Preferred language code",
+                        text: Binding(
+                            get: { behavior.settings.preferredSubtitleLanguage ?? "" },
+                            set: {
+                                behavior.settings.preferredSubtitleLanguage =
+                                    $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                                    ? nil
+                                    : $0
+                            }
+                        ),
+                        prompt: Text(verbatim: "")
                     )
-                )
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                }
                 .settingsSearchAnchor("subtitle-language")
                 Picker(
                     "SDH subtitles",

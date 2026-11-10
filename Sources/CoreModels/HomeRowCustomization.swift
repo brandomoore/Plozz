@@ -78,6 +78,15 @@ public struct HomeRowChoice: Identifiable, Equatable, Sendable {
         ]
     }
 
+    public func renamed(to name: String) -> Self {
+        Self(
+            id: id, title: name, library: library,
+            isProviderDefault: isProviderDefault, isLegacyDefault: isLegacyDefault,
+            serverRow: serverRow, collectionSection: collectionSection,
+            hasCollectionCovers: hasCollectionCovers
+        )
+    }
+
     public init(serverRow: HomeServerRowDefinition) {
         self.init(
             id: serverRow.id, title: serverRow.section.title ?? serverRow.section.kind.rawValue,

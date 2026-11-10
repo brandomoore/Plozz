@@ -185,6 +185,7 @@ public struct FeaturedMediaRow: View {
                 .accessibilityHidden(true)
             } else if !items.isEmpty || onBrowse != nil {
                 rail
+                    .environment(\.homeRowEditAction, nil)
             }
         }
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { viewportWidth = $0 }

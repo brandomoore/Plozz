@@ -123,6 +123,7 @@ struct SettingsNavigationShell<Navigation: View>: View {
 }
 
 struct MainTabView: View {
+    private var navigationTitles = NavigationTitles()
     /// Stable identifiers for the root tabs, used to persist and restore the
     /// selected tab across MainTabView being rebuilt (see `selectedTab`).
     /// The pending person route, visible ONLY to the tab that is showing.
@@ -163,7 +164,7 @@ struct MainTabView: View {
 
     private var homeTabLabel: some View {
         RootNavigationTabLabel(
-            title: Text("Home"),
+            title: navigationTitles(NavigationLibraryLayout.homeKey, default: Text("Home")),
             systemImage: "house.fill",
             usesCompactSidebarText: navigationStyle == .sidebar
         )
@@ -171,7 +172,7 @@ struct MainTabView: View {
 
     private var searchTabLabel: some View {
         RootNavigationTabLabel(
-            title: Text("Search"),
+            title: navigationTitles(NavigationLibraryLayout.searchKey, default: Text("Search")),
             systemImage: "magnifyingglass",
             usesCompactSidebarText: navigationStyle == .sidebar
         )
@@ -179,7 +180,7 @@ struct MainTabView: View {
 
     private var watchlistTabLabel: some View {
         RootNavigationTabLabel(
-            title: Text("Watchlist"),
+            title: navigationTitles(NavigationLibraryLayout.watchlistKey, default: Text("Watchlist")),
             systemImage: "bookmark.fill",
             usesCompactSidebarText: navigationStyle == .sidebar
         )
@@ -187,7 +188,7 @@ struct MainTabView: View {
 
     private var musicTabLabel: some View {
         RootNavigationTabLabel(
-            title: Text("Music"),
+            title: navigationTitles(NavigationLibraryLayout.musicKey, default: Text("Music")),
             systemImage: "music.note",
             usesCompactSidebarText: navigationStyle == .sidebar
         )
@@ -195,7 +196,7 @@ struct MainTabView: View {
 
     private var liveTVTabLabel: some View {
         RootNavigationTabLabel(
-            title: Text("Live TV"),
+            title: navigationTitles(NavigationLibraryLayout.liveTVKey, default: Text("Live TV")),
             systemImage: "antenna.radiowaves.left.and.right",
             usesCompactSidebarText: navigationStyle == .sidebar
         )
@@ -203,7 +204,7 @@ struct MainTabView: View {
 
     private var settingsTabLabel: some View {
         RootNavigationTabLabel(
-            title: Text("Settings"),
+            title: navigationTitles(NavigationLibraryLayout.settingsKey, default: Text("Settings")),
             systemImage: "gearshape.fill",
             usesCompactSidebarText: navigationStyle == .sidebar
         )
@@ -1446,7 +1447,7 @@ struct MainTabView: View {
             return AnyView(watchlistTabLabel)
         case .discover:
             return AnyView(RootNavigationTabLabel(
-                title: Text("Discover"), systemImage: "sparkles",
+                title: navigationTitles(NavigationLibraryLayout.discoverKey, default: Text("Discover")), systemImage: "sparkles",
                 usesCompactSidebarText: navigationStyle == .sidebar
             ))
         case .liveTV:
@@ -1460,7 +1461,8 @@ struct MainTabView: View {
                 return AnyView(EmptyView())
             }
             return AnyView(Self.navigationLibraryLabel(
-                libraryEntry, usesCompactSidebarText: navigationStyle == .sidebar
+                libraryEntry, usesCompactSidebarText: navigationStyle == .sidebar,
+                customName: navigationStyleModel.libraryLayout.customNames[libraryEntry.key]
             ))
         }
     }
@@ -1716,9 +1718,11 @@ struct MainTabView: View {
     /// Native navigation label for a real or synthetic library destination.
     static func navigationLibraryLabel(
         _ entry: NavigationRailLibraryEntry,
-        usesCompactSidebarText: Bool = true
+        usesCompactSidebarText: Bool = true,
+        customName: String? = nil
     ) -> some View {
-        let title = entry.library?.library.displayName ?? Text(AllLibrariesBrowse.title)
+        let title = customName.map { Text(verbatim: $0) }
+            ?? entry.library?.library.displayName ?? Text(AllLibrariesBrowse.title)
         let symbol = entry.library?.library.navigationSymbolName
             ?? "square.stack.3d.up.fill"
         // Native tabs extract one title; sibling Text views are discarded.

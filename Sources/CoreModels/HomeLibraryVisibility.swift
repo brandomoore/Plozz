@@ -34,6 +34,17 @@ public struct HomeLibraryVisibility: Codable, Equatable, Sendable {
     public var rowCustomization: HomeRowCustomization?
     public var collectionSections: [CollectionSection]
     public var dismissedEmptyHomeRows: Set<HomeRowID>
+    /// Profile-owned labels keyed by stable row identity, independent of layout presets.
+    public private(set) var homeRowNames: [String: String] = [:]
+
+    public func homeRowName(for id: HomeRowID) -> String? {
+        homeRowNames[id.presentationID]
+    }
+
+    public mutating func setHomeRowName(_ name: String, for id: HomeRowID) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        homeRowNames[id.presentationID] = trimmed.isEmpty ? nil : trimmed
+    }
 
     public var intent: Self {
         var copy = self
@@ -386,6 +397,7 @@ public struct HomeLibraryVisibility: Codable, Equatable, Sendable {
         case mergeNextUpIntoContinueWatching
         case hideWatchedRecentlyAdded
         case dismissedEmptyHomeRows
+        case homeRowNames
     }
 
     /// Decodes leniently so a pre-existing blob still loads: missing fields fall
@@ -436,6 +448,12 @@ public struct HomeLibraryVisibility: Codable, Equatable, Sendable {
         self.dismissedEmptyHomeRows = try container.decodeIfPresent(
             Set<HomeRowID>.self, forKey: .dismissedEmptyHomeRows
         ) ?? []
+        self.homeRowNames = (try container.decodeIfPresent(
+            [String: String].self, forKey: .homeRowNames
+        ) ?? [:]).compactMapValues {
+            let name = $0.trimmingCharacters(in: .whitespacesAndNewlines)
+            return name.isEmpty ? nil : name
+        }
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -451,6 +469,7 @@ public struct HomeLibraryVisibility: Codable, Equatable, Sendable {
         try container.encode(continueWatchingPlaybackDetails, forKey: .continueWatchingPlaybackDetails)
         try container.encode(continueWatchingAction, forKey: .continueWatchingAction)
         try container.encodeIfPresent(rowCustomization, forKey: .rowCustomization)
+        if !homeRowNames.isEmpty { try container.encode(homeRowNames, forKey: .homeRowNames) }
         if !collectionSections.isEmpty { try container.encode(collectionSections, forKey: .collectionSections) }
         try container.encode(mergeNextUpIntoContinueWatching, forKey: .mergeNextUpIntoContinueWatching)
         try container.encode(hideWatchedRecentlyAdded, forKey: .hideWatchedRecentlyAdded)

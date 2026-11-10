@@ -235,6 +235,14 @@ public final class HomeLibraryVisibilityModel {
         store.save(visibility)
     }
 
+    public func setHomeRowName(_ name: String, for id: HomeRowID) {
+        var updated = visibility
+        updated.setHomeRowName(name, for: id)
+        guard updated != visibility else { return }
+        visibility = updated
+        store.save(visibility)
+    }
+
     public func setEmptyHomeRowDismissed(_ dismissed: Bool, id: HomeRowID) {
         guard visibility.dismissedEmptyHomeRows.contains(id) != dismissed else { return }
         if dismissed {
