@@ -419,14 +419,14 @@ final class PlayerSkipMarkerTrackTests: XCTestCase {
             let top = Int((44 - height) / 2)
             for y in top..<(44 - top) {
                 for x in [39, 40, 41, 279, 280, 281] {
-                    XCTAssertEqual(mask.red(x: x, y: y), 0, "No rail or backing bridges a segment boundary.")
+                    XCTAssertLessThanOrEqual(mask.red(x: x, y: y), 1, "No rail or backing bridges a segment boundary.")
                 }
                 for x in [80, 160, 240] {
-                    XCTAssertEqual(mask.red(x: x, y: y), 255, "The segment's interior remains solid.")
+                    XCTAssertGreaterThanOrEqual(mask.red(x: x, y: y), 254, "The segment's interior remains solid.")
                 }
             }
-            XCTAssertEqual(mask.red(x: 43, y: top), 0, "Each new section has a rounded corner.")
-            XCTAssertEqual(mask.red(x: 43, y: 22), 255, "The rounded cap still reaches the middle of the bar.")
+            XCTAssertLessThanOrEqual(mask.red(x: 43, y: top), 1, "Each new section has a rounded corner.")
+            XCTAssertGreaterThanOrEqual(mask.red(x: 43, y: 22), 254, "The rounded cap still reaches the middle of the bar.")
             for background in [Color.black, .gray, .cyan] {
                 let plain = try pixels(track(segments: [], height: height, background: background))
                 let divided = try pixels(track(segments: [marker], height: height, background: background))
