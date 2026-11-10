@@ -15,7 +15,7 @@ public struct NowPlayingView: View {
     @Environment(\.transientStatusPresenter) private var statusPresenter
     @Bindable var controller: AudioPlaybackController
     /// The app's currently selected theme, passed in from the host so the
-    /// player's Match App appearance can distinguish Black from plain Dark
+    /// player's Match App Theme appearance can distinguish Black from plain Dark
     /// (the system color scheme alone can't tell them apart).
     var appTheme: AppTheme = .system
     /// Per-profile player preferences (appearance + "show extra info"), injected
@@ -389,7 +389,7 @@ public struct NowPlayingView: View {
         .environment(\.colorScheme, isLightPlayer ? .light : .dark)
     }
 
-    /// Match App follows both the resolved app theme and Gradient Backgrounds.
+    /// Match App Theme follows both the resolved app theme and Gradient Backgrounds.
     private var playerStyle: MusicPlayerAppearance {
         playerAppearance.resolved(
             palette: ThemePalette.palette(for: appTheme, systemColorScheme: systemColorScheme),

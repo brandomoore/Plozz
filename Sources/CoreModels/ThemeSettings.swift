@@ -99,9 +99,9 @@ public enum MusicPlayerAppearance: String, CaseIterable, Identifiable, Codable, 
         switch self {
         case .matchTheme:
             return LocalizedStringResource(
-                "musicPlayerAppearance.matchApp",
-                defaultValue: "Match App",
-                comment: "Music player appearance option in Settings."
+                "musicPlayerAppearance.matchAppTheme",
+                defaultValue: "Match App Theme",
+                comment: "Follow Plozz's app theme and Gradient Backgrounds preference, including their defaults."
             )
         case .light:
             return LocalizedStringResource(

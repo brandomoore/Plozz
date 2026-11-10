@@ -75,6 +75,9 @@ final class MusicPlayerAppearanceTests: XCTestCase {
         defer { defaults.removePersistentDomain(forName: suite) }
         let store = MusicPlayerSettingsStore(defaults: defaults)
         XCTAssertEqual(store.loadAppearance(), .matchTheme)
+        var label = MusicPlayerAppearance.matchTheme.displayName
+        label.locale = Locale(identifier: "en_US")
+        XCTAssertEqual(String(localized: label), "Match App Theme")
         XCTAssertEqual(AppTheme.default, .pureBlack)
         XCTAssertTrue(ThemeSettingsStore(defaults: defaults).loadGradientEnabled())
         XCTAssertEqual(store.loadAppearance().resolved(palette: .pureBlack, gradientEnabled: true), .artwork)
@@ -114,7 +117,7 @@ final class MusicPlayerAppearanceTests: XCTestCase {
                 }
             }
         }
-        XCTAssertEqual(Set(previews).count, 4, "Match App equals Black with gradients off; explicit looks are distinct")
+        XCTAssertEqual(Set(previews).count, 4, "Match App Theme equals Black with gradients off; explicit looks are distinct")
     }
 
     private func pixel(_ image: UIImage, at point: CGPoint) throws -> [UInt8] {
@@ -162,7 +165,7 @@ final class MusicPlayerAppearanceTests: XCTestCase {
                 var text = try visibleText(window)
                 let scroll = try XCTUnwrap(descendants(window).compactMap { $0 as? UIScrollView }.first)
                 XCTAssertLessThanOrEqual(scroll.contentSize.width, scroll.bounds.width + 1)
-                if !text.localizedCaseInsensitiveContains(String(localized: appearance.displayName)) {
+                if !containsLabel(appearance, in: text) {
                     scroll.setContentOffset(CGPoint(
                         x: 0, y: max(-scroll.adjustedContentInset.top,
                                      scroll.contentSize.height - scroll.bounds.height + scroll.adjustedContentInset.bottom)
@@ -170,7 +173,7 @@ final class MusicPlayerAppearanceTests: XCTestCase {
                     try await Task.sleep(for: .milliseconds(150))
                     text = try visibleText(window)
                 }
-                XCTAssertTrue(text.localizedCaseInsensitiveContains(String(localized: appearance.displayName)), text)
+                XCTAssertTrue(containsLabel(appearance, in: text), text)
                 XCTAssertEqual(primaryStore.loadAppearance(), appearance)
                 XCTAssertEqual(otherStore.loadAppearance(), .dark)
                 XCTAssertEqual(other.appearance, .dark)
@@ -249,12 +252,18 @@ final class MusicPlayerAppearanceTests: XCTestCase {
             try await Task.sleep(for: .milliseconds(100))
         }
         for appearance in MusicPlayerAppearance.pickerOrder {
-            XCTAssertTrue(text.contains(String(localized: appearance.displayName)), text)
+            XCTAssertTrue(containsLabel(appearance, in: text), text)
         }
     }
 
     private func descendants(_ view: UIView) -> [UIView] {
         [view] + view.subviews.flatMap(descendants)
+    }
+
+    private func containsLabel(_ appearance: MusicPlayerAppearance, in text: String) -> Bool {
+        String(localized: appearance.displayName).split(separator: " ").allSatisfy {
+            text.localizedCaseInsensitiveContains(String($0))
+        }
     }
 
     private func page(_ model: MusicPlayerSettingsModel) -> some View {

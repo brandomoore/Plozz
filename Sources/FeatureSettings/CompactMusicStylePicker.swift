@@ -22,7 +22,9 @@ public struct CompactMusicStylePicker<Preview: View>: View {
             PreviewCard(
                 title: appearance.displayName, isSelected: selection == appearance,
                 accent: palette.accent, compact: true, swatchAspectRatio: 1.6,
-                titleLineLimit: nil, action: { selection = appearance }
+                titleLineLimit: nil,
+                titleSizeGroup: MusicPlayerAppearance.pickerOrder.map(\.displayName),
+                action: { selection = appearance }
             ) {
                 preview(appearance)
             }
@@ -73,6 +75,8 @@ struct MusicPlayerStyleDetail: View {
                         isSelected: appearance == style,
                         accent: palette.accent,
                         compact: true,
+                        titleLineLimit: nil,
+                        titleSizeGroup: MusicPlayerAppearance.pickerOrder.map(\.displayName),
                         action: { appearance = style }
                     ) {
                         MusicStyleSwatch(appearance: style, cornerRadius: PlozzTheme.Metrics.Radius.content)

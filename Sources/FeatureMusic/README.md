@@ -125,11 +125,11 @@ Play/pause shows a loading indicator only after one uninterrupted second of
 buffering. Short waits retain Pause and its normal tap feedback; playback,
 pause, or view removal cancels the pending indicator without delaying audio.
 Mobile player appearance is configured under Settings → Appearance →
-Music player. The default Match App follows both the active palette (including
+Music player. The default Match App Theme follows both the active palette (including
 system/circadian changes) and Gradient Backgrounds: artwork colors when enabled,
 or flat Black, Dark or Light when disabled. Artwork, Black, Dark and Light are
 independent player-only overrides. The visual cards use the actual platform
-background renderer; Match App updates with the app's settings. The legacy
+background renderer; Match App Theme updates with the app's settings. The legacy
 colorful Dark preference retains its stored value and now appears as Artwork.
 The collapsed dock always inherits the app's color scheme and native regular
 Liquid Glass, matching the tab bar. Player-specific colors apply only to the
