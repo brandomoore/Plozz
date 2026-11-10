@@ -235,10 +235,12 @@ struct PlozziOSMetadataSettingsView: View {
                     .plozzForeground(.secondary)
             }
 
-            SecureField("TMDB v4 API Read Access Token", text: draftKeyBinding)
-                .textContentType(.password)
-                .disableAutocorrection(true)
-                .autocapitalization(.none)
+            SettingsInputRow("TMDB v4 API Read Access Token") {
+                SecureField("TMDB v4 API Read Access Token", text: draftKeyBinding, prompt: Text(""))
+                    .textContentType(.password)
+                    .autocorrectionDisabled()
+                    .textInputAutocapitalization(.never)
+            }
 
             tmdbStatusRow
 

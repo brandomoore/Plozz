@@ -519,6 +519,13 @@ extension HomeRowArrangementHostedTests {
 }
 #endif
 
+@MainActor @Observable
+private final class SettingsInputFixtureState {
+    var name = "Movie night"
+    var address = "https://fixture.invalid"
+    var key = ""
+}
+
 #if os(tvOS)
 @MainActor
 @Observable
@@ -2114,6 +2121,123 @@ final class HomeRowArrangementHostedTests: XCTestCase {
                     XCTAssertTrue(disabledText.contains("Add Continue Watching"), disabledText)
                 }
             }
+        }
+    }
+
+    func testSettingsInputsKeepLabelsAndNativeEditingTraits() async throws {
+        let state = SettingsInputFixtureState()
+        try await withWindow {
+            @Bindable var state = state
+            SettingsSectionGroup {
+                SettingsInputRow("Row name") {
+                    TextField("Row name", text: $state.name)
+                        .accessibilityIdentifier("input-name")
+                }
+                SettingsInputRow("Server address") {
+                    TextField("Server address", text: $state.address)
+                        .keyboardType(.URL)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .accessibilityIdentifier("input-address")
+                }
+                SettingsInputRow("API key") {
+                    SecureField("API key", text: $state.key, prompt: Text(""))
+                        .textContentType(.password)
+                        .accessibilityIdentifier("input-key")
+                }
+            }
+        } inspect: { window in
+            let lines = try await self.capture(window, name: "Shared settings input labels")
+            for label in ["Row name", "Server address", "API key"] {
+                XCTAssertTrue(lines.contains { $0.0.contains(label) }, lines.map(\.0).joined(separator: " | "))
+            }
+            #if os(iOS)
+            func fields(_ view: UIView) -> [UITextField] {
+                (view as? UITextField).map { [$0] } ?? view.subviews.flatMap(fields)
+            }
+            let controls = fields(window)
+            XCTAssertEqual(controls.count, 3)
+            let address = try XCTUnwrap(controls.first { $0.keyboardType == .URL })
+            XCTAssertEqual(address.autocapitalizationType, .none)
+            XCTAssertEqual(address.autocorrectionType, .no)
+            let key = try XCTUnwrap(controls.first(where: \.isSecureTextEntry))
+            XCTAssertEqual(key.textContentType, .password)
+            XCTAssertTrue(address.becomeFirstResponder())
+            address.selectAll(nil)
+            address.insertText("https://updated.invalid")
+            try await Task.sleep(for: .milliseconds(100))
+            XCTAssertEqual(state.address, "https://updated.invalid")
+            XCTAssertEqual(state.name, "Movie night")
+            XCTAssertTrue(state.key.isEmpty)
+            XCTAssertTrue(fields(window).contains { $0 === address }, "Editing must retain the native field.")
+            address.resignFirstResponder()
+            let edited = try await self.capture(window, name: "Settings labels after typing")
+            XCTAssertTrue(edited.contains { $0.0.contains("Server address") })
+            #endif
+        }
+    }
+
+    func testSettingsInputLabelWrapsAtAccessibleTextSize() async throws {
+        try await withWindow(size: CGSize(width: 390, height: 844)) {
+            SettingsSectionGroup {
+                SettingsInputRow("TMDB v4 API Read Access Token") {
+                    SecureField("TMDB v4 API Read Access Token", text: .constant(""), prompt: Text(""))
+                }
+            }
+            .padding(.horizontal, 24)
+            .environment(\.dynamicTypeSize, .accessibility3)
+            .environment(\.colorScheme, .light)
+        } inspect: { window in
+            let lines = try await self.capture(window, name: "Settings input accessible text")
+            let text = lines.map(\.0).joined(separator: " ")
+            XCTAssertTrue(text.contains("TMDB"), text)
+            XCTAssertTrue(text.contains("Access Token"), text)
+            for (_, bounds) in lines {
+                XCTAssertGreaterThanOrEqual(bounds.minX, 0)
+                XCTAssertLessThanOrEqual(bounds.maxX, 1)
+            }
+        }
+    }
+
+    func testHomeRowRemoveActionIsSeparateAndFullWidth() async throws {
+        var actionFrame = CGRect.zero
+        var inputFrame = CGRect.zero
+        try await withWindow {
+            VStack(alignment: .leading, spacing: 12) {
+                SettingsSectionGroup {
+                    SettingsInputRow("Row name") {
+                        TextField("Row name", text: .constant("Movie night"))
+                    }
+                }
+                .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { inputFrame = $0 }
+                Button("Save changes") {}
+                    .plozzActionButton()
+                HomeRowRemoveAction {}
+                    .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { actionFrame = $0 }
+            }
+            .padding(.horizontal, 24)
+        } inspect: { window in
+            let lines = try await self.capture(window, name: "Separate Home row removal")
+            let save = try XCTUnwrap(lines.first { $0.0.contains("Save changes") }).1
+            let remove = try XCTUnwrap(lines.first { $0.0.contains("Remove from Home") }).1
+            XCTAssertGreaterThanOrEqual((save.minY - remove.maxY) * window.bounds.height, 24)
+            XCTAssertGreaterThan(inputFrame.width, 0)
+            XCTAssertEqual(actionFrame.width, inputFrame.width, accuracy: 1)
+            #if os(tvOS)
+            let point = CGPoint(x: remove.midX * window.bounds.width, y: (1 - remove.midY) * window.bounds.height)
+            let target = try XCTUnwrap(self.focusableItem(at: point, in: window))
+            XCTAssertGreaterThanOrEqual(target.frame.width, actionFrame.width - 32)
+            let host = try XCTUnwrap(window.rootViewController as? HomeRowsFocusHost)
+            host.target = target
+            let system = try XCTUnwrap(UIFocusSystem(for: window))
+            system.requestFocusUpdate(to: host)
+            system.updateFocusIfNeeded()
+            let focused = XCTNSPredicateExpectation(
+                predicate: NSPredicate { _, _ in system.focusedItem === target }, object: nil
+            )
+            await self.fulfillment(of: [focused], timeout: 2)
+            _ = try await self.snapshot(window, name: "Home row Remove focused")
+            #endif
         }
     }
 

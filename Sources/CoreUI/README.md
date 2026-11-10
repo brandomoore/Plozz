@@ -76,6 +76,13 @@ Mobile settings actions inside `SettingsSectionGroup` use `settingsActionRow()`.
 It puts the group's 16-point horizontal and 12-point vertical insets inside the
 button or menu's hit area, with a 44-point minimum height. A container value tells
 the group not to add those insets twice. Keep `SettingsDisclosureLabel` padding-free.
+
+Ordinary Settings fields use `SettingsInputRow` inside their existing group or
+panel. It supplies a persistent, wrapping label and forwards that name to the
+native input for accessibility without speaking a second static label. Callers
+retain bindings, keyboard/content types, secure entry, focus and submit behavior.
+The row owns no background or outer insets; do not nest settings surfaces around
+it. Search, code-entry, and message-composition controls are intentional exceptions.
 Composite rows use `settingsControlTarget()` inside each control label for separate,
 non-overlapping 44-by-44 minimum targets; do not mark the entire composite as one action.
 `SettingsControlMenu` places that minimum inside the native menu label: a frame

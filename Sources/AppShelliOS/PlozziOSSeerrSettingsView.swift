@@ -161,14 +161,18 @@ struct PlozziOSSeerrSettingsView: View {
                 }
             }
         }
-        TextField("Server address", text: $urlText, prompt: Text(verbatim: "192.168.1.20:5055"))
-            .textInputAutocapitalization(.never)
-            .autocorrectionDisabled()
-            .keyboardType(.URL)
-            .settingsSearchAnchor("seerr-profile-user")
-        SecureField("API key", text: $apiKey)
-            .textInputAutocapitalization(.never)
-            .autocorrectionDisabled()
+        SettingsInputRow("Server address") {
+            TextField("Server address", text: $urlText, prompt: Text(verbatim: "192.168.1.20:5055"))
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .keyboardType(.URL)
+        }
+        .settingsSearchAnchor("seerr-profile-user")
+        SettingsInputRow("API key") {
+            SecureField("API key", text: $apiKey, prompt: Text(""))
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+        }
         Button("Connect") {
             connect()
         }

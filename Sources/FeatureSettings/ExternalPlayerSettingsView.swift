@@ -304,11 +304,13 @@ private struct CustomExternalPlayerControls: View {
         VStack(alignment: .leading, spacing: 20) {
             Text("Use {url} for the encoded video link. Custom players don't receive resume positions or return progress.")
                 .settingsHelperText()
-            TextField("myplayer://play?url={url}", text: $template)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-                .accessibilityLabel("Player URL template")
-                .accessibilityIdentifier("external-player-custom-template").settingsSearchAnchor("external-template")
+            SettingsInputRow("Player URL template") {
+                TextField("Player URL template", text: $template, prompt: Text(verbatim: "myplayer://play?url={url}"))
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .accessibilityIdentifier("external-player-custom-template")
+            }
+            .settingsSearchAnchor("external-template")
             Text("Don't include passwords or access tokens in this template.")
                 .settingsHelperText()
             if let error { Text(error.message).foregroundStyle(.red) }

@@ -121,12 +121,14 @@ struct CollectionSectionSettingsView: View {
             }
             .buttonStyle(SettingsFormButtonStyle())
             .accessibilityIdentifier("collection-section-source")
-            SettingsSectionGroup("Row name") {
-                TextField("Row name", text: $draft.name, prompt: Text(verbatim: draft.source.title))
-                    .focused($isNameFocused)
-                    .submitLabel(.done)
-                    .onSubmit { isNameFocused = false }
-                    .accessibilityIdentifier("collection-section-name")
+            SettingsSectionGroup {
+                SettingsInputRow("Row name") {
+                    TextField("Row name", text: $draft.name, prompt: Text(verbatim: draft.source.title))
+                        .focused($isNameFocused)
+                        .submitLabel(.done)
+                        .onSubmit { isNameFocused = false }
+                        .accessibilityIdentifier("collection-section-name")
+                }
             }
             Button {
                 do {
@@ -145,7 +147,7 @@ struct CollectionSectionSettingsView: View {
             .disabled(!accounts.contains(where: draft.source.matches))
             .accessibilityIdentifier("collection-section-save")
             if !isNew {
-                Button("Remove from Home", role: .destructive) {
+                HomeRowRemoveAction {
                     do {
                         try visibility.setHomeSectionVisible(false, id: draft.rowID, catalog: currentCatalog)
                         dismiss()
@@ -154,7 +156,6 @@ struct CollectionSectionSettingsView: View {
                         PlozzLog.app.error("Could not remove collection section")
                     }
                 }
-                .plozzActionButton(role: .secondary)
             }
             if saveFailed { InlineErrorMessage(Text("Couldn't update this row. Try again.")) }
         }

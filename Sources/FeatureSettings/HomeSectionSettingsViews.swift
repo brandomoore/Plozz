@@ -195,8 +195,8 @@ struct HomeRowNameEditor: View {
 
     var body: some View {
         #if os(iOS)
-        SettingsSectionGroup("Row name") {
-            nameField
+        SettingsSectionGroup {
+            SettingsInputRow("Row name") { nameField }
         }
         Button("Save changes", action: save)
             .plozzActionButton(role: .primary)
@@ -204,7 +204,7 @@ struct HomeRowNameEditor: View {
             .accessibilityIdentifier("home-section-name-save")
         #else
         SettingsSectionGroup {
-            nameField
+            SettingsInputRow("Row name") { nameField }
             Button("Save changes", action: save)
                 .buttonStyle(SettingsFormButtonStyle())
                 .disabled(trimmedName == (visibility.visibility.homeRowName(for: choice.id) ?? ""))
@@ -225,6 +225,27 @@ struct HomeRowNameEditor: View {
         visibility.setHomeRowName(name, for: choice.id)
         name = visibility.visibility.homeRowName(for: choice.id) ?? ""
         isNameFocused = false
+    }
+}
+
+struct HomeRowRemoveAction: View {
+    let action: () -> Void
+
+    var body: some View {
+        SettingsSectionGroup {
+            Button(role: .destructive, action: action) {
+                Text("Remove from Home")
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            #if os(iOS)
+            .settingsActionRow()
+            .foregroundStyle(.red)
+            #else
+            .plozzActionButton(role: .secondary)
+            #endif
+            .accessibilityIdentifier("home-section-remove")
+        }
+        .padding(.top, 16)
     }
 }
 
@@ -297,7 +318,7 @@ struct HomeSectionSettingsView: View {
                 .accessibilityIdentifier("home-section-restore-empty")
             }
             if showsRemoveAction {
-                Button("Remove from Home", role: .destructive) {
+                HomeRowRemoveAction {
                     do {
                         try visibility.setHomeSectionVisible(false, id: choice.id, catalog: inventory.currentCatalog(
                             libraries: libraries, accounts: accounts, visibility: visibility
@@ -305,8 +326,6 @@ struct HomeSectionSettingsView: View {
                         dismiss()
                     } catch { failed = true }
                 }
-                .plozzActionButton(role: .secondary)
-                .accessibilityIdentifier("home-section-remove")
             }
             if failed { InlineErrorMessage(Text("Couldn't update this row. Try again.")) }
             if inventory.isLoading { ProgressView("Loading available rows…") }

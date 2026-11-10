@@ -7,6 +7,15 @@ system green appearance instead of inheriting the page's monochrome navigation t
 
 The Settings screen and its detail pages. Profile-aware and integration-aware.
 
+Ordinary Settings text inputs use CoreUI's `SettingsInputRow` for a persistent
+label above the native field. Existing settings groups/panels own backgrounds and
+insets; the row does not add another surface or replace native editing, secure
+entry, keyboard traits, focus, validation, or save behavior. Home row names, Seerr
+connection fields, TMDB tokens, custom player URLs, and mobile subtitle-language
+codes share this treatment. Search, authorization-code entry, diagnostic-message
+composition, sign-in, server setup, and profile forms keep their intentional
+task-specific presentation.
+
 Version selection offers Ask every time, Choose automatically, and Use first from server
 on both platforms and at first use. Use first from server uses the selected server's first
 version and ignores remembered choices; a manual file selection still wins.
@@ -684,6 +693,8 @@ watch history and planning-list behavior are documented in
   Row-name fields have a persistent label on mobile and a separate native save action.
   Done dismisses the keyboard and saves ordinary row names; collection rows retain
   their existing Save changes action for the whole draft.
+  Remove from Home is a separate, full-width destructive action group below the
+  row's editing controls, shared by ordinary and collection rows.
   Source-specific rows and their settings
   use the shared provider brand mark, including the transport badge for shares.
   In the editor, Add row, and reorder rows, the mark sits beside the

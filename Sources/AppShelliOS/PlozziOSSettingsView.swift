@@ -2845,20 +2845,23 @@ private struct PlozziOSSubtitleSettingsView: View {
                     "Download subtitles automatically",
                     isOn: $behavior.settings.autoDownloadSubtitles
                 ).settingsSearchAnchor("subtitle-download")
-                TextField(
-                    "Preferred language code",
-                    text: Binding(
-                        get: { behavior.settings.preferredSubtitleLanguage ?? "" },
-                        set: {
-                            behavior.settings.preferredSubtitleLanguage =
-                                $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                                ? nil
-                                : $0
-                        }
+                SettingsInputRow("Preferred language code") {
+                    TextField(
+                        "Preferred language code",
+                        text: Binding(
+                            get: { behavior.settings.preferredSubtitleLanguage ?? "" },
+                            set: {
+                                behavior.settings.preferredSubtitleLanguage =
+                                    $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                                    ? nil
+                                    : $0
+                            }
+                        ),
+                        prompt: Text("")
                     )
-                )
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                }
                 .settingsSearchAnchor("subtitle-language")
                 Picker(
                     "SDH subtitles",
