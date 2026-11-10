@@ -119,7 +119,7 @@ struct MobileMusicArtistDetail: View {
                                     .foregroundStyle(.primary)
                                     .fixedSize(horizontal: false, vertical: true)
                                 if let year = album.year {
-                                    Text(String(year)).font(.caption).foregroundStyle(.white.opacity(0.8))
+                                    Text(String(year)).font(.caption).foregroundStyle(.primary.opacity(0.8))
                                 }
                             }
                             .contentShape(Rectangle())
@@ -138,6 +138,7 @@ private struct MobileMusicDetailActions: View {
     let onPlay: () -> Void
     let onShuffle: () -> Void
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         let layout = dynamicTypeSize.isAccessibilitySize
@@ -146,7 +147,7 @@ private struct MobileMusicDetailActions: View {
         layout {
             Button(action: onPlay) {
                 Label("Play", systemImage: "play.fill").frame(maxWidth: .infinity)
-                    .foregroundStyle(.black)
+                    .foregroundStyle(colorScheme == .light ? .white : .black)
             }
             .buttonStyle(.borderedProminent)
             .accessibilityIdentifier("music.detail.play")
@@ -156,7 +157,7 @@ private struct MobileMusicDetailActions: View {
             .buttonStyle(.bordered)
             .accessibilityIdentifier("music.detail.shuffle")
         }
-        .tint(.white)
+        .tint(colorScheme == .light ? .black : .white)
         .controlSize(.large)
         .disabled(isEmpty)
     }
@@ -177,7 +178,7 @@ private struct MobileMusicDetailTrackRow: View {
                     if isCurrent {
                         NowPlayingEqualizer(isAnimating: isPlaying && !reduceMotion, tint: .primary)
                     } else {
-                        Text(String(number)).font(.subheadline.monospacedDigit()).foregroundStyle(.white.opacity(0.8))
+                        Text(String(number)).font(.subheadline.monospacedDigit()).foregroundStyle(.primary.opacity(0.8))
                     }
                 }
                 .frame(width: 28)
@@ -189,7 +190,7 @@ private struct MobileMusicDetailTrackRow: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 Text(MusicFormat.duration(track.duration))
                     .font(.subheadline.monospacedDigit())
-                    .foregroundStyle(.white.opacity(0.8))
+                    .foregroundStyle(.primary.opacity(0.8))
                     .fixedSize()
             }
             .padding(.vertical, 12)
@@ -214,22 +215,24 @@ private struct MobileMusicDetailScaffold<Actions: View, Content: View>: View {
     @ViewBuilder let actions: () -> Actions
     @ViewBuilder let content: () -> Content
     @Environment(\.themePalette) private var theme
+    @Environment(\.gradientBackgroundsEnabled) private var gradientEnabled
     @Environment(\.plozzArtworkPolicy) private var artworkPolicy
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var resolvedArtwork: ResolvedArtwork?
     @State private var colors = MusicDetailColors.neutral
 
-    private var isBlack: Bool { theme == .pureBlack }
-    private var heroColor: Color { isBlack ? .black : colors.hero }
-    private var deepColor: Color { isBlack ? .black : colors.deep }
+    private var flatBackground: Color { theme == .pureBlack ? .black : theme.backgroundBase }
+    private var heroColor: Color { gradientEnabled ? colors.hero : flatBackground }
+    private var deepColor: Color { gradientEnabled ? colors.deep : flatBackground }
+    private var pagePalette: ThemePalette { gradientEnabled ? .dark : theme }
 
     var body: some View {
         GeometryReader { geometry in
             let wide = geometry.size.width >= 700 && !dynamicTypeSize.isAccessibilitySize
             ScrollView {
                 VStack(spacing: 0) {
-                    if isArtist && !wide && !isBlack && !dynamicTypeSize.isAccessibilitySize {
+                    if isArtist && !wide && gradientEnabled && !dynamicTypeSize.isAccessibilitySize {
                         artistHero(width: geometry.size.width, topInset: geometry.safeAreaInsets.top)
                     } else {
                         framedHero(width: geometry.size.width, wide: wide, topInset: geometry.safeAreaInsets.top)
@@ -253,15 +256,15 @@ private struct MobileMusicDetailScaffold<Actions: View, Content: View>: View {
             .ignoresSafeArea(.container, edges: .top)
             .background(deepColor.ignoresSafeArea())
         }
-        .environment(\.colorScheme, .dark)
-        .environment(\.themePalette, isBlack ? .pureBlack : .dark)
+        .environment(\.colorScheme, pagePalette.isLight ? .light : .dark)
+        .environment(\.themePalette, pagePalette)
         .tint(.musicPlayerAccent)
-        .toolbarColorScheme(.dark, for: .navigationBar)
+        .toolbarColorScheme(pagePalette.isLight ? .light : .dark, for: .navigationBar)
         .toolbarBackground(.hidden, for: .navigationBar)
         .navigationBarTitleDisplayMode(.inline)
-        .task(id: PaletteRequest(resolution: resolvedArtwork, identity: artworkID, policy: artworkPolicy.forArea(.music).identity, isBlack: isBlack)) {
+        .task(id: PaletteRequest(resolution: resolvedArtwork, identity: artworkID, policy: artworkPolicy.forArea(.music).identity, gradientEnabled: gradientEnabled)) {
             colors = .neutral
-            guard !isBlack, let resolvedArtwork,
+            guard gradientEnabled, let resolvedArtwork,
                   resolvedArtwork.policy == artworkPolicy.forArea(.music).identity,
                   let reference = resolvedArtwork.reference,
                   let image = await ArtworkImageCache.shared.image(for: reference, variant: .heroBackdrop),
@@ -337,10 +340,10 @@ private struct MobileMusicDetailScaffold<Actions: View, Content: View>: View {
             Text(title).font(.title.bold()).foregroundStyle(.primary).accessibilityAddTraits(.isHeader)
                 .accessibilityIdentifier("music.detail.title")
             if let subtitle, !subtitle.isEmpty {
-                Text(subtitle).font(.title3).foregroundStyle(.white.opacity(0.8))
+                Text(subtitle).font(.title3).foregroundStyle(.primary.opacity(0.8))
             }
             if !metadata.isEmpty {
-                Text(metadata).font(.caption).foregroundStyle(.white.opacity(0.8))
+                Text(metadata).font(.caption).foregroundStyle(.primary.opacity(0.8))
             }
             actions().padding(.top, 12).frame(maxWidth: 520)
         }
@@ -358,7 +361,7 @@ private struct MobileMusicDetailScaffold<Actions: View, Content: View>: View {
         let resolution: ResolvedArtwork?
         let identity: String
         let policy: String
-        let isBlack: Bool
+        let gradientEnabled: Bool
     }
 }
 

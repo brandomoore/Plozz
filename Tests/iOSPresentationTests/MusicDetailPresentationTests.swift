@@ -52,7 +52,8 @@ final class MusicDetailPresentationTests: XCTestCase {
                             }
                         }
                 }
-                .environment(\.themePalette, .light)
+                .environment(\.themePalette, .pureBlack)
+                .environment(\.gradientBackgroundsEnabled, true)
                 .tint(.blue)
                 try await mount(page, size: size, name: "Navigation seam \(Int(size.width)) \(kind)") { host, window in
                     let bar = try XCTUnwrap(self.navigationBar(in: host.view))
@@ -84,6 +85,71 @@ final class MusicDetailPresentationTests: XCTestCase {
                                            "Compact artwork headers must not acquire a second navigation scrim")
                         }
                     }
+                }
+            }
+        }
+    }
+
+    func testDetailPagesUpdateToFlatAppThemeWithoutChangingArtwork() async throws {
+        let url = URL(string: "https://music-detail.invalid/\(UUID()).png")!
+        let art = UIGraphicsImageRenderer(size: CGSize(width: 48, height: 48)).image { context in
+            UIColor.cyan.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 48, height: 48))
+        }
+        let response = try XCTUnwrap(HTTPURLResponse(
+            url: url, statusCode: 200, httpVersion: nil,
+            headerFields: ["Content-Type": "image/png", "Cache-Control": "max-age=3600"]
+        ))
+        let cache = try XCTUnwrap(ArtworkSession.shared.configuration.urlCache)
+        cache.storeCachedResponse(
+            CachedURLResponse(response: response, data: try XCTUnwrap(art.pngData())), for: URLRequest(url: url)
+        )
+        defer { cache.removeCachedResponse(for: URLRequest(url: url)) }
+        for kind in ["album", "artist", "playlist"] {
+            func page(_ palette: ThemePalette, gradients: Bool) -> some View {
+                Group {
+                    if kind == "artist" {
+                        MobileMusicArtistDetail(
+                            artist: MusicArtist(id: "artist", name: "Artist", artworkURL: url),
+                            albums: [], onSelectAlbum: { _ in }
+                        )
+                    } else if kind == "playlist" {
+                        MobileMusicPlaylistDetail(
+                            playlist: MusicPlaylist(id: "playlist", title: "Playlist", artworkURL: url),
+                            tracks: [], nowPlayingTrack: nil, isPlaying: false,
+                            onPlay: {}, onShuffle: {}, onPlayTrack: { _ in }
+                        )
+                    } else {
+                        MobileMusicAlbumDetail(
+                            album: MusicAlbum(id: "album", title: "Album", artworkURL: url),
+                            tracks: [], nowPlayingTrack: nil, isPlaying: false,
+                            onPlay: {}, onShuffle: {}, onPlayTrack: { _ in }
+                        )
+                    }
+                }
+                .environment(\.themePalette, palette)
+                .environment(\.gradientBackgroundsEnabled, gradients)
+            }
+            try await mount(page(.pureBlack, gradients: true), size: CGSize(width: 390, height: 844),
+                            name: "\(kind) artwork") { host, window in
+                for palette in [ThemePalette.pureBlack, .dark, .light, .pureBlack] {
+                    host.rootView = page(palette, gradients: false)
+                    try await Task.sleep(for: .milliseconds(200))
+                    let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+                        window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+                    }
+                    let background = try self.pixel(in: image, at: CGPoint(x: 380, y: 300))
+                    let renderer = ImageRenderer(content:
+                        (palette == .pureBlack ? Color.black : palette.backgroundBase).frame(width: 10, height: 10)
+                    )
+                    let expected = try self.pixel(in: XCTUnwrap(renderer.uiImage), at: CGPoint(x: 5, y: 5))
+                    for channel in 0..<3 {
+                        XCTAssertEqual(background[channel], expected[channel], accuracy: 0.02, kind)
+                    }
+                    let cover = try self.pixel(in: image, at: CGPoint(x: 195, y: 150))
+                    XCTAssertGreaterThan(cover[1], cover[0] + 0.3, "Disabling gradients must retain the cyan cover")
+                    host.rootView = page(palette, gradients: true)
+                    try await Task.sleep(for: .milliseconds(200))
                 }
             }
         }

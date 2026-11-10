@@ -15,10 +15,13 @@ using the app's shared ambient mesh or the theme's flat background. System
 continues to preview both light and dark.
 
 On mobile beta builds, Appearance → Music player sits beneath the theme controls
-in the same group and exposes the existing
-per-profile Appearance preference: Dark, Pure Black, Light, and Match Theme.
-The native picker updates the active player's settings model directly, without
-changing the app theme or music browsing pages. Settings search reaches the same
+in the same group and exposes the per-profile choices Match App (default),
+Artwork, Black, Dark, and Light. Its visual cards reuse the app-theme picker
+layout and shared preview-card styling, with each platform's actual player
+background. Match App previews the current app theme and Gradient Backgrounds;
+explicit choices stay independent. The picker updates the active player's
+settings model directly, without changing the app theme or music browsing pages.
+Settings search reaches the same
 control; production mobile builds hide the page and its search entry. The TV-only track
 details toggle is not offered on mobile.
 

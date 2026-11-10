@@ -125,8 +125,12 @@ Play/pause shows a loading indicator only after one uninterrupted second of
 buffering. Short waits retain Pause and its normal tap feedback; playback,
 pause, or view removal cancels the pending indicator without delaying audio.
 Mobile player appearance is configured under Settings → Appearance →
-Music player. Explicit choices override the app theme; Match Theme resolves the
-active palette, including Pure Black and system/circadian light or dark changes.
+Music player. The default Match App follows both the active palette (including
+system/circadian changes) and Gradient Backgrounds: artwork colors when enabled,
+or flat Black, Dark or Light when disabled. Artwork, Black, Dark and Light are
+independent player-only overrides. The visual cards use the actual platform
+background renderer; Match App updates with the app's settings. The legacy
+colorful Dark preference retains its stored value and now appears as Artwork.
 The collapsed dock always inherits the app's color scheme and native regular
 Liquid Glass, matching the tab bar. Player-specific colors apply only to the
 expanded backdrop and controls, not the dock's glass or text. Existing reduced
@@ -151,10 +155,11 @@ Native back controls remain, without an additional navigation-bar background or
 iOS 26 top-edge scrim over the hero.
 
 The detail backdrop uses the same policy-resolved, cached bitmap as its hero,
-with a dark two-tone palette that keeps text legible. These immersive pages use
-dark foreground styling even in the light app theme; Pure Black uses a black
-background and framed artwork. Reduce Motion disables artist overscroll stretch
-and the active-track equalizer animation. Playlist, video, and tvOS details are
+with a dark two-tone palette that keeps text legible when Gradient Backgrounds
+is enabled, including in Black mode. Disabling gradients uses the flat app theme
+and its foreground contrast, with framed artwork still visible. The player
+override never changes these pages. Reduce Motion disables artist overscroll
+stretch and the active-track equalizer animation. Video and tvOS details are
 unchanged. No artist top-song fetching, downloads, or radio were added.
 The presentation host's `--music-detail-fixture` opens the album preview;
 `--music-artist`, `--music-light`, `--music-oled`, `--music-no-art`, and

@@ -1492,7 +1492,7 @@ final class SettingsInteractionTests: XCTestCase {
         reveal(music)
         music.tap()
         XCTAssertTrue(app.navigationBars["Music player"].waitForExistence(timeout: 3))
-        XCTAssertTrue(app.buttons["music-player-appearance"].exists)
+        XCTAssertTrue(app.buttons["music-appearance-matchTheme"].exists)
     }
 
     func testLabelEditsEnterCustomAndPresetsReplaceAllViews() {

@@ -8,6 +8,7 @@ import FeatureLiveTV
 import FeatureAuth
 import FeatureProfiles
 import FeatureSettings
+import FeatureMusic
 import FeatureSyncSetup
 import SwiftUI
 import UIKit
@@ -2208,11 +2209,9 @@ struct PlozziOSMusicPlayerSettingsView: View {
 
     var body: some View {
         List {
-            SettingsSectionGroup {
-                Picker("Appearance", selection: $model.appearance) {
-                    ForEach(MusicPlayerAppearance.pickerOrder) { appearance in
-                        Label(appearance.displayName, systemImage: appearance.symbolName).tag(appearance)
-                    }
+            SettingsSectionGroup("Appearance") {
+                CompactMusicStylePicker(selection: $model.appearance) { appearance in
+                    MusicPlayerStylePreview(appearance: appearance)
                 }
                 .settingsSearchAnchor("music-style")
                 .accessibilityIdentifier("music-player-appearance")

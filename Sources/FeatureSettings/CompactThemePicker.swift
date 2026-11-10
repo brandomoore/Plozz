@@ -13,7 +13,6 @@ import CoreUI
 public struct CompactThemePicker: View {
     @Binding var selection: AppTheme
     @Environment(\.themePalette) private var palette
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     public init(selection: Binding<AppTheme>) {
         self._selection = selection
@@ -21,17 +20,8 @@ public struct CompactThemePicker: View {
 
     public var body: some View {
         #if os(iOS)
-        if dynamicTypeSize.isAccessibilitySize {
-            VStack(spacing: 12) { options(AppTheme.pickerOrder) }
-        } else {
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: 12) { options(AppTheme.pickerOrder, width: 144) }
-                Grid(horizontalSpacing: 12, verticalSpacing: 12) {
-                    GridRow { options(Array(AppTheme.pickerOrder.prefix(2))) }
-                    GridRow { options(Array(AppTheme.pickerOrder.suffix(2))) }
-                }
-            }
-            .frame(maxWidth: .infinity)
+        AppearancePreviewLayout(options: AppTheme.pickerOrder) { theme in
+            option(theme)
         }
         #else
         HStack(alignment: .top, spacing: 16) {
@@ -50,21 +40,53 @@ public struct CompactThemePicker: View {
     }
 
     #if os(iOS)
-    private func options(_ themes: [AppTheme], width: CGFloat? = nil) -> some View {
-        ForEach(themes) { theme in
-            PreviewCard(
-                title: theme.displayName, isSelected: selection == theme,
-                accent: palette.accent, compact: true, swatchAspectRatio: 1.6,
-                titleLineLimit: nil, action: { selection = theme }
-            ) {
-                ThemeSwatch(theme: theme, cornerRadius: PlozzTheme.Metrics.Radius.content)
-            }
-            .frame(width: width)
-            .accessibilityLabel(Text(theme.displayName))
-            .accessibilityAddTraits(selection == theme ? .isSelected : [])
-            .accessibilityIdentifier("theme-option-\(theme.rawValue)")
+    private func option(_ theme: AppTheme) -> some View {
+        PreviewCard(
+            title: theme.displayName, isSelected: selection == theme,
+            accent: palette.accent, compact: true, swatchAspectRatio: 1.6,
+            titleLineLimit: nil, action: { selection = theme }
+        ) {
+            ThemeSwatch(theme: theme, cornerRadius: PlozzTheme.Metrics.Radius.content)
         }
+        .accessibilityLabel(Text(theme.displayName))
+        .accessibilityAddTraits(selection == theme ? .isSelected : [])
+        .accessibilityIdentifier("theme-option-\(theme.rawValue)")
     }
     #endif
 }
+
+#if os(iOS)
+struct AppearancePreviewLayout<Option: Identifiable, Content: View>: View {
+    let options: [Option]
+    @ViewBuilder let content: (Option) -> Content
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    var body: some View {
+        if dynamicTypeSize.isAccessibilitySize {
+            VStack(spacing: 12) {
+                ForEach(options) { content($0) }
+            }
+        } else {
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 12) {
+                    ForEach(options) { content($0).frame(width: 144) }
+                }
+                Grid(horizontalSpacing: 12, verticalSpacing: 12) {
+                    ForEach(Array(stride(from: 0, to: options.count, by: 2)), id: \.self) { index in
+                        GridRow {
+                            content(options[index])
+                            if index + 1 < options.count {
+                                content(options[index + 1])
+                            } else {
+                                Color.clear.gridCellUnsizedAxes([.horizontal, .vertical])
+                            }
+                        }
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity)
+        }
+    }
+}
+#endif
 #endif

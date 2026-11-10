@@ -4,6 +4,7 @@
 #if os(iOS)
 import SwiftUI
 import CoreModels
+import CoreUI
 #if canImport(UIKit)
 import UIKit
 #endif
@@ -19,9 +20,18 @@ enum PlayerBackgroundStyle: String, CaseIterable, Sendable {
     case adaptive
     /// Pure black (AMOLED / OLED battery + aesthetic).
     case oled
-    /// Follow the app's light/dark theme (a neutral system background).
+    /// Plain light background.
     case theme
+    case dark
 
+    init(appearance: MusicPlayerAppearance) {
+        switch appearance {
+        case .artwork, .matchTheme: self = .adaptive
+        case .pureBlack: self = .oled
+        case .dark: self = .dark
+        case .light: self = .theme
+        }
+    }
     var storageValue: String { rawValue }
     static let storageKey = "playerBackgroundStyle"
     static let `default`: PlayerBackgroundStyle = .adaptive
@@ -155,10 +165,13 @@ struct PlayerBackdrop: View {
         case .oled:
             Color.black
         case .theme:
-            Color.mozzBackground
+            MusicPlayerAppearance.light.neutralBackground
+        case .dark:
+            MusicPlayerAppearance.dark.neutralBackground
         case .adaptive:
             adaptive
         }
+
     }
 
     private var drift: Bool { animated && !reduceMotion && !power.isLowPower }
@@ -249,6 +262,35 @@ struct PlayerBackdrop: View {
             SIMD2(0.5 + ax * s(0.10, 4.2), 1),
             SIMD2(1, 1),
         ]
+    }
+}
+
+public struct MusicPlayerStylePreview: View {
+    let appearance: MusicPlayerAppearance
+    @Environment(\.themePalette) private var palette
+    @Environment(\.gradientBackgroundsEnabled) private var gradientEnabled
+
+    public init(appearance: MusicPlayerAppearance) {
+        self.appearance = appearance
+    }
+
+    public var body: some View {
+        let resolved = appearance.resolved(palette: palette, gradientEnabled: gradientEnabled)
+        MusicPlayerPreview(isLight: resolved == .light) {
+            PlayerBackdrop(
+                style: PlayerBackgroundStyle(appearance: resolved),
+                grid: Self.previewGrid, animated: false
+            )
+        }
+    }
+
+    static var previewGrid: ArtworkColorGrid {
+        let colors = MusicPlayerPreview<Color>.artworkColors
+        return ArtworkColorGrid(colors: [
+            colors[0], colors[0], colors[1],
+            colors[0], colors[1], colors[1],
+            colors[1], colors[1], colors[1]
+        ])
     }
 }
 

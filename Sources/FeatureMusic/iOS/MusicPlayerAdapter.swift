@@ -314,15 +314,16 @@ public struct MusicPlayerOverlay: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.plozzArtworkPolicy) private var artworkPolicy
     @Environment(\.themePalette) private var palette
+    @Environment(\.gradientBackgroundsEnabled) private var gradientEnabled
 
     public static func contentClearance(hasBottomBar: Bool) -> CGFloat {
         BottomBar.contentClearance(hasBottomBar: hasBottomBar)
     }
 
-    static func resolvedAppearance(_ appearance: MusicPlayerAppearance, palette: ThemePalette) -> MusicPlayerAppearance {
-        guard appearance == .matchTheme else { return appearance }
-        if palette == .pureBlack { return .pureBlack }
-        return palette == .light ? .light : .dark
+    static func resolvedAppearance(
+        _ appearance: MusicPlayerAppearance, palette: ThemePalette, gradientEnabled: Bool
+    ) -> MusicPlayerAppearance {
+        appearance.resolved(palette: palette, gradientEnabled: gradientEnabled)
     }
 
     public init(session: MusicPlayerSession, hasBottomBar: Bool, contentLeft: CGFloat = 0, appearance: MusicPlayerAppearance = .matchTheme) {
@@ -333,7 +334,7 @@ public struct MusicPlayerOverlay: View {
     }
 
     public var body: some View {
-        let appearance = Self.resolvedAppearance(appearance, palette: palette)
+        let appearance = Self.resolvedAppearance(appearance, palette: palette, gradientEnabled: gradientEnabled)
         Group {
             if session.controller.hasActivePlayback {
                 NowPlayingMorphContainer(
@@ -344,7 +345,7 @@ public struct MusicPlayerOverlay: View {
                 )
                 .environmentObject(session.environment)
                 .environmentObject(session.toasts)
-                .environment(\.musicPlayerBackground, appearance == .pureBlack ? .oled : appearance == .light ? .theme : .adaptive)
+                .environment(\.musicPlayerBackground, PlayerBackgroundStyle(appearance: appearance))
                 .transaction { if reduceMotion { $0.disablesAnimations = true } }
                 .task(id: session.playback.currentTrack?.id) {
                     await session.environment.loadFeedback()
