@@ -37,6 +37,25 @@ source-switch fencing and verifies the composed Play target after refreshed and
 cleared single-source progress. These checks complement platform builds; they
 are not physical-device playback evidence.
 
+`DetailSelectionInteractionTests` complements those model checks with real
+detail views and native remote/touch input on TV, iPhone, and iPad. The fixture
+uses distinct provider item IDs and colliding file IDs: movie and series tests
+switch from Plex to Jellyfin, choose the smaller version, then assert the exact
+account/item/file delivered by Play. The series handoff must be an episode,
+not the show. A single-source movie also exercises actual background/foreground
+refresh twice, verifying advanced and then cleared resume positions at the next
+Play. The fixture shortens the refresh threshold to one second; it does not
+change production timing.
+
+On TV the receipt comes from the production view's `onPlay` callback. On mobile
+it comes from the registered provider's streaming request, including start
+position, after normal account routing and player presentation. The fixture
+disables resume rewind and deliberately returns a playback error after recording
+that request; the test closes the real player and checks the receipt. This
+verifies UI-to-playback handoff, not media decoding or external-player launching.
+Run the class in `PlozzHomeFixtureTests` (`PlozzHomeRemoteTests` target) or
+`PlozziOSInteractionTests`, using the [safe simulator routes](../testing-policy.md).
+
 ## Related loading
 
 Library-only Related rows use the active profile's identity index to locate a

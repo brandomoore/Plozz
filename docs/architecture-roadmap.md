@@ -137,6 +137,14 @@ The baseline had 1,596 passes with those same two failures and one skip.
 The selection cases passed, but this is not a clean Home-suite or physical-device
 playback result. The unrelated failures are not changed by this pilot.
 
+The follow-up production-view smoke matrix passed all nine cases: movie
+server/version selection, series episode handoff, and refreshed/cleared movie
+progress on each of TV, iPhone, and iPad simulators. These cases are retained in
+`DetailSelectionInteractionTests`; their [observation boundaries](feature-home/detail-and-playback.md#selection-ownership)
+stop at the playback handoff, not actual decoding. Mobile picker cases emitted
+non-failing invalid-frame runtime warnings; this result does not establish their
+cause or a warning-free layout.
+
 **Done when:** the selected behavior has fewer independently mutable authorities
 and a smaller required reading set; TV/mobile use the same policy; account,
 edition, watch-state, and cancellation regressions pass. Exercise real mounted

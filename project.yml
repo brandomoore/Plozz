@@ -492,6 +492,7 @@ targets:
         basedOnDependencyAnalysis: false
     sources:
       - path: Tests/FocusHost
+      - path: Tests/HomePresentationSupport/DetailSelectionFixture.swift
       - path: Tests/HomePresentationSupport/ContentRefreshReturnFixture.swift
       - path: Tests/iOSPresentationHost/DetailInformationFixture.swift
       - path: Tests/DiscoverPresentationSupport/DiscoverBrowseFixture.swift
@@ -529,6 +530,7 @@ targets:
         basedOnDependencyAnalysis: false
     sources:
       - path: Tests/iOSPresentationHost
+      - path: Tests/HomePresentationSupport/DetailSelectionFixture.swift
       - path: Tests/HomePresentationSupport/ContentRefreshReturnFixture.swift
       - path: Tests/DiscoverPresentationSupport/DiscoverBrowseFixture.swift
       - path: Tests/AuthPresentationSupport/MobileServerOnboardingFixture.swift
@@ -614,6 +616,7 @@ targets:
       - path: Tests/FocusIntegrationTests/DiagnosticRecordingStatusHostedTests.swift
       - path: Tests/FocusIntegrationTests/PINRequirementPresentationTests.swift
       - path: Tests/HomePresentationSupport
+        excludes: ["ContentRefreshReturnFixture.swift", "ContentRefreshReturnInteractionTests.swift", "DetailSelectionFixture.swift", "DetailSelectionInteractionTests.swift"]
       - path: Tests/TestSupportPerformance
       - path: Tests/PerformancePresentationSupport
       - path: Tests/ProviderIPTVTests/IPTVTestHTTPServer.swift
@@ -645,6 +648,7 @@ targets:
     platform: iOS
     sources:
       - path: Tests/iOSInteractionTests
+      - path: Tests/HomePresentationSupport/DetailSelectionInteractionTests.swift
       - path: Tests/HomePresentationSupport/ContentRefreshReturnInteractionTests.swift
       - path: Tests/PlaybackPresentationSupport/PlaybackFailureInteractionTests.swift
       - path: Tests/PlaybackPresentationSupport/DiscReviewScreenshotTests.swift
@@ -666,6 +670,7 @@ targets:
     platform: tvOS
     sources:
       - path: Tests/HomeRemoteTests
+      - path: Tests/HomePresentationSupport/DetailSelectionInteractionTests.swift
       - path: Tests/HomePresentationSupport/ContentRefreshReturnInteractionTests.swift
       - path: Tests/PlaybackPresentationSupport/PlaybackFailureInteractionTests.swift
       - path: Tests/PlaybackPresentationSupport/DiscReviewScreenshotTests.swift
@@ -690,7 +695,7 @@ targets:
       - path: Tests/CoreUITests/DetailInformationPreviewTests.swift
       - path: Tests/EnginePlozzigenTests/SpatialAudioLayoutPreferenceTests.swift
       - path: Tests/HomePresentationSupport
-        excludes: ["ContentRefreshReturnFixture.swift", "ContentRefreshReturnInteractionTests.swift"]
+        excludes: ["ContentRefreshReturnFixture.swift", "ContentRefreshReturnInteractionTests.swift", "DetailSelectionFixture.swift", "DetailSelectionInteractionTests.swift"]
       - path: Tests/TestSupportPerformance
       - path: Tests/PerformancePresentationSupport
       - path: Tests/ProviderIPTVTests/IPTVTestHTTPServer.swift
