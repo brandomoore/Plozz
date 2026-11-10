@@ -5,7 +5,7 @@ import CoreModels
 /// Jellyfin computes a leaf's `PlayedPercentage` as position ÷ runtime, so a
 /// response carrying both has already told us the runtime even when it omits
 /// `RunTimeTicks`. Without recovering it the card draws a progress bar it cannot
-/// label — "S1, E2" beside a bar showing real progress and no duration.
+/// label — "S1 · E2" beside a bar showing real progress and no duration.
 final class JellyfinRuntimeInferenceTests: XCTestCase {
 
     /// The case this exists for: 25% through a 20-minute episode.

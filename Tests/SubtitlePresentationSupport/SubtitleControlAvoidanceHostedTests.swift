@@ -316,7 +316,7 @@ final class SubtitleControlAvoidanceHostedTests: XCTestCase {
         subtitles.tick(1)
         let model = PlayerControlsModel()
         model.title = "Ted Lasso"
-        model.subtitle = "S1, E4 · For the Children"
+        model.subtitle = "S1 · E4 · For the Children"
         model.controlsVisible = true
         host.rootView = AnyView(ZStack {
             LiveSubtitleOverlay(model: subtitles, controls: model)

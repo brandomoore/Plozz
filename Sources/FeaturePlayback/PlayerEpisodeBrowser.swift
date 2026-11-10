@@ -17,8 +17,10 @@ public struct PlayerEpisodeEntry: Identifiable, Equatable, Sendable {
 
     public var badge: String? {
         guard let episode = item.episodeNumber else { return nil }
-        if let season = item.seasonNumber ?? seasonNumber {
-            return "S\(season) · E\(episode)"
+        if let label = MediaItem.seasonEpisodeLabel(
+            season: item.seasonNumber ?? seasonNumber, episode: episode
+        ) {
+            return label
         }
         return "E\(episode)"
     }

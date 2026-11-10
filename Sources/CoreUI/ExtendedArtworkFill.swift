@@ -8,7 +8,7 @@ import UIKit
 /// How a wide picture is laid into a slot that is **taller** than the picture.
 ///
 /// Continue Watching cards are taller than the 16:9 art they carry so their
-/// chrome — play glyph, progress bar, "S1, E12 · 17m" — can sit *below* the
+/// chrome — play glyph, progress bar, "S1 · E12 · 17m" — can sit *below* the
 /// picture instead of on top of the subject. This works out the two bands that
 /// split: how much of the card the picture itself occupies, and how much is left
 /// underneath for ``ExtendedArtworkFill`` to fill.

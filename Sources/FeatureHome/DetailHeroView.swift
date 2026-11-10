@@ -161,7 +161,7 @@ struct DetailHeroView: View, Equatable {
     /// button, after the progress bar.
     var playRemainingText: String? = nil
     /// The episode the Play button will play, as `S{n} E{m}` — appended to the plain
-    /// label ("Play S21 E8") and prefixed to the resume trailing ("S5 E12 • 43m").
+    /// label ("Play S21 · E8") and prefixed to the resume trailing ("S5 · E12 • 43m").
     /// For a series hero this is the next-up/resume episode's S/E, not the series.
     var playSeasonEpisodeText: String? = nil
     /// When provided, a secondary "Trailer" button is shown next to Play.

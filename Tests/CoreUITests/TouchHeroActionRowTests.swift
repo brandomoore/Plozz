@@ -78,8 +78,8 @@ final class TouchHeroActionRowTests: XCTestCase {
         XCTAssertEqual(prominent.width, 180, accuracy: 0.5)
         XCTAssertGreaterThan(prominent.width, original.width)
         XCTAssertEqual(prominent.height, original.height, accuracy: 0.5)
-        let longOriginal = size(of: play(episode: "S20, E100", progress: 0.4))
-        let longProminent = size(of: play(episode: "S20, E100", progress: 0.4, minimumWidth: 180))
+        let longOriginal = size(of: play(episode: "S20 · E100", progress: 0.4))
+        let longProminent = size(of: play(episode: "S20 · E100", progress: 0.4, minimumWidth: 180))
         XCTAssertEqual(longProminent.width, max(180, longOriginal.width), accuracy: 0.5)
     }
 
@@ -95,10 +95,10 @@ final class TouchHeroActionRowTests: XCTestCase {
 
     func testProminentPlayKeepsTheAccessibleWrappingFallback() {
         let actual = size(of: adaptiveRow(
-            episode: "S20, E100", progress: 0.4, minimumWidth: 180
+            episode: "S20 · E100", progress: 0.4, minimumWidth: 180
         ), width: 145)
         let expected = size(of: HeroActionRow(stacksVertically: true) {
-            self.play(episode: "S20, E100", progress: 0.4, wraps: true)
+            self.play(episode: "S20 · E100", progress: 0.4, wraps: true)
         }, width: 145)
         XCTAssertEqual(actual.width, expected.width, accuracy: 0.5)
         XCTAssertEqual(actual.height, expected.height, accuracy: 0.5)
@@ -106,7 +106,7 @@ final class TouchHeroActionRowTests: XCTestCase {
     }
 
     func testInlinePlayLabelNeverReportsATruncatedWidth() {
-        for episode in ["S1, E8", "S20, E100"] {
+        for episode in ["S1 · E8", "S20 · E100"] {
             for progress in [nil, 0.4] as [Double?] {
                 let label = PlayResumeButtonLabel(
                     title: "Play", progress: progress,
@@ -123,7 +123,7 @@ final class TouchHeroActionRowTests: XCTestCase {
     }
 
     func testActualStyledRowPreservesPlayWidthWithNeighboringButtons() {
-        for episode in ["S1, E8", "S20, E100"] {
+        for episode in ["S1 · E8", "S20 · E100"] {
             for progress in [nil, 0.4] as [Double?] {
                 let playSize = size(of: play(episode: episode, progress: progress))
                 for extras in 1...4 {
@@ -138,7 +138,7 @@ final class TouchHeroActionRowTests: XCTestCase {
     }
 
     func testOverflowShedsAnExtraBeforeShorteningThePlayLabel() {
-        let episode = "S1, E8"
+        let episode = "S1 · E8"
         let smaller = size(of: row(episode: episode, extras: 3))
         let larger = size(of: row(episode: episode, extras: 4))
         let width = (smaller.width + larger.width) / 2
@@ -153,7 +153,7 @@ final class TouchHeroActionRowTests: XCTestCase {
 
     func testStyledVerticalFallbackStillWrapsInsteadOfOverflowing() {
         let candidate = HeroActionRow(stacksVertically: true) {
-            play(episode: "S20, E100", progress: 0.4, wraps: true)
+            play(episode: "S20 · E100", progress: 0.4, wraps: true)
         }
         let wide = size(of: candidate)
         let narrow = size(of: candidate, width: 145)
@@ -169,7 +169,7 @@ final class TouchHeroActionRowTests: XCTestCase {
         })
         let proposal = CGSize(width: 331, height: 2_000)
         _ = host.sizeThatFits(in: proposal)
-        for (episode, progress) in [("S1, E8", nil), ("S20, E100", 0.4)] as [(String, Double?)] {
+        for (episode, progress) in [("S1 · E8", nil), ("S20 · E100", 0.4)] as [(String, Double?)] {
             state.episode = episode
             state.progress = progress
             await Task.yield()
@@ -186,7 +186,7 @@ final class TouchHeroActionRowTests: XCTestCase {
     func testRendersStyledRowsAcrossPhoneWidthsAndTextSizes() throws {
         for width in [CGFloat(276), 331, 386] {
             for textSize in [DynamicTypeSize.large, .xxxLarge, .accessibility3] {
-                let content = adaptiveRow(episode: "S20, E100", progress: nil, minimumWidth: 180)
+                let content = adaptiveRow(episode: "S20 · E100", progress: nil, minimumWidth: 180)
                     .environment(\.dynamicTypeSize, textSize)
                     .environment(\.themePalette, .dark)
                     .environment(\.colorScheme, .dark)

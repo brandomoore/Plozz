@@ -85,7 +85,7 @@ final class TopShelfContentBuilderTests: XCTestCase {
         let published = try XCTUnwrap(result.sections.first?.items.first)
         XCTAssertEqual(published.imageURL, episode.fallbackArtworkURL)
         XCTAssertEqual(published.title, "Series — Episode 2")
-        XCTAssertEqual(published.summary, "Series · S1, E2")
+        XCTAssertEqual(published.summary, "Series · S1 · E2")
         XCTAssertEqual(published.genre, "Drama")
         XCTAssertEqual(published.duration, 3600)
         let native = try XCTUnwrap(TopShelfContentBuilder.makeContent(from: result) as? TVTopShelfCarouselContent)

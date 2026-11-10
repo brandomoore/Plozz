@@ -434,8 +434,10 @@ final class NextEpisodeCoordinator {
     /// this is always shown even under a masked thumbnail.
     static func upNextMeta(for item: MediaItem) -> String? {   // l10n:content — episode metadata from the server
         var parts: [String] = []
-        if let season = item.seasonNumber, let episode = item.episodeNumber {
-            parts.append("S\(season) · E\(episode)")
+        if let label = MediaItem.seasonEpisodeLabel(
+            season: item.seasonNumber, episode: item.episodeNumber
+        ) {
+            parts.append(label)
         } else if let episode = item.episodeNumber {
             parts.append("Episode \(episode)")
         }

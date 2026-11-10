@@ -5,7 +5,7 @@ import XCTest
 
 /// Coverage for the geometry behind a Continue Watching card, which is taller
 /// than the 16:9 art it carries so its chrome — play glyph, progress bar,
-/// "S1, E12 · 17m" — sits in a band of its own beneath the picture instead of on
+/// "S1 · E12 · 17m" — sits in a band of its own beneath the picture instead of on
 /// top of the subject.
 ///
 /// The band split is the whole design, so it is asserted here rather than left to
@@ -591,12 +591,12 @@ import SwiftUI
 import UIKit
 #endif
 
-/// A Continue Watching card writes its text *inside* the artwork — "S1, E12 ·
+/// A Continue Watching card writes its text *inside* the artwork — "S1 · E12 ·
 /// 17m", on one line, next to a play glyph and a progress bar — instead of in a
 /// caption underneath that could wrap or grow. That makes it the one card whose
 /// width has to answer to Dynamic Type: the label tracks the reader's chosen
 /// size, and a card sized only by display density does not, so turning text up
-/// truncated the episode being named down to "S1, E1 · 4…".
+/// truncated the episode being named down to "S1 · E1 · 4…".
 final class ContinueWatchingDynamicTypeTests: XCTestCase {
 
     private func width(_ size: DynamicTypeSize) -> CGFloat {
@@ -653,7 +653,7 @@ final class ContinueWatchingDynamicTypeTests: XCTestCase {
     /// The bar's width ceiling may grow with the text, but only because the bar
     /// is *flexible* where it shares a line with a label: it is a maximum the bar
     /// may reach, never a width it insists on. A rigid bar that grew this way is
-    /// what truncated "S4, E1 · 44m" down to "S4, E1 ·…".
+    /// what truncated "S4 · E1 · 44m" down to "S4 · E1 ·…".
     func testProgressBarWidthCeilingGrowsButStaysDamped() {
         if assertFixedMetricsOnUnscaledPlatform() { return }
         let base = PlozzMetrics(density: .standard, dynamicTypeSize: .large)

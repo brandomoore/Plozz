@@ -1459,9 +1459,7 @@ public struct MediaItem: Codable, Hashable, Identifiable, Sendable {
 
     /// A human-friendly subtitle line, e.g. `S1 · E3` or the production year.
     public var subtitle: String? {  // l10n:content — "S"/"E" abbreviations are hand-built formatting, not copy; parentTitle/year are content
-        if let season = seasonNumber, let episode = episodeNumber {
-            return "S\(season) · E\(episode)"
-        }
+        if let label = seasonEpisodeLabel { return label }
         if let parentTitle { return parentTitle }
         if let productionYear { return String(productionYear) }
         return nil
@@ -1560,17 +1558,21 @@ public struct MediaItem: Codable, Hashable, Identifiable, Sendable {
         )
     }
 
-    /// The episode's place in the run, comma-separated — `S4, E1`.
+    /// The episode's place in the run — `S4 · E1`.
     ///
-    /// A tighter sibling of ``subtitle`` for places that already join with `·`,
-    /// where the dotted form would produce "S4 · E1 · 22m" and read as three
-    /// separate facts instead of one designation and a duration. The comma keeps
-    /// the season and episode visibly paired — bare "S4 E1 · 22m" runs the two
-    /// numbers together. `nil` unless both are known: a half-built "S4" says
-    /// nothing useful.
+    /// The one owner for the dotted season/episode label used across the app.
+    /// Callers holding loose numbers use the static formatter below so the
+    /// separator and spacing cannot drift. `nil` unless both are known: a
+    /// half-built "S4" says nothing useful.
     public var seasonEpisodeLabel: String? {  // l10n:content — "S"/"E" abbreviations are hand-built formatting, not copy
-        guard let season = seasonNumber, let episode = episodeNumber else { return nil }
-        return "S\(season), E\(episode)"
+        Self.seasonEpisodeLabel(season: seasonNumber, episode: episodeNumber)
+    }
+
+    /// Formats a season/episode designation in the app-wide dotted style —
+    /// `S4 · E1` — or `nil` unless both numbers are known.
+    public static func seasonEpisodeLabel(season: Int?, episode: Int?) -> String? {  // l10n:content — hand-built numbering, not copy
+        guard let season, let episode else { return nil }
+        return "S\(season) · E\(episode)"
     }
 
     /// On-screen / voice talent, in billing order (crew filtered out).

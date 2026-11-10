@@ -23,7 +23,7 @@ final class PlayResumeButtonLabelTests: XCTestCase {
                         title: "Play",
                         progress: progress,
                         remainingText: progress == nil ? nil : "35m",
-                        seasonEpisodeText: pending ? nil : "S4 E1",
+                        seasonEpisodeText: pending ? nil : "S4 · E1",
                         onLight: true,
                         spacing: fontSize == 17 ? 10 : 16,
                         capsuleWidth: fontSize == 17 ? 60 : 75,
@@ -50,11 +50,11 @@ final class PlayResumeButtonLabelTests: XCTestCase {
     func testStartWatchingUsesTheSeparatedEpisodeLabelAtItsNaturalWidth() {
         let label = PlayResumeButtonLabel(
             title: "Start watching", progress: nil, remainingText: nil,
-            seasonEpisodeText: "S1 E1", onLight: true, separatesEpisodeText: true
+            seasonEpisodeText: "S1 · E1", onLight: true, separatesEpisodeText: true
         )
         let expected = HStack(spacing: 16) {
             Image(systemName: "play.fill")
-            Text("Start watching · S1 E1")
+            Text("Start watching · S1 · E1")
         }
         XCTAssertEqual(
             size(of: label.font(.system(size: 30))).width,
@@ -66,12 +66,12 @@ final class PlayResumeButtonLabelTests: XCTestCase {
     func testReadyResumeLabelHasNoHiddenPlaceholderWidth() {
         let label = PlayResumeButtonLabel(
             title: "Play", progress: 0.3, remainingText: "35m",
-            seasonEpisodeText: "S4 E1", onLight: true
+            seasonEpisodeText: "S4 · E1", onLight: true
         )
         let expected = HStack(spacing: 16) {
             Image(systemName: "play.fill")
             ResumeProgressCapsule(progress: 0.3, onLight: true, width: 75)
-            Text("S4 E1 • 35m")
+            Text("S4 · E1 • 35m")
         }
         XCTAssertEqual(
             size(of: label.font(.system(size: 30))).width,
@@ -97,7 +97,7 @@ final class PlayResumeButtonLabelTests: XCTestCase {
     func testResumeTextCanWrapInTheVerticalActionFallback() {
         let label = PlayResumeButtonLabel(
             title: "Play", progress: 0.64, remainingText: "1h 43m",
-            seasonEpisodeText: "S20 E100", onLight: true, wrapsText: true
+            seasonEpisodeText: "S20 · E100", onLight: true, wrapsText: true
         )
         .font(.system(size: 34))
         let host = UIHostingController(rootView: label)

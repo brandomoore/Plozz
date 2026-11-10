@@ -1,5 +1,6 @@
 #if os(iOS)
 import BackgroundTasks
+import CoreModels
 import CoreNetworking
 import Foundation
 import MediaDownloads
@@ -409,14 +410,11 @@ struct PlozziOSSystemDownloadActivityScheduler: PlozziOSDownloadActivityScheduli
         _ item: DownloadActivityProgress.ItemProgress,
         locale: Locale
     ) -> String? { // l10n:content - pinned media title or the app's S/E episode notation.
-        if let episode = item.episodeNumber, episode >= 0 {
-            let episodeLabel = "E\(episode.formatted(.number.locale(locale)))"
-            if let season = item.seasonNumber, season >= 0 {
-                return "S\(season.formatted(.number.locale(locale))) \(episodeLabel)"
-            }
-            return episodeLabel
+        guard let episode = item.episodeNumber, episode >= 0 else { return nil }
+        if let season = item.seasonNumber, season >= 0 {
+            return MediaItem.seasonEpisodeLabel(season: season, episode: episode)
         }
-        return nil
+        return "E\(episode.formatted(.number.locale(locale)))"
     }
 
     private static func status(for status: DownloadStatus) -> LocalizedStringResource {

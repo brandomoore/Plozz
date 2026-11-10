@@ -656,7 +656,7 @@ final class HeroCuratorTests: XCTestCase {
     func testAResumableEpisodeAndItsWatchlistedSeriesShareOneSlide() async {
         // Continue Watching offers the episode you're mid-way through; Watchlist
         // offers the series. Scoping identity by `kind` kept them apart, so the same
-        // show took two slides — once reading "Play S3, E1", once with a bookmark.
+        // show took two slides — once reading "Play S3 · E1", once with a bookmark.
         let episode = MediaItem(
             id: "reacher-s3e1",
             title: "Reacher",

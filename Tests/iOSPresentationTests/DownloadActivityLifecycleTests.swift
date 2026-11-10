@@ -47,7 +47,7 @@ final class DownloadActivityLifecycleTests: XCTestCase {
         XCTAssertEqual(progress.completedUnitCount, 3_620)
         XCTAssertEqual(
             PlozziOSSystemDownloadActivityScheduler.title(for: progress, locale: Locale(identifier: "en")),
-            "Example Show · S1 E4"
+            "Example Show · S1 · E4"
         )
         XCTAssertEqual(
             PlozziOSSystemDownloadActivityScheduler.subtitle(for: progress, locale: Locale(identifier: "en")),

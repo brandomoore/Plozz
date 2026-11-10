@@ -2918,15 +2918,17 @@ public final class PlayerViewModel {
 
     /// The transport's two title lines, Apple-TV style. For episodes the SERIES
     /// is the prominent (primary) line and the episode rides above it as the
-    /// secondary line "S1, E2 • Episode Title". For movies (and anything without
+    /// secondary line "S1 · E2 • Episode Title". For movies (and anything without
     /// a parent series) the item's own title is primary with no secondary line.
     private static func titleLines(for item: MediaItem) -> (primary: String, secondary: String) {
         guard let series = item.parentTitle, !series.isEmpty else {
             return (item.title, "")
         }
         var prefix = ""
-        if let season = item.seasonNumber, let episode = item.episodeNumber {
-            prefix = "S\(season), E\(episode)"
+        if let label = MediaItem.seasonEpisodeLabel(
+            season: item.seasonNumber, episode: item.episodeNumber
+        ) {
+            prefix = label
         } else if let episode = item.episodeNumber {
             prefix = "E\(episode)"
         }
@@ -2945,8 +2947,10 @@ public final class PlayerViewModel {
     /// Compact season/episode tag for the Info card metadata row (e.g. "S2 · E7").
     /// Empty for movies and anything without episode numbering.
     private static func episodeTag(for item: MediaItem) -> String {
-        if let season = item.seasonNumber, let episode = item.episodeNumber {
-            return "S\(season) · E\(episode)"
+        if let label = MediaItem.seasonEpisodeLabel(
+            season: item.seasonNumber, episode: item.episodeNumber
+        ) {
+            return label
         }
         if let episode = item.episodeNumber {
             return "E\(episode)"

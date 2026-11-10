@@ -18,17 +18,17 @@ final class EpisodeReleaseDisplayTests: XCTestCase {
         XCTAssertEqual(
             d.badge,
             LocalizedStringResource("episodeRelease.badge.upcoming", defaultValue: "Airing soon"))
-        XCTAssertEqual(d.numberLabel, "S1 E2")
+        XCTAssertEqual(d.numberLabel, "S1 · E2")
         XCTAssertEqual(d.title, "Chapter 5")
         XCTAssertTrue(d.isExpectedNotGuaranteed)
         XCTAssertTrue(String(localized: d.summaryLineParts.badge!).contains("Airing soon"))
-        XCTAssertEqual(d.summaryLineParts.numberLabel, "S1 E2")
+        XCTAssertEqual(d.summaryLineParts.numberLabel, "S1 · E2")
     }
 
     func testSpoilersHideTitleButKeepNumberAndDate() {
         let d = EpisodeReleaseDisplay.make(for: .upcoming(western()), spoilersEnabled: true, locale: enUS, timeZone: utc)
         XCTAssertNil(d.title, "Spoiler mode hides the upcoming title")
-        XCTAssertEqual(d.numberLabel, "S1 E2")
+        XCTAssertEqual(d.numberLabel, "S1 · E2")
         XCTAssertNotNil(d.dateLabel)
     }
 
