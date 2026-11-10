@@ -590,6 +590,13 @@ SCENARIOS = {
                      "scrollCPUTimeMicroseconds", "scrollWallMicroseconds",
                      "firstRowMicroseconds", "allRowsMicroseconds", "scrollableDistancePoints"],
     },
+    "mobile-home-library-row-comparison": {
+        "suite": "ui", "platforms": ["iOS"],
+        "test": "HomeLoadingLayoutTests/testPerformanceLibraryRowComparison",
+        "file": "Tests/iOSPresentationTests/HomeLoadingLayoutTests.swift",
+        "description": "Compare production library-row inputs with independently decoded complete metadata; preserve deep changes and owner scope.",
+        "counters": ["comparisons", "items", "metadataPeople"],
+    },
     "mobile-home-multi-server-scroll": {
         "suite": "ui", "platforms": ["iOS"],
         "test": "HomeMultiServerLoadingTests/testPerformanceScrollingAcrossTwentyServers",
@@ -663,6 +670,20 @@ SCENARIOS = {
         "file": "Tests/PerformancePresentationSupport/PlaybackSourceMenuPerformanceTests.swift",
         "description": "Build actual source-menu version presentations, preserving every displayed title and supplemental fact.",
         "counters": ["versions", "menuUpdates", "presentedRows"],
+    },
+    "detail-selection-legacy": {
+        "suite": "ui",
+        "test": "PlaybackSourceMenuPerformanceTests/testPerformanceLegacyDetailSelectionComposition",
+        "file": "Tests/PerformancePresentationSupport/PlaybackSourceMenuPerformanceTests.swift",
+        "description": "Compose existing detail selection primitives as a same-binary control; verify exact picker and playback identities.",
+        "counters": ["selections", "presentedVersions", "playTargets"],
+    },
+    "detail-selection-resolved": {
+        "suite": "ui",
+        "test": "PlaybackSourceMenuPerformanceTests/testPerformanceResolvedDetailSelectionComposition",
+        "file": "Tests/PerformancePresentationSupport/PlaybackSourceMenuPerformanceTests.swift",
+        "description": "Resolve identical detail picker and playback inputs through the shared composition; not a whole-detail startup measurement.",
+        "counters": ["selections", "presentedVersions", "playTargets"],
     },
     "native-poster-composition": {
         "suite": "ui", "platforms": ["tvOS"],

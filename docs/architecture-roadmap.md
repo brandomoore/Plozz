@@ -1,6 +1,7 @@
 # Incremental architecture and efficiency roadmap
 
-Status: proposed; implementation batches require selection.
+Status: A/B pilots complete; C has one measured optimization. Later batches
+require selection.
 Research snapshot: November 10, 2026, source commit `31a2be726`.
 
 ## Recommendation
@@ -92,8 +93,11 @@ are retained in six topic guides, with the old README heading destinations
 preserved. A2 has a [reproducible bounded-retrieval baseline](feature-home/navigation-baseline.md)
 for all three discovery tasks. The entry is smaller, but total documentation is
 slightly larger; token savings and end-to-end investigation time remain
-unmeasured. Capture those during the code pilot before extending the pattern
-to other modules. This batch changes no application behavior.
+unmeasured. The [post-detail known-file replay](feature-home/navigation-baseline.md#known-file-replay-after-the-detail-pilot)
+was mixed: detail +12.4%, refresh -9.7%, preference ownership +0.4% in retrieved
+bytes. These are selected excerpts, not actual token usage or equivalent
+cold-reader investigations. Do not expand the pattern across other modules
+based only on the entry-file size.
 
 ### B. Detail source selection and Play target — first code pilot
 
@@ -145,6 +149,14 @@ stop at the playback handoff, not actual decoding. Mobile picker cases emitted
 non-failing invalid-frame runtime warnings; this result does not establish their
 cause or a warning-free layout.
 
+**Measurement follow-through:** same-binary primitive/resolver probes completed
+identical explicit selections and raw playback targets. TV wall medians were
+91.991 / 92.023 ms per 1,024 selections; mobile was 93.012 / 94.819 ms.
+This is not a whole-detail startup measurement or demonstrated speedup.
+The maintenance consolidation is complete, but the smaller-reading-set goal
+below has not been demonstrated. See the [lab scope and evidence](performance-lab.md#single-input-mobile-library-rows)
+and [reading replay](feature-home/navigation-baseline.md#known-file-replay-after-the-detail-pilot).
+
 **Done when:** the selected behavior has fewer independently mutable authorities
 and a smaller required reading set; TV/mobile use the same policy; account,
 edition, watch-state, and cancellation regressions pass. Exercise real mounted
@@ -164,6 +176,26 @@ unnecessarily broad dependencies, or redundant provider work.
 reusing an unchanged derived row, or coalescing equivalent work. These are
 options, not preselected fixes. Avoid another copy of watch state, an unbounded
 cache, or a global observation workaround.
+
+**First measured batch:** TV reuse probes already avoided redundant card/layout
+work. Mobile startup sampling plus source inspection identified a concrete
+double comparison: the library view stored both a presentation containing a row
+and that same row separately. It now stores one choice and one complete row,
+reconstructing the browse presentation only when needed. Full metadata,
+model/controller identity, settings observation, and native scrolling remain.
+The isolated 256-comparison workload dropped from 47.330 to 23.844 ms wall and
+47.380 to 23.853 ms CPU. The matched twenty-provider startup workload completed
+identical content within the existing budget, with no demonstrated startup,
+memory, or scheduling-gap improvement. The [lab record](performance-lab.md#single-input-mobile-library-rows)
+preserves the control definition, run IDs, counters and limitations.
+Do not extend this into identity-only equality or a new row cache.
+
+Focused hosted checks passed on iPhone and iPad simulators: six cases per device,
+12 passes with no skips. They cover deep metadata/choice/model invalidation,
+caption observation, browse policy, loading/failure/retry slots, reserved
+offscreen geometry, and native animated scrolling. The performance runner's
+39 Python tests also passed. This is scoped coverage, not a clean full Home
+suite or physical-device result; the unrelated B-stage failures remain separate.
 
 **Done when:** the same workload finishes with identical required content and
 no identity/focus regressions; relevant CPU, memory, I/O, network, and latency
@@ -233,8 +265,9 @@ report the range, not a universal savings claim. Do not spend more tokens on a
 large measurement campaign than a small navigation change can plausibly save.
 Human completion and correctness matter as much as smaller prompts.
 
-No new timing baselines or token-savings measurements were collected for this
-planning document. Earlier refresh tests provide correctness evidence only.
+The original proposal collected no timing or token-savings measurements.
+Subsequent pilot results above are bounded simulator/retrieval evidence;
+actual token savings remain unmeasured.
 
 ## How to execute incrementally
 
@@ -253,9 +286,10 @@ If a batch grows the reading surface, introduces broad host protocols, adds
 more independently mutable copies, or has no demonstrated benefit, simplify
 or stop that batch rather than extending it into a framework.
 
-The next recommended batch is **A1/A2, Home navigation and baseline**, then
-**B1/B2, detail source ownership**. C through F remain candidates to reassess
-after the pilot; no recurring automation or large migration is implied.
+The next candidate is **D, one low-risk mobile shell/settings boundary**.
+Choose a concrete responsibility before editing; do not broaden Home changes
+without another measured cause. E/F remain later candidates, not an authorized
+migration or recurring automation.
 
 ## Sources
 

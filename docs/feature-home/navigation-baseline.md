@@ -145,3 +145,43 @@ and end-to-end investigation time were not instrumented consistently enough for
 a comparison to the fixed baseline. No before/after token or investigation-time
 claim is supported. Preserve the baseline method for a future instrumented task
 rather than treating smaller adapter files as proof of savings.
+
+## Known-file replay after the detail pilot
+
+A bounded replay at `47bc8cd62aa4116caa0de2533aa00ef337fff79d` used the same
+ownership questions and UTF-8 accounting, with explicitly selected current
+excerpts. The result is mixed:
+
+| Task | Baseline bytes | Current bytes | Change |
+| --- | ---: | ---: | ---: |
+| Detail Play-target ownership and regressions | 13,869 | 15,594 | +12.4% |
+| Home refresh ownership and tests | 17,096 | 15,444 | -9.7% |
+| Continue Watching preference ownership | 12,618 | 12,674 | +0.4% |
+
+To reproduce, use the baseline snippet's search and byte accounting with the
+current pinned commit and these replacement ranges:
+
+| Detail task file | Inclusive ranges |
+| --- | --- |
+| `Sources/FeatureHome/README.md` | 8-18 |
+| `docs/feature-home/detail-and-playback.md` | 5-39 |
+| `Sources/FeatureHomeCore/ItemDetailViewModel.swift` | 429-445 |
+| `Sources/FeatureHomeCore/DetailPlaybackSelection.swift` | 5-62 |
+| `Sources/FeatureHome/ItemDetailView.swift` | 988-1003 |
+| `Sources/AppShelliOS/PlozziOSItemDetailView.swift` | 1076-1111 |
+| `Tests/FeatureHomeTests/ItemDetailViewModelTests.swift` | 4936-5004 |
+
+Append `|func resolve|func playbackSelection` to the detail search expression
+to include the consolidated entry points. For refresh, replace only the README
+ranges with 8-17 and 19-19. For the preference task, replace its README range
+with 8-17 and 20-20, add `docs/feature-home/home-rows-and-loading.md` lines
+136-146, and retain the other baseline files/ranges. Run each task's original
+search over its complete revised file set, including the added topic guide.
+
+This is not a blinded task, a minimum reading set, or actual agent-token
+accounting. The detail set now includes seven files rather than six and stronger
+current regression coverage; selected ranges also include overscan. The replay
+therefore does not isolate documentation layout from code/test changes.
+Consolidated ownership is useful, but a smaller required reading set and lower
+billing have not been established. Do not expand the documentation split across
+all modules on this evidence alone.

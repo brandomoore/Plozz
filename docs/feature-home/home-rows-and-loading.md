@@ -38,8 +38,12 @@ visibility controls its shared shimmer animation. Only visible loading rows
 animate; scrolling a row into view resumes its shimmer without delaying loading.
 Server/library/collection rows have a scoped, equatable presentation boundary,
 so another server's response does not reconstruct their unchanged content and
-browse closures. The comparison includes row content/status, Home model and
-controller identities, and featured playback activity. Profile settings and
+browse closures. Each library boundary stores one `HomeRowChoice` and one
+complete `HomeLibrarySectionGroup.Row`, not a presentation plus a second copy
+of its embedded row. Equality compares the complete row once, including deep
+metadata, alongside the choice, Home model and controller identities, and
+featured playback activity. Browse actions reconstruct `HomePresentationRow`
+from those same inputs. Profile settings and
 environment changes remain observable inside the row; browsing/customization
 bindings retain the owning Home's presentation state.
 Scrolling is native: there is no per-row frame tracking, anchor preservation, or

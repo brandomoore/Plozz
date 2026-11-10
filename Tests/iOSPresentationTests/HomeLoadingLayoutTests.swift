@@ -678,10 +678,11 @@ final class HomeLoadingLayoutTests: XCTestCase {
         let section = LibrarySection(id: "shelf", title: "Shelf", items: fixture.items)
         let row = HomeLibrarySectionGroup.Row(section: section, isLoading: false, failure: nil)
         func view(
-            _ row: HomeLibrarySectionGroup.Row, modelOverride: HomeViewModel? = nil, isActive: Bool = false
+            _ row: HomeLibrarySectionGroup.Row, modelOverride: HomeViewModel? = nil, isActive: Bool = false,
+            choiceOverride: HomeRowChoice? = nil
         ) -> PlozziOSHomeLibraryPresentationRow {
             PlozziOSHomeLibraryPresentationRow(
-                presentation: HomePresentationRow(choice: choice, source: .library(row)), row: row,
+                choice: choiceOverride ?? choice, row: row,
                 appModel: fixture.app, viewModel: modelOverride ?? model,
                 coordinator: coordinator, controller: controller, isActive: isActive,
                 rowBrowser: .constant(nil), showingHomeCustomization: .constant(false)
@@ -704,6 +705,58 @@ final class HomeLoadingLayoutTests: XCTestCase {
         XCTAssertNotEqual(view(row), view(browsable))
         XCTAssertNotEqual(view(row), view(row, modelOverride: replacement))
         XCTAssertNotEqual(view(row), view(row, isActive: true))
+        let otherChoice = try XCTUnwrap(HomeRowChoice.shared.first { $0.id != choice.id })
+        XCTAssertNotEqual(view(row), view(row, choiceOverride: otherChoice))
+        var metadata = section
+        metadata.items[metadata.items.count - 1].people = [
+            MediaPerson(id: "person", name: "Person", role: "Actor", kind: "Actor", biography: "Original")
+        ]
+        let originalMetadata = HomeLibrarySectionGroup.Row(section: metadata, isLoading: false, failure: nil)
+        metadata.items[metadata.items.count - 1].people[0].biography = "Updated biography"
+        XCTAssertNotEqual(view(originalMetadata), view(.init(section: metadata, isLoading: false, failure: nil)))
+    }
+
+    func testPerformanceLibraryRowComparison() async throws {
+        try PerformanceProbe.requireEnabled()
+        let fixture = try Fixture()
+        defer { fixture.close() }
+        let model = HomeViewModel(accounts: [], profileNamespace: fixture.profileID)
+        defer { model.invalidate() }
+        let coordinator = FeaturedTrailerCoordinator()
+        let controller = HeroTrailerController()
+        let choice = try XCTUnwrap(HomeRowChoice.shared.first)
+        let items = (0..<75).map { index in
+            MediaItem(
+                id: "movie-\(index)", title: "Movie \(index)", kind: .movie,
+                people: (0..<32).map {
+                    MediaPerson(id: "person-\($0)", name: "Person \($0)", role: "Actor", kind: "Actor",
+                                biography: String(repeating: "Biography \($0). ", count: 16))
+                }
+            )
+        }
+        let encoded = try JSONEncoder().encode(items)
+        func view(_ items: [MediaItem]) -> PlozziOSHomeLibraryPresentationRow {
+            PlozziOSHomeLibraryPresentationRow(
+                choice: choice,
+                row: .init(section: .init(id: "row", title: "Row", items: items), isLoading: false, failure: nil),
+                appModel: fixture.app, viewModel: model, coordinator: coordinator, controller: controller,
+                isActive: false, rowBrowser: .constant(nil), showingHomeCustomization: .constant(false)
+            )
+        }
+        let left = view(try JSONDecoder().decode([MediaItem].self, from: encoded))
+        let right = view(try JSONDecoder().decode([MediaItem].self, from: encoded))
+        try await PerformanceProbe.measure(self, scenario: "mobile-home-library-row-comparison") {
+            var comparisons = 0
+            for _ in 0..<256 {
+                XCTAssertEqual(left, right)
+                comparisons += 1
+            }
+            return ["comparisons": comparisons, "items": items.count,
+                    "metadataPeople": items.reduce(0) { $0 + $1.people.count }]
+        }
+        var changed = items
+        changed[74].people[31].biography = "Updated last biography"
+        XCTAssertNotEqual(left, view(changed))
     }
 
     func testUnchangedLibraryRowsStillRespondToCaptionSettings() async throws {
@@ -721,7 +774,7 @@ final class HomeLoadingLayoutTests: XCTestCase {
             fixture.mount(
                 ScrollView {
                     PlozziOSHomeLibraryPresentationRow(
-                        presentation: HomePresentationRow(choice: choice, source: .library(row)), row: row,
+                        choice: choice, row: row,
                         appModel: fixture.app, viewModel: model,
                         coordinator: FeaturedTrailerCoordinator(), controller: HeroTrailerController(),
                         isActive: false, rowBrowser: .constant(nil), showingHomeCustomization: .constant(false)
@@ -1183,7 +1236,7 @@ final class HomeLoadingLayoutTests: XCTestCase {
                 continueWatchingUsesSeriesArtwork: app.settings.homeVisibility.continueWatchingUsesSeriesArtwork
             ) {
                 PlozziOSHomeLibraryPresentationRow(
-                    presentation: presentation, row: state.row, appModel: app, viewModel: model,
+                    choice: presentation.choice, row: state.row, appModel: app, viewModel: model,
                     coordinator: coordinator, controller: controller, isActive: false,
                     rowBrowser: .constant(nil), showingHomeCustomization: .constant(false)
                 )

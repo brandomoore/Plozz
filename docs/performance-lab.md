@@ -1335,6 +1335,76 @@ zero sources. `source-menu-version-presentation` builds 1,024 production version
 rows per sample on either platform and compares every title and supplemental
 fact with the original output.
 
+`detail-selection-legacy` and `detail-selection-resolved` compare direct
+composition of existing selection primitives with the shared resolver in the
+same binary. Each sample completes 1,024 explicit account/version selections,
+8,192 version entries, and 1,024 exact provider account/item/file handoffs.
+The control is not a historical binary or whole-detail startup replay; automatic
+selection and decoding are outside this workload. Initial TV medians were
+91.991 / 92.023 ms wall and 91.993 / 92.023 ms CPU; mobile medians were
+93.012 / 94.819 ms wall and 93.014 / 94.820 ms CPU. Both had zero median resident
+delta. This supports a maintenance consolidation, not a selection speedup.
+Runs: TV `583c51a43b9c4d26a7fde1c315b51337`, mobile
+`952207f098be4b2093109509fd5874c6`.
+
+### Single-input mobile library rows
+
+The architecture pilot first exercised the existing reuse paths. TV metadata
+updates rebuilt zero card inputs; artwork updates performed zero row-content
+size/placement/fit calls or card-input builds. No TV sizing cache was added.
+Mobile metadata row samples had card-input counts `[20, 0, 0, 0, 0]`; they were
+not universally zero. Mobile publication completed eight refreshes, 24 synthetic
+provider requests, eight save/publication callbacks, and zero observed state
+notifications. Save callbacks are fixture counters, not measured disk writes.
+
+A separate bounded process sample of mobile startup found nested derived
+equality for `HomePresentationRow.Source`, `HomeLibrarySectionGroup.Row`, and
+`LibrarySection`. Source inspection confirmed that the mobile library view
+compared the row inside `presentation` and then compared `row` again.
+The view now stores a choice and one complete row; browsing reconstructs the
+presentation from those inputs. No metadata is omitted, no identity-only
+shortcut or cache is introduced, and settings remain observable.
+
+`mobile-home-library-row-comparison` measures 256 production-view comparisons
+of independently decoded equal snapshots containing 75 items and 2,400 credits.
+A positive control changes the final person's biography and requires inequality.
+The matched baseline already used the narrowed inputs and final fixtures but
+retained the original double comparison. The candidate changed only equality
+to compare the choice and complete row once.
+
+| iPhone 17 Pro / iOS 26.2, optimized simulator | Before median | After median |
+| --- | ---: | ---: |
+| 256 comparisons, wall | 47.330 ms | 23.844 ms |
+| 256 comparisons, CPU | 47.380 ms | 23.853 ms |
+| Twenty-provider startup scroll, wall | 10,726.093 ms | 10,758.859 ms |
+| Twenty-provider startup scroll, CPU | 4,850.425 ms | 4,895.829 ms |
+
+Baseline `f91582171a1d434cb13630abb590dc7e` and candidate
+`eebdd8334429488eb2646c13c589929e` used the same simulator, Xcode 27.2,
+SDK 27.2, fixtures and runner. Comparison
+`4e82be435d094def840f73f4c014936a` was within the existing budget.
+The isolated comparison cost fell about 50%; whole-startup speed did not
+improve. Both completed 40 rows, 800 items, 100 requests, and 25 scroll targets,
+24 while loading, with 38 rows completing while scrolling. Median per-sample
+maximum main-actor wake-up gap was 58.315 / 67.460 ms; ranges were
+52.166-70.284 / 56.497-75.086 ms. There is no demonstrated scheduling-gap,
+FPS, or physical-device improvement.
+
+Comparison samples had zero resident delta. Startup median resident snapshots
+were 876,101,632 / 776,077,312 bytes, while median window deltas were
+26,509,312 / 33,603,584 bytes. These variable process snapshots do not establish
+reduced peak memory, retained memory, or leaks. No network, persistence, or
+cancellation owner changed.
+
+Attribution-only runs were TV navigation `fcd0074d13fc42cda5618de160c3ca90`
+and mobile startup `483ada1d9b7f494a84748ba017567bb3`. The mobile 75-second,
+5-ms process sample retained symbolized frames but ended without a binary-image
+table after host exit. Inclusive stack observations include waiting, not CPU
+milliseconds or frame latency. Its instrumented timings are not comparison
+evidence. The raw sample and verified simulator/process identity are retained
+with local session evidence; all benchmark results remain under the run IDs
+above.
+
 The tvOS-only `native-poster-composition` converts twelve generated 2160x3240
 extended-range images into native poster surfaces. Each sample changes the
 presentation dimming to require twelve cold compositions despite the shared
