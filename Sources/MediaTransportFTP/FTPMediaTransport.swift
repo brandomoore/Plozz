@@ -6,6 +6,7 @@ import MediaTransportCore
 /// endpoint. Port defaults by security policy when the endpoint omits one:
 /// implicit FTPS → 990, everything else → 21.
 struct FTPConnectionTarget: Sendable, Equatable {
+    let scheme: String
     let host: String
     let port: Int
     let rootPath: String
@@ -14,6 +15,7 @@ struct FTPConnectionTarget: Sendable, Equatable {
         guard !endpoint.host.isEmpty else {
             throw MediaTransportError.invalidInput(reason: "invalid FTP endpoint")
         }
+        scheme = endpoint.transportIdentifier
         host = endpoint.host
         port = endpoint.port ?? (security.isImplicitTLS ? 990 : 21)
         rootPath = try FTPPathPolicy.normalizeRoot(endpoint.rootPath)
@@ -89,7 +91,9 @@ public struct FTPMediaTransportAdapter: MediaTransportAdapter, Sendable {
             sourceBackendFactory: backendFactory,
             rootPath: target.rootPath,
             accountID: key.accountID,
-            credentialRevision: key.credentialRevision
+            credentialRevision: key.credentialRevision,
+            externalTarget: target,
+            externalConfiguration: configuration
         )
         return FTPMediaTransportSession(
             key: key,
@@ -145,7 +149,7 @@ final class FTPMediaTransportSession: MediaTransportSession, @unchecked Sendable
     }
 }
 
-final class FTPMediaTransportFileSystem: MediaTransportFileSystem, @unchecked Sendable {
+final class FTPMediaTransportFileSystem: MediaTransportExternalPlaybackFileSystem, @unchecked Sendable {
     static let maximumSmallFileSize = 16 * 1_024 * 1_024
 
     private let primary: any FTPBackend
@@ -153,19 +157,78 @@ final class FTPMediaTransportFileSystem: MediaTransportFileSystem, @unchecked Se
     private let rootPath: String
     private let accountID: String
     private let credentialRevision: CredentialRevision
+    private let externalTarget: FTPConnectionTarget
+    private let externalConfiguration: FTPMediaTransportConfiguration
 
     init(
         primary: any FTPBackend,
         sourceBackendFactory: @escaping FTPBackendFactory,
         rootPath: String,
         accountID: String,
-        credentialRevision: CredentialRevision
+        credentialRevision: CredentialRevision,
+        externalTarget: FTPConnectionTarget,
+        externalConfiguration: FTPMediaTransportConfiguration
     ) {
         self.primary = primary
         self.sourceBackendFactory = sourceBackendFactory
         self.rootPath = rootPath
         self.accountID = accountID
         self.credentialRevision = credentialRevision
+        self.externalTarget = externalTarget
+        self.externalConfiguration = externalConfiguration
+    }
+
+    func externalPlaybackURL(for locator: NetworkFileLocator, player: ExternalPlayer) async throws -> URL {
+        guard player == .vlc, externalTarget.scheme == "ftp", externalConfiguration.security == .plaintext,
+              externalConfiguration.trustPolicy == .system else {
+            throw MediaTransportError.unsupportedCapability("external FTP playback policy")
+        }
+        let absolute = try FTPPathPolicy.absolutePath(root: rootPath, relative: locator.relativePath)
+        var components = URLComponents()
+        components.scheme = "ftp"
+        components.host = externalTarget.host
+        components.port = externalTarget.port
+        // VLC strips one slash: a second preserves the absolute server path,
+        // rather than selecting a different file under the login directory.
+        let unreserved = CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~")
+        guard let path = ("/" + absolute).addingPercentEncoding(
+            withAllowedCharacters: unreserved.union(CharacterSet(charactersIn: "/"))
+        ) else {
+            throw MediaTransportError.invalidInput(reason: "could not encode FTP path")
+        }
+        components.percentEncodedPath = path
+        if case .password = externalConfiguration.credential {
+            let login = externalConfiguration.credential.loginPair
+            guard !login.user.isEmpty,
+                  login.user.unicodeScalars.allSatisfy(unreserved.contains),
+                  login.pass.unicodeScalars.allSatisfy(unreserved.contains) else {
+                throw MediaTransportError.unsupportedCapability("external FTP credential encoding")
+            }
+            components.user = login.user
+            components.password = login.pass
+        }
+        guard let url = components.url,
+              ExternalPlayerURL.isSupportedMediaURL(url, player: player, allowPassword: true) else {
+            throw MediaTransportError.unsupportedCapability("external FTP URL")
+        }
+        let lease = try await openSource(for: locator)
+        guard let cursor = lease.makeCursor() else {
+            await lease.waitForFinalShutdown()
+            throw MediaTransportError.cancelled
+        }
+        do {
+            guard try await cursor.read(at: 0, length: 1).count == 1 else {
+                throw MediaTransportError.sourceChanged(reason: "FTP file is empty")
+            }
+            cursor.close()
+            await lease.waitForFinalShutdown()
+            try Task.checkCancellation()
+            return url
+        } catch {
+            cursor.close()
+            await lease.waitForFinalShutdown()
+            throw error
+        }
     }
 
     func validate() async throws {

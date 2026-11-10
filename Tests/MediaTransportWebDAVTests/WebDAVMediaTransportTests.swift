@@ -1077,6 +1077,368 @@ final class WebDAVMediaTransportTests: XCTestCase {
         }
     }
 
+    func testExternalPlaybackUsesAnAnonymousRangeValidatedFileURL() async throws {
+        let revision = CredentialRevision()
+        let url = URL(string: "https://nas.example.com/dav/movies/Movie.mkv")!
+        queueStat()
+        let request = LockedValue<URLRequest?>(nil)
+        queueReadHalf(url: url, offset: 0, length: 2, total: 1000, onRequest: { request.set($0) })
+        let session = try await makeAdapter().connect(for: try makeKey(revision: revision))
+        let external = try XCTUnwrap(session.fileSystem as? any MediaTransportExternalPlaybackFileSystem)
+        let result = try await external.externalPlaybackURL(for: strongETagLocator(revision: revision), player: .infuse)
+        XCTAssertEqual(result, url)
+        XCTAssertEqual(request.get()?.value(forHTTPHeaderField: "Range"), "bytes=0-1")
+        XCTAssertNil(request.get()?.value(forHTTPHeaderField: "Authorization"))
+        XCTAssertNil(request.get()?.value(forHTTPHeaderField: "Cookie"))
+        await session.shutdown()
+    }
+
+    func testExternalPlaybackExportsOnlyTheAnonymousDeliveryGrantFromProtectedWebDAV() async throws {
+        for credential in [
+            WebDAVCredential.password(username: "fixture", password: "synthetic", policy: .automatic),
+            .bearerToken("synthetic")
+        ] {
+            let revision = CredentialRevision()
+            let source = URL(string: "https://nas.example.com/dav/movies/Movie.mkv")!
+            let delivery = URL(string: "https://delivery.example.com/movie.mkv?grant=synthetic-ticket")!
+            queueStat()
+            StubURLProtocol.queue(StubResponse(statusCode: 302, headers: ["Location": delivery.absoluteString]), for: source)
+            let request = LockedValue<URLRequest?>(nil)
+            queueReadHalf(url: delivery, offset: 0, length: 2, total: 1000, onRequest: { request.set($0) })
+            let session = try await makeAdapter(credential: credential).connect(for: try makeKey(revision: revision))
+            let external = try XCTUnwrap(session.fileSystem as? any MediaTransportExternalPlaybackFileSystem)
+            let result = try await external.externalPlaybackURL(for: strongETagLocator(revision: revision), player: .infuse)
+            XCTAssertEqual(result, delivery)
+            XCTAssertNil(request.get()?.value(forHTTPHeaderField: "Authorization"))
+            XCTAssertNil(request.get()?.value(forHTTPHeaderField: "Cookie"))
+            XCTAssertNil(request.get()?.value(forHTTPHeaderField: "Referer"))
+            await session.shutdown()
+        }
+    }
+
+    func testExternalPlaybackDoesNotExportProtectedDirectURLsOrBypassPinning() async throws {
+        for pinned in [false, true] {
+            let revision = CredentialRevision()
+            let trustRevision = UUID()
+            let source = URL(string: "https://nas.example.com/dav/movies/Movie.mkv")!
+            queueStat()
+            queueReadHalf(url: source, offset: 0, length: 2, total: 1000)
+            if !pinned {
+                StubURLProtocol.queue(StubResponse(statusCode: 401), for: source)
+            }
+            let session = try await makeAdapter(
+                credential: pinned ? .anonymous : .bearerToken("synthetic"),
+                trustPolicy: pinned ? .pinnedLeaf(sha256: Data(repeating: 1, count: 32), revision: trustRevision) : .system
+            ).connect(for: try makeKey(revision: revision, trustRevision: trustRevision))
+            let external = try XCTUnwrap(session.fileSystem as? any MediaTransportExternalPlaybackFileSystem)
+            do {
+                _ = try await external.externalPlaybackURL(for: strongETagLocator(revision: revision), player: .infuse)
+                XCTFail("Connection policy cannot be dropped")
+            } catch {
+                guard case .unsupportedCapability = error as? MediaTransportError else { return XCTFail("\(error)") }
+            }
+            await session.shutdown()
+        }
+    }
+
+    func testExternalPlaybackRejectsChangedFilesNonRangeResponsesAndUnsafeRedirects() async throws {
+        for mode in 0..<4 {
+            let revision = CredentialRevision()
+            let url = URL(string: "https://nas.example.com/dav/movies/Movie.mkv")!
+            queueStat(etag: mode == 0 ? "\"changed\"" : "\"strong-1\"")
+            switch mode {
+            case 0: break
+            case 1:
+                StubURLProtocol.queue(StubResponse(statusCode: 200, body: Data([0, 0])), for: url)
+            case 2:
+                queueReadHalf(url: url, offset: 0, length: 2, total: 1001)
+            default:
+                StubURLProtocol.queue(
+                    StubResponse(statusCode: 302, headers: ["Location": "http://delivery.example.com/movie.mkv"]),
+                    for: url
+                )
+            }
+            let session = try await makeAdapter().connect(for: try makeKey(revision: revision))
+            let external = try XCTUnwrap(session.fileSystem as? any MediaTransportExternalPlaybackFileSystem)
+            do {
+                _ = try await external.externalPlaybackURL(for: strongETagLocator(revision: revision), player: .infuse)
+                XCTFail("Unusable or changed source must stay internal")
+            } catch { XCTAssertTrue(error is MediaTransportError) }
+            await session.shutdown()
+        }
+    }
+
+    func testExternalPlaybackKeepsRootAndEscapedFilePath() async throws {
+        let revision = CredentialRevision()
+        let path = "folder/My Movie 1.mkv"
+        let encodedPath = "folder/My%20Movie%201.mkv"
+        let url = try XCTUnwrap(URL(string: "https://nas.example.com/dav/movies/\(encodedPath)"))
+        queueStat(relativePath: encodedPath)
+        queueReadHalf(url: url, offset: 0, length: 2, total: 1000)
+        let session = try await makeAdapter().connect(for: try makeKey(revision: revision))
+        let external = try XCTUnwrap(session.fileSystem as? any MediaTransportExternalPlaybackFileSystem)
+        let result = try await external.externalPlaybackURL(
+            for: strongETagLocator(relativePath: path, revision: revision), player: .infuse
+        )
+        XCTAssertEqual(result, url)
+        XCTAssertNil(result.fragment)
+        await session.shutdown()
+    }
+
+    func testExternalPlaybackCancellationDoesNotYieldAURL() async throws {
+        let revision = CredentialRevision()
+        let url = try XCTUnwrap(URL(string: "https://nas.example.com/dav/movies/Movie.mkv"))
+        let started = WebDAVPreparationGate()
+        queueStat()
+        queueReadHalf(
+            url: url, offset: 0, length: 2, total: 1000, delay: .seconds(2),
+            onRequest: { _ in Task { await started.open() } }
+        )
+        let session = try await makeAdapter().connect(for: try makeKey(revision: revision))
+        let external = try XCTUnwrap(session.fileSystem as? any MediaTransportExternalPlaybackFileSystem)
+        let locator = try strongETagLocator(revision: revision)
+        let task = Task { try await external.externalPlaybackURL(for: locator, player: .infuse) }
+        await started.wait()
+        task.cancel()
+        do {
+            _ = try await task.value
+            XCTFail("Cancelled preparation must not launch another app")
+        } catch { XCTAssertEqual(error as? MediaTransportError, .cancelled) }
+        await session.shutdown()
+    }
+
+    func testExternalPlaybackRejectsStaleCredentialRevisionBeforeIO() async throws {
+        let session = try await makeAdapter().connect(for: try makeKey())
+        let external = try XCTUnwrap(session.fileSystem as? any MediaTransportExternalPlaybackFileSystem)
+        do {
+            _ = try await external.externalPlaybackURL(
+                for: strongETagLocator(revision: CredentialRevision()), player: .infuse
+            )
+            XCTFail("A different owner must not resolve the file")
+        } catch { XCTAssertEqual(error as? MediaTransportError, .invalidInput(reason: "locator session mismatch")) }
+        await session.shutdown()
+    }
+
+    func testExternalPasswordHandoffUsesTheSelectedPlayerWithoutChangingResourceIdentity() async throws {
+        let username = "fixture user@nas"
+        let password = "fixture-secret"
+        for player in [ExternalPlayer.nativePlayer, .infuse, .vlc] {
+            let revision = CredentialRevision()
+            let source = URL(string: "https://nas.example.com/dav/movies/Movie.mkv")!
+            queueStat()
+            queueReadHalf(url: source, offset: 0, length: 2, total: 1000)
+            let session = try await makeAdapter(
+                credential: .password(username: username, password: password, policy: .automatic)
+            ).connect(for: try makeKey(revision: revision))
+            let external = try XCTUnwrap(session.fileSystem as? any MediaTransportExternalPlaybackFileSystem)
+            let url = try await external.externalPlaybackURL(for: strongETagLocator(revision: revision), player: player)
+            var components = try XCTUnwrap(URLComponents(url: url, resolvingAgainstBaseURL: false))
+            XCTAssertEqual(components.user, username)
+            XCTAssertEqual(components.password, password)
+            XCTAssertFalse(components.percentEncodedUser?.contains("@") ?? true)
+            components.user = nil
+            components.password = nil
+            XCTAssertEqual(components.url, source)
+            await session.shutdown()
+        }
+    }
+
+    func testExternalPasswordIncompatibleWithTheReceiverStaysInternal() async throws {
+        for player in [ExternalPlayer.nativePlayer, .infuse] {
+            let revision = CredentialRevision()
+            queueStat()
+            queueReadHalf(
+                url: URL(string: "https://nas.example.com/dav/movies/Movie.mkv")!,
+                offset: 0, length: 2, total: 1000
+            )
+            StubURLProtocol.queue(
+                StubResponse(statusCode: 401), for: URL(string: "https://nas.example.com/dav/movies/Movie.mkv")!
+            )
+            let session = try await makeAdapter(
+                credential: .password(username: "fixture", password: "synthetic@secret", policy: .automatic)
+            ).connect(for: try makeKey(revision: revision))
+            let external = try XCTUnwrap(session.fileSystem as? any MediaTransportExternalPlaybackFileSystem)
+            do {
+                _ = try await external.externalPlaybackURL(for: strongETagLocator(revision: revision), player: player)
+                XCTFail("An escaped password must not launch a player that misreads it")
+            } catch {
+                XCTAssertEqual(error as? MediaTransportError, .unsupportedCapability("external playback authentication"))
+            }
+            await session.shutdown()
+        }
+    }
+
+    func testExternalPasswordHandoffCannotDowngradeDigestOnlyOrExportToCustomPlayers() async throws {
+        for (player, policy) in [
+            (ExternalPlayer.infuse, PasswordAuthPolicy.digestOnly),
+            (.nativePlayer, .digestOnly), (.vlc, .digestOnly),
+            (.custom, .automatic), (.builtIn, .automatic)
+        ] {
+            let revision = CredentialRevision()
+            queueStat()
+            queueReadHalf(
+                url: URL(string: "https://nas.example.com/dav/movies/Movie.mkv")!,
+                offset: 0, length: 2, total: 1000
+            )
+            StubURLProtocol.queue(
+                StubResponse(statusCode: 401), for: URL(string: "https://nas.example.com/dav/movies/Movie.mkv")!
+            )
+            let session = try await makeAdapter(
+                credential: .password(username: "fixture", password: "synthetic", policy: policy)
+            ).connect(for: try makeKey(revision: revision))
+            let external = try XCTUnwrap(session.fileSystem as? any MediaTransportExternalPlaybackFileSystem)
+            do {
+                _ = try await external.externalPlaybackURL(for: strongETagLocator(revision: revision), player: player)
+                XCTFail("The receiver cannot enforce this authentication policy")
+            } catch {
+                guard case .unsupportedCapability = error as? MediaTransportError else { return XCTFail("\(error)") }
+            }
+            await session.shutdown()
+        }
+    }
+
+    func testSameOriginDeliveryGrantsAvoidSendingUnsupportedOrReusableCredentials() async throws {
+        for credential in [
+            WebDAVCredential.bearerToken("synthetic"),
+            .password(username: "fixture", password: "synthetic@secret", policy: .automatic),
+            .password(username: "fixture", password: "synthetic", policy: .automatic),
+            .password(username: "fixture", password: "synthetic", policy: .digestOnly)
+        ] {
+            let revision = CredentialRevision()
+            let source = URL(string: "https://nas.example.com/dav/movies/Movie.mkv")!
+            let delivery = URL(string: "https://nas.example.com/dav/movies/delivery.mkv?grant=synthetic")!
+            queueStat()
+            StubURLProtocol.queue(StubResponse(statusCode: 302, headers: ["Location": delivery.absoluteString]), for: source)
+            queueReadHalf(url: delivery, offset: 0, length: 2, total: 1000)
+            queueReadHalf(url: delivery, offset: 0, length: 2, total: 1000, onRequest: {
+                XCTAssertNil($0.value(forHTTPHeaderField: "Authorization"))
+                XCTAssertNil($0.value(forHTTPHeaderField: "Cookie"))
+                XCTAssertNil($0.value(forHTTPHeaderField: "Referer"))
+                XCTAssertEqual($0.value(forHTTPHeaderField: "If-Match"), "\"strong-1\"")
+            })
+            let session = try await makeAdapter(credential: credential).connect(for: try makeKey(revision: revision))
+            let external = try XCTUnwrap(session.fileSystem as? any MediaTransportExternalPlaybackFileSystem)
+            let result = try await external.externalPlaybackURL(for: strongETagLocator(revision: revision), player: .infuse)
+            XCTAssertEqual(result, delivery)
+            XCTAssertNil(result.user)
+            XCTAssertNil(result.password)
+            XCTAssertEqual(StubURLProtocol.requests(for: delivery).count, 2)
+            await session.shutdown()
+            StubURLProtocol.reset()
+        }
+    }
+
+    func testIndependentProbeCannotChangeTheFileOrHideServerErrorsBehindAPasswordFallback() async throws {
+        let failures = [
+            StubResponse(statusCode: 206, headers: ["ETag": "\"changed\"", "Content-Range": "bytes 0-1/1000"], body: Data([0, 0])),
+            StubResponse(statusCode: 206, headers: ["ETag": "\"strong-1\"", "Content-Range": "bytes 0-1/1001"], body: Data([0, 0])),
+            StubResponse(statusCode: 302, headers: ["Location": "https://other.example.com/movie.mkv"]),
+            StubResponse(statusCode: 403),
+            StubResponse(statusCode: 503)
+        ]
+        for failure in failures {
+            let revision = CredentialRevision()
+            let source = URL(string: "https://nas.example.com/dav/movies/Movie.mkv")!
+            let delivery = URL(string: "https://nas.example.com/dav/movies/delivery.mkv?grant=synthetic")!
+            queueStat()
+            StubURLProtocol.queue(StubResponse(statusCode: 302, headers: ["Location": delivery.absoluteString]), for: source)
+            queueReadHalf(url: delivery, offset: 0, length: 2, total: 1000)
+            StubURLProtocol.queue(failure, for: delivery)
+            let session = try await makeAdapter(
+                credential: .password(username: "fixture", password: "synthetic", policy: .automatic)
+            ).connect(for: try makeKey(revision: revision))
+            let external = try XCTUnwrap(session.fileSystem as? any MediaTransportExternalPlaybackFileSystem)
+            do {
+                _ = try await external.externalPlaybackURL(for: strongETagLocator(revision: revision), player: .infuse)
+                XCTFail("An independent read failure must not become successful handoff")
+            } catch {
+                XCTAssertTrue(error is MediaTransportError)
+                XCTAssertNotEqual(error as? MediaTransportError, .unsupportedCapability("external playback authentication"))
+            }
+            await session.shutdown()
+            StubURLProtocol.reset()
+        }
+    }
+
+    func testProtectedSameOriginRedirectCanStillUseACompatiblePassword() async throws {
+        let revision = CredentialRevision()
+        let source = URL(string: "https://nas.example.com/dav/movies/Movie.mkv")!
+        let delivery = URL(string: "https://nas.example.com/dav/movies/renamed.mkv")!
+        queueStat()
+        StubURLProtocol.queue(StubResponse(statusCode: 302, headers: ["Location": delivery.absoluteString]), for: source)
+        queueReadHalf(url: delivery, offset: 0, length: 2, total: 1000)
+        StubURLProtocol.queue(StubResponse(statusCode: 401), for: delivery)
+        let session = try await makeAdapter(
+            credential: .password(username: "fixture", password: "synthetic", policy: .automatic)
+        ).connect(for: try makeKey(revision: revision))
+        let external = try XCTUnwrap(session.fileSystem as? any MediaTransportExternalPlaybackFileSystem)
+        let result = try await external.externalPlaybackURL(for: strongETagLocator(revision: revision), player: .infuse)
+        let parsed = try XCTUnwrap(URLComponents(url: result, resolvingAgainstBaseURL: false))
+        XCTAssertEqual(parsed.path, delivery.path)
+        XCTAssertEqual(parsed.user, "fixture")
+        XCTAssertEqual(parsed.password, "synthetic")
+        await session.shutdown()
+    }
+
+    func testPinnedDAVOnlyHandsOffIndependentForeignDeliveryWithoutThePinOrLogin() async throws {
+        for returnsToOrigin in [false, true] {
+            let revision = CredentialRevision()
+            let trustRevision = UUID()
+            let source = URL(string: "https://nas.example.com/dav/movies/Movie.mkv")!
+            let delivery = URL(string: "https://delivery.example.com/movie.mkv?grant=synthetic")!
+            let returned = URL(string: "https://nas.example.com/dav/movies/returned.mkv?grant=synthetic")!
+            queueStat()
+            StubURLProtocol.queue(StubResponse(statusCode: 302, headers: ["Location": delivery.absoluteString]), for: source)
+            if returnsToOrigin {
+                StubURLProtocol.queue(
+                    StubResponse(statusCode: 302, headers: ["Location": returned.absoluteString]), for: delivery
+                )
+            }
+            queueReadHalf(url: returnsToOrigin ? returned : delivery, offset: 0, length: 2, total: 1000, onRequest: {
+                XCTAssertNil($0.value(forHTTPHeaderField: "Authorization"))
+                XCTAssertNil($0.value(forHTTPHeaderField: "Cookie"))
+            })
+            let session = try await makeAdapter(
+                credential: .bearerToken("synthetic"),
+                trustPolicy: .pinnedLeaf(sha256: Data(repeating: 1, count: 32), revision: trustRevision)
+            ).connect(for: try makeKey(revision: revision, trustRevision: trustRevision))
+            let external = try XCTUnwrap(session.fileSystem as? any MediaTransportExternalPlaybackFileSystem)
+            do {
+                let result = try await external.externalPlaybackURL(for: strongETagLocator(revision: revision), player: .infuse)
+                XCTAssertFalse(returnsToOrigin)
+                XCTAssertEqual(result, delivery)
+            } catch {
+                XCTAssertTrue(returnsToOrigin)
+                XCTAssertEqual(error as? MediaTransportError, .unsupportedCapability("external playback requires system TLS trust"))
+            }
+            await session.shutdown()
+            StubURLProtocol.reset()
+        }
+    }
+
+    func testIndependentAccessCancellationNeverReturnsAPasswordOrGrant() async throws {
+        let revision = CredentialRevision()
+        let source = URL(string: "https://nas.example.com/dav/movies/Movie.mkv")!
+        let started = WebDAVPreparationGate()
+        queueStat()
+        queueReadHalf(url: source, offset: 0, length: 2, total: 1000)
+        queueReadHalf(
+            url: source, offset: 0, length: 2, total: 1000, delay: .seconds(2),
+            onRequest: { _ in Task { await started.open() } }
+        )
+        let session = try await makeAdapter(credential: .bearerToken("synthetic")).connect(for: try makeKey(revision: revision))
+        let external = try XCTUnwrap(session.fileSystem as? any MediaTransportExternalPlaybackFileSystem)
+        let locator = try strongETagLocator(revision: revision)
+        let task = Task { try await external.externalPlaybackURL(for: locator, player: .infuse) }
+        await started.wait()
+        task.cancel()
+        do {
+            _ = try await task.value
+            XCTFail("Cancelled independent validation must not hand off")
+        } catch { XCTAssertEqual(error as? MediaTransportError, .cancelled) }
+        await session.shutdown()
+    }
+
     // MARK: - trust-revision threading
 
     private func queueStat(

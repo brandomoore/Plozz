@@ -227,6 +227,22 @@ These Home and device-login contracts were checked at upstream revision
   protocol-3 sessions without playback activity can expire independently of
   their signed URL's expiry. Progress samples are sequenced and stop
   requests carry an idempotent stop identifier.
+- External library playback uses the same validated native plan and exact file,
+  including mobile conversion limits. External negotiations request
+  `progress_persistence: client` so expiry/cleanup cannot invent playback history;
+  supported player callbacks feed the ordinary Plozz watch-state reconciler.
+  Original and HLS sessions both retain cleanup ownership. A restored,
+  credential-free receipt can release the session through the original
+  authorized account/profile without resolving another playback grant.
+  There is no background relay or fabricated heartbeat. Media requests sustain
+  the session, but a long pause can expire it; reopening playback requires a new
+  Plozz play intent. API-origin media also requires a current account bearer;
+  external eligibility requires its remaining lifetime and any advertised signed
+  grant expiry to cover the full source duration plus five minutes for startup.
+  Short-lived grants and unknown-duration API-origin media stay internal rather
+  than opening a stream the external player cannot refresh. See the upstream
+  [session-liveness contract](https://github.com/Silo-Server/silo-server/blob/baf9d4267043a2fa5f41f4fdebc4a175e564e793/docs/architecture/playback-protocol-v3.md#25-session-liveness).
+  Downloads and scheduled channels remain internal.
 - Watched state and the native Silo watchlist write back to Silo. Batched resume
   synchronization checks each result, not only HTTP success.
   Watched writes use `POST /api/v2/watched/{id}`; unwatched writes use `DELETE`.

@@ -45,13 +45,15 @@ final class PlaybackVersionSelectionSettingsTests: XCTestCase {
         XCTAssertEqual(primary.load().versionSelectionMode, .askEveryTime)
         XCTAssertNil(guest.load().versionSelectionMode)
         let guestModel = PlaybackSettingsModel(store: guest)
-        guestModel.settings.versionSelectionMode = .automatic
+        guestModel.settings.versionSelectionMode = .serverOrder
+        XCTAssertEqual(VersionPreferenceStore(defaults: defaults, namespace: "guest").selectionMode, .serverOrder)
+        XCTAssertEqual(VersionPreferenceStore(defaults: defaults).selectionMode, .askEveryTime)
         guestModel.settings.rememberVersionPerSeries = false
         XCTAssertFalse(VersionPreferenceStore(defaults: defaults, namespace: "guest").remembersSeriesVersions)
         XCTAssertTrue(VersionPreferenceStore(defaults: defaults).remembersSeriesVersions)
         let snapshot = ProfileSettingsTransfer.capture(namespace: "guest", defaults: defaults)
         ProfileSettingsTransfer.apply(snapshot, namespace: "restored", defaults: defaults)
-        XCTAssertEqual(PlaybackSettingsStore(defaults: defaults, namespace: "restored").load().versionSelectionMode, .automatic)
+        XCTAssertEqual(PlaybackSettingsStore(defaults: defaults, namespace: "restored").load().versionSelectionMode, .serverOrder)
         XCTAssertFalse(VersionPreferenceStore(defaults: defaults, namespace: "restored").remembersSeriesVersions)
         XCTAssertEqual(primary.load().versionSelectionMode, .askEveryTime)
     }

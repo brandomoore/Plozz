@@ -341,7 +341,8 @@ struct PlozziOSHomeView: View {
             )
             .id(ObjectIdentifier(appModel.settings.homeVisibility))
         }
-        .navigationDestination(item: $rowBrowser) { browser in
+        // Capturing the whole Home view here loops navigation updates on iOS 18.
+        .navigationDestination(item: $rowBrowser) { [appModel, horizontalSizeClass, dynamicTypeSize, isRunningOnMac] browser in
             HomeRowBrowseView(
                 model: browser,
                 columns: browser.style == .landscape

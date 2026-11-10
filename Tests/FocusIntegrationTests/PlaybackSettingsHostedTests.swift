@@ -9,7 +9,89 @@ import XCTest
 @testable import FeatureSettings
 
 @MainActor
+private final class PlayerSupportFocusController<Content: View>: UIHostingController<Content> {
+    var target: (any UIFocusEnvironment)?
+    override var preferredFocusEnvironments: [any UIFocusEnvironment] {
+        target.map { [$0] } ?? super.preferredFocusEnvironments
+    }
+}
+
+@MainActor
 final class PlaybackSettingsHostedTests: XCTestCase {
+    func testExternalPlayerFocusPreviewsOnlyLimitationsWithoutChangingSelection() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let suite = "ExternalPlayerSupportTV-\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        let model = ExternalPlayerSettingsModel(defaults: defaults)
+        model.settings.player = .nativePlayer
+        let row = try XCTUnwrap(ExternalPlayerSettingsRows.external(
+            model: model, installedPlayers: Set(ExternalPlayer.supported)
+        ).first)
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
+        let host = PlayerSupportFocusController(rootView:
+            SettingsFormLayout(title: Text("External player"), rows: [row])
+                .environment(\.themePalette, .dark)
+                .environment(\.locale, Locale(identifier: "en_US"))
+                .frame(width: SettingsFormMetrics.pageWidth)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(.black)
+        )
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+            defaults.removePersistentDomain(forName: suite)
+        }
+        try await Task.sleep(for: .milliseconds(400))
+        let system = try XCTUnwrap(UIFocusSystem.focusSystem(for: window))
+        let targets = try nativeFocusItems(in: window).map { item in
+            (item: item, frame: try XCTUnwrap(nativeFocusFrame(item, in: window)))
+        }.sorted { $0.frame.minY < $1.frame.minY }.map(\.item)
+        XCTAssertEqual(targets.count, ExternalPlayer.supported.count)
+        guard targets.count == ExternalPlayer.supported.count else { return }
+        func focus(_ player: ExternalPlayer) async throws {
+            let index = try XCTUnwrap(ExternalPlayer.supported.firstIndex(of: player))
+            let target = targets[index]
+            host.target = target
+            system.requestFocusUpdate(to: host)
+            system.updateFocusIfNeeded()
+            try await Task.sleep(for: .milliseconds(250))
+            host.target = nil
+            XCTAssertTrue(system.focusedItem === target)
+            XCTAssertEqual(model.settings.player, .nativePlayer, "Focus must not change the default.")
+        }
+        try await focus(.nativePlayer)
+        let native = try visibleText(in: window, attachment: "External-player-Native-support")
+        for phrase in ["Native Player limitations", "Live TV", "non-WebDAV",
+                       "WebDAV passwords", "extra login headers", "pinned certificates"] {
+            XCTAssertTrue(native.contains(phrase), native)
+        }
+        XCTAssertFalse(native.contains("library videos"), native)
+        XCTAssertFalse(native.contains("server-converted"), native)
+        XCTAssertFalse(native.contains("Native Player support"), native)
+        try await focus(.infuse)
+        let infuse = try visibleText(in: window, attachment: "External-player-Infuse-support")
+        XCTAssertTrue(infuse.contains("WebDAV passwords"), infuse)
+        XCTAssertTrue(infuse.contains("Infuse limitations"), infuse)
+        XCTAssertFalse(infuse.contains("Native Player limitations"), infuse)
+        try await focus(.vlc)
+        let vlc = try visibleText(in: window, attachment: "External-player-VLC-support")
+        XCTAssertTrue(vlc.contains("SMB, NFS, SFTP, FTPS"), vlc)
+        XCTAssertTrue(vlc.contains("VLC limitations"), vlc)
+        XCTAssertTrue(vlc.contains("Watch progress isn't returned"), vlc)
+        XCTAssertFalse(vlc.contains("library videos"), vlc)
+        try await focus(.builtIn)
+        let builtIn = try visibleText(in: window, attachment: "External-player-built-in")
+        XCTAssertFalse(builtIn.contains("server-converted"), builtIn)
+        XCTAssertFalse(builtIn.contains("limitations"), builtIn)
+        XCTAssertFalse(builtIn.contains("WebDAV"), builtIn)
+    }
+
     func testPlayerTabsShareOneSettingsGroupWithoutAnInfoToggle() async throws {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
             .first { $0.activationState == .foregroundActive })
@@ -534,7 +616,7 @@ final class PlaybackSettingsHostedTests: XCTestCase {
         return text
     }
 
-    private func profileFocusFrames(in window: UIWindow) -> [CGRect] {
+    private func nativeFocusItems(in window: UIWindow) -> [any UIFocusItem] {
         var containers: [any UIFocusItemContainer] = [window]
         var visited = Set<ObjectIdentifier>()
         var items: [ObjectIdentifier: any UIFocusItem] = [:]
@@ -546,17 +628,25 @@ final class PlaybackSettingsHostedTests: XCTestCase {
                 if item.canBecomeFocused, !(item is UIScrollView) { items[ObjectIdentifier(item)] = item }
             }
         }
-        return items.values.compactMap { item in
-            var environment: (any UIFocusEnvironment)? = item
-            while let current = environment {
-                if let container = current.focusItemContainer {
-                    return container.coordinateSpace.convert(item.frame, to: window)
-                }
-                environment = current.parentFocusEnvironment
-            }
-            XCTFail("The profile control must have a native focus coordinate space.")
-            return nil
+        return Array(items.values)
+    }
+
+    private func profileFocusFrames(in window: UIWindow) -> [CGRect] {
+        nativeFocusItems(in: window).compactMap { item in
+            nativeFocusFrame(item, in: window)
         }.sorted { $0.minY < $1.minY }
+    }
+
+    private func nativeFocusFrame(_ item: any UIFocusItem, in window: UIWindow) -> CGRect? {
+        var environment: (any UIFocusEnvironment)? = item
+        while let current = environment {
+            if let container = current.focusItemContainer {
+                return container.coordinateSpace.convert(item.frame, to: window)
+            }
+            environment = current.parentFocusEnvironment
+        }
+        XCTFail("The control must have a native focus coordinate space.")
+        return nil
     }
 
     private func visibleText(in window: UIWindow, attachment name: String, crop: CGRect? = nil) throws -> String {

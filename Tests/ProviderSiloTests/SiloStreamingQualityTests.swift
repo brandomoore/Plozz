@@ -5,6 +5,149 @@ import XCTest
 @testable import ProviderSilo
 
 extension SiloProviderTests {
+    func testExternalSiloOriginalOwnsCleanupAndLeavesProgressToTheCallback() async throws {
+        for options in [nil, StreamingPlaybackOptions(quality: .original)] {
+            let raw = try credential().encoded()
+            let http = SiloHTTPStub(playbackResponses())
+            let provider = try SiloProvider(context: context(raw), credentials: SiloCredentialStub(raw), http: http)
+            let request = try await provider.externalPlaybackInfo(
+                for: "movie:1", mediaSourceID: "42", player: .infuse, streaming: options
+            )
+            XCTAssertEqual(request.streamingSessionID, "session1")
+            XCTAssertEqual(request.playSessionID, "session1")
+            XCTAssertEqual(request.item.selectedVersionID, "42")
+            XCTAssertFalse(request.suppressOrdinaryWatchReporting, "Library videos are not scheduled channels")
+            guard case .authenticatedHTTP(let locator) = request.playbackSource else {
+                return XCTFail("Missing native playback grant")
+            }
+            let url = try await provider.resolveHTTPResource(locator)
+            XCTAssertTrue(ExternalPlayerURL.isSupportedMediaURL(url))
+            let requests = await http.requests
+            let start = try XCTUnwrap(requests.first { $0.path == "/api/v2/playback/start" })
+            let body = try XCTUnwrap(JSONSerialization.jsonObject(with: XCTUnwrap(start.body)) as? [String: Any])
+            XCTAssertEqual(body["progress_persistence"] as? String, "client")
+            XCTAssertEqual(body["start_position"] as? Double, 0)
+            XCTAssertEqual(body["file_id"] as? String, "42")
+            XCTAssertFalse(requests.contains { $0.method == .delete || $0.path.hasSuffix("/progress") })
+            await provider.releaseStreamingSession(request)
+            let ended = await http.requests
+            XCTAssertEqual(ended.filter { $0.method == .delete }.map(\.path), ["/api/v2/playback/session1"])
+        }
+    }
+
+    func testExternalSiloConversionPreservesQualityButDoesNotDoubleApplyResume() async throws {
+        let raw = try credential().encoded()
+        let http = SiloHTTPStub(streamingResponses())
+        let provider = try SiloProvider(context: context(raw), credentials: SiloCredentialStub(raw), http: http)
+        var options = StreamingPlaybackOptions(quality: try .custom(maximumHeight: 1080, bitrateKbps: 2_000))
+        options.startPosition = 125
+        let request = try await provider.externalPlaybackInfo(
+            for: "movie:1", mediaSourceID: "42", player: .vlc, streaming: options
+        )
+        XCTAssertEqual(request.streamingOptions?.quality, options.quality)
+        XCTAssertEqual(request.streamingOptions?.startPosition, 0)
+        XCTAssertEqual(request.streamingSessionID, "session1")
+        XCTAssertEqual(request.deliveryMode, .transcode)
+        let requests = await http.requests
+        let body = try XCTUnwrap(JSONSerialization.jsonObject(with: XCTUnwrap(
+            requests.first { $0.path == "/api/v2/playback/start" }?.body
+        )) as? [String: Any])
+        XCTAssertEqual(body["progress_persistence"] as? String, "client")
+        XCTAssertEqual(body["start_position"] as? Double, 0)
+        XCTAssertEqual(body["bandwidth_cap_kbps"] as? Int, 1_808)
+        XCTAssertEqual(body["quality_preference"] as? String, "1080p-high")
+    }
+
+    func testExternalSiloStillRejectsUnusableGrantsAndCleansUp() async throws {
+        for (old, new) in [
+            (#""effective_media_file_id":"42""#, #""effective_media_file_id":"another-file""#),
+            (#""headers":{}"#, #""headers":{"Authorization":"synthetic"}"#),
+            (#""timeline_offset_seconds":0"#, #""timeline_offset_seconds":125"#),
+            (#""can_seek_anywhere":true"#, #""can_seek_anywhere":false"#)
+        ] {
+            let raw = try credential().encoded()
+            var responses = playbackResponses()
+            responses["/api/v2/playback/start"] = responses["/api/v2/playback/start"]?
+                .replacingOccurrences(of: old, with: new)
+            let http = SiloHTTPStub(responses)
+            let provider = try SiloProvider(context: context(raw), credentials: SiloCredentialStub(raw), http: http)
+            do {
+                _ = try await provider.externalPlaybackInfo(for: "movie:1", mediaSourceID: "42")
+                XCTFail("External handoff must retain native plan validation")
+            } catch {
+                guard case .serverRefusal = error as? StreamingQualityError else { return XCTFail("\(error)") }
+            }
+            let requests = await http.requests
+            XCTAssertEqual(requests.filter { $0.method == .delete }.map(\.path), ["/api/v2/playback/session1"])
+        }
+    }
+
+    func testExternalSiloRejectsInvalidQualityBeforeNegotiation() async throws {
+        let raw = try credential().encoded()
+        let http = SiloHTTPStub(playbackResponses())
+        let provider = try SiloProvider(context: context(raw), credentials: SiloCredentialStub(raw), http: http)
+        for quality in [StreamingQuality.invalid(.bitrateTooLow), .low] {
+            do {
+                _ = try await provider.externalPlaybackInfo(
+                    for: "movie:1", mediaSourceID: "42", player: .infuse, streaming: .init(quality: quality)
+                )
+                XCTFail("Invalid or unsupported limits must not be bypassed")
+            } catch { XCTAssertTrue(error is StreamingQualityError) }
+        }
+        let requests = await http.requests
+        XCTAssertTrue(requests.isEmpty)
+    }
+
+    func testRestoredExternalSiloCleanupDoesNotNeedOrCreateAPlaybackGrant() async throws {
+        let raw = try credential().encoded()
+        let http = SiloHTTPStub(playbackResponses())
+        let provider = try SiloProvider(context: context(raw), credentials: SiloCredentialStub(raw), http: http)
+        await provider.releaseStreamingSession(id: "session1")
+        let requests = await http.requests
+        XCTAssertEqual(requests.map(\.path), ["/api/v2/playback/capabilities", "/api/v2/playback/session1"])
+        let stop = try XCTUnwrap(requests.last)
+        XCTAssertEqual(stop.method, .delete)
+        let body = try XCTUnwrap(JSONSerialization.jsonObject(with: XCTUnwrap(stop.body)) as? [String: Any])
+        XCTAssertEqual(body["installation_id"] as? String, "server1")
+        XCTAssertNotNil(body["stop_id"])
+        XCTAssertNil(body["position"])
+    }
+
+    func testExternalSiloRequiresTokenLifetimeForTheWholeVideoAndStartup() async throws {
+        for (remaining, eligible) in [(899.0, false), (950.0, true)] {
+            var login = try credential()
+            login.expiresAt = Date().addingTimeInterval(remaining)
+            let raw = try login.encoded()
+            let http = SiloHTTPStub(playbackResponses())
+            let provider = try SiloProvider(context: context(raw), credentials: SiloCredentialStub(raw), http: http)
+            do {
+                _ = try await provider.externalPlaybackInfo(for: "movie:1", mediaSourceID: "42")
+                XCTAssertTrue(eligible)
+            } catch {
+                XCTAssertFalse(eligible)
+                XCTAssertEqual(error as? ExternalPlayerError, .unsupportedSource)
+            }
+            let requests = await http.requests
+            XCTAssertEqual(requests.filter { $0.method == .delete }.count, eligible ? 0 : 1)
+        }
+    }
+
+    func testExternalSiloRejectsShortSignedGrantEvenWithLongAccountLifetime() async throws {
+        let raw = try credential().encoded()
+        var responses = playbackResponses()
+        let expiry = ISO8601DateFormatter().string(from: Date().addingTimeInterval(850))
+        responses["/api/v2/playback/start"] = responses["/api/v2/playback/start"]?
+            .replacingOccurrences(of: #""delivery":"original_http""#, with: #""expires_at":"\#(expiry)","delivery":"original_http""#)
+        let http = SiloHTTPStub(responses)
+        let provider = try SiloProvider(context: context(raw), credentials: SiloCredentialStub(raw), http: http)
+        do {
+            _ = try await provider.externalPlaybackInfo(for: "movie:1", mediaSourceID: "42")
+            XCTFail("An expiring signed grant must stay internal")
+        } catch { XCTAssertEqual(error as? ExternalPlayerError, .unsupportedSource) }
+        let requests = await http.requests
+        XCTAssertEqual(requests.filter { $0.method == .delete }.count, 1)
+    }
+
     private func streamingResponses(
         height: Int = 1080, bitrate: Int = 1_808, channels: Int = 2
     ) -> [String: String] {

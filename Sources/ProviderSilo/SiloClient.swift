@@ -59,6 +59,20 @@ actor SiloClient {
 
     func validateLogin() throws { _ = try currentCredential() }
 
+    func validateExternalMediaLifetime(_ url: URL, duration: TimeInterval) async throws {
+        guard MediaProviderURLIdentity.matchingBaseURL(for: url, among: addressResolver.addresses) != nil else {
+            return
+        }
+        let credential = try await authorizedCredential()
+        _ = try currentCredential()
+        // External players cannot refresh the native media-element account token.
+        // Reserve startup time as well as the entire source timeline.
+        guard duration.isFinite, duration > 0,
+              credential.expiresAt.timeIntervalSinceNow > duration + 5 * 60 else {
+            throw ExternalPlayerError.unsupportedSource
+        }
+    }
+
     func authorizedMediaURL(_ url: URL, sessionID: String) async throws -> URL {
         let credential = try await authorizedCredential()
         _ = try currentCredential()

@@ -85,24 +85,126 @@ The notification toggle is labeled **Season or Show Complete**. Active system do
 Live Activities include **Cancel to pause** beside their progress, since the system's
 Cancel action pauses rather than deletes downloads.
 
+## Download navigation
+
+On iPhone and iPad, download row menus offer Go to Movie or Go to Show when the
+saved record identifies a connected source. These actions open the source's
+detail page without interrupting the transfer. The downloaded-show page keeps
+its title in the scrolling content, below the navigation bar. Edit enables native
+episode multiselect, Select All, and confirmed removal of the selected downloads.
+The native Edit/Done button stays in the horizontal action group alongside
+Select All and Remove, including on iPhone Duo; Back retains its native placement.
+Done leaves downloads untouched and clears the selection. Episode menus remain
+available in either mode, including Play for completed downloads, Go to Show, and
+Remove Download. Tapping an episode while editing selects it instead of navigating.
+
 ## Download quality and tracks
 
 Track inclusion is automatic, not a universal pair of settings. Original saves
 the existing file unchanged, retaining its embedded audio and subtitle tracks.
-Reduced copies use the existing server download/conversion paths: Plex keeps one
-audio track and at most one text subtitle; Jellyfin/Emby keep the primary audio
-and text subtitles exposed in the downloadable HLS presentation; Silo follows its
-native download artifact and subtitle manifest. Preferred audio languages are
-requested where supported. Network shares remain Original-only.
+New reduced Plex, Emby and Silo downloads retain all reported audio tracks
+automatically. Playback applies the existing preferred-language policy to the
+local tracks, without changing the server's saved soundtrack selection.
+
+Plex prepares one H.264/AAC MP4 through its native download queue. Its offline
+client profile enables `DirectPlayStreamSelection`; no individual audio selection
+is sent and no extra video conversion or original-file transfer is needed.
+Before completion, Plozz checks the actual languages, audio count, requested
+resolution and end-of-file samples. Older single-audio requests retain their
+existing behavior on retry; already saved files are not changed.
+
+Emby converts video once to H.264
+MP4 and each additional soundtrack separately to stereo AAC at 192 kbps. Native
+AVFoundation packaging copies those compressed samples into one MP4 with mutually
+exclusive audio choices; it does not encode the video again. This needs temporary
+space for the downloaded inputs and the finished file.
+
+Reduced Silo downloads require a native artifact whose audio inventory matches
+the exact catalog file. Missing, incomplete or changed inventories fail rather
+than silently dropping languages; the downloaded file's audio count is checked
+along with its languages, resolution and end samples. Server-advertised quality presets still determine whether reduced downloads
+are available. Original-only Silo servers are not treated as conversion-capable.
+
+Jellyfin's tested audio-only endpoint ignores the requested index, so Jellyfin
+retains its existing HLS behavior and may include only one audio track. Use
+Original to retain every embedded track on Jellyfin. Network shares remain Original-only.
+Existing reduced Emby downloads retain their original HLS behavior on retry.
+Silent Emby videos also retain that transport rather than requiring an audio package.
+
+`OfflineAudioDownload` persists credential-free source fingerprints, track plans
+and completed-artifact receipts. A failed extra soundtrack does not re-download
+completed video. Source changes fail closed, each artifact is checked for its
+expected streams and complete duration, authorization is rechecked across
+asynchronous work, and the final MP4 is published atomically. Per-track server
+preparation references survive retries. Packaging preserves compressed content;
+it is not a full-original download fallback.
+
+### Restart and offline playback validation
+
+`OfflineDownloadPlaybackHostedTests` is an opt-in, two-process iOS hosted check.
+Generate its synthetic media without accessing a server or personal library:
+
+```sh
+python3 tools/generate-playback-fixture.py --offline-downloads \
+  --output .build/offline-fixtures/media.mp4
+```
+
+The generator refuses existing outputs. It creates a 24-second H.264 MP4 with
+English and French AAC tracks (distinct 440/880 Hz tones), plus the single-audio
+video and audio-only input used by the Emby packaging path.
+
+Build `PlozziOSPresentationTests` for an explicitly owned iOS simulator using the
+normal build lease and private package workspace. In a copy of that build's
+`.xctestrun` manifest **beside the original** (its paths are relative), set the
+`PlozziOSPresentationTests.EnvironmentVariables` entries:
+
+- `PLOZZ_OFFLINE_VALIDATION_RUN`: a fresh UUID, shared by both phases.
+- `PLOZZ_OFFLINE_VALIDATION_FIXTURES`: the absolute directory containing the three generated files.
+
+Run these selectors separately with `xcodebuild test-without-building`, the same
+manifest and simulator, `-parallel-testing-enabled NO`, and distinct result
+bundles:
+
+```text
+PlozziOSPresentationTests/OfflineDownloadPlaybackHostedTests/testPrepareReducedDownloadsForProcessRestart
+PlozziOSPresentationTests/OfflineDownloadPlaybackHostedTests/testPlayPersistedDownloadsOfflineAfterProcessRestart
+```
+
+The first phase runs real background HTTP transfers against a bounded loopback
+fixture, pauses/resumes each video, verifies no second full-video request, saves
+text subtitles, and shuts down the server. It covers both a native multi-audio
+MP4 and separately downloaded audio packaged locally. The second phase rejects
+the producer's process ID, reopens the production durable catalog format, enables
+Offline Mode, and uses `PlayerViewModel` with the native engine. It requires a
+presented video frame, advancing playback, the preferred audio language, both
+audio selections, both subtitle languages, forward/backward seeking, subtitle
+gaps, and subtitles off. Playback resolution must not call the unavailable provider.
+Successful runs remove only their own catalog/media directory.
+
+This tests production persistence envelopes with a disk-backed test adapter,
+not simulator Keychain entitlement behavior. It also does not replace live-server
+protocol checks, UI navigation coverage, physical-device background-task admission,
+or physical-device audiovisual checks. Without the explicit fixture environment,
+these two methods skip rather than claiming restart coverage from one process.
 
 External text subtitles are saved beside new downloads, for both Original and reduced
 quality. Plex and Jellyfin/Emby discovery uses the exact downloaded media source, not
 the first version of the title, and never starts another playback/transcode session.
+Reduced Jellyfin/Emby downloads also save extractable embedded text tracks as local
+sidecars, sequentially through the same bounded, authenticated subtitle loader.
+Embedded extraction has a 120-second per-track budget for the server's first scan;
+ordinary external sidecar timeouts remain unchanged.
+Language, title, forced, and hearing-impaired labels remain available offline.
+Original downloads keep their embedded tracks in the original file without extracting
+duplicate sidecars. Existing reduced downloads can acquire these tracks with
+**Update Subtitles**, without downloading or converting the video again.
 Network shares save exact-stem sidecars from the video's folder or its Subs/Subtitles
 folder. Silo retains its native download manifest, permissions, and asset endpoint.
 SRT, WebVTT, ASS, and SSA delivery is supported; image subtitles and unavailable or
 unreadable files are not advertised as saved. Jellyfin/Emby retain their existing
-subtitle delivery format (SRT for SubRip, WebVTT for other text formats).
+subtitle delivery format (SRT for SubRip, WebVTT for other text formats); WebVTT
+conversion does not preserve all ASS/SSA styling. Embedded image subtitles remain
+outside the sidecar-saving path.
 
 A video is marked complete before optional subtitle saving starts, so cancelling
 that work cannot hide it offline or restart the video transfer. An interrupted initial
@@ -128,10 +230,12 @@ background execution grant until the tracked downloads' subtitle saving finishes
 including the last video and downloads added while completion is pending. This waits
 for the actual work, not a fixed delay; subtitle failures remain nonfatal.
 
-New requests use `ManagedHTTPDownloadSource`'s defaults (one preferred audio
-rendition, available text subtitles). The retired global track flags are ignored
+The request builder opts new reduced Plex, Emby and Silo downloads into all-audio
+delivery; `ManagedHTTPDownloadSource` keeps its legacy decoding defaults.
+Available text subtitles remain enabled. The retired global track flags are ignored
 when decoding `DownloadNetworkPolicy`; they cannot invisibly block new Plex/Silo
 downloads or disable subtitles. Existing per-download flags remain decodable and
 are preserved when retrying, including explicit unsupported-track errors. Saved
 files are not rewritten. There is no full-original fallback for reduced quality,
-client-side repackaging, custom server requirement, or dependency upgrade.
+custom server requirement, or dependency upgrade. Progressive Emby packages use
+the existing HTTP speed limit; Jellyfin and legacy Emby HLS still require Full Speed.

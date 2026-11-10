@@ -76,6 +76,23 @@ regression uses a synthetic connected provider and the real episode detail page,
 then returns through both Back levels four times. Run it on iOS 18 as well as a
 current OS; this verifies navigation, not network transfer or offline playback.
 
+## Home row navigation on iOS 18
+
+The Home Films heading reproduced a main-thread SwiftUI update loop on an
+iPhone 11 simulator running iOS 18.0, using a synthetic Jellyfin server shelf,
+enabled hero, cached artwork, and the production `PlozziOSTabShell`. The first
+heading tap left Home visible and the app near 100% CPU; a process sample showed
+repeated Home body and AttributeGraph updates. The same fixture in a standalone
+navigation stack, even with native tabs, completed four push/Back cycles.
+
+Keep the row-browser destination's captures limited to the app model and
+resolved layout inputs, not the entire Home view and its environment. This
+change alone allowed the production-shell fixture to complete all four cycles
+on iOS 18. The regression is
+`ContinueWatchingDetailsInteractionTests.testServerFilmsHeaderWithHeroRemainsNavigableAcrossRepeatedPushes`.
+Retain the production shell when modifying it. This is simulator navigation
+evidence, not a physical iPhone XR result or proof of a whole-device crash.
+
 ## Sentry diagnostics and matching symbols
 
 Crash-reporting consent gates all uploads. Automatic UI/network breadcrumbs and

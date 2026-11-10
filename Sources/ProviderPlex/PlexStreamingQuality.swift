@@ -100,7 +100,7 @@ extension PlexProvider: StreamingSessionMaintaining {
     }
 }
 
-extension PlexProvider: StreamingQualityProviding {
+extension PlexProvider: StreamingSessionReleasing {
     public func playbackInfo(
         for itemID: String, mediaSourceID: String?, forceTranscode: Bool,
         streaming: StreamingPlaybackOptions
@@ -113,6 +113,10 @@ extension PlexProvider: StreamingQualityProviding {
 
     public func releaseStreamingSession(_ request: PlaybackRequest) async {
         guard let id = request.streamingSessionID else { return }
+        await releaseStreamingSession(id: id)
+    }
+
+    public func releaseStreamingSession(id: String) async {
         do { try await client.stopStreamingTranscode(sessionID: id) }
         catch { PlozzLog.playback.error("Unable to release the previous Plex streaming rendition.") }
     }

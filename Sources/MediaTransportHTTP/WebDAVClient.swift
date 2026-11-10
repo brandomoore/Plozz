@@ -283,6 +283,25 @@ public struct WebDAVClient: Sendable {
         }
     }
 
+    /// Verifies independent access to the exact already-probed representation,
+    /// including same-origin delivery grants. No account session, cookies,
+    /// credentials, redirects or trust overrides participate in this read.
+    public func validateAnonymousAccess(
+        to representation: RangeProbeResult, sessionKey: TransportSessionKey
+    ) async throws {
+        let anonymous = RangeProbeResult(
+            validator: representation.validator,
+            totalLength: representation.totalLength,
+            resourceURL: representation.resourceURL,
+            lastModified: representation.lastModified,
+            usesAnonymousSession: true
+        )
+        _ = try await readRange(
+            url: anonymous.resourceURL, start: 0, end: 1, representation: anonymous,
+            sessionKey: sessionKey, credential: .anonymous, trustPolicy: .system, maxReadBytes: 2
+        )
+    }
+
     /// Bounded `PROPFIND` `Depth: 0` + parse for a **single** resource
     /// (`stat`). Unlike ``listChildren(root:path:depth:…)`` this keeps the
     /// self-entry (a Depth:0 response's only entry) and returns exactly it,

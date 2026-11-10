@@ -271,6 +271,248 @@ final class ShareProviderLocatorTests: XCTestCase {
         XCTAssertEqual(openingCalls, 0)
     }
 
+    func testExternalWebDAVKeepsExactFileAndOrdinaryPlaybackTyped() async throws {
+        let entry = try RemoteFileEntry(
+            relativePath: "movie.mkv", kind: .file, size: 4096, strongETag: "\"file\""
+        )
+        let url = try XCTUnwrap(URL(string: "https://delivery.example.com/movie.mkv?grant=synthetic"))
+        let fileSystem = LocatorFakeFileSystem(statEntry: entry, externalURL: url)
+        let provider = makeProvider(stat: entry, fileSystem: fileSystem)
+        addTeardownBlock { await provider.teardown() }
+        for player in [ExternalPlayer.nativePlayer, .infuse, .vlc] {
+            let request = try await provider.externalPlaybackInfo(
+                for: "f:movie.mkv", mediaSourceID: "movie.mkv",
+                player: player, streaming: .init(quality: .original)
+            )
+            XCTAssertEqual(request.streamURL, url)
+            XCTAssertNil(request.playbackSource)
+            XCTAssertNil(request.streamingSessionID)
+            XCTAssertNil(request.playSessionID)
+            XCTAssertEqual(request.item.id, "f:movie.mkv")
+            XCTAssertEqual(request.sourceFileName, "movie.mkv")
+            XCTAssertTrue(request.subtitleTracks.isEmpty)
+        }
+
+        let paths = await fileSystem.externalPaths
+        XCTAssertEqual(paths, Array(repeating: "movie.mkv", count: 3))
+        let players = await fileSystem.externalPlayers
+        XCTAssertEqual(players, [.nativePlayer, .infuse, .vlc])
+        let internalRequest = try await provider.playbackInfo(for: "f:movie.mkv")
+        guard case .networkFile(let locator) = internalRequest.playbackSource else {
+            return XCTFail("Built-in playback must keep its transport lifecycle")
+        }
+        XCTAssertEqual(locator.relativePath, "movie.mkv")
+        XCTAssertNil(internalRequest.streamURL)
+    }
+
+    func testExternalFTPCarriesVLCMediaAndSRTWithoutLocalRelay() async throws {
+        let entry = try RemoteFileEntry(relativePath: "movie.mkv", kind: .file, size: 4096, strongETag: "\"video\"")
+        let subtitle = try RemoteFileEntry(relativePath: "movie.en.srt", kind: .file, size: 80, strongETag: "\"sub\"")
+        let url = URL(string: "ftp://nas.example.com:2121//media/movie.mkv")!
+        let files = LocatorFakeFileSystem(
+            statEntry: entry, listedEntries: [entry, subtitle], externalURL: url,
+            openingEntries: [subtitle.relativePath: subtitle]
+        )
+        let provider = makeProvider(
+            stat: entry, fileSystem: files, baseURL: URL(string: "ftp://nas.example.com:2121/media")!
+        )
+        addTeardownBlock { await provider.teardown() }
+        let request = try await provider.externalPlaybackInfo(
+            for: "f:movie.mkv", mediaSourceID: "movie.mkv", player: .vlc, streaming: nil
+        )
+        XCTAssertEqual(request.streamURL, url)
+        XCTAssertNil(request.playbackSource)
+        XCTAssertEqual(request.sourceProvider, .mediaShare)
+        XCTAssertEqual(request.externalSubtitleURLs, [url])
+        let paths = await files.externalPaths
+        XCTAssertEqual(paths, ["movie.mkv", "movie.en.srt"])
+        let reads = await files.fileReads
+        XCTAssertEqual(reads, 0)
+    }
+
+    func testExternalWebDAVPassesMatchingSRTWithoutDownloadingOrSharingLocalFiles() async throws {
+        let entry = try RemoteFileEntry(
+            relativePath: "movie.mkv", kind: .file, size: 4096, strongETag: "\"file\""
+        )
+        let subtitles = try ["movie.en.srt", "movie.fr.srt", "movie.de.ass", "other.en.srt"].map {
+            try RemoteFileEntry(relativePath: $0, kind: .file, size: 100, strongETag: "\"sub\"")
+        }
+        for player in [ExternalPlayer.nativePlayer, .infuse, .vlc, .custom] {
+            let fileSystem = LocatorFakeFileSystem(
+                statEntry: entry, listedEntries: [entry] + subtitles,
+                externalURL: URL(string: "https://delivery.example.com/asset?grant=synthetic")
+            )
+            let provider = makeProvider(stat: entry, fileSystem: fileSystem)
+            addTeardownBlock { await provider.teardown() }
+            let request = try await provider.externalPlaybackInfo(
+                for: "f:movie.mkv", mediaSourceID: nil, player: player, streaming: nil
+            )
+            let count = player == .custom ? 0 : player == .vlc ? 1 : 2
+            XCTAssertEqual(request.externalSubtitleURLs.count, count)
+            let paths = await fileSystem.externalPaths
+            XCTAssertEqual(paths, ["movie.mkv"] + Array(["movie.en.srt", "movie.fr.srt"].prefix(count)))
+            let players = await fileSystem.externalPlayers
+            XCTAssertEqual(players, Array(repeating: player, count: count + 1))
+            let reads = await fileSystem.fileReads
+            XCTAssertEqual(reads, 0)
+        }
+    }
+
+    func testExternalWebDAVCarriesPasswordURLsThroughMediaAndSidecarNegotiation() async throws {
+        let entry = try RemoteFileEntry(
+            relativePath: "movie.mkv", kind: .file, size: 4096, strongETag: "\"file\""
+        )
+        let subtitle = try RemoteFileEntry(
+            relativePath: "movie.en.srt", kind: .file, size: 100, strongETag: "\"sub\""
+        )
+        var source = try XCTUnwrap(URLComponents(string: "https://nas.example.com/dav/movie.mkv"))
+        source.user = "fixture"
+        source.password = "synthetic"
+        let url = try XCTUnwrap(source.url)
+        for player in [ExternalPlayer.nativePlayer, .infuse, .vlc] {
+            let fileSystem = LocatorFakeFileSystem(
+                statEntry: entry, listedEntries: [entry, subtitle], externalURL: url
+            )
+            let provider = makeProvider(stat: entry, fileSystem: fileSystem)
+            addTeardownBlock { await provider.teardown() }
+            let request = try await provider.externalPlaybackInfo(
+                for: "f:movie.mkv", mediaSourceID: nil, player: player, streaming: nil
+            )
+            XCTAssertEqual(request.streamURL, url)
+            XCTAssertEqual(request.externalSubtitleURLs, [url])
+            XCTAssertEqual(request.sourceProvider, .mediaShare)
+            let players = await fileSystem.externalPlayers
+            XCTAssertEqual(players, [player, player])
+            let reads = await fileSystem.fileReads
+            XCTAssertEqual(reads, 0)
+        }
+    }
+
+    func testExternalWebDAVRejectsConversionAndWrongVersionsBeforeHandoff() async throws {
+        let entry = try RemoteFileEntry(
+            relativePath: "movie.mkv", kind: .file, size: 4096, strongETag: "\"file\""
+        )
+        let fileSystem = LocatorFakeFileSystem(
+            statEntry: entry, externalURL: URL(string: "https://nas.example.com/dav/movie.mkv")
+        )
+        let provider = makeProvider(stat: entry, fileSystem: fileSystem)
+        addTeardownBlock { await provider.teardown() }
+        for (version, options) in [
+            ("movie.mkv", StreamingPlaybackOptions(quality: .hd720)),
+            ("movie.mkv", StreamingPlaybackOptions(quality: .original, forceTranscoding: true)),
+            ("another.mkv", StreamingPlaybackOptions(quality: .original)),
+            ("", StreamingPlaybackOptions(quality: .original))
+        ] {
+            do {
+                _ = try await provider.externalPlaybackInfo(
+                    for: "f:movie.mkv", mediaSourceID: version, player: .infuse, streaming: options
+                )
+                XCTFail("An unsupported request must not choose another file or ignore conversion")
+            } catch { XCTAssertTrue(error is ExternalPlayerError || error is MediaTransportError) }
+        }
+        let paths = await fileSystem.externalPaths
+        XCTAssertTrue(paths.isEmpty)
+    }
+
+    func testExternalShareRefusesOtherTransportsAndLocalDeliveryURLs() async throws {
+        let entry = try RemoteFileEntry(
+            relativePath: "movie.mkv", kind: .file, size: 4096, strongETag: "\"file\""
+        )
+        for scheme in ["smb", "sftp", "ftp", "https"] {
+            let fileSystem = LocatorFakeFileSystem(
+                statEntry: entry, externalURL: URL(string: "http://127.0.0.1/movie.mkv")
+            )
+            let provider = makeProvider(
+                stat: entry, fileSystem: fileSystem,
+                baseURL: try XCTUnwrap(URL(string: "\(scheme)://nas.example.com/dav"))
+            )
+            addTeardownBlock { await provider.teardown() }
+            do {
+                _ = try await provider.externalPlaybackInfo(for: "f:movie.mkv", mediaSourceID: nil)
+                XCTFail("No unsupported transport or app-local relay")
+            } catch { XCTAssertEqual(error as? ExternalPlayerError, .unsupportedSource) }
+            let paths = await fileSystem.externalPaths
+            XCTAssertEqual(paths.count, scheme == "https" ? 1 : 0)
+        }
+    }
+
+    func testExternalWebDAVWithoutTransportOptInRemainsInternal() async throws {
+        let entry = try RemoteFileEntry(
+            relativePath: "movie.mkv", kind: .file, size: 4096, strongETag: "\"file\""
+        )
+        let provider = makeProvider(stat: entry)
+        addTeardownBlock { await provider.teardown() }
+        do {
+            _ = try await provider.externalPlaybackInfo(for: "f:movie.mkv", mediaSourceID: nil)
+            XCTFail("A transport must explicitly approve the handoff")
+        } catch { XCTAssertEqual(error as? MediaTransportError, .unsupportedCapability("external playback")) }
+    }
+
+    func testAdmittedLocalHandoffPreservesExactLocatorAndSRTWithoutCopyingFiles() async throws {
+        let entry = try RemoteFileEntry(relativePath: "movie.mkv", kind: .file, size: 4096, strongETag: "\"video\"")
+        let subtitle = try RemoteFileEntry(relativePath: "movie.en.srt", kind: .file, size: 80, strongETag: "\"sub\"")
+        for scheme in ["https", "http", "smb", "nfs", "sftp", "ftp", "ftps"] {
+            let files = LocatorFakeFileSystem(
+                statEntry: entry, listedEntries: [entry, subtitle], openingEntries: [subtitle.relativePath: subtitle]
+            )
+            let provider = makeProvider(
+                stat: entry, fileSystem: files, baseURL: URL(string: "\(scheme)://nas.example.com/media")!
+            )
+            addTeardownBlock { await provider.teardown() }
+            let request = try await provider.externalPlaybackInfo(
+                for: "f:movie.mkv", mediaSourceID: "movie.mkv", player: .infuse, streaming: nil, allowLocalRelay: true
+            )
+            guard case .networkFile(let locator) = request.playbackSource else {
+                return XCTFail("\(scheme): expected exact typed source")
+            }
+            XCTAssertEqual(locator.relativePath, entry.relativePath)
+            XCTAssertNil(request.streamURL)
+            XCTAssertEqual(request.externalSubtitleLocators.map(\.relativePath), ["movie.en.srt"])
+            XCTAssertTrue(request.subtitleTracks.isEmpty)
+            let reads = await files.fileReads
+            XCTAssertEqual(reads, 0)
+        }
+    }
+
+    func testLocalHandoffOptInCannotHideFailuresOrOverrideDirectDelivery() async throws {
+        let entry = try RemoteFileEntry(relativePath: "movie.mkv", kind: .file, size: 4096, strongETag: "\"video\"")
+        for error in [MediaTransportError.permissionDenied, .authentication(reason: "test"), .sourceChanged(reason: "test")] {
+            let files = LocatorFakeFileSystem(statEntry: entry, externalError: error)
+            let provider = makeProvider(stat: entry, fileSystem: files)
+            addTeardownBlock { await provider.teardown() }
+            do {
+                _ = try await provider.externalPlaybackInfo(
+                    for: "f:movie.mkv", mediaSourceID: nil, player: .infuse, streaming: nil, allowLocalRelay: true
+                )
+                XCTFail("Do not turn upstream failure into another successful source")
+            } catch let actual as MediaTransportError { XCTAssertEqual(actual, error) }
+        }
+        let url = URL(string: "https://delivery.example.com/movie.mkv")!
+        let files = LocatorFakeFileSystem(statEntry: entry, externalURL: url)
+        let provider = makeProvider(stat: entry, fileSystem: files)
+        addTeardownBlock { await provider.teardown() }
+        let direct = try await provider.externalPlaybackInfo(
+            for: "f:movie.mkv", mediaSourceID: nil, player: .infuse, streaming: nil, allowLocalRelay: true
+        )
+        XCTAssertEqual(direct.streamURL, url)
+        XCTAssertNil(direct.playbackSource)
+    }
+
+    func testLocalHandoffStillRejectsCustomPlayersAndRequiredConversion() async throws {
+        let entry = try RemoteFileEntry(relativePath: "movie.mkv", kind: .file, size: 4096, strongETag: "\"video\"")
+        let provider = makeProvider(stat: entry)
+        addTeardownBlock { await provider.teardown() }
+        for player in [ExternalPlayer.custom, .infuse] {
+            do {
+                _ = try await provider.externalPlaybackInfo(
+                    for: "f:movie.mkv", mediaSourceID: nil, player: player,
+                    streaming: player == .infuse ? .init(quality: .hd720) : nil, allowLocalRelay: true
+                )
+                XCTFail("Must preserve player and conversion policy")
+            } catch { XCTAssertTrue(error is ExternalPlayerError || error is MediaTransportError) }
+        }
+    }
+
     private func makeProvider(
         stat: RemoteFileEntry,
         streamProber: NetworkFileStreamProbing? = nil,
@@ -813,7 +1055,7 @@ private final class LocatorFakeSession: MediaTransportSession, @unchecked Sendab
     func isHealthy() async -> Bool { true }
 }
 
-private actor LocatorFakeFileSystem: MediaTransportFileSystem {
+private actor LocatorFakeFileSystem: MediaTransportExternalPlaybackFileSystem {
     private var statEntry: RemoteFileEntry
     private let openingEntry: RemoteFileEntry?
     private var listedEntries: [RemoteFileEntry]
@@ -826,12 +1068,19 @@ private actor LocatorFakeFileSystem: MediaTransportFileSystem {
     private let directoryTree: [String: [RemoteFileEntry]]?
     private let deniedDirectories: Set<String>
     private(set) var listedPaths: [String] = []
+    private(set) var externalPaths: [String] = []
+    private(set) var externalPlayers: [ExternalPlayer] = []
+    private let externalURL: URL?
+    private let externalError: MediaTransportError?
+    private let openingEntries: [String: RemoteFileEntry]
 
     init(
         statEntry: RemoteFileEntry, openingEntry: RemoteFileEntry? = nil,
         listedEntries: [RemoteFileEntry] = [], listingError: MediaTransportError? = nil,
         fileContents: Data = Data(), directoryTree: [String: [RemoteFileEntry]]? = nil,
-        deniedDirectories: Set<String> = []
+        deniedDirectories: Set<String> = [],
+        externalURL: URL? = nil, externalError: MediaTransportError? = nil,
+        openingEntries: [String: RemoteFileEntry] = [:]
     ) {
         self.statEntry = statEntry
         self.openingEntry = openingEntry
@@ -840,12 +1089,23 @@ private actor LocatorFakeFileSystem: MediaTransportFileSystem {
         self.fileContents = fileContents
         self.directoryTree = directoryTree
         self.deniedDirectories = deniedDirectories
+        self.externalURL = externalURL
+        self.externalError = externalError
+        self.openingEntries = openingEntries
     }
 
     func replaceStat(_ entry: RemoteFileEntry) { statEntry = entry }
     func replaceListing(_ entries: [RemoteFileEntry]) { listedEntries = entries }
 
     func validate() async throws {}
+
+    func externalPlaybackURL(for locator: NetworkFileLocator, player: ExternalPlayer) async throws -> URL {
+        externalPaths.append(locator.relativePath)
+        externalPlayers.append(player)
+        if let externalError { throw externalError }
+        guard let externalURL else { throw MediaTransportError.unsupportedCapability("external playback") }
+        return externalURL
+    }
 
     func probe() async throws -> MediaTransportProbe {
         MediaTransportProbe(
@@ -873,7 +1133,7 @@ private actor LocatorFakeFileSystem: MediaTransportFileSystem {
 
     func statForOpening(relativePath: String) async throws -> RemoteFileEntry {
         openingCalls += 1
-        return openingEntry ?? statEntry
+        return openingEntries[relativePath] ?? openingEntry ?? statEntry
     }
 
     func readSmallFile(relativePath: String, maximumBytes: Int) async throws -> Data {

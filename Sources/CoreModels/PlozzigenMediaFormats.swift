@@ -1,6 +1,7 @@
 import Foundation
 
-/// Server negotiation for the linked Aether/FFmpeg build, not a decoder router.
+/// Shared input hints for negotiation and version selection with the linked
+/// Aether/FFmpeg build, not a decoder router or a playback guarantee.
 /// Keep containers, video and audio aligned; see docs/playback-engines.md.
 public enum PlozzigenMediaFormats {
     public static let containers = [

@@ -964,7 +964,8 @@ public struct ItemDetailView: View {
             versions: versions,
             versionOverride: versionOverride,
             preferences: versionPreferences,
-            capabilities: capabilities
+            capabilities: capabilities,
+            sources: viewModel.sources
         )
     }
 
@@ -1052,7 +1053,8 @@ public struct ItemDetailView: View {
             versionID: versionID,
             explicit: viewModel.isLibraryOriginPinned
                 || sourceOverride != nil
-                || versionOverride != nil
+                || versionOverride != nil,
+            explicitVersion: versionOverride != nil || item.explicitVersionSelection
         )
     }
 

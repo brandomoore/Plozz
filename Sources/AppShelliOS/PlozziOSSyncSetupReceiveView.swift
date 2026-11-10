@@ -50,9 +50,9 @@ struct PlozziOSSyncSetupReceiveView: View {
                 .navigationTitle("Set Up This Device")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
-                    ToolbarItem(placement: .topBarTrailing) {
+                    ToolbarItem(placement: .cancellationAction) {
                         if case .applied = model.phase { EmptyView() } else {
-                            Button("Cancel", action: onClose)
+                            Button("Cancel", systemImage: "xmark", action: onClose)
                         }
                     }
                 }

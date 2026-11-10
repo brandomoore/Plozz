@@ -191,9 +191,17 @@ bounded language-match/accessibility flags without track titles or URLs.
 - **Native-only video assets** — when that engine is selected, tvOS feeds the resolved URL directly to
   AVPlayer even when sidecars are available. Track menus still use provider
   tracks; the owned overlay authorizes and fetches selected SRT/WebVTT sidecars.
-  Embedded captions retain native cue extraction. iOS keeps the existing
-  `SubtitleHLSComposer` / `SubtitleInjectingResourceLoader` path; real provider
-  HLS, trailer audio composition, and Plozzigen are unchanged.
+  Embedded captions retain native cue extraction. Local files on every platform
+  also keep their original asset, preserving selectable audio and saved captions
+  through the owned overlay. Injecting a local MP4 into the HLS wrapper is not a
+  supported file-delivery route and can prevent playback entirely. iOS retains
+  `SubtitleHLSComposer` / `SubtitleInjectingResourceLoader` for remote non-HLS
+  sources; real provider HLS, trailer audio composition, and Plozzigen are unchanged.
+  Saved sidecars use the in-app overlay, not native PiP/AirPlay caption injection.
+  When a local asset has no provider audio inventory, the native engine discovers
+  its audible selection group asynchronously and updates the existing track menu.
+  Selection uses the exact local option index, including unnamed and same-language
+  tracks; preferred-language startup selection and teardown remain item-scoped.
 - **Trickplay scrubbing** — `ScrubGeometry`, `ScrubThumbnailProviding`,
   `TrickplayThumbnailLoader`, `PlexBIFThumbnailLoader`: focus-driven
   scrub bar with per-provider thumbnail loaders (Jellyfin "trickplay"

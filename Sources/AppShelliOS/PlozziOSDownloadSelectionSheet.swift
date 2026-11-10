@@ -391,7 +391,7 @@ struct PlozziOSDownloadSelectionContent: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel", action: onCancel).disabled(isDownloading)
+                    Button("Cancel", systemImage: "xmark", action: onCancel).disabled(isDownloading)
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     if isDownloading {

@@ -31,7 +31,7 @@ public enum MediaFileSizeFormatter {
 /// Beyond the label/size the brief requires, this also carries the handful of
 /// technical facts (`videoCodec`, `videoRange`, `audioCodec`, `audioChannels`)
 /// needed to (a) render a tasteful "4K · Dolby Vision · Atmos" diff per row and
-/// (b) provide a conservative native-profile ordering hint. The actual delivery
+/// (b) provide an engine-aware ordering hint. The actual delivery
 /// mode is known only after provider resolution and is shown in Playback
 /// Diagnostics, never guessed in the version menu.
 public struct MediaVersion: Codable, Hashable, Identifiable, Sendable {
@@ -61,7 +61,7 @@ public struct MediaVersion: Codable, Hashable, Identifiable, Sendable {
     /// Runtime of this specific file in seconds, when known.
     public var duration: TimeInterval?
     /// The server's default/primary source — used as the selection fallback when
-    /// no version direct-plays and as a tie-breaker.
+    /// no version has known supported input and as a tie-breaker.
     public var isDefault: Bool
 
     // Technical facts for the visual diff + device compatibility prediction.
@@ -505,9 +505,8 @@ public struct MediaVersion: Codable, Hashable, Identifiable, Sendable {
         )
     }
 
-    /// A coarse quality score used to order versions and pick a default. Driven
-    /// primarily by resolution, then HDR, then bitrate — so "best available"
-    /// sorts first. Deterministic and dependency-free.
+    /// Coarse source quality for display ordering and remembered-shape tiebreaks.
+    /// Automatic selection separately accounts for usable HDR and engine input.
     public var qualityScore: Int {
         var score = 0
         score += (height ?? 0)
@@ -575,28 +574,33 @@ public extension MediaVersion {
 }
 
 public extension Array where Element == MediaVersion {
-    /// The version a freshly opened picker should select by default: the
-    /// highest-quality version whose known facts fit the native device profile.
-    /// This is a conservative ordering hint, not a claim about the provider's
-    /// resolved delivery mode (Plozzigen may directly decode a version outside
-    /// that profile). Falls back to the server default, then highest quality.
-    ///
-    /// This is the heart of the "smart selection" creative addition — it turns a
-    /// dumb list into a one-tap "right thing for *this* TV" while still letting
-    /// the user override to any other version.
-    func recommendedSelection(for capabilities: MediaCapabilities) -> MediaVersion? {
+    /// The highest-scoring known engine input, then the server default or best
+    /// remaining estimate. Neither codec support nor this score promises playback
+    /// success, real-time software decoding, or a particular output format.
+    func recommendedSelection(
+        for capabilities: MediaCapabilities,
+        engine: PlaybackEngineKind = .plozzigen
+    ) -> MediaVersion? {
         guard !isEmpty else { return nil }
         let playable = filter { !$0.isExternalSource }
         if playable.count != count {
-            return playable.isEmpty ? first : playable.recommendedSelection(for: capabilities)
+            return playable.isEmpty ? first : playable.recommendedSelection(for: capabilities, engine: engine)
         }
-        let nativeCompatible = filter { $0.compatibility(with: capabilities) == .directPlay }
-        if let best = nativeCompatible.max(by: { $0.qualityScore < $1.qualityScore }) {
-            return best
+        let assessed = map { (version: $0, assessment: $0.selectionAssessment(for: capabilities, engine: engine)) }
+        func ranksBefore(
+            _ lhs: (version: MediaVersion, assessment: VersionSelectionAssessment),
+            _ rhs: (version: MediaVersion, assessment: VersionSelectionAssessment)
+        ) -> Bool {
+            if lhs.assessment.qualityScore != rhs.assessment.qualityScore {
+                return lhs.assessment.qualityScore < rhs.assessment.qualityScore
+            }
+            return lhs.version.id > rhs.version.id
+        }
+        if let best = assessed.filter({ $0.assessment.hasSupportedInput }).max(by: ranksBefore) {
+            return best.version
         }
         if let serverDefault = first(where: { $0.isDefault }) { return serverDefault }
-        if let best = self.max(by: { $0.qualityScore < $1.qualityScore }) { return best }
-        return first
+        return assessed.max(by: ranksBefore)?.version
     }
 
     /// A deterministic display order for the version picker. Known file sizes

@@ -12,7 +12,7 @@ struct PlozziOSOverflowBackToolbarItem: ToolbarContent {
     let action: () -> Void
 
     var body: some ToolbarContent {
-        ToolbarItem(id: "more-navigation-back", placement: .topBarLeading) {
+        ToolbarItem(id: "more-navigation-back", placement: .cancellationAction) {
             Button("Back", systemImage: "chevron.backward", action: action)
                 .labelStyle(.iconOnly)
                 .accessibilityIdentifier("more-navigation-back")

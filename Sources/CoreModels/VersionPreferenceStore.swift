@@ -14,6 +14,7 @@ import Foundation
 /// — version preference is a convenience, not critical state, so it needs no
 /// schema or migration. Per-profile scoped via `namespace`.
 public protocol VersionPreferenceStoring: Sendable {
+    var selectionMode: PlaybackVersionSelectionMode { get }
     var remembersSeriesVersions: Bool { get }
     /// The remembered `MediaVersion.id` for `titleID`, or `nil` if none.
     func preferredVersionID(forTitle titleID: String) -> String?
@@ -37,6 +38,7 @@ public protocol VersionPreferenceStoring: Sendable {
 }
 
 public extension VersionPreferenceStoring {
+    var selectionMode: PlaybackVersionSelectionMode { .automatic }
     var remembersSeriesVersions: Bool { true }
 
     func shouldRememberVersion(for item: MediaItem) -> Bool {
@@ -87,6 +89,10 @@ public final class VersionPreferenceStore: VersionPreferenceStoring, @unchecked 
 
     public var remembersSeriesVersions: Bool {
         playbackSettings.load().rememberVersionPerSeries
+    }
+
+    public var selectionMode: PlaybackVersionSelectionMode {
+        playbackSettings.load().versionSelectionMode ?? .automatic
     }
 
     public func preferredVersionID(forTitle titleID: String) -> String? {

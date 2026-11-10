@@ -222,7 +222,7 @@ struct PlozziOSProfilePickerView: View {
             .toolbarBackground(.hidden, for: .navigationBar)
             .toolbar {
                 if let onCancel, !isEditing, !isCovered {
-                    ToolbarItem(placement: .topBarLeading) {
+                    ToolbarItem(placement: .cancellationAction) {
                         Button("Cancel", systemImage: "xmark", action: onCancel)
                             .labelStyle(.iconOnly)
                             .accessibilityIdentifier("profile-picker-close")

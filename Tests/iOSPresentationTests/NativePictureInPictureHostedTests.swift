@@ -9,6 +9,42 @@ import XCTest
 
 @MainActor
 final class NativePictureInPictureHostedTests: XCTestCase {
+    func testLocalAudioInventoryLoadsWithoutProviderTracksAndClearsOnStop() async throws {
+        let engine = NativeVideoEngine(startsMuted: true)
+        defer { engine.stop() }
+        let folder = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "Fixtures", withExtension: nil))
+        var changes = 0
+        engine.onTracksChanged = { changes += 1 }
+        await engine.load(request: .init(
+            item: .init(id: "local-audio", title: "Synthetic video", kind: .movie),
+            streamURL: folder.appendingPathComponent("live-continuity.mp4")
+        ), startPosition: 0)
+        try await waitUntil { engine.audioTracks.count == 1 }
+        let track = try XCTUnwrap(engine.audioTracks.first)
+        engine.selectAudioTrack(track)
+        try await waitUntil { engine.currentAudioTrackID == track.id }
+        XCTAssertGreaterThan(changes, 0)
+        engine.stop()
+        XCTAssertTrue(engine.audioTracks.isEmpty)
+        XCTAssertNil(engine.currentAudioTrackID)
+    }
+
+    func testLocalVideoWithSidecarsKeepsItsNativeAsset() async throws {
+        let engine = NativeVideoEngine(startsMuted: true)
+        defer { engine.stop() }
+        var request = try fixture()
+        let source = try XCTUnwrap(request.streamURL)
+        request.subtitleTracks.append(.init(
+            id: 100_000, kind: .subtitle, displayTitle: "Saved captions", language: "fr", codec: "srt",
+            deliverySource: .localFile(source.deletingLastPathComponent().appendingPathComponent("saved.srt")),
+            isExternal: true
+        ))
+        await engine.load(request: request, startPosition: 0)
+        let asset = try XCTUnwrap(engine.nowPlayingPlayer?.currentItem?.asset as? AVURLAsset)
+        XCTAssertEqual(asset.url, source, "A local MP4 cannot be served as an injected HLS segment")
+        try await waitUntil { engine.status == .ready }
+    }
+
     func testNativePresentationSurvivesPlayerReplacementAndClearsOnStop() async throws {
         let engine = NativeVideoEngine(startsMuted: true)
         defer { engine.stop() }

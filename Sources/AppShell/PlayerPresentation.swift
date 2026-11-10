@@ -115,7 +115,7 @@ struct PlayerPresentation: View {
                     dismiss()
                     return
                 }
-                ExternalPlaybackRuntime.shared.beginPlaybackIntent()
+                ExternalPlaybackRuntime.shared.beginPlaybackIntent(context: externalContext?())
                 HandoffDiagnostics.emit(
                     "presentation READY trace=\(activeRequest.traceID.uuidString.prefix(8)) "
                         + "item=\(activeRequest.item.id) "

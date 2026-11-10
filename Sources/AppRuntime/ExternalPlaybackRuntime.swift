@@ -3,6 +3,7 @@ import CoreNetworking
 import CryptoKit
 import FeaturePlayback
 import Foundation
+import MediaTransportCore
 import Observation
 import os
 import UIKit
@@ -33,11 +34,13 @@ public struct ExternalPlaybackContext {
     public let isAuthorized: Bool
     public let resolver: any AuthenticatedHTTPResourceResolving
     public let offlineResolver: (any OfflinePlaybackResolving)?
+    public let networkFileResolver: (any MediaTransportNetworkFileResolving)?
 
     public init(
         profileID: String, authorizationID: String, accounts: [ResolvedAccount],
         isAuthorized: Bool, resolver: any AuthenticatedHTTPResourceResolving,
-        offlineResolver: (any OfflinePlaybackResolving)? = nil
+        offlineResolver: (any OfflinePlaybackResolving)? = nil,
+        networkFileResolver: (any MediaTransportNetworkFileResolving)? = nil
     ) {
         self.profileID = profileID
         self.authorizationID = authorizationID
@@ -45,6 +48,7 @@ public struct ExternalPlaybackContext {
         self.isAuthorized = isAuthorized
         self.resolver = resolver
         self.offlineResolver = offlineResolver
+        self.networkFileResolver = networkFileResolver
     }
 
     public var identity: String {
@@ -83,6 +87,10 @@ public final class ExternalPlaybackRuntime {
         let mediaURLDigest: String
         let duration: TimeInterval?
         let createdAt: Date
+        var isTrailer: Bool?
+        var isExtra: Bool?
+        var streamingSessionID: String?
+        var stripsURLPassword: Bool?
         var position: TimeInterval?
         var progress: Double?
         var returnedAt: Date?
@@ -99,6 +107,40 @@ public final class ExternalPlaybackRuntime {
     private var processingTask: Task<Void, Never>?
     private var launchID = UUID()
     @ObservationIgnored private var foregroundDepartureProfileID: String?
+    @ObservationIgnored private var streamingSession: (
+        receiptID: UUID, request: PlaybackRequest, provider: any StreamingQualityProviding
+    )?
+    @ObservationIgnored private var streamingCleanup: Task<Void, Never>?
+    @ObservationIgnored var relayAvailable = ExternalPlaybackExecution.isSupported
+    @ObservationIgnored var acquireRelayExecution: ExternalPlaybackRelay.ExecutionProvider = {
+        try await ExternalPlaybackExecution.acquire(title: $0, player: $1, bytes: $2)
+    }
+    @ObservationIgnored private var relay: (id: UUID, session: ExternalPlaybackRelay)?
+    @ObservationIgnored private var relayCleanup: Task<Void, Never>?
+    @ObservationIgnored private var relayDeparted = false
+
+    public func updateRelayContext(_ context: ExternalPlaybackContext, isActive: Bool, isBackground: Bool) {
+        guard let relay else { return }
+        if !context.isAuthorized || context.identity != relay.session.contextIdentity {
+            releaseRelay(success: false)
+        } else if isBackground {
+            relayDeparted = true
+        } else if isActive, relayDeparted {
+            releaseRelay(success: true)
+        }
+    }
+
+    private func releaseRelay(success: Bool) {
+        guard let value = relay else { return }
+        relay = nil
+        relayDeparted = false
+        value.session.stop(success: success)
+        let previous = relayCleanup
+        relayCleanup = Task {
+            await previous?.value
+            await value.session.waitForShutdown()
+        }
+    }
 
     /// Only the next scene departure belongs to this handoff, not a later browsing session.
     public func consumeForegroundDeparture(forProfile profileID: String) -> Bool {
@@ -107,7 +149,8 @@ public final class ExternalPlaybackRuntime {
     }
 
     public var returnID: UUID? {
-        guard let receipt, receipt.position != nil || receipt.failed else { return nil }
+        guard let receipt, receipt.player.returnsProgress,
+              receipt.position != nil || receipt.failed else { return nil }
         return receipt.id
     }
 
@@ -132,10 +175,12 @@ public final class ExternalPlaybackRuntime {
     }
 
     /// Every new ordinary play intent supersedes an older external return.
-    public func beginPlaybackIntent() {
+    public func beginPlaybackIntent(context: ExternalPlaybackContext? = nil) {
         foregroundDepartureProfileID = nil
         processingTask?.cancel()
         launchID = UUID()
+        releaseRelay(success: false)
+        releaseStreamingSession(context: context)
         clearReceipt()
     }
 
@@ -150,6 +195,12 @@ public final class ExternalPlaybackRuntime {
         let initial = context()
         let generation = launchID
         do {
+            await streamingCleanup?.value
+            await relayCleanup?.value
+            try Task.checkCancellation()
+            guard generation == launchID, initial.identity == context().identity else {
+                throw CancellationError()
+            }
             return try await launchIfSupported(
                 item: item, startPosition: startPosition, settings: settings, selection: selection,
                 streamingOptions: streamingOptions, context: context, isPresented: isPresented
@@ -174,17 +225,39 @@ public final class ExternalPlaybackRuntime {
     public func availablePlayers(
         for item: MediaItem, context: ExternalPlaybackContext, selection: ExternalPlayerSettings
     ) -> [ExternalPlayer] {
-        guard context.isAuthorized, item.kind == .movie || item.kind == .episode,
-              !item.opensExternalSource, item.discMenuAvailability == nil,
+        guard context.isAuthorized, Self.supportsOnDemand(item),
+              item.discMenuAvailability == nil,
               let account = context.accounts.first(where: { $0.account.id == item.sourceAccountID })
                 ?? (item.sourceAccountID == nil ? context.accounts.first : nil),
-              [.jellyfin, .emby, .plex].contains(account.provider.kind) else { return [] }
+              [.jellyfin, .emby, .plex].contains(account.provider.kind)
+                || (Self.supportsIndependentHandoff(account.provider)
+                    && account.provider is any ExternalPlaybackProviding) else { return [] }
+        guard ExternalPlayer.supported.contains(where: {
+            $0 != .builtIn && supportsShareHandoff(account.provider, player: $0, context: context)
+        }) else { return [] }
         return ExternalPlayer.supported.filter { player in
             guard player != selection.player else { return false }
             if player == .builtIn { return true }
+            guard supportsShareHandoff(account.provider, player: player, context: context) else { return false }
             guard let scheme = player.scheme, let url = URL(string: scheme + "://") else { return false }
             return canOpen(url)
         }
+    }
+
+    private static func supportsOnDemand(_ item: MediaItem) -> Bool {
+        !item.opensExternalSource && (item.kind == .movie || item.kind == .episode || item.kind == .video)
+    }
+
+    private static func supportsIndependentHandoff(_ provider: any MediaProvider) -> Bool {
+        [.iptv, .silo, .mediaShare].contains(provider.kind)
+    }
+
+    private func supportsShareHandoff(
+        _ provider: any MediaProvider, player: ExternalPlayer, context: ExternalPlaybackContext
+    ) -> Bool {
+        provider.kind != .mediaShare
+            || player.supportsDirectMediaScheme(provider.session.server.baseURL.scheme)
+            || (relayAvailable && context.networkFileResolver != nil && player != .custom)
     }
 
     private func launchIfSupported(
@@ -194,8 +267,7 @@ public final class ExternalPlaybackRuntime {
         isPresented: @escaping @MainActor () -> Bool
     ) async throws -> Bool {
         guard selection.player != .builtIn else { return false }
-        // Trailer, live-channel and music sessions remain owned by their existing runtimes.
-        guard item.kind == .movie || item.kind == .episode else { return false }
+        guard Self.supportsOnDemand(item) else { return false }
         let generation = launchID
         let initial = context()
         guard initial.isAuthorized,
@@ -210,14 +282,13 @@ public final class ExternalPlaybackRuntime {
         }
         try checkCurrent()
         switch account.provider.kind {
-        case .iptv, .mediaShare, .silo:
-            // These sources need Plozz's transport or session lifecycle. Do not
-            // negotiate an external stream or expose credentials speculatively.
-            PlozzLog.playback.info("Source requires Plozz playback; skipping external player.")
-            return false
+        case .iptv, .silo, .mediaShare:
+            guard Self.supportsIndependentHandoff(account.provider),
+                  account.provider is any ExternalPlaybackProviding else { return false }
         case .jellyfin, .emby, .plex:
             break
         }
+        guard supportsShareHandoff(account.provider, player: selection.player, context: initial) else { return false }
         guard selection.player == .custom || ExternalPlayer.supported.contains(selection.player) else {
             throw ExternalPlayerError.unavailable
         }
@@ -227,33 +298,90 @@ public final class ExternalPlaybackRuntime {
         if selection.player == .custom {
             try ExternalPlayerURL.validateCustomTemplate(selection.customURLTemplate)
         }
-        guard streamingOptions?.requiresConversionPolicy != true else {
-            throw ExternalPlayerError.unsupportedSource
-        }
         if let offlineResolver = initial.offlineResolver,
            await offlineResolver.localPlaybackURL(for: item, versionID: item.selectedVersionID) != nil {
             throw ExternalPlayerError.unsupportedSource
         }
         try checkCurrent()
         let provider = account.provider
-        let request = try await provider.playbackInfo(
-            for: item.id, mediaSourceID: item.selectedVersionID, forceTranscode: false
-        )
-        do {
-            try checkCurrent()
-            guard request.externalAudioURL == nil, !request.isTranscoding,
-                  request.deliveryMode == .directPlay, request.streamingSessionID == nil,
-                  !request.suppressOrdinaryWatchReporting else {
+        let allowLocalRelay = relayAvailable && initial.networkFileResolver != nil
+            && provider.kind == .mediaShare && selection.player != .custom
+        var request: PlaybackRequest
+        if Self.supportsIndependentHandoff(provider), let external = provider as? any ExternalPlaybackProviding {
+            try streamingOptions?.quality.validate()
+            var options = streamingOptions
+            options?.startPosition = 0
+            request = try await external.externalPlaybackInfo(
+                for: item.id, mediaSourceID: item.selectedVersionID,
+                player: selection.player, streaming: options, allowLocalRelay: allowLocalRelay
+            )
+        } else if let options = streamingOptions {
+            try options.quality.validate()
+            guard let streaming = provider as? any StreamingQualityProviding else {
                 throw ExternalPlayerError.unsupportedSource
             }
-            let mediaURL = try await resolveURL(
-                source: request.playbackSource, fallback: request.streamURL, resolver: initial.resolver
+            // External players seek on the complete source timeline. Do not ask
+            // the server to trim the rendition to a resume offset as well.
+            var options = options
+            options.startPosition = 0
+            request = try await streaming.playbackInfo(
+                for: item.id, mediaSourceID: item.selectedVersionID,
+                forceTranscode: options.forceTranscoding, streaming: options
             )
+        } else {
+            request = try await provider.playbackInfo(
+                for: item.id, mediaSourceID: item.selectedVersionID, forceTranscode: false
+            )
+        }
+        if request.streamingSessionID == nil, request.isTranscoding || request.deliveryMode != .directPlay {
+            request.streamingSessionID = request.playSessionID
+        }
+        let nonce = UUID()
+        var registeredStreamingSession = false
+        var preparedRelay: ExternalPlaybackRelay?
+        do {
             try checkCurrent()
-            var subtitles: [URL] = []
+            guard request.externalAudioURL == nil, !request.suppressOrdinaryWatchReporting else {
+                throw ExternalPlayerError.unsupportedSource
+            }
+            let allowPassword = provider.kind == .mediaShare && request.sourceProvider == .mediaShare
+            let mediaURL: URL
+            if case .networkFile(let locator) = request.playbackSource,
+               allowLocalRelay, let resolver = initial.networkFileResolver {
+                guard locator.accountID == account.account.id,
+                      locator.credentialRevision == account.credentialRevision else {
+                    throw ExternalPlayerError.unsupportedSource
+                }
+                let session = try await ExternalPlaybackRelay.prepare(
+                    request: request, player: selection.player, contextIdentity: initial.identity,
+                    resolver: resolver, acquire: acquireRelayExecution,
+                    authorized: { [weak self] in
+                        self?.launchID == generation && context().isAuthorized && context().identity == initial.identity
+                    },
+                    expired: { [weak self] in
+                        guard let self, self.relay?.id == nonce else { return }
+                        self.releaseRelay(success: false)
+                        self.error = .playbackFailed
+                        PlozzLog.playback.error("External file streaming source or background execution ended.")
+                    }
+                )
+                preparedRelay = session
+                mediaURL = session.mediaURL
+            } else {
+                mediaURL = try await resolveURL(
+                    source: request.playbackSource, fallback: request.streamURL,
+                    player: selection.player, allowPassword: allowPassword, resolver: initial.resolver
+                )
+            }
+            try checkCurrent()
+            var subtitles = Array(request.externalSubtitleURLs.filter {
+                ExternalPlayerURL.isSupportedMediaURL($0, player: selection.player, allowPassword: allowPassword)
+            }.prefix(8))
+            subtitles.append(contentsOf: preparedRelay?.subtitleURLs ?? [])
             if selection.player != .custom {
                 for track in request.subtitleTracks where !track.isBitmapSubtitle
                     && ["srt", "subrip"].contains(track.codec?.lowercased() ?? "") {
+                    if subtitles.count == 8 { break }
                     guard case .authenticatedHTTP(let locator) = track.deliverySource else { continue }
                     let url = try await initial.resolver.resolve(locator)
                     try checkCurrent()
@@ -261,25 +389,38 @@ public final class ExternalPlaybackRuntime {
                     if subtitles.count == 8 { break }
                 }
             }
-            let nonce = UUID()
             let link = try ExternalPlayerURL.make(
                 settings: selection, mediaURL: mediaURL,
                 title: request.sourceFileName ?? request.item.title,
                 position: settings.resumeRewindInterval.applied(to: startPosition ?? request.startPosition),
-                subtitles: subtitles, callbackScheme: callbackScheme, nonce: nonce
+                subtitles: subtitles, callbackScheme: callbackScheme, nonce: nonce, allowPassword: allowPassword,
+                ownedLocalURLs: preparedRelay.map { Set([$0.mediaURL] + $0.subtitleURLs) } ?? []
             )
             try checkCurrent()
-            if selection.player.returnsProgress {
+            if selection.player.returnsProgress || request.streamingSessionID != nil {
+                let stripsPassword = allowPassword && mediaURL.password != nil
                 try save(Receipt(
                     id: nonce, owner: Owner(profileID: initial.profileID, account: account),
-                    itemID: item.id, player: selection.player, mediaURLDigest: Self.digest(mediaURL),
+                    itemID: item.id, player: selection.player,
+                    mediaURLDigest: Self.digest(mediaURL, strippingPassword: stripsPassword),
                     duration: request.item.runtime.flatMap { $0.isFinite && $0 > 0 ? $0 : nil },
-                    createdAt: Date()
+                    createdAt: Date(), isTrailer: item.isTrailer, isExtra: item.isExtra,
+                    streamingSessionID: request.streamingSessionID,
+                    stripsURLPassword: stripsPassword ? true : nil
                 ))
             }
+            if request.streamingSessionID != nil, let streaming = provider as? any StreamingQualityProviding {
+                streamingSession = (nonce, request, streaming)
+                registeredStreamingSession = true
+            }
             foregroundDepartureProfileID = initial.profileID
+            if let preparedRelay {
+                guard preparedRelay.isValid else { throw ExternalPlayerError.unavailable }
+                relay = (nonce, preparedRelay)
+                relayDeparted = false
+            }
             guard await open(link) else {
-                foregroundDepartureProfileID = nil
+                if generation == launchID { foregroundDepartureProfileID = nil }
                 if receipt?.id == nonce { clearReceipt() }
                 throw ExternalPlayerError.unavailable
             }
@@ -287,15 +428,17 @@ public final class ExternalPlaybackRuntime {
             PlozzLog.playback.info("Opened external player.")
             return true
         } catch {
-            foregroundDepartureProfileID = nil
-            if let streaming = provider as? any StreamingQualityProviding {
-                var cleanupRequest = request
-                if cleanupRequest.streamingSessionID == nil,
-                   request.isTranscoding || request.deliveryMode != .directPlay {
-                    cleanupRequest.streamingSessionID = request.playSessionID
-                }
-                if cleanupRequest.streamingSessionID != nil {
-                    await streaming.releaseStreamingSession(cleanupRequest)
+            if relay?.id == nonce { releaseRelay(success: false) }
+            preparedRelay?.stop(success: false)
+            await preparedRelay?.waitForShutdown()
+            if generation == launchID { foregroundDepartureProfileID = nil }
+            let needsRelease = !registeredStreamingSession || streamingSession?.receiptID == nonce
+            if streamingSession?.receiptID == nonce { streamingSession = nil }
+            if receipt?.id == nonce { clearReceipt() }
+            if needsRelease, let streaming = provider as? any StreamingQualityProviding {
+                if request.streamingSessionID != nil {
+                    let cleanup = Task { [request] in await streaming.releaseStreamingSession(request) }
+                    await cleanup.value
                 }
             }
             throw error
@@ -303,12 +446,16 @@ public final class ExternalPlaybackRuntime {
     }
 
     private func resolveURL(
-        source: PlaybackSource?, fallback: URL?, resolver: any AuthenticatedHTTPResourceResolving
+        source: PlaybackSource?, fallback: URL?, player: ExternalPlayer,
+        allowPassword: Bool,
+        resolver: any AuthenticatedHTTPResourceResolving
     ) async throws -> URL {
         let url: URL
         switch source {
         case .authenticatedHTTP(let locator):
-            guard locator.deliveryMode == .directFile else { throw ExternalPlayerError.unsupportedSource }
+            guard locator.deliveryMode != .dash || player.supportsDASH else {
+                throw ExternalPlayerError.unsupportedSource
+            }
             url = try await resolver.resolve(locator)
         case .publicURL(let source): url = source.url
         case .networkFile, .networkDisc, .dlnaResource: throw ExternalPlayerError.unsupportedSource
@@ -316,7 +463,9 @@ public final class ExternalPlaybackRuntime {
             guard let fallback else { throw ExternalPlayerError.unsupportedSource }
             url = fallback
         }
-        guard ExternalPlayerURL.isSupportedMediaURL(url) else { throw ExternalPlayerError.unsupportedSource }
+        guard ExternalPlayerURL.isSupportedMediaURL(url, player: player, allowPassword: allowPassword) else {
+            throw ExternalPlayerError.unsupportedSource
+        }
         return url
     }
 
@@ -329,7 +478,7 @@ public final class ExternalPlaybackRuntime {
               values.filter({ $0.name == "session" }).count == 1,
               let token = values.first(where: { $0.name == "session" })?.value,
               var pending = receipt, UUID(uuidString: token) == pending.id,
-              pending.position == nil, !pending.failed else {
+              pending.player.returnsProgress, pending.position == nil, !pending.failed else {
             PlozzLog.playback.info("Ignored an unmatched external player callback.")
             return true
         }
@@ -347,7 +496,7 @@ public final class ExternalPlaybackRuntime {
                       let position = values.first(where: { $0.name == "position" })?.value.flatMap(Double.init),
                       position.isFinite, position >= 0, position < 24 * 60 * 60 * 30,
                       let played = values.first(where: { $0.name == "lastPlayedUrl" })?.value.flatMap(URL.init(string:)),
-                      Self.digest(played) == pending.mediaURLDigest else {
+                      Self.digest(played, strippingPassword: pending.stripsURLPassword == true) == pending.mediaURLDigest else {
                     throw ExternalPlayerError.invalidCallback
                 }
                 if pending.player == .nativePlayer {
@@ -368,6 +517,7 @@ public final class ExternalPlaybackRuntime {
             }
             pending.returnedAt = now
             try save(pending)
+            if relay?.id == pending.id { releaseRelay(success: !pending.failed) }
         } catch let failure as ExternalPlayerError {
             clearReceipt()
             error = failure
@@ -409,6 +559,9 @@ public final class ExternalPlaybackRuntime {
         func current() -> Bool {
             !Task.isCancelled && receipt?.id == pending.id && context().identity == initial.identity
         }
+        releaseStreamingSession(context: initial)
+        await streamingCleanup?.value
+        guard current() else { return }
         if pending.failed {
             clearReceipt()
             error = .playbackFailed
@@ -417,11 +570,13 @@ public final class ExternalPlaybackRuntime {
         do {
             var item = try await account.provider.item(id: pending.itemID)
             guard current(), let position = pending.position else { return }
-            guard item.id == pending.itemID, item.kind == .movie || item.kind == .episode,
+            guard item.id == pending.itemID, Self.supportsOnDemand(item),
                   item.sourceAccountID == nil || item.sourceAccountID == account.account.id else {
                 throw ExternalPlayerError.invalidCallback
             }
             item = item.taggingSource(account.account.id)
+            item.isTrailer = item.isTrailer || pending.isTrailer == true
+            item.isExtra = item.isExtra || item.isTrailer || pending.isExtra == true
             let duration = pending.duration ?? item.runtime.flatMap { $0.isFinite && $0 > 0 ? $0 : nil }
             if pending.progress == nil, let duration, position > duration + 5 {
                 throw ExternalPlayerError.invalidCallback
@@ -453,6 +608,30 @@ public final class ExternalPlaybackRuntime {
         }
     }
 
+    private func releaseStreamingSession(context: ExternalPlaybackContext?) {
+        let release: @Sendable () async -> Void
+        if let session = streamingSession {
+            release = { await session.provider.releaseStreamingSession(session.request) }
+            streamingSession = nil
+        } else if let pending = receipt, let id = pending.streamingSessionID,
+                  let context, context.isAuthorized,
+                  let account = context.accounts.first(where: {
+                      Owner(profileID: context.profileID, account: $0) == pending.owner
+                  }), let streaming = account.provider as? any StreamingSessionReleasing {
+            release = { await streaming.releaseStreamingSession(id: id) }
+        } else { return }
+        if var pending = receipt {
+            pending.streamingSessionID = nil
+            do { try save(pending) }
+            catch { self.error = .persistence }
+        }
+        let previous = streamingCleanup
+        streamingCleanup = Task {
+            await previous?.value
+            await release()
+        }
+    }
+
     private func save(_ value: Receipt) throws {
         do {
             let data = try JSONEncoder().encode(value)
@@ -469,7 +648,16 @@ public final class ExternalPlaybackRuntime {
         receipt = nil
     }
 
-    static func digest(_ url: URL) -> String {
-        SHA256.hash(data: Data(url.absoluteString.utf8)).map { String(format: "%02x", $0) }.joined()
+    static func digest(_ url: URL, strippingPassword: Bool = false) -> String {
+        var identity = url.absoluteString
+        if strippingPassword, var components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+           components.user != nil || components.password != nil {
+            // A player may remove authentication from lastPlayedUrl. Account,
+            // credential revision and nonce still bind the callback to its owner.
+            components.user = nil
+            components.password = nil
+            if let resource = components.url { identity = resource.absoluteString }
+        }
+        return SHA256.hash(data: Data(identity.utf8)).map { String(format: "%02x", $0) }.joined()
     }
 }

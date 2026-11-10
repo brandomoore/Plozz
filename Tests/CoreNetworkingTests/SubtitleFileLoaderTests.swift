@@ -3,6 +3,22 @@ import XCTest
 @testable import CoreNetworking
 
 final class SubtitleFileLoaderTests: XCTestCase {
+    func testEmbeddedExtractionUsesLongerBoundedRequestTimeout() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [SubtitleFileProtocol.self]
+        let session = URLSession(configuration: configuration)
+        defer { session.invalidateAndCancel() }
+        for extraction in [false, true] {
+            let loader = SubtitleFileLoader(session: session, allowsExtractionDelay: extraction)
+            let host = extraction ? "extraction.invalid" : "valid.invalid"
+            let data = try await loader.load(
+                XCTUnwrap(URL(string: "https://\(host)/subtitle.srt")), maximumBytes: 16,
+                allowsCellular: false, allowsConstrained: false
+            )
+            XCTAssertEqual(data, Data("subtitle".utf8))
+        }
+    }
+
     func testBoundedHTTPDeliveryRejectsFailedAndOversizedResponses() async throws {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [SubtitleFileProtocol.self]
@@ -56,6 +72,7 @@ private final class SubtitleFileProtocol: URLProtocol {
         guard let url = request.url else { return }
         XCTAssertFalse(request.allowsCellularAccess)
         XCTAssertFalse(request.httpShouldHandleCookies)
+        XCTAssertEqual(request.timeoutInterval, url.host == "extraction.invalid" ? 120 : 30)
         let data = url.host?.contains("large") == true ? Data(repeating: 65, count: 17) : Data("subtitle".utf8)
         let headers = url.host == "declared-large.invalid" ? ["Content-Length": "17"] : [:]
         guard let response = HTTPURLResponse(url: url, statusCode: url.host == "missing.invalid" ? 404 : 200,
