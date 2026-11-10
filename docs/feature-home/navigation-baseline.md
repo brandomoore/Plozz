@@ -128,3 +128,20 @@ Do not treat familiarity from this work as a cold-reader speedup. A credible
 before/after token claim needs equivalent tasks, comparable starting context,
 and consistent model/tool accounting. Until then, do not roll this documentation
 pattern across every module on the strength of the entry-file size alone.
+
+## Detail pilot follow-through
+
+The first code pilot traced the existing opening, model, selection, routing,
+and runtime boundaries described in the
+[selection ownership map](detail-and-playback.md#selection-ownership).
+It consolidated the repeated TV/mobile composition without introducing another
+mutable owner. Across the two adapters and shared selector, the production diff
+against `05d54e4d9` adds 97 lines and removes 205 (108 fewer lines in total).
+That is a structural maintenance result, not a runtime benchmark.
+
+The investigation was not a cold-reader replay: it reused knowledge from the
+documentation work. Search/read calls, full investigation bytes, model tokens,
+and end-to-end investigation time were not instrumented consistently enough for
+a comparison to the fixed baseline. No before/after token or investigation-time
+claim is supported. Preserve the baseline method for a future instrumented task
+rather than treating smaller adapter files as proof of savings.

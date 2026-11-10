@@ -2,6 +2,41 @@
 
 [Home task map](../../Sources/FeatureHome/README.md#where-to-look-first)
 
+## Selection ownership
+
+| Boundary | Owner and contract |
+| --- | --- |
+| Open a detail page | `DetailOpenEnvironment` resolves eligible accounts, opening edition, initial source, and initial resume context before constructing the model. |
+| Loaded detail and source state | `ItemDetailViewModel` owns provider results, enriched sources, watch-state refresh, and source-switch fencing. `playbackSources` supplies current stamped state for single-source mobile pages; an opening card is not a second ongoing authority. |
+| Picker and Play decisions | `DetailPlaybackSelection.resolve` composes the existing source, version-list, and preferred-version rules into an immutable `Resolution`. TV item detail and mobile picker, Play, and preparation paths use that same composition. |
+| Provider-native playback identity and resume | `MediaItem.retargetedForPlayback` owns account/item/file routing and cross-source resume reconciliation. Picker IDs are not provider media IDs. |
+| Live account/locality routing | `AppRuntime.PlaybackSourceSelection` remains outside feature core. A detail resolution neither authorizes playback nor replaces the normal inventory/admission gates. |
+
+`Resolution` is a synchronous value, not retained observable state. Recompute it
+from current inputs at activation. Its `playItem` is computed only when needed;
+rendering picker options does not construct a playback item or reconcile resume.
+Source/version overrides remain visit-local view state. Selecting another source
+still clears the version override, invalidates preparation, and invokes the
+model's existing fenced source switch. Preference persistence stays in the
+profile-scoped version store.
+
+Platform inputs deliberately differ: TV item detail uses the model's picker
+sources; mobile uses `playbackSources` and enriches episode metadata on the same
+paths as before. Mobile's runtime best-source adaptation remains after the shared
+resolution. TV `SeriesDetailView` first resolves its actual episode and uses that
+episode's sources/account with the existing version and routing primitives. It
+does not pass the show's source inventory through the movie selection path.
+Series resume ownership is outside this consolidation.
+
+`DetailPlaybackSelectionTests` covers the composed result, including colliding
+account/item/file IDs, same-account editions, removed sources, container/episode
+separation, and equivalence to the prior composition across automatic/server-order
+modes and explicit choices. `EditionDetailSelectionTests` retains remembered
+choice and profile/account coverage. `ItemDetailViewModelTests` retains asynchronous
+source-switch fencing and verifies the composed Play target after refreshed and
+cleared single-source progress. These checks complement platform builds; they
+are not physical-device playback evidence.
+
 ## Related loading
 
 Library-only Related rows use the active profile's identity index to locate a

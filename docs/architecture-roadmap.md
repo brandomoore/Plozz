@@ -117,6 +117,26 @@ and view layout. Preserve provider-native playback IDs and intentional
 cross-source resume semantics. A later extraction of series resume ownership
 is a separate batch, not part of this first change.
 
+**Pilot implementation:** the trace found existing state ownership and shared
+selection primitives, not a need for another coordinator. The bounded change
+consolidates the repeated source/version/Play composition in
+`DetailPlaybackSelection.resolve`, consumed by TV item detail and mobile detail.
+The [selection ownership map](feature-home/detail-and-playback.md#selection-ownership)
+records the boundaries and the intentional series/platform differences.
+No provider, runtime admission, asynchronous source-switch, or series-resume
+policy moves. Regression coverage characterizes the composed result as well as
+the existing primitive rules. Fewer duplicated decisions are a maintenance
+improvement; runtime speed and actual agent-token savings are not established.
+
+**Verification:** full TV and mobile simulator app builds passed; independent
+review found no significant issues. The two selected package suites recorded
+1,601 passes, two failures, and one opt-in skip. Both failures also reproduced
+before this change: `HomeRowBrowseTests.testCompleteHistoryAndFailedRowsDoNotOfferBrowse`
+and `HomePresentationRowTests.testRetainedNativeRowsImmediatelyHonorDisabledLibraryAndItemVisibility`.
+The baseline had 1,596 passes with those same two failures and one skip.
+The selection cases passed, but this is not a clean Home-suite or physical-device
+playback result. The unrelated failures are not changed by this pilot.
+
 **Done when:** the selected behavior has fewer independently mutable authorities
 and a smaller required reading set; TV/mobile use the same policy; account,
 edition, watch-state, and cancellation regressions pass. Exercise real mounted

@@ -868,35 +868,13 @@ private struct PlozziOSCanonicalItemDetailView: View {
         for item: MediaItem
     ) -> DetailPlaybackOptions {
         let item = viewModel.episodeWithEnrichedBadges(item)
-        let available = availableSources
-        let source = DetailPlaybackSelection.preferredSource(
-            sourceOverride: sourceOverride,
-            libraryOrigin: viewModel.originSourceAccountID,
-            itemSourceAccountID: item.sourceAccountID,
-            sources: available,
-            capabilities: capabilities,
-            openingSource: item.editionOpeningSource
-        )
-        let sources = DetailPlaybackSelection.serverChoices(from: available)
-        let versions = DetailPlaybackSelection.versions(
-            for: item,
-            sources: available,
-            activeAccountID: source?.accountID
-        )
-        let selectedVersionID = DetailPlaybackSelection.preferredVersionID(
-            for: item,
-            versions: versions,
-            versionOverride: versionOverride,
-            preferences: appModel.versionPreferences,
-            capabilities: capabilities,
-            sources: available
-        )
+        let selection = playbackSelection(for: item)
         return DetailPlaybackOptions(
-            sources: sources,
-            selectedSourceAccountID: source?.accountID
+            sources: selection.serverChoices,
+            selectedSourceAccountID: selection.source?.accountID
                 ?? item.sourceAccountID,
-            versions: versions,
-            selectedVersionID: selectedVersionID
+            versions: selection.versions,
+            selectedVersionID: selection.selectedVersionID
         )
     }
 
@@ -985,35 +963,13 @@ private struct PlozziOSCanonicalItemDetailView: View {
 
     @ViewBuilder
     private func sourceAndVersionControls(for item: MediaItem) -> some View {
-        let sources = availableSources
-        let source = DetailPlaybackSelection.preferredSource(
-            sourceOverride: sourceOverride,
-            libraryOrigin: viewModel.originSourceAccountID,
-            itemSourceAccountID: item.sourceAccountID,
-            sources: sources,
-            capabilities: capabilities,
-            openingSource: item.editionOpeningSource
-        )
-        let choices = DetailPlaybackSelection.serverChoices(from: sources)
-        let versions = DetailPlaybackSelection.versions(
-            for: item,
-            sources: sources,
-            activeAccountID: source?.accountID
-        )
-        let versionID = DetailPlaybackSelection.preferredVersionID(
-            for: item,
-            versions: versions,
-            versionOverride: versionOverride,
-            preferences: appModel.versionPreferences,
-            capabilities: capabilities,
-            sources: sources
-        )
-        if choices.count > 1 || versions.count > 1 {
+        let selection = playbackSelection(for: item)
+        if selection.serverChoices.count > 1 || selection.versions.count > 1 {
             PlozziOSSourceVersionControls(
-                sources: choices,
-                selectedSourceID: source?.accountID ?? item.sourceAccountID,
-                versions: versions,
-                selectedVersionID: versionID,
+                sources: selection.serverChoices,
+                selectedSourceID: selection.source?.accountID ?? item.sourceAccountID,
+                versions: selection.versions,
+                selectedVersionID: selection.selectedVersionID,
                 onSelectSource: selectSource,
                 onSelectVersion: { selectVersion($0, for: item) },
                 loadVersions: viewModel.playbackVersionsLoader(for: item)
@@ -1117,40 +1073,22 @@ private struct PlozziOSCanonicalItemDetailView: View {
         viewModel.playbackSources
     }
 
+    private func playbackSelection(for item: MediaItem) -> DetailPlaybackSelection.Resolution {
+        DetailPlaybackSelection.resolve(
+            for: item,
+            sources: availableSources,
+            sourceOverride: sourceOverride,
+            versionOverride: versionOverride,
+            libraryOrigin: viewModel.originSourceAccountID,
+            isLibraryOriginPinned: viewModel.isLibraryOriginPinned,
+            preferences: appModel.versionPreferences,
+            capabilities: capabilities
+        )
+    }
+
     private func playbackItem(for item: MediaItem) -> MediaItem {
         let item = viewModel.episodeWithEnrichedBadges(item)
-        let sources = availableSources
-        let source = DetailPlaybackSelection.preferredSource(
-            sourceOverride: sourceOverride,
-            libraryOrigin: viewModel.originSourceAccountID,
-            itemSourceAccountID: item.sourceAccountID,
-            sources: sources,
-            capabilities: capabilities,
-            openingSource: item.editionOpeningSource
-        )
-        let versions = DetailPlaybackSelection.versions(
-            for: item,
-            sources: sources,
-            activeAccountID: source?.accountID
-        )
-        let versionID = DetailPlaybackSelection.preferredVersionID(
-            for: item,
-            versions: versions,
-            versionOverride: versionOverride,
-            preferences: appModel.versionPreferences,
-            capabilities: capabilities,
-            sources: sources
-        )
-        let selected = DetailPlaybackSelection.playItem(
-            for: item,
-            sources: sources,
-            activeAccountID: source?.accountID,
-            versionID: versionID,
-            explicit: viewModel.isLibraryOriginPinned
-                || sourceOverride != nil
-                || versionOverride != nil,
-            explicitVersion: versionOverride != nil || item.explicitVersionSelection
-        )
+        let selected = playbackSelection(for: item).playItem
         return PlaybackSourceSelection.bestPlayItem(
             selected,
             accounts: appModel.accountsProviders.resolvedActiveAccounts,

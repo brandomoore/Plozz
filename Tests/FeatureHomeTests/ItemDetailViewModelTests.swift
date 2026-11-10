@@ -4965,12 +4965,30 @@ final class DetailReturnRefreshTests: XCTestCase {
         XCTAssertEqual(selected.sourceAccountID, "account")
         XCTAssertEqual(selected.id, item.id)
 
+        let suite = "detail-resolution-refresh-\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let preferences = VersionPreferenceStore(defaults: defaults)
+        func resolvedItem() throws -> MediaItem {
+            DetailPlaybackSelection.resolve(
+                for: try XCTUnwrap(vm.state.value?.item), sources: vm.playbackSources,
+                sourceOverride: nil, versionOverride: nil, libraryOrigin: nil,
+                isLibraryOriginPinned: false, preferences: preferences, capabilities: .detected()
+            ).playItem
+        }
+        XCTAssertEqual(try resolvedItem().resumePosition, 600)
+        XCTAssertTrue(try resolvedItem().hasBeenPlayed)
+
         provider.allItems = [item]
         await vm.refreshWatchStateOnly()
         let cleared = try XCTUnwrap(vm.playbackSources.first)
         XCTAssertNil(cleared.resumePosition)
         XCTAssertNil(cleared.playedPercentage)
         XCTAssertFalse(cleared.hasBeenPlayed)
+        let clearedPlayItem = try resolvedItem()
+        XCTAssertNil(clearedPlayItem.resumePosition)
+        XCTAssertNil(clearedPlayItem.playedPercentage)
+        XCTAssertFalse(clearedPlayItem.hasBeenPlayed)
     }
 
     func testRefreshWatchStateOnlyUpdatesProgressWithoutReloadingChildren() async {
