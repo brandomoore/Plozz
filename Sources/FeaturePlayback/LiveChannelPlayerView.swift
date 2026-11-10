@@ -126,6 +126,8 @@ public struct LiveChannelPlayerView: View {
     @State private var returnsToGuideAfterFullscreen = false
     @State private var opensMultiviewAfterFullscreen = false
     @State private var videoHandoff: VideoPresentationHandoff?
+    @State private var focusHandoff: VideoPresentationHandoff?
+    @Environment(\.videoCardFocus) private var videoCardFocus
     @State private var engineInitializationFailed = false
     @State private var controlsVisible = true
     @State private var touchGestures = PlayerTouchGestureState()
@@ -399,6 +401,18 @@ public struct LiveChannelPlayerView: View {
                     }
                 }
                 .videoCardFocusSurface()
+                #if os(tvOS)
+                .onChange(of: videoCardFocus?.presentsEffect) { old, new in
+                    focusHandoff?.cancel(restoringOutput: true)
+                    focusHandoff = nil
+                    guard let old, let new, old != new, isMultiview, isActive, isAuthorized else { return }
+                    focusHandoff = VideoPresentationHandoff(
+                        engine: model.engine, pictureCornerRadius: videoCardFocus?.cornerRadius ?? 0
+                    ) {
+                        focusHandoff = nil
+                    }
+                }
+                #endif
                 .ignoresSafeArea(.all, edges: hasInlineControls || isMultiview ? [] : .all)
 
                 #if os(iOS)
@@ -998,6 +1012,8 @@ public struct LiveChannelPlayerView: View {
         opensMultiviewAfterFullscreen = false
         videoHandoff?.cancel()
         videoHandoff = nil
+        focusHandoff?.cancel()
+        focusHandoff = nil
         exitTask?.cancel()
         exitTask = nil
         displayTask?.cancel()

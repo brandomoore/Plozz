@@ -102,6 +102,7 @@ struct LiveTVShellDestination: View {
                 .environment(displayVeil)
                 .environment(\.managedProviderSetupRouter, providerSetupRouter)
         }
+        .ignoresSafeArea()
     }
 
     @ViewBuilder

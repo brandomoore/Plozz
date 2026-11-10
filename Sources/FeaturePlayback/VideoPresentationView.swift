@@ -7,6 +7,7 @@ final class VideoPresentationHandoff: UIView {
     private weak var output: UIView?
     private weak var originalHost: UIView?
     private var originalCenter: CGPoint = .zero
+    private var originalTransform: CGAffineTransform = .identity
     private var completion: (() -> Void)?
     private weak var receiver: VideoPresentationView?
     private var displayLink: CADisplayLink?
@@ -20,21 +21,31 @@ final class VideoPresentationHandoff: UIView {
         }
     }
 
-    init?(engine: any VideoEngine, completion: @escaping () -> Void) {
+    init?(engine: any VideoEngine, pictureCornerRadius: CGFloat? = nil, completion: @escaping () -> Void) {
         let output = engine.makeVideoOutputView()
         guard let window = output.window, !output.bounds.isEmpty else { return nil }
+        let picture = output.convert(output.bounds, to: window)
+        let viewport = output.superview.map { $0.convert($0.bounds, to: window) } ?? picture
         let center = output.convert(CGPoint(x: output.bounds.midX, y: output.bounds.midY), to: window)
-        super.init(frame: window.bounds)
+        super.init(frame: pictureCornerRadius == nil ? window.bounds : viewport)
         self.output = output
         originalHost = output.superview
         originalCenter = output.center
+        originalTransform = output.transform
         self.completion = completion
-        backgroundColor = .black
+        backgroundColor = pictureCornerRadius == nil ? .black : .clear
+        layer.cornerRadius = pictureCornerRadius ?? 0
         isUserInteractionEnabled = false
         clipsToBounds = true
         window.addSubview(self)
         addSubview(output)
-        output.center = center
+        if pictureCornerRadius != nil {
+            output.transform = CGAffineTransform(
+                scaleX: picture.width / output.bounds.width, y: picture.height / output.bounds.height)
+            output.center = CGPoint(x: picture.midX - viewport.minX, y: picture.midY - viewport.minY)
+        } else {
+            output.center = center
+        }
     }
 
     @available(*, unavailable)
@@ -87,6 +98,7 @@ final class VideoPresentationHandoff: UIView {
             if restoringOutput, let originalHost, originalHost.window != nil {
                 originalHost.addSubview(output)
                 output.center = originalCenter
+                output.transform = originalTransform
             } else {
                 output.removeFromSuperview()
             }

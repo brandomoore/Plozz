@@ -199,6 +199,91 @@ final class LiveTVMultiviewMotionHostedTests: XCTestCase {
         XCTAssertEqual(fixture.model.engine.stops, 0)
     }
 
+    func testPictureHandoffsKeepBothRenderersVisibleUntilTheirNewLabelsArePresented() async throws {
+        let fixture = try await makeFixture()
+        defer { fixture.close() }
+        let engines = [MotionEngine(), MotionEngine()]
+        let hosts = [
+            VideoPresentationView(frame: CGRect(x: 100, y: 300, width: 800, height: 450)),
+            VideoPresentationView(frame: CGRect(x: 1020, y: 300, width: 800, height: 450))
+        ]
+        for (engine, host) in zip(engines, hosts) {
+            host.attach(engine)
+            host.transform = CGAffineTransform(scaleX: 1.04, y: 1.04)
+            fixture.window.addSubview(host)
+            host.layoutIfNeeded()
+        }
+        let frames = engines.map { $0.output.convert($0.output.bounds, to: fixture.window) }
+        var completions = 0
+        let handoffs = try engines.map { engine in
+            try XCTUnwrap(VideoPresentationHandoff(engine: engine, pictureCornerRadius: 20) {
+                completions += 1
+            })
+        }
+        defer { handoffs.forEach { $0.cancel() } }
+        for index in engines.indices {
+            XCTAssertEqual(handoffs[index].frame, frames[index])
+            XCTAssertEqual(handoffs[index].backgroundColor, .clear)
+            XCTAssertEqual(handoffs[index].layer.cornerRadius, 20)
+            hosts[index].removeFromSuperview()
+            XCTAssertEqual(engines[index].output.convert(engines[index].output.bounds, to: fixture.window),
+                           frames[index])
+        }
+        let replacements = frames.map { VideoPresentationView(frame: $0) }
+        for index in engines.indices {
+            replacements[index].alpha = 0
+            replacements[index].attach(engines[index], deferringOffscreenAttachment: true)
+            fixture.window.addSubview(replacements[index])
+            replacements[index].layoutIfNeeded()
+        }
+        try await Task.sleep(for: .milliseconds(50))
+        XCTAssertEqual(completions, 0)
+        for index in engines.indices {
+            XCTAssertTrue(engines[index].output.superview === handoffs[index])
+            XCTAssertTrue(engines[index].output.window === fixture.window)
+            replacements[index].alpha = 1
+        }
+        let deadline = ContinuousClock.now + .seconds(2)
+        while completions < 2, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertEqual(completions, 2)
+        for index in engines.indices {
+            XCTAssertTrue(engines[index].output.superview === replacements[index])
+            XCTAssertNil(handoffs[index].superview)
+            XCTAssertEqual(engines[index].stops, 0)
+        }
+    }
+
+    func testCancellingPictureHandoffRestoresItsOriginalTransform() async throws {
+        let fixture = try await makeFixture()
+        defer { fixture.close() }
+        let output = fixture.model.engine.output
+        let host = try XCTUnwrap(output.superview)
+        host.transform = CGAffineTransform(scaleX: 1.05, y: 1.05)
+        output.transform = CGAffineTransform(scaleX: 1.2, y: 1.2)
+        let originalFrame = output.convert(output.bounds, to: fixture.window)
+        let originalTransform = output.transform
+        func assertOriginalFrame() {
+            let actual = output.convert(output.bounds, to: fixture.window)
+            for component in [\CGRect.minX, \.minY, \.width, \.height] {
+                XCTAssertEqual(actual[keyPath: component], originalFrame[keyPath: component], accuracy: 0.001)
+            }
+        }
+        let handoff = try XCTUnwrap(VideoPresentationHandoff(engine: fixture.model.engine, pictureCornerRadius: 20) {
+            XCTFail("A cancelled focus handoff must not complete.")
+        })
+        XCTAssertEqual(handoff.frame, host.convert(host.bounds, to: fixture.window))
+        XCTAssertTrue(handoff.clipsToBounds, "Zoomed video must not cover neighboring pictures during a handoff.")
+        assertOriginalFrame()
+        handoff.cancel(restoringOutput: true)
+        XCTAssertTrue(output.superview === host)
+        XCTAssertEqual(output.transform, originalTransform)
+        assertOriginalFrame()
+        XCTAssertNil(handoff.superview)
+        try await Task.sleep(for: .milliseconds(20))
+    }
+
     func testCancelledFullscreenHandoffCannotStartMultiviewBeforeItsNewHostIsPresented() async throws {
         let fixture = try await makeFixture()
         defer { fixture.close() }

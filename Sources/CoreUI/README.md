@@ -32,6 +32,8 @@ environment. Its scoped transfer flag distinguishes reparenting from removal;
 playback may ignore disappearance during that transfer only while still active
 and authorized. Deactivation, authorization loss and teardown must still retire
 playback. Live TV uses it for the entire Multiview workspace, including its guide.
+Full-bleed callers must ignore the outer container safe area so the retained
+host receives the physical canvas; content still owns its control-safe insets.
 
 `videoCardFocusSurface()` gives tvOS live video and its subtitles native card
 focus without wrapping player state or transport controls. Its environment
@@ -41,6 +43,8 @@ platforms leave the content unchanged. Renderer hosts must preserve a single
 windowed output when SwiftUI prepares replacement labels offscreen.
 Label and style replacements use identity transitions: cross-fading two hosts
 cannot cross-fade the single live renderer they share. Geometry still animates.
+Live playback temporarily retains each renderer in a picture-sized window host
+while an idle/native label is replaced, until its new host is visibly laid out.
 Only focus clearance has its own interpolation. The video reads the container's
 current animated size directly, rather than starting a second size animation
 for every layout frame.

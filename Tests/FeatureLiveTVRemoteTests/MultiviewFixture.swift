@@ -361,6 +361,9 @@ struct LiveTVRootFixture: View {
     @State private var hidesNavigation = false
     @State private var nativeSelection = NavigationRailDestination.liveTV
     @State private var nativeHandoff = NavigationDestinationFocusHandoff()
+    private var usesNativeFullscreen: Bool {
+        !ProcessInfo.processInfo.arguments.contains("--inline-live-tv")
+    }
 
     init() {
         let configuration = LiveTVSourcesConfiguration(playlists: [
@@ -400,46 +403,59 @@ struct LiveTVRootFixture: View {
 
     private var guide: some View {
         RetainedFullscreenWorkspace { guideContent }
+            .ignoresSafeArea()
+    }
+
+    private var liveTVContent: some View {
+        LiveTVPrototypeView(
+            isActive: isActive,
+            usesNativeFullscreen: usesNativeFullscreen,
+            preferencesStore: LiveTVRootFixtureStorage.preferences,
+            viewSettingsStore: LiveTVRootFixtureSettings(),
+            sourceStore: sources,
+            serverAuthorizationID: "fixture-\(hostRevision)",
+            onExpandedChange: { hidesNavigation = $0 },
+            importModel: imports,
+            profileID: profiles.activeProfileID,
+            preferencesNamespace: profiles.activeNamespace,
+            sourceApprovalContext: { [profiles] in LiveTVSourceApprovalContext(profiles: profiles) }
+        ) { playback in
+            LiveChannelPlayerView(
+                channelID: playback.channel.id, title: playback.channel.name,
+                input: playback.input, logoURL: nil,
+                makeEngine: { state.makeEngine() },
+                onPreviousChannel: playback.previousChannel, onNextChannel: playback.nextChannel,
+                isFavorite: playback.isFavorite, canToggleFavorite: playback.canToggleFavorite,
+                onToggleFavorite: playback.onToggleFavorite,
+                isExpanded: playback.isExpanded,
+                usesNativeFullscreen: usesNativeFullscreen && !playback.isMultiview,
+                isActive: playback.isPlaybackActive, onReturnToGuide: playback.returnToGuide,
+                playPauseRequest: playback.playPauseRequest, onPlaybackStarted: playback.playbackStarted,
+                reportingID: playback.reportingID, onPlaybackUpdate: playback.playbackUpdate,
+                onPlaybackFailed: playback.playbackFailed,
+                onVideoAspectRatioChange: playback.videoAspectRatioChanged,
+                onMultiview: playback.canOpenMultiview ? playback.openMultiview : nil,
+                outputGroup: state.output, outputID: playback.paneID, isAudible: playback.isAudible,
+                countsAsWatching: playback.countsAsWatching, isMultiview: playback.isMultiview,
+                displayTransitionSettings: {
+                    PlaybackSettings(fadeOnDynamicRangeChange: false, fadeOnFrameRateChange: false)
+                },
+                isAuthorized: playback.isAuthorized
+            )
+        }
+    }
+
+    @ViewBuilder
+    private var navigationContent: some View {
+        if usesNativeFullscreen {
+            NavigationStack { liveTVContent }
+        } else {
+            liveTVContent
+        }
     }
 
     private var guideContent: some View {
-        NavigationStack {
-            LiveTVPrototypeView(
-                isActive: isActive,
-                usesNativeFullscreen: true,
-                preferencesStore: LiveTVRootFixtureStorage.preferences,
-                viewSettingsStore: LiveTVRootFixtureSettings(),
-                sourceStore: sources,
-                serverAuthorizationID: "fixture-\(hostRevision)",
-                onExpandedChange: { hidesNavigation = $0 },
-                importModel: imports,
-                profileID: profiles.activeProfileID,
-                preferencesNamespace: profiles.activeNamespace,
-                sourceApprovalContext: { [profiles] in LiveTVSourceApprovalContext(profiles: profiles) }
-            ) { playback in
-                LiveChannelPlayerView(
-                    channelID: playback.channel.id, title: playback.channel.name,
-                    input: playback.input, logoURL: nil,
-                    makeEngine: { state.makeEngine() },
-                    onPreviousChannel: playback.previousChannel, onNextChannel: playback.nextChannel,
-                    isFavorite: playback.isFavorite, canToggleFavorite: playback.canToggleFavorite,
-                    onToggleFavorite: playback.onToggleFavorite,
-                    isExpanded: playback.isExpanded, usesNativeFullscreen: !playback.isMultiview,
-                    isActive: playback.isPlaybackActive, onReturnToGuide: playback.returnToGuide,
-                    playPauseRequest: playback.playPauseRequest, onPlaybackStarted: playback.playbackStarted,
-                    reportingID: playback.reportingID, onPlaybackUpdate: playback.playbackUpdate,
-                    onPlaybackFailed: playback.playbackFailed,
-                    onVideoAspectRatioChange: playback.videoAspectRatioChanged,
-                    onMultiview: playback.canOpenMultiview ? playback.openMultiview : nil,
-                    outputGroup: state.output, outputID: playback.paneID, isAudible: playback.isAudible,
-                    countsAsWatching: playback.countsAsWatching, isMultiview: playback.isMultiview,
-                    displayTransitionSettings: {
-                        PlaybackSettings(fadeOnDynamicRangeChange: false, fadeOnFrameRateChange: false)
-                    },
-                    isAuthorized: playback.isAuthorized
-                )
-            }
-        }
+        navigationContent
         .environment(profiles)
         .overlay(alignment: .topTrailing) {
             if isActive && !ProcessInfo.processInfo.arguments.contains("--visual-focus-fixture") {

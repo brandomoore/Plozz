@@ -684,76 +684,39 @@ private struct LiveTVMultiviewChrome: View {
             onEditingInsetsChange: onEditingInsetsChange
         )
         #else
-        VStack(spacing: 0) {
-            LiveTVMultiviewHeader(
-                exit: exit, editing: editing, watch: coordinator.isEditingLayout ? watch : nil)
-                #if os(tvOS)
-                .padding(.horizontal, 80)
-                .padding(.top, 60)
-                .padding(.bottom, 20)
-                #else
-                .padding(.horizontal, 24)
-                .padding(.top, 24)
-                .padding(.bottom, 12)
-                #endif
-                .background {
-                    LinearGradient(colors: [.black.opacity(0.72), .clear], startPoint: .top, endPoint: .bottom)
-                        .allowsHitTesting(false)
-                }
-            Spacer(minLength: 0)
+        GeometryReader { geometry in
             LiveTVMultiviewToolbar(
                 coordinator: coordinator, add: add,
                 collapse: collapse, setup: setup, focusScope: focusScope,
                 restoresSetupFocus: restoresSetupFocus, setupFocused: setupFocused, editing: editing,
                 isFavorite: isFavorite, toggleFavorite: toggleFavorite
             )
-            #if os(tvOS)
             .padding(.horizontal, 72)
-            .padding(.bottom, 52)
-            .padding(.top, 16)
-            #else
-            .padding(.horizontal, 16)
-            .padding(.bottom, 16)
-            .padding(.top, 12)
-            #endif
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .padding(.bottom, max(32, safeAreaInsets.bottom))
             .background {
                 LinearGradient(colors: [.clear, .black.opacity(0.72)], startPoint: .top, endPoint: .bottom)
                     .allowsHitTesting(false)
             }
+            .padding(.top, toolbarTop(in: geometry.size))
         }
-        #if !os(tvOS)
-        .simultaneousGesture(TapGesture().onEnded { _ in editing() })
-        #else
         .focusScope(focusScope)
         #endif
-        #endif
     }
-}
 
-private struct LiveTVMultiviewHeader: View {
-    let exit: () -> Void
-    let editing: () -> Void
-    let watch: (() -> Void)?
-
-    var body: some View {
-        HStack {
-            Text("Multiview").font(.headline).foregroundStyle(.white)
-            Spacer()
-            #if !os(tvOS)
-            if let watch {
-                LiveTVMultiviewAction(title: "Watch", symbol: "play.fill", action: watch, editing: editing)
-                    .accessibilityIdentifier("live-multiview-watch")
-            }
-            #endif
-            #if !os(tvOS)
-            LiveTVMultiviewAction(title: "Close Multiview", symbol: "xmark", action: exit, editing: editing)
-                .accessibilityIdentifier("live-multiview-done")
-            #endif
+    private func toolbarTop(in size: CGSize) -> CGFloat {
+        let bottom = coordinator.panes
+            .filter { coordinator.expandedPaneID == nil || coordinator.expandedPaneID == $0.id }
+            .reduce(CGFloat.zero) { bottom, pane in
+                let slot = LiveTVMultiviewGeometry.frame(
+                    for: pane.id, panes: coordinator.panes.map(\.id), primary: coordinator.primaryPaneID,
+                    layout: coordinator.layout, corner: coordinator.corner, insetSize: coordinator.insetSize,
+                    expanded: coordinator.expandedPaneID, size: size, isEditing: coordinator.isEditingLayout,
+                    aspectRatio: pane.videoAspectRatio.map { CGFloat($0) })
+                return max(bottom, LiveTVMultiviewGeometry.contentFrame(
+                    in: slot, aspectRatio: pane.videoAspectRatio.map { CGFloat($0) }).maxY)
         }
-        .environment(\.colorScheme, .dark)
-        #if os(tvOS)
-        .focusSection()
-        #endif
+        return min(bottom, LiveTVMultiviewGeometry.viewport(in: size, isEditing: true).maxY)
     }
 }
 
@@ -1123,6 +1086,7 @@ private struct LiveTVMultiviewToolbar: View {
             .padding(8)
         }
         .scrollIndicators(.hidden)
+        .defaultScrollAnchor(.center, for: .alignment)
         .fixedSize(horizontal: false, vertical: true)
         .environment(\.colorScheme, .dark)
         #if os(tvOS)

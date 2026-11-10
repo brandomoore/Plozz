@@ -1797,13 +1797,15 @@ windows the dock scrolls rather than truncating labels. Setup's pictures reserve
 the measured header and dock heights so landscape and large-text controls cannot
 cover them. TV focus controls and the retained players' full-screen geometry are
 unchanged.
-Apple TV multiview's toolbar contains Add channel, Layout and More. More holds
+Apple TV multiview has no top-left title. Its toolbar is centered beneath the
+pictures, midway through the available lower space, and contains Add channel,
+Layout and More. More holds
 Favorite and, while expanded, Show all. Holding Select on a picture opens its
 native menu for Make main picture, Replace channel and Remove; Remove is
 available only with multiple pictures. Loading pictures retain their menu, and
 failed pictures expose removal beside recovery actions. Channel actions always
 target their own picture rather than the last audible channel.
-The header and toolbar keep visible title-and-icon labels with
+The toolbar keeps visible title-and-icon labels with
 the same native button treatment as normal playback, including the Layout menu.
 Their height stays transport-sized while width follows the action's title.
 Focused labels stay dark against the bright fill in native-glass and
@@ -1825,6 +1827,10 @@ picture is large enough. After the ten-second idle deadline, focus effects
 disappear and the retained videos expand into the viewing layout. VoiceOver
 keeps the interactive presentation available. These changes do not reload or
 replace streams; Reduce Motion uses final layout sizes immediately.
+Idle/native focus-label replacements retain each live renderer in a temporary,
+picture-sized window host until the replacement is visible, avoiding blank
+frames without taking snapshots or covering neighboring pictures. Cancellation,
+authorization loss and playback teardown release that temporary host.
 Reduce Motion suppresses the fade, and loading/error indicators remain separate.
 Native menu focus notifications do not write back into the pinned controls'
 activity state, avoiding an update loop that can repeatedly rebuild the menu.
