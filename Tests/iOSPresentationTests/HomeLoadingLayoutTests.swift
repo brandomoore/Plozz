@@ -15,6 +15,85 @@ import XCTest
 
 @MainActor
 final class HomeLoadingLayoutTests: XCTestCase {
+    func testLiveJellyfinCompletedEpisodeRemainsOnHome() async throws {
+        guard let address = ProcessInfo.processInfo.environment["PLOZZ_LIVE_REFRESH_BROKER"] else {
+            throw XCTSkip("Requires the authorized internal history-mutation broker.")
+        }
+        guard let broker = URL(string: address), broker.scheme == "http", broker.host == "127.0.0.1",
+              broker.port != nil, broker.user == nil, broker.password == nil,
+              broker.query == nil, broker.fragment == nil else { throw AppError.invalidResponse }
+        func operation(_ action: String) async throws -> Data {
+            var request = URLRequest(url: broker.appendingPathComponent("jellyfin/\(action)/series"),
+                                     timeoutInterval: 90)
+            if action != "configuration" { request.httpMethod = "POST" }
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard (response as? HTTPURLResponse)?.statusCode == 200 else { throw AppError.invalidResponse }
+            return data
+        }
+        struct Configuration: Decodable {
+            let baseURL: URL
+            let serverID: String
+            let userID: String
+            let username: String
+            let deviceID: String
+            let token: String
+            let firstEpisodeID: String
+            let secondEpisodeID: String
+        }
+        let config = try JSONDecoder().decode(Configuration.self, from: await operation("configuration"))
+        let session = UserSession(
+            server: .init(id: config.serverID, name: "Internal history", baseURL: config.baseURL, provider: .jellyfin),
+            userID: config.userID, userName: config.username, deviceID: config.deviceID, accessToken: config.token
+        )
+        let provider = JellyfinProvider(session: session, http: LiveHomeReadOnlyHTTP())
+        let accounts = [ResolvedAccount(account: Account(id: "live-jellyfin", from: session), provider: provider)]
+        let retainedFixture = try Fixture()
+        defer { retainedFixture.close() }
+        let retainedVisibility = retainedFixture.app.settings.homeVisibility
+        await retainedVisibility.prepareServerDefaults(accounts: accounts)
+        retainedVisibility.setMergeNextUpIntoContinueWatching(true)
+        let retained = HomeViewModel(
+            accounts: accounts, profileNamespace: retainedFixture.profileID,
+            layoutStore: InMemoryHomeLayoutStore(), contentStore: NoOpHomeContentStore(),
+            currentVisibility: { retainedVisibility.visibility }
+        )
+        defer { retained.invalidate() }
+        for action in ["prepare", "advance"] {
+            _ = try await operation(action)
+            let expected = action == "prepare" ? config.firstEpisodeID : config.secondEpisodeID
+            let feed = try await provider.continueWatching(limit: .max)
+            XCTAssertTrue(feed.contains { $0.id == expected }, "Expected episode must reach the provider feed.")
+            XCTAssertTrue(ContinueWatchingPolicy.default.curated(feed).contains { $0.id == expected },
+                          "Expected episode must survive progress eligibility.")
+            await retained.load(showLoadingState: action == "prepare")
+            XCTAssertTrue(retained.state.value?.continueWatching.contains { $0.id == expected } == true,
+                          "The existing Home model must advance without a profile switch or cold start.")
+            if action == "advance" {
+                XCTAssertFalse(retained.state.value?.continueWatching.contains { $0.id == config.firstEpisodeID } == true,
+                               "The completed episode must leave the refreshed row.")
+            }
+            for includeNextUp in [true, false] {
+                let fixture = try Fixture()
+                defer { fixture.close() }
+                let visibility = fixture.app.settings.homeVisibility
+                await visibility.prepareServerDefaults(accounts: accounts)
+                visibility.setMergeNextUpIntoContinueWatching(includeNextUp)
+                let model = HomeViewModel(
+                    accounts: accounts, profileNamespace: fixture.profileID,
+                    layoutStore: InMemoryHomeLayoutStore(), contentStore: NoOpHomeContentStore(),
+                    currentVisibility: { visibility.visibility }
+                )
+                defer { model.invalidate() }
+                await model.load()
+                let content = try XCTUnwrap(model.state.value)
+                let present = content.continueWatching.contains { $0.id == expected }
+                XCTAssertEqual(present, action == "prepare" || includeNextUp,
+                               "Home must include a paused episode, and include the next episode when enabled.")
+                print("LIVE_SERIES_HISTORY phase=\(action) includeNextUp=\(includeNextUp) expectedOnHome=\(present) providerItems=\(feed.count) homeItems=\(content.continueWatching.count)")
+            }
+        }
+    }
+
     func testLiveJellyfinLibraryRows() async throws {
         try await exerciseLiveRows(kinds: [.jellyfin])
     }

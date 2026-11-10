@@ -54,6 +54,30 @@ out of launch arguments, result attachments, logs, and committed configuration.
 Without that opt-in, the live tests skip rather than impersonating a passing
 server check.
 
+`HomeLoadingLayoutTests.testLiveJellyfinCompletedEpisodeRemainsOnHome` reuses
+that broker's authorized Jellyfin series scope in the mobile hosted target.
+It seeds a five-minute resume point, then completes that episode independently.
+It checks the exact episode in the production provider feed, progress policy,
+fresh Home models, and one retained Home model across a silent reload. The
+completed episode must leave and its successor must enter without restarting
+or changing profiles. Include Next Up off is an explicit negative control,
+not evidence that a reporter has misconfigured the setting. No media is
+decoded; only the dedicated internal user's disposable history is changed.
+
+The investigation of [#170](https://github.com/brandomoore/Plozz/issues/170)
+confirmed that the provider, aggregator, progress policy and Next Up preference
+implementation are unchanged between `release/071.6` and `021f7972a`.
+Subsequent lifecycle work changes refresh delivery, while the mobile library-row
+optimization changes duplicate equality work, not Continue Watching membership.
+Passing a controlled live-server case does not resolve a report about another
+server, user, series, or device; the reporter's exact missing title still needs
+to be traced through Resume, Next Up, curation and presentation.
+The current-branch check passed on iPhone and iPad simulators (Xcode 27.2,
+iOS 26.2), including retained-model advancement, both fresh-load phases and
+the negative controls. Local evidence:
+`live-home-rows-9d2fd88f9d834092a3337de45d1faf98`. This was not a run of the
+71.6 binary and did not reproduce or fix the reported failure.
+
 ## Continue Watching watch actions
 
 In-progress movies, episodes and videos offer both **Mark as Watched** and
