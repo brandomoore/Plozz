@@ -93,25 +93,31 @@ enum LiveTVMultiviewGeometry {
             return isEditing ? contentFrame(in: slot, aspectRatio: aspectRatio) : slot
         }
         if layout == .sideBySide {
+            #if os(tvOS)
+            let gap: CGFloat = isEditing ? 0 : 8
+            #else
+            let gap: CGFloat = 0
+            #endif
             let horizontal = area.width >= area.height
             let slot: CGRect
             if ordered.count > 2 {
                 let row = index / 2
                 let columns = min(2, ordered.count - row * 2)
-                let width = area.width / CGFloat(columns)
+                let width = (area.width - gap * CGFloat(columns - 1)) / CGFloat(columns)
+                let height = (area.height - gap) / 2
                 slot = CGRect(
-                    x: area.minX + CGFloat(index % 2) * width,
-                    y: area.minY + CGFloat(row) * area.height / 2,
-                    width: width, height: area.height / 2)
+                    x: area.minX + CGFloat(index % 2) * (width + gap),
+                    y: area.minY + CGFloat(row) * (height + gap),
+                    width: width, height: height)
             } else if horizontal {
-                let width = area.width / 2
+                let width = (area.width - gap) / 2
                 slot = CGRect(
-                    x: area.minX + CGFloat(index) * width, y: area.minY,
+                    x: area.minX + CGFloat(index) * (width + gap), y: area.minY,
                     width: width, height: area.height)
             } else {
-                let height = area.height / 2
+                let height = (area.height - gap) / 2
                 slot = CGRect(
-                    x: area.minX, y: area.minY + CGFloat(index) * height,
+                    x: area.minX, y: area.minY + CGFloat(index) * (height + gap),
                     width: area.width, height: height)
             }
             return isEditing ? contentFrame(in: slot.insetBy(dx: 8, dy: 8), aspectRatio: aspectRatio) : slot

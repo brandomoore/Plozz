@@ -68,6 +68,7 @@ public struct RetainedFullscreenWorkspace<Content: View>: UIViewControllerRepres
     public final class Controller: UIViewController {
         let host: UIHostingController<HostedContent>
         let state: RetainedFullscreenWorkspaceState
+        private let workspace = UIViewController()
         private var transitioning = false
         private var tornDown = false
 
@@ -75,8 +76,8 @@ public struct RetainedFullscreenWorkspace<Content: View>: UIViewControllerRepres
             state = content.state
             host = UIHostingController(rootView: content)
             super.init(nibName: nil, bundle: nil)
-            host.modalPresentationStyle = .overFullScreen
-            host.isModalInPresentation = true
+            workspace.modalPresentationStyle = .overFullScreen
+            workspace.isModalInPresentation = true
             state.presentationChanged = { [weak self] in
                 DispatchQueue.main.async { self?.updatePresentation() }
             }
@@ -98,27 +99,25 @@ public struct RetainedFullscreenWorkspace<Content: View>: UIViewControllerRepres
 
         private func updatePresentation() {
             guard !tornDown, !transitioning, viewIfLoaded?.window != nil else { return }
-            if state.isPresented, host.presentingViewController == nil {
+            if state.isPresented, workspace.presentingViewController == nil {
                 guard presentedViewController == nil else { return }
                 transitioning = true
                 state.isTransferring = true
-                host.view.backgroundColor = .black
-                host.willMove(toParent: nil)
-                host.view.removeFromSuperview()
-                host.removeFromParent()
-                present(host, animated: false) { [weak self] in
+                workspace.view.backgroundColor = .clear
+                // Keep the live tree windowed while UIKit establishes the modal hierarchy.
+                present(workspace, animated: false) { [weak self] in
                     guard let self, !tornDown else { return }
+                    moveHost(to: workspace)
                     state.isTransferring = false
                     transitioning = false
                     updatePresentation()
                 }
-            } else if !state.isPresented, host.presentingViewController != nil {
+            } else if !state.isPresented, workspace.presentingViewController != nil {
                 transitioning = true
                 state.isTransferring = true
-                host.dismiss(animated: false) { [weak self] in
+                moveHost(to: self)
+                workspace.dismiss(animated: false) { [weak self] in
                     guard let self, !tornDown else { return }
-                    moveHost(to: self)
-                    host.view.backgroundColor = .clear
                     state.isTransferring = false
                     transitioning = false
                     updatePresentation()
@@ -142,7 +141,7 @@ public struct RetainedFullscreenWorkspace<Content: View>: UIViewControllerRepres
             tornDown = true
             state.presentationChanged = nil
             state.isTransferring = false
-            if host.presentingViewController != nil { host.dismiss(animated: false) }
+            if workspace.presentingViewController != nil { workspace.dismiss(animated: false) }
             host.willMove(toParent: nil)
             host.view.removeFromSuperview()
             host.removeFromParent()

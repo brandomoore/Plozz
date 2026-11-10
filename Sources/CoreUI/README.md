@@ -34,6 +34,9 @@ and authorized. Deactivation, authorization loss and teardown must still retire
 playback. Live TV uses it for the entire Multiview workspace, including its guide.
 Full-bleed callers must ignore the outer container safe area so the retained
 host receives the physical canvas; content still owns its control-safe insets.
+The transparent full-screen container must already be presented before moving
+the host into it. Return the host inline before dismissing that empty container,
+so no displayed frame loses the live tree during a UIKit presentation.
 
 `videoCardFocusSurface()` gives tvOS live video and its subtitles native card
 focus without wrapping player state or transport controls. Its environment
@@ -45,9 +48,10 @@ Label and style replacements use identity transitions: cross-fading two hosts
 cannot cross-fade the single live renderer they share. Geometry still animates.
 Live playback temporarily retains each renderer in a picture-sized window host
 while an idle/native label is replaced, until its new host is visibly laid out.
-Only focus clearance has its own interpolation. The video reads the container's
-current animated size directly, rather than starting a second size animation
-for every layout frame.
+The caller interpolates focus clearance together with the picture's placement.
+The focus surface consumes that inset directly, without another animation
+clock. The video reads the container's current animated size rather than
+starting a second resize for every layout frame.
 Preserve the native button's animation transaction: clearing it snaps the live
 video on focus gain/loss even though the system focus decoration still animates.
 

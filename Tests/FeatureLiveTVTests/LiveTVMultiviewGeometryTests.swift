@@ -44,6 +44,11 @@ final class LiveTVMultiviewGeometryTests: XCTestCase {
 
     func testSideBySideAndPortraitSlotsConsumeTheEntireCanvas() {
         let panes = [UUID(), UUID()]
+        #if os(tvOS)
+        let gap: CGFloat = 8
+        #else
+        let gap: CGFloat = 0
+        #endif
         for size in sizes {
             let pictures = panes.map {
                 LiveTVMultiviewGeometry.frame(
@@ -55,8 +60,8 @@ final class LiveTVMultiviewGeometryTests: XCTestCase {
             XCTAssertEqual(pictures[0].union(pictures[1]), CGRect(origin: .zero, size: size))
             for (id, picture) in zip(panes, pictures) {
                 XCTAssertTrue(CGRect(origin: .zero, size: size).contains(picture))
-                XCTAssertEqual(picture.width, size.width >= size.height ? size.width / 2 : size.width, accuracy: 0.001)
-                XCTAssertEqual(picture.height, size.width >= size.height ? size.height : size.height / 2, accuracy: 0.001)
+                XCTAssertEqual(picture.width, size.width >= size.height ? (size.width - gap) / 2 : size.width, accuracy: 0.001)
+                XCTAssertEqual(picture.height, size.width >= size.height ? size.height : (size.height - gap) / 2, accuracy: 0.001)
                 XCTAssertEqual(LiveTVMultiviewGeometry.focusFrame(
                     for: id, panes: panes, primary: panes[0], layout: .sideBySide,
                     corner: .bottomTrailing, insetSize: .medium, expanded: nil, size: size,
@@ -65,19 +70,46 @@ final class LiveTVMultiviewGeometryTests: XCTestCase {
             }
             if size.width >= size.height {
                 XCTAssertEqual(pictures[0].minX, 0, accuracy: 0.001)
-                XCTAssertEqual(pictures[0].maxX, pictures[1].minX, accuracy: 0.001)
+                XCTAssertEqual(pictures[1].minX - pictures[0].maxX, gap, accuracy: 0.001)
                 XCTAssertEqual(pictures[1].maxX, size.width, accuracy: 0.001)
                 XCTAssertEqual(pictures[0].minY, 0)
                 XCTAssertEqual(pictures[1].maxY, size.height)
             } else {
                 XCTAssertEqual(pictures[0].minY, 0, accuracy: 0.001)
-                XCTAssertEqual(pictures[0].maxY, pictures[1].minY, accuracy: 0.001)
+                XCTAssertEqual(pictures[1].minY - pictures[0].maxY, gap, accuracy: 0.001)
                 XCTAssertEqual(pictures[1].maxY, size.height, accuracy: 0.001)
                 XCTAssertEqual(pictures[0].minX, 0)
                 XCTAssertEqual(pictures[1].maxX, size.width)
             }
         }
     }
+
+    #if os(tvOS)
+    func testWidenedGridHasEightPointInternalGapsAndNoOuterInsets() {
+        for count in [3, 4] {
+            let panes = (0..<count).map { _ in UUID() }
+            for size in sizes {
+                let canvas = CGRect(origin: .zero, size: size)
+                let slots = panes.map {
+                    LiveTVMultiviewGeometry.frame(
+                        for: $0, panes: panes, primary: panes[0], layout: .sideBySide,
+                        corner: .bottomTrailing, insetSize: .medium, expanded: nil, size: size)
+                }
+                XCTAssertEqual(slots.reduce(CGRect.null) { $0.union($1) }, canvas)
+                XCTAssertEqual(slots[1].minX - slots[0].maxX, 8, accuracy: 0.001)
+                XCTAssertEqual(slots[2].minY - slots[0].maxY, 8, accuracy: 0.001)
+                if count == 4 {
+                    XCTAssertEqual(slots[3].minX - slots[2].maxX, 8, accuracy: 0.001)
+                }
+                for id in panes {
+                    XCTAssertEqual(LiveTVMultiviewGeometry.frame(
+                        for: id, panes: panes, primary: panes[0], layout: .sideBySide,
+                        corner: .bottomTrailing, insetSize: .medium, expanded: id, size: size), canvas)
+                }
+            }
+        }
+    }
+    #endif
 
     func testCornerPrimaryUsesFullCanvasWhileInsetKeepsPresentationAspect() {
         let panes = [UUID(), UUID()]

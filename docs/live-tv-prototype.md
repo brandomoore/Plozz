@@ -1766,6 +1766,9 @@ one large picture on the left and up to three separate pictures stacked on the
 right, without overlap. Corner mode retains its overlaid inset column.
 Each renderer fits its source without cropping. Edit layout returns to setup;
 ordinary viewing never reserves permanent space for controls.
+Widened Apple TV split/grid slots have an 8-point internal gap, without an
+outer gutter. Aspect fitting can leave additional letterboxing; a single
+expanded picture still uses the full canvas.
 
 Apple TV animates the retained video surfaces into Multiview and between layouts,
 including pane entry/removal, setup/watch, promotion and expansion. Native
@@ -1779,7 +1782,9 @@ and disappear when a picture is expanded. Reduce Motion makes these changes
 immediate. Removing a pane still retires its stream immediately; visual removal
 never delays authorization or tuner cleanup.
 The renderer follows the container's size in the same animation frames when
-shrinking or growing; only focus clearance animates independently.
+shrinking or growing. Placement and focus clearance share one interpolation,
+so all pictures shrink together instead of starting nested resize animations.
+The selected picture's lift remains the native tvOS focus effect.
 The close confirmation and playback errors share `playerPlatformAppearance`
 with transport controls, preserving native focused-label contrast without a
 dialog-specific button style.

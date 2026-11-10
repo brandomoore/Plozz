@@ -431,7 +431,6 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
                     .environment(\.playbackReflectionColorScheme, palette.isLight ? .light : .dark)
                     .environment(\.themePalette, ThemePalette.dark)
                     .environment(\.colorScheme, .dark)
-                    .environment(\.videoCardFocus, videoCardFocus(for: pane, frame: videoFrame))
                     #if os(iOS)
                     .frame(width: videoFrame.width, height: videoFrame.height)
                     #endif
@@ -461,7 +460,7 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
                         !showingMultiview && layoutDirection == .rightToLeft
                             ? CGRect(x: geometry.size.width - videoFrame.maxX, y: videoFrame.minY,
                                      width: videoFrame.width, height: videoFrame.height)
-                            : videoFrame))
+                            : videoFrame, focus: videoCardFocus(for: pane, frame: videoFrame)))
                     #else
                     .position(
                         x: !showingMultiview && layoutDirection == .rightToLeft
@@ -501,6 +500,7 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
                     .animation(playerTransition, value: multiview.expandedPaneID)
                     .animation(playerTransition, value: cornerRadius)
                     .animation(playerTransition, value: showingMultiview ? videoFrame : nil)
+                    .animation(playerTransition, value: multiviewFocusPresented)
                     .animation(playerTransition, value: preview.isExpanded)
                     #endif
                     }

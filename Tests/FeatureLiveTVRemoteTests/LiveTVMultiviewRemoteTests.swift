@@ -1285,9 +1285,9 @@ final class LiveTVMultiviewRemoteTests: XCTestCase {
     private func assertSideBySideFillsScreen(in app: XCUIApplication) {
         finishSetup(in: app)
         for index in 0..<2 {
-            let width = app.frame.width / 2
+            let width = (app.frame.width - 8) / 2
             assertVideoFrame(index + 1, equals: CGRect(
-                x: app.frame.minX + CGFloat(index) * width,
+                x: app.frame.minX + CGFloat(index) * (width + 8),
                 y: app.frame.minY, width: width, height: app.frame.height
             ), in: app)
         }

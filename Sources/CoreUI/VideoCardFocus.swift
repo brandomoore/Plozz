@@ -7,7 +7,7 @@ public struct VideoCardFocus {
     public let audible: Bool
     public let presentsEffect: Bool
     public let cornerRadius: CGFloat
-    public let horizontalInset: CGFloat
+    public var horizontalInset: CGFloat
     public let request: Int
     public let prefersFocus: Bool
     public let focused: (Bool) -> Void
@@ -85,13 +85,11 @@ private struct VideoCardSurface<Content: View>: View {
     let content: Content
     @FocusState private var focused: Bool
     @State private var handledRequest: Int?
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         button
             .buttonStyle(VideoCardButtonStyle(presentsEffect: configuration.presentsEffect))
             .modifier(VideoCardInset(horizontalInset: configuration.horizontalInset))
-            .animation(reduceMotion ? nil : .easeInOut(duration: 0.32), value: configuration.horizontalInset)
         .focusSection()
         .onChange(of: focused) { _, value in configuration.focused(value) }
         .task(id: FocusRequest(revision: configuration.request, effect: configuration.presentsEffect)) {
@@ -157,13 +155,8 @@ private struct VideoCardButtonStyle: PrimitiveButtonStyle {
     }
 }
 
-private struct VideoCardInset: ViewModifier, Animatable {
-    var horizontalInset: CGFloat
-
-    var animatableData: CGFloat {
-        get { horizontalInset }
-        set { horizontalInset = newValue }
-    }
+private struct VideoCardInset: ViewModifier {
+    let horizontalInset: CGFloat
 
     func body(content: Content) -> some View {
         GeometryReader { geometry in

@@ -9,6 +9,83 @@ import XCTest
 
 @MainActor
 final class LiveTVMultiviewMotionHostedTests: XCTestCase {
+    func testWorkspacePresentationKeepsItsLiveContentInTheWindowEveryFrame() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
+        let video = UIView()
+        video.backgroundColor = .systemBlue
+        var state: RetainedFullscreenWorkspaceState?
+        window.rootViewController = UIHostingController(rootView:
+            RetainedFullscreenWorkspace {
+                WorkspaceProbe(video: video, ready: { state = $0 })
+            }.ignoresSafeArea())
+        window.makeKeyAndVisible()
+        let continuity = WindowContinuityProbe(view: video, window: window)
+        defer {
+            continuity.stop()
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        try await Task.sleep(for: .milliseconds(500))
+        let workspace = try XCTUnwrap(state)
+        continuity.start()
+        for presented in [true, false, true, false] {
+            workspace.isPresented = presented
+            try await Task.sleep(for: .milliseconds(300))
+            XCTAssertFalse(workspace.isTransferring)
+            XCTAssertEqual(window.rootViewController?.presentedViewController != nil, presented)
+            XCTAssertEqual(video.convert(video.bounds, to: window), window.bounds)
+        }
+        XCTAssertGreaterThan(continuity.frames, 8)
+        XCTAssertEqual(continuity.missingFrames, 0,
+                       "Presenting and dismissing the isolated workspace must not detach live content for a frame.")
+    }
+
+    private struct WorkspaceProbe: View {
+        let video: UIView
+        let ready: (RetainedFullscreenWorkspaceState) -> Void
+        @Environment(\.retainedFullscreenWorkspace) private var workspace
+
+        var body: some View {
+            ViewportProbe(view: video)
+                .ignoresSafeArea()
+                .onAppear { if let workspace { ready(workspace) } }
+        }
+    }
+
+    private final class WindowContinuityProbe: NSObject {
+        let view: UIView
+        let window: UIWindow
+        var frames = 0
+        var missingFrames = 0
+        private var displayLink: CADisplayLink?
+
+        init(view: UIView, window: UIWindow) {
+            self.view = view
+            self.window = window
+        }
+
+        func start() {
+            let link = CADisplayLink(target: self, selector: #selector(sample))
+            displayLink = link
+            link.add(to: .main, forMode: .common)
+        }
+
+        func stop() {
+            displayLink?.invalidate()
+            displayLink = nil
+        }
+
+        @objc private func sample() {
+            frames += 1
+            if view.window !== window { missingFrames += 1 }
+        }
+    }
+
     func testNativeFocusGainAndLossAnimateTheActualVideoFrame() async throws {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
             .first { $0.activationState == .foregroundActive })
@@ -142,14 +219,14 @@ final class LiveTVMultiviewMotionHostedTests: XCTestCase {
                 Color.black
                 VideoSurfaceContainer(engine: model.engine)
                     .videoCardFocusSurface()
-                    .environment(\.videoCardFocus, VideoCardFocus(
+                    .background { ViewportProbe(view: model.viewport) }
+                    .modifier(PrototypeVideoPlacement(frame: model.frame, focus: VideoCardFocus(
                         identifier: "synchronized-video", title: "Video", audible: true,
                         presentsEffect: false, cornerRadius: 20, horizontalInset: model.inset,
                         request: 0, prefersFocus: true, focused: { _ in },
-                        activate: {}, promote: {}, replace: {}))
-                    .background { ViewportProbe(view: model.viewport) }
-                    .modifier(PrototypeVideoPlacement(frame: model.frame))
+                        activate: {}, promote: {}, replace: {})))
                     .animation(.easeInOut(duration: 0.32), value: model.frame)
+                    .animation(.easeInOut(duration: 0.32), value: model.inset)
             }
             .ignoresSafeArea()
         }
@@ -159,6 +236,80 @@ final class LiveTVMultiviewMotionHostedTests: XCTestCase {
         let view: UIView
         func makeUIView(context: Context) -> UIView { view }
         func updateUIView(_ uiView: UIView, context: Context) {}
+    }
+
+    func testFourPicturesInterpolatePlacementAndClearanceTogether() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let model = GroupMotionModel()
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
+        window.rootViewController = UIHostingController(rootView: GroupMotionPage(model: model))
+        window.makeKeyAndVisible()
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        try await Task.sleep(for: .milliseconds(500))
+        for editing in [true, false, true] {
+            model.editing = editing
+            var intermediateFrames = 0
+            let deadline = ContinuousClock.now + .milliseconds(500)
+            while ContinuousClock.now < deadline {
+                try await Task.sleep(for: .milliseconds(16))
+                window.layoutIfNeeded()
+                let widths = model.viewports.map { $0.bounds.width }
+                XCTAssertLessThan(try XCTUnwrap(widths.max()) - XCTUnwrap(widths.min()), 1)
+                if widths[0] > 801, widths[0] < 959 { intermediateFrames += 1 }
+                for index in model.engines.indices {
+                    let progress = (960 - widths[index]) / 160
+                    let output = model.engines[index].output
+                    XCTAssertEqual(output.bounds.width, widths[index] - 56 * progress, accuracy: 2,
+                                   "Focus clearance must use the same progress as the enclosing picture.")
+                    XCTAssertTrue(output.window === window)
+                }
+            }
+            XCTAssertGreaterThan(intermediateFrames, 3)
+            for engine in model.engines {
+                XCTAssertEqual(engine.output.bounds.width, editing ? 744 : 960, accuracy: 1)
+                XCTAssertEqual(engine.stops, 0)
+            }
+        }
+    }
+
+    @Observable
+    final class GroupMotionModel {
+        let engines = (0..<4).map { _ in MotionEngine() }
+        let viewports = (0..<4).map { _ in UIView() }
+        var editing = false
+    }
+
+    private struct GroupMotionPage: View {
+        let model: GroupMotionModel
+
+        var body: some View {
+            ZStack(alignment: .topLeading) {
+                Color.black
+                ForEach(0..<4) { index in
+                    let width: CGFloat = model.editing ? 800 : 960
+                    let frame = CGRect(x: CGFloat(index % 2) * 960, y: CGFloat(index / 2) * 540,
+                                       width: width, height: width * 9 / 16)
+                    VideoSurfaceContainer(engine: model.engines[index])
+                        .videoCardFocusSurface()
+                        .background { ViewportProbe(view: model.viewports[index]) }
+                        .modifier(PrototypeVideoPlacement(frame: frame, focus: VideoCardFocus(
+                            identifier: "group-motion-\(index)", title: "Video \(index)",
+                            audible: index == 0, presentsEffect: true,
+                            cornerRadius: 20, horizontalInset: model.editing ? 28 : 0,
+                            request: 0, prefersFocus: index == 0, focused: { _ in },
+                            activate: {}, promote: {}, replace: {})))
+                        .animation(.easeInOut(duration: 0.32), value: model.editing)
+                }
+            }
+            .ignoresSafeArea()
+        }
     }
 
     func testFullscreenHandoffKeepsTheActualOutputVisibleUntilTheInlineHostLaysOut() async throws {
