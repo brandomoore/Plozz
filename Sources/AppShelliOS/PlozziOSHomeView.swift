@@ -429,6 +429,20 @@ struct PlozziOSHomeView: View {
                 for: appModel.settings.homeVisibility.visibility
             )
         }
+        .contentRefreshSurface(
+            id: ContentRefreshSurfaceID(kind: .home),
+            isVisible: homeIsFrontmost && homeHasAppeared && appModel.allowsHomeContentLoading
+        ) { request in
+            switch request.action {
+            case .reloadHome:
+                await viewModel.loadIfNeeded(
+                    for: appModel.settings.homeVisibility.visibility,
+                    trigger: request.reason.diagnosticTrigger
+                )
+            case .reloadSeriesContext, .refreshWatchStateOnly, .reloadDetail, .none:
+                break
+            }
+        }
         .task(id: featuredStatusKey) {
             guard featuredStatusKey.isActive else { return }
             await refreshFeaturedStatusLoop()

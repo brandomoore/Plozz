@@ -803,7 +803,9 @@ public final class ItemDetailViewModel {
             guard !Task.isCancelled, isCurrent() else { return }
             let redirected = await redirectingSeasonToSeries(fetched, using: loadProvider)
             guard !Task.isCancelled, isCurrent() else { return }
-            preselectedSeasonID = redirected.preselectedSeasonID
+            if let seasonID = redirected.preselectedSeasonID {
+                preselectedSeasonID = seasonID
+            }
             captureSeriesContext(from: redirected.item)
             // Immutable snapshot so the concurrent async-lets below capture a
             // Sendable value (Swift 6 strict-concurrency forbids capturing
@@ -1899,7 +1901,9 @@ public final class ItemDetailViewModel {
         guard !Task.isCancelled, isCurrent() else { return }
         let redirected = await redirectingSeasonToSeries(fetched, using: provider)
         guard !Task.isCancelled, isCurrent() else { return }
-        preselectedSeasonID = redirected.preselectedSeasonID
+        if let seasonID = redirected.preselectedSeasonID {
+            preselectedSeasonID = seasonID
+        }
         let item = Self.preservingConfirmedStreamFacts(
             in: redirected.item,
             from: state.value?.item
@@ -1969,6 +1973,72 @@ public final class ItemDetailViewModel {
         )
         _ = await trailers
         _ = await extras
+    }
+
+    /// Refreshes a series page after the app or the page has been away long
+    /// enough for another device to move the viewer to a new episode.
+    ///
+    /// The ordinary `reload()` deliberately preserves the previous
+    /// `serverResumeEpisode`; that is correct for a context-menu edit but wrong
+    /// here, because the season page decides which season to show from it.
+    public func refreshSeriesContextAfterReturn() async {
+        guard case let .loaded(detail) = state,
+              detail.item.kind == .series,
+              let provider = activeProvider else { return }
+        await reload()
+        guard case let .loaded(updated) = state,
+              updated.item.kind == .series else { return }
+        resumeResolution.isResolving = true
+        defer { resumeResolution.isResolving = false }
+        await publishServerResumeEpisode(
+            for: updated.item,
+            provider: provider,
+            sourceGeneration: sourceGeneration
+        )
+    }
+
+    /// Refreshes only the loaded leaf item's watch state. Used on an episode
+    /// page after a return: the page must not rebuild children, change seasons,
+    /// or navigate. The parent series page refreshes when it is revealed again.
+    public func refreshWatchStateOnly() async {
+        guard case let .loaded(detail) = state,
+              let provider = activeProvider else { return }
+        switch detail.item.kind {
+        case .episode, .movie, .video:
+            break
+        default:
+            return
+        }
+        guard let fetched = try? await provider.item(id: activeItemID) else { return }
+        guard !Task.isCancelled,
+              case var .loaded(current) = state,
+              current.item.id == detail.item.id else { return }
+        current.item = Self.applyingWatchState(from: fetched, to: current.item)
+        state = .loaded(current)
+        sources = sources.map { source in
+            guard source.accountID == activeSourceAccountID,
+                  source.itemID == fetched.id else { return source }
+            var copy = source
+            copy.resumePosition = fetched.resumePosition
+            copy.playedPercentage = fetched.playedPercentage
+            copy.unwatchedEpisodeCount = fetched.unwatchedEpisodeCount
+            copy.isPlayed = fetched.isPlayed
+            copy.hasBeenPlayed = fetched.hasBeenPlayed
+            copy.lastPlayedAt = fetched.lastPlayedAt
+            return copy
+        }
+        applyUnifiedWatchState()
+    }
+
+    private static func applyingWatchState(from source: MediaItem, to target: MediaItem) -> MediaItem {
+        var copy = target
+        copy.resumePosition = source.resumePosition
+        copy.playedPercentage = source.playedPercentage
+        copy.unwatchedEpisodeCount = source.unwatchedEpisodeCount
+        copy.isPlayed = source.isPlayed
+        copy.hasBeenPlayed = source.hasBeenPlayed
+        copy.lastPlayedAt = source.lastPlayedAt
+        return copy
     }
 
     /// Whether the page can switch to `accountID`'s copy of this title in place —

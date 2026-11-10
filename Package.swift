@@ -996,6 +996,11 @@ let package = Package(
             name: "TestSupportPerformance",
             path: "Tests/TestSupportPerformance"
         ),
+        .target(
+            name: "TestSupportContentRefresh",
+            dependencies: ["FeatureHomeCore"],
+            path: "Tests/TestSupportContentRefresh"
+        ),
 
         // MARK: Tests (pure logic, no UI required)
         .testTarget(
@@ -1105,13 +1110,14 @@ let package = Package(
                 "FeatureHomeCore",
                 "HeroUI",
                 "CoreModels",
-                "RatingsService"
+                "RatingsService",
+                "TestSupportContentRefresh"
             ]
         ),
         .testTarget(
             name: "FeatureHomeCoreTests",
             dependencies: ["FeatureHomeCore", "CoreModels", "MetadataKit", "ProviderJellyfin",
-                           "CoreNetworking", "TestSupportPerformance"]
+                           "CoreNetworking", "TestSupportPerformance", "TestSupportContentRefresh"]
         ),
         .testTarget(
             name: "FeatureSearchCoreTests",

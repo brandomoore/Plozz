@@ -80,6 +80,7 @@ public struct RootView: View {
     /// tab tree so a `TabView` re-host cannot discard it mid-load; see
     /// ``LazyViewState`` for the measurements that forced this.
     @State private var homeViewModelBox = LazyViewState<HomeViewModel>()
+    @State private var contentRefreshCoordinator = ContentRefreshCoordinator(profile: .tvOS)
     /// The device appearance, mirrored into state by `ColorSchemeMirror` rather
     /// than read from the environment here.
     ///
@@ -832,10 +833,12 @@ public struct RootView: View {
         ))
         .background { AppBackground(palette: resolvedPalette) }
         .environment(\.themePalette, resolvedPalette)
+        .environment(contentRefreshCoordinator)
         .environment(\.managedProviderSetupRouter, providerSetupRouter)
         .onChange(of: appState.profilesModel.activeProfileID) { _, _ in
             providerSetupRouter.addressAccount = nil
             providerSetupRouter.reauthenticationAccount = nil
+            contentRefreshCoordinator.reset()
         }
         .onChange(of: providerSetupRouter.request?.id) { _, _ in
             guard let request = providerSetupRouter.request else { return }
@@ -1039,6 +1042,9 @@ public struct RootView: View {
                 // invalidation this exists to remove.
                 if systemColorScheme != scheme { systemColorScheme = scheme }
             }
+        )
+        .background(
+            ContentRefreshLifecycleReader(coordinator: contentRefreshCoordinator)
         )
         .background(
             ScenePhaseEffects(

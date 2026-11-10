@@ -4932,6 +4932,75 @@ final class ThemeMusicSourceResolutionTests: XCTestCase {
         XCTAssertEqual(resolver.locator, locator)
     }
 
+    func testRefreshWatchStateOnlyUpdatesProgressWithoutReloadingChildren() async {
+        var episode = MediaItem(id: "episode", title: "Episode", kind: .episode)
+        episode.resumePosition = 30
+        episode.playedPercentage = 0.1
+        let provider = FakeMediaProvider(allItems: [episode])
+        let vm = ItemDetailViewModel(
+            provider: provider, itemID: episode.id, initialItem: episode,
+            onlineTrailerResolver: { _ in [] }
+        )
+        defer { vm.suspendEnrichment() }
+        await vm.load()
+        XCTAssertEqual(vm.state.value?.item.resumePosition, 30)
+
+        var refreshed = episode
+        refreshed.resumePosition = 120
+        refreshed.playedPercentage = 0.4
+        provider.allItems = [refreshed]
+
+        await vm.refreshWatchStateOnly()
+
+        XCTAssertEqual(vm.state.value?.item.resumePosition, 120)
+        XCTAssertEqual(vm.state.value?.item.playedPercentage, 0.4)
+        XCTAssertEqual(vm.state.value?.childrenLoaded, true)
+    }
+
+    func testRefreshSeriesContextAfterReturnRefreshesResumeAndPreservesExplicitSeason() async {
+        let series = MediaItem(id: "series", title: "Series", kind: .series)
+        var season1 = MediaItem(id: "s1", title: "Season 1", kind: .season)
+        season1.seriesID = series.id
+        season1.seasonNumber = 1
+        var season2 = MediaItem(id: "s2", title: "Season 2", kind: .season)
+        season2.seriesID = series.id
+        season2.seasonNumber = 2
+        func episode(_ id: String) -> MediaItem {
+            var episode = MediaItem(id: id, title: id, kind: .episode)
+            episode.seriesID = series.id
+            episode.seasonID = season2.id
+            episode.seasonNumber = 2
+            episode.episodeNumber = 1
+            return episode
+        }
+        let firstResume = episode("s2e1")
+        let secondResume = episode("s2e2")
+        let provider = SeriesResumeFakeProvider(allItems: [series, season1, season2, firstResume])
+        provider.childrenByParent = [
+            series.id: [season1, season2],
+            season1.id: [],
+            season2.id: [firstResume]
+        ]
+        provider.resumeHandler = { _ in firstResume }
+
+        let vm = ItemDetailViewModel(
+            provider: provider, itemID: season1.id, initialItem: season1,
+            onlineTrailerResolver: { _ in [] }
+        )
+        defer { vm.suspendEnrichment() }
+        await vm.load()
+
+        XCTAssertEqual(vm.state.value?.item.kind, .series)
+        XCTAssertEqual(vm.preselectedSeasonID, season1.id)
+        XCTAssertEqual(vm.serverResumeEpisode?.id, firstResume.id)
+
+        provider.resumeHandler = { _ in secondResume }
+        await vm.refreshSeriesContextAfterReturn()
+
+        XCTAssertEqual(vm.serverResumeEpisode?.id, secondResume.id)
+        XCTAssertEqual(vm.preselectedSeasonID, season1.id)
+    }
+
     func testPublicThemeDoesNotRequireAuthenticatedResolver() async throws {
         let expected = URL(string: "https://themes.example/movie.mp3")!
         let theme = ThemeMusic(
