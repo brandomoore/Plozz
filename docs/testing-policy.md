@@ -12,6 +12,17 @@ workloads once, keeps five measured repetitions, checks work-count invariants,
 and compares source-identified baseline/candidate evidence without hardware
 deployment or automatic retries. Normal suites skip those opt-in probes.
 
+State/lifecycle coordination follows [state management](state-management.md).
+Drive it with a deterministic harness (fake clock and synthetic foreground/
+surface transitions), not UI timing. Run the same scenario matrix for each
+platform profile. Shared fixtures and constants live in `Tests/TestSupport*`.
+
+Tests use named constants or shared fixtures for repeated values, thresholds,
+surface identities, item IDs, and expected actions. The owner of a formatted
+value owns the literal assertion; other suites use the owner or the shared
+constant. Do not derive an expected value from production code when the
+production behavior is what the test is verifying.
+
 Render-dependent playback transitions belong in the app-hosted suite. Use a
 mounted video surface and a real HLS fixture for native-player continuity; a
 local MP4 may select the software decoder and cannot prove AVPlayer item reuse.
