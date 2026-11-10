@@ -256,10 +256,15 @@ struct NavigationNameEditor: View {
                     TextField("Name", text: $name, prompt: defaultTitle)
                         .focused($isNameFocused)
                         .submitLabel(.done)
+                        #if os(iOS)
+                        .onSubmit { isNameFocused = false }
+                        #else
                         .onSubmit(save)
+                        #endif
                         .accessibilityIdentifier("navigation-name-input")
                 }
             }
+            #if !os(iOS)
             Button(action: save) {
                 Text("Save changes").plozzPageActionLabel()
             }
@@ -267,7 +272,15 @@ struct NavigationNameEditor: View {
             .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines)
                 == (navigation.libraryLayout.customName(for: key, homeVisibility: visibility.visibility) ?? ""))
             .accessibilityIdentifier("navigation-name-save")
+            #endif
         }
+        #if os(iOS)
+        .modifier(HomeEditorSaveAction(
+            isEnabled: name.trimmingCharacters(in: .whitespacesAndNewlines)
+                != (navigation.libraryLayout.customName(for: key, homeVisibility: visibility.visibility) ?? ""),
+            identifier: "navigation-name-save", action: save
+        ))
+        #endif
     }
 
     private func save() {

@@ -2341,8 +2341,8 @@ final class HomeRowArrangementHostedTests: XCTestCase {
             }
             let lines = try await self.capture(window, name: "Home row name editor")
             XCTAssertTrue(lines.contains { $0.0.contains("Movie night") }, lines.map(\.0).joined(separator: " | "))
-            XCTAssertTrue(lines.contains { $0.0.contains("Save changes") })
             #if os(iOS)
+            XCTAssertFalse(lines.contains { $0.0.contains("Save changes") })
             XCTAssertTrue(lines.contains { $0.0.localizedCaseInsensitiveContains("Row name") })
             let field = try XCTUnwrap(fields(window).first)
             XCTAssertEqual(field.text, "Movie night")
@@ -2366,6 +2366,7 @@ final class HomeRowArrangementHostedTests: XCTestCase {
             XCTAssertFalse(field.isFirstResponder)
             field.resignFirstResponder()
             #else
+            XCTAssertTrue(lines.contains { $0.0.contains("Save changes") })
             model.setHomeRowName("", for: choice.id)
             #endif
             let reset = try await self.capture(window, name: "Home row default heading")
@@ -2387,6 +2388,189 @@ final class HomeRowArrangementHostedTests: XCTestCase {
             #endif
         }
     }
+
+    #if os(iOS)
+    func testMobileNameEditorsSaveFromToolbarAndReturn() async throws {
+        let suite = "ToolbarNameSave.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let visibility = HomeLibraryVisibilityModel(store: HomeLibraryVisibilityStore(defaults: defaults))
+        let navigation = NavigationStyleSettingsModel(
+            store: NavigationStyleSettingsStore(defaults: defaults),
+            layoutStore: NavigationLibraryLayoutStore(defaults: defaults)
+        )
+        let choice = try XCTUnwrap(HomeRowChoice.shared.first { $0.id == .global(.watchlist) })
+        for homeEditor in [true, false] {
+            for name in ["Weekend queue", "   "] {
+                visibility.setHomeRowName("Movie night", for: choice.id)
+                let route = HomeCatalogNavigationFixture()
+                route.path = ["editor"]
+                try await withWindow {
+                    @Bindable var route = route
+                    NavigationStack(path: $route.path) {
+                        Text("Editor parent")
+                            .navigationDestination(for: String.self) { _ in
+                                if homeEditor {
+                                    HomeRowSettingsView(choice: choice, libraries: [], accounts: [], visibility: visibility)
+                                } else {
+                                    NavigationNameEditor(
+                                        key: NavigationLibraryLayout.watchlistKey, defaultTitle: Text("Watchlist"),
+                                        navigation: navigation, visibility: visibility
+                                    )
+                                }
+                            }
+                    }
+                } inspect: { window in
+                        _ = try await self.snapshot(window, name: "Toolbar name editor before changes")
+                        XCTAssertFalse(try self.editorSaveItem(in: window).isEnabled)
+                    let field = try XCTUnwrap(self.editorViews(in: window).compactMap { $0 as? UITextField }.first)
+                    XCTAssertTrue(field.becomeFirstResponder())
+                    field.selectAll(nil)
+                    field.insertText(name)
+                    try await self.waitForEditor { self.findEditorSaveItem(in: window)?.isEnabled == true }
+                    field.resignFirstResponder()
+                    _ = try await self.snapshot(window, name: homeEditor ? "Home row toolbar save" : "Navigation toolbar save")
+                    try self.activateEditorSave(in: window)
+                    try await self.waitForEditor { route.path.isEmpty }
+                    XCTAssertEqual(visibility.visibility.homeRowName(for: choice.id), name == "   " ? nil : name)
+                    XCTAssertEqual(navigation.libraryLayout.customName(
+                        for: NavigationLibraryLayout.watchlistKey, homeVisibility: visibility.visibility
+                    ), name == "   " ? nil : name)
+                }
+            }
+        }
+    }
+
+    func testMobileCollectionEditorSavesDraftFromToolbar() async throws {
+        let suite = "ToolbarCollectionSave.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let visibility = HomeLibraryVisibilityModel(store: HomeLibraryVisibilityStore(defaults: defaults))
+        let inventory = HomeSectionCatalogModel()
+        let provider = HomeSettingsLibraryProvider(name: "Collection server")
+        let account = ResolvedAccount(account: Account(from: provider.session), provider: provider)
+        let section = CollectionSection(source: .init(
+            accountID: account.account.id, collectionID: "weekend",
+            title: "Weekend picks", serverUserID: account.provider.session.userID
+        ))
+        for isNew in [true, false] {
+            let route = HomeCatalogNavigationFixture()
+            route.path = ["editor"]
+            let saved = visibility.visibility.collectionSections.first ?? section
+            try await withWindow {
+                @Bindable var route = route
+                NavigationStack(path: $route.path) {
+                    Text("Editor parent")
+                        .navigationDestination(for: String.self) { _ in
+                            CollectionSectionSettingsView(
+                                section: saved, isNew: isNew, inventory: inventory, visibility: visibility,
+                                libraries: [], accounts: [account]
+                            )
+                        }
+                }
+            } inspect: { window in
+                _ = try await self.snapshot(window, name: "Collection toolbar \(isNew ? "create" : "edit")")
+                XCTAssertEqual(try self.editorSaveItem(in: window).isEnabled, isNew)
+                let field = try XCTUnwrap(self.editorViews(in: window).compactMap { $0 as? UITextField }.first)
+                XCTAssertTrue(field.becomeFirstResponder())
+                field.selectAll(nil)
+                field.insertText(isNew ? "Movie night" : "Weekend queue")
+                try await self.waitForEditor { self.findEditorSaveItem(in: window)?.isEnabled == true }
+                field.resignFirstResponder()
+                try self.activateEditorSave(in: window)
+                try await self.waitForEditor { route.path.isEmpty }
+                XCTAssertEqual(visibility.visibility.collectionSections.count, 1)
+                XCTAssertEqual(visibility.visibility.collectionSections.first?.name, isNew ? "Movie night" : "Weekend queue")
+            }
+        }
+    }
+
+    func testEditorSaveProgressFailureAndCancellation() async throws {
+        for outcome in ["success", "failure", "cancel"] {
+            let gate = HomeEditorSaveGate()
+            defer { gate.finish(.failure(CancellationError())) }
+            let route = HomeCatalogNavigationFixture()
+            route.path = ["editor"]
+            try await withWindow {
+                @Bindable var route = route
+                NavigationStack(path: $route.path) {
+                    Text("Editor parent")
+                        .navigationDestination(for: String.self) { _ in
+                            Text("Retained draft")
+                                .modifier(HomeEditorSaveAction(
+                                    isEnabled: true, identifier: "test-editor-save", action: gate.save
+                                ))
+                        }
+                }
+            } inspect: { window in
+                _ = try await self.snapshot(window, name: "Editor save ready")
+                try self.activateEditorSave(in: window)
+                try await self.waitForEditor { gate.calls == 1 }
+                _ = try await self.snapshot(window, name: "Editor saving progress")
+                let savingItem = try self.editorSaveItem(in: window)
+                if let action = savingItem.action {
+                    UIApplication.shared.sendAction(action, to: savingItem.target, from: savingItem, for: nil)
+                }
+                XCTAssertEqual(gate.calls, 1, "Repeated activation while saving must not submit twice.")
+                XCTAssertEqual(route.path, ["editor"], "Don't navigate while saving.")
+                XCTAssertTrue(self.editorViews(in: window).contains {
+                    $0 is UIActivityIndicatorView || $0.accessibilityLabel == "Saving…"
+                }, "The checkmark must be replaced by an accessible progress indicator.")
+                if outcome == "cancel" {
+                    route.path.removeAll()
+                    _ = try await self.snapshot(window, name: "Editor cancelled")
+                }
+                gate.finish(outcome == "failure" ? .failure(AppError.invalidResponse) : .success(()))
+                if outcome == "failure" {
+                    let lines = try await self.capture(window, name: "Editor save failure retains draft")
+                    XCTAssertTrue(lines.contains { $0.0.contains("Couldn't save changes") })
+                    XCTAssertEqual(route.path, ["editor"])
+                    XCTAssertEqual(gate.calls, 1)
+                } else {
+                    try await self.waitForEditor { route.path.isEmpty }
+                    XCTAssertEqual(gate.calls, 1)
+                }
+            }
+        }
+    }
+
+    private func editorViews(in view: UIView) -> [UIView] {
+        [view] + view.subviews.flatMap { editorViews(in: $0) }
+    }
+
+    private func editorSaveItem(in window: UIWindow) throws -> UIBarButtonItem {
+        try XCTUnwrap(findEditorSaveItem(in: window))
+    }
+
+    private func findEditorSaveItem(in window: UIWindow) -> UIBarButtonItem? {
+        editorViews(in: window).compactMap { $0 as? UINavigationBar }.compactMap { bar in
+            guard let item = bar.topItem else { return nil }
+            return item.rightBarButtonItems?.first
+                ?? item.trailingItemGroups.flatMap(\.barButtonItems).first
+                ?? item.pinnedTrailingGroup?.barButtonItems.first
+        }.first
+    }
+
+    private func activateEditorSave(in window: UIWindow) throws {
+        let item = try editorSaveItem(in: window)
+        XCTAssertTrue(item.isEnabled)
+        if let action = item.action {
+            XCTAssertTrue(UIApplication.shared.sendAction(action, to: item.target, from: item, for: nil))
+        } else {
+            let custom = try XCTUnwrap(item.customView)
+            let control = try XCTUnwrap(editorViews(in: custom).compactMap { $0 as? UIControl }.first)
+            control.sendActions(for: .primaryActionTriggered)
+        }
+    }
+
+    private func waitForEditor(_ predicate: () -> Bool) async throws {
+        let deadline = ContinuousClock.now + .seconds(3)
+        while !predicate(), ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertTrue(predicate())
+    }
+    #endif
 
     func testContinueWatchingSectionOrdersArtworkAndGroupedControls() async throws {
         let suite = "HomeSectionLayout.\(UUID())"
@@ -3374,6 +3558,23 @@ final class HomeRowArrangementHostedTests: XCTestCase {
 }
 
 #if os(iOS)
+@MainActor
+private final class HomeEditorSaveGate {
+    var calls = 0
+    private var continuation: CheckedContinuation<Void, Error>?
+
+    func save() async throws {
+        calls += 1
+        try await withCheckedThrowingContinuation { continuation = $0 }
+        try Task.checkCancellation()
+    }
+
+    func finish(_ result: Result<Void, Error>) {
+        continuation?.resume(with: result)
+        continuation = nil
+    }
+}
+
 @MainActor @Observable
 private final class HomeCatalogNavigationFixture {
     var path: [String] = []

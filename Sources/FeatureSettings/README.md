@@ -696,14 +696,17 @@ watch history and planning-list behavior are documented in
   choose **Edit** to open that same row editor directly. Ordinary taps still browse;
   rows without a browse action also expose Edit. The shortcut is scoped to the
   active profile and is available through VoiceOver actions.
-  Row-name fields have a persistent label on mobile and a separate native save action.
-  Done dismisses the keyboard and saves ordinary row names; collection rows retain
-  their existing Save changes action for the whole draft.
+  On iPhone and iPad, ordinary row names, collection-row drafts, and navigation
+  names share a native confirmation-toolbar checkmark instead of an in-content
+  Save changes button. It enables for valid changes (or a new collection row),
+  shows progress while saving, and returns to the previous page after success.
+  Keyboard Done uses the same save path. Failures retain the draft and show an
+  alert; leaving cancels pending work. Immediate appearance/behavior preferences
+  remain immediate, and TV keeps its existing in-content actions.
   Remove from Home is a separate, full-width destructive action group below the
   row's editing controls, shared by ordinary and collection rows.
-  Mobile Add to Home and Save changes use the shared large, full-width native
-  page action also used by onboarding. Toolbar and inline actions keep their
-  existing compact sizing.
+  Onboarding keeps the shared large native page actions; editor toolbar actions
+  and destructive form rows retain their native sizing.
   Source-specific rows and their settings
   use the shared provider brand mark, including the transport badge for shares.
   In the editor, Add row, and reorder rows, the mark sits beside the

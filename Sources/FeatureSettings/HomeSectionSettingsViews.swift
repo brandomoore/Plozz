@@ -1,6 +1,7 @@
 #if canImport(SwiftUI)
 import SwiftUI
 import CoreModels
+import CoreNetworking
 import CoreUI
 
 struct HomeEditorPage<HeaderActions: View, Content: View>: View {
@@ -49,6 +50,64 @@ extension HomeEditorPage where HeaderActions == EmptyView {
         self.init(title: title, showsHeader: showsHeader, headerActions: { EmptyView() }, content: content)
     }
 }
+
+#if os(iOS)
+struct HomeEditorSaveAction: ViewModifier {
+    var title: Text = Text("Save changes")
+    let isEnabled: Bool
+    let identifier: String
+    let action: @MainActor () async throws -> Void
+    @State private var isSaving = false
+    @State private var saveFailed = false
+    @SettingsPageDismiss private var dismiss
+
+    func body(content: Content) -> some View {
+        content
+            .disabled(isSaving)
+            .onSubmit(submit)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(action: submit) {
+                        if isSaving {
+                            ProgressView()
+                        } else {
+                            Label { title } icon: { Image(systemName: "checkmark") }
+                                .labelStyle(.iconOnly)
+                        }
+                    }
+                    .accessibilityLabel(isSaving ? Text("Saving…") : title)
+                    .accessibilityIdentifier(identifier)
+                    .disabled(!isEnabled || isSaving)
+                }
+            }
+            .task(id: isSaving) {
+                guard isSaving else { return }
+                defer { isSaving = false }
+                do {
+                    try Task.checkCancellation()
+                    try await action()
+                    try Task.checkCancellation()
+                    dismiss()
+                } catch is CancellationError {
+                    // Leaving an editor cancels its pending save, not the next page.
+                } catch {
+                    saveFailed = true
+                    PlozzLog.app.error("Could not save settings editor")
+                }
+            }
+            .alert("Couldn't save changes", isPresented: $saveFailed) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text("Try again.")
+            }
+    }
+
+    private func submit() {
+        guard isEnabled, !isSaving else { return }
+        isSaving = true
+    }
+}
+#endif
 
 struct HomeEditorLink<Destination: View, Label: View>: View {
     @ViewBuilder let destination: () -> Destination
@@ -198,12 +257,10 @@ struct HomeRowNameEditor: View {
         SettingsSectionGroup {
             SettingsInputRow("Row name") { nameField }
         }
-        Button(action: save) {
-            Text("Save changes").plozzPageActionLabel()
-        }
-            .plozzPageActionButton()
-            .disabled(trimmedName == (visibility.visibility.homeRowName(for: choice.id) ?? ""))
-            .accessibilityIdentifier("home-section-name-save")
+        .modifier(HomeEditorSaveAction(
+            isEnabled: trimmedName != (visibility.visibility.homeRowName(for: choice.id) ?? ""),
+            identifier: "home-section-name-save", action: save
+        ))
         #else
         SettingsSectionGroup {
             SettingsInputRow("Row name") { nameField }
@@ -220,7 +277,11 @@ struct HomeRowNameEditor: View {
             .focused($isNameFocused)
             .submitLabel(.done)
             .accessibilityIdentifier("home-section-name")
+            #if os(iOS)
+            .onSubmit { isNameFocused = false }
+            #else
             .onSubmit(save)
+            #endif
     }
 
     private func save() {

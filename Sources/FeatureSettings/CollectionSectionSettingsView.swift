@@ -32,6 +32,7 @@ struct CollectionSectionCreationView: View {
 
 struct CollectionSectionSettingsView: View {
     let isNew: Bool
+    let original: CollectionSection
     let inventory: HomeSectionCatalogModel
     let visibility: HomeLibraryVisibilityModel
     let libraries: [AggregatedLibrary]
@@ -55,6 +56,7 @@ struct CollectionSectionSettingsView: View {
         spoilerSettings: SpoilerSettings = .default
     ) {
         _draft = State(initialValue: section)
+        self.original = section
         self.isNew = isNew
         self.inventory = inventory
         self.visibility = visibility
@@ -130,10 +132,10 @@ struct CollectionSectionSettingsView: View {
                         .accessibilityIdentifier("collection-section-name")
                 }
             }
+            #if !os(iOS)
             Button {
                 do {
-                    guard accounts.contains(where: draft.source.matches) else { throw AppError.notFound }
-                    try visibility.saveCollectionSection(draft, catalog: currentCatalog)
+                    try save()
                     dismiss()
                 } catch {
                     saveFailed = true
@@ -149,6 +151,7 @@ struct CollectionSectionSettingsView: View {
             .plozzPageActionButton()
             .disabled(!accounts.contains(where: draft.source.matches))
             .accessibilityIdentifier("collection-section-save")
+            #endif
             if !isNew {
                 HomeRowRemoveAction {
                     do {
@@ -162,6 +165,13 @@ struct CollectionSectionSettingsView: View {
             }
             if saveFailed { InlineErrorMessage(Text("Couldn't update this row. Try again.")) }
         }
+        #if os(iOS)
+        .modifier(HomeEditorSaveAction(
+            title: isNew ? Text("Add to Home") : Text("Save changes"),
+            isEnabled: canSave,
+            identifier: "collection-section-save", action: save
+        ))
+        #endif
         .settingsPageDestination(isPresented: $choosingSource) {
             HeroCollectionPickerView(
                 selections: .constant([draft.source]),
@@ -180,6 +190,20 @@ struct CollectionSectionSettingsView: View {
 
     private var currentCatalog: HomeSectionCatalog {
         inventory.currentCatalog(libraries: libraries, accounts: accounts, visibility: visibility)
+    }
+
+    private var canSave: Bool {
+        var normalizedDraft = draft
+        normalizedDraft.name = draft.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        var saved = visibility.visibility.collectionSections.first { $0.id == draft.id } ?? original
+        saved.name = saved.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        return accounts.contains(where: draft.source.matches) && (isNew || normalizedDraft != saved)
+    }
+
+    private func save() throws {
+        guard accounts.contains(where: draft.source.matches) else { throw AppError.notFound }
+        try visibility.saveCollectionSection(draft, catalog: currentCatalog)
+        isNameFocused = false
     }
 
     @ViewBuilder
