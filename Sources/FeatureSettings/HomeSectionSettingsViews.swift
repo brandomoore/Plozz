@@ -60,7 +60,7 @@ struct HomeEditorLink<Destination: View, Label: View>: View {
     var body: some View {
         #if os(tvOS)
         SettingsPageLink(destination: destination) {
-            label().padding(16).settingsGroupSurface(cornerRadius: SettingsRowMetrics.navigationCornerRadius)
+            label().padding(16)
         }
             .buttonStyle(SettingsFocusButtonStyle(size: .navigation))
         #else

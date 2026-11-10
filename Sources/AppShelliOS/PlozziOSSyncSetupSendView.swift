@@ -86,7 +86,7 @@ struct SyncSetupCodeEntryScreen: View {
             .navigationTitle("Enter Code").navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { onCancel() }.foregroundStyle(palette.primaryText)
+                    Button("Cancel", systemImage: "xmark") { onCancel() }.foregroundStyle(palette.primaryText)
                 }
             }
         }

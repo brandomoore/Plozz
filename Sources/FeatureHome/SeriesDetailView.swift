@@ -397,7 +397,8 @@ struct SeriesDetailView: View {
                             let item = DetailPlaybackSelection.playItem(
                                 for: target, sources: target.sources, activeAccountID: target.sourceAccountID,
                                 versionID: effectivePlayVersionID,
-                                explicit: versionOverride != nil || target.explicitSourceSelection
+                                explicit: versionOverride != nil || target.explicitSourceSelection,
+                                explicitVersion: versionOverride != nil || target.explicitVersionSelection
                             )
                             playbackPreparation.handoff(item)
                             onPlay(item)
@@ -409,7 +410,8 @@ struct SeriesDetailView: View {
                             }
                             let selected = DetailPlaybackSelection.playItem(
                                 for: target, sources: target.sources, activeAccountID: target.sourceAccountID,
-                                versionID: effectivePlayVersionID, explicit: true
+                                versionID: effectivePlayVersionID, explicit: true,
+                                explicitVersion: versionOverride != nil || target.explicitVersionSelection
                             )
                             onPlay(selected.requestingDiscPlayback(behavior))
                         },
@@ -420,7 +422,8 @@ struct SeriesDetailView: View {
                             }
                             let selected = DetailPlaybackSelection.playItem(
                                 for: target, sources: target.sources, activeAccountID: target.sourceAccountID,
-                                versionID: effectivePlayVersionID, explicit: true
+                                versionID: effectivePlayVersionID, explicit: true,
+                                explicitVersion: versionOverride != nil || target.explicitVersionSelection
                             )
                             onPlay(selected.requestingExternalPlayer(player))
                         },
@@ -1542,7 +1545,8 @@ struct SeriesDetailView: View {
         return DetailPlaybackSelection.playItem(
             for: target, sources: target.sources, activeAccountID: target.sourceAccountID,
             versionID: effectivePlayVersionID,
-            explicit: versionOverride != nil || target.explicitSourceSelection
+            explicit: versionOverride != nil || target.explicitSourceSelection,
+            explicitVersion: versionOverride != nil || target.explicitVersionSelection
         )
     }
 

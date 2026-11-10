@@ -15,6 +15,225 @@ import XCTest
 
 @MainActor
 final class DownloadPresentationTests: XCTestCase {
+    func testDownloadNavigationPreservesExactSourceAndSeasonForEveryTransferState() throws {
+        let model = PlozziOSDownloadsModel(initializationError: "fixture")
+        for status in [DownloadStatus.queued, .preparing, .downloading, .paused, .failed, .completed] {
+            var saved = record()
+            saved.status = status
+            saved.snapshot.sourceAccountID = "selected-account"
+            saved.snapshot.sourceItemID = "selected-episode"
+            saved.snapshot.seriesID = "selected-show"
+            saved.snapshot.seasonID = "selected-season"
+            saved.snapshot.kind = .episode
+            let episode = try XCTUnwrap(model.detailItem(for: saved))
+            let show = try XCTUnwrap(PlozziOSDownloadNavigationAction.navigation(for: episode))
+            XCTAssertEqual(show.action, .goToSeason)
+            XCTAssertEqual(show.item.id, "selected-show")
+            XCTAssertEqual(show.item.kind, .series)
+            XCTAssertEqual(show.item.sourceAccountID, "selected-account")
+            XCTAssertEqual(show.item.seasonID, "selected-season")
+
+            saved.snapshot.kind = .movie
+            let movie = try XCTUnwrap(model.detailItem(for: saved))
+            let target = try XCTUnwrap(PlozziOSDownloadNavigationAction.navigation(for: movie))
+            XCTAssertEqual(target.action, .goToMovie)
+            XCTAssertEqual(target.item, movie)
+        }
+    }
+
+    func testDownloadNavigationDoesNotInventMissingShowIdentity() throws {
+        let episode = MediaItem(id: "episode", title: "Episode", kind: .episode, sourceAccountID: "account")
+        XCTAssertNil(PlozziOSDownloadNavigationAction.navigation(for: episode))
+        var seasonEpisode = episode
+        seasonEpisode.seasonID = "season"
+        let season = try XCTUnwrap(PlozziOSDownloadNavigationAction.navigation(for: seasonEpisode))
+        XCTAssertEqual(season.item.id, "season")
+        XCTAssertEqual(season.item.kind, .season)
+        XCTAssertEqual(season.item.sourceAccountID, "account")
+    }
+
+    func testReducedJellyfinAndEmbyDownloadsKeepEmbeddedTextSubtitlesOffline() async throws {
+        for kind in [ProviderKind.jellyfin, .emby] {
+            let storage = try temporaryStorage()
+            var saved = record(versionID: "selected")
+            saved.managedHTTPSource = .init(
+                provider: kind, accountID: "emby", itemID: "episode",
+                mediaSourceID: "selected", quality: .hd720
+            )
+            let destination = try storage.pinnedFileURL(for: saved)
+            try FileManager.default.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try Data([1]).write(to: destination)
+            let srt = storage.root.appendingPathComponent("extracted.srt")
+            let vtt = storage.root.appendingPathComponent("extracted.vtt")
+            try Data("1\n00:00:01,000 --> 00:00:02,000\nHello\n\n".utf8).write(to: srt)
+            try Data("WEBVTT\n\n00:00:03.000 --> 00:00:04.000\nBonjour\n\n".utf8).write(to: vtt)
+            let tracks = [
+                try embeddedSubtitle(kind: kind, id: 2, language: "en", format: "srt", forced: true),
+                try embeddedSubtitle(kind: kind, id: 3, language: "fr", format: "vtt", hearingImpaired: true),
+                MediaTrack(id: 4, kind: .subtitle, displayTitle: "External", language: "es", codec: "srt",
+                           deliverySource: .localFile(srt), isExternal: true),
+                MediaTrack(id: 5, kind: .subtitle, displayTitle: "PGS", codec: "pgssub", isImageBasedSubtitle: true),
+                MediaTrack(id: 6, kind: .subtitle, displayTitle: "Not extractable", codec: "unknown"),
+                MediaTrack(id: 7, kind: .audio, displayTitle: "Audio")
+            ]
+            let requests = SubtitleAuthorizationCounter()
+            let status = try await PlozziOSOfflineSubtitles.save(
+                record: saved, destination: destination, policy: .default,
+                provider: DownloadTrackProvider(kind: kind, sidecars: tracks), authorize: {},
+                resolve: { locator in
+                    let request = await requests.increment()
+                    XCTAssertEqual(locator.provider, kind)
+                    XCTAssertEqual(locator.accountID, "emby")
+                    XCTAssertEqual(locator.itemID, "episode")
+                    XCTAssertEqual(locator.mediaSourceID, "selected")
+                    XCTAssertEqual(locator.purpose, .subtitle)
+                    XCTAssertEqual(locator.resource.path, "Videos/episode/selected/Subtitles/\(request + 1)/0/Stream.\(request == 1 ? "srt" : "vtt")")
+                    return request == 1 ? srt : vtt
+                }
+            )
+            XCTAssertEqual(status, .saved)
+            let count = await requests.increment() - 1
+            XCTAssertEqual(count, 2, "Extract only the supported embedded text tracks")
+            try FileManager.default.removeItem(at: srt)
+            try FileManager.default.removeItem(at: vtt)
+            OfflineMode.shared.setEnabled(true)
+            let registry = DownloadedMediaRegistry(store: InMemoryDownloadedMediaStore(.init(records: [saved.identityKey: saved])))
+            let resolver = RegistryOfflinePlaybackResolver(registry: registry, storage: storage)
+            let item = try XCTUnwrap(PlozziOSDownloadsModel(initializationError: "fixture").detailItem(for: saved))
+            let resolved = await resolver.localPlaybackAsset(for: item, versionID: "selected")
+            let asset = try XCTUnwrap(resolved)
+            XCTAssertEqual(asset.subtitleTracks.map(\.language), ["en", "fr", "es"])
+            XCTAssertEqual(asset.subtitleTracks.map(\.isForced), [true, false, false])
+            XCTAssertEqual(asset.subtitleTracks.map(\.isHearingImpaired), [false, true, false])
+            XCTAssertEqual(asset.subtitleTracks.map(\.displayTitle), ["Caption 2", "Caption 3", "External"])
+            for track in asset.subtitleTracks {
+                guard case .localFile(let url)? = track.deliverySource else { return XCTFail("Expected durable local subtitles") }
+                let text = try XCTUnwrap(SubtitleCueParser.decodeText(Data(contentsOf: url)))
+                let cues = SubtitleCueParser.parseCues(text)
+                XCTAssertEqual(cues.count, 1)
+            }
+        }
+    }
+
+    func testEmbeddedSubtitleExtractionLeavesOriginalAndOtherProvidersUnchanged() async throws {
+        for kind in [ProviderKind.jellyfin, .emby, .plex] {
+            for original in [true, false] {
+                if kind != .plex && !original { continue }
+                let storage = try temporaryStorage()
+                var saved = record()
+                saved.managedHTTPSource = .init(
+                    provider: kind, accountID: "emby", itemID: "episode",
+                    mediaSourceID: "selected", quality: original ? .original : .hd720
+                )
+                let destination = try storage.pinnedFileURL(for: saved)
+                try FileManager.default.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
+                let track = try embeddedSubtitle(kind: kind)
+                let status = try await PlozziOSOfflineSubtitles.save(
+                    record: saved, destination: destination, policy: .default,
+                    provider: DownloadTrackProvider(kind: kind, sidecars: [track]), authorize: {},
+                    resolve: { _ in XCTFail("Do not extract embedded tracks for this request"); throw AppError.invalidResponse }
+                )
+                XCTAssertEqual(status, .saved)
+                XCTAssertTrue(try OfflineSubtitleStore.files(beside: destination).isEmpty)
+            }
+        }
+    }
+
+    func testEmbeddedSubtitleExtractionHonorsSavedOptOut() async throws {
+        let storage = try temporaryStorage()
+        var saved = record()
+        saved.managedHTTPSource = .init(
+            provider: .jellyfin, accountID: "emby", itemID: "episode", mediaSourceID: "selected",
+            quality: .hd720, includesTextSubtitleTracks: false
+        )
+        let destination = try storage.pinnedFileURL(for: saved)
+        let status = try await PlozziOSOfflineSubtitles.save(
+            record: saved, destination: destination, policy: .default,
+            provider: DownloadTrackProvider(kind: .jellyfin, sidecars: [try embeddedSubtitle()]), authorize: {},
+            resolve: { _ in XCTFail("Saved opt-out must be preserved"); throw AppError.invalidResponse }
+        )
+        XCTAssertEqual(status, .saved)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: destination.appendingPathExtension("subtitles.json").path))
+    }
+
+    func testEmbeddedSubtitleFailurePreservesSavedTracksAndCanBeRetried() async throws {
+        let storage = try temporaryStorage()
+        var saved = record()
+        saved.managedHTTPSource = .init(
+            provider: .emby, accountID: "emby", itemID: "episode", mediaSourceID: "selected", quality: .hd720
+        )
+        let destination = try storage.pinnedFileURL(for: saved)
+        try FileManager.default.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let video = Data([1, 2, 3])
+        try video.write(to: destination)
+        let oldTrack = MediaTrack(id: 9, kind: .subtitle, displayTitle: "Previously saved", language: "es")
+        try OfflineSubtitleStore.save([
+            .init(track: oldTrack, data: Data("1\n00:00:01,000 --> 00:00:02,000\nHola\n".utf8), format: "srt")
+        ], beside: destination)
+        let extracted = storage.root.appendingPathComponent("extracted.srt")
+        try Data("1\n00:00:01,000 --> 00:00:02,000\nHello\n".utf8).write(to: extracted)
+        let tracks = [try embeddedSubtitle(kind: .emby), try embeddedSubtitle(kind: .emby, id: 3, language: "fr")]
+        let provider = DownloadTrackProvider(kind: .emby, sidecars: tracks)
+        let partial = try await PlozziOSOfflineSubtitles.save(
+            record: saved, destination: destination, policy: .default, provider: provider, authorize: {},
+            resolve: { locator in
+                if locator.resource.path.contains("/3/") { throw URLError(.timedOut) }
+                return extracted
+            }
+        )
+        XCTAssertEqual(partial, .unavailable)
+        XCTAssertEqual(try OfflineSubtitleStore.files(beside: destination).map(\.language), ["en", "es"])
+        let retried = try await PlozziOSOfflineSubtitles.save(
+            record: saved, destination: destination, policy: .default, provider: provider, authorize: {},
+            resolve: { _ in extracted }
+        )
+        XCTAssertEqual(retried, .saved)
+        XCTAssertEqual(try OfflineSubtitleStore.files(beside: destination).map(\.language), ["en", "fr"])
+        XCTAssertEqual(try Data(contentsOf: destination), video)
+        XCTAssertEqual(saved.status, .completed)
+    }
+
+    func testEmbeddedSubtitleLocatorsCannotCrossDownloadIdentity() async throws {
+        let storage = try temporaryStorage()
+        var saved = record()
+        saved.managedHTTPSource = .init(
+            provider: .jellyfin, accountID: "emby", itemID: "episode", mediaSourceID: "selected", quality: .hd720
+        )
+        let destination = try storage.pinnedFileURL(for: saved)
+        try FileManager.default.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let locators = [
+            try embeddedSubtitle(accountID: "another-account"),
+            try embeddedSubtitle(itemID: "another-item"),
+            try embeddedSubtitle(sourceID: "another-source"),
+            try embeddedSubtitle(purpose: .mediaStream)
+        ]
+        let status = try await PlozziOSOfflineSubtitles.save(
+            record: saved, destination: destination, policy: .default,
+            provider: DownloadTrackProvider(kind: .jellyfin, sidecars: locators), authorize: {},
+            resolve: { _ in XCTFail("Mismatched identities must not be resolved"); throw AppError.invalidResponse }
+        )
+        XCTAssertEqual(status, .unavailable)
+        XCTAssertTrue(try OfflineSubtitleStore.files(beside: destination).isEmpty)
+    }
+
+    func testEmbeddedSubtitleExtractionCancellationDoesNotPublishPartialFiles() async throws {
+        let storage = try temporaryStorage()
+        var saved = record()
+        saved.managedHTTPSource = .init(
+            provider: .jellyfin, accountID: "emby", itemID: "episode", mediaSourceID: "selected", quality: .hd720
+        )
+        let destination = try storage.pinnedFileURL(for: saved)
+        do {
+            _ = try await PlozziOSOfflineSubtitles.save(
+                record: saved, destination: destination, policy: .default,
+                provider: DownloadTrackProvider(kind: .jellyfin, sidecars: [try embeddedSubtitle()]), authorize: {},
+                resolve: { _ in throw CancellationError() }
+            )
+            XCTFail("Cancellation must propagate")
+        } catch { XCTAssertTrue(error is CancellationError) }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: destination.appendingPathExtension("subtitles.json").path))
+    }
+
     func testExternalDownloadSubtitlesStayPlayableAfterTemporarySourcesDisappear() async throws {
         let storage = try temporaryStorage()
         var saved = record(versionID: "selected")
@@ -1092,6 +1311,7 @@ final class DownloadPresentationTests: XCTestCase {
             )
             defer { model.beginProfileTransition() }
             XCTAssertEqual(model.downloadQuality, .hd720)
+            if kind == .emby { model.maximumDownloadMegabitsPerSecond = 25 }
             for quality: DownloadQuality in [.original, .hd720] {
                 let item = MediaItem(
                     id: quality == .original ? "original" : "reduced", title: "Movie", kind: .movie,
@@ -1105,10 +1325,30 @@ final class DownloadPresentationTests: XCTestCase {
                 XCTAssertEqual(source.quality, quality)
                 XCTAssertEqual(source.provider, kind)
                 XCTAssertEqual(source.preferredAudioLanguages, ["fr"])
-                XCTAssertFalse(source.includesAllAudioTracks)
+                XCTAssertEqual(source.includesAllAudioTracks, (kind == .plex || kind == .emby) && quality != .original)
                 XCTAssertTrue(source.includesTextSubtitleTracks)
+                if kind == .plex || kind == .emby, quality != .original {
+                    XCTAssertEqual((record.localFileName as NSString).pathExtension, "mp4")
+                    XCTAssertFalse(source.requiresUncappedRenditionTransfer)
+                }
             }
         }
+    }
+
+    func testSilentEmbyVideoKeepsItsExistingDownloadTransport() async throws {
+        let model = makeModel(
+            registry: DownloadedMediaRegistry(store: InMemoryDownloadedMediaStore()),
+            storage: try temporaryStorage(), probe: ArtworkProbe(data: imageData()),
+            observer: StaticDownloadNetworkObserver(.unsatisfied), providerKind: .emby
+        )
+        defer { model.beginProfileTransition() }
+        let record = try await model.enqueue(
+            item: MediaItem(id: "silent", title: "Silent", kind: .movie, sourceAccountID: "account"),
+            provider: DownloadTrackProvider(kind: .emby, audioTracks: []), quality: .hd720)
+        let source = try XCTUnwrap(record.managedHTTPSource)
+        XCTAssertFalse(source.includesAllAudioTracks)
+        XCTAssertTrue(source.requiresUncappedRenditionTransfer)
+        XCTAssertEqual((record.localFileName as NSString).pathExtension, "movpkg")
     }
 
     func testActiveDownloadSummaryKeepsMetricsAndActionStableAsValuesChange() throws {
@@ -2003,7 +2243,7 @@ final class DownloadPresentationTests: XCTestCase {
                 if let posterProbe { return try await posterProbe.load(item) }
                 return poster
             },
-            managedURLResolver: { _, _, _ in throw CancellationError() },
+            managedURLResolver: { _, _, _, _ in throw CancellationError() },
             saveSubtitles: saveSubtitles
         )
     }
@@ -2018,6 +2258,25 @@ final class DownloadPresentationTests: XCTestCase {
                 title: id, kind: .episode, sourceAccountID: "emby", sourceItemID: id,
                 seriesTitle: "Show", seriesID: "show", seasonNumber: 1
             )
+        )
+    }
+
+    private func embeddedSubtitle(
+        kind: ProviderKind = .jellyfin, id: Int = 2, language: String = "en", format: String = "srt",
+        forced: Bool = false, hearingImpaired: Bool = false,
+        accountID: String = "emby", itemID: String = "episode", sourceID: String = "selected",
+        purpose: AuthenticatedHTTPResourcePurpose = .subtitle
+    ) throws -> MediaTrack {
+        let locator = try AuthenticatedHTTPPlaybackLocator(
+            provider: kind, accountID: accountID, credentialRevision: .init(),
+            itemID: itemID, mediaSourceID: sourceID, deliveryMode: .directFile,
+            formatHint: .init(container: format), purpose: purpose,
+            resource: .init(pathBase: .configuredBaseURL,
+                            path: "Videos/\(itemID)/\(sourceID)/Subtitles/\(id)/0/Stream.\(format)")
+        )
+        return MediaTrack(
+            id: id, kind: .subtitle, displayTitle: "Caption \(id)", language: language, codec: format,
+            isForced: forced, isHearingImpaired: hearingImpaired, deliverySource: .authenticatedHTTP(locator)
         )
     }
 
@@ -2062,6 +2321,10 @@ final class DownloadPresentationTests: XCTestCase {
 private struct DownloadTrackProvider: MediaProvider {
     let kind: ProviderKind
     var sidecars: [MediaTrack] = []
+    var audioTracks: [MediaTrack] = [
+        .init(id: 1, kind: .audio, displayTitle: "English", language: "en"),
+        .init(id: 2, kind: .audio, displayTitle: "French", language: "fr")
+    ]
     var session: UserSession {
         .init(
             server: .init(id: "fixture", name: "Fixture", baseURL: URL(string: "https://fixture.invalid")!, provider: kind),
@@ -2092,7 +2355,8 @@ private struct DownloadTrackProvider: MediaProvider {
         )
         return PlaybackRequest(
             item: MediaItem(id: itemID, title: "Movie", kind: .movie, sourceAccountID: "account"),
-            playbackSource: .authenticatedHTTP(locator), isTranscoding: forceTranscode,
+            playbackSource: .authenticatedHTTP(locator), audioTracks: audioTracks,
+            isTranscoding: forceTranscode,
             sourceFileName: "movie.mkv"
         )
     }

@@ -26,6 +26,38 @@ final class SettingsInteractionTests: XCTestCase {
         verifyNavigationRetention(directPresentation: false)
     }
 
+    func testSettingsClosePreservesNestedNativeBackNavigation() {
+        launchNavigation()
+        let open = app.buttons.matching(NSPredicate(
+            format: "label BEGINSWITH %@", "Settings for "
+        )).firstMatch
+        XCTAssertTrue(open.waitForExistence(timeout: 10))
+        open.tap()
+        let close = app.buttons["Close"]
+        XCTAssertTrue(close.wait(for: \.isHittable, toEqual: true, timeout: 5))
+        let playback = categoryButton("Playback")
+        reveal(playback, settingsMenu: true)
+        playback.tap()
+        let advanced = app.buttons["playback-advanced"]
+        reveal(advanced)
+        advanced.tap()
+        XCTAssertTrue(app.navigationBars["Advanced"].waitForExistence(timeout: 5))
+        let back = app.buttons["BackButton"].firstMatch
+        XCTAssertTrue(back.wait(for: \.isHittable, toEqual: true, timeout: 5), app.debugDescription)
+        capture("settings-native-nested-back")
+        back.tap()
+        XCTAssertTrue(app.navigationBars["Playback"].waitForExistence(timeout: 5))
+        if !close.exists {
+            XCTAssertTrue(back.isHittable)
+            back.tap()
+        }
+        XCTAssertTrue(close.wait(for: \.isHittable, toEqual: true, timeout: 5), app.debugDescription)
+        capture("settings-native-close")
+        close.tap()
+        XCTAssertTrue(open.wait(for: \.isHittable, toEqual: true, timeout: 5))
+        XCTAssertFalse(close.exists)
+    }
+
     func testTabletSidebarSwitchesCategoriesFromPushedSettingsPages() throws {
         try XCTSkipUnless(UIDevice.current.userInterfaceIdiom == .pad)
         launchNavigation(directPresentation: true)
@@ -2093,6 +2125,34 @@ final class SettingsInteractionTests: XCTestCase {
         ] + arguments
         app.launch()
         XCTAssertTrue(app.navigationBars["Playback"].waitForExistence(timeout: 5))
+    }
+
+    func testAutomaticVersionHelpLeavesTheSelectionUnchanged() {
+        launchPlayback()
+        let picker = app.buttons["playback-version-selection"]
+        reveal(picker, fullyVisible: true)
+        picker.tap()
+        app.buttons["Choose automatically"].tap()
+        let info = app.buttons["automatic-version-information"]
+        XCTAssertTrue(info.wait(for: \.isHittable, toEqual: true, timeout: 5))
+        XCTAssertGreaterThanOrEqual(info.frame.width, 44 - 0.01)
+        XCTAssertGreaterThanOrEqual(info.frame.height, 44 - 0.01)
+        XCTAssertFalse(picker.frame.intersects(info.frame), app.debugDescription)
+        capture("automatic-version-setting")
+        info.tap()
+        let help = app.alerts["How automatic selection works"]
+        XCTAssertTrue(help.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(help.staticTexts.matching(NSPredicate(
+            format: "label CONTAINS %@ AND label CONTAINS %@", "lower-bitrate HDR", "previous choice takes priority"
+        )).firstMatch.exists)
+        capture("automatic-version-examples")
+        help.buttons["Done"].tap()
+        XCTAssertTrue(help.waitForNonExistence(timeout: 5))
+        XCTAssertTrue(picker.label.contains("Choose automatically") || picker.value as? String == "Choose automatically")
+        picker.tap()
+        app.buttons["Ask every time"].tap()
+        XCTAssertTrue(info.waitForNonExistence(timeout: 5))
+        XCTAssertTrue(picker.label.contains("Ask every time") || picker.value as? String == "Ask every time")
     }
 
     func testCompactSkipDefaultsShowEffectiveValueAndNativeMenuChoices() {

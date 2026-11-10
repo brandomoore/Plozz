@@ -125,8 +125,9 @@ public final class PlaybackVersionChoiceModel {
             item = try await Self.resolvingAlternateInventories(in: item, provider: provider) {
                 self.owner == id && isCurrent()
             }
-            if !item.explicitSourceSelection {
-                item.selectedVersionID = nil
+            if !item.explicitSourceSelection
+                || (settings.settings.versionSelectionMode == .serverOrder && !item.explicitVersionSelection) {
+                item = item.selectingVersion(nil)
             }
         } else {
             return opened
@@ -134,17 +135,21 @@ public final class PlaybackVersionChoiceModel {
         try Task.checkCancellation()
         guard owner == id, isCurrent() else { throw CancellationError() }
         let versions = PlayerVersionSelection.versions(for: item)
-        guard versions.count > 1 else { return item }
+        guard versions.count > 1
+                || (settings.settings.versionSelectionMode == .serverOrder && !versions.isEmpty)
+        else { return item }
         let selectedID = DetailPlaybackSelection.preferredVersionID(
             for: item, versions: versions, versionOverride: nil,
-            preferences: preferences, capabilities: capabilities
+            preferences: preferences, capabilities: capabilities,
+            mode: settings.settings.versionSelectionMode ?? .automatic
         )
-        if settings.settings.versionSelectionMode == .automatic {
+        if let mode = settings.settings.versionSelectionMode, mode != .askEveryTime {
             guard let selectedID,
                   let selected = PlayerVersionSelection.selecting(
-                    selectedID, in: item, explicit: item.explicitSourceSelection
+                    selectedID, in: item, explicit: item.explicitSourceSelection,
+                    explicitVersion: item.explicitVersionSelection
                   ) else {
-                PlozzLog.playback.error("Could not resolve an automatic playback version.")
+                PlozzLog.playback.error("Could not resolve a playback version for the selected mode.")
                 throw AppError.invalidResponse
             }
             return selected
@@ -228,12 +233,13 @@ public final class PlaybackVersionChoiceModel {
             guard let preferences,
                   let id = DetailPlaybackSelection.preferredVersionID(
                     for: prompt.item, versions: prompt.versions, versionOverride: nil,
-                    preferences: preferences, capabilities: capabilities
+                    preferences: preferences, capabilities: capabilities, mode: mode
                   ),
                   let item = PlayerVersionSelection.selecting(
-                    id, in: prompt.item, explicit: prompt.item.explicitSourceSelection
+                    id, in: prompt.item, explicit: prompt.item.explicitSourceSelection,
+                    explicitVersion: prompt.item.explicitVersionSelection
                   ) else {
-                PlozzLog.playback.error("Could not resolve the first automatic playback version.")
+                PlozzLog.playback.error("Could not resolve the first playback version for the selected mode.")
                 finish(.failure(AppError.invalidResponse), owner: prompt.id)
                 return
             }

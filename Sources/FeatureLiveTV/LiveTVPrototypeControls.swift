@@ -156,15 +156,17 @@ struct PrototypeTouchBrowseToolbar: ToolbarContent {
     @Environment(\.horizontalSizeClass) private var sizeClass
 
     var body: some ToolbarContent {
-        ToolbarItemGroup(placement: .topBarLeading) {
+        ToolbarItem(placement: .cancellationAction) {
             if let cancelSelection {
-                Button("Cancel", action: cancelSelection)
+                Button("Cancel", systemImage: "xmark", action: cancelSelection)
             } else if !hasSidebar && !showsDirectory && !isSearching {
                 Button("Categories", systemImage: "chevron.backward", action: showCategories)
                     .labelStyle(.iconOnly)
                     .accessibilityIdentifier("live-tv-categories")
                     .disabled(isDisabled)
             }
+        }
+        ToolbarItemGroup(placement: .topBarLeading) {
             if (showsDirectory || hasSidebar) && !isSearching {
                 Menu {
                     Picker("Source", selection: Binding(
@@ -490,7 +492,7 @@ struct PrototypeSheetContent: View {
             #endif
             .toolbar {
                 #if os(iOS)
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItem(placement: .cancellationAction) {
                     Button("Close", systemImage: "xmark") { dismiss() }
                         .labelStyle(.iconOnly)
                         .accessibilityIdentifier("live-tv-close-sheet")

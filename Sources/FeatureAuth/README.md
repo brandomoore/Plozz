@@ -64,8 +64,9 @@ session persistence.
   20-point page insets and a 640-point content cap across the server flows.
   Welcome, Add Source, Silo, and IPTV page actions share `plozzPageActionLabel`
   inside native large buttons, including alternative sign-in methods.
-  The mobile navigation owner supplies top-leading Cancel at the modal root
-  and Back on subsequent steps. Silo and IPTV suppress their standalone
+  The mobile navigation owner supplies Cancel at the modal root and Back on
+  subsequent steps, using semantic cancellation placement and title-plus-symbol
+  labels so native bars can adapt their edge. Silo and IPTV suppress their standalone
   in-content cancellation when hosted in that flow; leaving a step cancels its
   authentication/import work. Plex preserves its selection-loss confirmation
   for both root Cancel and pushed Back.

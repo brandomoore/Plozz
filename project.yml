@@ -375,6 +375,7 @@ targets:
         UIRequiresFullScreen: false
         BGTaskSchedulerPermittedIdentifiers:
           - "$(PRODUCT_BUNDLE_IDENTIFIER).downloads.*"
+          - "$(PRODUCT_BUNDLE_IDENTIFIER).external-stream.*"
         # remote-notification lets CloudKit (CKSyncEngine) wake the app to pull
         # config changes pushed from another device on the same Apple ID.
         UIBackgroundModes:
@@ -557,6 +558,7 @@ targets:
         NSMotionUsageDescription: "Plozz uses device motion to follow your phone's landscape direction during playback."
         BGTaskSchedulerPermittedIdentifiers:
           - "$(PRODUCT_BUNDLE_IDENTIFIER).downloads.*"
+          - "$(PRODUCT_BUNDLE_IDENTIFIER).external-stream.*"
         UIBackgroundModes:
           - audio
           - processing

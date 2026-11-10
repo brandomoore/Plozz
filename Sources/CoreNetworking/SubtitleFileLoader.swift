@@ -3,9 +3,19 @@ import Foundation
 /// Bounded, uncached subtitle delivery. Credentials belong only to the resolved request.
 public struct SubtitleFileLoader: Sendable {
     private let session: URLSession
+    private let requestTimeout: TimeInterval
 
-    public init() { session = Self.subtitleSession }
-    init(session: URLSession) { self.session = session }
+    public init(allowsExtractionDelay: Bool = false) {
+        self.init(
+            session: allowsExtractionDelay ? Self.extractionSession : Self.subtitleSession,
+            allowsExtractionDelay: allowsExtractionDelay
+        )
+    }
+
+    init(session: URLSession, allowsExtractionDelay: Bool = false) {
+        self.session = session
+        requestTimeout = allowsExtractionDelay ? 120 : 30
+    }
 
     public func load(
         _ url: URL, maximumBytes: Int, allowsCellular: Bool, allowsConstrained: Bool,
@@ -23,7 +33,7 @@ public struct SubtitleFileLoader: Sendable {
         guard ["http", "https"].contains(url.scheme?.lowercased() ?? "") else {
             throw URLError(.unsupportedURL)
         }
-        var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 30)
+        var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: requestTimeout)
         request.allowsCellularAccess = allowsCellular
         request.allowsExpensiveNetworkAccess = allowsCellular
         request.allowsConstrainedNetworkAccess = allowsConstrained
@@ -48,15 +58,18 @@ public struct SubtitleFileLoader: Sendable {
         return data
     }
 
-    private static let subtitleSession: URLSession = {
+    private static let subtitleSession = makeSession(resourceTimeout: 60)
+    private static let extractionSession = makeSession(resourceTimeout: 120)
+
+    private static func makeSession(resourceTimeout: TimeInterval) -> URLSession {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.httpCookieStorage = nil
         configuration.httpShouldSetCookies = false
         configuration.urlCredentialStorage = nil
         configuration.urlCache = nil
-        configuration.timeoutIntervalForResource = 60
+        configuration.timeoutIntervalForResource = resourceTimeout
         return OfflineNetworkSession.make(configuration: configuration)
-    }()
+    }
 }
 
 private final class SubtitleRequestDelegate: NSObject, URLSessionTaskDelegate {

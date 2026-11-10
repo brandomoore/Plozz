@@ -147,7 +147,8 @@ public enum SettingsRowMetrics {
 /// FOCUSED state is the native tvOS "inverted card":
 /// - Dark mode focus: WHITE fill, BLACK foreground.
 /// - Light mode focus: BLACK fill, WHITE foreground.
-/// UNFOCUSED state is transparent and inherits normal foreground colors.
+/// UNFOCUSED state inherits normal foreground colors. Navigation rows own their
+/// resting settings surface; other row roles remain transparent.
 ///
 /// The highlight card normally bleeds slightly outward via negative padding;
 /// `.contained` keeps it within grouped-list row bounds. Content remains anchored
@@ -379,6 +380,11 @@ public struct SettingsFocusRow<Content: View>: View {
                         y: isFocused ? 6 : 0
                     )
             )
+            .background {
+                if effectiveSize == .navigation {
+                    Color.clear.settingsGroupSurface(cornerRadius: corner)
+                }
+            }
             .contentShape(Rectangle())
             // Primary foreground inverts on focus so untouched titles flip.
             // Explicit `.foregroundStyle(...)` on individual leaves (chips,

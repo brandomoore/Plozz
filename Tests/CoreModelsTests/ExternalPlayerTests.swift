@@ -64,6 +64,31 @@ final class ExternalPlayerTests: XCTestCase {
         XCTAssertEqual(query, [.init(name: "video", value: media.absoluteString), .init(name: "mode", value: "1")])
     }
 
+    func testFTPRequiresVLCAndExplicitShareOptInAndPreservesNestedPaths() throws {
+        let media = try XCTUnwrap(URL(string: "ftp://nas.test:2121//media/clip%2520%20%23.mp4"))
+        for player in ExternalPlayer.allCases {
+            XCTAssertFalse(ExternalPlayerURL.isSupportedMediaURL(media, player: player))
+            XCTAssertEqual(
+                ExternalPlayerURL.isSupportedMediaURL(media, player: player, allowPassword: true), player == .vlc
+            )
+        }
+        let link = try ExternalPlayerURL.make(
+            settings: .init(player: .vlc), mediaURL: media, title: "Movie", position: 0,
+            subtitles: [media], callbackScheme: "test", nonce: nonce, allowPassword: true
+        )
+        let query = try XCTUnwrap(URLComponents(url: link, resolvingAgainstBaseURL: false)?.queryItems)
+        XCTAssertEqual(query.first { $0.name == "url" }?.value, media.absoluteString)
+        XCTAssertEqual(query.first { $0.name == "sub" }?.value, media.absoluteString)
+        for scheme in ["ftps", "smb", "nfs", "sftp"] {
+            XCTAssertFalse(ExternalPlayerURL.isSupportedMediaURL(
+                URL(string: "\(scheme)://nas.test/media/movie.mp4")!, player: .vlc, allowPassword: true
+            ))
+        }
+        XCTAssertFalse(ExternalPlayerURL.isSupportedMediaURL(
+            URL(string: "ftp://127.0.0.1//movie.mp4")!, player: .vlc, allowPassword: true
+        ))
+    }
+
     func testInvalidCustomTemplatesFailClosed() {
         for template in [
             "", "testplayer://play", "testplayer://{url}/{url}", "testplayer://{url}/{title}",
@@ -88,6 +113,95 @@ final class ExternalPlayerTests: XCTestCase {
         XCTAssertTrue(ExternalPlayerURL.isSupportedMediaURL(URL(string: "http://192.168.1.2/video")!))
     }
 
+    func testPasswordLinksRequireExplicitOptInAndAKnownPlayer() throws {
+        var source = try XCTUnwrap(URLComponents(url: media, resolvingAgainstBaseURL: false))
+        source.user = "fixture"
+        source.password = "synthetic"
+        let authenticated = try XCTUnwrap(source.url)
+        for player in ExternalPlayer.allCases {
+            XCTAssertFalse(ExternalPlayerURL.isSupportedMediaURL(authenticated, player: player))
+            let supported = [ExternalPlayer.nativePlayer, .infuse, .vlc].contains(player)
+            XCTAssertEqual(
+                ExternalPlayerURL.isSupportedMediaURL(authenticated, player: player, allowPassword: true), supported
+            )
+            if supported {
+                let link = try ExternalPlayerURL.make(
+                    settings: .init(player: player), mediaURL: authenticated, title: "Movie", position: 0,
+                    subtitles: [authenticated], callbackScheme: "test", nonce: nonce, allowPassword: true
+                )
+                let query = try XCTUnwrap(URLComponents(url: link, resolvingAgainstBaseURL: false)?.queryItems)
+                XCTAssertEqual(query.first { $0.name == "url" }?.value, authenticated.absoluteString)
+                XCTAssertEqual(query.first { $0.name == "sub" }?.value, authenticated.absoluteString)
+                for callback in query.filter({ $0.name.hasPrefix("x-") }) {
+                    XCTAssertFalse(callback.value?.contains("synthetic") ?? true)
+                }
+            } else {
+                XCTAssertThrowsError(try ExternalPlayerURL.make(
+                    settings: .init(player: player, customURLTemplate: "player://play?url={url}"),
+                    mediaURL: authenticated, title: "Movie", position: 0,
+                    callbackScheme: "test", nonce: nonce, allowPassword: true
+                ))
+            }
+        }
+        source.password = nil
+        XCTAssertFalse(ExternalPlayerURL.isSupportedMediaURL(try XCTUnwrap(source.url), allowPassword: true))
+        source.password = "synthetic"
+        source.host = "127.0.0.1"
+        XCTAssertFalse(ExternalPlayerURL.isSupportedMediaURL(try XCTUnwrap(source.url), allowPassword: true))
+    }
+
+    func testPasswordPunctuationIsNotOverencodedInsideTheNestedURL() throws {
+        let password = "fixture+&=!$'()*,;"
+        var source = try XCTUnwrap(URLComponents(url: media, resolvingAgainstBaseURL: false))
+        source.user = "fixture"
+        source.password = password
+        XCTAssertEqual(source.percentEncodedPassword, password)
+        let authenticated = try XCTUnwrap(source.url)
+        for player in [ExternalPlayer.nativePlayer, .infuse, .vlc] {
+            let link = try ExternalPlayerURL.make(
+                settings: .init(player: player), mediaURL: authenticated, title: "Movie", position: 0,
+                subtitles: [authenticated], callbackScheme: "test", nonce: nonce, allowPassword: true
+            )
+            let query = try XCTUnwrap(URLComponents(url: link, resolvingAgainstBaseURL: false)?.queryItems)
+            for name in ["url", "sub"] {
+                let nested = try XCTUnwrap(query.first { $0.name == name }?.value)
+                XCTAssertEqual(nested, authenticated.absoluteString)
+                XCTAssertEqual(URLComponents(string: nested)?.percentEncodedPassword, password)
+            }
+        }
+        source.percentEncodedPassword = "fixture:secret"
+        let rawColon = try XCTUnwrap(source.url)
+        for player in [ExternalPlayer.nativePlayer, .infuse] {
+            XCTAssertFalse(ExternalPlayerURL.isSupportedMediaURL(rawColon, player: player, allowPassword: true))
+        }
+    }
+
+    func testIncompatiblePasswordsAreNotSentToPlayersThatRejectThem() throws {
+        for password in [
+            "fixture:secret", "fixture@secret", "fixture/secret", "fixture?secret",
+            "fixture#secret", "fixture%secret", "fixtur\u{e9}"
+        ] {
+            var source = try XCTUnwrap(URLComponents(url: media, resolvingAgainstBaseURL: false))
+            source.user = "fixture"
+            source.password = password
+            let url = try XCTUnwrap(source.url)
+            if !password.contains(":") {
+                XCTAssertNotEqual(source.password, source.percentEncodedPassword)
+            }
+            for player in [ExternalPlayer.nativePlayer, .infuse, .vlc] {
+                XCTAssertEqual(
+                    ExternalPlayerURL.isSupportedMediaURL(url, player: player, allowPassword: true), player == .vlc
+                )
+                if player != .vlc {
+                    XCTAssertThrowsError(try ExternalPlayerURL.make(
+                        settings: .init(player: player), mediaURL: url, title: "Movie", position: 0,
+                        callbackScheme: "test", nonce: nonce, allowPassword: true
+                    ))
+                }
+            }
+        }
+    }
+
     func testInvalidResumePositionsAreRejected() {
         for position in [Double.nan, .infinity, -1, Double(Int.max)] {
             XCTAssertThrowsError(try ExternalPlayerURL.make(
@@ -95,6 +209,28 @@ final class ExternalPlayerTests: XCTestCase {
                 position: position, callbackScheme: "test", nonce: nonce
             ))
         }
+    }
+
+    func testDASHIsHandedToVLCWithoutRelaxingURLSecurityChecks() throws {
+        let manifest = URL(string: "https://server.test/movie.MPD?token=synthetic")!
+        for player in ExternalPlayer.allCases {
+            XCTAssertEqual(ExternalPlayerURL.isSupportedMediaURL(manifest, player: player), player == .vlc)
+            for value in ["file:///movie.mpd", "http://127.0.0.1/movie.mpd", "https://user:password@server.test/movie.mpd"] {
+                XCTAssertFalse(ExternalPlayerURL.isSupportedMediaURL(URL(string: value)!, player: player))
+            }
+        }
+        let link = try ExternalPlayerURL.make(
+            settings: .init(player: .vlc), mediaURL: manifest, title: "Movie",
+            position: 0, callbackScheme: "test", nonce: nonce
+        )
+        XCTAssertEqual(
+            URLComponents(url: link, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "url" }?.value,
+            manifest.absoluteString
+        )
+        XCTAssertThrowsError(try ExternalPlayerURL.make(
+            settings: .init(player: .infuse), mediaURL: manifest, title: "Movie",
+            position: 0, callbackScheme: "test", nonce: nonce
+        ))
     }
 
     func testOldAndFutureSettingsPreserveOtherPreferencesAndDefaultToPlozz() throws {

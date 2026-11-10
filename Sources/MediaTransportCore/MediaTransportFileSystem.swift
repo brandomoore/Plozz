@@ -77,6 +77,14 @@ public protocol MediaTransportFileSystem: MediaTransportBrowsing {
     func openSource(for locator: NetworkFileLocator) async throws -> MediaTransportSourceLease
 }
 
+/// An explicit, bounded handoff that preserves the locator's identity and proves
+/// the player can fetch the URL without app-owned cookies, trust overrides or a
+/// local relay. A supported player may receive the share's password in the URL.
+/// Returned URLs may contain credentials or grants; never persist or log them.
+public protocol MediaTransportExternalPlaybackFileSystem: MediaTransportFileSystem {
+    func externalPlaybackURL(for locator: NetworkFileLocator, player: ExternalPlayer) async throws -> URL
+}
+
 /// Explicit opt-in to bounded, source-lease preparation. Implementations
 /// must honor cancellation, bound their I/O and memory, and return an unclaimed
 /// lease (no cursor), preserving its validation and persistent-reuse policy.

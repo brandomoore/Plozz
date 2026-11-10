@@ -400,6 +400,12 @@ public extension StreamingQualityProviding {
     var streamingQualitySupport: StreamingQualitySupport { .standard }
 }
 
+/// Session cleanup that can survive an app handoff without persisting media
+/// URLs or reconstructing a playback request.
+public protocol StreamingSessionReleasing: StreamingQualityProviding {
+    func releaseStreamingSession(id: String) async
+}
+
 /// Opt-in maintenance of an already-started server rendition, including while paused.
 public protocol StreamingSessionMaintaining: MediaProvider {
     func maintainStreamingSession(_ request: PlaybackRequest) async throws

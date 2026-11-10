@@ -13,6 +13,172 @@ import XCTest
 
 @MainActor
 final class PlayerSongLayoutPreviewTests: XCTestCase {
+    func testSongServiceChooserShowsReadableNativeServiceRows() async throws {
+        let deadline = ContinuousClock.now + .seconds(5)
+        while !UIApplication.shared.connectedScenes.contains(where: { $0.activationState == .foregroundActive }),
+              ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        defer { previous?.makeKeyAndVisible() }
+        let song = SongMatch(
+            title: "Six Days (feat. Mos Def) [Remix]", artist: "DJ Shadow", artworkURL: nil,
+            appleMusicURL: URL(string: "https://music.apple.com/album/example?i=123")
+        )
+        for (name, palette, reduced) in [
+            ("dark", ThemePalette.dark, false), ("light", .light, false), ("opaque", .pureBlack, true)
+        ] {
+            let window = UIWindow(windowScene: scene)
+            window.overrideUserInterfaceStyle = palette.isLight ? .light : .dark
+            let host = UIHostingController(rootView: SongServiceSheetPreview(song: song)
+                .environment(\.themePalette, palette)
+                .environment(\.colorScheme, palette.isLight ? .light : .dark)
+                .environment(\.plozzReduceTransparency, reduced)
+                .environment(\.plozzReducePanelGlass, reduced)
+                .environment(\.locale, Locale(identifier: "en_US")))
+            window.rootViewController = host
+            window.makeKeyAndVisible()
+            defer {
+                host.dismiss(animated: false)
+                window.isHidden = true
+                window.rootViewController = nil
+            }
+            let presentationDeadline = ContinuousClock.now + .seconds(5)
+            while host.presentedViewController == nil, ContinuousClock.now < presentationDeadline {
+                try await Task.sleep(for: .milliseconds(20))
+            }
+            XCTAssertNotNil(host.presentedViewController)
+            try await Task.sleep(for: .milliseconds(700))
+            window.layoutIfNeeded()
+            let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+                XCTAssertTrue(window.drawHierarchy(in: window.bounds, afterScreenUpdates: true))
+            }
+            let attachment = XCTAttachment(image: image)
+            attachment.name = "song-service-picker-\(name)"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+            let request = VNRecognizeTextRequest()
+            request.recognitionLevel = .accurate
+            request.recognitionLanguages = ["en-US"]
+            try VNImageRequestHandler(cgImage: XCTUnwrap(image.cgImage)).perform([request])
+            let observations = request.results ?? []
+            let text = observations.compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ")
+            let serviceTitles = ["Search Spotify", "Apple Music", "Search YouTube Music",
+                                 "Search Amazon Music", "Search Deezer", "Search TIDAL"]
+            for label in ["Open song", "Six Days", "DJ Shadow"] + serviceTitles {
+                XCTAssertTrue(text.contains(label), "\(name): keep \(label) visible and readable: \(text)")
+                let frame = try XCTUnwrap(observations.first {
+                    $0.topCandidates(1).first?.string.contains(label) == true
+                }?.boundingBox)
+                try assertSongTextContrast(in: XCTUnwrap(image.cgImage), normalizedFrame: frame,
+                                          message: "\(name): \(label)")
+            }
+            let serviceFrames = try serviceTitles.map { title in
+                try XCTUnwrap(observations.first { $0.topCandidates(1).first?.string.contains(title) == true }?.boundingBox)
+            }
+            for (previous, next) in zip(serviceFrames, serviceFrames.dropFirst()) {
+                XCTAssertGreaterThan(previous.minY, next.maxY,
+                                     "Keep services in popularity order with a separate full-width row for each.")
+            }
+            #if os(tvOS)
+            let heading = try XCTUnwrap(observations.first {
+                $0.topCandidates(1).first?.string == "Open song"
+            }?.boundingBox)
+            XCTAssertLessThanOrEqual(heading.height * window.bounds.height,
+                                    UIFont.systemFont(ofSize: 38, weight: .semibold).lineHeight,
+                                    "Use the compact detail-dialog heading rather than a page-sized title.")
+            #endif
+        }
+    }
+
+    func testSongServiceRowsWrapForLargeTextWithoutAnAppleMusicLink() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        defer { previous?.makeKeyAndVisible() }
+        let song = SongMatch(title: "A long song title with a remix and featured performers",
+                             artist: "An artist with a long name", artworkURL: nil, appleMusicURL: nil)
+        XCTAssertEqual(SongServiceLink.links(for: song).map(\.service),
+                       [.spotify, .youtubeMusic, .amazonMusic, .deezer, .tidal])
+        for size in [DynamicTypeSize.large, .accessibility2] {
+            #if os(tvOS)
+            let width: CGFloat = 740
+            #else
+            let width: CGFloat = 320
+            #endif
+            let window = UIWindow(windowScene: scene)
+            window.overrideUserInterfaceStyle = .dark
+            let host = UIHostingController(rootView:
+                SongServiceChooserContent(song: song, phoneLink: nil, select: { _ in })
+                    .frame(width: width)
+                    .padding(24)
+                    .background(Color.black)
+                    .environment(\.colorScheme, .dark)
+                    .environment(\.themePalette, .dark)
+                    .environment(\.dynamicTypeSize, size)
+                    .environment(\.locale, Locale(identifier: "en_US"))
+            )
+            host.safeAreaRegions = []
+            window.rootViewController = host
+            window.makeKeyAndVisible()
+            defer { window.isHidden = true; window.rootViewController = nil }
+            let fitted = host.sizeThatFits(in: CGSize(width: width + 48, height: .greatestFiniteMagnitude))
+            window.frame = CGRect(origin: .zero, size: fitted)
+            host.view.frame = window.bounds
+            window.layoutIfNeeded()
+            try await Task.sleep(for: .milliseconds(500))
+            let format = UIGraphicsImageRendererFormat()
+            format.scale = 2
+            let captured = UIGraphicsImageRenderer(bounds: window.bounds, format: format).image { _ in
+                XCTAssertTrue(window.drawHierarchy(in: window.bounds, afterScreenUpdates: true))
+            }
+            let image = try XCTUnwrap(captured.cgImage)
+            let attachment = XCTAttachment(image: captured)
+            attachment.name = "song-service-picker-wrapping-\(size)"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+            let request = VNRecognizeTextRequest()
+            request.recognitionLevel = .accurate
+            request.recognitionLanguages = ["en-US"]
+            request.customWords = song.title.components(separatedBy: " ")
+            try VNImageRequestHandler(cgImage: image).perform([request])
+            let text = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }
+                .joined(separator: " ").replacingOccurrences(of: "- ", with: "")
+            XCTAssertTrue(text.contains(song.title), text)
+            XCTAssertTrue(text.contains(try XCTUnwrap(song.artist)), text)
+            for title in ["Search Spotify", "Search YouTube Music", "Search Amazon Music", "Search Deezer", "Search TIDAL"] {
+                XCTAssertTrue(text.contains(title), text)
+            }
+        }
+    }
+
+    private func assertSongTextContrast(in image: CGImage, normalizedFrame: CGRect, message: String) throws {
+        let rect = CGRect(x: normalizedFrame.minX * CGFloat(image.width),
+                          y: normalizedFrame.minY * CGFloat(image.height),
+                          width: normalizedFrame.width * CGFloat(image.width),
+                          height: normalizedFrame.height * CGFloat(image.height)).integral
+        let width = Int(rect.width)
+        let height = Int(rect.height)
+        XCTAssertGreaterThan(width * height, 0)
+        guard width * height > 0 else { return }
+        var pixels = [UInt8](repeating: 0, count: width * height * 4)
+        pixels.withUnsafeMutableBytes {
+            CIContext().render(CIImage(cgImage: image), toBitmap: $0.baseAddress!, rowBytes: width * 4,
+                               bounds: rect, format: .RGBA8, colorSpace: CGColorSpace(name: CGColorSpace.sRGB))
+        }
+        func linear(_ byte: UInt8) -> Double {
+            let value = Double(byte) / 255
+            return value <= 0.04045 ? value / 12.92 : pow((value + 0.055) / 1.055, 2.4)
+        }
+        let luminances = stride(from: 0, to: pixels.count, by: 4).map {
+            0.2126 * linear(pixels[$0]) + 0.7152 * linear(pixels[$0 + 1]) + 0.0722 * linear(pixels[$0 + 2])
+        }.sorted()
+        let contrast = (luminances[luminances.count * 95 / 100] + 0.05)
+            / (luminances[luminances.count * 5 / 100] + 0.05)
+        XCTAssertGreaterThanOrEqual(contrast, 3, message)
+    }
+
     func testLinkedSongCardMatchesPanelSurfaceAndCorners() async throws {
         let presentationDeadline = ContinuousClock.now + .seconds(5)
         while !UIApplication.shared.connectedScenes.contains(where: { $0.activationState == .foregroundActive }),
@@ -621,6 +787,20 @@ final class PlayerSongLayoutPreviewTests: XCTestCase {
         return Array(items.values)
     }
     #endif
+}
+
+private struct SongServiceSheetPreview: View {
+    let song: SongMatch
+    @State private var isPresented = false
+
+    var body: some View {
+        Color.gray.opacity(0.2)
+            .ignoresSafeArea()
+            .plozzSheet(isPresented: $isPresented, style: SongServiceChooser.presentationStyle) {
+                SongServiceChooser(song: song)
+            }
+            .task { isPresented = true }
+    }
 }
 
 @MainActor

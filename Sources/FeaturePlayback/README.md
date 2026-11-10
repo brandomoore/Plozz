@@ -117,9 +117,40 @@ bounded language-match/accessibility flags without track titles or URLs.
   song. The visible panel allows focus lift/shadow overflow, while the parked
   panel still clips its shadow. Song titles and artists wrap rather than
   truncating to fixed line counts. Mobile retains the shared Info panel surface.
-  Selecting a song offers its exact Apple Music link (when supplied), a Spotify
-  search, or a YouTube search. Searches use the title and artist, not inferred
-  service track IDs, and need no catalog API or account connection. TV attempts
+  Selecting a song offers Spotify, Apple Music, YouTube Music, Amazon Music,
+  Deezer, and TIDAL, in that order. Apple Music uses the exact recognition link
+  when supplied and is omitted otherwise; the other services search by title and
+  artist. YouTube Music replaces regular YouTube. The first four follow global
+  music subscription shares in
+  [MIDiA's Q4 2025 report](https://www.midiaresearch.com/blog/music-subscriber-market-shares-q4-2025-the-chess-board-is-set)
+  (published June 2026). Deezer and TIDAL follow as smaller services; that public
+  chart does not rank them individually. This is a static approximate popularity
+  order, not a live or country-specific ranking.
+  The chooser pairs album artwork with wrapping song
+  metadata above full-width native service buttons, rather than inline text links.
+  TV uses a compact floating card with scroll fallback, the shared detail-dialog
+  heading, and extra space around song metadata; iPhone/iPad use an inline
+  navigation title and native sheet sizing. All service rows use an external-open
+  accessory. Bundled monochrome service marks inherit
+  the native control's contrast. Apple Music, Spotify, YouTube Music, Deezer, and
+  TIDAL marks come from
+  [Simple Icons](https://github.com/simple-icons/simple-icons/tree/1bb2f6e6ea50f920de8d2f3d273ae48564a5eaee/icons)
+  under CC0 (see `Resources/SongServiceIconsLicense.txt`); trademarks remain their
+  owners' property. Amazon Music uses a generic system music-note symbol:
+  [Simple Icons removed Amazon assets pending permission](https://github.com/simple-icons/simple-icons/pull/13056).
+  Searches use the title and artist, not inferred service track IDs, and need no
+  catalog API or account connection in Plozz. The destinations are public HTTPS
+  search routes, not an in-app streaming integration; playback on those services
+  may require an account or subscription. YouTube Music's
+  [OpenSearch template](https://music.youtube.com/opensearch?locale=en_US)
+  uses `search?q=`, while Spotify, Amazon Music, Deezer, and TIDAL use an encoded
+  path component. Deezer publishes its
+  [OpenSearch template](https://cdn-files.dzcdn.net/xml/opensearch.xml);
+  Amazon Music and TIDAL's path routes are also listed in
+  [DuckDuckGo's public search shortcuts](https://duckduckgo.com/bang.js).
+  TIDAL redirects `listen.tidal.com` to `tidal.com`; its anti-bot page prevents
+  automated end-to-end search verification. No third-party native-app handoff is
+  guaranteed. TV attempts
   an installed universal-link handler; if unavailable, it shows a locally
   generated QR code for the selected service. App routing depends on that app's
   supported links. The chooser retains the selected song if recognition expires.
@@ -160,9 +191,17 @@ bounded language-match/accessibility flags without track titles or URLs.
 - **Native-only video assets** — when that engine is selected, tvOS feeds the resolved URL directly to
   AVPlayer even when sidecars are available. Track menus still use provider
   tracks; the owned overlay authorizes and fetches selected SRT/WebVTT sidecars.
-  Embedded captions retain native cue extraction. iOS keeps the existing
-  `SubtitleHLSComposer` / `SubtitleInjectingResourceLoader` path; real provider
-  HLS, trailer audio composition, and Plozzigen are unchanged.
+  Embedded captions retain native cue extraction. Local files on every platform
+  also keep their original asset, preserving selectable audio and saved captions
+  through the owned overlay. Injecting a local MP4 into the HLS wrapper is not a
+  supported file-delivery route and can prevent playback entirely. iOS retains
+  `SubtitleHLSComposer` / `SubtitleInjectingResourceLoader` for remote non-HLS
+  sources; real provider HLS, trailer audio composition, and Plozzigen are unchanged.
+  Saved sidecars use the in-app overlay, not native PiP/AirPlay caption injection.
+  When a local asset has no provider audio inventory, the native engine discovers
+  its audible selection group asynchronously and updates the existing track menu.
+  Selection uses the exact local option index, including unnamed and same-language
+  tracks; preferred-language startup selection and teardown remain item-scoped.
 - **Trickplay scrubbing** — `ScrubGeometry`, `ScrubThumbnailProviding`,
   `TrickplayThumbnailLoader`, `PlexBIFThumbnailLoader`: focus-driven
   scrub bar with per-provider thumbnail loaders (Jellyfin "trickplay"

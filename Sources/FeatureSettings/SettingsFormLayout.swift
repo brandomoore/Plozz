@@ -104,9 +104,7 @@ private struct SettingsFormRow: View {
             VStack(alignment: .leading, spacing: SettingsFormMetrics.relatedControlSpacing) {
                 SettingsControlGroup { row.detail() }
                 if let description = row.description {
-                    description
-                        .settingsHelperText()
-                        .fixedSize(horizontal: false, vertical: true)
+                    SettingsRowDescription(text: description, accessory: row.descriptionAccessory)
                         .padding(.horizontal, SettingsFormMetrics.headingInset)
                 }
             }
@@ -124,6 +122,7 @@ private struct SettingsFormRow: View {
         } else {
             SettingsFormGroup(
                 title: row.title, description: row.description,
+                descriptionAccessory: row.descriptionAccessory,
                 illustrated: row.hasIllustratedContent, hasGroupedContent: row.hasGroupedContent
             ) {
                 row.detail()
@@ -136,6 +135,7 @@ private struct SettingsFormRow: View {
 struct SettingsFormGroup<Content: View>: View {
     let title: Text
     var description: Text?
+    var descriptionAccessory: AnyView?
     var illustrated = false
     var hasGroupedContent = false
     @ViewBuilder var content: () -> Content
@@ -152,9 +152,7 @@ struct SettingsFormGroup<Content: View>: View {
                 SettingsControlGroup(illustrated: illustrated, content: content)
             }
             if let description {
-                description
-                    .settingsHelperText()
-                    .fixedSize(horizontal: false, vertical: true)
+                SettingsRowDescription(text: description, accessory: descriptionAccessory)
                     .padding(.horizontal, SettingsFormMetrics.headingInset)
             }
         }
@@ -230,7 +228,6 @@ private struct SettingsFormLinkLabel: View {
         .padding(.horizontal, SettingsFormMetrics.headingInset)
         .padding(.vertical, 20)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .settingsGroupSurface(cornerRadius: SettingsRowMetrics.navigationCornerRadius)
     }
 }
 
@@ -274,8 +271,7 @@ private struct SettingsFormRowContent: View {
                     .environment(\.settingsPageBackButton, nil)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 if let description = row.description {
-                    description.settingsHelperText()
-                        .fixedSize(horizontal: false, vertical: true)
+                    SettingsRowDescription(text: description, accessory: row.descriptionAccessory)
                         .padding(.horizontal, SettingsFormMetrics.headingInset)
                 }
             }

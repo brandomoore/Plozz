@@ -64,6 +64,11 @@ public struct MediaCapabilities: Sendable, Equatable {
     /// source-profile handling, including its optional dual-layer decoding.
     public var supportsDolbyVision: Bool
 
+    /// OS-reported eligibility for HDR presentation, not a particular HDR format
+    /// or the current output signal. Nil lets injected profiles use their HDR
+    /// flags. Selection uses this without changing provider negotiation policy.
+    public var isHDRPlaybackEligible: Bool?
+
     // MARK: Audio output
 
     /// Maximum output channel count the current audio route advertises (e.g. 2
@@ -83,7 +88,8 @@ public struct MediaCapabilities: Sendable, Equatable {
         supportsDolbyVision: Bool = false,
         maxOutputChannels: Int = 2,
         supportsAtmos: Bool = false,
-        supportsDTSPassthrough: Bool = false
+        supportsDTSPassthrough: Bool = false,
+        isHDRPlaybackEligible: Bool? = nil
     ) {
         self.supportsHEVC = supportsHEVC
         self.supportsAV1 = supportsAV1
@@ -93,6 +99,7 @@ public struct MediaCapabilities: Sendable, Equatable {
         self.maxOutputChannels = max(2, maxOutputChannels)
         self.supportsAtmos = supportsAtmos
         self.supportsDTSPassthrough = supportsDTSPassthrough
+        self.isHDRPlaybackEligible = isHDRPlaybackEligible
     }
 
     /// A conservative profile used where the hardware can't be probed (Linux CI,
@@ -203,10 +210,11 @@ extension MediaCapabilities {
 extension MediaCapabilities {
     /// Probes the real hardware where possible and returns a populated profile.
     ///
-    /// Video decode is probed via VideoToolbox (`VTIsHardwareDecodeSupported`);
-    /// HDR display support tracks HEVC hardware decode (every Apple TV 4K that
-    /// decodes HEVC also drives HDR10/HLG/Dolby Vision over HDMI). Audio output
-    /// is a best-effort read of the current `AVAudioSession` route. On platforms
+    /// Video decode is probed via VideoToolbox (`VTIsHardwareDecodeSupported`).
+    /// Legacy per-format HDR input flags track HEVC hardware decode, not the
+    /// display mode. Selection additionally checks AVPlayer's generic HDR
+    /// eligibility without changing provider profiles. Audio output is a
+    /// best-effort read of the current `AVAudioSession` route. On platforms
     /// without these frameworks (Linux/CI) it returns ``default``.
     public static func detected() -> MediaCapabilities {
         var caps = MediaCapabilities.default
@@ -219,10 +227,14 @@ extension MediaCapabilities {
         } else {
             caps.supportsAV1 = false
         }
-        // HDR signalling over HDMI is gated on the same HEVC-capable pipeline.
+        // Preserve the legacy provider-profile estimate, not proof of HDR output.
         caps.supportsHDR10 = hevc
         caps.supportsHLG = hevc
         caps.supportsDolbyVision = hevc
+        #endif
+
+        #if canImport(AVFoundation) && (os(iOS) || os(tvOS) || os(macOS) || os(visionOS))
+        caps.isHDRPlaybackEligible = AVPlayer.eligibleForHDRPlayback
         #endif
 
         #if canImport(AVFoundation) && (os(iOS) || os(tvOS) || os(watchOS) || os(visionOS))

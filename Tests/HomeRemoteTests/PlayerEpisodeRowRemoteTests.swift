@@ -45,26 +45,50 @@ final class PlayerEpisodeRowRemoteTests: XCTestCase {
         XCUIRemote.shared.press(.select)
         let spotify = app.buttons["song-service-spotify"]
         XCTAssertTrue(spotify.waitForExistence(timeout: 5))
-        // The native sheet begins on its leading service action.
+        // Service actions are a vertical native menu below the song header.
         for _ in 0..<5 {
             if spotify.hasFocus { break }
-            XCUIRemote.shared.press(.right)
+            XCUIRemote.shared.press(.down)
         }
         focused(spotify)
         XCUIRemote.shared.press(.select)
         XCTAssertTrue(app.staticTexts["This app couldn’t open the link. Scan with your phone."].waitForExistence(timeout: 5))
-        Thread.sleep(forTimeInterval: 0.8)
-        let image = try XCTUnwrap(app.screenshot().image.cgImage)
-        let detector = try XCTUnwrap(CIDetector(
-            ofType: CIDetectorTypeQRCode, context: CIContext(options: [.useSoftwareRenderer: true]),
-            options: [CIDetectorAccuracy: CIDetectorAccuracyHigh]
-        ))
-        XCTAssertEqual((detector.features(in: CIImage(cgImage: image)).first as? CIQRCodeFeature)?.messageString,
-                       "https://open.spotify.com/search/Test%20song%20Test%20artist")
+        try assertSongPhoneLink("https://open.spotify.com/search/Test%20song%20Test%20artist", in: app)
+        for service in ["appleMusic", "youtubeMusic", "amazonMusic", "deezer", "tidal"] {
+            XCUIRemote.shared.press(.down)
+            let button = app.buttons["song-service-\(service)"]
+            focused(button)
+            XCTAssertTrue(button.isHittable, "The expanded list must keep \(service) reachable.")
+        }
+        XCUIRemote.shared.press(.select)
+        try assertSongPhoneLink("https://listen.tidal.com/search/Test%20song%20Test%20artist", in: app)
         XCUIRemote.shared.press(.menu)
         XCTAssertTrue(app.buttons["Info"].waitForExistence(timeout: 5))
         XCUIRemote.shared.press(.down)
         focused(app.buttons["Restart"])
+    }
+
+    private func assertSongPhoneLink(_ url: String, in app: XCUIApplication) throws {
+        let detector = try XCTUnwrap(CIDetector(
+            ofType: CIDetectorTypeQRCode, context: CIContext(options: [.useSoftwareRenderer: true]),
+            options: [CIDetectorAccuracy: CIDetectorAccuracyHigh]
+        ))
+        let deadline = ContinuousClock.now + .seconds(10)
+        var decoded: String?
+        repeat {
+            let screenshot = app.screenshot()
+            let image = try XCTUnwrap(screenshot.image.cgImage)
+            decoded = (detector.features(in: CIImage(cgImage: image)).first as? CIQRCodeFeature)?.messageString
+            if decoded == url {
+                let capture = XCTAttachment(screenshot: screenshot)
+                capture.name = "Song service phone fallback \(try XCTUnwrap(URL(string: url)?.host))"
+                capture.lifetime = .keepAlways
+                add(capture)
+                break
+            }
+            Thread.sleep(forTimeInterval: 0.1)
+        } while ContinuousClock.now < deadline
+        XCTAssertEqual(decoded, url)
     }
 
     private func assertSongFocusOverflows(_ bounds: CGRect, before: UIImage, after: UIImage) throws {

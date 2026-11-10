@@ -596,7 +596,7 @@ struct PlaybackDetailView: View {
         [
             SettingsSplitRow(
                 id: "version-selection", title: "Version selection",
-                description: "Ask before each multi-version video, including autoplay, or choose automatically without opening the version picker."
+                description: "Ask each time, let Plozz choose, or use the server's first version."
             ) {
                 #if os(tvOS)
                 SettingsControlRows {
@@ -616,6 +616,12 @@ struct PlaybackDetailView: View {
                 }
                 #else
                 PlaybackVersionPreferencePicker(model: playback)
+                #endif
+            }.descriptionAccessory {
+                #if os(tvOS)
+                return AnyView(AutomaticVersionInfoButton())
+                #else
+                return nil
                 #endif
             },
             SettingsSplitRow(

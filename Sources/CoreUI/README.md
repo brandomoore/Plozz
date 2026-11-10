@@ -79,6 +79,13 @@ Mobile full-width page actions use `plozzPageActionLabel()` inside a native
 not sizing. On iOS 26, disabled page actions use the same native glass treatment
 as secondary actions instead of a separate prominent-button outline.
 Toolbar actions and native form rows retain their system metrics.
+Mobile Back, Close, and Cancel toolbar actions use `cancellationAction` placement
+and a localized title plus symbol. Native navigation containers own their
+position, including iPhone Duo's vertical bars; do not pin them to a physical
+left or right edge. Text-only task actions may remain horizontal; use the native
+`EditButton` for Edit/Done and keep related selection actions grouped with it
+rather than moving the exit action to a different axis. Validate with
+the iOS 27.1 SDK or later, not merely a Duo runtime running an older-SDK build.
 Mobile settings actions inside `SettingsSectionGroup` use `settingsActionRow()`.
 It puts the group's 16-point horizontal and 12-point vertical insets inside the
 button or menu's hit area, with a 44-point minimum height. A container value tells
@@ -470,6 +477,9 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   playback-version introduction heading, native actions, and Settings reminder.
   Hosts own persistence and cancellation; dismissing a version prompt never
   records a mode. Mobile uses a vertically stacked, scrolling adaptation.
+  The shared prompt supplies the palette's accent tint to its native controls,
+  including the focused TV fill, rather than relying on a host's inherited tint.
+  Description accessories center beside the text without shrinking their hit target.
 
 - **Settings row typography** — `SettingsRowMetrics.titleFont` is the shared
   body-size label for navigation rows, TV switch variants, and labeled controls.
@@ -490,6 +500,9 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   checkmark groups retain their separate focus-bleed geometry.
   Standalone page links use the `.navigation` row role: idle and focused surfaces
   both read the same 28pt radius, with no focus bleed or corner tightening.
+  `SettingsFocusRow` owns both surfaces, with the idle surface behind the focus
+  fill. Keep navigation labels surface-free so opaque backgrounds cannot cover
+  the highlight when gradients or Liquid Glass are disabled.
   Adjacent page links have an 8pt gap; separate control sections keep their larger gap.
   Page titles and Back belong inside the scrolling content, not in a fixed
   header strip that shortens the viewport. `SettingsPageHeader` supplies their
@@ -1160,7 +1173,8 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   a content-sized 900pt card, capped at 760pt high, with a 38pt leading title,
   48pt content insets and Menu/Back dismissal. Metadata uses unboxed
   scrolling content, including on mobile; mobile retains its native inline title
-  and Done action.
+  and Done action. `PlozzDialogHeading` owns the TV title treatment shared by
+  About, detail More dialogs, and the song-service picker.
   Section gaps, gutters, and padding come from `DetailInformationLayout`.
   Ratings stay separate from editorial facts. Revealing one
   protected score reveals the shared score group, never the surrounding facts.

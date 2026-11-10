@@ -543,6 +543,8 @@ public struct MediaItem: Codable, Hashable, Identifiable, Sendable {
     /// from a remote/Tailscale library still plays from a same-LAN copy when one
     /// exists. `false` for every non-picked item (Home / Search / auto default).
     public var explicitSourceSelection: Bool
+    /// Transient proof of a manual file choice, separate from a pinned server or edition.
+    public var explicitVersionSelection: Bool = false
     public init(
         id: String,
         title: String,  // l10n:content — media title (server/provider content)
@@ -1215,6 +1217,7 @@ public struct MediaItem: Codable, Hashable, Identifiable, Sendable {
     public func selectingVersion(_ versionID: String?) -> MediaItem {
         var copy = self
         copy.selectedVersionID = versionID
+        if versionID == nil { copy.explicitVersionSelection = false }
         return copy
     }
 
@@ -1306,6 +1309,7 @@ public struct MediaItem: Codable, Hashable, Identifiable, Sendable {
         } else {
             copy.selectedVersionID = nil
         }
+        copy.explicitVersionSelection = explicit && copy.selectedVersionID != nil
         // Keep proof of an explicit target through the later live-source router,
         // even when the identity index has not learned this physical edition yet.
         if explicit, !copy.sources.contains(where: { $0.id == source.id }) {

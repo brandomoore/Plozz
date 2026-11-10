@@ -185,6 +185,11 @@ and library grids use that same mobile toolbar placement, keeping supported
 query actions available while the content scrolls without adding a pinned
 content header.
 
+Mobile row-browser destinations capture only the app model and resolved layout
+inputs. Capturing the entire Home view causes a navigation update loop on iOS 18
+inside the production tab shell; standalone Home navigation does not reproduce
+it. Keep the shell-backed Films heading regression when changing this boundary.
+
 `HomeRowBrowseModel` preserves source order by default and loads additional
 bounded pages as the grid advances. Library and collection rows use their existing
 container APIs. Provider Home feeds continue the exact feed: Plex uses its
@@ -1469,7 +1474,12 @@ both the rows and featured stage. With the native Sidebar, the first Showcase ro
 also includes the hidden hero's distance in its real scroll offset, balanced by
 matching content padding so card placement does not change. Native Home chrome
 therefore disappears on the first Down, not the second row, and reappears only
-when returning to the hero. This padding is a coordinate origin, separate from
+when returning to the hero. Selecting the already-active native Home destination
+resets both the Showcase rows and the featured stage before content focus returns;
+resetting the row offset alone leaves the hero hidden. Right from the sidebar and
+returning from another destination do not issue this explicit reset. With Hero
+disabled, reselection returns to the first row instead.
+This padding is a coordinate origin, separate from
 the row destination and height stops. Changing it rebases the native scroll
 target without adding a spring or restarting the in-flight viewport-height
 path, including when Up reaches the hero before the first row settles.

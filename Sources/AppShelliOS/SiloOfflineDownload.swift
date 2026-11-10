@@ -43,6 +43,7 @@ enum SiloOfflineDownload {
         return .init(
             url: result.url, expectedDuration: result.duration, cleanupURL: nil,
             headers: result.headers, singleFile: true, expectedBytes: result.expectedBytes,
+            expectedAudioLanguages: result.expectedAudioLanguages,
             didComplete: { destination in
                 try await provider.validateDownloadCompletion(result.reference, manifest: result.manifest)
                 try result.manifest.write(to: destination.appendingPathExtension("silo-manifest.json"), options: .atomic)

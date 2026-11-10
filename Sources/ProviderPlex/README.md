@@ -377,6 +377,15 @@ selection, quality limits, or server-transcode negotiation.
 Tests: `ProviderPlexTests` covers MKV and MP4 original-file playback, scrubbing,
 selected media versions, and the separately preserved offline-download URL.
 
+New reduced offline requests use a single native download-queue MP4 with
+H.264/AAC and `DirectPlayStreamSelection=true` in the all-context client profile.
+They retain every audio track without setting `audioStreamID` or changing the
+server's saved selection. The requested bitrate, resolution and exact media/part
+indices remain pinned. Actual audio inventory, resolution and complete media
+samples are validated before completion; playback uses the normal language
+preference against local tracks. Legacy single-audio requests remain compatible.
+See [MediaDownloads](../MediaDownloads/README.md#download-quality-and-tracks).
+
 ## Playback session reporting
 
 Each VOD playback request owns a unique `playSessionID`, even for repeated plays

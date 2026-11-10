@@ -2,6 +2,119 @@
   "schemaVersion": 1,
   "releases": [
     {
+      "id": "release/071.6",
+      "version": "2026.11.9",
+      "marketingVersion": "2026.11.6",
+      "build": "71.6",
+      "releasedAt": "2026-11-09",
+      "sections": [
+        {
+          "category": "New",
+          "items": [
+            {
+              "text": "Multiple audio languages in new reduced-quality Plex, Emby and compatible Silo downloads.",
+              "platforms": ["iOS"]
+            },
+            {
+              "text": "Select and remove multiple downloaded episodes.",
+              "platforms": ["iOS"]
+            }
+          ]
+        },
+        {
+          "category": "Updated",
+          "items": [
+            "Broader external-player support for converted videos and compatible network shares.",
+            "More music services and a redesigned song picker.",
+            {
+              "text": "More text subtitles saved with reduced-quality Jellyfin and Emby downloads.",
+              "platforms": ["iOS"]
+            },
+            {
+              "text": "Improved download navigation and native toolbar controls.",
+              "platforms": ["iOS"]
+            }
+          ]
+        },
+        {
+          "category": "Fixed",
+          "items": [
+            {
+              "text": "Settings text contrast with gradients or Liquid Glass disabled.",
+              "platforms": ["tvOS"]
+            },
+            {
+              "text": "Playback and audio selection for downloaded videos.",
+              "platforms": ["iOS"]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "release/071.5",
+      "version": "2026.11.8",
+      "marketingVersion": "2026.11.6",
+      "build": "71.5",
+      "releasedAt": "2026-11-08",
+      "sections": [
+        {
+          "category": "New",
+          "items": [
+            "Spotify and YouTube searches for recognized songs."
+          ]
+        },
+        {
+          "category": "Updated",
+          "items": [
+            {
+              "text": "Episode descriptions stay visible, with an optional focus-only setting.",
+              "platforms": ["tvOS"]
+            },
+            {
+              "text": "Episode card focus and menu previews.",
+              "platforms": ["tvOS"]
+            }
+          ]
+        },
+        {
+          "category": "Fixed",
+          "items": [
+            {
+              "text": "Native sidebar layout and clipped Settings content.",
+              "platforms": ["tvOS"]
+            },
+            {
+              "text": "Selecting Home again not returning to the top.",
+              "platforms": ["tvOS"]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "release/071.4",
+      "version": "2026.11.8",
+      "marketingVersion": "2026.11.6",
+      "build": "71.4",
+      "releasedAt": "2026-11-08",
+      "sections": [
+        {
+          "category": "Fixed",
+          "items": [
+            {
+              "text": "Pinned sidebar blocking navigation into Live TV and Settings.",
+              "platforms": ["tvOS"]
+            },
+            {
+              "text": "Music playback skipping a newly selected song.",
+              "platforms": ["tvOS"]
+            }
+          ]
+        }
+      ]
+    },
+    {
       "id": "release/071.3",
       "version": "2026.11.8",
       "marketingVersion": "2026.11.6",

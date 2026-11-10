@@ -28,7 +28,7 @@ final class NativeInformationCardHostedTests: XCTestCase {
             for light in [false, true] {
                 window.rootViewController = UIHostingController(rootView:
                     DetailReaderCard {
-                        Text("Details").font(.system(size: 38, weight: .semibold))
+                        PlozzDialogHeading(Text("Details"))
                         Text(long ? String(repeating: "A complete value that must remain readable. ", count: 100)
                              : "Short value")
                             .font(.system(size: 29))
