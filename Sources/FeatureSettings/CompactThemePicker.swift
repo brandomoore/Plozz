@@ -20,7 +20,7 @@ public struct CompactThemePicker: View {
 
     public var body: some View {
         #if os(iOS)
-        AppearancePreviewLayout(options: AppTheme.pickerOrder) { theme in
+        AppearancePreviewLayout(options: AppTheme.pickerOrder) { theme, _ in
             option(theme)
         }
         #else
@@ -58,25 +58,26 @@ public struct CompactThemePicker: View {
 #if os(iOS)
 struct AppearancePreviewLayout<Option: Identifiable, Content: View>: View {
     let options: [Option]
-    @ViewBuilder let content: (Option) -> Content
+    @ViewBuilder let content: (Option, [Option]) -> Content
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
         if dynamicTypeSize.isAccessibilitySize {
             VStack(spacing: 12) {
-                ForEach(options) { content($0) }
+                ForEach(options) { content($0, [$0]) }
             }
         } else {
             ViewThatFits(in: .horizontal) {
                 HStack(spacing: 12) {
-                    ForEach(options) { content($0).frame(width: 144) }
+                    ForEach(options) { content($0, options).frame(width: 144) }
                 }
                 Grid(horizontalSpacing: 12, verticalSpacing: 12) {
                     ForEach(Array(stride(from: 0, to: options.count, by: 2)), id: \.self) { index in
+                        let row = Array(options[index..<min(index + 2, options.count)])
                         GridRow {
-                            content(options[index])
+                            content(options[index], row)
                             if index + 1 < options.count {
-                                content(options[index + 1])
+                                content(options[index + 1], row)
                             } else {
                                 Color.clear.gridCellUnsizedAxes([.horizontal, .vertical])
                             }
@@ -85,6 +86,7 @@ struct AppearancePreviewLayout<Option: Identifiable, Content: View>: View {
                 }
             }
             .frame(maxWidth: .infinity)
+            .fixedSize(horizontal: false, vertical: true)
         }
     }
 }

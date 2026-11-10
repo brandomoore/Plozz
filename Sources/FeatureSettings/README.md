@@ -21,6 +21,8 @@ layout and shared preview-card styling, with each platform's actual player
 background. Match App Theme previews the current app theme and Gradient Backgrounds;
 explicit choices stay independent. The picker updates the active player's
 settings model directly, without changing the app theme or music browsing pages.
+Preview-card title heights match only within each visible row; wrapped labels
+do not add empty space to other rows or single-column accessibility layouts.
 Settings search reaches the same
 control; production mobile builds hide the page and its search entry. The TV-only track
 details toggle is not offered on mobile.

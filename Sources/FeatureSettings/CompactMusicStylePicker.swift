@@ -18,12 +18,12 @@ public struct CompactMusicStylePicker<Preview: View>: View {
     }
 
     public var body: some View {
-        AppearancePreviewLayout(options: MusicPlayerAppearance.pickerOrder) { appearance in
+        AppearancePreviewLayout(options: MusicPlayerAppearance.pickerOrder) { appearance, row in
             PreviewCard(
                 title: appearance.displayName, isSelected: selection == appearance,
                 accent: palette.accent, compact: true, swatchAspectRatio: 1.6,
                 titleLineLimit: nil,
-                titleSizeGroup: MusicPlayerAppearance.pickerOrder.map(\.displayName),
+                titleSizeGroup: row.map(\.displayName),
                 action: { selection = appearance }
             ) {
                 preview(appearance)
