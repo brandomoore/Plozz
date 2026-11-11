@@ -58,6 +58,14 @@ The caller interpolates focus clearance together with the picture's placement.
 The focus surface consumes that inset directly, without another animation
 clock. The video reads the container's current animated size rather than
 starting a second resize for every layout frame.
+
+`MultiviewLayoutSymbol` supplies real SF Symbol images for native labels and
+menus. Standard two/four-picture grids use Apple's symbols; original custom
+symbol assets cover the three-picture grid, Main and stack, and Corner
+count/position/size combinations. Each custom asset has compatible ultralight,
+regular and black masters for native weight/scale interpolation. Regenerate
+with `python3 tools/generate-multiview-symbols.py`; `--check` verifies the
+committed assets. Keep menu selection checkmarks separate from layout previews.
 Preserve the native button's animation transaction: clearing it snaps the live
 video on focus gain/loss even though the system focus decoration still animates.
 

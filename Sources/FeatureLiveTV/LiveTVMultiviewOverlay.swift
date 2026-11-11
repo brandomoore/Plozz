@@ -751,6 +751,7 @@ private struct LiveTVMultiviewChrome: View {
     let isFavorite: Bool
     let toggleFavorite: (() -> Void)?
     @State private var toolbarHeight: CGFloat = 0
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         #if os(iOS)
@@ -770,6 +771,7 @@ private struct LiveTVMultiviewChrome: View {
                 isFavorite: isFavorite, toggleFavorite: toggleFavorite
             )
             .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { toolbarHeight = $0 }
+            .modifier(LiveTVMultiviewToolbarEntrance(reduceMotion: reduceMotion))
             .padding(.horizontal, 72)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .padding(.bottom, max(32, safeAreaInsets.bottom))
@@ -807,6 +809,19 @@ private struct LiveTVMultiviewChrome: View {
         }
         return min(bottom, LiveTVMultiviewGeometry.viewport(
             in: size, isEditing: true, editingInsets: televisionEditingInsets).maxY)
+    }
+}
+
+struct LiveTVMultiviewToolbarEntrance: ViewModifier {
+    let reduceMotion: Bool
+    @State private var appeared = false
+
+    func body(content: Content) -> some View {
+        content
+            .opacity(reduceMotion || appeared ? 1 : 0)
+            .offset(y: reduceMotion || appeared ? 0 : 20)
+            .animation(reduceMotion ? nil : MultiviewMotion.animation, value: appeared)
+            .onAppear { appeared = true }
     }
 }
 
@@ -1122,7 +1137,7 @@ private struct LiveTVMultiviewToolbar: View {
                 Menu {
                     LiveTVMultiviewLayoutOptions(coordinator: coordinator, setup: setup)
                 } label: {
-                    Label("Layout", systemImage: "rectangle.split.2x1")
+                    Label { Text("Layout") } icon: { layoutSymbol }
                     #if os(tvOS)
                         .labelStyle(.titleAndIcon)
                     #endif
@@ -1157,8 +1172,10 @@ private struct LiveTVMultiviewToolbar: View {
                                 .accessibilityIdentifier("live-multiview-favorite")
                         }
                         if coordinator.expandedPaneID != nil {
-                            Button("Show all", systemImage: "rectangle.split.2x2", action: collapse)
-                                .accessibilityIdentifier("live-multiview-collapse")
+                            Button(action: collapse) {
+                                Label { Text("Show all") } icon: { layoutSymbol }
+                            }
+                            .accessibilityIdentifier("live-multiview-collapse")
                         }
                     } label: {
                         Label("More", systemImage: "ellipsis")
@@ -1183,33 +1200,66 @@ private struct LiveTVMultiviewToolbar: View {
         .focusSection()
         #endif
     }
+
+    private var layoutSymbol: Image {
+        MultiviewLayoutSymbol(
+            layout: coordinator.layout, count: coordinator.panes.count,
+            corner: coordinator.corner, insetSize: coordinator.insetSize).image
+    }
 }
 
 struct LiveTVMultiviewLayoutOptions: View {
     let coordinator: LiveTVMultiviewCoordinator
     let setup: () -> Void
+    var isPortrait = false
 
     var body: some View {
-        ForEach(LiveTVMultiviewLayout.allCases, id: \.self) { layout in
-            Button {
-                setup()
-                coordinator.layout = layout
-            } label: {
-                Label(layout.title, systemImage: coordinator.layout == layout ? "checkmark" : "rectangle")
+        Picker("Layout", selection: Binding(
+            get: { coordinator.layout },
+            set: { setup(); coordinator.layout = $0 }
+        )) {
+            ForEach(LiveTVMultiviewLayout.allCases, id: \.self) { layout in
+                Label { Text(layout.title) } icon: {
+                    symbol(layout: layout, corner: coordinator.corner, size: coordinator.insetSize)
+                }
+                .tag(layout)
             }
         }
+        .pickerStyle(.inline)
         if coordinator.layout == .corner {
-            Section("Position") {
+            Picker("Position", selection: Binding(
+                get: { coordinator.corner },
+                set: { setup(); coordinator.corner = $0 }
+            )) {
                 ForEach(LiveTVMultiviewCorner.allCases, id: \.self) { corner in
-                    Button(corner.title) { setup(); coordinator.corner = corner }
+                    Label { Text(corner.title) } icon: {
+                        symbol(layout: .corner, corner: corner, size: coordinator.insetSize)
+                    }
+                    .tag(corner)
                 }
             }
-            Section("Size") {
+            .pickerStyle(.inline)
+            Picker("Size", selection: Binding(
+                get: { coordinator.insetSize },
+                set: { setup(); coordinator.insetSize = $0 }
+            )) {
                 ForEach(LiveTVMultiviewInsetSize.allCases, id: \.self) { size in
-                    Button(size.title) { setup(); coordinator.insetSize = size }
+                    Label { Text(size.title) } icon: {
+                        symbol(layout: .corner, corner: coordinator.corner, size: size)
+                    }
+                    .tag(size)
                 }
             }
+            .pickerStyle(.inline)
         }
+    }
+
+    private func symbol(
+        layout: LiveTVMultiviewLayout, corner: LiveTVMultiviewCorner, size: LiveTVMultiviewInsetSize
+    ) -> Image {
+        MultiviewLayoutSymbol(
+            layout: layout, count: coordinator.panes.count, corner: corner,
+            insetSize: size, isPortrait: isPortrait).image
     }
 }
 

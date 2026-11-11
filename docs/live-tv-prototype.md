@@ -1780,10 +1780,20 @@ On Apple TV, ten seconds without interaction automatically leaves setup for the
 full physical-screen canvas, including safe-area edges, and hides controls and
 focus treatment. There is no Watch button. Remote activity restores the
 interactive layout and controls. On iPhone/iPad, Watch remains an explicit action.
+The Apple TV bottom actions enter together with a half-second fade and a
+20-point upward movement, on both initial setup and return from idle or the
+guide. Reduce Motion shows them immediately without movement. Their measured
+layout and native focus styling remain unchanged.
 Two channels split horizontally in landscape and
 vertically in portrait; three or four use a two-row grid. Main and stack places
 one large picture on the left and up to three separate pictures stacked on the
 right, without overlap. Corner mode retains its overlaid inset column.
+Layout controls and menu options use count-aware SF Symbol previews: two,
+three or four pictures, with a large primary and the correct number of stacked
+pictures for Main and stack. Corner previews include the selected position and
+inset size; position and size options preview their respective destinations.
+Native menu checkmarks remain separate from the preview icon. The mobile
+two-picture Grid icon also follows portrait/landscape orientation.
 Each renderer fits its source without cropping. Edit layout returns to setup;
 ordinary viewing never reserves permanent space for controls.
 Widened Apple TV split/grid slots have an 8-point internal gap, without an

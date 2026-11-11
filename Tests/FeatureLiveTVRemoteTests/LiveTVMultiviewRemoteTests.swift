@@ -4,6 +4,42 @@ import Vision
 
 final class LiveTVMultiviewRemoteTests: XCTestCase {
     @MainActor
+    func testLayoutMenusShowCountAwareSymbolsAndRetainNativeSelection() {
+        continueAfterFailure = false
+        let app = fixtureApplication()
+        app.launchArguments = ["--live-root-fixture", "--visual-focus-fixture"]
+        app.launch()
+        defer { app.terminate() }
+        startProductionChannel(in: app)
+        openMultiviewPicker(in: app)
+        chooseGuideChannel(2, in: app)
+        for count in 2...4 {
+            if count > 2 {
+                select(app.buttons["live-multiview-add"], in: app)
+                chooseGuideChannel(count, in: app)
+            }
+            select(app.buttons["live-multiview-layout"], in: app)
+            for title in ["Grid", "Main and stack", "Corner"] {
+                XCTAssertTrue(app.cells.containing(NSPredicate(format: "label == %@", title)).firstMatch.exists)
+            }
+            capture("native-layout-options-\(count)-pictures", in: app)
+            selectMenuItem("Main and stack", in: app)
+            XCTAssertGreaterThan(app.otherElements["multiview-fixture-video-1"].frame.width,
+                                 app.otherElements["multiview-fixture-video-2"].frame.width)
+            select(app.buttons["live-multiview-layout"], in: app)
+            capture("native-main-and-stack-selected-\(count)-pictures", in: app)
+            selectMenuItem("Corner", in: app)
+            select(app.buttons["live-multiview-layout"], in: app)
+            capture("native-corner-options-\(count)-pictures", in: app)
+            selectMenuItem("Top left", in: app)
+            select(app.buttons["live-multiview-layout"], in: app)
+            capture("native-top-left-selected-\(count)-pictures", in: app)
+            selectMenuItem("Grid", in: app)
+            assertMetrics("Engines \(count) loads \(count) stops 0 audible 1", in: app)
+        }
+    }
+
+    @MainActor
     func testNativePictureFocusLiftIsVisibleOutsideItsRestingEdges() {
         continueAfterFailure = false
         let app = fixtureApplication()

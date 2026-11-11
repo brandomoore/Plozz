@@ -1,5 +1,5 @@
 import CoreModels
-import CoreUI
+@testable import CoreUI
 import EnginePlozzigen
 import Observation
 import SwiftUI
@@ -10,6 +10,163 @@ import XCTest
 
 @MainActor
 final class LiveTVMultiviewMotionHostedTests: XCTestCase {
+    func testLayoutSymbolsAreNativeCountAwareImagesWithWeightVariants() throws {
+        var assets: [String: UIImage] = [:]
+        for count in 1...4 {
+            for layout in LiveTVMultiviewLayout.allCases {
+                for corner in LiveTVMultiviewCorner.allCases {
+                    for size in LiveTVMultiviewInsetSize.allCases {
+                        let symbol = MultiviewLayoutSymbol(layout: layout, count: count, corner: corner, insetSize: size)
+                        let image: UIImage
+                        if let name = symbol.systemName {
+                            image = try XCTUnwrap(UIImage(systemName: name))
+                        } else {
+                            image = try XCTUnwrap(UIImage(
+                                named: symbol.assetName, in: MultiviewLayoutSymbol.bundle, compatibleWith: nil))
+                            assets[symbol.assetName] = image
+                        }
+                        XCTAssertTrue(image.isSymbolImage, "Layout previews must remain SF Symbol images, not bitmaps.")
+                        XCTAssertGreaterThan(image.size.width, 0)
+                        XCTAssertGreaterThan(image.size.height, 0)
+                    }
+                }
+            }
+        }
+        XCTAssertEqual(assets.count, 40)
+        let configuration = UIImage.SymbolConfiguration(pointSize: 32, weight: .regular)
+        let reference = try XCTUnwrap(UIImage(systemName: "rectangle", withConfiguration: configuration))
+        let corner = try XCTUnwrap(assets["multiview.corner.2.bottomTrailing.medium"]?
+            .applyingSymbolConfiguration(configuration))
+        XCTAssertEqual(corner.size.height, reference.size.height, accuracy: 2,
+                       "Custom symbols must match the optical height of Apple's neighboring rectangle symbols.")
+        for image in assets.values {
+            let light = try XCTUnwrap(image.applyingSymbolConfiguration(
+                .init(pointSize: 32, weight: .ultraLight)))
+            let bold = try XCTUnwrap(image.applyingSymbolConfiguration(
+                .init(pointSize: 32, weight: .black)))
+            XCTAssertNotEqual(light.pngData(), bold.pngData(), "Custom symbols must adapt to native font weight.")
+        }
+        XCTAssertEqual(MultiviewLayoutSymbol(layout: .sideBySide, count: 2, isPortrait: true).systemName,
+                       "rectangle.split.1x2")
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        let gallery = UIGraphicsImageRenderer(size: CGSize(width: 1080, height: 600), format: format).image { context in
+            UIColor.black.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 1080, height: 600))
+            for (index, name) in assets.keys.sorted().enumerated() {
+                let column = index % 8
+                let row = index / 8
+                let image = assets[name]!.applyingSymbolConfiguration(.init(pointSize: 36, weight: .regular))!
+                    .withTintColor(.white, renderingMode: .alwaysOriginal)
+                image.draw(at: CGPoint(x: column * 135 + 45, y: row * 120 + 20))
+                let label = name.replacingOccurrences(of: "multiview.", with: "")
+                (label as NSString).draw(
+                    in: CGRect(x: column * 135 + 5, y: row * 120 + 70, width: 125, height: 50),
+                    withAttributes: [.font: UIFont.systemFont(ofSize: 11), .foregroundColor: UIColor.white])
+            }
+        }
+        let attachment = XCTAttachment(image: gallery)
+        attachment.name = "Native Multiview symbol variants"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
+    func testToolbarActionsFadeAndRiseTogetherOnEveryEntrance() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        for reduceMotion in [false, true] {
+            let model = ToolbarEntranceModel()
+            let window = UIWindow(windowScene: scene)
+            window.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
+            window.rootViewController = UIHostingController(rootView:
+                ToolbarEntrancePage(model: model, reduceMotion: reduceMotion))
+            window.makeKeyAndVisible()
+            defer {
+                window.isHidden = true
+                window.rootViewController = nil
+                previous?.makeKeyAndVisible()
+            }
+            try await Task.sleep(for: .milliseconds(150))
+            for _ in 0..<2 {
+                model.visible = true
+                var samples: [[(y: CGFloat, opacity: Float)]] = []
+                let deadline = ContinuousClock.now + .milliseconds(750)
+                while ContinuousClock.now < deadline {
+                    try await Task.sleep(for: .milliseconds(16))
+                    guard model.controls.allSatisfy({ $0.window === window }) else { continue }
+                    samples.append(model.controls.map { control in
+                        let layer = control.layer.presentation() ?? control.layer
+                        let y = layer.convert(layer.bounds, to: window.layer.presentation() ?? window.layer).midY
+                        var opacity: Float = 1
+                        var ancestor: CALayer? = layer
+                        while let current = ancestor {
+                            opacity *= current.opacity
+                            ancestor = current.superlayer
+                        }
+                        return (y, opacity)
+                    })
+                }
+                XCTAssertGreaterThan(samples.count, 8)
+                for sample in samples {
+                    for control in sample {
+                        XCTAssertEqual(control.y, sample[0].y, accuracy: 0.5)
+                        XCTAssertEqual(control.opacity, sample[0].opacity, accuracy: 0.01)
+                        XCTAssertGreaterThanOrEqual(control.y, 899.5)
+                        XCTAssertLessThanOrEqual(control.y, 920.5)
+                    }
+                }
+                let middle = samples.filter { $0[0].y > 900.5 && $0[0].opacity > 0.01 && $0[0].opacity < 0.99 }
+                if reduceMotion {
+                    XCTAssertTrue(middle.isEmpty)
+                    for sample in samples {
+                        XCTAssertEqual(sample[0].y, 900, accuracy: 0.5)
+                        XCTAssertEqual(sample[0].opacity, 1, accuracy: 0.01)
+                    }
+                } else {
+                    XCTAssertGreaterThan(middle.count, 3, "All actions must visibly fade and rise, not jump into place.")
+                }
+                let final = try XCTUnwrap(samples.last?.first)
+                XCTAssertEqual(final.y, 900, accuracy: 0.5)
+                XCTAssertEqual(final.opacity, 1, accuracy: 0.01)
+                model.visible = false
+                try await Task.sleep(for: .milliseconds(100))
+            }
+        }
+    }
+
+    @Observable
+    final class ToolbarEntranceModel {
+        var visible = false
+        let controls = (0..<3).map { _ in
+            let view = UIView()
+            view.backgroundColor = .white
+            return view
+        }
+    }
+
+    private struct ToolbarEntrancePage: View {
+        let model: ToolbarEntranceModel
+        let reduceMotion: Bool
+
+        var body: some View {
+            ZStack(alignment: .topLeading) {
+                Color.black
+                if model.visible {
+                    HStack(spacing: 16) {
+                        ForEach(model.controls.indices, id: \.self) { index in
+                            ViewportProbe(view: model.controls[index])
+                                .frame(width: 160, height: 60)
+                        }
+                    }
+                    .modifier(LiveTVMultiviewToolbarEntrance(reduceMotion: reduceMotion))
+                    .position(x: 960, y: 900)
+                }
+            }
+            .ignoresSafeArea()
+        }
+    }
+
     func testWorkspacePresentationKeepsItsLiveContentInTheWindowEveryFrame() async throws {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
             .first { $0.activationState == .foregroundActive })
