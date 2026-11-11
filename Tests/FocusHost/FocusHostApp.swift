@@ -9,7 +9,9 @@ import FeaturePlayback
 struct FocusHostApp: App {
     var body: some Scene {
         WindowGroup {
-            if ProcessInfo.processInfo.arguments.contains("--detail-selection-fixture") {
+            if ProcessInfo.processInfo.arguments.contains("--live-webdav-watchlist-fixture") {
+                LiveWebDAVWatchlistFixture()
+            } else if ProcessInfo.processInfo.arguments.contains("--detail-selection-fixture") {
                 DetailSelectionFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--live-content-refresh-fixture") {
                 LiveContentRefreshFixture()

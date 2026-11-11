@@ -135,6 +135,42 @@ item. The broker may supply two explicit `resetEpisodeIDs` from a bounded approv
 sample. These cases verify persisted zero progress and an unplayed flag, not just
 successful HTTP writes. They restore the sampled item's watched/resume values.
 
+## Live WebDAV Watchlist journeys
+
+`LiveWebDAVWatchlistInteractionTests` in `PlozzHomeRemoteTests` is an opt-in
+tvOS simulator journey through the production shell, account configuration,
+profile stores, WebDAV provider, and file-backed Watchlist. Ordinary runs skip
+it. Use a fresh, caller-owned simulator and the `PlozzHomeFixtureTests` scheme
+with normal ad-hoc simulator signing: an unsigned host cannot exercise Keychain
+persistence. This fixture disables CloudKit, so it measures local persistence,
+not cloud delivery or recovery.
+
+Set `TEST_RUNNER_PLOZZ_WEBDAV_JOURNEY_BROKER` to a private loopback endpoint
+following the credential-broker protections above. Its JSON response contains
+`baseURL`, `username`, and `password`, resolved in memory. The authorized root
+must contain `Movies/` with a playable movie and `TV/` with the demo series
+`Caminandes`. Use licensed, disposable test media and dedicated internal
+credentials; the test does not write to the WebDAV server.
+
+Select `testLiveWebDAVWatchlistUserJourneys` first. It saves the series,
+backgrounds and cold-launches the app three times, adds/removes/re-adds a movie,
+observes playback progress, verifies separate profile Watchlists, and exits
+immediately after saving. It checks restored cards as well as model counts.
+The full journey requires fresh state rather than silently deleting or repairing
+an earlier run's data.
+
+For the separate reboot check, shut down and boot **that same owned simulator**
+without erasing it, set `TEST_RUNNER_PLOZZ_WEBDAV_JOURNEY_RESTORE_ONLY=1`, and select
+`testPreviouslySavedItemsRestoreAfterDeviceRestart`. This phase only inspects the
+existing saved items; it never re-adds them. The diagnostic receipt and local
+`com.plozz.app` logs identify saved counts and storage location; include info
+messages and bound log capture to the run. Retain XCTest screenshots, hierarchy
+attachments, and the authoritative result summary, including on failure.
+
+Close the private broker and owned simulator after collecting evidence.
+A passing LAN WebDAV journey does not prove AllDebrid behavior, physical Apple TV
+power-cycle behavior, or recovery after tvOS storage eviction.
+
 ## The two speed wins
 
 ### 1. Build once, run many (`tools/run-tests.sh`)
