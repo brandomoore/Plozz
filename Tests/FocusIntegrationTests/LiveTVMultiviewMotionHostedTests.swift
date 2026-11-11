@@ -359,7 +359,7 @@ final class LiveTVMultiviewMotionHostedTests: XCTestCase {
         }
     }
 
-    func testNativeFocusGainAndLossAnimateTheActualVideoFrame() async throws {
+    func testNativeFocusGainAndLossApplyFinalVideoSizeWithoutIntermediateScaling() async throws {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
             .first { $0.activationState == .foregroundActive })
         let previous = scene.windows.first(where: \.isKeyWindow)
@@ -395,8 +395,9 @@ final class LiveTVMultiviewMotionHostedTests: XCTestCase {
             for index in 0...1 {
                 let low = min(before[index], after[index])
                 let high = max(before[index], after[index])
-                XCTAssertGreaterThan(samples.filter { $0[index] > low + 1 && $0[index] < high - 1 }.count, 2,
-                                     "Both gaining and losing native focus must animate the live video, not snap its bounds.")
+                XCTAssertEqual(samples.filter { $0[index] > low + 1 && $0[index] < high - 1 }.count, 0,
+                               "Native focus size must apply directly, without a second scaling animation.")
+                XCTAssertTrue(samples.allSatisfy { $0[index] >= low - 1 && $0[index] <= high + 1 })
                 XCTAssertTrue(model.engines[index].output.window === window)
                 XCTAssertEqual(model.engines[index].stops, 0)
             }

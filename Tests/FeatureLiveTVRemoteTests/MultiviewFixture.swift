@@ -218,12 +218,11 @@ struct MultiviewFixture: View {
                                 ))
                             }
                         )
-                        .clipShape(PrototypeVideoClip(
-                            reflectionHeight: 0,
-                            cornerRadius: roundsPicture ? LiveTVMultiviewGeometry.videoCornerRadius : 0))
                         .modifier(PrototypeVideoPlacement(frame: containerFrame, focus: focus))
+                        .animation(nil, value: focusPresented)
+                        .animation(coordinator.isEditingLayout ? nil : (reduceMotion ? nil : MultiviewMotion.animation),
+                                   value: coordinator.isEditingLayout)
                         .animation(reduceMotion ? nil : MultiviewMotion.animation, value: frame)
-                        .animation(reduceMotion ? nil : MultiviewMotion.animation, value: focusPresented)
                         .zIndex(coordinator.isEnabled && coordinator.expandedPaneID == nil && pane.preparation.failure == nil
                             ? (pane.id != coordinator.primaryPaneID ? 4 : 3) : 0)
                         .allowsHitTesting(channelSelection == nil

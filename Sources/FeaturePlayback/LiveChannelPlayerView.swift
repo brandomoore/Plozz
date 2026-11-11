@@ -411,8 +411,12 @@ public struct LiveChannelPlayerView: View {
                     }
                 }
                 .videoCardFocusSurface()
+                #if os(tvOS)
+                .transition(isMultiview && !reduceMotion ? .opacity : .identity)
+                #else
                 .transition(isMultiview && !reduceMotion
                     ? .scale(scale: 0.94).combined(with: .opacity) : .identity)
+                #endif
                 #if os(tvOS)
                 .onChange(of: videoCardFocus?.presentsEffect) { old, new in
                     focusHandoff?.cancel(restoringOutput: true)

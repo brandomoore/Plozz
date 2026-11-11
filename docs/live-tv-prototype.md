@@ -1741,8 +1741,10 @@ apply another inset to each picture. Main picture uses the same horizontal
 and vertical gaps, including mixed source aspect ratios. Its widened layout
 uses 8-point gaps. The focused picture still receives the system's native lift.
 Packed pictures keep transparent clearance outside their resting frames for
-native focus scale and shadow. The enclosing player clip includes this clearance;
-the visible picture sizes and gaps do not shrink to make room for it.
+native focus scale and shadow. Only the picture is clipped; the outer card remains
+unclipped so its native shadow feathers over neighboring pictures rather than
+ending at a hard boundary. Visible picture sizes and gaps do not shrink to make
+room for it.
 Focus outlines hug the actual video aspect, reported by the retained player,
 rather than its letterbox area or caption. Add and Replace return to the actual
 guide in selection mode: the same channel/programme rows, vertical catalog,
@@ -1808,9 +1810,12 @@ outer gutter. Aspect fitting can leave additional letterboxing; a single
 expanded picture still uses the full canvas.
 
 Apple TV animates the retained video surfaces into Multiview and between layouts,
-including pane entry/removal, setup/watch, promotion and expansion.
-Multiview layout and new-renderer entry share a half-second ease-in-out
-transition, without spring overshoot; UIKit still owns native focus timing.
+including pane entry/removal, return to watching, promotion and expansion.
+Multiview layout and new-renderer fades share a half-second ease-in-out
+transition. New renderers no longer add a separate scale-in. Native focus
+appearance is unchanged, but focused size applies immediately, without
+competing focus-scale and setup-resize animations. Returning focus to the
+interactive canvas does not shrink below or grow beyond the focused size.
 Native full-screen playback first hands its existing renderer back to the full-size
 inline canvas, then shrinks it; no replacement player or screenshot stands in
 for the video. A temporary window host keeps that renderer visible during native

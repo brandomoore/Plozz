@@ -4,6 +4,71 @@ import Vision
 
 final class LiveTVMultiviewRemoteTests: XCTestCase {
     @MainActor
+    func testReturningFocusDoesNotShrinkBelowTheFinalFocusedSize() throws {
+        continueAfterFailure = false
+        let app = fixtureApplication()
+        app.launchArguments = ["--live-root-fixture", "--visual-focus-fixture", "--motion-fixture"]
+        app.launch()
+        defer { app.terminate() }
+        startProductionChannel(in: app)
+        openMultiviewPicker(in: app)
+        chooseGuideChannel(2, in: app)
+        select(pane("Sports 1", in: app), in: app, activate: false)
+        XCUIRemote.shared.press(.menu)
+        assertChromeHidden(in: app)
+        let idle = settledVideoFrame(2, in: app)
+        let before = pictureMotion(in: app)
+        XCUIRemote.shared.press(.right)
+        assertNativeFocus(pane("Sports 2", in: app), in: app)
+        let focused = settledVideoFrame(2, in: app)
+        let after = pictureMotion(in: app)
+        let samples = after[1].dropFirst(before[1].count).filter { $0[4] > 0.99 }
+        let evidence = XCTAttachment(string: samples.map { "\($0)" }.joined(separator: "\n"))
+        evidence.name = "Idle to focused picture presentation frames"
+        evidence.lifetime = .keepAlways
+        add(evidence)
+        XCTAssertFalse(samples.isEmpty)
+        XCTAssertGreaterThanOrEqual(try XCTUnwrap(samples.map { $0[2] }.min()),
+                                   min(idle.width, focused.width) - 2,
+                                   "Focus must not shrink to a smaller resting picture and then grow again.")
+        XCTAssertLessThanOrEqual(try XCTUnwrap(samples.map { $0[2] }.max()),
+                                 max(idle.width, focused.width) + 2,
+                                 "Layout and focus must not grow past the final focused size and then shrink back.")
+        assertMetrics("Engines 2 loads 2 stops 0 audible 1", in: app)
+    }
+
+    @MainActor
+    func testNativePictureShadowFeathersPastItsFocusClearance() {
+        continueAfterFailure = false
+        let app = fixtureApplication()
+        app.launchArguments = ["--live-root-fixture", "--visual-focus-fixture"]
+        app.launch()
+        defer { app.terminate() }
+        startProductionChannel(in: app)
+        openMultiviewPicker(in: app)
+        chooseGuideChannel(2, in: app)
+        select(app.buttons["live-multiview-layout"], in: app)
+        selectMenuItem("Corner", in: app)
+        select(app.buttons["live-multiview-layout"], in: app)
+        selectMenuItem("Top right", in: app)
+        select(app.buttons["live-multiview-layout"], in: app, activate: false)
+        let resting = settledVideoFrame(2, in: app)
+        let before = capture("corner-picture-shadow-resting", in: app)
+        select(pane("Sports 2", in: app), in: app, activate: false)
+        _ = settledVideoFrame(2, in: app)
+        let after = capture("corner-picture-shadow-focused", in: app)
+        let boundary = resting.maxY + 28 * 9 / 16
+        let inside = pixelDifference(before, after, region: CGRect(
+            x: resting.midX - 20, y: boundary - 3, width: 40, height: 1), screen: app.frame).mean
+        let outside = pixelDifference(before, after, region: CGRect(
+            x: resting.midX - 20, y: boundary + 3, width: 40, height: 1), screen: app.frame).mean
+        XCTAssertLessThan(abs(inside - outside), 0.04,
+                          "Native shadow must feather across the container boundary, not end at a hard clip: \(inside), \(outside)")
+        XCTAssertGreaterThan(outside, 0.005, "Retain the native shadow beyond the old clipping boundary.")
+        assertMetrics("Engines 2 loads 2 stops 0 audible 1", in: app)
+    }
+
+    @MainActor
     func testLoadingPictureDoesNotCoverItsSiblingOrFocusClearance() {
         assertLoadingPictures(layouts: [nil, "Main picture", "Grid"])
     }

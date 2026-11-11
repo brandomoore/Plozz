@@ -320,6 +320,11 @@ private struct VideoCardButtonStyle: PrimitiveButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         if presentsEffect {
             Button(configuration).buttonStyle(.card)
+                // Apply native focused size once; layout motion has its own clock.
+                .transaction {
+                    $0.animation = nil
+                    $0.disablesAnimations = true
+                }
                 .transition(.identity)
         } else {
             configuration.label

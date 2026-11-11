@@ -441,12 +441,15 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
                     #if os(iOS)
                     .frame(width: videoFrame.width, height: videoFrame.height)
                     #endif
+                    // The tvOS card clips its picture, leaving the native focus shadow unbounded.
+                    #if !os(tvOS)
                     .clipShape(PrototypeVideoClip(
                         reflectionHeight: reflectionHeight,
                         topReflectionHeight: topReflectionHeight,
                         leftReflectionWidth: layoutDirection == .rightToLeft ? trailingReflectionWidth : leadingReflectionWidth,
                         rightReflectionWidth: layoutDirection == .rightToLeft ? leadingReflectionWidth : trailingReflectionWidth,
                         cornerRadius: cornerRadius))
+                    #endif
                     .overlay {
                         #if os(tvOS)
                         LinearGradient(
@@ -468,6 +471,8 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
                             ? CGRect(x: geometry.size.width - videoFrame.maxX, y: videoFrame.minY,
                                      width: videoFrame.width, height: videoFrame.height)
                             : containerFrame, focus: focus))
+                    .animation(nil, value: multiviewFocusPresented)
+                    .animation(multiview.isEditingLayout ? nil : playerTransition, value: multiview.isEditingLayout)
                     #else
                     .position(
                         x: !showingMultiview && layoutDirection == .rightToLeft
@@ -504,11 +509,10 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
                     .accessibilityHidden(!expanded && layout.heroHeight == 0)
                     #endif
                     #if os(tvOS)
-                    .transition(reduceMotion ? .identity : .scale(scale: 0.94).combined(with: .opacity))
+                    .transition(reduceMotion ? .identity : .opacity)
                     .animation(playerTransition, value: multiview.expandedPaneID)
                     .animation(playerTransition, value: cornerRadius)
                     .animation(playerTransition, value: videoFrame)
-                    .animation(playerTransition, value: multiviewFocusPresented)
                     .animation(playerTransition, value: preview.isExpanded)
                     #endif
                     }
