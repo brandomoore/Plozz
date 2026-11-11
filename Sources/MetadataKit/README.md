@@ -74,7 +74,10 @@ load-bearing.
   Detail pages pass the effective UI/profile locale to text enrichment, including
   missing-text resolution for external/discovery details.
   TMDB detail, episode, credits and matching requests carry that language;
-  provider-result keys and detail snapshots separate language variants. Query
+  when a localized title search misses an English release alias, identity lookup
+  retries the English search with the same exact-title/year checks. Detail text
+  still comes from the requested-language endpoint.
+  Provider-result keys and detail snapshots separate language variants. Query
   copies retain language when promoting series IDs or threading matched IDs.
   Providers without requested-language text support cannot fill descriptions,
   genres, titles or taglines for non-English requests; their artwork and other
@@ -83,6 +86,10 @@ load-bearing.
   translated or replaced. Child descriptions use scoped providers, not a series
   description returned by an unscoped adapter. The independent English-only
   `OverviewRouter` no longer races library-detail enrichment.
+  Its keyless English Wikipedia overview fallback now participates in the same
+  ordered pipeline for movie/series gaps; Wikipedia artwork remains idle-only.
+  Retained detail models update their language in place, discard late old-language
+  work and refill gaps from native metadata, not previously enriched text.
   This does not translate existing server metadata or change the language of
   discovery-feed seeds or share-scanner metadata. Selecting French cannot guarantee
   French descriptions when the server or external service has no such text.

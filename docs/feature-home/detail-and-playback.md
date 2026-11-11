@@ -6,7 +6,7 @@
 
 | Boundary | Owner and contract |
 | --- | --- |
-| Open a detail page | `DetailOpenEnvironment` resolves eligible accounts, opening edition, initial source, and initial resume context before constructing the model. |
+| Open a detail page | `DetailOpenEnvironment` supplies both shells with one factory and a fenced opening resolver. The resolver hydrates the native subject before applying the shared source policy and current resume context. |
 | Loaded detail and source state | `ItemDetailViewModel` owns provider results, enriched sources, watch-state refresh, and source-switch fencing. `playbackSources` supplies current stamped state for single-source mobile pages; an opening card is not a second ongoing authority. |
 | Picker and Play decisions | `DetailPlaybackSelection.resolve` composes the existing source, version-list, and preferred-version rules into an immutable `Resolution`. TV item detail and mobile picker, Play, and preparation paths use that same composition. |
 | Provider-native playback identity and resume | `MediaItem.retargetedForPlayback` owns account/item/file routing and cross-source resume reconciliation. Picker IDs are not provider media IDs. |
@@ -26,7 +26,41 @@ paths as before. Mobile's runtime best-source adaptation remains after the share
 resolution. TV `SeriesDetailView` first resolves its actual episode and uses that
 episode's sources/account with the existing version and routing primitives. It
 does not pass the show's source inventory through the movie selection path.
-Series resume ownership is outside this consolidation.
+Series resume comes from the current selected provider, not an ordinary card's
+cached episode.
+
+## Consistent navigation
+
+Ordinary Search, Home, Continue Watching, library and recommendation navigation
+use the same source-ranking policy. A library origin identifies an otherwise
+untagged seed's account; it is not a source preference. Equivalent sources use
+stable account/item ordering after the normal availability/locality/quality
+rules. An episode card supplies its parent series identity, never an override
+that forces its stale episode onto the hero or Play action. The hydrated series
+owns the title, synopsis, genres and ratings; current provider resume owns the
+playable episode.
+
+Explicit episode information, season navigation, edition opens and server/version
+choices remain deliberate exceptions. Provider-local child IDs stay on their
+owning account. A fresh alternate response must agree on item, account, kind and
+non-conflicting catalog identity. Source errors remain visible; an unavailable
+explicit source is not silently replaced.
+
+Changing the app language refreshes retained detail models in place. Old work is
+cancelled and fenced, native metadata is restored before gap filling, and season
+loads remain usable. This preserves navigation and native server text; it does
+not translate a server's existing English synopsis. Language-aware external
+metadata and snapshots cannot reuse another language's text.
+Interrupted season requests restart without requiring a selection change.
+Account/language-scoped snapshots race opening hydration and can fill sparse
+seeds during transient outages. They never mask rejected authorization or a
+conflicting source identity.
+
+`ContinueWatchingDetailsInteractionTests` compares actual mobile Search and
+Continue Watching navigation using French native series metadata and a stale
+episode card for both Jellyfin and Plex. Its expected page uses the series
+synopsis and current provider resume episode. The shared-model regression also
+compares multiple source accounts with different provider-local IDs.
 
 `DetailPlaybackSelectionTests` covers the composed result, including colliding
 account/item/file IDs, same-account editions, removed sources, container/episode

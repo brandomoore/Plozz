@@ -512,13 +512,20 @@ public struct TMDbMetadataProvider: ArtworkProvider {
               let escaped = metadataEscaped(query.title) else { return nil }
         var path = "/3/search/\(query.isTV ? "tv" : "movie")?query=\(escaped)&include_adult=false"
         if let year = query.year { path += "&\(query.isTV ? "first_air_date_year" : "year")=\(year)" }
-        guard let url = url(path, language: query.metadataLanguage),
-              let results = try await detailResponse(SearchResponse.self, url: url)?.results,
-              let match = Self.bestMatch(for: query, among: results),
-              match.matches(normalizedTitle: MediaItemIdentity.normalizedTitle(query.title)),
-              query.year == nil || match.year == query.year,
-              let id = match.id else { return nil }
-        return String(id)
+        // Identity can be an English release alias even when neither the localized
+        // display title nor the original-language title matches it.
+        let languages = query.metadataLanguage == "en" ? ["en"] : [query.metadataLanguage, "en"]
+        for language in languages {
+            try Task.checkCancellation()
+            guard let url = url(path, language: language),
+                  let results = try await detailResponse(SearchResponse.self, url: url)?.results,
+                  let match = Self.bestMatch(for: query, among: results),
+                  match.matches(normalizedTitle: MediaItemIdentity.normalizedTitle(query.title)),
+                  query.year == nil || match.year == query.year,
+                  let id = match.id, id > 0 else { continue }
+            return String(id)
+        }
+        return nil
     }
 
     private func detailResponse<Value: Decodable & Sendable>(_ type: Value.Type, url: URL) async throws -> Value? {

@@ -4,6 +4,13 @@ import CoreNetworking
 import MetadataKit
 import RatingsService
 
+public struct DetailOpeningResolution {
+    let provider: any MediaProvider
+    let item: MediaItem
+    let sources: [MediaSourceRef]
+    let resumeEpisode: MediaItem?
+}
+
 /// The single place both platform shells (tvOS `AppShell`, iOS `AppShelliOS`)
 /// turn a tapped `MediaItem` into a fully-configured ``ItemDetailViewModel``.
 ///
@@ -42,6 +49,7 @@ public struct DetailOpenEnvironment {
     public let ratingsProvider: any ExternalRatingsProviding
     public let detailMetadataResolver: @Sendable (MediaItem) async -> MetadataEnrichment
     public let metadataLanguage: String
+    public let localizedDetailMetadataResolver: (@Sendable (MediaItem, String) async -> MetadataEnrichment)?
     public let onlineTrailerResolver: OnlineTrailerResolving
     public let trailerSettings: HeroBackgroundSettingsModel?
     /// Refreshes a discovery (Seerr) title's request/availability. `nil` when Seerr
@@ -68,6 +76,7 @@ public struct DetailOpenEnvironment {
         ratingsProvider: any ExternalRatingsProviding = DisabledRatingsProvider(),
         detailMetadataResolver: @escaping @Sendable (MediaItem) async -> MetadataEnrichment = { _ in MetadataEnrichment() },
         metadataLanguage: String = "en",
+        localizedDetailMetadataResolver: (@Sendable (MediaItem, String) async -> MetadataEnrichment)? = nil,
         onlineTrailerResolver: @escaping OnlineTrailerResolving = ItemDetailViewModel.defaultOnlineTrailerResolver,
         trailerSettings: HeroBackgroundSettingsModel? = nil,
         discoveryStatusRefresh: (@Sendable (MediaItem) async -> MediaRequestAvailability?)? = nil,
@@ -85,6 +94,7 @@ public struct DetailOpenEnvironment {
         self.ratingsProvider = ratingsProvider
         self.detailMetadataResolver = detailMetadataResolver
         self.metadataLanguage = metadataLanguage
+        self.localizedDetailMetadataResolver = localizedDetailMetadataResolver
         self.onlineTrailerResolver = onlineTrailerResolver
         self.trailerSettings = trailerSettings
         self.discoveryStatusRefresh = discoveryStatusRefresh
@@ -116,7 +126,7 @@ public struct DetailOpenEnvironment {
         // `isDiscovery == false` and does get its sources.
         let indexed = isDiscovery ? [] : identitySources(item)
         var own: [MediaSourceRef] = []
-        if !isDiscovery, let opening = openingSource(for: item) {
+        if !isDiscovery, let opening = openingSource(for: item) ?? contextSource(for: item) {
             var source = (item.sources + indexed).first {
                 $0.accountID == opening.accountID && $0.itemID == opening.itemID
             } ?? MediaSourceRef(
@@ -157,6 +167,15 @@ public struct DetailOpenEnvironment {
               item.kind == .movie,
               let edition = item.edition,
               !edition.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              let account = item.sourceAccountID else { return nil }
+        return MediaItemSourceIdentity(accountID: account, itemID: item.id)
+    }
+
+    /// Direct episode pages and explicit season navigation keep provider-local
+    /// child IDs on their owner. Ordinary episode taps reach us as a series seed.
+    private static func contextSource(for item: MediaItem) -> MediaItemSourceIdentity? {
+        guard item.kind == .episode || item.kind == .season
+                || (item.kind == .series && item.seasonID != nil),
               let account = item.sourceAccountID else { return nil }
         return MediaItemSourceIdentity(accountID: account, itemID: item.id)
     }
@@ -214,16 +233,15 @@ public struct DetailOpenEnvironment {
             var liveSource = source
             liveSource.locality = locality
             return liveSource
-        }
-        let opening = openingSource(for: item)
+        }.sorted { $0.id < $1.id }
+        let opening = openingSource(for: item) ?? contextSource(for: item)
         let selected = isDiscovery
             ? nil
             : sources.first(where: {
                 $0.accountID == opening?.accountID && $0.itemID == opening?.itemID
             }) ?? CrossSourceSelector.bestSelection(
                 from: sources,
-                capabilities: .detected(),
-                preferring: libraryOrigin
+                capabilities: .detected()
             )?.source
         return (sources, selected)
     }
@@ -233,8 +251,8 @@ public struct DetailOpenEnvironment {
     /// identity-index enrichment above resolves to its real library copies so the
     /// server picker and episodes work.
     ///
-    /// - Parameter libraryOrigin: soft tie-break for otherwise-equivalent sources;
-    ///   locality and managed-server priority remain authoritative.
+    /// - Parameter libraryOrigin: owning account for an untagged native seed,
+    ///   not a preference that changes ordinary detail source selection.
     /// Whether a title should get the request-focused discovery page rather than
     /// the ordinary library one.
     ///
@@ -262,7 +280,9 @@ public struct DetailOpenEnvironment {
     }
 
     public func makeViewModel(for item: MediaItem, libraryOrigin: String?) throws -> ItemDetailViewModel {
-        if let opening = Self.openingSource(for: item) {
+        var item = item
+        if item.sourceAccountID == nil { item.sourceAccountID = libraryOrigin }
+        if let opening = Self.openingSource(for: item) ?? Self.contextSource(for: item) {
             _ = try resolveProvider(opening.accountID)
         }
         let identitySources = self.identitySources
@@ -292,6 +312,15 @@ public struct DetailOpenEnvironment {
         var selectedItem = Self.initialItem(for: routingItem, selectedSource: selectedSource)
         selectedItem.sources = sources
         let resume = DetailPlaybackSelection.resumeItem(for: selectedItem, in: continueWatchingSnapshot())
+        let openingResolver: (@MainActor () async throws -> DetailOpeningResolution)?
+        if isDiscovery {
+            openingResolver = nil
+        } else {
+            let seed = selectedItem
+            let retargeted = seed.id != routingItem.id || seed.sourceAccountID != routingItem.sourceAccountID
+            let expectedIdentity = retargeted ? routingItem : nil
+            openingResolver = { try await self.resolveOpening(for: seed, expectedIdentity: expectedIdentity) }
+        }
         return ItemDetailViewModel(
             provider: isDiscovery ? nil : try resolveProvider(
                 selectedSource?.accountID ?? item.sourceAccountID ?? libraryOrigin
@@ -306,7 +335,7 @@ public struct DetailOpenEnvironment {
             detailMetadataResolver: detailMetadataResolver,
             metadataLanguage: metadataLanguage,
             sourceAccountID: isDiscovery ? nil : selectedSource?.accountID ?? item.sourceAccountID ?? libraryOrigin,
-            originSourceAccountID: libraryOrigin,
+            originSourceAccountID: Self.contextSource(for: selectedItem)?.accountID,
             onlineTrailerResolver: onlineTrailerResolver,
             trailerSettings: trailerSettings,
             initialSources: sources,
@@ -316,7 +345,66 @@ public struct DetailOpenEnvironment {
             relatedTitlesLoader: makeRelatedTitlesLoader?(
                 Self.relatedTitlesDisplayMode(isDiscoveryItem: isDiscovery)
             ),
-            snapshotCache: snapshotCache
+            snapshotCache: snapshotCache,
+            openingResolver: openingResolver,
+            localizedDetailMetadataResolver: localizedDetailMetadataResolver
+        )
+    }
+
+    /// Hydrate before resolving membership: episode-derived parent seeds do not
+    /// carry the series' catalog IDs. Every route then uses the same source policy.
+    private func resolveOpening(
+        for seed: MediaItem, expectedIdentity: MediaItem?
+    ) async throws -> DetailOpeningResolution {
+        var provider = try resolveProvider(seed.sourceAccountID)
+        var item = try await provider.item(id: seed.id)
+        try Task.checkCancellation()
+        guard item.id == seed.id, item.kind == seed.kind,
+              seed.sourceAccountID == nil || item.sourceAccountID == nil
+                || item.sourceAccountID == seed.sourceAccountID,
+              !MediaItemIdentity.externalIdentitiesConflict(
+                  expectedIdentity.map(MediaItemIdentity.identities(for:)) ?? [],
+                  MediaItemIdentity.identities(for: item)
+              ) else {
+            throw AppError.invalidResponse
+        }
+        item.sourceAccountID = seed.sourceAccountID ?? item.sourceAccountID
+        item.editionOpeningSource = seed.editionOpeningSource
+        if item.kind == .series { item.seasonID = seed.seasonID }
+        item.rejectedSourceIDs.formUnion(seed.rejectedSourceIDs)
+        item.sources = identitySources(item) + item.sources + seed.sources
+        if let account = item.sourceAccountID,
+           !item.sources.contains(where: { $0.accountID == account && $0.itemID == item.id }) {
+            item.sources.append(MediaSourceRef(
+                accountID: account, itemID: item.id, kind: item.kind,
+                providerKind: provider.kind
+            ))
+        }
+        let selection = Self.initialSourceSelection(
+            for: item, isDiscovery: false, libraryOrigin: nil,
+            identitySources: identitySources,
+            sourceLocality: { resolveOptionalProvider($0)?.connectionLocality },
+            sourceIsAvailable: { resolveOptionalProvider($0) != nil }
+        )
+        if let selected = selection.selected,
+           selected.itemID != item.id || selected.accountID != item.sourceAccountID {
+            provider = try resolveProvider(selected.accountID)
+            let fetched = try await provider.item(id: selected.itemID)
+            try Task.checkCancellation()
+            guard fetched.id == selected.itemID, fetched.kind == item.kind,
+                  fetched.sourceAccountID == nil || fetched.sourceAccountID == selected.accountID,
+                  !MediaItemIdentity.externalIdentitiesConflict(
+                      MediaItemIdentity.identities(for: item),
+                      MediaItemIdentity.identities(for: fetched)
+                  ) else {
+                throw AppError.invalidResponse
+            }
+            item = fetched.taggingSource(selected.accountID)
+        }
+        item.sources = selection.sources
+        return DetailOpeningResolution(
+            provider: provider, item: item, sources: selection.sources,
+            resumeEpisode: DetailPlaybackSelection.resumeItem(for: item, in: continueWatchingSnapshot())
         )
     }
 
@@ -355,9 +443,7 @@ public struct DetailOpenEnvironment {
 
     /// Build the detail view model for a series opened via an episode/season
     /// context: the page and its first paint describe the series; the tapped
-    /// child remains separate playback/browser context. No `initialSources` enrichment — the
-    /// cross-server resolver fills the picker once the page settles, without ever
-    /// switching the already-visible page automatically.
+    /// child identifies the parent, not a stale override of its current resume target.
     public func makeSeriesContextViewModel(
         seriesID: String,
         seed: MediaItem,
@@ -367,26 +453,6 @@ public struct DetailOpenEnvironment {
         let series = SeriesEpisodeEntry.seriesSeed(
             from: seed, seriesID: seriesID, sourceAccountID: sourceAccountID ?? originAccountID
         )
-        return ItemDetailViewModel(
-            provider: try resolveProvider(sourceAccountID ?? originAccountID),
-            itemID: seriesID,
-            initialItem: series,
-            initialResumeEpisode: DetailPlaybackSelection.resumeItem(
-                for: series, in: continueWatchingSnapshot()
-            ),
-            loadSeasonEpisodeRoster: loadSeasonEpisodeRoster,
-            ratingsProvider: ratingsProvider,
-            detailMetadataResolver: detailMetadataResolver,
-            metadataLanguage: metadataLanguage,
-            sourceAccountID: sourceAccountID ?? originAccountID,
-            originSourceAccountID: originAccountID,
-            onlineTrailerResolver: onlineTrailerResolver,
-            trailerSettings: trailerSettings,
-            alternateProviderResolver: resolveOptionalProvider,
-            crossServerSourceResolver: crossServerSourceResolver,
-            identitySources: identitySources,
-            relatedTitlesLoader: makeRelatedTitlesLoader?(.libraryOnly),
-            snapshotCache: snapshotCache
-        )
+        return try makeViewModel(for: series, libraryOrigin: originAccountID)
     }
 }

@@ -125,26 +125,7 @@ public actor OverviewRouter {
     /// for "<title> [<year>] film" and `prop=extracts` returns its plain-text intro
     /// in the *same* request — accurate (search-ranked, not title-guessed) and cheap.
     private static func wikipediaOverview(for query: MetadataQuery) async -> String? {  // l10n:content — plot/overview text sourced from Wikipedia, rendered verbatim like MediaItem.overview
-        var search = query.title
-        if let year = query.year { search += " \(year)" }
-        // A gentle hint toward the film/series article without hard-filtering, so a
-        // title that isn't disambiguated still resolves.
-        search += query.contentType == .anime ? " anime" : " film"
-        guard let escaped = metadataEscaped(search),
-              let url = URL(string: "https://en.wikipedia.org/w/api.php?action=query&format=json&prop=extracts&exintro=1&explaintext=1&redirects=1&generator=search&gsrlimit=1&gsrsearch=\(escaped)")
-        else { return nil }
-        guard let response = await MetadataHTTP.get(WikipediaResponse.self, url: url),
-              let page = response.query?.pages?.values.first,
-              let extract = page.extract?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !extract.isEmpty
-        else { return nil }
-        return extract
-    }
-
-    private struct WikipediaResponse: Decodable {
-        let query: Query?
-        struct Query: Decodable { let pages: [String: Page]? }
-        struct Page: Decodable { let extract: String? }
+        await WikipediaEnrichmentProvider().enrich(query, missing: [.overview]).overview?.value
     }
 
     // MARK: - Helpers

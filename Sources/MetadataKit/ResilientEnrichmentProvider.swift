@@ -43,6 +43,9 @@ public struct ResilientEnrichmentProvider: MetadataEnrichmentProvider {
     public var id: MetadataSource { base.id }
     public var capabilities: Set<MetadataCapability> { base.capabilities }
     public var policy: ProviderPolicy { base.policy }
+    public func supports(_ field: MetadataField, at tier: MetadataWorkTier) -> Bool {
+        base.supports(field, at: tier)
+    }
 
     public func enrich(_ query: MetadataQuery, missing: Set<MetadataField>) async -> MetadataEnrichment {
         await enrichReporting(query, missing: missing).enrichment

@@ -215,6 +215,7 @@ public actor MetadataEnrichmentPipeline {
             for (rank, source) in chain.enumerated() {
                 guard let provider = providers[source],
                       provider.policy.eligibleTiers.contains(tier),
+                      provider.supports(field, at: tier),
                       !Self.localizedTextFields.contains(field) || Self.supportsTextLanguage(query, source: source),
                       field != .overview || Self.supportsOverviewScope(query, source: source),
                       !(tried[field]?.contains(source) ?? false)

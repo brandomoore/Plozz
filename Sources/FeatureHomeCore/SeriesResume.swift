@@ -217,6 +217,7 @@ public enum SeriesEpisodeEntry {
             id: seriesID, title: child.parentTitle ?? "", kind: .series,
             sourceAccountID: sourceAccountID
         )
+        if child.kind == .season { series.seasonID = child.id }
         if let synopsis = child.seriesSynopsis,
            synopsis.matches(child), synopsis.seriesID == seriesID,
            synopsis.sourceAccountID == sourceAccountID {

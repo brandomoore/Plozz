@@ -626,6 +626,327 @@ final class ItemDetailViewModelTests: XCTestCase {
         }
     }
 
+    func testSearchLibraryAndStaleEpisodeEntriesResolveTheSameHydratedShowAndResume() async throws {
+        let a = MediaItem(
+            id: "show-a", title: "Titre FR", kind: .series, overview: "Description FR",
+            genres: ["Animation"], providerIDs: ["Tmdb": "62211"],
+            allowsTitleBasedMetadataMatching: false, sourceAccountID: "a"
+        )
+        var b = a
+        b.id = "show-b"
+        b.sourceAccountID = "b"
+        b.overview = "Different server description"
+        let current = MediaItem(
+            id: "a-36", title: "Current", kind: .episode, seasonNumber: 1, episodeNumber: 36,
+            seriesID: a.id, seasonID: "a-season", resumePosition: 90, sourceAccountID: "a"
+        )
+        let stale = MediaItem(
+            id: "b-34", title: "Stale", kind: .episode, parentTitle: b.title,
+            seasonNumber: 1, episodeNumber: 34, seriesID: b.id, seasonID: "b-season", sourceAccountID: "b"
+        )
+        let first = FakeMediaProvider(allItems: [a, current], accountID: "a")
+        let second = FakeMediaProvider(allItems: [b, stale], accountID: "b")
+        first.childrenByParent = [a.id: []]
+        second.childrenByParent = [b.id: []]
+        first.continueWatchingItems = [current]
+        second.continueWatchingItems = [stale]
+        let sources = [
+            MediaSourceRef(accountID: "b", itemID: b.id, kind: .series, providerKind: .jellyfin),
+            MediaSourceRef(accountID: "a", itemID: a.id, kind: .series, providerKind: .jellyfin),
+        ]
+        let environment = DetailOpenEnvironment(
+            resolveProvider: { $0 == "b" ? second : first },
+            resolveOptionalProvider: { $0 == "b" ? second : first },
+            identitySources: { $0.providerIDs["Tmdb"] == "62211" ? sources : [] },
+            crossServerSourceResolver: nil,
+            continueWatchingSnapshot: { [stale] },
+            metadataLanguage: "fr", onlineTrailerResolver: { _ in [] }
+        )
+        let models = [
+            try environment.makeViewModel(for: a, libraryOrigin: nil),
+            try environment.makeViewModel(for: b, libraryOrigin: "b"),
+            try environment.makeSeriesContextViewModel(
+                seriesID: b.id, seed: stale, sourceAccountID: "b", originAccountID: nil
+            ),
+        ]
+        for model in models {
+            defer { model.suspendEnrichment() }
+            await model.load()
+            let item = try XCTUnwrap(model.state.value?.item)
+            XCTAssertEqual(item.id, a.id)
+            XCTAssertEqual(item.sourceAccountID, "a")
+            XCTAssertEqual(item.overview, a.overview)
+            XCTAssertEqual(item.genres, a.genres)
+            XCTAssertEqual(model.serverResumeEpisode?.id, current.id)
+            XCTAssertEqual(model.serverResumeEpisode?.resumePosition, 90)
+            XCTAssertNil(model.originSourceAccountID)
+        }
+    }
+
+    func testRetainedLanguageChangeRejectsInflightEnglishAndReloadsNativeGaps() async {
+        let native = MediaItem(id: "movie", title: "Movie", kind: .movie, sourceAccountID: "account")
+        let provider = FakeMediaProvider(allItems: [native])
+        let entered = AsyncGate()
+        let release = AsyncGate()
+        let model = ItemDetailViewModel(
+            provider: provider, itemID: native.id, initialItem: native,
+            detailMetadataResolver: { _ in
+                entered.open()
+                await release.wait()
+                return .init(overview: .init(value: "English", source: .tmdb))
+            },
+            sourceAccountID: "account", onlineTrailerResolver: { _ in [] }
+        )
+        defer { model.suspendEnrichment() }
+        let english = Task { await model.load() }
+        await entered.wait()
+        model.updateMetadataLanguage("fr_FR") { item in
+            XCTAssertNil(item.overview, "Enriched English is not native server text")
+            return .init(overview: .init(value: "Description FR", source: .tmdb))
+        }
+        await model.load()
+        release.open()
+        await english.value
+        XCTAssertEqual(model.metadataLanguage, "fr")
+        XCTAssertEqual(model.state.value?.item.overview, "Description FR")
+        model.updateMetadataLanguage("en") { item in
+            XCTAssertNil(item.overview, "Prior French enrichment is not native either")
+            return .init(overview: .init(value: "English", source: .tmdb))
+        }
+        await model.load()
+        XCTAssertEqual(model.state.value?.item.overview, "English")
+            }
+
+    func testRetainedLanguageChangeKeepsSeasonLoadingAvailable() async throws {
+        let show = series("show")
+        let season = MediaItem(id: "season", title: "Season", kind: .season, seriesID: show.id)
+        let episode = MediaItem(id: "episode", title: "Episode", kind: .episode, seriesID: show.id, seasonID: season.id)
+        let provider = FakeMediaProvider(allItems: [show, season, episode])
+        provider.childrenByParent = [show.id: [season], season.id: [episode]]
+        let model = ItemDetailViewModel(
+            provider: provider, itemID: show.id, initialItem: show,
+            detailMetadataResolver: { _ in .init() }, sourceAccountID: "account",
+            onlineTrailerResolver: { _ in [] }
+        )
+        defer { model.suspendEnrichment() }
+        await model.load()
+        await model.loadEpisodes(for: season.id)
+        XCTAssertEqual(model.episodes(for: season.id)?.map(\.id), [episode.id])
+        model.updateMetadataLanguage("fr")
+        XCTAssertEqual(model.episodes(for: season.id)?.map(\.id), [episode.id])
+        await model.load()
+        XCTAssertEqual(model.episodes(for: season.id)?.map(\.id), [episode.id])
+    }
+
+    func testLanguageChangeDuringSourceSwitchNeverRetagsTheOldNativeItem() async {
+        let a = MediaItem(id: "a-movie", title: "Movie", kind: .movie, sourceAccountID: "a")
+        let b = MediaItem(id: "b-movie", title: "Movie", kind: .movie, sourceAccountID: "b")
+        let first = FakeMediaProvider(allItems: [a], accountID: "a")
+        let second = FakeMediaProvider(allItems: [b], accountID: "b")
+        let model = ItemDetailViewModel(
+            provider: first, itemID: a.id, initialItem: a,
+            detailMetadataResolver: { _ in .init() }, sourceAccountID: "a",
+            onlineTrailerResolver: { _ in [] },
+            initialSources: [
+                MediaSourceRef(accountID: "a", itemID: a.id),
+                MediaSourceRef(accountID: "b", itemID: b.id)
+            ],
+            alternateProviderResolver: { $0 == "b" ? second : first }
+        )
+        defer { model.suspendEnrichment() }
+        await model.load()
+        model.suspendEnrichment()
+        let entered = AsyncGate()
+        let release = AsyncGate()
+        second.itemGate = [b.id: { entered.open(); await release.wait() }]
+        let switching = Task { await model.switchToSource(accountID: "b") }
+        await entered.wait()
+        model.updateMetadataLanguage("fr")
+        XCTAssertNil(model.state.value, "The old native item cannot be displayed under the new account")
+        release.open()
+        await switching.value
+        await model.load()
+        XCTAssertEqual(model.state.value?.item.id, b.id)
+        XCTAssertEqual(model.state.value?.item.sourceAccountID, "b")
+    }
+
+    func testLanguageReloadRestartsAnInterruptedSeasonRequestWithoutASelectionChange() async {
+        let show = series("show")
+        let season = MediaItem(id: "season", title: "Season", kind: .season, seriesID: show.id)
+        let episode = MediaItem(id: "episode", title: "Episode", kind: .episode, seriesID: show.id, seasonID: season.id)
+        let provider = FakeMediaProvider(allItems: [show, season, episode])
+        provider.childrenByParent = [show.id: [season], season.id: [episode]]
+        let entered = AsyncGate()
+        let release = AsyncGate()
+        provider.childrenGate = [season.id: { call in
+            if call == 1 { entered.open(); await release.wait() }
+        }]
+        let model = ItemDetailViewModel(
+            provider: provider, itemID: show.id, initialItem: show,
+            detailMetadataResolver: { _ in .init() }, sourceAccountID: "account",
+            onlineTrailerResolver: { _ in [] }
+        )
+        defer { model.suspendEnrichment() }
+        await model.load()
+        let oldLoad = Task { await model.loadEpisodes(for: season.id) }
+        await entered.wait()
+        model.updateMetadataLanguage("fr")
+        await model.load()
+        XCTAssertEqual(model.episodes(for: season.id)?.map(\.id), [episode.id])
+        XCTAssertEqual(provider.childrenCallCount[season.id], 2)
+        release.open()
+        await oldLoad.value
+        XCTAssertEqual(model.episodes(for: season.id)?.map(\.id), [episode.id])
+    }
+
+    func testOpeningHydrationRestoresCachedDetailButFailsClosedOnAuthorization() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("plozz-opening-snapshot-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let cache = DetailSnapshotCache(directory: directory)
+        let native = MediaItem(
+            id: "series", title: "Show", kind: .series, overview: "Cached description",
+            sourceAccountID: "account"
+        )
+        let season = MediaItem(id: "season", title: "Season", kind: .season, seriesID: native.id)
+        await cache.store(.init(item: native, children: [season]), for: "account|series")
+        let provider = FakeMediaProvider(allItems: [native])
+        let release = AsyncGate()
+        var seed = native
+        seed.overview = nil
+        let model = ItemDetailViewModel(
+            provider: provider, itemID: native.id, initialItem: seed,
+            sourceAccountID: "account", onlineTrailerResolver: { _ in [] }, snapshotCache: cache,
+            openingResolver: { await release.wait(); throw AppError.serverUnreachable }
+        )
+        defer { model.suspendEnrichment() }
+        let loading = Task { await model.load() }
+        await waitUntil { model.state.value?.item.overview == native.overview }
+        XCTAssertEqual(model.state.value?.children.map(\.id), [season.id])
+        release.open()
+        await loading.value
+        XCTAssertEqual(model.state.value?.item.overview, native.overview)
+
+        let forbidden = ItemDetailViewModel(
+            provider: provider, itemID: native.id, initialItem: native,
+            sourceAccountID: "account", onlineTrailerResolver: { _ in [] }, snapshotCache: cache,
+            openingResolver: { throw AppError.unauthorized }
+        )
+        defer { forbidden.suspendEnrichment() }
+        await forbidden.load()
+        guard case .failed(.unauthorized) = forbidden.state else {
+            return XCTFail("Cached metadata must not mask an authorization failure")
+        }
+    }
+
+    func testExplicitSeasonAndEpisodeKeepTheirOwnerDespiteCanonicalSourceRanking() async throws {
+        let show = MediaItem(
+            id: "b-show", title: "Show", kind: .series,
+            providerIDs: ["Tmdb": "1"], sourceAccountID: "b"
+        )
+        let season = MediaItem(
+            id: "b-season", title: "Season 2", kind: .season,
+            seasonNumber: 2, seriesID: show.id, sourceAccountID: "b"
+        )
+        let episode = MediaItem(
+            id: "b-episode", title: "Episode", kind: .episode,
+            seasonNumber: 2, episodeNumber: 3, seriesID: show.id,
+            seasonID: season.id, sourceAccountID: "b"
+        )
+        let provider = FakeMediaProvider(allItems: [show, season, episode], accountID: "b")
+        let environment = DetailOpenEnvironment(
+            resolveProvider: { account in
+                XCTAssertEqual(account, "b")
+                return provider
+            },
+            resolveOptionalProvider: { _ in provider },
+            identitySources: { item in [
+                MediaSourceRef(accountID: "a", itemID: "a-\(item.kind)", kind: item.kind, providerKind: .jellyfin)
+            ] },
+            crossServerSourceResolver: nil, onlineTrailerResolver: { _ in [] }
+        )
+        let models = [
+            try environment.makeViewModel(for: episode, libraryOrigin: nil),
+            try environment.makeSeriesContextViewModel(
+                seriesID: show.id, seed: season, sourceAccountID: "b", originAccountID: nil
+            )
+        ]
+        for model in models {
+            defer { model.suspendEnrichment() }
+            await model.load()
+            XCTAssertEqual(model.state.value?.item.sourceAccountID, "b")
+            XCTAssertEqual(model.originSourceAccountID, "b")
+        }
+        XCTAssertEqual(models[0].state.value?.item.id, episode.id)
+        XCTAssertEqual(models[1].state.value?.item.id, show.id)
+    }
+
+    func testUntaggedLibrarySeedUsesItsOwnerThroughHydration() async throws {
+        let native = MediaItem(id: "movie", title: "Movie", kind: .movie, sourceAccountID: "b")
+        var seed = native
+        seed.sourceAccountID = nil
+        let provider = FakeMediaProvider(allItems: [native], accountID: "b")
+        let environment = DetailOpenEnvironment(
+            resolveProvider: { account in
+                XCTAssertEqual(account, "b")
+                return provider
+            },
+            resolveOptionalProvider: { _ in provider },
+            identitySources: { _ in [] }, crossServerSourceResolver: nil,
+            onlineTrailerResolver: { _ in [] }
+        )
+        let model = try environment.makeViewModel(for: seed, libraryOrigin: "b")
+        defer { model.suspendEnrichment() }
+        await model.load()
+        XCTAssertEqual(model.state.value?.item.sourceAccountID, "b")
+    }
+
+    func testCanonicalOpeningRejectsConflictingFreshIndexedCopy() async throws {
+        let native = MediaItem(
+            id: "b-show", title: "Show", kind: .series,
+            providerIDs: ["Tmdb": "1"], sourceAccountID: "b"
+        )
+        let wrong = MediaItem(
+            id: "a-show", title: "Other show", kind: .series,
+            providerIDs: ["Tmdb": "2"], sourceAccountID: "a"
+        )
+        let first = FakeMediaProvider(allItems: [wrong], accountID: "a")
+        let second = FakeMediaProvider(allItems: [native], accountID: "b")
+        let environment = DetailOpenEnvironment(
+            resolveProvider: { $0 == "b" ? second : first },
+            resolveOptionalProvider: { $0 == "b" ? second : first },
+            identitySources: { _ in [
+                MediaSourceRef(accountID: "a", itemID: wrong.id, kind: .series, providerKind: .jellyfin)
+            ] }, crossServerSourceResolver: nil, onlineTrailerResolver: { _ in [] }
+        )
+        let model = try environment.makeViewModel(for: native, libraryOrigin: nil)
+        defer { model.suspendEnrichment() }
+        await model.load()
+        guard case .failed(.invalidResponse) = model.state else {
+            return XCTFail("An indexed item with conflicting catalog identity must not become the detail subject")
+        }
+    }
+
+    func testOpeningAcceptsCatalogCorrectionsFromTheSameNativeItem() async throws {
+        let fresh = MediaItem(
+            id: "show", title: "Show", kind: .series,
+            providerIDs: ["Tmdb": "2"], sourceAccountID: "account"
+        )
+        var stale = fresh
+        stale.providerIDs = ["Tmdb": "1"]
+        let provider = FakeMediaProvider(allItems: [fresh])
+        let environment = DetailOpenEnvironment(
+            resolveProvider: { _ in provider }, resolveOptionalProvider: { _ in provider },
+            identitySources: { _ in [] }, crossServerSourceResolver: nil,
+            onlineTrailerResolver: { _ in [] }
+        )
+        let model = try environment.makeViewModel(for: stale, libraryOrigin: nil)
+        defer { model.suspendEnrichment() }
+        await model.load()
+        XCTAssertEqual(model.state.value?.item.providerIDs["Tmdb"], "2")
+    }
+
     func testFrenchDetailRestoresOnlyItsLanguageSnapshot() async throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("plozz-language-snapshot-\(UUID().uuidString)", isDirectory: true)
@@ -1690,8 +2011,9 @@ final class ItemDetailViewModelTests: XCTestCase {
         XCTAssertEqual(model.state.value?.item.sources.map(\.accountID), ["live"])
     }
 
-    func testDetailSelectionSkipsRemovedSourcesWithoutSendingTheirItemIDToAnotherServer() throws {
-        let live = FakeMediaProvider(allItems: [], kind: .jellyfin, accountID: "live")
+    func testDetailSelectionSkipsRemovedSourcesWithoutSendingTheirItemIDToAnotherServer() async throws {
+        let native = MediaItem(id: "live-id", title: "Saved", kind: .movie, sourceAccountID: "live")
+        let live = FakeMediaProvider(allItems: [native], kind: .jellyfin, accountID: "live")
         var item = MediaItem(id: "old-id", title: "Saved", kind: .movie, sourceAccountID: "removed")
         item.sources = [
             MediaSourceRef(accountID: "removed", itemID: "old-id", kind: .movie, locality: .local),
@@ -1711,6 +2033,11 @@ final class ItemDetailViewModelTests: XCTestCase {
         XCTAssertEqual(model.currentSourceForDisplay?.itemID, "live-id")
         XCTAssertEqual(model.state.value?.item.sources.map(\.accountID), ["live"])
         XCTAssertTrue(live.itemCallCounts.isEmpty)
+        defer { model.suspendEnrichment() }
+        await model.load()
+        XCTAssertEqual(model.state.value?.item.id, "live-id")
+        XCTAssertEqual(model.state.value?.item.sourceAccountID, "live")
+        XCTAssertEqual(live.itemCallCount(for: "old-id"), 0)
     }
 
     func testSeriesContextResolvesItsOriginWhenTheSeedHasNoSource() throws {
@@ -1730,7 +2057,7 @@ final class ItemDetailViewModelTests: XCTestCase {
             seriesID: "series", seed: .init(id: "season", title: "Season", kind: .season),
             sourceAccountID: nil, originAccountID: "origin"
         )
-        XCTAssertEqual(requested, ["origin"])
+        XCTAssertEqual(requested, ["origin", "origin"], "Explicit season entry validates its owner before selection")
         XCTAssertEqual(model.currentSourceForDisplay?.accountID, "origin")
     }
 

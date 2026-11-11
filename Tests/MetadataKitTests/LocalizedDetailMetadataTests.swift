@@ -3,6 +3,56 @@ import XCTest
 @testable import MetadataKit
 
 final class LocalizedDetailMetadataTests: XCTestCase {
+    func testReleaseAliasLookupKeepsFrenchDetailAndRejectsWrongYear() async throws {
+        for year in [2001, 2002] {
+            let fixture = TMDbTVDBDiscoveryFixture { request, _ in
+                let language = TMDbTVDBDiscoveryFixture.query(request)["language"]
+                if request.url?.path == "/3/search/movie" {
+                    let title = language == "en" ? "Spirited Away" : "Le voyage de Chihiro"
+                    return .init(json: """
+                    {"results":[{"id":129,"title":"\(title)","original_title":"Sen to Chihiro no kamikakushi","release_date":"\(year)-07-20"}]}
+                    """)
+                }
+                XCTAssertEqual(language, "fr")
+                XCTAssertEqual(request.url?.path, "/3/movie/129")
+                return .init(json: #"{"overview":"Description FR"}"#)
+            }
+            let provider = TMDbMetadataProvider(access: .directToken("fixture"), detailHTTP: fixture.http)
+            let item = MediaItem(id: "movie", title: "Spirited Away", kind: .movie, productionYear: 2001)
+            let result = try await provider.detailMetadata(
+                for: MetadataQuery(item).forMetadataLanguage("fr"), missing: [.overview]
+            )
+            XCTAssertEqual(result.overview?.value, year == 2001 ? "Description FR" : nil)
+            let requests = await fixture.recorded()
+            XCTAssertEqual(requests.count, year == 2001 ? 3 : 2)
+        }
+    }
+
+    func testKeylessWikipediaOverviewIsForegroundOnlyForEnglishAndArtworkStaysIdle() async {
+        let fixture = TMDbTVDBDiscoveryFixture { request, _ in
+            XCTAssertEqual(request.url?.host, "en.wikipedia.org")
+            return .init(json: #"{"query":{"pages":{"1":{"extract":"English synopsis"}}}}"#)
+        }
+        let provider = WikipediaEnrichmentProvider(http: fixture.http)
+        let wrapped = ResilientEnrichmentProvider(
+            base: provider, breaker: ProviderCircuitBreaker(), cache: ProviderResultCache()
+        )
+        XCTAssertFalse(wrapped.supports(.posterURL, at: .foregroundFill))
+        XCTAssertTrue(wrapped.supports(.posterURL, at: .idleBacklog))
+        let pipeline = MetadataEnrichmentPipeline(providers: [wrapped], config: .init(order: [.wikipedia]))
+        let item = MediaItem(id: "movie", title: "Movie", kind: .movie)
+        for language in ["fr", "en"] {
+            let result = await pipeline.enrich(
+                MetadataQuery(item).forMetadataLanguage(language),
+                requesting: [.overview, .posterURL], tier: .foregroundFill
+            )
+            XCTAssertEqual(result.overview?.value, language == "en" ? "English synopsis" : nil)
+            XCTAssertNil(result.posterURL)
+        }
+        let requests = await fixture.recorded()
+        XCTAssertEqual(requests.count, 1)
+    }
+
     func testLocalizedSearchStillMatchesAnExactOriginalMovieOrSeriesTitle() async throws {
         for kind: MediaItemKind in [.movie, .series] {
             let type = kind == .movie ? "movie" : "tv"

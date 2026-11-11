@@ -688,7 +688,6 @@ struct HomeTab: View {
                         stackDepth: detailStackDepth,
                         heroTrailerResolver: makeHeroTrailerResolver(),
                         preservesHeroTrailerOnDisappear: preservesHeroTrailerOnReturn,
-                        initialEpisode: route.episode,
                         seerConnected: seer.isConfigured,
                         requestAvailabilityRefresh: { await seer.requestAvailability(for: $0) },
                         onRequestSeasons: { item, seasons in
@@ -1222,10 +1221,10 @@ struct HomeTab: View {
             crossServerSourceResolver: crossServerSourceResolver(in: accounts, identitySources: identitySources),
             continueWatchingSnapshot: { runtime.continueWatchingForDetail },
             ratingsProvider: ratingsProvider,
-            detailMetadataResolver: {
-                await DetailMetadataResolver.household.resolve($0, language: metadataLanguage)
-            },
             metadataLanguage: metadataLanguage,
+            localizedDetailMetadataResolver: {
+                await DetailMetadataResolver.household.resolve($0, language: $1)
+            },
             onlineTrailerResolver: { await DetailMetadataResolver.household.trailers(for: $0) },
             trailerSettings: heroBackground,
             discoveryStatusRefresh: { await seer.requestAvailability(for: $0) },

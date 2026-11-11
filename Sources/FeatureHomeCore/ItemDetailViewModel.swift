@@ -341,7 +341,7 @@ public final class ItemDetailViewModel {
     private let provider: (any MediaProvider)?
     private let itemID: String
     private let ratingsProvider: any ExternalRatingsProviding
-    private let detailMetadataResolver: @Sendable (MediaItem) async -> MetadataEnrichment
+    @ObservationIgnored private var detailMetadataResolver: @Sendable (MediaItem, String) async -> MetadataEnrichment
     /// External until a real library source is resolved. Both shells observe this
     /// instead of freezing the index's ownership answer at navigation time.
     public private(set) var isDiscoveryItem: Bool
@@ -356,7 +356,7 @@ public final class ItemDetailViewModel {
     /// items and must not enter snapshots or download flows.
     private let seasonEpisodeRosterLoader:
         (@Sendable (MediaItem, Int) async -> SeasonEpisodeRosterResult)?
-    private let externalMetadataResolver:
+    @ObservationIgnored private var externalMetadataResolver:
         @Sendable (MediaItem, String) async -> ExternalTitleMetadata
     private let availabilityRegionCode: String
 
@@ -582,7 +582,12 @@ public final class ItemDetailViewModel {
     /// conditional at every call site.
     public let relatedTitlesLoader: RelatedTitlesLoader?
     private let snapshotCache: DetailSnapshotCache
-    private let metadataLanguage: String
+    @ObservationIgnored public private(set) var metadataLanguage: String
+    @ObservationIgnored private var openingResolver: (@MainActor () async throws -> DetailOpeningResolution)?
+    private let discoverySeed: MediaItem?
+    private let usesDefaultExternalMetadataResolver: Bool
+    @ObservationIgnored private var nativeDetailItem: MediaItem?
+    @ObservationIgnored private var interruptedLanguageSeasonIDs: Set<String> = []
     /// Stable per-title key for ``snapshotCache``. Scoped by owning account so the
     /// same id on two servers or in two languages caches independently. Routes to a series share a
     /// key (they're all built with the series id as `itemID`).
@@ -617,7 +622,9 @@ public final class ItemDetailViewModel {
         crossServerSourceResolver: (@Sendable (MediaItem) async -> CrossServerSourceResolution)? = nil,
         identitySources: @escaping (MediaItem) -> [MediaSourceRef] = { _ in [] },
         relatedTitlesLoader: RelatedTitlesLoader? = nil,
-        snapshotCache: DetailSnapshotCache = .ephemeral
+        snapshotCache: DetailSnapshotCache = .ephemeral,
+        openingResolver: (@MainActor () async throws -> DetailOpeningResolution)? = nil,
+        localizedDetailMetadataResolver: (@Sendable (MediaItem, String) async -> MetadataEnrichment)? = nil
     ) {
         self.relatedTitlesLoader = relatedTitlesLoader
         self.editionOpeningSource = initialItem?.editionOpeningSource
@@ -642,7 +649,9 @@ public final class ItemDetailViewModel {
         // instead, which is why a share's resume never survived a relaunch).
         self.activeSourceAccountID = sourceAccountID ?? originSourceAccountID
         self.ratingsProvider = ratingsProvider
-        self.detailMetadataResolver = detailMetadataResolver
+        self.detailMetadataResolver = localizedDetailMetadataResolver ?? { item, _ in
+            await detailMetadataResolver(item)
+        }
         self.metadataLanguage = Locale.Language(identifier: metadataLanguage).minimalIdentifier
         self.sourceAccountID = sourceAccountID
         self.originSourceAccountID = originSourceAccountID
@@ -656,6 +665,9 @@ public final class ItemDetailViewModel {
         self.crossServerSourceResolver = crossServerSourceResolver
         self.identitySources = identitySources
         self.snapshotCache = snapshotCache
+        self.openingResolver = openingResolver
+        self.discoverySeed = isDiscoveryItem ? initialItem : nil
+        self.usesDefaultExternalMetadataResolver = externalMetadataResolver == nil
 
         // Seed the hero from the list item the user just tapped so the detail
         // screen's first paint is INSTANT — before `provider.item(id:)` returns.
@@ -726,7 +738,90 @@ public final class ItemDetailViewModel {
         seasonLoads.values.forEach { $0.task?.cancel() }
     }
 
+    /// Keep the page and explicit selections mounted, but never reuse enriched
+    /// text as native input after changing language.
+    public func updateMetadataLanguage(
+        _ language: String,
+        resolver: (@Sendable (MediaItem) async -> MetadataEnrichment)? = nil
+    ) {
+        let language = Locale.Language(identifier: language).minimalIdentifier
+        guard language != metadataLanguage else { return }
+        interruptedLanguageSeasonIDs.formUnion(seasonLoads.keys)
+        suspendEnrichment()
+        invalidateSourceOperations()
+        metadataLanguage = language
+        if let resolver {
+            detailMetadataResolver = { item, _ in await resolver(item) }
+        }
+        if usesDefaultExternalMetadataResolver {
+            externalMetadataResolver = {
+                await ExternalTitleMetadataResolver.shared.resolve(
+                    item: $0, regionCode: $1, language: language
+                )
+            }
+        }
+        if isDiscoveryItem, let discoverySeed {
+            state = .loaded(Detail(item: discoverySeed, children: []))
+        } else if var detail = state.value, let nativeDetailItem,
+                  nativeDetailItem.id == activeItemID,
+                  nativeDetailItem.sourceAccountID == activeSourceAccountID {
+            detail.item = tagged(nativeDetailItem)
+            state = .loaded(detail)
+        } else {
+            state = .loading
+        }
+    }
+
     public func load() async {
+        guard !Task.isCancelled else { return }
+        seasonLoadingSuspended = false
+        var openingItem: MediaItem?
+        if let openingResolver {
+            let generation = sourceGeneration
+            let account = activeSourceAccountID
+            let itemID = activeItemID
+            hasPaintedFreshDetail = false
+            startSnapshotRestore()
+            do {
+                let resolved = try await openingResolver()
+                guard !Task.isCancelled,
+                      isCurrentSource(generation: generation, itemID: itemID, accountID: account) else { return }
+                invalidateSourceOperations()
+                activeProvider = resolved.provider
+                activeItemID = resolved.item.id
+                activeSourceAccountID = resolved.item.sourceAccountID
+                initialSources = resolved.sources
+                self.openingResolver = nil
+                openingItem = resolved.item
+                state = .loaded(Detail(
+                    item: resolved.item, children: [], serverResumeEpisode: resolved.resumeEpisode
+                ))
+            } catch {
+                guard !Task.isCancelled, !(error is CancellationError),
+                      isCurrentSource(generation: generation, itemID: itemID, accountID: account) else { return }
+                let failure = error as? AppError ?? .unknown("")
+                guard failure != .cancelled else { return }
+                PlozzLog.app.error("Detail opening resolution failed")
+                let canKeepCachedDetail: Bool
+                switch failure {
+                case .serverUnreachable, .rateLimited: canKeepCachedDetail = true
+                default: canKeepCachedDetail = error is URLError
+                }
+                if canKeepCachedDetail {
+                    await snapshotRestoreTask?.value
+                    guard !Task.isCancelled,
+                          isCurrentSource(generation: generation, itemID: itemID, accountID: account) else { return }
+                    if let detail = state.value,
+                       detail.item.id == itemID, detail.item.sourceAccountID == account,
+                       detail.childrenLoaded || [.movie, .episode, .video].contains(detail.item.kind) {
+                        return
+                    }
+                }
+                snapshotRestoreTask?.cancel()
+                state = .failed(failure)
+                return
+            }
+        }
         if isDiscoveryItem {
             await resolveDiscoveryLibrarySource()
             guard !Task.isCancelled else { return }
@@ -788,20 +883,7 @@ public final class ItemDetailViewModel {
         // paints the cached hero/seasons/picker only if it arrives before fresh
         // detail and never downgrades a fresher render, while the live fetch below
         // proceeds immediately and drives first paint regardless of the cache.
-        snapshotRestoreTask?.cancel()
-        let restoreKey = snapshotKey
-        let restoreCache = snapshotCache
-        snapshotRestoreTask = Task { [weak self] in
-            guard let snapshot = await restoreCache.snapshot(for: restoreKey) else { return }
-            guard let self,
-                  !Task.isCancelled,
-                  self.isCurrentSource(
-                      generation: loadSourceGeneration,
-                      itemID: loadItemID,
-                      accountID: loadAccountID
-                  ) else { return }
-            self.applySnapshotIfNotStale(snapshot)
-        }
+        startSnapshotRestore()
 
         // Cold open (no seeded hero) shows a spinner immediately instead of blank.
         if state.value == nil { state = .loading }
@@ -813,7 +895,12 @@ public final class ItemDetailViewModel {
             if !startedRelated, isCurrent() { relatedTitlesLoader?.cancelRecommendationPreparation() }
         }
         do {
-            let fetched = try await loadProvider.item(id: loadItemID)
+            let fetched: MediaItem
+            if let openingItem {
+                fetched = openingItem
+            } else {
+                fetched = try await loadProvider.item(id: loadItemID)
+            }
             guard !Task.isCancelled, isCurrent() else { return }
             let redirected = await redirectingSeasonToSeries(fetched, using: loadProvider)
             guard !Task.isCancelled, isCurrent() else { return }
@@ -829,6 +916,7 @@ public final class ItemDetailViewModel {
                 from: state.value?.item
             )
             let taggedItem = tagged(item)
+            nativeDetailItem = taggedItem
 
             if item.kind == .collection {
                 state = .loaded(Detail(
@@ -979,6 +1067,12 @@ public final class ItemDetailViewModel {
                 detail.collectionMembersState = .failed(failure)
                 state = .loaded(detail)
             }
+        }
+        for seasonID in interruptedLanguageSeasonIDs.sorted() {
+            guard !Task.isCancelled, isCurrent() else { return }
+            await loadEpisodes(for: seasonID)
+            guard !Task.isCancelled, isCurrent() else { return }
+            interruptedLanguageSeasonIDs.remove(seasonID)
         }
     }
 
@@ -1918,6 +2012,7 @@ public final class ItemDetailViewModel {
             from: state.value?.item
         )
         captureSeriesContext(from: item)
+        nativeDetailItem = tagged(item)
         if item.kind == .collection {
             if case var .loaded(detail) = state {
                 detail.item = tagged(item)
@@ -2136,6 +2231,8 @@ public final class ItemDetailViewModel {
         activeProvider = provider
         activeItemID = source.itemID
         activeSourceAccountID = accountID
+        nativeDetailItem = nil
+        interruptedLanguageSeasonIDs = []
         trailers = []
         extrasState = .loading
         seasonLoadingResumeSourceGeneration = sourceGeneration
@@ -2699,7 +2796,25 @@ public final class ItemDetailViewModel {
     /// whatever hero is showing and only ADOPTS enrichments the current state still
     /// lacks — so a revisit still gets its season picker, schedule, and server picker
     /// instantly from disk without ever downgrading a fresher render.
+    private func startSnapshotRestore() {
+        snapshotRestoreTask?.cancel()
+        let key = snapshotKey
+        let cache = snapshotCache
+        let generation = sourceGeneration
+        let itemID = activeItemID
+        let accountID = activeSourceAccountID
+        snapshotRestoreTask = Task { [weak self] in
+            guard let snapshot = await cache.snapshot(for: key),
+                  let self, !Task.isCancelled,
+                  self.isCurrentSource(generation: generation, itemID: itemID, accountID: accountID) else { return }
+            self.applySnapshotIfNotStale(snapshot)
+        }
+    }
+
     private func applySnapshotIfNotStale(_ snapshot: DetailSnapshotCache.Snapshot) {
+        guard snapshot.item.id == activeItemID,
+              snapshot.item.sourceAccountID == nil
+                || snapshot.item.sourceAccountID == activeSourceAccountID else { return }
         if state.value == nil && !hasPaintedFreshDetail {
             applySnapshot(snapshot)
         } else {
@@ -2713,10 +2828,13 @@ public final class ItemDetailViewModel {
     private func adoptSnapshotEnrichments(_ snapshot: DetailSnapshotCache.Snapshot) {
         retainSourceRejections(snapshot.item.rejectedSourceIDs)
         if case var .loaded(detail) = state {
-            let enriched = Self.preservingConfirmedStreamFacts(
+            var enriched = Self.preservingConfirmedStreamFacts(
                 in: detail.item,
                 from: snapshot.item
             )
+            if !hasPaintedFreshDetail {
+                enriched.fillingMissingPresentation(from: snapshot.item)
+            }
             if enriched != detail.item {
                 detail.item = enriched
                 state = .loaded(detail)
@@ -2840,7 +2958,7 @@ public final class ItemDetailViewModel {
 
     private func enrichDetailMetadata(for item: MediaItem, sourceGeneration: UInt64) async {
         guard !DetailMetadataResolver.missingFields(in: item).isEmpty, !Task.isCancelled else { return }
-        let enrichment = await detailMetadataResolver(item)
+        let enrichment = await detailMetadataResolver(item, metadataLanguage)
         guard !Task.isCancelled, self.sourceGeneration == sourceGeneration,
               case var .loaded(detail) = state, detail.item.id == item.id else { return }
         let enriched = DetailMetadataResolver.applying(enrichment, to: detail.item)
