@@ -851,13 +851,22 @@ private struct LiveTVMultiviewPaneControl: View {
 
     var body: some View {
         ZStack(alignment: .top) {
+            if pane.preparation.isPreparing, pane.preparation.current == nil {
+                VideoLoadingPlaceholder()
+                    .clipShape(RoundedRectangle(
+                        cornerRadius: LiveTVMultiviewGeometry.videoCornerRadius, style: .continuous
+                    ))
+                    .frame(width: pictureFrame.width, height: pictureFrame.height)
+                    .position(x: pictureFrame.midX, y: pictureFrame.midY)
+            }
             #if os(tvOS)
-            if pane.preparation.isPreparing {
+            if pane.preparation.isPreparing, pane.preparation.current != nil {
                 ProgressView()
                     .tint(.white)
                     .position(x: focusFrame.midX, y: focusFrame.midY)
             }
-            #else
+            #endif
+            #if !os(tvOS)
             if chromeVisible {
                 VStack(spacing: 0) {
                     Spacer(minLength: 0)

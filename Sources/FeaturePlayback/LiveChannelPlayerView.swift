@@ -402,6 +402,13 @@ public struct LiveChannelPlayerView: View {
                         LiveChannelSubtitleSurface(model: model, viewport: liveSubtitleViewport)
                             .allowsHitTesting(false)
                     }
+
+                    if isMultiview,
+                       !sourceMatches || !model.hasPresentedFrame || model.interruption != nil {
+                        VideoLoadingPlaceholder(isLoading: !sourceMatches || (
+                            model.interruption == nil && model.networkBlock == nil && model.phase != .paused
+                        ))
+                    }
                 }
                 .videoCardFocusSurface()
                 .transition(isMultiview && !reduceMotion
@@ -447,7 +454,8 @@ public struct LiveChannelPlayerView: View {
                 }
                 #endif
 
-                if !sourceMatches || !model.hasPresentedFrame || (!isExpanded && model.interruption != nil) {
+                if !isMultiview,
+                   !sourceMatches || !model.hasPresentedFrame || (!isExpanded && model.interruption != nil) {
                     Rectangle()
                         .fill(.black)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -548,7 +556,8 @@ public struct LiveChannelPlayerView: View {
                     )
                 } else if !model.hasPresentedFrame, model.phase == .paused {
                     LiveChannelCompactStatusView(icon: "pause.fill", title: "Paused")
-                } else if !sourceMatches || model.showsActivityIndicator {
+                } else if (!sourceMatches || model.showsActivityIndicator),
+                          !isMultiview || (sourceMatches && model.hasPresentedFrame) {
                     LiveChannelCompactStatusView(
                         icon: nil,
                         title: sourceMatches
@@ -610,6 +619,9 @@ public struct LiveChannelPlayerView: View {
                         title: "Preview unavailable"
                     )
                 }
+            } else if isMultiview {
+                VideoLoadingPlaceholder()
+                    .videoCardFocusSurface()
             } else {
                 if isExpanded {
                     LiveChannelStartupView(

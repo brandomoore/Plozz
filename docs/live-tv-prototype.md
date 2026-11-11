@@ -1770,6 +1770,11 @@ This full-screen guide does not reserve the app sidebar or top-navigation insets
 Guide and scrim visibility animate independently of the retained picture layout;
 adding a channel animates existing pictures to their new slots and introduces the
 new picture in its own slot rather than passing through a full-screen frame.
+New channels show a skeleton at their picture's exact size while preparing and
+waiting for their first frame. It shares the picture's rounded boundary and
+does not fill native focus clearance or cover neighboring pictures. The existing
+reduced-motion-aware shimmer is shared across preparation and player startup;
+errors, cancellation, and first-frame audio gating keep their existing behavior.
 Filtering scrolls the guide to its first row without taking focus from categories.
 Left from the guide reaches categories; Right
 returns to the filtered guide. These directions reverse in right-to-left layouts.

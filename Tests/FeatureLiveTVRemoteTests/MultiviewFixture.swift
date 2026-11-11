@@ -469,6 +469,11 @@ struct LiveTVRootFixture: View {
             }
         }
         .overlay(alignment: .topTrailing) {
+            if ProcessInfo.processInfo.arguments.contains("--loading-multiview-fixture") {
+                Button("Release pictures") { state.engines.forEach { $0.presentFirstFrame() } }
+                    .accessibilityIdentifier("multiview-fixture-release-pictures")
+                    .padding(24)
+            }
             if isActive && !ProcessInfo.processInfo.arguments.contains("--visual-focus-fixture") {
                 HStack {
                     Button("Refresh host") { hostRevision += 1 }
@@ -730,6 +735,10 @@ private final class MultiviewFixtureEngine: LiveChannelEngine {
 
     init(number: Int) {
         self.number = number
+        if number > 1, ProcessInfo.processInfo.arguments.contains("--loading-multiview-fixture") {
+            liveSnapshot.firstFrameReady = false
+            liveSnapshot.phase = .loading
+        }
         if ProcessInfo.processInfo.arguments.contains("--visual-focus-fixture") {
             audioTracks = [
                 MediaTrack(id: 1, kind: .audio, displayTitle: "English", language: "eng"),
@@ -754,6 +763,11 @@ private final class MultiviewFixtureEngine: LiveChannelEngine {
         if policy.isAudible, !audible { audioActivations += 1 }
         audible = policy.isAudible
         label.accessibilityValue = String(audioActivations)
+    }
+    func presentFirstFrame() {
+        liveSnapshot.firstFrameReady = true
+        liveSnapshot.phase = .playing
+        onProgress?()
     }
     func loadLive(url: URL, httpHeaders: [String: String]) async {
         loads += 1

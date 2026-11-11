@@ -566,6 +566,13 @@ label replacement carries the renderer the same way, without cross-fading its
 owners. A rejected Multiview request restores the inline output; cancellation
 releases the handoff without starting Multiview. Focus spacing outside each Multiview picture
 is transparent, so an inset does not mask the main picture with a black border.
+Multiview startup uses an opaque, shimmering picture-sized skeleton, including
+engine initialization and the wait for the first frame. The skeleton lives
+inside the native video card's inset and clipping boundary, never across its
+transparent focus clearance. The renderer remains mounted underneath it so
+readiness does not depend on showing the output first. Interrupted and paused
+states retain their status UI without an animated loading skeleton; fullscreen
+and inline-preview startup treatment is unchanged.
 
 The retained channel engine keeps output muted until the current source has
 finished loading and its first-frame signal permits presentation. Scheduled

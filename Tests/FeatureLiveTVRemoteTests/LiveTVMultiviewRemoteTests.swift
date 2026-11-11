@@ -4,6 +4,62 @@ import Vision
 
 final class LiveTVMultiviewRemoteTests: XCTestCase {
     @MainActor
+    func testLoadingPictureDoesNotCoverItsSiblingOrFocusClearance() {
+        assertLoadingPictures(layouts: [nil, "Main picture", "Grid"])
+    }
+
+    @MainActor
+    func testLoadingCornerPictureKeepsItsSurroundingMainPictureVisible() {
+        assertLoadingPictures(layouts: ["Corner"])
+    }
+
+    @MainActor
+    private func assertLoadingPictures(layouts: [String?]) {
+        continueAfterFailure = false
+        let app = fixtureApplication()
+        app.launchArguments = ["--live-root-fixture", "--visual-focus-fixture", "--loading-multiview-fixture"]
+        app.launch()
+        defer { app.terminate() }
+        startProductionChannel(in: app)
+        for (index, layout) in layouts.enumerated() {
+            let count = index + 2
+            if count == 2 { openMultiviewPicker(in: app) }
+            else { select(app.buttons["live-multiview-add"], in: app) }
+            chooseGuideChannel(count, in: app)
+            if let layout {
+                select(app.buttons["live-multiview-layout"], in: app)
+                selectMenuItem(layout, in: app)
+            }
+            let release = app.buttons["multiview-fixture-release-pictures"]
+            select(release, in: app, activate: false)
+            let incoming = settledVideoFrame(count, in: app)
+            _ = settledVideoFrame(1, in: app)
+            let siblings = (1..<count).map { app.otherElements["multiview-fixture-video-\($0)"].frame }
+            let waiting = capture("new-picture-\(count)-waiting-for-first-frame", in: app)
+            assertMetrics("Engines \(count) loads \(count) stops 0 audible 1", in: app)
+            select(release, in: app)
+            let sample = incoming.insetBy(dx: 60, dy: 60)
+            let finished = NSPredicate { _, _ in
+                self.pixelDifference(waiting, app.screenshot().image, region: sample, screen: app.frame).mean > 0.1
+            }
+            XCTAssertEqual(XCTWaiter.wait(for: [
+                XCTNSPredicateExpectation(predicate: finished, object: nil)
+            ], timeout: 5), .completed, "The skeleton must give way to the prepared video.")
+            let ready = capture("new-picture-\(count)-first-frame-ready", in: app)
+            let edges = siblings.flatMap { frame in [
+                CGRect(x: frame.maxX - 4, y: frame.midY - 30, width: 3, height: 60),
+                CGRect(x: frame.midX - 30, y: frame.maxY - 4, width: 60, height: 3)
+            ] } + [CGRect(x: incoming.minX - 18, y: incoming.midY - 30, width: 8, height: 60)]
+            for region in edges {
+                let change = pixelDifference(waiting, ready, region: region, screen: app.frame)
+                XCTAssertLessThan(change.mean, 0.02,
+                                  "Loading changed \(region); incoming \(incoming), siblings \(siblings).")
+            }
+            assertMetrics("Engines \(count) loads \(count) stops 0 audible 1", in: app)
+        }
+    }
+
+    @MainActor
     func testLayoutMenusShowCountAwareSymbolsAndRetainNativeSelection() {
         continueAfterFailure = false
         let app = fixtureApplication()
