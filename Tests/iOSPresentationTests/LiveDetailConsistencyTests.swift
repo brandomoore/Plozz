@@ -11,6 +11,133 @@ final class LiveDetailConsistencyTests: XCTestCase {
     func testLiveJellyfinDetailRoutes() async throws { try await exercise(.jellyfin) }
     func testLivePlexDetailRoutes() async throws { try await exercise(.plex) }
     func testLiveEmbyDetailRoutes() async throws { try await exercise(.emby) }
+    func testLiveJellyfinCatalogSample() async throws { try await exerciseCatalog(.jellyfin) }
+    func testLivePlexCatalogSample() async throws { try await exerciseCatalog(.plex) }
+    func testLiveEmbyCatalogSample() async throws { try await exerciseCatalog(.emby) }
+
+    func testLivePlexRestoredStaleActionsNeverWrite() async throws {
+        let http = LiveHomeReadOnlyHTTP()
+        let account = try await LiveHomeReadOnlyAccount.connect(.plex, http: http)
+        let provider = account.provider
+        let feed = try await provider.continueWatching(limit: 20)
+        let seed = try XCTUnwrap(feed.first {
+            ($0.kind == .movie || $0.kind == .episode) && ($0.resumePosition ?? 0) > 0
+        }, "The internal Plex identity must have a real in-progress title.")
+        let current = try await provider.item(id: seed.id)
+        let lastPlayedAt = try XCTUnwrap(current.lastPlayedAt)
+        let target = WatchMutationTarget(accountID: account.account.id, itemID: current.id)
+        let applier = AppShellWatchMutationApplier(
+            resolveProvider: { id in id == account.account.id ? provider : nil },
+            applyTrakt: { _ in }, applySimkl: { _ in }, applyAniList: { _ in }, applyMAL: { _ in }
+        )
+        for action in 0..<4 {
+            var mutation = WatchMutation(
+                capturedAt: lastPlayedAt.addingTimeInterval(-60), canonicalMediaID: "live-stale-action",
+                played: action == 0 ? nil : action >= 2, clearResume: true,
+                targets: [target], kind: current.kind, isExplicitReset: action != 3
+            )
+            if action == 3 { mutation.attempts = 1 }
+            let store = InMemoryWatchMutationStore()
+            let original = WatchStateReconciler(store: store, applier: applier)
+            await original.enqueue(mutation)
+            let restored = WatchStateReconciler(
+                store: InMemoryWatchMutationStore(try JSONDecoder().decode(
+                    WatchOutboxState.self, from: JSONEncoder().encode(store.load())
+                )),
+                applier: applier
+            )
+            await restored.drain()
+            let pending = await restored.pendingCount
+            XCTAssertEqual(pending, 0, "Newer real Plex playback must retire every restored stale action.")
+        }
+        let after = try await provider.item(id: current.id)
+        XCTAssertTrue(after.isPlayed == current.isPlayed && after.resumePosition == current.resumePosition)
+        let counts = await http.counts()
+        XCTAssertEqual(counts.blocked, 0, "Even attempted writes are a failure; the transport blocks them.")
+        print("LIVE_PLEX_STALE actions=4 restored=4 reads=\(counts.reads) blocked=\(counts.blocked)")
+    }
+
+    private func exerciseCatalog(_ kind: ProviderKind) async throws {
+        let http = LiveHomeReadOnlyHTTP()
+        let account = try await LiveHomeReadOnlyAccount.connect(kind, http: http)
+        let provider = account.provider
+        let libraries = try await provider.libraries()
+        let feed = try await provider.continueWatching(limit: 20).map { $0.taggingSource(account.account.id) }
+        let environment = environment(accounts: [account], feed: feed)
+        var movies = 0
+        var shows = 0
+        var episodes = 0
+        var inspected = Set<String>()
+        for itemKind in [MediaItemKind.movie, .series] {
+            for library in libraries.filter({ $0.kind == itemKind }).prefix(2) {
+                let page = try await provider.items(
+                    in: library.id, kind: itemKind, page: .init(limit: itemKind == .movie ? 4 : 3)
+                )
+                for raw in page.items where raw.kind == itemKind && inspected.insert(raw.id).inserted {
+                    let seed = raw.taggingSource(account.account.id)
+                    let native = try await provider.item(id: seed.id).taggingSource(account.account.id)
+                    let results = try await provider.search(query: native.title, limit: 30)
+                    let found = try XCTUnwrap(results.first { $0.id == seed.id && $0.kind == itemKind },
+                                             "The bounded Search sample must include the same native title.")
+                        .taggingSource(account.account.id)
+                    let models = [
+                        try environment.makeViewModel(for: seed, libraryOrigin: account.account.id),
+                        try environment.makeViewModel(for: found, libraryOrigin: nil)
+                    ]
+                    defer { models.forEach { $0.suspendEnrichment() } }
+                    for model in models {
+                        await model.load()
+                        let detail = try XCTUnwrap(model.state.value)
+                        XCTAssertTrue(detail.item.id == native.id && detail.item.sourceAccountID == account.account.id)
+                        XCTAssertTrue(sameEditorial(detail.item, native))
+                    }
+                    XCTAssertTrue(models[0].serverResumeEpisode?.id == models[1].serverResumeEpisode?.id)
+                    if itemKind == .movie {
+                        movies += 1
+                        XCTAssertTrue(models[0].state.value?.item.resumePosition == native.resumePosition)
+                        continue
+                    }
+                    shows += 1
+                    let children = try await provider.children(of: native.id)
+                    var episodeSeeds = children.filter { $0.kind == .episode }
+                    if episodeSeeds.isEmpty {
+                        for season in children.filter({ $0.kind == .season && ($0.seasonNumber ?? 0) > 0 }).prefix(2) {
+                            episodeSeeds = try await provider.children(of: season.id).filter { $0.kind == .episode }
+                            if !episodeSeeds.isEmpty {
+                                await models[0].loadEpisodes(for: season.id)
+                                XCTAssertTrue(models[0].episodes(for: season.id)?.map(\.id) == episodeSeeds.map(\.id))
+                                break
+                            }
+                        }
+                    }
+                    for rawEpisode in episodeSeeds.prefix(2) {
+                        let episode = rawEpisode.taggingSource(account.account.id)
+                        let parent = try environment.makeSeriesContextViewModel(
+                            seriesID: native.id, seed: episode, sourceAccountID: account.account.id, originAccountID: nil
+                        )
+                        defer { parent.suspendEnrichment() }
+                        await parent.load()
+                        XCTAssertTrue(sameEditorial(try XCTUnwrap(parent.state.value?.item), native))
+                        XCTAssertTrue(parent.serverResumeEpisode?.id == models[0].serverResumeEpisode?.id)
+                        let explicit = try environment.makeViewModel(for: episode, libraryOrigin: nil)
+                        defer { explicit.suspendEnrichment() }
+                        await explicit.load()
+                        let fullEpisode = try await provider.item(id: episode.id)
+                        XCTAssertTrue(sameEditorial(try XCTUnwrap(explicit.state.value?.item), fullEpisode))
+                        XCTAssertTrue(explicit.state.value?.item.id == episode.id)
+                        XCTAssertTrue(fullEpisode.isPlayed == episode.isPlayed && fullEpisode.resumePosition == episode.resumePosition)
+                        episodes += 1
+                    }
+                }
+            }
+        }
+        XCTAssertGreaterThanOrEqual(movies, 3)
+        XCTAssertGreaterThanOrEqual(shows, 2)
+        XCTAssertGreaterThanOrEqual(episodes, 4)
+        let counts = await http.counts()
+        XCTAssertEqual(counts.blocked, 0)
+        print("LIVE_CATALOG provider=\(kind.rawValue) movies=\(movies) shows=\(shows) episodes=\(episodes) reads=\(counts.reads) blocked=\(counts.blocked)")
+    }
 
     private func exercise(_ kind: ProviderKind) async throws {
         let http = LiveHomeReadOnlyHTTP()

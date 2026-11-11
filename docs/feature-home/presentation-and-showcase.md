@@ -4,6 +4,12 @@
 
 ## Typography
 
+Home playback pills keep Play, Resume and Start watching as localized resources
+until the UIKit presentation boundary resolves the active app locale. Episode
+suffixes remain separate content, and progress/remaining-time pills keep their
+existing layout. `HeroPlaybackLocalizationHostedTests` checks the shipped German
+catalog across playback states and locale changes on a retained pill.
+
 Home text sizing applies to both SwiftUI and persistent UIKit foregrounds.
 Detail Page, Showcase, and library Recommended have independent profile-scoped sizes.
 Title fallbacks, descriptions, metadata, and badge details scale together;

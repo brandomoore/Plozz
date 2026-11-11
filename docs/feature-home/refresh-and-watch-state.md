@@ -115,7 +115,14 @@ after the read. Skipping a superseded target does not publish an old reset as a
 confirmed server update. Ordinary progress checkpoints and first-delivery player
 completions add no metadata read. Explicit reset identity survives serialization;
 older remove/unwatch payloads are recognized without that new field.
-Local timestamp-ordered stores retain their own arbitration.
+Fully local timestamp-ordered stores explicitly opt out through
+`PlayedStateWriting.usesLocalWatchStateOnly` and retain their own arbitration.
+Timestamped-write conformance alone is insufficient: Plex also implements it
+for profile-local extras, while ordinary movie/episode state remains server-owned.
+Production Plex adapter tests restore queued remove/unwatch/watched actions and
+retried completions against newer metadata and assert that no write endpoint runs.
+The opt-in live detail lane repeats those four restored actions against real Plex
+progress through a transport that blocks every write, including attempted ones.
 
 This is a read-before-write guard, not a server transaction: it cannot prevent a
 simultaneous remote play between the read and write, or establish recency when the

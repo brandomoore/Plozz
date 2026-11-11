@@ -48,11 +48,20 @@ public extension WatchStateProviding {
 /// Detected at runtime via `provider as? PlayedStateWriting` (preferred over the
 /// timestamp-less ``WatchStateProviding/setPlayed(_:itemID:)`` when present).
 public protocol PlayedStateWriting: WatchStateProviding {
+    /// Only fully local providers can skip server freshness reads before a queued
+    /// reset. Timestamped writes alone do not imply this: a mixed provider can
+    /// use local ordering for extras while ordinary titles remain server-backed.
+    var usesLocalWatchStateOnly: Bool { get }
+
     /// Marks `itemID` played/unplayed, stamped with the play's real time
     /// (`capturedAt`) for local last-writer-wins ordering — see
     /// ``ResumeStateWriting/setResumePosition(_:itemID:capturedAt:)`` for the
     /// same rationale applied to resume writes.
     func setPlayed(_ played: Bool, itemID: String, capturedAt: Date) async throws
+}
+
+public extension PlayedStateWriting {
+    var usesLocalWatchStateOnly: Bool { false }
 }
 
 /// Optional capability a `MediaProvider` adopts to write a **resume position**

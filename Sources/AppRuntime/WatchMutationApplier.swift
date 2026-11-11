@@ -127,10 +127,10 @@ public struct AppShellWatchMutationApplier: WatchMutationAuthorizationEnforcing 
         guard let provider = await scopedProvider(for: target.accountID) else { throw AppError.serverUnreachable }
         guard await isActive() else { throw AppError.serverUnreachable }
         try await WatchMutationDeliveryAuthorization.check()
-        // Local stores already arbitrate capture times atomically. Ordinary
-        // progress, first-delivery player completions and container cascades do
-        // not use this leaf read.
-        guard !(provider is any PlayedStateWriting), provider is any ResumeStateWriting else { return false }
+        // Timestamped writes can cover only a subset of a provider's items.
+        // Only fully local watch stores arbitrate without a server freshness read.
+        guard provider is any ResumeStateWriting else { return false }
+        if let local = provider as? any PlayedStateWriting, local.usesLocalWatchStateOnly { return false }
         let current = try await provider.item(id: target.itemID)
         guard await isActive() else { throw AppError.serverUnreachable }
         try await WatchMutationDeliveryAuthorization.check()

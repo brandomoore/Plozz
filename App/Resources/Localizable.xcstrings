@@ -983622,6 +983622,7 @@
       }
     },
     "Unable to load show" : {
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {

@@ -6,6 +6,7 @@ public final class IPTVProvider: MediaProvider, CapabilityReporting, MediaSortFi
     ServerLiveTVProviding, ProviderHTTPResourceResolving, PlayedStateWriting,
     ResumeStateWriting, ContinueWatchingRemovable, ProviderTeardown, Sendable {
     public let kind: ProviderKind = .iptv
+    public var usesLocalWatchStateOnly: Bool { true }
     public let session: UserSession
     private let context: ProviderResolutionContext
     private let client: IPTVClient

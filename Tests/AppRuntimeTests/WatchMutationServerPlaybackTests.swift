@@ -1,5 +1,7 @@
 import CoreModels
+import CoreNetworking
 import Foundation
+import ProviderPlex
 import Synchronization
 import XCTest
 @testable import AppRuntime
@@ -31,12 +33,76 @@ final class WatchMutationServerPlaybackTests: XCTestCase {
         )
     }
 
-    private func applier(_ provider: PlaybackProbeProvider, active: PlaybackActivity? = nil) -> AppShellWatchMutationApplier {
+    private func applier(_ provider: any MediaProvider, active: PlaybackActivity? = nil) -> AppShellWatchMutationApplier {
         AppShellWatchMutationApplier(
             isActive: { active?.value.withLock { $0 } ?? true },
             resolveProvider: { _ in provider },
             applyTrakt: { _ in }, applySimkl: { _ in }, applyAniList: { _ in }, applyMAL: { _ in }
         )
+    }
+
+    func testProductionPlexRestoredResetsAndRetriedCompletionPreserveNewerPlayback() async throws {
+        for kind in [MediaItemKind.movie, .episode] {
+            for action in 0..<4 {
+                let http = PlexWatchStateHTTP(kind: kind, lastViewedAt: captured.addingTimeInterval(1))
+                let provider = plex(http)
+                var intent = mutation(action == 0 ? nil : action >= 2)
+                intent.kind = kind
+                if action == 3 {
+                    intent.isExplicitReset = false
+                    intent.attempts = 1
+                }
+                let store = InMemoryWatchMutationStore()
+                let first = WatchStateReconciler(store: store, applier: applier(provider))
+                await first.enqueue(intent)
+                let restoredState = try JSONDecoder().decode(
+                    WatchOutboxState.self, from: JSONEncoder().encode(store.load())
+                )
+                let restored = WatchStateReconciler(
+                    store: InMemoryWatchMutationStore(restoredState), applier: applier(provider)
+                )
+                await restored.drain()
+                let reads = await http.metadataReads
+                let writes = await http.writes
+                let pending = await restored.pendingCount
+                XCTAssertGreaterThan(reads, 0)
+                XCTAssertTrue(writes.isEmpty, "A stale Plex action must not scrobble, clear progress, or dismiss: \(writes)")
+                XCTAssertEqual(pending, 0)
+            }
+        }
+    }
+
+    func testProductionPlexCurrentResetStillWrites() async throws {
+        for played in [nil, false, true] as [Bool?] {
+            let http = PlexWatchStateHTTP(kind: .episode, lastViewedAt: captured.addingTimeInterval(-1))
+            let queue = WatchStateReconciler(store: InMemoryWatchMutationStore(), applier: applier(plex(http)))
+            await queue.enqueue(mutation(played))
+            await queue.drain()
+            let writes = await http.writes
+            let pending = await queue.pendingCount
+            XCTAssertFalse(writes.isEmpty, "Fresh actions must not be discarded with stale ones.")
+            XCTAssertEqual(pending, 0)
+        }
+    }
+
+    private func plex(_ http: PlexWatchStateHTTP) -> PlexProvider {
+        PlexProvider(
+            session: UserSession(
+                server: .init(id: "server", name: "Fixture", baseURL: URL(string: "https://plex.invalid")!, provider: .plex),
+                userID: "viewer", userName: "Fixture", deviceID: "device", accessToken: "fixture"
+            ),
+            localMediaContext: .init(accountID: "account", profileID: "profile", profileNamespace: nil, serverUserID: "viewer"),
+            http: http
+        )
+    }
+
+    func testFullyLocalProviderDoesNotNeedServerFreshnessRead() async throws {
+        let provider = PlaybackProbeProvider(lastPlayedAt: captured, usesLocalWatchStateOnly: true)
+        await provider.setReadFailure(true)
+        let superseded = try await applier(provider).serverPlaybackSupersedes(mutation(false), on: target)
+        let reads = await provider.reads
+        XCTAssertFalse(superseded)
+        XCTAssertEqual(reads, 0)
     }
 
     func testAllResetActionsPreserveNewerServerPlaybackAcrossProviders() async throws {
@@ -183,9 +249,10 @@ final class WatchMutationServerPlaybackTests: XCTestCase {
     }
 }
 
-private actor PlaybackProbeProvider: MediaProvider, WatchStateProviding, ResumeStateWriting {
+private actor PlaybackProbeProvider: MediaProvider, PlayedStateWriting, ResumeStateWriting {
     nonisolated let kind: ProviderKind
     nonisolated let session: UserSession
+    nonisolated let usesLocalWatchStateOnly: Bool
     let lastPlayedAt: Date
     private var readFailure = false
     private var afterRead: (@Sendable () -> Void)?
@@ -193,8 +260,9 @@ private actor PlaybackProbeProvider: MediaProvider, WatchStateProviding, ResumeS
     private(set) var receivedKinds: [MediaItemKind?] = []
     private(set) var reads = 0
 
-    init(kind: ProviderKind = .jellyfin, lastPlayedAt: Date) {
+    init(kind: ProviderKind = .jellyfin, lastPlayedAt: Date, usesLocalWatchStateOnly: Bool = false) {
         self.kind = kind
+        self.usesLocalWatchStateOnly = usesLocalWatchStateOnly
         self.lastPlayedAt = lastPlayedAt
         session = UserSession(
             server: .init(id: "server", name: "Fixture", baseURL: URL(string: "https://server.invalid")!, provider: kind),
@@ -210,10 +278,14 @@ private actor PlaybackProbeProvider: MediaProvider, WatchStateProviding, ResumeS
         return MediaItem(id: id, title: "Fixture", kind: .episode, resumePosition: 900, lastPlayedAt: lastPlayedAt)
     }
     func setPlayed(_ played: Bool, itemID: String) async throws { writes.append("played:\(played)") }
+    func setPlayed(_ played: Bool, itemID: String, capturedAt: Date) async throws {
+        try await setPlayed(played, itemID: itemID)
+    }
     func setPlayed(_ played: Bool, itemID: String, kind: MediaItemKind?, capturedAt: Date) async throws {
         receivedKinds.append(kind)
         try await setPlayed(played, itemID: itemID)
     }
+
     func setResumePosition(_ seconds: TimeInterval, itemID: String, capturedAt: Date) async throws { writes.append("resume:\(Int(seconds))") }
     func libraries() async throws -> [MediaLibrary] { [] }
     func continueWatching(limit: Int) async throws -> [MediaItem] { [] }
@@ -224,4 +296,32 @@ private actor PlaybackProbeProvider: MediaProvider, WatchStateProviding, ResumeS
     func playbackInfo(for itemID: String) async throws -> PlaybackRequest { throw AppError.notFound }
     func reportPlayback(_ progress: PlaybackProgress, event: PlaybackEvent) async throws {}
     nonisolated func imageURL(itemID: String, kind: ImageKind, maxWidth: Int?) -> URL? { nil }
+}
+
+private actor PlexWatchStateHTTP: HTTPClient {
+    let kind: MediaItemKind
+    let lastViewedAt: Date
+    private(set) var metadataReads = 0
+    private(set) var writes: [String] = []
+
+    init(kind: MediaItemKind, lastViewedAt: Date) {
+        self.kind = kind
+        self.lastViewedAt = lastViewedAt
+    }
+
+    func send(_ endpoint: Endpoint, baseURL: URL) async throws -> (Data, HTTPURLResponse) {
+        let body: String
+        if endpoint.path == "/library/metadata/item" {
+            metadataReads += 1
+            body = """
+            {"MediaContainer":{"Metadata":[{"ratingKey":"item","type":"\(kind.rawValue)",
+            "title":"Fixture","duration":1800000,"viewOffset":900000,
+            "lastViewedAt":\(Int(lastViewedAt.timeIntervalSince1970))}]}}
+            """
+        } else {
+            writes.append(endpoint.path)
+            body = "{}"
+        }
+        return (Data(body.utf8), HTTPURLResponse(url: baseURL, statusCode: 200, httpVersion: nil, headerFields: nil)!)
+    }
 }

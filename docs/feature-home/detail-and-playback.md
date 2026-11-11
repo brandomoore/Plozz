@@ -75,6 +75,11 @@ compares multiple source accounts with different provider-local IDs.
 `LiveDetailConsistencyTests` is an opt-in, read-only production-provider matrix
 for Jellyfin, Plex and Emby. It compares Search, library and episode-derived
 details, current resume, explicit child navigation, and retained language reloads.
+Bounded catalog samples additionally compare several movies, shows and episodes
+across up to two libraries per media type, including season rosters and unchanged
+watch state. Each provider sample must cover at least three movies, two shows and
+four episodes; an unavailable or undersized sample fails rather than silently
+claiming broader coverage.
 A combined Jellyfin/Plex case passes a real merged episode through runtime
 preselection before opening its parent and changing sources. Public TMDb checks
 cover French episode metadata, language-isolated cache reuse, and English release

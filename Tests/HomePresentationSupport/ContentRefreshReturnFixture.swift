@@ -46,12 +46,27 @@ struct ContentRefreshReturnFixture: View {
             sourceAccountID: "refresh-fixture", onlineTrailerResolver: { _ in [] }
         ))
         #else
-        let sync = SyncSetupFeatureFlag()
-        sync.isEnabled = false
-        _app = State(initialValue: PlozziOSAppModel(
-            accountStore: AccountStore(secureStore: InMemorySecureStore()),
-            profileStore: ProfileStore(defaults: .standard)
-        ))
+        SyncSetupFeatureFlag().isEnabled = false
+        let store = AccountStore(secureStore: InMemorySecureStore())
+        let model = PlozziOSAppModel(accountStore: store, profileStore: ProfileStore(defaults: .standard))
+        let profile = model.profiles.add(name: "Refresh fixture", isAwaitingSetup: false)
+        model.profiles.select(profile.id)
+        model.refreshActiveProfileSettings()
+        model.accountsProviders.registry.register(provider.kind) { _ in provider }
+        do {
+            try store.add(Account(id: "refresh-fixture", from: provider.session), token: "fixture")
+        } catch {
+            preconditionFailure("Unable to configure refresh fixture: \(error)")
+        }
+        model.profiles.setActiveAccountIDs(["refresh-fixture"], for: profile.id)
+        model.accountsProviders.tokenResolver = { _ in "fixture" }
+        model.accountsProviders.reloadAccounts()
+        model.settings.heroBackground.settings.detailMode = .off
+        model.metadataProviderSettingsModel.settings = MetadataProviderSettings(
+            orderMode: .custom, preferOnlineArtwork: false,
+            disabledOrder: MetadataSourceAttribution.all.map(\.id)
+        )
+        _app = State(initialValue: model)
         #endif
     }
 
