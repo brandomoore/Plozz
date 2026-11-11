@@ -209,6 +209,7 @@ struct AppearanceDetailView: View {
 
     @ViewBuilder private var themeControls: some View {
         CompactThemePicker(selection: $theme.theme)
+            .environment(\.gradientBackgroundsEnabled, theme.gradientEnabled)
             .settingsSearchAnchor("theme")
         Toggle("Gradient Backgrounds", isOn: $theme.gradientEnabled)
             .settingsSearchAnchor("gradient-backgrounds")

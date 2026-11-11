@@ -3,6 +3,39 @@ import SwiftUI
 import CoreModels
 import CoreUI
 
+#if os(iOS)
+public struct CompactMusicStylePicker<Preview: View>: View {
+    @Binding private var selection: MusicPlayerAppearance
+    private let preview: (MusicPlayerAppearance) -> Preview
+    @Environment(\.themePalette) private var palette
+
+    public init(
+        selection: Binding<MusicPlayerAppearance>,
+        @ViewBuilder preview: @escaping (MusicPlayerAppearance) -> Preview
+    ) {
+        _selection = selection
+        self.preview = preview
+    }
+
+    public var body: some View {
+        AppearancePreviewLayout(options: MusicPlayerAppearance.pickerOrder) { appearance, row in
+            PreviewCard(
+                title: appearance.displayName, isSelected: selection == appearance,
+                accent: palette.accent, compact: true, swatchAspectRatio: 1.6,
+                titleLineLimit: nil,
+                titleSizeGroup: row.map(\.displayName),
+                action: { selection = appearance }
+            ) {
+                preview(appearance)
+            }
+            .accessibilityLabel(Text(appearance.displayName))
+            .accessibilityAddTraits(selection == appearance ? .isSelected : [])
+            .accessibilityIdentifier("music-appearance-\(appearance.rawValue)")
+        }
+    }
+}
+#endif
+
 /// The detail-pane content for the "Music Player" settings row: the style
 /// preview cards with the "Show track details" toggle beneath.
 ///
@@ -42,6 +75,8 @@ struct MusicPlayerStyleDetail: View {
                         isSelected: appearance == style,
                         accent: palette.accent,
                         compact: true,
+                        titleLineLimit: nil,
+                        titleSizeGroup: MusicPlayerAppearance.pickerOrder.map(\.displayName),
                         action: { appearance = style }
                     ) {
                         MusicStyleSwatch(appearance: style, cornerRadius: PlozzTheme.Metrics.Radius.content)

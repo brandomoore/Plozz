@@ -10,6 +10,9 @@ Title fallbacks, descriptions, metadata, and badge details scale together;
 artwork sizing and action controls remain independent. On Apple TV, Detail Page
 text sizing also scales the episode titles and three-line synopses below episode
 artwork, including loading placeholders; other row/card labels remain independent.
+Compact mobile detail badges use their natural height when fully visible, with
+8-point padding above and below in addition to the normal metadata and action-stack gaps.
+Overflow disclosures retain their 44-point tap target.
 Episode synopses use the same font size and line spacing as hero descriptions at
 every adjustment, while episode titles stay larger and semibold.
 TV episode descriptions are visible on every labeled card by default. The

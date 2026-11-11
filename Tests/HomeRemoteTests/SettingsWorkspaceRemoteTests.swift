@@ -3,6 +3,93 @@ import Vision
 
 @MainActor
 final class SettingsWorkspaceRemoteTests: XCTestCase {
+    func testExistingCollectionPreferencesAutosaveWithoutASaveButton() throws {
+        #if targetEnvironment(simulator)
+        continueAfterFailure = false
+        let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.FocusHost")
+        app.launchArguments = ["--collection-row-editor-fixture", "--collection-row-existing", "-AppleLanguages", "(en)"]
+        app.launch()
+        defer { app.terminate() }
+        let layout = app.buttons["collection-section-card-style"]
+        let logo = app.buttons["collection-section-title-logo"]
+        XCTAssertTrue(layout.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["collection-section-save"].exists)
+        for (control, choice) in [(logo, "Off"), (layout, "Posters")] {
+            try focus(control, in: app)
+            XCUIRemote.shared.press(.select)
+            try focus(app.cells.containing(.any, identifier: choice).firstMatch, in: app)
+            XCUIRemote.shared.press(.select)
+            let changed = XCTNSPredicateExpectation(
+                predicate: NSPredicate { _, _ in control.value as? String == choice }, object: nil
+            )
+            XCTAssertEqual(XCTWaiter.wait(for: [changed], timeout: 5), .completed)
+            XCTAssertFalse(app.staticTexts["Couldn't update this row. Try again."].exists)
+        }
+        capture("collection-preferences-autosaved", in: app)
+        app.terminate()
+        app.launch()
+        XCTAssertTrue(layout.waitForExistence(timeout: 5))
+        XCTAssertEqual(layout.value as? String, "Posters")
+        try focus(layout, in: app)
+        XCUIRemote.shared.press(.select)
+        try focus(app.cells.containing(.any, identifier: "Landscape").firstMatch, in: app)
+        XCUIRemote.shared.press(.select)
+        XCTAssertTrue(logo.waitForExistence(timeout: 5))
+        XCTAssertEqual(logo.value as? String, "Off")
+        XCTAssertFalse(app.buttons["collection-section-save"].exists)
+        #else
+        throw XCTSkip("Simulator-only collection editing.")
+        #endif
+    }
+
+    func testHomeRowNameAutosavesWithKeyboardBackAndDone() throws {
+        #if targetEnvironment(simulator)
+        continueAfterFailure = false
+        let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.FocusHost")
+        app.launchArguments = ["--home-section-editor-fixture", "-AppleLanguages", "(en)"]
+        app.launch()
+        defer { app.terminate() }
+        try openHomeSections(in: app)
+        let row = app.buttons["home-section-home-watchlist"]
+        try focus(row, in: app)
+        XCUIRemote.shared.press(.select)
+        let field = app.textFields["home-section-name"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertFalse(app.buttons["home-section-name-save"].exists)
+        XCTAssertFalse(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Saved")).firstMatch.exists)
+        for useDone in [false, true] {
+            try focus(field, in: app)
+            XCUIRemote.shared.press(.select)
+            XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5), app.debugDescription)
+            XCTAssertFalse(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Saved")).firstMatch.exists)
+            // The native TV keyboard starts on "a"; select it through the remote.
+            XCUIRemote.shared.press(.select)
+            if useDone {
+                try focus(app.buttons.matching(NSPredicate(format: "label ==[c] %@", "Done")).firstMatch, in: app)
+                XCUIRemote.shared.press(.select)
+            } else {
+                XCUIRemote.shared.press(.menu)
+            }
+            XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
+            XCTAssertTrue(field.exists, "Keyboard Back must not also leave the editor.")
+            let value = try XCTUnwrap(field.value as? String)
+            XCTAssertFalse(value.isEmpty)
+            let status = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Saved")).firstMatch
+            XCTAssertTrue(status.waitForExistence(timeout: 5), app.debugDescription)
+            XCTAssertFalse(hasFocus(status))
+            capture(useDone ? "home-name-saved-with-done" : "home-name-saved-with-back", in: app)
+            XCUIRemote.shared.press(.menu)
+            XCTAssertTrue(row.waitForExistence(timeout: 5))
+            try focus(row, in: app)
+            XCUIRemote.shared.press(.select)
+            XCTAssertTrue(field.waitForExistence(timeout: 5))
+            XCTAssertEqual(field.value as? String, value, "The saved name must survive leaving and reopening.")
+        }
+        #else
+        throw XCTSkip("Simulator-only name editing.")
+        #endif
+    }
+
     func testAutomaticVersionHelpDoesNotSelectAutomatic() throws {
         let app = try launchSettings(style: "tabBar", syncEnabled: false)
         defer { app.terminate() }

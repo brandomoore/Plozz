@@ -61,7 +61,7 @@ styling settings.
 
 Mobile full-width page actions use `plozzPageActionLabel()` inside a native
 `plozzPageActionButton`. The label owns body typography, multiline expansion, and a
-24-point minimum height; primary and secondary actions differ in prominence,
+32-point minimum label height; primary and secondary actions differ in prominence,
 not sizing. On iOS 26, disabled page actions use the same native glass treatment
 as secondary actions instead of a separate prominent-button outline.
 Toolbar actions and native form rows retain their system metrics.
@@ -76,6 +76,16 @@ Mobile settings actions inside `SettingsSectionGroup` use `settingsActionRow()`.
 It puts the group's 16-point horizontal and 12-point vertical insets inside the
 button or menu's hit area, with a 44-point minimum height. A container value tells
 the group not to add those insets twice. Keep `SettingsDisclosureLabel` padding-free.
+
+Ordinary Settings fields use `SettingsInputRow` inside their existing group or
+panel. It supplies a persistent, wrapping label and forwards that name to the
+native input for accessibility without speaking a second static label. Callers
+retain bindings, keyboard/content types, secure entry, focus and submit behavior.
+An optional trailing status shares the label's baseline and secondary type size
+without hiding its accessibility text. Autosaving editors own that status and its
+announcement; the input row does not imply persistence or add a focus target.
+The row owns no background or outer insets; do not nest settings surfaces around
+it. Search, code-entry, and message-composition controls are intentional exceptions.
 Composite rows use `settingsControlTarget()` inside each control label for separate,
 non-overlapping 44-by-44 minimum targets; do not mark the entire composite as one action.
 `SettingsControlMenu` places that minimum inside the native menu label: a frame
@@ -85,6 +95,10 @@ its List accessibility container, whose reported frame may include the other col
 `SettingsPageLink` uses a button-backed native destination on mobile so a link
 cannot take over its sibling switch or menu's action in a composite List cell.
 TV navigation, focus styles, and row geometry are unchanged.
+Mobile `settingsPageSurface` paints the shared dialog background inside each
+native navigation destination. A clear pushed page reveals UIKit's opaque
+default instead of the sheet behind it, so it must retain the same palette and
+gradient preference as the Settings root.
 
 Mobile `ConnectionCodeView` uses `settingsGroupSurface` so code tiles follow the
 same gradient, theme, and reduced-transparency treatment as surrounding groups,

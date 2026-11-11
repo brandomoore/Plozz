@@ -1,0 +1,28 @@
+<!--
+Play Next: the queue, with the play head arriving at the top of it.
+
+Drawn rather than borrowed because the obvious candidate — the player's
+skip-forward glyph — is authored FILLED, and means "next track" rather than
+"play this one next". Stroking its outline drew both edges of the bar and came
+out twice the weight of every other icon in the menu.
+
+tags: [queue, next, play, upcoming]
+category: Media
+version: "1.0"
+-->
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+>
+  <path d="M4 7h11" />
+  <path d="M4 11h11" />
+  <path d="M4 15h7" />
+  <path d="M16 10l5 3.5l-5 3.5z" />
+</svg>

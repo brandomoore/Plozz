@@ -210,14 +210,36 @@ public struct HomePresentationRow: Identifiable, Equatable, Sendable {
         let byID = Dictionary(available.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         let ordered = visibility.rowSections(choices: available.map(\.choice)).enabled
         return ordered.compactMap { byID[$0] }.map { entry in
-            guard case let .library(row) = entry.source else { return entry }
-            return Self(choice: entry.choice, source: .library(.init(
-                section: row.section.resolvingCollectionCovers(presentation.collectionCoverLayout(
+            let name = visibility.homeRowName(for: entry.id)
+            let choice = name.map { entry.choice.renamed(to: $0) } ?? entry.choice
+            switch entry.source {
+            case var .home(row):
+                row.customTitle = name
+                return Self(choice: choice, source: .home(row))
+            case .liveTV:
+                return Self(choice: choice, source: entry.source)
+            case let .library(row):
+                var section = row.section.resolvingCollectionCovers(presentation.collectionCoverLayout(
                     at: LibraryPresentationSettings.collectionCoverAddress(for: entry.id)
-                )),
-                isLoading: row.isLoading, failure: row.failure, browseItem: row.browseItem,
-                issue: row.issue, collectionCardStyle: row.collectionCardStyle
-            )))
+                ))
+                if let name {
+                    section = LibrarySection(
+                        id: section.id, title: name, style: section.style, items: section.items,
+                        isHomeDefault: section.isHomeDefault, isLegacyHomeDefault: section.isLegacyHomeDefault,
+                        browseID: section.browseID, hasMore: section.hasMore
+                    )
+                }
+                let issue = row.issue.map {
+                    HomeSectionIssue(
+                        choice: choice, reason: $0.reason, serverName: $0.serverName, providerKind: $0.providerKind
+                    )
+                }
+                return Self(choice: choice, source: .library(.init(
+                    section: section,
+                    isLoading: row.isLoading, failure: row.failure, browseItem: row.browseItem,
+                    issue: issue, collectionCardStyle: row.collectionCardStyle
+                )))
+            }
         }
     }
 }

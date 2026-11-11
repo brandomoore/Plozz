@@ -228,6 +228,16 @@ struct PresentationHostApp: App {
                 DetailSelectionFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--content-refresh-return-fixture") {
                 ContentRefreshReturnFixture()
+            } else if ProcessInfo.processInfo.arguments.contains("--music-landing-fixture") {
+                MusicLandingFixture(
+                    palette: ProcessInfo.processInfo.arguments.contains("--music-light") ? .light :
+                        ProcessInfo.processInfo.arguments.contains("--music-oled") ? .pureBlack : .dark,
+                    textSize: ProcessInfo.processInfo.arguments.contains("--music-large-text") ? .accessibility3 : .large
+                )
+            } else if ProcessInfo.processInfo.arguments.contains("--music-detail-fixture") {
+                MusicDetailFixture()
+            } else if ProcessInfo.processInfo.arguments.contains("--music-player-fixture") {
+                MusicPlayerFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--offline-review-fixture") {
                 OfflineModeReviewFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--home-empty-fixture") {

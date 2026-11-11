@@ -80,17 +80,17 @@ public enum AppTheme: String, CaseIterable, Identifiable, Codable, Sendable {
 /// How the full-screen music player paints its background and text. Independent
 /// of `AppTheme`: the player can follow the app theme or be pinned to one of its
 /// own looks, because its immersive, artwork-tinted background reads differently
-/// from the browsing chrome. Persisted locally via `@AppStorage`.
+/// from the browsing chrome. Persisted per profile by `MusicPlayerSettingsStore`.
 public enum MusicPlayerAppearance: String, CaseIterable, Identifiable, Codable, Sendable {
-    /// Follow the app theme: a light theme gives the frosted-light player, any
-    /// dark theme gives the vibrant-dark player.
+    /// Follow both the app theme and its gradient preference.
     case matchTheme
-    /// Always a frosted, lightly artwork-tinted light look.
+    /// Always a plain light background.
     case light
-    /// Always the vibrant, artwork-tinted dark look.
-    case dark
-    /// Always true black, with the artwork colors as subtle accents. The
-    /// persisted raw value stays unchanged for existing installs.
+    /// Keep the former colorful Dark preference as Artwork on existing installs.
+    case artwork = "dark"
+    /// Always a plain dark background, distinct from the legacy colorful look.
+    case dark = "neutralDark"
+    /// Always true black. The persisted raw value stays unchanged.
     case pureBlack = "oled"
 
     public var id: String { rawValue }
@@ -99,9 +99,9 @@ public enum MusicPlayerAppearance: String, CaseIterable, Identifiable, Codable, 
         switch self {
         case .matchTheme:
             return LocalizedStringResource(
-                "musicPlayerAppearance.matchTheme",
-                defaultValue: "Match Theme",
-                comment: "Music player appearance option in Settings."
+                "musicPlayerAppearance.matchAppTheme",
+                defaultValue: "Match App Theme",
+                comment: "Follow Plozz's app theme and Gradient Backgrounds preference, including their defaults."
             )
         case .light:
             return LocalizedStringResource(
@@ -115,10 +115,16 @@ public enum MusicPlayerAppearance: String, CaseIterable, Identifiable, Codable, 
                 defaultValue: "Dark",
                 comment: "Music player appearance option in Settings."
             )
+        case .artwork:
+            return LocalizedStringResource(
+                "musicPlayerAppearance.artwork",
+                defaultValue: "Artwork",
+                comment: "Music player background sampled from the album artwork."
+            )
         case .pureBlack:
             return LocalizedStringResource(
-                "musicPlayerAppearance.pureBlack",
-                defaultValue: "Pure Black",
+                "musicPlayerAppearance.black",
+                defaultValue: "Black",
                 comment: "Music player appearance option in Settings."
             )
         }
@@ -130,18 +136,16 @@ public enum MusicPlayerAppearance: String, CaseIterable, Identifiable, Codable, 
         case .matchTheme: return "circle.lefthalf.filled"
         case .light: return "sun.max.fill"
         case .dark: return "moon.fill"
+        case .artwork: return "photo"
         case .pureBlack: return "moon.stars.fill"
         }
     }
 
     public static let `default`: MusicPlayerAppearance = .matchTheme
 
-    /// The order the music-player style picker presents options in: Dark, Pure Black,
-    /// Light, then Match Theme last (mirroring the theme picker, where the
-    /// "follows something else" option sits at the end).
-    public static let pickerOrder: [MusicPlayerAppearance] = [.dark, .pureBlack, .light, .matchTheme]
+    public static let pickerOrder: [MusicPlayerAppearance] = [.matchTheme, .artwork, .pureBlack, .dark, .light]
 
-    /// AppStorage key shared by the player (reads it) and Settings (writes it).
+    /// Base key scoped by the profile's music settings store.
     public static let storageKey = "musicPlayerAppearance"
 }
 

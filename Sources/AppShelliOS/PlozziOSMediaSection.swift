@@ -38,6 +38,7 @@ enum PlozziOSMediaRailLayout {
 }
 
 struct PlozziOSMediaSection<Content: View>: View {
+    @Environment(\.homeRowEditAction) private var editAction
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.plozzMetrics) private var metrics
@@ -53,7 +54,9 @@ struct PlozziOSMediaSection<Content: View>: View {
         VStack(alignment: .leading, spacing: PlozziOSMediaRailLayout.headingSpacing) {
             HStack {
                 Group {
-                    if onBrowse != nil || reservesBrowseSpace { BrowseRowHeading(title: title, action: onBrowse) }
+                    if onBrowse != nil || reservesBrowseSpace || editAction != nil {
+                        BrowseRowHeading(title: title, action: onBrowse)
+                    }
                     else { title }
                 }
                     .font(.title3.weight(.semibold))
@@ -71,6 +74,7 @@ struct PlozziOSMediaSection<Content: View>: View {
                     for: sizeClass, usesDesktopSizing: metrics.usesDesktopSizing
                 ))
             content
+                .environment(\.homeRowEditAction, nil)
                 .padding(.vertical, -artworkInset)
         }
     }

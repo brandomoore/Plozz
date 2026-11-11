@@ -538,7 +538,8 @@ let package = Package(
         // it stays decoupled from the video feature modules.
         .target(
             name: "FeatureMusic",
-            dependencies: ["CoreModels", "CoreUI", "MetadataKit", "CoreNetworking"]
+            dependencies: ["CoreModels", "CoreUI", "MetadataKit", "CoreNetworking"],
+            resources: [.process("iOS/Resources"), .copy("iOS/Mozz-NOTICE.txt")]
         ),
 
         // MARK: Top Shelf (shared with the tvOS Top Shelf extension)
@@ -932,6 +933,7 @@ let package = Package(
         .target(
             name: "AppShelliOS",
             dependencies: [
+                "FeatureMusic",
                 "FeatureShareOnboarding",
                 "AppRuntime",
                 "CoreModels",

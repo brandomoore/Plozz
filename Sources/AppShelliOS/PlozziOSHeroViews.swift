@@ -43,7 +43,6 @@ enum PlozziOSHeroArtworkFallback {
 }
 
 enum PlozziOSHeroMetrics {
-    static let compactDetailActionSpacing: CGFloat = 20
     static let detailContentTopInset: CGFloat = 24
 
     /// Whether this hero fills its stage by **mirroring** its own bottom edge
@@ -2206,7 +2205,6 @@ struct PlozziOSDetailHeroForeground: View {
                 stackedActionRows(actions: entries)
             }
             .controlSize(.large)
-            .padding(.top, style == .compactPortrait ? PlozziOSHeroMetrics.compactDetailActionSpacing : 0)
         }
         .frame(
             maxWidth: PlozziOSPageLayout.heroTextMaxWidth(for: style),
@@ -2898,11 +2896,14 @@ struct PlozziOSHeroMetadata: View {
                             : .leading
                     )
                 } else if mode == .detail, usesCompactDetailLayout {
-                    DetailHeaderMetadataRow(
-                        ratings: effectiveRatings,
-                        badges: effectiveTechnicalBadges,
-                        familyGuidanceAge: effectiveFamilyGuidanceAge
-                    )
+                    if !effectiveRatings.isEmpty || !effectiveTechnicalBadges.isEmpty || effectiveFamilyGuidanceAge != nil {
+                        DetailHeaderMetadataRow(
+                            ratings: effectiveRatings,
+                            badges: effectiveTechnicalBadges,
+                            familyGuidanceAge: effectiveFamilyGuidanceAge
+                        )
+                        .padding(.vertical, 8)
+                    }
                 } else if mode == .detail,
                     !factComponents.isEmpty
                         || !effectiveRatings.isEmpty

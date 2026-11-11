@@ -8,6 +8,7 @@ import FeatureLiveTV
 import FeatureAuth
 import FeatureProfiles
 import FeatureSettings
+import FeatureMusic
 import FeatureSyncSetup
 import SwiftUI
 import UIKit
@@ -1027,6 +1028,7 @@ private struct PlozziOSDeveloperInfoSection: View {
 }
 
 private struct PlozziOSSettingsCompactMenu: View {
+    private var navigationTitles = NavigationTitles()
     let appModel: PlozziOSAppModel
     let onAddServer: () -> Void
     var onAddUser: (MediaServer) -> Void = { _ in }
@@ -1073,7 +1075,7 @@ private struct PlozziOSSettingsCompactMenu: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 18) {
-                Text("Settings")
+                navigationTitles(NavigationLibraryLayout.settingsKey, default: Text("Settings"))
                     .font(.largeTitle.bold())
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .accessibilityAddTraits(.isHeader)
@@ -1336,7 +1338,8 @@ private struct PlozziOSSettingsCompactMenu: View {
             titleDisplayMode: .inline,
             horizontalInset: 16
         )
-        .navigationTitle(isHeaderCollapsed ? Text("Settings") : Text(verbatim: ""))
+        .navigationTitle(isHeaderCollapsed
+            ? navigationTitles(NavigationLibraryLayout.settingsKey, default: Text("Settings")) : Text(verbatim: ""))
         .modifier(PlozziOSSettingsSearch(
             appModel: appModel, isShowingDestination: searchSelection != nil
         ) { searchSelection = $0 })
@@ -1545,7 +1548,7 @@ private struct PlozziOSSettingsSearchDestination: View {
                 )
             }
         case .theme:
-            PlozziOSThemeSettingsView(theme: appModel.settings.theme, transparency: appModel.settings.transparency)
+            profilePage(.appearance)
         case .cards:
             CardAppearanceControls(
                 cards: appModel.settings.cardStyle, watchIndicator: appModel.settings.watchIndicator,
@@ -1640,7 +1643,13 @@ private struct PlozziOSSettingsSearchDestination: View {
             PlozziOSDiagnosticsSettingsView(
                 appModel: appModel, model: appModel.settings.diagnostics, crashReporting: appModel.crashReporting
             )
-        case .musicPlayer, .topShelf:
+        case .musicPlayer:
+            if let music = appModel.music {
+                PlozziOSMusicPlayerSettingsView(model: music.settings)
+            } else {
+                ContentUnavailableView("Setting unavailable", systemImage: "magnifyingglass")
+            }
+        case .topShelf:
             ContentUnavailableView("Setting unavailable", systemImage: "magnifyingglass")
         case .releaseNotes:
             ReleaseNotesSettingsView(model: .shared)
@@ -2009,11 +2018,11 @@ struct PlozziOSAppearanceSettingsView: View {
     @State private var destination: Page?
 
     private enum Page: String, CaseIterable, Identifiable {
-        case theme, cards, artwork, circadian
+        case musicPlayer, cards, artwork, circadian
         var id: Self { self }
         var title: LocalizedStringResource {
             switch self {
-            case .theme: "Theme"
+            case .musicPlayer: "Music player"
             case .cards: "Cards"
             case .artwork: "Artwork"
             case .circadian: "Circadian Mode"
@@ -2023,8 +2032,30 @@ struct PlozziOSAppearanceSettingsView: View {
 
     var body: some View {
         List {
+            SettingsSectionGroup("Theme") {
+                CompactThemePicker(selection: $theme.theme)
+                    .environment(\.gradientBackgroundsEnabled, theme.gradientEnabled)
+                    .settingsSearchAnchor("theme")
+                Toggle("Gradient Backgrounds", isOn: $theme.gradientEnabled)
+                    .settingsSearchAnchor("gradient-backgrounds")
+                Picker("Liquid Glass", selection: $transparency.preference) {
+                    ForEach(TransparencyPreference.allCases) { preference in
+                        Text(preference == .system ? "System" : preference.displayName)
+                            .tag(preference)
+                    }
+                }
+                .settingsSearchAnchor("liquid-glass")
+                if appModel.music != nil {
+                    Button { destination = .musicPlayer } label: {
+                        SettingsDisclosureLabel { Text(Page.musicPlayer.title) }
+                    }
+                    .settingsActionRow()
+                    .accessibilityIdentifier("appearance-musicPlayer")
+                }
+            }
+            .settingsSearchGroup(["theme", "gradient-backgrounds", "liquid-glass"])
             SettingsSectionGroup {
-                ForEach(Page.allCases) { page in
+                ForEach([Page.cards, .artwork, .circadian]) { page in
                     Button { destination = page } label: {
                         SettingsDisclosureLabel { Text(page.title) }
                     }
@@ -2037,8 +2068,10 @@ struct PlozziOSAppearanceSettingsView: View {
         .navigationTitle("Appearance")
         .navigationDestination(item: $destination) { page in
             switch page {
-            case .theme:
-                PlozziOSThemeSettingsView(theme: theme, transparency: transparency)
+            case .musicPlayer:
+                if let music = appModel.music {
+                    PlozziOSMusicPlayerSettingsView(model: music.settings)
+                }
             case .cards:
                 CardAppearanceControls(
                     cards: cardStyle, watchIndicator: watchIndicator,
@@ -2087,36 +2120,6 @@ private struct SettingsCategoryNavigationReset<Identity: Equatable>: UIViewContr
                 }
             }
         }
-    }
-}
-
-private struct PlozziOSThemeSettingsView: View {
-    @Bindable var theme: ThemeSettingsModel
-    @Bindable var transparency: TransparencyPreferenceModel
-
-    var body: some View {
-        List {
-            SettingsSectionGroup {
-                Picker("Appearance", selection: $theme.theme) {
-                    ForEach(AppTheme.allCases) { theme in
-                        Label(theme.displayName, systemImage: theme.symbolName).tag(theme)
-                    }
-                }
-                .settingsSearchAnchor("theme")
-                Toggle("Gradient Backgrounds", isOn: $theme.gradientEnabled)
-                    .settingsSearchAnchor("gradient-backgrounds")
-                Picker("Liquid Glass", selection: $transparency.preference) {
-                    ForEach(TransparencyPreference.allCases) { preference in
-                        Text(preference == .system ? "System" : preference.displayName)
-                            .tag(preference)
-                    }
-                }
-                .settingsSearchAnchor("liquid-glass")
-            }
-            .settingsSearchGroup(["theme", "gradient-backgrounds", "liquid-glass"])
-        }
-        .settingsPageSurface()
-        .navigationTitle("Theme")
     }
 }
 
@@ -2203,6 +2206,25 @@ private struct PlozziOSScreensNavigationSettingsView: View {
     }
 }
 
+struct PlozziOSMusicPlayerSettingsView: View {
+    @Bindable var model: MusicPlayerSettingsModel
+
+    var body: some View {
+        List {
+            SettingsSectionGroup("Appearance") {
+                CompactMusicStylePicker(selection: $model.appearance) { appearance in
+                    MusicPlayerStylePreview(appearance: appearance)
+                }
+                .settingsSearchAnchor("music-style")
+                .accessibilityIdentifier("music-player-appearance")
+            }
+            .settingsSearchGroup(["music-style"])
+        }
+        .settingsPageSurface()
+        .navigationTitle("Music player")
+    }
+}
+
 struct PlozziOSAllScreensSettingsView: View {
     let contentRatings: ContentRatingSettingsModel
     let spoilers: SpoilerSettingsModel
@@ -2269,9 +2291,7 @@ private struct PlozziOSNavigationSettingsView: View {
                 NavigationLibrariesDetailView(
                     scope: navigationLibrariesScope,
                     navigation: appModel.settings.navigation,
-                    excludedKeys: [
-                        NavigationLibraryLayout.musicKey,
-                    ]
+                    excludedKeys: appModel.music == nil ? [NavigationLibraryLayout.musicKey] : []
                 )
                 .id(appModel.navigationLibrariesScopeKey)
             }
@@ -2845,20 +2865,23 @@ private struct PlozziOSSubtitleSettingsView: View {
                     "Download subtitles automatically",
                     isOn: $behavior.settings.autoDownloadSubtitles
                 ).settingsSearchAnchor("subtitle-download")
-                TextField(
-                    "Preferred language code",
-                    text: Binding(
-                        get: { behavior.settings.preferredSubtitleLanguage ?? "" },
-                        set: {
-                            behavior.settings.preferredSubtitleLanguage =
-                                $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                                ? nil
-                                : $0
-                        }
+                SettingsInputRow("Preferred language code") {
+                    TextField(
+                        "Preferred language code",
+                        text: Binding(
+                            get: { behavior.settings.preferredSubtitleLanguage ?? "" },
+                            set: {
+                                behavior.settings.preferredSubtitleLanguage =
+                                    $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                                    ? nil
+                                    : $0
+                            }
+                        ),
+                        prompt: Text(verbatim: "")
                     )
-                )
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                }
                 .settingsSearchAnchor("subtitle-language")
                 Picker(
                     "SDH subtitles",

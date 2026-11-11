@@ -4,6 +4,21 @@ import CoreNetworking
 @testable import ProviderJellyfin
 
 final class JellyfinMusicProviderTests: XCTestCase {
+    func testMusicFavoriteIsScopedToCurrentServerUserForJellyfinAndEmby() async throws {
+        for kind in [ProviderKind.jellyfin, .emby] {
+            let http = StubHTTPClient()
+            http.stub(pathSuffix: "/Users/u1/Items/song", json: #"{"Id":"song","Type":"Audio","UserData":{"IsFavorite":true}}"#)
+            http.stub(pathSuffix: "/Users/u1/FavoriteItems/song", json: "{}")
+            let provider = JellyfinProvider(session: makeSession(provider: kind), http: http)
+            let favorite = try await provider.musicFeedback(for: "song")
+            XCTAssertEqual(favorite, .favorite(true))
+            try await provider.setMusicFeedback(.favorite(false), for: "song")
+            XCTAssertEqual(http.method(forPathSuffix: "/Users/u1/FavoriteItems/song"), .delete)
+            try await provider.setMusicFeedback(.favorite(true), for: "song")
+            XCTAssertEqual(http.method(forPathSuffix: "/Users/u1/FavoriteItems/song"), .post)
+        }
+    }
+
     private func makeSession(provider: ProviderKind = .jellyfin) -> UserSession {
         UserSession(
             server: MediaServer(id: "s", name: "Home", baseURL: URL(string: "http://host:8096")!, provider: provider),
@@ -69,7 +84,7 @@ final class JellyfinMusicProviderTests: XCTestCase {
         stub.stub(pathSuffix: "/Users/u1/Items/al1", json: #"{"Id":"al1","Type":"MusicAlbum"}"#)
         stub.stub(pathSuffix: "/Users/u1/Items", json: """
         {"Items":[{"Id":"t1","Name":"Opening","Type":"Audio","Album":"Greatest Hits",
-          "AlbumId":"al1","Artists":["The Band"],"IndexNumber":1,"ParentIndexNumber":1,
+          "AlbumId":"al1","Artists":["The Band"],"ArtistItems":[{"Id":"artist","Name":"The Band"}],"IndexNumber":1,"ParentIndexNumber":1,
           "RunTimeTicks":1870000000}],"TotalRecordCount":1}
         """)
         let provider = JellyfinProvider(session: makeSession(), http: stub)
@@ -81,6 +96,7 @@ final class JellyfinMusicProviderTests: XCTestCase {
         XCTAssertEqual(track.albumTitle, "Greatest Hits")
         XCTAssertEqual(track.albumID, "al1")
         XCTAssertEqual(track.artistName, "The Band")
+        XCTAssertEqual(track.artistID, "artist")
         XCTAssertEqual(track.trackNumber, 1)
         XCTAssertEqual(track.discNumber, 1)
         XCTAssertEqual(track.duration ?? 0, 187, accuracy: 0.001)

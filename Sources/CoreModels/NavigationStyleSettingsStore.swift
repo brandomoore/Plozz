@@ -231,10 +231,23 @@ public final class NavigationStyleSettingsModel {
 
     /// Restores every destination's default visibility and order.
     public func resetLibraryLayout() {
-        let next = NavigationLibraryLayout.default
+        var next = NavigationLibraryLayout.default
+        for (key, name) in libraryLayout.customNames { next.setCustomName(name, for: key) }
         guard libraryLayout != next else { return }
         libraryLayout = next
         layoutStore.save(libraryLayout)
+    }
+
+    public func renameDestination(_ key: String, to name: String, homeVisibility: HomeLibraryVisibilityModel) {
+        if key == NavigationLibraryLayout.watchlistKey {
+            homeVisibility.setHomeRowName(name, for: .global(.watchlist))
+            return
+        }
+        var next = libraryLayout
+        next.setCustomName(name, for: key)
+        guard next != libraryLayout else { return }
+        libraryLayout = next
+        layoutStore.save(next)
     }
 
     private func setDestination(_ visible: Bool, key: String) {
