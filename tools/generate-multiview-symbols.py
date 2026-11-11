@@ -8,7 +8,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 CATALOG = ROOT / "Sources/CoreUI/Resources/MultiviewSymbols.xcassets"
 WIDTH, HEIGHT = 110.0, 78.0
-WEIGHTS = (("Ultralight", 1.5), ("Regular", 5.0), ("Black", 8.0))
+# Calibrated against rendered rectangle.split.2x1 outlines at matching size/scale.
+WEIGHTS = (("Ultralight", 2.55), ("Regular", 8.1), ("Black", 15.8))
+INSET_SIZES = (("small", 0.25), ("medium", 0.32), ("large", 0.40))
 
 
 def rounded_rect(x, y, width, height, radius, reverse=False):
@@ -38,12 +40,23 @@ def picture_path(rect, thickness, filled=False):
     outer = rounded_rect(x, y, width, height, radius)
     if filled:
         return outer
-    inset = min(thickness, min(width, height) / 3)
+    inset = min(thickness, min(width, height) / 2 - 1)
     inner = rounded_rect(
         x + inset, y + inset, width - 2 * inset, height - 2 * inset,
         max(1, radius - inset), reverse=True,
     )
     return outer + " " + inner
+
+
+def corner_rectangles(count, corner, fraction, margin):
+    side_count = count - 1
+    width = min(WIDTH * fraction, (HEIGHT - 2 * margin - 5 * (side_count - 1)) / side_count * 1.4)
+    height = width / 1.4
+    x = margin if corner.endswith("Leading") else WIDTH - margin - width
+    top = margin if corner.startswith("top") else HEIGHT - margin - side_count * height - 5 * (side_count - 1)
+    return [(0, 0, WIDTH, HEIGHT)] + [
+        (x, top + i * (height + 5), width, height) for i in range(side_count)
+    ]
 
 
 def layouts():
@@ -56,20 +69,19 @@ def layouts():
         rectangles += [(80, top + i * (side_height + 8), 30, side_height) for i in range(side_count)]
         yield f"multiview.main-and-stack.{count}", rectangles, False
         for corner in ("topLeading", "topTrailing", "bottomLeading", "bottomTrailing"):
-            for size, fraction in (("small", 0.25), ("medium", 0.32), ("large", 0.40)):
-                width = min(WIDTH * fraction, (HEIGHT - 16 - 5 * (side_count - 1)) / side_count * 1.4)
-                height = width / 1.4
-                x = 8 if corner.endswith("Leading") else WIDTH - 8 - width
-                top = 8 if corner.startswith("top") else HEIGHT - 8 - side_count * height - 5 * (side_count - 1)
-                rectangles = [(0, 0, WIDTH, HEIGHT)]
-                rectangles += [(x, top + i * (height + 5), width, height) for i in range(side_count)]
+            for size, fraction in INSET_SIZES:
+                rectangles = corner_rectangles(count, corner, fraction, margin=8)
                 yield f"multiview.corner.{count}.{corner}.{size}", rectangles, True
 
 
-def symbol_svg(rectangles, filled_insets):
+def symbol_svg(name, rectangles, filled_insets):
     # SF Symbols interpolates other weights/scales from these compatible masters.
     guides, symbols = [], []
     for index, (weight, thickness) in enumerate(WEIGHTS):
+        weight_rectangles = rectangles
+        if filled_insets:
+            _, _, count, corner, size = name.split(".")
+            weight_rectangles = corner_rectangles(int(count), corner, dict(INSET_SIZES)[size], margin=thickness + 4)
         x, baseline = 400 + index * 400, 500
         variant = f"{weight}-S"
         guides += [
@@ -78,7 +90,7 @@ def symbol_svg(rectangles, filled_insets):
         ]
         paths = "\n".join(
             f'      <path d="{picture_path(rect, thickness, filled_insets and i > 0)}"/>'
-            for i, rect in enumerate(rectangles)
+            for i, rect in enumerate(weight_rectangles)
         )
         symbols.append(f'    <g id="{variant}" transform="translate({x} {baseline-HEIGHT})">\n{paths}\n    </g>')
     return (
@@ -87,11 +99,11 @@ def symbol_svg(rectangles, filled_insets):
         '  <g id="Notes"><text id="template-version">3.0</text></g>\n'
         '  <g id="Guides" fill="none" stroke="#00AEEF" stroke-width="0.5">\n'
         '    <line id="Baseline-S" x1="0" x2="1800" y1="500" y2="500"/>\n'
-        '    <line id="Capline-S" x1="0" x2="1800" y1="412" y2="412"/>\n'
+        '    <line id="Capline-S" x1="0" x2="1800" y1="420" y2="420"/>\n'
         '    <line id="Baseline-M" x1="0" x2="1800" y1="1000" y2="1000"/>\n'
-        '    <line id="Capline-M" x1="0" x2="1800" y1="912" y2="912"/>\n'
+        '    <line id="Capline-M" x1="0" x2="1800" y1="920" y2="920"/>\n'
         '    <line id="Baseline-L" x1="0" x2="1800" y1="1500" y2="1500"/>\n'
-        '    <line id="Capline-L" x1="0" x2="1800" y1="1412" y2="1412"/>\n'
+        '    <line id="Capline-L" x1="0" x2="1800" y1="1420" y2="1420"/>\n'
         + "\n".join("    " + guide for guide in guides) + '\n  </g>\n'
         '  <g id="Symbols" fill="black">\n' + "\n".join(symbols) + '\n  </g>\n</svg>\n'
     )
@@ -108,7 +120,7 @@ def main():
             "info": {"author": "xcode", "version": 1},
             "symbols": [{"filename": "symbol.svg", "idiom": "universal"}],
         }, indent=2) + "\n"
-        files[folder / "symbol.svg"] = symbol_svg(rectangles, filled)
+        files[folder / "symbol.svg"] = symbol_svg(name, rectangles, filled)
     for path, content in files.items():
         if args.check:
             if not path.exists() or path.read_text() != content:

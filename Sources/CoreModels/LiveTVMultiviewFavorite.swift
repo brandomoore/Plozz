@@ -5,10 +5,17 @@ public enum LiveTVMultiviewLayout: String, Codable, CaseIterable, Sendable {
     case mainAndStack
     case corner
 
-    public var title: LocalizedStringResource {
+    public func title(count: Int, isPortrait: Bool = false) -> LocalizedStringResource {
         switch self {
-        case .sideBySide: "Grid"
-        case .mainAndStack: "Main and stack"
+        case .sideBySide:
+            if count > 2 {
+                "Grid"
+            } else if isPortrait {
+                "Top and bottom"
+            } else {
+                "Side by side"
+            }
+        case .mainAndStack: "Main picture"
         case .corner: "Corner"
         }
     }

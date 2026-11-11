@@ -61,9 +61,12 @@ starting a second resize for every layout frame.
 
 `MultiviewLayoutSymbol` supplies real SF Symbol images for native labels and
 menus. Standard two/four-picture grids use Apple's symbols; original custom
-symbol assets cover the three-picture grid, Main and stack, and Corner
+symbol assets cover the three-picture grid, Main picture, and Corner
 count/position/size combinations. Each custom asset has compatible ultralight,
-regular and black masters for native weight/scale interpolation. Regenerate
+regular and black masters for native weight/scale interpolation. Their outlines
+are calibrated against rendered native symbols at matching point sizes, weights
+and scales; matching bounding boxes alone does not establish matching weight.
+Corner insets retain clearance from the outline at every master weight. Regenerate
 with `python3 tools/generate-multiview-symbols.py`; `--check` verifies the
 committed assets. Keep menu selection checkmarks separate from layout previews.
 Preserve the native button's animation transaction: clearing it snaps the live

@@ -1219,7 +1219,7 @@ struct LiveTVMultiviewLayoutOptions: View {
             set: { setup(); coordinator.layout = $0 }
         )) {
             ForEach(LiveTVMultiviewLayout.allCases, id: \.self) { layout in
-                Label { Text(layout.title) } icon: {
+                Label { Text(layout.title(count: coordinator.panes.count, isPortrait: isPortrait)) } icon: {
                     symbol(layout: layout, corner: coordinator.corner, size: coordinator.insetSize)
                 }
                 .tag(layout)

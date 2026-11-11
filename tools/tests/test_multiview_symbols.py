@@ -18,7 +18,7 @@ class MultiviewSymbolsTests(unittest.TestCase):
             names.add(name)
             count = int(name.split(".")[2])
             self.assertEqual(len(rectangles), count)
-            root = ET.fromstring(symbols.symbol_svg(rectangles, filled))
+            root = ET.fromstring(symbols.symbol_svg(name, rectangles, filled))
             for weight, _ in symbols.WEIGHTS:
                 paths = root.findall(f".//svg:g[@id='{weight}-S']/svg:path", namespace)
                 self.assertEqual(len(paths), count)
@@ -30,6 +30,22 @@ class MultiviewSymbolsTests(unittest.TestCase):
                 self.assertLessEqual(x + width, symbols.WIDTH)
                 self.assertLessEqual(y + height, symbols.HEIGHT)
         self.assertEqual(len(names), 40)
+
+    def test_corner_pictures_stay_clear_of_every_outline_weight(self):
+        for count in range(2, 5):
+            for corner in ("topLeading", "topTrailing", "bottomLeading", "bottomTrailing"):
+                for _, fraction in symbols.INSET_SIZES:
+                    for _, thickness in symbols.WEIGHTS:
+                        _, *insets = symbols.corner_rectangles(count, corner, fraction, margin=thickness + 4)
+                        for x, y, width, height in insets:
+                            self.assertGreater(width, 0)
+                            self.assertGreater(height, 0)
+                            self.assertGreaterEqual(x, thickness + 3.99)
+                            self.assertGreaterEqual(y, thickness + 3.99)
+                            self.assertLessEqual(x + width, symbols.WIDTH - thickness - 3.99)
+                            self.assertLessEqual(y + height, symbols.HEIGHT - thickness - 3.99)
+                        for first, second in zip(insets, insets[1:]):
+                            self.assertAlmostEqual(second[1] - first[1] - first[3], 5)
 
     def test_corner_and_stack_symbols_preserve_actual_arrangement(self):
         for name, rectangles, _ in symbols.layouts():

@@ -10,6 +10,117 @@ import XCTest
 
 @MainActor
 final class LiveTVMultiviewMotionHostedTests: XCTestCase {
+    func testLayoutTitlesFollowCountAndOrientationWithoutChangingSavedValues() throws {
+        func title(_ layout: LiveTVMultiviewLayout, count: Int, portrait: Bool) -> String {
+            var resource = layout.title(count: count, isPortrait: portrait)
+            resource.locale = Locale(identifier: "en")
+            return String(localized: resource)
+        }
+        for count in 1...4 {
+            for portrait in [false, true] {
+                XCTAssertEqual(title(.sideBySide, count: count, portrait: portrait),
+                               count > 2 ? "Grid" : portrait ? "Top and bottom" : "Side by side")
+                XCTAssertEqual(title(.mainAndStack, count: count, portrait: portrait), "Main picture")
+                XCTAssertEqual(title(.corner, count: count, portrait: portrait), "Corner")
+            }
+        }
+        for (rawValue, layout) in [
+            ("sideBySide", LiveTVMultiviewLayout.sideBySide), ("mainAndStack", .mainAndStack), ("corner", .corner)
+        ] {
+            let data = Data("\"\(rawValue)\"".utf8)
+            XCTAssertEqual(try JSONDecoder().decode(LiveTVMultiviewLayout.self, from: data), layout)
+            XCTAssertEqual(try JSONEncoder().encode(layout), data)
+        }
+    }
+
+    func testLayoutSymbolStrokesMatchNativeSymbols() throws {
+        var measurements: [String] = []
+        defer {
+            let attachment = XCTAttachment(string: measurements.joined(separator: "\n"))
+            attachment.name = "Native and custom symbol stroke measurements"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+        }
+        for weight in [UIImage.SymbolWeight.ultraLight, .regular, .semibold, .black] {
+            for scale in [UIImage.SymbolScale.small, .medium, .large] {
+                for pointSize: CGFloat in [20, 32] {
+                    let configuration = UIImage.SymbolConfiguration(pointSize: pointSize, weight: weight, scale: scale)
+                    let reference = try XCTUnwrap(UIImage(
+                        systemName: "rectangle.split.2x1", withConfiguration: configuration))
+                    let nativeStroke = try topStrokeThickness(reference)
+                    for layout in LiveTVMultiviewLayout.allCases {
+                        for count in 2...4 {
+                            let corners: [LiveTVMultiviewCorner] = layout == .corner ? LiveTVMultiviewCorner.allCases : [.bottomTrailing]
+                            let sizes: [LiveTVMultiviewInsetSize] = layout == .corner ? LiveTVMultiviewInsetSize.allCases : [.medium]
+                            for corner in corners {
+                                for size in sizes {
+                                    let symbol = MultiviewLayoutSymbol(layout: layout, count: count, corner: corner, insetSize: size)
+                                    guard symbol.systemName == nil else { continue }
+                                    let image = try XCTUnwrap(UIImage(
+                                        named: symbol.assetName, in: MultiviewLayoutSymbol.bundle, compatibleWith: nil)?
+                                        .applyingSymbolConfiguration(configuration))
+                                    let leadingInset = corner == .topLeading || corner == .bottomLeading
+                                    let customStroke = try topStrokeThickness(
+                                        image, horizontalFraction: layout == .corner && leadingInset ? 0.75 : 0.25,
+                                        topBandFraction: layout == .sideBySide ? 0.22 : 0.5)
+                                    measurements.append(
+                                        "\(symbol.assetName) weight=\(weight.rawValue) scale=\(scale.rawValue) size=\(pointSize): native=\(nativeStroke) custom=\(customStroke)")
+                                    XCTAssertEqual(customStroke, nativeStroke, accuracy: max(0.2, nativeStroke * 0.15),
+                                                   "\(symbol.assetName), weight \(weight.rawValue), scale \(scale.rawValue), size \(pointSize)")
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func topStrokeThickness(
+        _ image: UIImage, horizontalFraction: CGFloat = 0.25, topBandFraction: CGFloat = 0.5
+    ) throws -> CGFloat {
+        let scale: CGFloat = 4
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = scale
+        let rendered = UIGraphicsImageRenderer(size: image.size, format: format).image { _ in
+            image.withTintColor(.white, renderingMode: .alwaysOriginal).draw(at: .zero)
+        }
+        let bitmap = try XCTUnwrap(rendered.cgImage)
+        let width = bitmap.width
+        let height = bitmap.height
+        var pixels = [UInt8](repeating: 0, count: width * height * 4)
+        try pixels.withUnsafeMutableBytes { bytes in
+            let context = try XCTUnwrap(CGContext(
+                data: bytes.baseAddress, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4,
+                space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+            context.draw(bitmap, in: CGRect(x: 0, y: 0, width: width, height: height))
+        }
+        var minX = width, minY = height, maxX = 0, maxY = 0
+        for y in 0..<height {
+            for x in 0..<width where pixels[(y * width + x) * 4 + 3] > 0 {
+                minX = min(minX, x)
+                minY = min(minY, y)
+                maxX = max(maxX, x)
+                maxY = max(maxY, y)
+            }
+        }
+        guard minX < maxX, minY < maxY else {
+            XCTFail("The symbol must contain visible pixels.")
+            return 0
+        }
+        // Integrate alpha through the top half of a picture, away from dividers
+        // and insets. Tiny antialiased gaps need not contain a fully clear pixel.
+        let x = minX + Int(CGFloat(maxX - minX) * horizontalFraction)
+        let end = CGFloat(minY) + CGFloat(maxY - minY + 1) * topBandFraction
+        var coverage: CGFloat = 0
+        for y in minY..<Int(ceil(end)) {
+            let alpha = CGFloat(pixels[(y * width + x) * 4 + 3]) / 255
+            coverage += alpha * min(1, end - CGFloat(y))
+        }
+        XCTAssertGreaterThan(coverage, 0)
+        return coverage / scale
+    }
+
     func testLayoutSymbolsAreNativeCountAwareImagesWithWeightVariants() throws {
         var assets: [String: UIImage] = [:]
         for count in 1...4 {
@@ -50,16 +161,19 @@ final class LiveTVMultiviewMotionHostedTests: XCTestCase {
                        "rectangle.split.1x2")
         let format = UIGraphicsImageRendererFormat()
         format.scale = 1
-        let gallery = UIGraphicsImageRenderer(size: CGSize(width: 1080, height: 600), format: format).image { context in
+        let nativeNames = ["rectangle", "rectangle.split.2x1", "rectangle.split.2x2"]
+        let nativeImages = try nativeNames.map { (name: $0, image: try XCTUnwrap(UIImage(systemName: $0))) }
+        let galleryImages = nativeImages + assets.keys.sorted().map { (name: $0, image: assets[$0]!) }
+        let gallery = UIGraphicsImageRenderer(size: CGSize(width: 1080, height: 720), format: format).image { context in
             UIColor.black.setFill()
-            context.fill(CGRect(x: 0, y: 0, width: 1080, height: 600))
-            for (index, name) in assets.keys.sorted().enumerated() {
+            context.fill(CGRect(x: 0, y: 0, width: 1080, height: 720))
+            for (index, item) in galleryImages.enumerated() {
                 let column = index % 8
                 let row = index / 8
-                let image = assets[name]!.applyingSymbolConfiguration(.init(pointSize: 36, weight: .regular))!
+                let image = item.image.applyingSymbolConfiguration(.init(pointSize: 36, weight: .regular))!
                     .withTintColor(.white, renderingMode: .alwaysOriginal)
                 image.draw(at: CGPoint(x: column * 135 + 45, y: row * 120 + 20))
-                let label = name.replacingOccurrences(of: "multiview.", with: "")
+                let label = item.name.replacingOccurrences(of: "multiview.", with: "")
                 (label as NSString).draw(
                     in: CGRect(x: column * 135 + 5, y: row * 120 + 70, width: 125, height: 50),
                     withAttributes: [.font: UIFont.systemFont(ofSize: 11), .foregroundColor: UIColor.white])

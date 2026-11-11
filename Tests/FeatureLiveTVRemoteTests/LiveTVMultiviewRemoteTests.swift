@@ -19,11 +19,12 @@ final class LiveTVMultiviewRemoteTests: XCTestCase {
                 chooseGuideChannel(count, in: app)
             }
             select(app.buttons["live-multiview-layout"], in: app)
-            for title in ["Grid", "Main and stack", "Corner"] {
+            let equalLayoutTitle = count == 2 ? "Side by side" : "Grid"
+            for title in [equalLayoutTitle, "Main picture", "Corner"] {
                 XCTAssertTrue(app.cells.containing(NSPredicate(format: "label == %@", title)).firstMatch.exists)
             }
             capture("native-layout-options-\(count)-pictures", in: app)
-            selectMenuItem("Main and stack", in: app)
+            selectMenuItem("Main picture", in: app)
             XCTAssertGreaterThan(app.otherElements["multiview-fixture-video-1"].frame.width,
                                  app.otherElements["multiview-fixture-video-2"].frame.width)
             select(app.buttons["live-multiview-layout"], in: app)
@@ -34,7 +35,7 @@ final class LiveTVMultiviewRemoteTests: XCTestCase {
             selectMenuItem("Top left", in: app)
             select(app.buttons["live-multiview-layout"], in: app)
             capture("native-top-left-selected-\(count)-pictures", in: app)
-            selectMenuItem("Grid", in: app)
+            selectMenuItem(equalLayoutTitle, in: app)
             assertMetrics("Engines \(count) loads \(count) stops 0 audible 1", in: app)
         }
     }
@@ -161,7 +162,7 @@ final class LiveTVMultiviewRemoteTests: XCTestCase {
             chooseGuideChannel(channel, in: app)
         }
         select(app.buttons["live-multiview-layout"], in: app)
-        selectMenuItem("Main and stack", in: app)
+        selectMenuItem("Main picture", in: app)
         return app
     }
 
@@ -579,7 +580,7 @@ final class LiveTVMultiviewRemoteTests: XCTestCase {
         select(app.buttons["live-multiview-layout"], in: app)
         try await Task.sleep(for: .seconds(11))
         capture("production-native-menu-blocks-idle-timeout", in: app)
-        selectMenuItem("Main and stack", in: app)
+        selectMenuItem("Main picture", in: app)
         XCTAssertTrue(app.buttons["live-multiview-layout"].exists)
         assertMetrics("Engines 2 loads 2 stops 0 audible 1", in: app)
     }
@@ -740,14 +741,14 @@ final class LiveTVMultiviewRemoteTests: XCTestCase {
         assertMetrics("Engines 2 loads 2 stops 0 audible 1", in: app)
         let grid = widths()
         select(app.buttons["live-multiview-layout"], in: app)
-        selectMenuItem("Main and stack", in: app)
+        selectMenuItem("Main picture", in: app)
         let stack = try waitForGrowth(after: grid)
         let gridWidth = try XCTUnwrap(grid.last)
         let stackWidth = try XCTUnwrap(stack.last)
         XCTAssertGreaterThan(stackWidth, gridWidth)
         XCTAssertGreaterThan(stack.dropFirst(grid.count).filter { $0 > gridWidth + 1 && $0 < stackWidth - 1 }.count, 2)
         select(app.buttons["live-multiview-layout"], in: app)
-        selectMenuItem("Grid", in: app)
+        selectMenuItem("Side by side", in: app)
         focusAudio("Sports 2", in: app)
         XCUIRemote.shared.press(.select, forDuration: 1)
         selectMenuItem("Remove", in: app)
@@ -1584,7 +1585,7 @@ final class LiveTVMultiviewRemoteTests: XCTestCase {
             assertMetrics("Engines \(number) loads \(number) stops 0 audible 1", in: app)
         }
         select(app.buttons["live-multiview-layout"], in: app)
-        selectMenuItem("Main and stack", in: app)
+        selectMenuItem("Main picture", in: app)
         select(app.buttons["live-multiview-more"], in: app)
         selectMenuItem("Favorite", in: app)
         select(app.buttons["live-multiview-more"], in: app)

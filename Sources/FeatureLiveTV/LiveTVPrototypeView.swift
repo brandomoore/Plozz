@@ -85,6 +85,7 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
     @State private var reloadRequest = 0
     @State private var pendingServerRefresh = false
     @State private var sheet: PrototypeSheet?
+    @State private var isPortraitCanvas = false
     @State private var needsPreviewChoice = false
     @State private var selectedChannelID: String?
     @State private var selectedRowID: LiveTVGuideRowID?
@@ -864,6 +865,7 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
 
     private var sheetContent: some View {
         playerAndGuideSurface
+        .onGeometryChange(for: Bool.self) { $0.size.height > $0.size.width } action: { isPortraitCanvas = $0 }
         .modifier(PrototypeSheetPresentation(selection: $sheet, onDismiss: {
             if let item = pendingLibraryNavigation {
                 pendingLibraryNavigation = nil
@@ -901,6 +903,7 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
                 guideStart: timeAnchor.addingTimeInterval(guideOffset),
                 tune: { pendingTuneID = $0 },
                 openMultiview: { pendingMultiviewFavorite = $0; sheet = nil },
+                isPortrait: isPortraitCanvas,
                 channelActionTitle: multiviewSelection?.title,
                 sourceManagement: sources == nil ? nil : { AnyView(sourceSetupDestination($0)) },
                 openLibraryItem: onOpenTitle == nil ? nil : {

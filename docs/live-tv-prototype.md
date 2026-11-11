@@ -1735,9 +1735,9 @@ Multiview. Multiview retains each player's decoder and prepared stream through
 side-by-side/corner layout changes, audio selection and returning to one player.
 Setup keeps the pictures inside a bounded canvas with room for controls.
 On Apple TV, setup reserves the measured bottom toolbar and 24-point native
-focus clearance, not a matching empty header band. Grid and main-and-stack
+focus clearance, not a matching empty header band. Equal-picture and Main picture
 layouts pack the actual aspect-fitted pictures with 24-point gaps; they do not
-apply another inset to each picture. Main-and-stack uses the same horizontal
+apply another inset to each picture. Main picture uses the same horizontal
 and vertical gaps, including mixed source aspect ratios. Its widened layout
 uses 8-point gaps. The focused picture still receives the system's native lift.
 Packed pictures keep transparent clearance outside their resting frames for
@@ -1784,16 +1784,18 @@ The Apple TV bottom actions enter together with a half-second fade and a
 20-point upward movement, on both initial setup and return from idle or the
 guide. Reduce Motion shows them immediately without movement. Their measured
 layout and native focus styling remain unchanged.
-Two channels split horizontally in landscape and
-vertically in portrait; three or four use a two-row grid. Main and stack places
+Two channels are labeled Side by side in landscape and Top and bottom in
+portrait; three or four use Grid. Main picture places
 one large picture on the left and up to three separate pictures stacked on the
 right, without overlap. Corner mode retains its overlaid inset column.
 Layout controls and menu options use count-aware SF Symbol previews: two,
 three or four pictures, with a large primary and the correct number of stacked
-pictures for Main and stack. Corner previews include the selected position and
+pictures for Main picture. Corner previews include the selected position and
 inset size; position and size options preview their respective destinations.
 Native menu checkmarks remain separate from the preview icon. The mobile
-two-picture Grid icon also follows portrait/landscape orientation.
+two-picture icon also follows portrait/landscape orientation. Favorite descriptions
+use the saved picture count and the presenting canvas orientation, not the sheet's
+dimensions. Layout names do not change persisted enum values.
 Each renderer fits its source without cropping. Edit layout returns to setup;
 ordinary viewing never reserves permanent space for controls.
 Widened Apple TV split/grid slots have an 8-point internal gap, without an
