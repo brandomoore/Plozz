@@ -4,6 +4,44 @@ import Vision
 
 final class LiveTVMultiviewRemoteTests: XCTestCase {
     @MainActor
+    func testUpFromToolbarReturnsDirectlyToTheLastFocusedPicture() async throws {
+        continueAfterFailure = false
+        let app = fixtureApplication()
+        app.launchArguments = ["--live-root-fixture", "--visual-focus-fixture", "--focus-history-fixture"]
+        app.launch()
+        defer { app.terminate() }
+        startProductionChannel(in: app)
+        openMultiviewPicker(in: app)
+        chooseGuideChannel(2, in: app)
+        func history() -> [[Double]] {
+            (app.staticTexts["multiview-fixture-focus-history"].value as? String ?? "")
+                .split(separator: ";").map { $0.split(separator: ",").compactMap { Double($0) } }
+        }
+        for (destination, action) in [("Sports 2", "add"), ("Sports 1", "more"),
+                                      ("Sports 2", "layout"), ("Sports 1", "add")] {
+            select(pane(destination, in: app), in: app, activate: false)
+            assertAudio(destination, in: app)
+            select(app.buttons["live-multiview-\(action)"], in: app, activate: false)
+            let count = history().count
+            let guide = app.staticTexts["multiview-fixture-focus-diagnostics"].value as? String ?? ""
+            XCUIRemote.shared.press(.up)
+            try await Task.sleep(for: .seconds(3))
+            let pictures = history().dropFirst(count).filter { $0.count == 5 && $0[3] > 100 }
+            let evidence = XCTAttachment(string: pictures.map { "\($0)" }.joined(separator: "\n"))
+            evidence.name = "Native Up from \(action)"
+            evidence.lifetime = .keepAlways
+            add(evidence)
+            XCTAssertFalse(pictures.isEmpty)
+            let left = destination == "Sports 1"
+            XCTAssertTrue(pictures.allSatisfy { ($0[0] < app.frame.midX) == left },
+                          "One Up press must return to \(destination): \(pictures). Before: \(guide)")
+            assertNativeFocus(pane(destination, in: app), in: app)
+            assertAudio(destination, in: app)
+        }
+        assertMetrics("Engines 2 loads 2 stops 0 audible 1", in: app)
+    }
+
+    @MainActor
     func testReturningFocusDoesNotShrinkBelowTheFinalFocusedSize() throws {
         continueAfterFailure = false
         let app = fixtureApplication()

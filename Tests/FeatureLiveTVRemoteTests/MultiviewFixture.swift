@@ -516,6 +516,8 @@ private struct MultiviewFocusDiagnostics: UIViewRepresentable {
     final class Probe: UIView {
         private var timer: Timer?
         private let report = UILabel()
+        private let focusHistory = UILabel()
+        private var focusEvents: [String] = []
 
         init() {
             super.init(frame: .zero)
@@ -524,6 +526,11 @@ private struct MultiviewFocusDiagnostics: UIViewRepresentable {
             report.font = .systemFont(ofSize: 10)
             report.textColor = .white
             report.isUserInteractionEnabled = false
+            focusHistory.accessibilityIdentifier = "multiview-fixture-focus-history"
+            focusHistory.text = "Focus history"
+            focusHistory.font = .systemFont(ofSize: 10)
+            focusHistory.textColor = .white
+            focusHistory.isUserInteractionEnabled = false
         }
 
         required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
@@ -534,6 +541,13 @@ private struct MultiviewFocusDiagnostics: UIViewRepresentable {
             guard let window else { return }
             report.frame = CGRect(x: 80, y: window.bounds.height - 32, width: window.bounds.width - 160, height: 20)
             window.addSubview(report)
+            if ProcessInfo.processInfo.arguments.contains("--focus-history-fixture") {
+                focusHistory.frame = report.frame.offsetBy(dx: 0, dy: -22)
+                window.addSubview(focusHistory)
+                NotificationCenter.default.addObserver(
+                    self, selector: #selector(recordFocus(_:)),
+                    name: UIFocusSystem.didUpdateNotification, object: nil)
+            }
             timer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
                 MainActor.assumeIsolated { self?.sample() }
             }
@@ -544,6 +558,19 @@ private struct MultiviewFocusDiagnostics: UIViewRepresentable {
             timer?.invalidate()
             timer = nil
             report.removeFromSuperview()
+            focusHistory.removeFromSuperview()
+            NotificationCenter.default.removeObserver(self)
+        }
+
+        @objc private func recordFocus(_ notification: Notification) {
+            guard let window,
+                  let context = notification.userInfo?[UIFocusSystem.focusUpdateContextUserInfoKey] as? UIFocusUpdateContext,
+                  let next = context.nextFocusedItem,
+                  let localFrame = NativeFocusRegion.frame(of: next, in: self) else { return }
+            let frame = convert(localFrame, to: window)
+            focusEvents.append("\(frame.midX),\(frame.midY),\(frame.width),\(frame.height),\(context.focusHeading.rawValue)")
+            if focusEvents.count > 128 { focusEvents.removeFirst() }
+            focusHistory.accessibilityValue = focusEvents.joined(separator: ";")
         }
 
         private func sample() {
@@ -553,6 +580,18 @@ private struct MultiviewFocusDiagnostics: UIViewRepresentable {
                 "keyWindow=\(window.isKeyWindow)",
                 "focused=\(focused.map { String(describing: type(of: $0)) } ?? "nil")"
             ]
+            func visitGuides(_ view: UIView) {
+                for guide in view.layoutGuides.compactMap({ $0 as? UIFocusGuide }) {
+                    pieces.append("returnGuide=\(guide.isEnabled):\(view.convert(guide.layoutFrame, to: window)):targets=\(guide.preferredFocusEnvironments.count)")
+                    for target in guide.preferredFocusEnvironments {
+                        if let frame = NativeFocusRegion.frame(of: target as? any UIFocusItem, in: self) {
+                            pieces.append("returnTarget=\(convert(frame, to: window))")
+                        }
+                    }
+                }
+                for child in view.subviews { visitGuides(child) }
+            }
+            if ProcessInfo.processInfo.arguments.contains("--focus-history-fixture") { visitGuides(window) }
             if let focused {
                 pieces.append("itemFrame=\(focused.frame)")
                 var windowFrame = (focused as? UIView).map { $0.convert($0.bounds, to: window) }

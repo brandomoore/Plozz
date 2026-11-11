@@ -1206,6 +1206,7 @@ private struct LiveTVMultiviewToolbar: View {
         .fixedSize(horizontal: false, vertical: true)
         .environment(\.colorScheme, .dark)
         #if os(tvOS)
+        .background { VideoCardFocusReturnGuide().padding(.top, -44) }
         .focusSection()
         #endif
     }

@@ -99,21 +99,31 @@ private struct VideoCardSurface<Content: View>: View {
     let content: Content
     @FocusState private var focused: Bool
     @State private var handledRequest: Int?
+    @State private var handledEffect: Bool?
+    @State private var restoringEffect = false
 
     var body: some View {
         button
-            .buttonStyle(VideoCardButtonStyle(presentsEffect: configuration.presentsEffect))
+            .buttonStyle(VideoCardButtonStyle(
+                presentsEffect: configuration.presentsEffect,
+                restoringEffect: restoringEffect || handledEffect == false && configuration.presentsEffect))
             .modifier(VideoCardInset(horizontalInset: configuration.horizontalInset))
         .focusSection()
-        .onChange(of: focused) { _, value in configuration.focused(value) }
+        .onChange(of: focused) { _, value in
+            configuration.focused(value)
+            if !value { restoringEffect = false }
+        }
         .task(id: FocusRequest(revision: configuration.request, effect: configuration.presentsEffect)) {
             let explicitRequest = handledRequest != configuration.request
+            let restoresEffect = handledEffect == false && configuration.presentsEffect
             handledRequest = configuration.request
+            handledEffect = configuration.presentsEffect
             guard explicitRequest ? configuration.prefersFocus : configuration.audible else { return }
             // A style replacement has a new native focus owner even when this binding was already true.
             focused = false
             await Task.yield()
             guard !Task.isCancelled else { return }
+            restoringEffect = restoresEffect
             focused = true
         }
         .onExitCommand(perform: configuration.back)
@@ -147,6 +157,7 @@ private struct VideoCardSurface<Content: View>: View {
 
 private struct VideoCardContextMenu: UIViewRepresentable {
     let configuration: VideoCardFocus
+    @Environment(\.videoCardFocusMemory) private var focusMemory
     @Environment(\.locale) private var locale
     @Environment(\.isEnabled) private var isEnabled
 
@@ -154,6 +165,7 @@ private struct VideoCardContextMenu: UIViewRepresentable {
 
     func updateUIView(_ view: MenuView, context: Context) {
         view.configuration = isEnabled ? configuration : nil
+        view.focusMemory = focusMemory
         view.locale = locale
         view.scheduleFocusCheck()
     }
@@ -162,6 +174,7 @@ private struct VideoCardContextMenu: UIViewRepresentable {
 
     final class MenuView: UIView, UIContextMenuInteractionDelegate {
         var configuration: VideoCardFocus?
+        weak var focusMemory: VideoCardFocusMemory?
         var locale = Locale.current
         private lazy var interaction = UIContextMenuInteraction(delegate: self)
         private var isPresented = false
@@ -181,7 +194,7 @@ private struct VideoCardContextMenu: UIViewRepresentable {
             NotificationCenter.default.removeObserver(self)
             guard window != nil else { stop(); return }
             NotificationCenter.default.addObserver(
-                self, selector: #selector(focusChanged),
+                self, selector: #selector(focusChanged(_:)),
                 name: UIFocusSystem.didUpdateNotification, object: nil)
             scheduleFocusCheck()
         }
@@ -191,7 +204,21 @@ private struct VideoCardContextMenu: UIViewRepresentable {
             scheduleFocusCheck()
         }
 
-        @objc private func focusChanged() { scheduleFocusCheck() }
+        @objc private func focusChanged(_ notification: Notification) {
+            if configuration != nil,
+               let context = notification.userInfo?[UIFocusSystem.focusUpdateContextUserInfoKey] as? UIFocusUpdateContext,
+               let next = context.nextFocusedItem, containsPicture(next) {
+                focusMemory?.target = next
+            }
+            scheduleFocusCheck()
+        }
+
+        private func containsPicture(_ item: any UIFocusItem) -> Bool {
+            guard let frame = NativeFocusRegion.frame(of: item, in: self) else { return false }
+            return bounds.contains(CGPoint(x: frame.midX, y: frame.midY))
+                && abs(frame.width - bounds.width) <= max(32, bounds.width * 0.05)
+                && abs(frame.height - bounds.height) <= max(32, bounds.height * 0.05)
+        }
 
         func scheduleFocusCheck() {
             pendingCheck?.cancel()
@@ -202,14 +229,12 @@ private struct VideoCardContextMenu: UIViewRepresentable {
                 guard !self.isPresented else { return }
                 guard let window = self.window,
                       let focused = UIFocusSystem.focusSystem(for: window)?.focusedItem,
-                      let frame = NativeFocusRegion.frame(of: focused, in: self),
-                      self.bounds.contains(CGPoint(x: frame.midX, y: frame.midY)),
-                      abs(frame.width - self.bounds.width) <= max(32, self.bounds.width * 0.05),
-                      abs(frame.height - self.bounds.height) <= max(32, self.bounds.height * 0.05),
+                      self.containsPicture(focused),
                       let target = focused as? UIView ?? NativeFocusRegion.owningController(of: focused)?.viewIfLoaded else {
                     self.detach()
                     return
                 }
+                self.focusMemory?.target = focused
                 guard self.interaction.view !== target else { return }
                 self.detach()
                 target.addInteraction(self.interaction)
@@ -313,17 +338,90 @@ private struct VideoCardContextMenu: UIViewRepresentable {
     }
 }
 
+/// Scoped to one Multiview workspace; remembers the actual native picture owner.
+@MainActor
+public final class VideoCardFocusMemory {
+    fileprivate weak var target: (any UIFocusItem)?
+    public init() {}
+}
+
+private struct VideoCardFocusMemoryKey: EnvironmentKey {
+    static let defaultValue: VideoCardFocusMemory? = nil
+}
+
+public extension EnvironmentValues {
+    var videoCardFocusMemory: VideoCardFocusMemory? {
+        get { self[VideoCardFocusMemoryKey.self] }
+        set { self[VideoCardFocusMemoryKey.self] = newValue }
+    }
+}
+
+/// Bridges the empty space above the toolbar before UIKit chooses a picture.
+public struct VideoCardFocusReturnGuide: UIViewRepresentable {
+    @Environment(\.videoCardFocusMemory) private var memory
+    public init() {}
+
+    public func makeUIView(context: Context) -> GuideView { GuideView() }
+    public func updateUIView(_ view: GuideView, context: Context) { view.memory = memory }
+    public static func dismantleUIView(_ view: GuideView, coordinator: ()) { view.stop() }
+
+    public final class GuideView: UIView {
+        fileprivate weak var memory: VideoCardFocusMemory?
+        private let guide = UIFocusGuide()
+        private var guideConstraints: [NSLayoutConstraint] = []
+
+        public override func didMoveToWindow() {
+            super.didMoveToWindow()
+            stop()
+            guard window != nil else { return }
+            addLayoutGuide(guide)
+            guideConstraints = [
+                guide.leadingAnchor.constraint(equalTo: leadingAnchor),
+                guide.trailingAnchor.constraint(equalTo: trailingAnchor),
+                guide.topAnchor.constraint(equalTo: topAnchor),
+                guide.heightAnchor.constraint(equalToConstant: 32)
+            ]
+            NSLayoutConstraint.activate(guideConstraints)
+            guide.isEnabled = false
+            NotificationCenter.default.addObserver(
+                self, selector: #selector(focusChanged(_:)),
+                name: UIFocusSystem.didUpdateNotification, object: nil)
+        }
+
+        @objc private func focusChanged(_ notification: Notification) {
+            guard let context = notification.userInfo?[UIFocusSystem.focusUpdateContextUserInfoKey] as? UIFocusUpdateContext else { return }
+            let target = memory?.target
+            let returning = NativeFocusRegion.contains(context.nextFocusedItem, in: self)
+                && NativeFocusRegion.frame(of: target, in: self) != nil
+            guide.preferredFocusEnvironments = returning ? target.map { [$0] } ?? [] : []
+            guide.isEnabled = returning
+        }
+
+        fileprivate func stop() {
+            NotificationCenter.default.removeObserver(self)
+            guide.isEnabled = false
+            guide.preferredFocusEnvironments = []
+            NSLayoutConstraint.deactivate(guideConstraints)
+            guideConstraints = []
+            guide.owningView?.removeLayoutGuide(guide)
+        }
+    }
+}
+
 private struct VideoCardButtonStyle: PrimitiveButtonStyle {
     let presentsEffect: Bool
+    let restoringEffect: Bool
 
     @ViewBuilder
     func makeBody(configuration: Configuration) -> some View {
         if presentsEffect {
             Button(configuration).buttonStyle(.card)
-                // Apply native focused size once; layout motion has its own clock.
                 .transaction {
-                    $0.animation = nil
-                    $0.disablesAnimations = true
+                    // Replacing an already-focused idle surface must not add another scale-in.
+                    if restoringEffect {
+                        $0.animation = nil
+                        $0.disablesAnimations = true
+                    }
                 }
                 .transition(.identity)
         } else {

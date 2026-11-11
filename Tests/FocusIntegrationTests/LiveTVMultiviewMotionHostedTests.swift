@@ -359,7 +359,7 @@ final class LiveTVMultiviewMotionHostedTests: XCTestCase {
         }
     }
 
-    func testNativeFocusGainAndLossApplyFinalVideoSizeWithoutIntermediateScaling() async throws {
+    func testNativeFocusGainAndLossAnimateTheActualVideoFrame() async throws {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
             .first { $0.activationState == .foregroundActive })
         let previous = scene.windows.first(where: \.isKeyWindow)
@@ -380,7 +380,13 @@ final class LiveTVMultiviewMotionHostedTests: XCTestCase {
                 return layer.convert(layer.bounds, to: window.layer.presentation() ?? window.layer).width
             }
         }
-        for selected in [1, 0] {
+        for selected in [1, 0, 1, 0] {
+            if selected == 0 {
+                model.presentsEffect = false
+                try await Task.sleep(for: .milliseconds(200))
+                model.presentsEffect = true
+                try await Task.sleep(for: .milliseconds(700))
+            }
             let before = presentedWidths()
             model.selected = selected
             var samples: [[CGFloat]] = []
@@ -395,8 +401,8 @@ final class LiveTVMultiviewMotionHostedTests: XCTestCase {
             for index in 0...1 {
                 let low = min(before[index], after[index])
                 let high = max(before[index], after[index])
-                XCTAssertEqual(samples.filter { $0[index] > low + 1 && $0[index] < high - 1 }.count, 0,
-                               "Native focus size must apply directly, without a second scaling animation.")
+                XCTAssertGreaterThan(samples.filter { $0[index] > low + 1 && $0[index] < high - 1 }.count, 2,
+                                     "Ordinary focus movement must animate the live video, not snap its bounds.")
                 XCTAssertTrue(samples.allSatisfy { $0[index] >= low - 1 && $0[index] <= high + 1 })
                 XCTAssertTrue(model.engines[index].output.window === window)
                 XCTAssertEqual(model.engines[index].stops, 0)
@@ -408,6 +414,7 @@ final class LiveTVMultiviewMotionHostedTests: XCTestCase {
     final class FocusMotionModel {
         let engines = [MotionEngine(), MotionEngine()]
         var selected = 0
+        var presentsEffect = true
     }
 
     private struct FocusMotionPage: View {
@@ -419,7 +426,7 @@ final class LiveTVMultiviewMotionHostedTests: XCTestCase {
                         .videoCardFocusSurface()
                         .environment(\.videoCardFocus, VideoCardFocus(
                             identifier: "focus-motion-\(index)", title: "Video \(index)",
-                            audible: index == model.selected, presentsEffect: true,
+                            audible: index == model.selected, presentsEffect: model.presentsEffect,
                             cornerRadius: 20, horizontalInset: 28, request: model.selected,
                             prefersFocus: index == model.selected, focused: { _ in },
                             activate: {}, promote: {}, replace: {}))

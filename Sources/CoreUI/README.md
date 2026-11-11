@@ -58,11 +58,18 @@ The caller interpolates focus clearance together with the picture's placement.
 The focus surface consumes that inset directly, without another animation
 clock. The video reads the container's current animated size rather than
 starting a second resize for every layout frame.
-The native card still owns focus styling and its lifted size, but applies that
-size without an additional focus-scale animation. The caller suppresses setup
-resizing when focus returns; ordinary layout changes retain their own animation.
+The native card owns focus styling, lifted size, and the animation when focus
+moves between pictures. Only restoration of an already-focused idle surface
+suppresses an extra scale-in. The caller suppresses competing setup resizing
+when focus returns; ordinary layout changes retain their own animation.
 Only the picture is rounded and clipped. Callers must not clip the outer card
 or its clearance, because the native shadow needs to feather beyond it.
+Multiview scopes `VideoCardFocusMemory` to its workspace. The toolbar's
+`VideoCardFocusReturnGuide` bridges the empty space above the controls to the
+last actual native picture owner, before another picture can receive focus.
+The guide stays inside its own visible UIKit region and is enabled only while
+the toolbar owns focus. Its remembered owner is weak; missing or removed
+pictures fall back to ordinary native navigation.
 
 `MultiviewLayoutSymbol` supplies real SF Symbol images for native labels and
 menus. Standard two/four-picture grids use Apple's symbols; original custom

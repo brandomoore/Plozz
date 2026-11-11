@@ -127,6 +127,9 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
     @State private var multiviewEditingInsets: EdgeInsets?
     @State private var multiviewFocusPresented = false
     @State private var multiviewNativeFocusedPaneID: UUID?
+    #if os(tvOS)
+    @State private var multiviewFocusMemory = VideoCardFocusMemory()
+    #endif
     @State private var multiviewFocusRequest = 0
     @State private var multiviewBackRequest = 0
     @State private var multiviewRequestedFocusID: UUID?
@@ -589,6 +592,7 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
             }
             #if os(tvOS)
             .settingsPageBackground()
+            .environment(\.videoCardFocusMemory, multiviewFocusMemory)
             #elseif os(iOS)
             .background(PrototypeToolbarBottomReader {
                 if !expanded, $0 > 0 { toolbarControlsBottom = $0 }

@@ -1812,10 +1812,15 @@ expanded picture still uses the full canvas.
 Apple TV animates the retained video surfaces into Multiview and between layouts,
 including pane entry/removal, return to watching, promotion and expansion.
 Multiview layout and new-renderer fades share a half-second ease-in-out
-transition. New renderers no longer add a separate scale-in. Native focus
-appearance is unchanged, but focused size applies immediately, without
-competing focus-scale and setup-resize animations. Returning focus to the
-interactive canvas does not shrink below or grow beyond the focused size.
+transition. New renderers no longer add a separate scale-in. Moving focus
+between pictures keeps the native animated lift and defocus. Only restoration
+of an already-focused idle surface suppresses an extra scale-in, without a
+competing setup-resize animation. Returning focus to the interactive canvas
+does not shrink below or grow beyond the focused size.
+Up from the Apple TV toolbar returns directly to the last-focused picture.
+A native focus guide spans the gap above the toolbar, avoiding a visible
+handoff through a different picture. Ordinary picture-to-picture navigation
+and focus animation remain native.
 Native full-screen playback first hands its existing renderer back to the full-size
 inline canvas, then shrinks it; no replacement player or screenshot stands in
 for the video. A temporary window host keeps that renderer visible during native
