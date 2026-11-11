@@ -578,6 +578,86 @@ final class ItemDetailViewModelTests: XCTestCase {
         }
     }
 
+    func testFrenchNativeMetadataSurvivesEnglishSeedsAndExternalEnrichment() async throws {
+        for kind: ProviderKind in [.jellyfin, .plex, .emby] {
+            let show = MediaItem(
+                id: "show-fr", title: "Titre FR", kind: .series, overview: "Description FR",
+                genres: ["Genre FR"], allowsTitleBasedMetadataMatching: false, sourceAccountID: "account"
+            )
+            let episode = MediaItem(
+                id: "episode-34-fr", title: "Episode 34 FR", kind: .episode,
+                overview: "Description 34 FR", parentTitle: show.title,
+                seasonNumber: 1, episodeNumber: 34, genres: ["Genre FR"], seriesID: show.id,
+                allowsTitleBasedMetadataMatching: false, sourceAccountID: "account"
+            )
+            var stale = episode
+            stale.title = "English episode"
+            stale.overview = "English overview"
+            stale.genres = ["English genre"]
+            let provider = FakeMediaProvider(allItems: [show, episode], kind: kind, accountID: "account")
+            let environment = DetailOpenEnvironment(
+                resolveProvider: { _ in provider }, resolveOptionalProvider: { _ in provider },
+                identitySources: { _ in [] }, crossServerSourceResolver: nil,
+                detailMetadataResolver: { _ in
+                    .init(
+                        overview: .init(value: "English fallback", source: .tmdb),
+                        genres: .init(value: ["English genre"], source: .tmdb)
+                    )
+                },
+                metadataLanguage: "fr", onlineTrailerResolver: { _ in [] }
+            )
+            let routes = [
+                (try environment.makeViewModel(for: show, libraryOrigin: nil), show),
+                (try environment.makeSeriesContextViewModel(
+                    seriesID: show.id, seed: stale, sourceAccountID: "account", originAccountID: nil
+                ), show),
+                (try environment.makeViewModel(for: stale, libraryOrigin: nil), episode)
+            ]
+            for (model, expected) in routes {
+                defer { model.suspendEnrichment() }
+                await model.load()
+                let loaded = try XCTUnwrap(model.state.value?.item)
+                XCTAssertEqual(loaded.title, expected.title, "\(kind)")
+                XCTAssertEqual(loaded.overview, expected.overview, "\(kind)")
+                XCTAssertEqual(loaded.genres, expected.genres, "\(kind)")
+                XCTAssertEqual(loaded.id, expected.id)
+                XCTAssertEqual(loaded.sourceAccountID, expected.sourceAccountID)
+            }
+        }
+    }
+
+    func testFrenchDetailRestoresOnlyItsLanguageSnapshot() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("plozz-language-snapshot-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let cache = DetailSnapshotCache(directory: directory)
+        let english = MediaItem(
+            id: "movie", title: "Movie", kind: .movie, overview: "English cached description",
+            sourceAccountID: "account"
+        )
+        var french = english
+        french.overview = "Description FR"
+        await cache.store(.init(item: english, children: []), for: "account|movie")
+        await cache.store(.init(item: french, children: []), for: "account|movie|text-language-v1:fr")
+        let provider = FakeMediaProvider(allItems: [french])
+        let entered = AsyncGate()
+        let release = AsyncGate()
+        provider.itemGate = ["movie": { entered.open(); await release.wait() }]
+        let model = ItemDetailViewModel(
+            provider: provider, itemID: "movie", metadataLanguage: "fr",
+            sourceAccountID: "account", onlineTrailerResolver: { _ in [] }, snapshotCache: cache
+        )
+        defer { model.suspendEnrichment() }
+        let load = Task { await model.load() }
+        await entered.wait()
+        await waitUntil { model.state.value != nil }
+        XCTAssertEqual(model.state.value?.item.overview, french.overview)
+        release.open()
+        await load.value
+        XCTAssertEqual(model.state.value?.item.overview, french.overview)
+    }
+
     func testCancelledDetailEnrichmentCannotPublishLateCrew() async {
         let item = MediaItem(id: "movie", title: "Movie", kind: .movie, overview: "Plot")
         let provider = FakeMediaProvider(allItems: [item], kind: .jellyfin)

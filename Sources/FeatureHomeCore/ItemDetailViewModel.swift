@@ -582,10 +582,14 @@ public final class ItemDetailViewModel {
     /// conditional at every call site.
     public let relatedTitlesLoader: RelatedTitlesLoader?
     private let snapshotCache: DetailSnapshotCache
+    private let metadataLanguage: String
     /// Stable per-title key for ``snapshotCache``. Scoped by owning account so the
-    /// same id on two servers caches independently. All routes to a series share a
+    /// same id on two servers or in two languages caches independently. Routes to a series share a
     /// key (they're all built with the series id as `itemID`).
-    private var snapshotKey: String { "\(activeSourceAccountID ?? "_")|\(activeItemID)" }
+    private var snapshotKey: String {
+        let key = "\(activeSourceAccountID ?? "_")|\(activeItemID)"
+        return metadataLanguage == "en" ? key : "\(key)|text-language-v1:\(metadataLanguage)"
+    }
 
     public init(
         provider: (any MediaProvider)?,
@@ -596,16 +600,12 @@ public final class ItemDetailViewModel {
         discoveryStatusRefresh: (@Sendable (MediaItem) async -> MediaRequestAvailability?)? = nil,
         loadSeasonEpisodeRoster:
             (@Sendable (MediaItem, Int) async -> SeasonEpisodeRosterResult)? = nil,
-        externalMetadataResolver: @escaping @Sendable (MediaItem, String) async -> ExternalTitleMetadata = {
-            await ExternalTitleMetadataResolver.shared.resolve(
-                item: $0,
-                regionCode: $1
-            )
-        },
+        externalMetadataResolver: (@Sendable (MediaItem, String) async -> ExternalTitleMetadata)? = nil,
         availabilityRegionCode: String =
             Locale.current.region?.identifier ?? "US",
         ratingsProvider: any ExternalRatingsProviding = DisabledRatingsProvider(),
         detailMetadataResolver: @escaping @Sendable (MediaItem) async -> MetadataEnrichment = { _ in MetadataEnrichment() },
+        metadataLanguage: String = "en",
         sourceAccountID: String? = nil,
         originSourceAccountID: String? = nil,
         onlineTrailerResolver: @escaping OnlineTrailerResolving = ItemDetailViewModel.defaultOnlineTrailerResolver,
@@ -629,7 +629,11 @@ public final class ItemDetailViewModel {
         self.isDiscoveryItem = isDiscoveryItem
         self.discoveryStatusRefresh = discoveryStatusRefresh
         self.seasonEpisodeRosterLoader = loadSeasonEpisodeRoster
-        self.externalMetadataResolver = externalMetadataResolver
+        self.externalMetadataResolver = externalMetadataResolver ?? {
+            await ExternalTitleMetadataResolver.shared.resolve(
+                item: $0, regionCode: $1, language: metadataLanguage
+            )
+        }
         self.availabilityRegionCode = availabilityRegionCode
         // Fall back to the library-origin account when a direct source tag is
         // absent, so a played item is always attributed to the account it was
@@ -639,6 +643,7 @@ public final class ItemDetailViewModel {
         self.activeSourceAccountID = sourceAccountID ?? originSourceAccountID
         self.ratingsProvider = ratingsProvider
         self.detailMetadataResolver = detailMetadataResolver
+        self.metadataLanguage = Locale.Language(identifier: metadataLanguage).minimalIdentifier
         self.sourceAccountID = sourceAccountID
         self.originSourceAccountID = originSourceAccountID
         self.onlineTrailerResolver = onlineTrailerResolver
@@ -1464,10 +1469,6 @@ public final class ItemDetailViewModel {
             provider: provider,
             sourceGeneration: sourceGeneration
         )
-        async let overviewDone: Void = enrichOverview(
-            for: item,
-            sourceGeneration: sourceGeneration
-        )
         async let metadataDone: Void = enrichDetailMetadata(for: item, sourceGeneration: sourceGeneration)
         async let extrasDone: Void = loadExtras(
             for: item,
@@ -1477,7 +1478,6 @@ public final class ItemDetailViewModel {
         )
         _ = await trailersDone
         _ = await ratingsDone
-        _ = await overviewDone
         _ = await metadataDone
         _ = await extrasDone
     }
@@ -1967,7 +1967,6 @@ public final class ItemDetailViewModel {
         }
         guard !Task.isCancelled else { return }
         await enrichRatings(for: item, provider: provider, sourceGeneration: reloadSourceGeneration)
-        await enrichOverview(for: item, sourceGeneration: reloadSourceGeneration)
         await enrichDetailMetadata(for: item, sourceGeneration: reloadSourceGeneration)
         async let trailers: Void = loadTrailers(
             for: item,
@@ -2847,30 +2846,6 @@ public final class ItemDetailViewModel {
         let enriched = DetailMetadataResolver.applying(enrichment, to: detail.item)
         guard enriched != detail.item else { return }
         detail.item = enriched
-        state = .loaded(detail)
-    }
-
-    /// Fills in a missing plot/overview from the keyless ``OverviewRouter`` (TVmaze
-    /// for TV, Wikipedia for film/anime), off the critical path. Only runs when the
-    /// item has NO description of its own — so a real server's overview is never
-    /// overwritten, and in practice this only fires for local media-share items
-    /// (whose provider synthesises no text). Cached in the router, so revisiting a
-    /// page or opening another episode of the same show issues no new request. A
-    /// describable kind is required so folders/collections never trigger a lookup.
-    private func enrichOverview(for item: MediaItem, sourceGeneration: UInt64) async {
-        guard item.overview?.isEmpty ?? true else { return }
-        switch item.kind {
-        case .movie, .series, .season, .episode, .video: break
-        case .folder, .collection, .playlist, .unknown: return
-        }
-        let text = await OverviewRouter.shared.overview(for: item)
-        guard !Task.isCancelled,
-              self.sourceGeneration == sourceGeneration,
-              let text,
-              !text.isEmpty else { return }
-        guard case var .loaded(detail) = state, detail.item.id == item.id else { return }
-        guard detail.item.overview?.isEmpty ?? true else { return }
-        detail.item.overview = text
         state = .loaded(detail)
     }
 

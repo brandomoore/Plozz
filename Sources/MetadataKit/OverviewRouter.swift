@@ -1,22 +1,10 @@
 import Foundation
 import CoreModels
 
-/// Keyless, cached, best-effort plot/overview **text** for video items whose
-/// provider gives none — a local media share has no server to describe its files.
-///
-/// Deliberately mirrors ``ArtworkRouter``'s shape: a shared actor with an in-memory
-/// cache (positive *and* negative), exactly one lightweight JSON request per lookup,
-/// never throws, and is kept **off the critical path** by its single caller (the
-/// detail page's speculative enrichment, which is cancellable and dwell-gated). No
-/// TMDb — this is the free/keyless backbone, so it never risks TMDb's commercial
-/// terms and works forever in the public build:
-///   - TV (series / season / episode): **TVmaze** — the episode summary when a
-///     season+episode is known, else the show summary.
-///   - Movie / anime / unknown: **Wikipedia** — one search-scoped `extract` call
-///     (`generator=search`), so the right page resolves in a single request.
-///
-/// The result is cached by the query's stable identity, so re-opening a detail (or
-/// opening another episode of the same show) is instant and issues no new request.
+/// Legacy, English-only overview lookup through TVmaze and Wikipedia.
+/// Detail pages use ``DetailMetadataResolver`` instead so selected-language
+/// requests, fallback eligibility and provenance have one owner. The HTML
+/// normalizer remains shared by the TVmaze and discovery adapters.
 public actor OverviewRouter {
     public static let shared = OverviewRouter()
 

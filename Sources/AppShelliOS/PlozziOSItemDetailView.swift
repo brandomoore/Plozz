@@ -14,6 +14,7 @@ import SwiftUI
 
 struct PlozziOSItemDetailView: View {
     @Environment(HomeViewModel.self) private var homeViewModel: HomeViewModel?
+    @Environment(\.locale) private var locale
     let appModel: PlozziOSAppModel
     let provider: any MediaProvider
     let item: MediaItem
@@ -134,6 +135,7 @@ struct PlozziOSItemDetailView: View {
             appModel: appModel,
             provider: provider,
             item: resolvedItem,
+            metadataLanguage: locale.identifier,
             continueWatching: homeViewModel?.continueWatchingForDetail ?? [],
             seerService: seerService,
             originSourceAccountID: originSourceAccountID,
@@ -233,6 +235,7 @@ private struct PlozziOSCanonicalItemDetailView: View {
         appModel: PlozziOSAppModel,
         provider: any MediaProvider,
         item: MediaItem,
+        metadataLanguage: String,
         continueWatching: [MediaItem] = [],
         seerService: SeerService? = nil,
         originSourceAccountID: String? = nil,
@@ -297,7 +300,10 @@ private struct PlozziOSCanonicalItemDetailView: View {
                     return await seer.seasonEpisodeRoster(for: item, seasonNumber: number)
                 },
                 ratingsProvider: RatingsServiceFactory.make(),
-                detailMetadataResolver: { await DetailMetadataResolver.household.resolve($0) },
+                detailMetadataResolver: {
+                    await DetailMetadataResolver.household.resolve($0, language: metadataLanguage)
+                },
+                metadataLanguage: metadataLanguage,
                 sourceAccountID: selectedSource?.accountID ?? item.sourceAccountID,
                 originSourceAccountID: originSourceAccountID,
                 onlineTrailerResolver: {

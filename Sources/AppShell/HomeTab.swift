@@ -1214,6 +1214,7 @@ struct HomeTab: View {
         let identitySources = self.identitySources
         let seer = self.seer
         let runtime = self.runtime
+        let metadataLanguage = locale.identifier
         return DetailOpenEnvironment(
             resolveProvider: { try resolveProvider($0, in: accounts) },
             resolveOptionalProvider: { resolveOptionalProvider($0, in: accounts) },
@@ -1221,7 +1222,10 @@ struct HomeTab: View {
             crossServerSourceResolver: crossServerSourceResolver(in: accounts, identitySources: identitySources),
             continueWatchingSnapshot: { runtime.continueWatchingForDetail },
             ratingsProvider: ratingsProvider,
-            detailMetadataResolver: { await DetailMetadataResolver.household.resolve($0) },
+            detailMetadataResolver: {
+                await DetailMetadataResolver.household.resolve($0, language: metadataLanguage)
+            },
+            metadataLanguage: metadataLanguage,
             onlineTrailerResolver: { await DetailMetadataResolver.household.trailers(for: $0) },
             trailerSettings: heroBackground,
             discoveryStatusRefresh: { await seer.requestAvailability(for: $0) },

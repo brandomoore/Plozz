@@ -32,7 +32,7 @@ load-bearing.
   library is enriched with a one-time burst of calls, then effectively
   none.
 - `MetadataHTTP` — internal lightweight `URLSession` transport for enrichment.
-- `DetailMetadataResolver` — fills missing cast, directors, writers, producers, composers, studios,
+- `DetailMetadataResolver` — fills missing descriptions, cast, directors, writers, producers, composers, studios,
   genres and confirmed title facts after a provider's full detail response, using the same pipeline on
   tvOS and iOS/iPadOS. Cast and crew are separate gaps: an existing cast does not
   hide missing directors, and adding cast never erases server crew. Source
@@ -71,6 +71,21 @@ load-bearing.
   Series facts never propagate to seasons/episodes or personal-video mode.
   Artwork, playable identity, file/stream facts and Common Sense are not filled
   by this resolver.
+  Detail pages pass the effective UI/profile locale to text enrichment, including
+  missing-text resolution for external/discovery details.
+  TMDB detail, episode, credits and matching requests carry that language;
+  provider-result keys and detail snapshots separate language variants. Query
+  copies retain language when promoting series IDs or threading matched IDs.
+  Providers without requested-language text support cannot fill descriptions,
+  genres, titles or taglines for non-English requests; their artwork and other
+  capabilities remain available. Missing localized text stays absent rather than
+  silently falling back to known English-only text. Server/NFO text is never
+  translated or replaced. Child descriptions use scoped providers, not a series
+  description returned by an unscoped adapter. The independent English-only
+  `OverviewRouter` no longer races library-detail enrichment.
+  This does not translate existing server metadata or change the language of
+  discovery-feed seeds or share-scanner metadata. Selecting French cannot guarantee
+  French descriptions when the server or external service has no such text.
 - `HeroDiscoveryProviding` — separate candidate-feed seam for TMDB,
   AniList, TheTVDB, and TVmaze. It does not call Trakt.
 - `HeroDiscoveryService` — bounded, coalesced public-feed reads, provider-level

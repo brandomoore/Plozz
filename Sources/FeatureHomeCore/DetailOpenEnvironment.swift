@@ -41,6 +41,7 @@ public struct DetailOpenEnvironment {
     /// External ratings (IMDb/RT/Metacritic) provider for live enrichment.
     public let ratingsProvider: any ExternalRatingsProviding
     public let detailMetadataResolver: @Sendable (MediaItem) async -> MetadataEnrichment
+    public let metadataLanguage: String
     public let onlineTrailerResolver: OnlineTrailerResolving
     public let trailerSettings: HeroBackgroundSettingsModel?
     /// Refreshes a discovery (Seerr) title's request/availability. `nil` when Seerr
@@ -66,6 +67,7 @@ public struct DetailOpenEnvironment {
         continueWatchingSnapshot: @escaping @MainActor () -> [MediaItem] = { [] },
         ratingsProvider: any ExternalRatingsProviding = DisabledRatingsProvider(),
         detailMetadataResolver: @escaping @Sendable (MediaItem) async -> MetadataEnrichment = { _ in MetadataEnrichment() },
+        metadataLanguage: String = "en",
         onlineTrailerResolver: @escaping OnlineTrailerResolving = ItemDetailViewModel.defaultOnlineTrailerResolver,
         trailerSettings: HeroBackgroundSettingsModel? = nil,
         discoveryStatusRefresh: (@Sendable (MediaItem) async -> MediaRequestAvailability?)? = nil,
@@ -82,6 +84,7 @@ public struct DetailOpenEnvironment {
         self.crossServerSourceResolver = crossServerSourceResolver
         self.ratingsProvider = ratingsProvider
         self.detailMetadataResolver = detailMetadataResolver
+        self.metadataLanguage = metadataLanguage
         self.onlineTrailerResolver = onlineTrailerResolver
         self.trailerSettings = trailerSettings
         self.discoveryStatusRefresh = discoveryStatusRefresh
@@ -301,6 +304,7 @@ public struct DetailOpenEnvironment {
             loadSeasonEpisodeRoster: loadSeasonEpisodeRoster,
             ratingsProvider: ratingsProvider,
             detailMetadataResolver: detailMetadataResolver,
+            metadataLanguage: metadataLanguage,
             sourceAccountID: isDiscovery ? nil : selectedSource?.accountID ?? item.sourceAccountID ?? libraryOrigin,
             originSourceAccountID: libraryOrigin,
             onlineTrailerResolver: onlineTrailerResolver,
@@ -373,6 +377,7 @@ public struct DetailOpenEnvironment {
             loadSeasonEpisodeRoster: loadSeasonEpisodeRoster,
             ratingsProvider: ratingsProvider,
             detailMetadataResolver: detailMetadataResolver,
+            metadataLanguage: metadataLanguage,
             sourceAccountID: sourceAccountID ?? originAccountID,
             originSourceAccountID: originAccountID,
             onlineTrailerResolver: onlineTrailerResolver,
