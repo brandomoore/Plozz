@@ -85,6 +85,81 @@ final class LiveTVMultiviewGeometryTests: XCTestCase {
     }
 
     #if os(tvOS)
+    func testEditingReservesOnlyMeasuredBottomControlsAndNativeFocusClearance() {
+        let size = CGSize(width: 1920, height: 1080)
+        let insets = EdgeInsets(top: 24, leading: 24, bottom: 82 + 60 + 24, trailing: 24)
+        let area = LiveTVMultiviewGeometry.viewport(in: size, isEditing: true, editingInsets: insets)
+        XCTAssertEqual(area, CGRect(x: 24, y: 24, width: 1872, height: 890))
+        let panes = [UUID(), UUID()]
+        let pictures = panes.map {
+            LiveTVMultiviewGeometry.frame(
+                for: $0, panes: panes, primary: panes[0], layout: .sideBySide,
+                corner: .bottomTrailing, insetSize: .medium, expanded: nil, size: size,
+                isEditing: true, editingInsets: insets)
+        }
+        XCTAssertEqual(pictures[0].width, 924, accuracy: 0.001)
+        XCTAssertEqual(pictures[1].minX - pictures[0].maxX, 24, accuracy: 0.001)
+        XCTAssertEqual(pictures[0].minX, area.minX, accuracy: 0.001)
+        XCTAssertEqual(pictures[1].maxX, area.maxX, accuracy: 0.001)
+    }
+
+    func testMainAndStackPacksActualPictureEdgesWithEqualGapsAndMixedAspects() {
+        let panes = (0..<4).map { _ in UUID() }
+        let ratioSets: [[CGFloat]] = [Array(repeating: 16 / 9, count: 4), [16 / 9, 4 / 3, 21 / 9, 16 / 9]]
+        for ratios in ratioSets {
+            let aspects = Dictionary(uniqueKeysWithValues: zip(panes, ratios))
+            for primary in panes {
+                for editing in [false, true] {
+                    let size = CGSize(width: 1920, height: 1080)
+                    let ordered = [primary] + panes.filter { $0 != primary }
+                    let area = LiveTVMultiviewGeometry.viewport(in: size, isEditing: editing)
+                    let pictures = ordered.map { id in
+                        let slot = LiveTVMultiviewGeometry.frame(
+                            for: id, panes: panes, primary: primary, layout: .mainAndStack,
+                            corner: .bottomTrailing, insetSize: .medium, expanded: nil, size: size,
+                            isEditing: editing, aspectRatio: aspects[id], aspectRatios: aspects)
+                        return LiveTVMultiviewGeometry.presentationFrame(
+                            in: slot, aspectRatio: aspects[id], focusActive: editing, layout: .mainAndStack)
+                    }
+                    let gap: CGFloat = editing ? 24 : 8
+                    for index in pictures.indices {
+                        XCTAssertEqual(pictures[index].width / pictures[index].height, aspects[ordered[index]]!, accuracy: 0.001)
+                        XCTAssertTrue(area.insetBy(dx: -0.001, dy: -0.001).contains(pictures[index]))
+                        if index > 0 {
+                            XCTAssertEqual(pictures[index].minX - pictures[0].maxX, gap, accuracy: 0.001)
+                        }
+                        if index > 1 {
+                            XCTAssertEqual(pictures[index].minY - pictures[index - 1].maxY, gap, accuracy: 0.001)
+                        }
+                    }
+                    XCTAssertEqual(pictures[0].minY, pictures[1].minY, accuracy: 0.001)
+                    XCTAssertEqual(pictures[0].maxY, pictures[3].maxY, accuracy: 0.001)
+                    let bounds = pictures.reduce(CGRect.null) { $0.union($1) }
+                    XCTAssertTrue(abs(bounds.width - area.width) < 0.001 || abs(bounds.height - area.height) < 0.001)
+                }
+            }
+        }
+    }
+
+    func testEditingGridKeepsTheSameHorizontalAndVerticalPictureGap() {
+        for count in [3, 4] {
+            let panes = (0..<count).map { _ in UUID() }
+            let size = CGSize(width: 1920, height: 1080)
+            let pictures = panes.map {
+                LiveTVMultiviewGeometry.frame(
+                    for: $0, panes: panes, primary: panes[0], layout: .sideBySide,
+                    corner: .bottomTrailing, insetSize: .medium, expanded: nil,
+                    size: size, isEditing: true)
+            }
+            XCTAssertEqual(pictures[1].minX - pictures[0].maxX, 24, accuracy: 0.001)
+            XCTAssertEqual(pictures[2].minY - pictures[0].maxY, 24, accuracy: 0.001)
+            XCTAssertGreaterThan(pictures[0].width, 750)
+            for picture in pictures {
+                XCTAssertEqual(picture.width / picture.height, 16 / 9, accuracy: 0.001)
+            }
+        }
+    }
+
     func testWidenedGridHasEightPointInternalGapsAndNoOuterInsets() {
         for count in [3, 4] {
             let panes = (0..<count).map { _ in UUID() }

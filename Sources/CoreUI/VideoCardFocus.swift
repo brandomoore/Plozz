@@ -1,4 +1,7 @@
 import SwiftUI
+#if os(tvOS)
+import UIKit
+#endif
 
 /// Focus belongs to the video surface, not the player or its transport controls.
 public struct VideoCardFocus {
@@ -121,18 +124,180 @@ private struct VideoCardSurface<Content: View>: View {
                         .accessibilityHidden(true)
                 }
                 .contentShape(RoundedRectangle(cornerRadius: configuration.cornerRadius, style: .continuous))
+                .background(VideoCardContextMenu(configuration: configuration))
         }
         .buttonBorderShape(.roundedRectangle(radius: configuration.cornerRadius))
         .focused($focused)
         .accessibilityLabel(Text(verbatim: configuration.title))
         .accessibilityValue(configuration.audible ? Text("Audio on") : Text("Muted"))
         .accessibilityIdentifier(configuration.identifier)
-        .contextMenu {
-            Button("Make main picture", systemImage: "rectangle.inset.filled", action: configuration.promote)
-            Button("Replace channel", systemImage: "arrow.triangle.2.circlepath", action: configuration.replace)
-            if let remove = configuration.remove {
-                Button("Remove", systemImage: "minus.circle", role: .destructive, action: remove)
+    }
+}
+
+private struct VideoCardContextMenu: UIViewRepresentable {
+    let configuration: VideoCardFocus
+    @Environment(\.locale) private var locale
+    @Environment(\.isEnabled) private var isEnabled
+
+    func makeUIView(context: Context) -> MenuView { MenuView() }
+
+    func updateUIView(_ view: MenuView, context: Context) {
+        view.configuration = isEnabled ? configuration : nil
+        view.locale = locale
+        view.scheduleFocusCheck()
+    }
+
+    static func dismantleUIView(_ view: MenuView, coordinator: ()) { view.stop() }
+
+    final class MenuView: UIView, UIContextMenuInteractionDelegate {
+        var configuration: VideoCardFocus?
+        var locale = Locale.current
+        private lazy var interaction = UIContextMenuInteraction(delegate: self)
+        private var isPresented = false
+        private var pendingAction: (() -> Void)?
+        private var pendingCheck: Task<Void, Never>?
+
+        init() {
+            super.init(frame: .zero)
+            isUserInteractionEnabled = false
+        }
+
+        @available(*, unavailable)
+        required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            NotificationCenter.default.removeObserver(self)
+            guard window != nil else { stop(); return }
+            NotificationCenter.default.addObserver(
+                self, selector: #selector(focusChanged),
+                name: UIFocusSystem.didUpdateNotification, object: nil)
+            scheduleFocusCheck()
+        }
+
+        override func layoutSubviews() {
+            super.layoutSubviews()
+            scheduleFocusCheck()
+        }
+
+        @objc private func focusChanged() { scheduleFocusCheck() }
+
+        func scheduleFocusCheck() {
+            pendingCheck?.cancel()
+            pendingCheck = Task { @MainActor [weak self] in
+                await Task.yield()
+                guard !Task.isCancelled, let self else { return }
+                guard self.configuration != nil else { self.detach(); return }
+                guard !self.isPresented else { return }
+                guard let window = self.window,
+                      let focused = UIFocusSystem.focusSystem(for: window)?.focusedItem,
+                      let frame = NativeFocusRegion.frame(of: focused, in: self),
+                      self.bounds.contains(CGPoint(x: frame.midX, y: frame.midY)),
+                      abs(frame.width - self.bounds.width) <= max(32, self.bounds.width * 0.05),
+                      abs(frame.height - self.bounds.height) <= max(32, self.bounds.height * 0.05),
+                      let target = focused as? UIView ?? NativeFocusRegion.owningController(of: focused)?.viewIfLoaded else {
+                    self.detach()
+                    return
+                }
+                guard self.interaction.view !== target else { return }
+                self.detach()
+                target.addInteraction(self.interaction)
             }
+        }
+
+        private func detach() {
+            pendingAction = nil
+            interaction.dismissMenu()
+            interaction.view?.removeInteraction(interaction)
+            isPresented = false
+        }
+
+        func stop() {
+            pendingCheck?.cancel()
+            pendingCheck = nil
+            NotificationCenter.default.removeObserver(self)
+            detach()
+        }
+
+        func contextMenuInteraction(
+            _ interaction: UIContextMenuInteraction, configurationForMenuAtLocation location: CGPoint
+        ) -> UIContextMenuConfiguration? {
+            guard let configuration, window != nil else { return nil }
+            func action(
+                _ title: LocalizedStringResource, symbol: String, destructive: Bool = false,
+                perform: @escaping () -> Void
+            ) -> UIAction {
+                var localizedTitle = title
+                localizedTitle.locale = locale
+                return UIAction(
+                    title: String(localized: localizedTitle), image: UIImage(systemName: symbol),
+                    attributes: destructive ? .destructive : []
+                ) { [weak self] _ in
+                    guard let self, self.configuration?.identifier == configuration.identifier else { return }
+                    self.pendingAction = perform
+                }
+            }
+            var actions = [
+                action("Make main picture", symbol: "rectangle.inset.filled", perform: configuration.promote),
+                action("Replace channel", symbol: "arrow.triangle.2.circlepath", perform: configuration.replace)
+            ]
+            if let remove = configuration.remove {
+                actions.append(action("Remove", symbol: "minus.circle", destructive: true, perform: remove))
+            }
+            return UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { _ in UIMenu(children: actions) }
+        }
+
+        func contextMenuInteraction(
+            _ interaction: UIContextMenuInteraction, willDisplayMenuFor configuration: UIContextMenuConfiguration,
+            animator: (any UIContextMenuInteractionAnimating)?
+        ) {
+            isPresented = true
+        }
+
+        func contextMenuInteraction(
+            _ interaction: UIContextMenuInteraction, configuration: UIContextMenuConfiguration,
+            highlightPreviewForItemWithIdentifier identifier: any NSCopying
+        ) -> UITargetedPreview? {
+            menuPreview()
+        }
+
+        func contextMenuInteraction(
+            _ interaction: UIContextMenuInteraction, configuration: UIContextMenuConfiguration,
+            dismissalPreviewForItemWithIdentifier identifier: any NSCopying
+        ) -> UITargetedPreview? {
+            menuPreview()
+        }
+
+        private func menuPreview() -> UITargetedPreview? {
+            guard window != nil else { return nil }
+            let parameters = UIPreviewParameters()
+            parameters.backgroundColor = .clear
+            // Anchor the menu to the picture without snapshotting or moving its live renderer.
+            return UITargetedPreview(view: self, parameters: parameters)
+        }
+
+        func contextMenuInteraction(
+            _ interaction: UIContextMenuInteraction, willEndFor configuration: UIContextMenuConfiguration,
+            animator: (any UIContextMenuInteractionAnimating)?
+        ) {
+            let identifier = self.configuration?.identifier
+            let complete: @MainActor () -> Void = { [weak self] in
+                guard let self else { return }
+                self.isPresented = false
+                let action = self.pendingAction
+                self.pendingAction = nil
+                guard self.window != nil, self.configuration?.identifier == identifier else { return }
+                action?()
+                self.scheduleFocusCheck()
+            }
+            // The native preview must return to its original bounds before those bounds change.
+            if let animator { animator.addCompletion(complete) }
+            else { complete() }
+        }
+
+        deinit {
+            pendingCheck?.cancel()
+            NotificationCenter.default.removeObserver(self)
         }
     }
 }

@@ -138,7 +138,7 @@ struct MultiviewFixture: View {
             title: pane.channel?.name ?? "", audible: pane.id == coordinator.audiblePaneID,
             presentsEffect: effect,
             cornerRadius: coordinator.expandedPaneID == nil ? LiveTVMultiviewGeometry.videoCornerRadius : 0,
-            horizontalInset: effect ? LiveTVMultiviewGeometry.focusInset(for: frame.width) : 0,
+            horizontalInset: effect ? LiveTVMultiviewGeometry.focusInset(for: frame.width, layout: coordinator.layout) : 0,
             request: focusRequest, prefersFocus: pane.id == (requestedFocusID ?? coordinator.audiblePaneID),
             focused: { value in
                 if value { nativeFocusedPaneID = pane.id }
@@ -146,8 +146,7 @@ struct MultiviewFixture: View {
             },
             activate: {
                 coordinator.selectAudio(pane.id)
-                coordinator.finishEditingLayout()
-                if coordinator.panes.count > 1 { coordinator.expand(pane.id) }
+                coordinator.promote(pane.id)
             },
             promote: { coordinator.promote(pane.id) },
             replace: { channelSelection = .replace(pane.id) },
@@ -171,7 +170,8 @@ struct MultiviewFixture: View {
                             corner: coordinator.corner, insetSize: coordinator.insetSize,
                             expanded: coordinator.expandedPaneID, size: bounds.size,
                             isEditing: coordinator.isEditingLayout,
-                            aspectRatio: pane.videoAspectRatio.map { CGFloat($0) }
+                            aspectRatio: pane.videoAspectRatio.map { CGFloat($0) },
+                            aspectRatios: LiveTVMultiviewGeometry.aspectRatios(in: coordinator.panes)
                         ).offsetBy(dx: bounds.minX, dy: bounds.minY) : CGRect(origin: .zero, size: geometry.size)
                         let roundsPicture = coordinator.isEnabled && coordinator.expandedPaneID == nil
                         let frame = roundsPicture ? LiveTVMultiviewGeometry.contentFrame(
@@ -660,6 +660,12 @@ private final class MultiviewMotionOutput: UIView {
 
     private func sample() {
         guard let window, let presented = layer.presentation() else { return }
+        var ancestorLayer: CALayer? = presented
+        while let current = ancestorLayer, current.model() !== window.layer {
+            ancestorLayer = current.superlayer
+        }
+        // A detached presentation tree has no window coordinates during native reparenting.
+        guard ancestorLayer != nil else { return }
         let frame = presented.convert(presented.bounds, to: window.layer.presentation() ?? window.layer)
         var opacity: CGFloat = 1
         var ancestor: UIView? = self

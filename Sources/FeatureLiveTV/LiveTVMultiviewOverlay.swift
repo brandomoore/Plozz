@@ -12,24 +12,30 @@ enum LiveTVMultiviewGeometry {
         #endif
     }
 
-    static func presentationFrame(in slot: CGRect, aspectRatio: CGFloat?, focusActive: Bool) -> CGRect {
+    static func presentationFrame(
+        in slot: CGRect, aspectRatio: CGFloat?, focusActive: Bool, layout: LiveTVMultiviewLayout = .corner
+    ) -> CGRect {
         let picture = contentFrame(in: slot, aspectRatio: aspectRatio)
         #if os(tvOS)
-        let inset = focusActive ? focusInset(for: picture.width) : 0
+        let inset = focusActive ? focusInset(for: picture.width, layout: layout) : 0
         return picture.insetBy(dx: inset, dy: inset * picture.height / max(1, picture.width))
         #else
         return picture
         #endif
     }
 
-    static func focusInset(for width: CGFloat) -> CGFloat {
-        min(width * 0.2, max(28, width * 0.02))
+    static func focusInset(for width: CGFloat, layout: LiveTVMultiviewLayout = .corner) -> CGFloat {
+        layout == .corner ? min(width * 0.2, max(28, width * 0.02)) : 0
+    }
+
+    @MainActor
+    static func aspectRatios(in panes: [LiveTVMultiviewPane]) -> [UUID: CGFloat] {
+        Dictionary(uniqueKeysWithValues: panes.map { ($0.id, CGFloat($0.videoAspectRatio ?? 16 / 9)) })
     }
 
     static func viewport(in size: CGSize, isEditing: Bool = false, editingInsets: EdgeInsets? = nil) -> CGRect {
         let canvas = CGRect(origin: .zero, size: size)
         guard isEditing else { return canvas }
-        #if os(iOS)
         if let insets = editingInsets {
             return CGRect(
                 x: insets.leading, y: insets.top,
@@ -37,15 +43,16 @@ enum LiveTVMultiviewGeometry {
                 height: max(1, size.height - insets.top - insets.bottom)
             )
         }
-        #endif
         #if os(tvOS)
-        let horizontal = min(CGFloat(80), size.width / 12)
-        let vertical = min(CGFloat(156), size.height / 4)
+        let margin = min(CGFloat(24), min(size.width, size.height) / 12)
+        return CGRect(
+            x: margin, y: margin, width: max(1, size.width - 2 * margin),
+            height: max(1, size.height - margin - min(156, size.height / 4)))
         #else
         let horizontal = min(CGFloat(24), size.width / 12)
         let vertical = min(CGFloat(100), size.height / 4)
-        #endif
         return canvas.insetBy(dx: horizontal, dy: vertical)
+        #endif
     }
 
     static func focusViewport(
@@ -67,7 +74,8 @@ enum LiveTVMultiviewGeometry {
         for id: UUID, panes: [UUID], primary: UUID,
         layout: LiveTVMultiviewLayout, corner: LiveTVMultiviewCorner,
         insetSize: LiveTVMultiviewInsetSize, expanded: UUID?, size: CGSize,
-        isEditing: Bool = false, aspectRatio: CGFloat? = nil, editingInsets: EdgeInsets? = nil
+        isEditing: Bool = false, aspectRatio: CGFloat? = nil, editingInsets: EdgeInsets? = nil,
+        aspectRatios: [UUID: CGFloat] = [:]
     ) -> CGRect {
         if expanded != nil { return viewport(in: size) }
         let area = viewport(in: size, isEditing: isEditing, editingInsets: editingInsets)
@@ -76,6 +84,12 @@ enum LiveTVMultiviewGeometry {
             return isEditing ? contentFrame(in: area, aspectRatio: aspectRatio) : area
         }
         let index = ordered.firstIndex(of: id) ?? 0
+        #if os(tvOS)
+        if layout == .mainAndStack || (isEditing && layout == .sideBySide) {
+            let ratios = ordered.map { validAspectRatio(aspectRatios[$0] ?? aspectRatio) }
+            return packedFrame(index: index, ratios: ratios, area: area, layout: layout, gap: isEditing ? 24 : 8)
+        }
+        #endif
         if layout == .mainAndStack {
             let gap = min(CGFloat(16), max(0, min(area.width, area.height) / 12))
             let sideWidth = area.width * 0.28
@@ -147,12 +161,13 @@ enum LiveTVMultiviewGeometry {
         for id: UUID, panes: [UUID], primary: UUID,
         layout: LiveTVMultiviewLayout, corner: LiveTVMultiviewCorner,
         insetSize: LiveTVMultiviewInsetSize, expanded: UUID?, size: CGSize,
-        chromeVisible: Bool, isEditing: Bool = false, aspectRatio: CGFloat? = nil, editingInsets: EdgeInsets? = nil
+        chromeVisible: Bool, isEditing: Bool = false, aspectRatio: CGFloat? = nil, editingInsets: EdgeInsets? = nil,
+        aspectRatios: [UUID: CGFloat] = [:]
     ) -> CGRect {
         let picture = frame(
             for: id, panes: panes, primary: primary, layout: layout, corner: corner,
             insetSize: insetSize, expanded: expanded, size: size,
-            isEditing: isEditing, aspectRatio: aspectRatio, editingInsets: editingInsets
+            isEditing: isEditing, aspectRatio: aspectRatio, editingInsets: editingInsets, aspectRatios: aspectRatios
         )
         var region = contentFrame(in: picture, aspectRatio: aspectRatio)
         if expanded == nil, layout == .corner, id == primary,
@@ -174,7 +189,7 @@ enum LiveTVMultiviewGeometry {
     }
 
     static func contentFrame(in area: CGRect, aspectRatio: CGFloat?) -> CGRect {
-        let ratio = aspectRatio.flatMap { $0.isFinite && $0 > 0 ? $0 : nil } ?? 16 / 9
+        let ratio = validAspectRatio(aspectRatio)
         let width = min(area.width, area.height * ratio)
         let height = width / ratio
         return CGRect(x: area.midX - width / 2, y: area.midY - height / 2, width: width, height: height)
@@ -183,6 +198,51 @@ enum LiveTVMultiviewGeometry {
     private static func insetPlacementBounds(in area: CGRect) -> CGRect {
         contentFrame(in: area, aspectRatio: 16 / 9)
     }
+
+    private static func validAspectRatio(_ ratio: CGFloat?) -> CGFloat {
+        ratio.flatMap { $0.isFinite && $0 > 0 ? $0 : nil } ?? 16 / 9
+    }
+
+    #if os(tvOS)
+    private static func packedFrame(
+        index: Int, ratios: [CGFloat], area: CGRect, layout: LiveTVMultiviewLayout, gap: CGFloat
+    ) -> CGRect {
+        if layout == .mainAndStack {
+            let sideRatios = ratios.dropFirst()
+            let verticalGaps = gap * CGFloat(max(2, sideRatios.count) - 1)
+            let sideHeightPerWidth = sideRatios.reduce(CGFloat.zero) { $0 + 1 / $1 }
+                * (sideRatios.count == 1 ? 2 : 1)
+            let width = min(
+                (area.width - gap - ratios[0] * verticalGaps) / (1 + ratios[0] * sideHeightPerWidth),
+                (area.height - verticalGaps) / sideHeightPerWidth)
+            let height = width * sideHeightPerWidth + verticalGaps
+            let mainWidth = height * ratios[0]
+            let x = area.midX - (mainWidth + gap + width) / 2
+            let y = area.midY - height / 2
+            if index == 0 { return CGRect(x: x, y: y, width: mainWidth, height: height) }
+            let precedingHeight = ratios.dropFirst().prefix(index - 1).reduce(CGFloat.zero) { $0 + width / $1 }
+            return CGRect(
+                x: x + mainWidth + gap,
+                y: sideRatios.count == 1 ? area.midY - width / ratios[index] / 2
+                    : y + precedingHeight + gap * CGFloat(index - 1),
+                width: width, height: width / ratios[index])
+        }
+        let columns = ratios.count == 2 && area.width < area.height ? 1 : 2
+        let rows = stride(from: 0, to: ratios.count, by: columns).map {
+            Array(ratios[$0..<min($0 + columns, ratios.count)])
+        }
+        let height = rows.reduce((area.height - gap * CGFloat(rows.count - 1)) / CGFloat(rows.count)) {
+            min($0, (area.width - gap * CGFloat($1.count - 1)) / $1.reduce(0, +))
+        }
+        let row = index / columns
+        let rowWidth = rows[row].reduce(0, +) * height + gap * CGFloat(rows[row].count - 1)
+        let x = area.midX - rowWidth / 2
+            + rows[row].prefix(index % columns).reduce(0, +) * height + gap * CGFloat(index % columns)
+        let y = area.midY - (height * CGFloat(rows.count) + gap * CGFloat(rows.count - 1)) / 2
+            + CGFloat(row) * (height + gap)
+        return CGRect(x: x, y: y, width: height * ratios[index], height: height)
+    }
+    #endif
 }
 
 struct LiveTVMultiviewChromeState: Equatable {
@@ -271,7 +331,7 @@ struct LiveTVMultiviewOverlay: View {
                             onRequestVideoFocus(id)
                         },
                         fallbackFocusChanged: paneFocusChanged,
-                        activate: expand,
+                        activate: promote,
                         editing: beginEditing,
                         replace: { beginEditing(); replaceChannel($0) }
                     )
@@ -479,7 +539,8 @@ struct LiveTVMultiviewOverlay: View {
                 expanded: coordinator.expandedPaneID, size: size,
                 isEditing: coordinator.isEditingLayout,
                 aspectRatio: pane.videoAspectRatio.map { CGFloat($0) },
-                editingInsets: editingInsets)
+                editingInsets: editingInsets,
+                aspectRatios: LiveTVMultiviewGeometry.aspectRatios(in: coordinator.panes))
             return abs(slot.midX - nativeFrame.midX) < max(2, slot.width * 0.1)
                 && abs(slot.midY - nativeFrame.midY) < max(2, slot.height * 0.1)
         }
@@ -536,15 +597,14 @@ struct LiveTVMultiviewOverlay: View {
         coordinator.selectAudio(id)
     }
 
-    private func expand(_ id: UUID) {
+    private func promote(_ id: UUID) {
         guard coordinator.panes.first(where: { $0.id == id })?.preparation.current != nil else {
             activity()
             return
         }
         selectPreparedAudio(id)
-        coordinator.finishEditingLayout()
-        if coordinator.panes.count > 1 { coordinator.expand(id) }
-        chrome.watching(at: ProcessInfo.processInfo.systemUptime)
+        coordinator.promote(id)
+        activity()
     }
 
     private func collapse() {
@@ -596,7 +656,8 @@ private struct LiveTVMultiviewPaneViewport: View {
                     expanded: coordinator.expandedPaneID, size: size,
                     isEditing: coordinator.isEditingLayout,
                     aspectRatio: pane.videoAspectRatio.map { CGFloat($0) },
-                    editingInsets: editingInsets
+                    editingInsets: editingInsets,
+                    aspectRatios: LiveTVMultiviewGeometry.aspectRatios(in: coordinator.panes)
                 )
                 let focusFrame = LiveTVMultiviewGeometry.focusFrame(
                     for: pane.id, panes: coordinator.panes.map(\.id),
@@ -605,13 +666,14 @@ private struct LiveTVMultiviewPaneViewport: View {
                     expanded: coordinator.expandedPaneID, size: size,
                     chromeVisible: true, isEditing: coordinator.isEditingLayout,
                     aspectRatio: pane.videoAspectRatio.map { CGFloat($0) },
-                    editingInsets: editingInsets
+                    editingInsets: editingInsets,
+                    aspectRatios: LiveTVMultiviewGeometry.aspectRatios(in: coordinator.panes)
                 )
                 let visible = coordinator.expandedPaneID == nil || coordinator.expandedPaneID == pane.id
                 if visible {
                     let pictureFrame = LiveTVMultiviewGeometry.presentationFrame(
                         in: frame, aspectRatio: pane.videoAspectRatio.map { CGFloat($0) },
-                        focusActive: showsFocusPresentation)
+                        focusActive: showsFocusPresentation, layout: coordinator.layout)
                     LiveTVMultiviewPaneControl(
                         pane: pane, audible: coordinator.audiblePaneID == pane.id,
                         focusFrame: focusFrame.offsetBy(dx: -frame.minX, dy: -frame.minY),
@@ -679,6 +741,7 @@ private struct LiveTVMultiviewChrome: View {
     let replace: () -> Void
     let isFavorite: Bool
     let toggleFavorite: (() -> Void)?
+    @State private var toolbarHeight: CGFloat = 0
 
     var body: some View {
         #if os(iOS)
@@ -697,6 +760,7 @@ private struct LiveTVMultiviewChrome: View {
                 restoresSetupFocus: restoresSetupFocus, setupFocused: setupFocused, editing: editing,
                 isFavorite: isFavorite, toggleFavorite: toggleFavorite
             )
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { toolbarHeight = $0 }
             .padding(.horizontal, 72)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .padding(.bottom, max(32, safeAreaInsets.bottom))
@@ -707,7 +771,15 @@ private struct LiveTVMultiviewChrome: View {
             .padding(.top, toolbarTop(in: geometry.size))
         }
         .focusScope(focusScope)
+        .onChange(of: televisionEditingInsets, initial: true) { _, insets in
+            guard toolbarHeight > 0 else { return }
+            onEditingInsetsChange(insets)
+        }
         #endif
+    }
+
+    private var televisionEditingInsets: EdgeInsets {
+        EdgeInsets(top: 24, leading: 24, bottom: toolbarHeight + max(32, safeAreaInsets.bottom) + 24, trailing: 24)
     }
 
     private func toolbarTop(in size: CGSize) -> CGFloat {
@@ -718,11 +790,14 @@ private struct LiveTVMultiviewChrome: View {
                     for: pane.id, panes: coordinator.panes.map(\.id), primary: coordinator.primaryPaneID,
                     layout: coordinator.layout, corner: coordinator.corner, insetSize: coordinator.insetSize,
                     expanded: coordinator.expandedPaneID, size: size, isEditing: coordinator.isEditingLayout,
-                    aspectRatio: pane.videoAspectRatio.map { CGFloat($0) })
+                    aspectRatio: pane.videoAspectRatio.map { CGFloat($0) },
+                    editingInsets: televisionEditingInsets,
+                    aspectRatios: LiveTVMultiviewGeometry.aspectRatios(in: coordinator.panes))
                 return max(bottom, LiveTVMultiviewGeometry.contentFrame(
                     in: slot, aspectRatio: pane.videoAspectRatio.map { CGFloat($0) }).maxY)
         }
-        return min(bottom, LiveTVMultiviewGeometry.viewport(in: size, isEditing: true).maxY)
+        return min(bottom, LiveTVMultiviewGeometry.viewport(
+            in: size, isEditing: true, editingInsets: televisionEditingInsets).maxY)
     }
 }
 

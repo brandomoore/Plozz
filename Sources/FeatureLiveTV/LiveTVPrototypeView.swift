@@ -404,7 +404,8 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
                                 expanded: multiview.expandedPaneID, size: layout.bounds.size,
                                 isEditing: multiview.isEditingLayout,
                                 aspectRatio: pane.videoAspectRatio.map { CGFloat($0) },
-                                editingInsets: multiviewEditingInsets
+                                editingInsets: multiviewEditingInsets,
+                                aspectRatios: LiveTVMultiviewGeometry.aspectRatios(in: multiview.panes)
                             )
                             .offsetBy(dx: layout.bounds.minX, dy: layout.bounds.minY)
                             : (expanded ? layout.bounds : layout.videoFrame)
@@ -662,7 +663,7 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
             title: pane.channel?.name ?? "", audible: pane.id == multiview.audiblePaneID,
             presentsEffect: presentsEffect,
             cornerRadius: multiview.expandedPaneID == nil ? LiveTVMultiviewGeometry.videoCornerRadius : 0,
-            horizontalInset: presentsEffect ? LiveTVMultiviewGeometry.focusInset(for: frame.width) : 0,
+            horizontalInset: presentsEffect ? LiveTVMultiviewGeometry.focusInset(for: frame.width, layout: multiview.layout) : 0,
             request: multiviewFocusRequest,
             prefersFocus: showingMultiview && pane.id == (multiviewRequestedFocusID ?? multiview.audiblePaneID),
             focused: { focused in
@@ -671,8 +672,7 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
             },
             activate: {
                 multiview.selectAudio(pane.id)
-                multiview.finishEditingLayout()
-                if multiview.panes.count > 1 { multiview.expand(pane.id) }
+                multiview.promote(pane.id)
             },
             promote: { multiview.promote(pane.id) },
             replace: { beginMultiviewSelection(.replace(pane.id)) },

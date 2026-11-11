@@ -4,6 +4,124 @@ import Vision
 
 final class LiveTVMultiviewRemoteTests: XCTestCase {
     @MainActor
+    func testPromotingPictureFromMenuKeepsMotionInsideItsOldAndNewSlots() throws {
+        let app = launchFourPictureMotionFixture()
+        defer { app.terminate() }
+        select(pane("Sports 4", in: app), in: app, activate: false)
+        assertAudio("Sports 4", in: app)
+        let before = pictureMotion(in: app)
+        XCUIRemote.shared.press(.select, forDuration: 1)
+        let menu = app.cells.containing(NSPredicate(format: "label == %@", "Make main picture")).firstMatch
+        select(menu, in: app, activate: false)
+        let counts = pictureMotion(in: app).map(\.count)
+        XCUIRemote.shared.press(.select)
+        assertNativeFocus(pane("Sports 4", in: app), in: app)
+        let after = pictureMotion(in: app)
+        let evidence = XCTAttachment(string: app.staticTexts["multiview-fixture-picture-motion"].value as? String ?? "")
+        evidence.name = "Primary promotion presentation frames"
+        evidence.lifetime = .keepAlways
+        add(evidence)
+        XCTAssertGreaterThan(try XCTUnwrap(after[3].last)[2], try XCTUnwrap(after[0].last)[2] * 2)
+        for index in 0..<4 {
+            let start = try XCTUnwrap(before[index].last)
+            let end = try XCTUnwrap(after[index].last)
+            let envelope = CGRect(x: start[0], y: start[1], width: start[2], height: start[3])
+                .union(CGRect(x: end[0], y: end[1], width: end[2], height: end[3]))
+                .insetBy(dx: -45, dy: -45)
+            let samples = after[index].dropFirst(counts[index]).filter { $0[4] > 0.99 }
+            for sample in samples {
+                let rect = CGRect(x: sample[0], y: sample[1], width: sample[2], height: sample[3])
+                XCTAssertLessThanOrEqual(rect.width, max(start[2], end[2]) + 45,
+                                         "Promotion must not enlarge the renderer beyond either endpoint.")
+                XCTAssertTrue(envelope.contains(rect), "Renderer \(index + 1) escaped its transition bounds: \(rect)")
+            }
+            if abs(start[2] - end[2]) > 50 {
+                XCTAssertGreaterThan(samples.filter {
+                    $0[2] > min(start[2], end[2]) + 5 && $0[2] < max(start[2], end[2]) - 5
+                }.count, 3, "Both promoted and demoted pictures must resize continuously.")
+            }
+        }
+        capture("multiview-promoted-primary", in: app)
+        assertMetrics("Engines 4 loads 4 stops 0 audible 1", in: app)
+    }
+
+    @MainActor
+    func testSelectingPictureMakesItPrimaryWithoutHidingOtherPictures() {
+        let app = launchFourPictureMotionFixture()
+        defer { app.terminate() }
+        select(pane("Sports 3", in: app), in: app, activate: false)
+        assertAudio("Sports 3", in: app)
+        XCUIRemote.shared.press(.select)
+        assertNativeFocus(pane("Sports 3", in: app), in: app)
+        for channel in 1...4 {
+            XCTAssertTrue(pane("Sports \(channel)", in: app).exists)
+        }
+        let main = app.otherElements["multiview-fixture-video-3"].frame
+        let side = app.otherElements["multiview-fixture-video-1"].frame
+        XCTAssertGreaterThan(main.width, side.width * 2)
+        XCTAssertLessThan(main.maxX, side.minX)
+        XCTAssertLessThan(main.width, app.frame.width * 0.85)
+        XCTAssertTrue(app.buttons["live-multiview-layout"].exists)
+        assertAudio("Sports 3", in: app)
+        assertMetrics("Engines 4 loads 4 stops 0 audible 1", in: app)
+    }
+
+    @MainActor
+    private func launchFourPictureMotionFixture() -> XCUIApplication {
+        continueAfterFailure = false
+        let app = fixtureApplication()
+        app.launchArguments = ["--live-root-fixture", "--motion-fixture"]
+        app.launch()
+        startProductionChannel(in: app)
+        openMultiviewPicker(in: app)
+        chooseGuideChannel(2, in: app)
+        for channel in 3...4 {
+            select(app.buttons["live-multiview-add"], in: app)
+            chooseGuideChannel(channel, in: app)
+        }
+        select(app.buttons["live-multiview-layout"], in: app)
+        selectMenuItem("Main and stack", in: app)
+        return app
+    }
+
+    @MainActor
+    private func pictureMotion(in app: XCUIApplication) -> [[[Double]]] {
+        (app.staticTexts["multiview-fixture-picture-motion"].value as? String ?? "")
+            .split(separator: "|", omittingEmptySubsequences: false).map {
+                $0.split(separator: ";").map { $0.split(separator: ",").compactMap { Double($0) } }
+            }
+    }
+
+    @MainActor
+    func testMainAndStackUsesEqualVisibleGapsAndLeavesOnlyBottomControlSpace() {
+        let app = launchFourPictureMotionFixture()
+        defer { app.terminate() }
+        let settled = NSPredicate { _, _ in
+            let main = app.otherElements["multiview-fixture-video-1"].frame
+            let side = app.otherElements["multiview-fixture-video-2"].frame
+            return main.width > 1350 && abs(side.minX - main.maxX - 24) <= 2
+        }
+        XCTAssertEqual(XCTWaiter.wait(for: [
+            XCTNSPredicateExpectation(predicate: settled, object: nil)
+        ], timeout: 5), .completed)
+        let pictures = (1...4).map { app.otherElements["multiview-fixture-video-\($0)"].frame }
+        XCTAssertGreaterThan(pictures[0].width, 1350)
+        XCTAssertGreaterThan(pictures[0].height, 760)
+        for index in 1...3 {
+            XCTAssertEqual(pictures[index].minX - pictures[0].maxX, 24, accuracy: 2)
+            if index > 1 {
+                XCTAssertEqual(pictures[index].minY - pictures[index - 1].maxY, 24, accuracy: 2)
+            }
+        }
+        XCTAssertEqual(pictures[0].minY, pictures[1].minY, accuracy: 2)
+        XCTAssertEqual(pictures[0].maxY, pictures[3].maxY, accuracy: 2)
+        let controls = app.buttons["live-multiview-layout"].frame.union(app.buttons["live-multiview-more"].frame)
+        XCTAssertGreaterThan(controls.minY, pictures[0].maxY + 20)
+        XCTAssertEqual(controls.midX, app.frame.midX, accuracy: 3)
+        capture("multiview-consistent-picture-gaps", in: app)
+    }
+
+    @MainActor
     func testInlineLiveTVAndGuideUsePhysicalScreenBounds() {
         assertLiveTVBounds(native: false)
     }
@@ -189,7 +307,7 @@ final class LiveTVMultiviewRemoteTests: XCTestCase {
             let start = try XCTUnwrap(before[index].last)[2]
             let end = try XCTUnwrap(after[index].last)[2]
             let widths = after[index].dropFirst(before[index].count).map { $0[2] }
-            XCTAssertGreaterThan(abs(start - end), 100)
+            XCTAssertGreaterThan(abs(start - end), 40)
             XCTAssertGreaterThan(widths.filter { $0 > min(start, end) + 1 && $0 < max(start, end) - 1 }.count, 3,
                                  "Each retained renderer must animate into its new slot.")
             XCTAssertLessThan(widths.max() ?? 0, app.frame.width * 0.6)
@@ -880,7 +998,7 @@ final class LiveTVMultiviewRemoteTests: XCTestCase {
             assertAudio("Sports 2", in: app)
             capture("\(corner)-inset-directional-focus", in: app)
             assertSelectAndBackPreservePictures(channel: "Sports 2", engine: 2, corner: corner, in: app)
-            XCUIRemote.shared.press(corner.hasSuffix("left") ? .right : .left)
+            XCUIRemote.shared.press(corner.hasSuffix("left") ? .left : .right)
             assertNativeFocus(pane("Sports 1", in: app), in: app)
             assertAudio("Sports 1", in: app)
             capture("\(corner)-main-directional-focus", in: app)
@@ -1000,8 +1118,8 @@ final class LiveTVMultiviewRemoteTests: XCTestCase {
         chooseGuideChannel(2, in: app)
         finishSetup(in: app)
         assertSideBySideFillsScreen(in: app)
-        let original = [1, 2].map { app.otherElements["multiview-fixture-video-\($0)"].frame }
         for cycle in 1...2 {
+            let original = [1, 2].map { app.otherElements["multiview-fixture-video-\($0)"].frame }
             focusAudio("Sports 1", in: app)
             let activations = [1, 2].map { audioActivations($0, in: app) }
             let shown = capture("multiview-chrome-shown-\(cycle)", in: app)
@@ -1202,41 +1320,23 @@ final class LiveTVMultiviewRemoteTests: XCTestCase {
         finishSetup(in: app)
         select(pane(channel, in: app), in: app, activate: false)
         finishSetup(in: app)
-        let original: [CGRect]
-        if let corner {
-            let width = app.frame.width * 0.32
-            let height = width * 9 / 16
-            original = [app.frame, CGRect(
-                x: corner.hasSuffix("left") ? 16 : app.frame.maxX - width - 16,
-                y: corner.hasPrefix("Top") ? 16 : app.frame.maxY - height - 16,
-                width: width, height: height)]
-        } else {
-            original = (0..<2).map {
-                CGRect(x: CGFloat($0) * app.frame.width / 2, y: 0,
-                       width: app.frame.width / 2, height: app.frame.height)
-            }
-        }
-        for (index, frame) in original.enumerated() {
-            assertVideoFrame(index + 1, equals: frame, in: app)
-        }
         let activations = [1, 2].map { audioActivations($0, in: app) }
         assertNativeFocus(pane(channel, in: app), in: app)
         XCUIRemote.shared.press(.select)
-        assertVideoFrame(engine, equals: app.frame, in: app)
         let other = channel == "Sports 1" ? "Sports 2" : "Sports 1"
-        let hidden = NSPredicate { _, _ in !self.pane(other, in: app).exists }
-        XCTAssertEqual(
-            XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: hidden, object: nil)], timeout: 3),
-            .completed, "Expanded viewing must expose only the selected pane")
-        capture("multiview-expanded-\(channel)", in: app)
-        XCUIRemote.shared.press(.menu)
         XCTAssertTrue(pane(other, in: app).waitForExistence(timeout: 3))
-        for (index, frame) in original.enumerated() {
-            assertVideoFrame(index + 1, equals: frame, in: app)
+        let primary = app.otherElements["multiview-fixture-video-\(engine)"].frame
+        let secondary = app.otherElements["multiview-fixture-video-\(engine == 1 ? 2 : 1)"].frame
+        if corner != nil {
+            XCTAssertGreaterThan(primary.width, secondary.width * 2)
+        } else {
+            XCTAssertLessThan(primary.midX, secondary.midX)
+            XCTAssertLessThan(primary.width, app.frame.width * 0.6)
         }
         assertNativeFocus(pane(channel, in: app), in: app)
         assertAudio(channel, in: app)
         XCTAssertEqual([1, 2].map { audioActivations($0, in: app) }, activations)
+        finishSetup(in: app)
         assertChromeHidden(in: app)
         assertMetrics("Engines 2 loads 2 stops 0 audible 1", in: app)
         capture("multiview-restored-\(channel)", in: app)
@@ -1512,8 +1612,10 @@ final class LiveTVMultiviewRemoteTests: XCTestCase {
         in app: XCUIApplication, topLeft: Bool = false,
         file: StaticString = #filePath, line: UInt = #line
     ) {
-        let main = app.otherElements["multiview-fixture-video-1"]
-        let inset = app.otherElements["multiview-fixture-video-2"]
+        let first = app.otherElements["multiview-fixture-video-1"]
+        let second = app.otherElements["multiview-fixture-video-2"]
+        let main = first.frame.width > second.frame.width ? first : second
+        let inset = first.frame.width > second.frame.width ? second : first
         let matches = NSPredicate { _, _ in
             guard main.exists, inset.exists, inset.frame.width < main.frame.width / 2,
                   main.frame.insetBy(dx: -1, dy: -1).contains(inset.frame) else { return false }
@@ -1528,7 +1630,7 @@ final class LiveTVMultiviewRemoteTests: XCTestCase {
             XCTAssertGreaterThan(main.frame.minY, app.frame.minY)
             XCTAssertLessThan(main.frame.maxY, app.frame.maxY)
         } else {
-            assertVideoFrame(1, equals: app.frame, in: app)
+            assertVideoFrame(main.identifier.hasSuffix("-1") ? 1 : 2, equals: app.frame, in: app)
         }
     }
 

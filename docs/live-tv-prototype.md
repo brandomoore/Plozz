@@ -1734,6 +1734,12 @@ generated library channels, indexed program search, channel checks and four-chan
 Multiview. Multiview retains each player's decoder and prepared stream through
 side-by-side/corner layout changes, audio selection and returning to one player.
 Setup keeps the pictures inside a bounded canvas with room for controls.
+On Apple TV, setup reserves the measured bottom toolbar and 24-point native
+focus clearance, not a matching empty header band. Grid and main-and-stack
+layouts pack the actual aspect-fitted pictures with 24-point gaps; they do not
+apply another inset to each picture. Main-and-stack uses the same horizontal
+and vertical gaps, including mixed source aspect ratios. Its widened layout
+uses 8-point gaps. The focused picture still receives the system's native lift.
 Focus outlines hug the actual video aspect, reported by the retained player,
 rather than its letterbox area or caption. Add and Replace return to the actual
 guide in selection mode: the same channel/programme rows, vertical catalog,
@@ -1805,10 +1811,10 @@ with transport controls, preserving native focused-label contrast without a
 dialog-specific button style.
 
 On Apple TV, native pane focus selects that channel's audio once its source is
-prepared. Moving into the controls keeps the last selected audio. Select opens
-the focused picture full-screen; Back restores all retained players without
-retuning. On touch devices, tapping a picture selects its audio and expands it;
-Show all restores the layout. Tapping again reveals hidden controls.
+prepared. Moving into the controls keeps the last selected audio. Select makes
+the focused picture primary without hiding the other streams or leaving the
+current layout. On touch devices, tapping a picture likewise selects its audio
+and makes it primary. Interaction reveals hidden controls.
 iPhone/iPad controls use the original container safe area even though the video
 canvas extends beneath system chrome. A compact Close control and separate Watch
 action stay at the top; a touch-sized bottom dock exposes Add, Layout, and Audio,
@@ -1825,6 +1831,9 @@ native menu for Make main picture, Replace channel and Remove; Remove is
 available only with multiple pictures. Loading pictures retain their menu, and
 failed pictures expose removal beside recovery actions. Channel actions always
 target their own picture rather than the last audible channel.
+Prepared video menus anchor to the picture without moving or snapshotting its
+renderer. Layout-changing actions wait for the native menu dismissal completion,
+so its returning preview cannot resize or reposition a picture during promotion.
 The toolbar keeps visible title-and-icon labels with
 the same native button treatment as normal playback, including the Layout menu.
 Their height stays transport-sized while width follows the action's title.
