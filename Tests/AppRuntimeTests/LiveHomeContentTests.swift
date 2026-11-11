@@ -1,14 +1,71 @@
 import CoreModels
+import CoreNetworking
 import Foundation
 import ProviderJellyfin
 import ProviderPlex
 import XCTest
+
+private actor LiveRecommendationHTTP: HTTPClient {
+    private let client = URLSessionHTTPClient()
+    private(set) var count = 0
+
+    func send(_ endpoint: Endpoint, baseURL: URL) async throws -> (Data, HTTPURLResponse) {
+        if endpoint.path.hasSuffix("/Movies/Recommendations") { count += 1 }
+        return try await client.send(endpoint, baseURL: baseURL)
+    }
+}
 
 /// Read-only production-provider checks using a private, ephemeral credential broker.
 final class LiveHomeContentTests: XCTestCase {
     func testJellyfinCustomRowSourcesAndPaging() async throws { try await verify(.jellyfin) }
     func testEmbyCustomRowSourcesAndPaging() async throws { try await verify(.emby) }
     func testPlexCustomRowSourcesAndPaging() async throws { try await verify(.plex) }
+
+    func testJellyfinScopedRecommendationReuse() async throws {
+        let http = LiveRecommendationHTTP()
+        let provider = try await provider(.jellyfin, http: http)
+        let libraries = try await provider.libraries()
+        let library = try XCTUnwrap(libraries.first { $0.kind == .movie && !$0.isMusic })
+        let account = ResolvedAccount(account: .init(id: "live-jellyfin", from: provider.session), provider: provider)
+        for sample in 0..<5 {
+            let scope = HomeRecommendationScope()
+            let before = await http.count
+            let began = ContinuousClock.now
+            let cold = try await HomeRecommendationScope.$current.withValue(scope) {
+                try await provider.homeHubs(libraryID: library.id, kind: .movie, limit: 20, includeUnpromoted: true)
+            }
+            let coldTime = began.duration(to: .now)
+            let shelf = try XCTUnwrap(cold.first { !$0.items.isEmpty })
+            let source = HomeContentSource(
+                feed: .recommendation(sectionID: shelf.id, kind: .movie), accountID: account.account.id,
+                serverUserID: provider.session.userID, libraryID: library.id, title: "Internal recommendation"
+            )
+            let reusedAt = ContinuousClock.now
+            for _ in 0..<3 {
+                let loader = HomeContentPageLoader.Session(
+                    accounts: [account], visibility: .default, recommendationScope: scope
+                ) { _ in [] }
+                let page = try await loader.load(source, start: 0, limit: 5)
+                XCTAssertEqual(page.items.map(\.id), Array(shelf.items.prefix(5)).map(\.id))
+            }
+            let reusedTime = reusedAt.duration(to: .now)
+            let afterReuse = await http.count
+            XCTAssertEqual(afterReuse - before, 1, "Separate consumers must reuse the exact discovery response")
+            scope.refresh()
+            let refreshed = try await HomeRecommendationScope.$current.withValue(scope) {
+                try await provider.homeHubs(libraryID: library.id, kind: .movie, limit: 20, includeUnpromoted: true)
+            }
+            XCTAssertFalse(refreshed.isEmpty)
+            let afterRefresh = await http.count
+            XCTAssertEqual(afterRefresh - before, 2, "Refresh must make a new authenticated request")
+            func milliseconds(_ value: Duration) -> Double {
+                Double(value.components.seconds) * 1_000 + Double(value.components.attoseconds) / 1e15
+            }
+            print("LiveHomeRecommendation sample=\(sample) coldMilliseconds=\(milliseconds(coldTime)) "
+                  + "threeReusedConsumersMilliseconds=\(milliseconds(reusedTime)) requests=\(afterRefresh - before)")
+            scope.invalidate()
+        }
+    }
 
     func testCombinedPlexJellyfinAndEmbyLibraries() async throws {
         var accounts: [ResolvedAccount] = []
@@ -57,7 +114,7 @@ final class LiveHomeContentTests: XCTestCase {
 
     private enum ConfigurationError: Error { case invalid }
 
-    private func provider(_ kind: ProviderKind) async throws -> any MediaProvider {
+    private func provider(_ kind: ProviderKind, http: any HTTPClient = URLSessionHTTPClient()) async throws -> any MediaProvider {
         guard let input = ProcessInfo.processInfo.environment["PLOZZ_LIVE_HOME_BROKER"] else {
             throw XCTSkip("Set PLOZZ_LIVE_HOME_BROKER for dedicated internal read-only Home checks.")
         }
@@ -83,7 +140,7 @@ final class LiveHomeContentTests: XCTestCase {
             try await PlexProvider.verifyAddress(config.baseURL, serverID: config.serverID)
             return PlexProvider(session: session)
         }
-        return JellyfinProvider(session: session, playbackRequests: .init())
+        return JellyfinProvider(session: session, http: http, playbackRequests: .init())
     }
 
     private func verify(_ kind: ProviderKind) async throws {

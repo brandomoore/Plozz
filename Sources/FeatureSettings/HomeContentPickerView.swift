@@ -9,6 +9,7 @@ struct HomeContentPickerView: View {
     let visibility: HomeLibraryVisibilityModel
     let libraries: [AggregatedLibrary]
     let accounts: [ResolvedAccount]
+    @Environment(\.homeContentSnapshot) private var homeSnapshot
     var allowsEmpty = true
     @State private var choosingCollections = false
     @State private var choosingPlaylists = false
@@ -83,7 +84,10 @@ struct HomeContentPickerView: View {
         .task(id: HomeSectionCatalogModel.loadID(
             libraries: libraries, accounts: accounts, visibility: visibility, revision: revision
         )) {
-            await inventory.load(libraries: libraries, accounts: accounts, visibility: visibility)
+            await inventory.load(
+                libraries: libraries, accounts: accounts, visibility: visibility,
+                recommendationScope: homeSnapshot?.recommendationScope, refreshRecommendations: revision > 0
+            )
         }
     }
 

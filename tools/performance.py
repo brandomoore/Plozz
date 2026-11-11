@@ -237,6 +237,13 @@ SCENARIOS = {
         "description": "Traverse 181 posters forward/backward with repeated overlapping windows across Jellyfin, Emby, Plex, and TMDB URLs.",
         "counters": ["candidateVisits", "distinctURLChecks", "queuedPreviews"],
     },
+    "home-recommendation-navigation": {
+        "suite": "network", "target": "ProviderJellyfinTests",
+        "test": "JellyfinRecommendationPerformanceTests/testPerformanceHomeRecommendationNavigation",
+        "file": "Tests/ProviderJellyfinTests/JellyfinRecommendationPerformanceTests.swift",
+        "description": "Production recommendation decoding/mapping across Home, picker, preview and two-shelf browsing; 5-ms synthetic transport, exact ordered contents.",
+        "counters": ["requests", "bytes", "items"],
+    },
     "home-single-collection-row": {
         "suite": "core", "target": "FeatureHomeCoreTests",
         "test": "CollectionSectionLoadingTests/testPerformanceSingleCollectionRow",

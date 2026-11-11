@@ -240,6 +240,25 @@ the changing baseline movie title or category ID. This keeps a hidden
 "More like..." slot hidden when its subject changes. The library Recommended
 screen still uses the server's own category identities and full inventory.
 
+Jellyfin Home, row discovery, previews, and browsing can share completed
+`/Movies/Recommendations` responses through an explicit `HomeRecommendationScope`.
+Reuse is private to one authenticated client and keyed by Home owner/revision,
+server user, library, and **exact item limit**. Different limits can return
+different titles: this does not substitute larger cached prefixes, increase
+request limits, or prefetch categories. Emby and unscoped requests retain their
+existing fresh-request behavior; Plex keeps native paging.
+
+Successful category arrays are reusable for 60 seconds, with least-recently-used
+limits of 16 entries and 2,000 item records per client. Pruning is lazy, and the
+record limit is not a byte/peak-memory guarantee. Empty arrays, failures, and
+oversized responses are not retained; oversized responses are returned without
+truncation. Concurrent readers share work, individual cancellation preserves
+remaining readers, and the last departure cancels transport work. Home refresh,
+history changes, and owner retirement fence older generations. Explicit Retry
+bypasses reuse, including when a valid response lacks the selected shelf.
+See the [performance evidence](../../docs/performance-lab.md#jellyfin-home-recommendation-reuse)
+for measured benefits and the unchanged first-load limitation.
+
 Watched- and liked-movie similarity rows share the concise localized heading
 `More like [movie title]`. The server title remains unchanged apart from trimming
 surrounding whitespace; absent or blank titles retain `Suggested movies`.

@@ -1732,10 +1732,24 @@ final class HomeRowArrangementHostedTests: XCTestCase {
             .environment(\.plozzMetrics, .touch(density: .standard))
             #endif
         } inspect: { window in
-            try await Task.sleep(for: .milliseconds(500))
-            try self.scrollToBottom(window)
-            let text = try await capture(window, name: "mixed-source-preview-partial-failure").map(\.0)
-                .joined(separator: " ")
+            func previewScroll(_ view: UIView) -> UIScrollView? {
+                if let scroll = view as? UIScrollView, scroll.contentSize.height > scroll.bounds.height + 1 {
+                    return scroll
+                }
+                return view.subviews.lazy.compactMap(previewScroll).first
+            }
+            let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+                Set(snapshot.requests) == Set([.continueWatching, .watchlist])
+            }, object: nil)
+            await fulfillment(of: [ready], timeout: 5)
+            let text = try await capture(window, name: "mixed-source-preview-partial-failure", beforeCapture: {
+                if let scroll = previewScroll(window) {
+                    scroll.setContentOffset(CGPoint(
+                        x: scroll.contentOffset.x,
+                        y: scroll.contentSize.height - scroll.bounds.height + scroll.adjustedContentInset.bottom
+                    ), animated: false)
+                }
+            }).map(\.0).joined(separator: " ")
             XCTAssertTrue(text.contains("Resume film"), text)
             XCTAssertTrue(text.contains("Saved film"), text)
             XCTAssertTrue(text.contains("Retry"), text)
@@ -3855,9 +3869,12 @@ final class HomeRowArrangementHostedTests: XCTestCase {
         scroll.setContentOffset(CGPoint(x: scroll.contentOffset.x, y: bottom), animated: false)
     }
 
-    private func snapshot(_ window: UIWindow, name: String, scale: CGFloat = 1) async throws -> UIImage {
+    private func snapshot(
+        _ window: UIWindow, name: String, scale: CGFloat = 1, beforeCapture: (() throws -> Void)? = nil
+    ) async throws -> UIImage {
         try await Task.sleep(for: .milliseconds(400))
         window.layoutIfNeeded()
+        try beforeCapture?()
         let format = UIGraphicsImageRendererFormat()
         format.scale = scale
         let image = UIGraphicsImageRenderer(bounds: window.bounds, format: format).image { _ in
@@ -3870,8 +3887,10 @@ final class HomeRowArrangementHostedTests: XCTestCase {
         return image
     }
 
-    private func capture(_ window: UIWindow, name: String, scale: CGFloat = 1) async throws -> [(String, CGRect)] {
-        let image = try await snapshot(window, name: name, scale: scale)
+    private func capture(
+        _ window: UIWindow, name: String, scale: CGFloat = 1, beforeCapture: (() throws -> Void)? = nil
+    ) async throws -> [(String, CGRect)] {
+        let image = try await snapshot(window, name: name, scale: scale, beforeCapture: beforeCapture)
         let request = VNRecognizeTextRequest()
         request.recognitionLevel = .accurate
         request.recognitionLanguages = ["en-US"]

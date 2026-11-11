@@ -618,6 +618,16 @@ records on both platforms; error dialogs, playback routing and timeouts are unch
   memory until the traversal ends; there is no cross-profile or global cache.
   Failed or cancelled discovery is not cached, and unrelated libraries retain
   independent request lanes.
+  Jellyfin additionally reuses exact recommendation responses across Home,
+  Settings discovery, previews, and browsing for up to one minute within the
+  same Home/profile owner. The authenticated provider bounds this transient
+  cache to 16 entries and 2,000 item records. Home reloads and watched/watchlist
+  mutations advance its generation; profile retirement invalidates it. Pausing
+  Home behind Settings does not retire authorized snapshot access. Detached Home
+  aggregation explicitly installs the scope, while previews and browse sessions
+  capture it. Missing-shelf and explicit editor Retry request fresh discovery
+  without replacing already pinned healthy shelves. This does not change
+  recommendation limits, cold server latency, or Emby's fixed-snapshot behavior.
   This member-row layout is separate from collection **covers**. Lists and Home
   or Recommended rows containing only collection containers use a uniform
   Auto/Posters/Landscape cover layout. Overrides are profile-scoped and keyed

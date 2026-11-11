@@ -665,6 +665,7 @@ public final class HomeViewModel: HomeContentSnapshotProviding {
                 if let mutation = MediaItemMutation.from(note) {
                     self.applyWatchedState(mutation)
                 } else {
+                    self.recommendationContext.refresh()
                     self.schedulePlaybackReload()
                 }
             }
@@ -674,12 +675,14 @@ public final class HomeViewModel: HomeContentSnapshotProviding {
         ) { [weak self] note in
             MainActor.assumeIsolated {
                 guard let change = note.object as? WatchlistProviderChange else { return }
+                self?.recommendationContext.refresh()
                 self?.scheduleCollectionRefresh(after: change)
             }
         }
     }
 
     deinit {
+        recommendationContext.invalidate()
         if let watchMutationObserver { NotificationCenter.default.removeObserver(watchMutationObserver) }
         if let watchlistProviderObserver { NotificationCenter.default.removeObserver(watchlistProviderObserver) }
         collectionRefreshTask?.cancel()
@@ -729,6 +732,7 @@ public final class HomeViewModel: HomeContentSnapshotProviding {
     /// not wait for deinit while an outstanding load still retains the model.
     public func invalidate() {
         isInvalidated = true
+        recommendationContext.invalidate()
         cancelPendingLoad()
         topShelfPublishTask?.cancel()
         durableWatchlistRefreshTask?.cancel()
@@ -829,6 +833,7 @@ public final class HomeViewModel: HomeContentSnapshotProviding {
             wantsReloadAfterCurrent = true
             return
         }
+        recommendationContext.refresh()
         let diagnostic = PerformanceDiagnostics.shared.begin(
             .homeLoad, metrics: .init(accounts: accounts.count)
         )
@@ -959,13 +964,16 @@ public final class HomeViewModel: HomeContentSnapshotProviding {
         // fetched Continue Watching row so a reload doesn't revert it to stale
         // pre-play order while the server catches up (r8-cw-outbox-patch).
         var content: Content
+        let recommendationContext = recommendationContext
         if !visibility.usesIndividualHomeRows {
             let aggregationTask = Task.detached(priority: .userInitiated) {
-                await aggregator.content(
-                    from: accounts, policy: policy, visibility: visibility,
-                    identitySources: identitySources, onContinueWatching: receiveResume,
-                    onProgress: receiveProgress
-                )
+                await HomeRecommendationScope.$current.withValue(recommendationContext) {
+                    await aggregator.content(
+                        from: accounts, policy: policy, visibility: visibility,
+                        identitySources: identitySources, onContinueWatching: receiveResume,
+                        onProgress: receiveProgress
+                    )
+                }
             }
             self.aggregationTask = aggregationTask
             let merged = await aggregationTask.value
@@ -1019,11 +1027,13 @@ public final class HomeViewModel: HomeContentSnapshotProviding {
             // full library inventory feeds the Libraries tiles, and each library the
             // user opted rows into contributes a block below.
             let unmergedTask = Task.detached(priority: .userInitiated) {
-                await aggregator.unmergedContent(
-                    from: accounts, policy: policy, visibility: visibility,
-                    identitySources: identitySources, onContinueWatching: receiveResume,
-                    onProgress: receiveProgress
-                )
+                await HomeRecommendationScope.$current.withValue(recommendationContext) {
+                    await aggregator.unmergedContent(
+                        from: accounts, policy: policy, visibility: visibility,
+                        identitySources: identitySources, onContinueWatching: receiveResume,
+                        onProgress: receiveProgress
+                    )
+                }
             }
             self.unmergedTask = unmergedTask
             let unmerged = await unmergedTask.value
@@ -1407,6 +1417,7 @@ public final class HomeViewModel: HomeContentSnapshotProviding {
     /// flip its badge without a refetch. A watchlist add/remove also inserts/removes
     /// the title from the Watchlist row.
     public func applyWatchedState(_ mutation: MediaItemMutation) {
+        recommendationContext.refresh()
         if mutation.refreshContinueWatching || mutation.refreshEpisodeCounts {
             if accounts.contains(where: { account in
                 mutation.itemIDs.contains {
@@ -2041,6 +2052,13 @@ public final class HomeViewModel: HomeContentSnapshotProviding {
         return scoped
     }
 
+    @ObservationIgnored private let recommendationContext = HomeRecommendationScope()
+
+    public var recommendationScope: HomeRecommendationScope? {
+        guard !isInvalidated, isSnapshotAccessAllowed() else { return nil }
+        return recommendationContext
+    }
+
     public func browseRow(_ row: HomePresentationRow) -> HomeRowBrowseModel {
         let visibility = currentVisibility()
         let snapshot: (@MainActor () -> [MediaItem]?)?
@@ -2057,6 +2075,7 @@ public final class HomeViewModel: HomeContentSnapshotProviding {
         return HomeRowBrowseFactory.make(
             row, accounts: accounts, visibility: visibility, libraries: libraries,
             identitySources: identitySources, snapshotProvider: snapshot,
+            recommendationScope: recommendationScope,
             homeSnapshot: { [weak self] kind in
                 guard let self else { throw AppError.notFound }
                 return try await self.contentSnapshot(for: kind, visibility: visibility)

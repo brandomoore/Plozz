@@ -4,6 +4,61 @@ import XCTest
 
 @MainActor
 final class MultiSourceRowTests: XCTestCase {
+    func testRecommendationScopeSurvivesSettingsPauseButRefreshesAndRetiresWithHome() async throws {
+        let provider = MultiSourceProvider()
+        let account = ResolvedAccount(account: .init(id: "account", from: provider.session), provider: provider)
+        var loadingAllowed = true
+        let definition = CollectionSection(sources: [
+            .init(feed: .recommendation(sectionID: "shelf", kind: .movie), accountID: "account",
+                  serverUserID: "viewer", libraryID: "movies", title: "Recommended")
+        ])
+        let visibility = settings(definition)
+        let model = HomeViewModel(
+            accounts: [account], currentVisibility: { visibility },
+            isLoadingAllowed: { loadingAllowed }, isSnapshotAccessAllowed: { true }
+        )
+        let scope = try XCTUnwrap(model.recommendationScope)
+        let initial = scope.revision
+        await model.load()
+        XCTAssertNotEqual(scope.revision, initial)
+        let loaded = scope.revision
+        let discoveredScopes = await provider.discoveredScopes
+        XCTAssertFalse(discoveredScopes.isEmpty)
+        XCTAssertTrue(discoveredScopes.allSatisfy { $0 == scope.id })
+        loadingAllowed = false
+        model.cancelPendingLoad()
+        XCTAssertTrue(model.recommendationScope === scope)
+        XCTAssertEqual(scope.revision, loaded)
+        model.applyWatchedState(.init(itemIDs: ["recommendation-0"], played: true))
+        XCTAssertNotEqual(scope.revision, loaded, "History changes must expire reuse even while Settings pauses Home")
+        let afterHistory = scope.revision
+        loadingAllowed = true
+        await model.load()
+        XCTAssertNotEqual(scope.revision, afterHistory)
+        model.invalidate()
+        XCTAssertFalse(scope.isActive)
+        XCTAssertNil(model.recommendationScope)
+    }
+
+    func testPageLoaderRestoresCapturedRecommendationScopeAndRejectsRetirement() async throws {
+        let provider = MultiSourceProvider()
+        let account = ResolvedAccount(account: .init(id: "account", from: provider.session), provider: provider)
+        let scope = HomeRecommendationScope()
+        let source = HomeContentSource(
+            feed: .recommendation(sectionID: "shelf", kind: .movie),
+            accountID: "account", serverUserID: "viewer", libraryID: "movies", title: "Recommended"
+        )
+        let loader = HomeContentPageLoader.Session(
+            accounts: [account], visibility: .default, recommendationScope: scope
+        ) { _ in [] }
+        _ = try await loader.load(source, start: 0, limit: 3)
+        let discoveredScopes = await provider.discoveredScopes
+        XCTAssertEqual(discoveredScopes, [scope.id])
+        scope.invalidate()
+        do { _ = try await loader.load(source, start: 0, limit: 3); XCTFail("Retired traversal must stop") }
+        catch { XCTAssertTrue(error is CancellationError) }
+    }
+
     func testConcurrentRecommendationsShareOneLibraryDiscoverySnapshot() async throws {
         let provider = MultiSourceProvider()
         let account = ResolvedAccount(account: .init(id: "account", from: provider.session), provider: provider)
@@ -259,6 +314,7 @@ private actor MultiSourceProvider: MediaProvider {
     nonisolated let kind: ProviderKind
     nonisolated let session: UserSession
     var calls: [String] = []
+    var discoveredScopes: [UUID?] = []
     let catalogDelay: Duration
     var catalogWaiters: [CheckedContinuation<Void, Never>] = []
 
@@ -292,6 +348,7 @@ private actor MultiSourceProvider: MediaProvider {
     }
     func homeHubs(libraryID: String, kind: MediaItemKind, limit: Int, includeUnpromoted: Bool) async throws -> [LibrarySection] {
         calls.append("catalog:\(libraryID)")
+        discoveredScopes.append(HomeRecommendationScope.current?.id)
         catalogWaiters.forEach { $0.resume() }
         catalogWaiters = []
         if catalogDelay > .zero { try await Task.sleep(for: catalogDelay) }

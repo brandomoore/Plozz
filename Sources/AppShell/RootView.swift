@@ -24,6 +24,15 @@ private struct RuntimeHomeContentSnapshot: HomeContentSnapshotProviding {
     let appState: AppState
     let models: LazyViewState<HomeViewModel>
 
+    var recommendationScope: HomeRecommendationScope? {
+        let key = HomeRuntimeScope.homeScopeKey(
+            profileID: appState.profilesModel.activeProfileID,
+            accounts: appState.accountsProviders.homeAccounts.map(\.account),
+            plexIdentityGeneration: appState.plexHomeUsers.plexIdentityGeneration
+        )
+        return models.existingValue(forKey: key)?.recommendationScope
+    }
+
     func contentSnapshot(for kind: HomeGlobalRow, visibility: HomeLibraryVisibility) throws -> [MediaItem] {
         let key = HomeRuntimeScope.homeScopeKey(
             profileID: appState.profilesModel.activeProfileID,

@@ -8,13 +8,16 @@ enum HomeRowBrowseFactory {
         libraries: [AggregatedLibrary] = [],
         identitySources: @escaping @Sendable (MediaItem) -> [MediaSourceRef] = { _ in [] },
         snapshotProvider: (@MainActor () -> [MediaItem]?)? = nil,
+        recommendationScope: HomeRecommendationScope? = nil,
         homeSnapshot: @escaping HomeContentPageLoader.HomeSnapshot = { _ in throw AppError.notFound },
         allowHiddenSource: Bool = false,
         isCurrent: @escaping @MainActor () -> Bool
     ) -> HomeRowBrowseModel {
         if let definition = row.choice.collectionSection {
             let sources = definition.availableSources(accounts: accounts, visibility: visibility)
-            let session = HomeContentPageLoader.Session(accounts: accounts, visibility: visibility, homeSnapshot: homeSnapshot)
+            let session = HomeContentPageLoader.Session(
+                accounts: accounts, visibility: visibility, recommendationScope: recommendationScope, homeSnapshot: homeSnapshot
+            )
             let recent: HomeRowBrowseModel? = sources.contains(where: { $0.home == .recentlyAdded }) ? make(
                 .init(choice: .init(id: .global(.recentlyAdded), title: "", isProviderDefault: false),
                       source: .home(.init(kind: .recentlyAdded, items: []))),
@@ -55,7 +58,10 @@ enum HomeRowBrowseFactory {
                 guard let account = accounts.first(where: { $0.account.id == accountID }) else {
                     throw AppError.notFound
                 }
-                let page = try await fetch(account.provider, start, limit)
+                guard recommendationScope?.isActive != false else { throw CancellationError() }
+                let page = try await HomeRecommendationScope.$current.withValue(recommendationScope) {
+                    try await fetch(account.provider, start, limit)
+                }
                 let items = recentlyAdded && visibility.hideWatchedRecentlyAdded
                     ? try await account.provider.recentlyAddedWatchState(page.items) : page.items
                 return HomeRowPage(

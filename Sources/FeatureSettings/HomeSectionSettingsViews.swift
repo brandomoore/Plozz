@@ -329,6 +329,7 @@ struct HomeSectionSettingsView: View {
     let visibility: HomeLibraryVisibilityModel
     let libraries: [AggregatedLibrary]
     let accounts: [ResolvedAccount]
+    @Environment(\.homeContentSnapshot) private var homeSnapshot
     var showsRemoveAction = true
     @Environment(\.themePalette) private var palette
     @Environment(CardStyleSettingsModel.self) private var cards
@@ -407,7 +408,10 @@ struct HomeSectionSettingsView: View {
         .task(id: HomeSectionCatalogModel.loadID(
             libraries: libraries, accounts: accounts, visibility: visibility
         )) {
-            await inventory.load(libraries: libraries, accounts: accounts, visibility: visibility)
+            await inventory.load(
+                libraries: libraries, accounts: accounts, visibility: visibility,
+                recommendationScope: homeSnapshot?.recommendationScope
+            )
         }
     }
 
@@ -531,6 +535,7 @@ struct HomeAddSectionView: View {
     let visibility: HomeLibraryVisibilityModel
     let libraries: [AggregatedLibrary]
     let accounts: [ResolvedAccount]
+    @Environment(\.homeContentSnapshot) private var homeSnapshot
     var spoilerSettings: SpoilerSettings = .default
     @Environment(CardStyleSettingsModel.self) private var cards
     @SettingsPageDismiss private var dismiss
@@ -587,7 +592,10 @@ struct HomeAddSectionView: View {
         .task(id: HomeSectionCatalogModel.loadID(
             libraries: libraries, accounts: accounts, visibility: visibility, revision: reloadRevision
         )) {
-            await inventory.load(libraries: libraries, accounts: accounts, visibility: visibility)
+            await inventory.load(
+                libraries: libraries, accounts: accounts, visibility: visibility,
+                recommendationScope: homeSnapshot?.recommendationScope, refreshRecommendations: reloadRevision > 0
+            )
         }
     }
 }

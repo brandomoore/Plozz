@@ -29,6 +29,7 @@ public struct JellyfinClient: Sendable {
     private let playbackServerKey: String
     private let inventoryScope = UUID()
     let userViewRequests = JellyfinDiscoveryRequests<[BaseItemDto]>()
+    private let recommendationRequests = JellyfinRecommendationRequests()
 
     public init(
         baseURL: URL,
@@ -670,6 +671,20 @@ public struct JellyfinClient: Sendable {
     }
 
     func movieRecommendations(userID: String, parentID: String, limit: Int) async throws -> [MovieRecommendationDto] {
+        guard providerKind == .jellyfin, let scope = HomeRecommendationScope.current else {
+            return try await fetchMovieRecommendations(userID: userID, parentID: parentID, limit: limit)
+        }
+        return try await recommendationRequests.load(
+            scope: scope, user: userID, library: parentID, limit: limit,
+            refresh: HomeRecommendationScope.refreshRequested
+        ) {
+            try await fetchMovieRecommendations(userID: userID, parentID: parentID, limit: limit)
+        }
+    }
+
+    private func fetchMovieRecommendations(
+        userID: String, parentID: String, limit: Int
+    ) async throws -> [MovieRecommendationDto] {
         let endpoint = Endpoint(
             path: "/Movies/Recommendations",
             queryItems: [

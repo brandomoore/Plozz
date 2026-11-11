@@ -324,7 +324,8 @@ struct CollectionSectionSettingsView: View {
             let sources = requested.sources.filter { $0.isAvailable(accounts: accounts, visibility: settings) }
             guard !sources.isEmpty else { throw AppError.notFound }
             let session = HomeContentPageLoader.Session(
-                accounts: accounts, visibility: settings, homeSnapshot: { kind in
+                accounts: accounts, visibility: settings,
+                recommendationScope: homeSnapshot?.recommendationScope, refreshRecommendations: retry > 0, homeSnapshot: { kind in
                     guard let homeSnapshot else { throw AppError.notFound }
                     return try await homeSnapshot.contentSnapshot(for: kind, visibility: settings)
                 }

@@ -123,6 +123,86 @@ final class JellyfinHomeLayoutTests: XCTestCase {
         XCTAssertEqual(stub.sentPaths.count, 2)
     }
 
+    func testScopedRecommendationReuseDoesNotChangeExactLimitsOrUnscopedAndEmbyRequests() async throws {
+        for kind: ProviderKind in [.jellyfin, .emby] {
+            let stub = StubHTTPClient()
+            stub.stub(pathSuffix: "/Movies/Recommendations", json: recommendationJSON(count: 25))
+            let provider = JellyfinProvider(session: session(kind), http: stub)
+            let scope = HomeRecommendationScope()
+            try await HomeRecommendationScope.$current.withValue(scope) {
+                for limit in [20, 8, 20, 20] {
+                    let rows = try await provider.homeHubs(
+                        libraryID: "movies", kind: .movie, limit: limit, includeUnpromoted: true
+                    )
+                    XCTAssertEqual(rows.first?.items.map(\.id), (0..<limit).map(String.init))
+                }
+            }
+            XCTAssertEqual(stub.sentPaths.count, kind == .jellyfin ? 2 : 4)
+            for _ in 0..<2 {
+                _ = try await provider.homeHubs(libraryID: "movies", kind: .movie, limit: 20, includeUnpromoted: true)
+            }
+            XCTAssertEqual(stub.sentPaths.count, kind == .jellyfin ? 4 : 6)
+        }
+    }
+
+    func testMissingScopedJellyfinRecommendationForcesFreshDiscoveryOnRetry() async throws {
+        let stub = StubHTTPClient()
+        let second = recommendationJSON(count: 3, offset: 200).replacingOccurrences(
+            of: #""CategoryId":"category""#, with: #""CategoryId":"second""#
+        )
+        let refreshed = String(recommendationJSON(count: 3, offset: 100).dropLast()) + "," + String(second.dropFirst())
+        stub.stubSequence(pathSuffix: "/Movies/Recommendations", jsons: [recommendationJSON(count: 3), refreshed, refreshed])
+        let provider = JellyfinProvider(session: session(.jellyfin), http: stub)
+        let account = ResolvedAccount(account: .init(id: "account", from: provider.session), provider: provider)
+        let scope = HomeRecommendationScope()
+        let initial = try await HomeRecommendationScope.$current.withValue(scope) {
+            try await provider.homeHubs(libraryID: "movies", kind: .movie, limit: 20, includeUnpromoted: true)
+        }
+        let shelfID = try XCTUnwrap(initial.first?.id)
+        let missingID = "recommendation:SimilarToRecentlyPlayed:1"
+        XCTAssertNotEqual(shelfID, missingID)
+        let sources = [shelfID, missingID].map {
+            HomeContentSource(feed: .recommendation(sectionID: $0, kind: .movie),
+                              accountID: "account", serverUserID: "selected-user", libraryID: "movies", title: "Recommended")
+        }
+        let loader = HomeContentPageLoader.Session(
+            accounts: [account], visibility: .default, recommendationScope: scope
+        ) { _ in [] }
+        let first = try await loader.load(sources[0], start: 0, limit: 1)
+        XCTAssertEqual(first.items.map(\.id), ["0"])
+        do { _ = try await loader.load(sources[1], start: 0, limit: 1); XCTFail("Missing shelf must remain explicit") }
+        catch { XCTAssertEqual(error as? AppError, .notFound) }
+        let retry = try await loader.load(sources[1], start: 0, limit: 1)
+        XCTAssertEqual(retry.items.map(\.id), ["200"])
+        let pinned = try await loader.load(sources[0], start: 0, limit: 1)
+        XCTAssertEqual(pinned.items.map(\.id), ["0"])
+        XCTAssertEqual(stub.sentPaths.count, 2)
+        let newPreview = HomeContentPageLoader.Session(
+            accounts: [account], visibility: .default, recommendationScope: scope, refreshRecommendations: true
+        ) { _ in [] }
+        let previewRetry = try await newPreview.load(sources[1], start: 0, limit: 1)
+        XCTAssertEqual(previewRetry.items.map(\.id), ["200"])
+        XCTAssertEqual(stub.sentPaths.count, 3, "A new preview traversal's explicit Retry must also bypass reuse")
+    }
+
+    func testRecommendationReuseDoesNotCrossAuthenticatedClientCopies() async throws {
+        let stub = StubHTTPClient()
+        stub.stubSequence(pathSuffix: "/Movies/Recommendations", jsons: [
+            recommendationJSON(count: 3), recommendationJSON(count: 3, offset: 100)
+        ])
+        let client = JellyfinProvider(session: session(.jellyfin), http: stub).client
+        let replacement = client.authenticated(token: "replacement-fixture")
+        try await HomeRecommendationScope.$current.withValue(HomeRecommendationScope()) {
+            let old = try await client.movieRecommendations(userID: "selected-user", parentID: "movies", limit: 20)
+            let new = try await replacement.movieRecommendations(userID: "selected-user", parentID: "movies", limit: 20)
+            let retained = try await client.movieRecommendations(userID: "selected-user", parentID: "movies", limit: 20)
+            XCTAssertEqual(old.first?.Items?.first?.Id, "0")
+            XCTAssertEqual(new.first?.Items?.first?.Id, "100")
+            XCTAssertEqual(retained.first?.Items?.first?.Id, "0")
+            XCTAssertEqual(stub.sentPaths.count, 2)
+        }
+    }
+
     private func recommendationJSON(count: Int, offset: Int = 0) -> String {
         let items = (offset..<(offset + count)).map { #"{"Id":"\#($0)","Type":"Movie","Name":"Title \#($0)"}"# }
             .joined(separator: ",")

@@ -1237,6 +1237,59 @@ without pretending a sample count measures frame smoothness.
 
 ## Workloads and configuration interactions
 
+### Jellyfin Home recommendation reuse
+
+`home-recommendation-navigation` runs production `JellyfinProvider.homeHubs`
+and `homeRowPage` decoding/mapping with three synthetic shelves and 5-ms HTTP
+latency. Each sample starts with a fresh client/scope. It requests limits
+20/8/20/20, then verifies two shelves' 40-item windows ending at 40, 70, and
+140. The 240-item counter means six checked windows, not complete traversal of
+280 distinct items. Exact ordered IDs and next offsets are asserted.
+
+One warmup and five measured samples on the same tvOS simulator, toolchain,
+optimized build settings, fixture, and measurement harness produced:
+
+| Metric | Uncached | Exact-request reuse |
+| --- | ---: | ---: |
+| HTTP requests | 10 | 5 |
+| Response bytes | 84,328 | 41,324 |
+| Verified window items | 240 | 240 |
+| Median wall time | 76.85 ms | 39.18 ms |
+| Median CPU time | 15.94 ms | 8.44 ms |
+| Median resident snapshot | 148.19 MiB | 144.78 MiB |
+
+Baseline evidence is `f89be5b623d9499dbd23f16f6870f159`; candidate evidence is
+`81d72504dd3e4e59b32d53be00d28c72` under `.build/performance/runs/`.
+These are descriptive same-workload measurements, not an automatic comparison
+verdict: `compare` rejects the broader fixture fingerprint because separate
+regression-test files were added or edited. The workload, `PerformanceProbe`,
+runner hashes, and complete environment identity were independently verified
+unchanged. Resident snapshots are not isolated cache cost or peak memory.
+
+Five read-only trials against one internal Jellyfin server through the actual
+provider and `HomeContentPageLoader.Session` measured a 4.21-second median cold
+discovery versus 43.21 ms total for three subsequent scoped consumers. All three
+consumers preserved the captured ordered titles without another HTTP request.
+Refreshing the scope made a fresh authenticated request in every trial. Separate
+live Plex, Emby, and combined-provider browsing checks preserve their behavior;
+these timings are not measurements of those servers, rendered frames, or devices.
+
+Earlier direct-transport experiments tested 75 trials/180 recommendation or
+similarity requests. Exact-limit reuse preserved results; speculative larger
+limits changed title membership and were rejected. Smaller payloads alone did
+not materially improve the cold request. A two-category progressive response
+was faster, but adds traffic and is not implemented. The first uncached full
+recommendation request remains server-limited.
+
+Upstream references informed the choice, not copied implementation:
+[Jellyfin Web's freshness](https://github.com/jellyfin/jellyfin-web/blob/b71bb29ed68c8ec46e47a4e5557e0cc81c91e32b/src/utils/query/queryClient.ts#L9-L13),
+[Android TV's per-seed composition](https://github.com/jellyfin/jellyfin-androidtv/blob/dae2c8c06911734e9e1d2abf5fc1e737067fcfb6/app/src/main/java/org/jellyfin/androidtv/ui/browsing/SuggestedMoviesFragment.kt#L25-L50),
+and [Swiftfin's generation fencing](https://github.com/jellyfin/Swiftfin/blob/0978922b923dac390a4b5a7a961a7fd06cef296b/Shared/Objects/PagingLibrary/PagingLibraryViewModel.swift#L314-L374).
+Their compositions and account/cache boundaries are not interchangeable with
+Plozz's exact server-authored shelves.
+
+### Scenario inventory
+
 | Suite | Production path and limits |
 | --- | --- |
 | `core` | Unchanged sync persistence (10,000 records, 1,000 checks), warm incremental Share scanning (1,000 films), fresh SQLite IPTV import (10,000 generated records). The sync/Share fixtures also verify an actual edit is not suppressed. |

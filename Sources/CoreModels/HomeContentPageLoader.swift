@@ -2,7 +2,12 @@ import Foundation
 
 @MainActor
 public protocol HomeContentSnapshotProviding: Sendable {
+    var recommendationScope: HomeRecommendationScope? { get }
     func contentSnapshot(for kind: HomeGlobalRow, visibility: HomeLibraryVisibility) throws -> [MediaItem]
+}
+
+public extension HomeContentSnapshotProviding {
+    var recommendationScope: HomeRecommendationScope? { nil }
 }
 
 public enum HomeContentPageLoader {
@@ -14,6 +19,8 @@ public enum HomeContentPageLoader {
         private let accounts: [ResolvedAccount]
         private let visibility: HomeLibraryVisibility
         private let homeSnapshot: HomeSnapshot
+        private let recommendationScope: HomeRecommendationScope?
+        private let refreshRecommendations: Bool
         private var snapshots: [HomeGlobalRow: [MediaItem]] = [:]
         private var recommendations: [HomeContentSource.ID: LibrarySection] = [:]
         private struct RecommendationKey: Hashable {
@@ -24,6 +31,7 @@ public enum HomeContentPageLoader {
         private struct RecommendationCatalog {
             let gate = ConcurrencyLimiter(limit: 1)
             var shelves: [LibrarySection]?
+            var needsRefresh = false
         }
         private var recommendationCatalogs: [RecommendationKey: RecommendationCatalog] = [:]
         private struct PageKey: Hashable { let source: HomeContentSource.ID; let start: Int; let limit: Int }
@@ -32,15 +40,26 @@ public enum HomeContentPageLoader {
 
         public init(
             accounts: [ResolvedAccount], visibility: HomeLibraryVisibility, cachesPages: Bool = false,
+            recommendationScope: HomeRecommendationScope? = HomeRecommendationScope.current,
+            refreshRecommendations: Bool = false,
             homeSnapshot: @escaping HomeSnapshot
         ) {
             self.accounts = accounts
             self.visibility = visibility
             self.homeSnapshot = homeSnapshot
+            self.recommendationScope = recommendationScope
+            self.refreshRecommendations = refreshRecommendations
             self.cachesPages = cachesPages
         }
 
         public func load(_ source: HomeContentSource, start: Int, limit: Int) async throws -> HomeRowPage {
+            guard recommendationScope?.isActive != false else { throw CancellationError() }
+            return try await HomeRecommendationScope.$current.withValue(recommendationScope) {
+                try await loadScoped(source, start: start, limit: limit)
+            }
+        }
+
+        private func loadScoped(_ source: HomeContentSource, start: Int, limit: Int) async throws -> HomeRowPage {
             guard start >= 0, limit > 0, limit <= PageRequest.defaultLimit, start < Int.max - limit else {
                 throw AppError.invalidResponse
             }
@@ -55,7 +74,7 @@ public enum HomeContentPageLoader {
                     throw AppError.notFound
                 }
                 let catalogKey = RecommendationKey(accountID: account.account.id, libraryID: library, kind: kind)
-                let catalog = recommendationCatalogs[catalogKey] ?? RecommendationCatalog()
+                let catalog = recommendationCatalogs[catalogKey] ?? RecommendationCatalog(needsRefresh: refreshRecommendations)
                 recommendationCatalogs[catalogKey] = catalog
                 let shelves = try await catalog.gate.runUnlessCancelled {
                     try await self.recommendationCatalog(catalogKey, provider: account.provider)
@@ -63,6 +82,7 @@ public enum HomeContentPageLoader {
                 try Task.checkCancellation()
                 guard let shelf = shelves.first(where: { $0.id == id }) else {
                     recommendationCatalogs[catalogKey]?.shelves = nil
+                    recommendationCatalogs[catalogKey]?.needsRefresh = true
                     throw AppError.notFound
                 }
                 recommendations[source.id] = shelf
@@ -80,11 +100,16 @@ public enum HomeContentPageLoader {
             _ key: RecommendationKey, provider: any MediaProvider
         ) async throws -> [LibrarySection] {
             if let shelves = recommendationCatalogs[key]?.shelves { return shelves }
-            let shelves = try await provider.homeHubs(
-                libraryID: key.libraryID, kind: key.kind, limit: 20, includeUnpromoted: true
-            )
+            let shelves = try await HomeRecommendationScope.$refreshRequested.withValue(
+                recommendationCatalogs[key]?.needsRefresh == true
+            ) {
+                try await provider.homeHubs(
+                    libraryID: key.libraryID, kind: key.kind, limit: 20, includeUnpromoted: true
+                )
+            }
             try Task.checkCancellation()
             recommendationCatalogs[key]?.shelves = shelves
+            recommendationCatalogs[key]?.needsRefresh = false
             return shelves
         }
 
