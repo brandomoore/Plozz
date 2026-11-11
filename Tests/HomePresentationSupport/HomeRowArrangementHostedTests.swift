@@ -1696,6 +1696,66 @@ final class HomeRowArrangementHostedTests: XCTestCase {
         }
     }
 
+    func testCollectionEditorKeepsGlobalSnapshotTitlesWhenRecommendationFails() async throws {
+        let provider = HomeSettingsLibraryProvider(name: "Preview server", kind: .plex)
+        let account = ResolvedAccount(account: .init(id: "preview-account", from: provider.session), provider: provider)
+        let recommendation = HomeContentSource(
+            feed: .recommendation(sectionID: "missing-shelf", kind: .movie),
+            accountID: account.account.id, serverUserID: provider.session.userID,
+            libraryID: "movies", title: "Recommendation"
+        )
+        let suite = "MixedPreview.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let visibility = HomeLibraryVisibilityModel(store: HomeLibraryVisibilityStore(defaults: defaults))
+        let inventory = HomeSectionCatalogModel()
+        let snapshot = EditorHomeSnapshot()
+        let section = CollectionSection(
+            name: "Mixed preview",
+            sources: [recommendation, .init(home: .continueWatching), .init(home: .watchlist)]
+        )
+        let libraries = [
+            AggregatedLibrary(
+                accountID: account.account.id, accountName: "Viewer", serverName: "Preview server",
+                providerKind: .plex, library: .init(id: "movies", title: "Movies", kind: .movie)
+            )
+        ]
+        try await withWindow {
+            CollectionSectionSettingsView(
+                section: section, isNew: true, inventory: inventory, visibility: visibility,
+                libraries: libraries, accounts: [account]
+            )
+            .environment(\.homeContentSnapshot, snapshot)
+            #if os(tvOS)
+            .frame(width: SettingsFormMetrics.pageWidth)
+            #elseif os(iOS)
+            .environment(\.plozzMetrics, .touch(density: .standard))
+            #endif
+        } inspect: { window in
+            try await Task.sleep(for: .milliseconds(500))
+            try self.scrollToBottom(window)
+            let text = try await capture(window, name: "mixed-source-preview-partial-failure").map(\.0)
+                .joined(separator: " ")
+            XCTAssertTrue(text.contains("Resume film"), text)
+            XCTAssertTrue(text.contains("Saved film"), text)
+            XCTAssertTrue(text.contains("Retry"), text)
+            XCTAssertEqual(Set(snapshot.requests), Set([.continueWatching, .watchlist]))
+        }
+    }
+
+    @MainActor
+    private final class EditorHomeSnapshot: HomeContentSnapshotProviding {
+        var requests: [HomeGlobalRow] = []
+
+        func contentSnapshot(for kind: HomeGlobalRow, visibility: HomeLibraryVisibility) throws -> [MediaItem] {
+            requests.append(kind)
+            return [.init(
+                id: kind.rawValue, title: kind == .continueWatching ? "Resume film" : "Saved film",
+                kind: .movie, allowsTitleBasedMetadataMatching: false
+            )]
+        }
+    }
+
     func testCollectionEditorPreviewsActualTitlesBelowSettingsMenus() async throws {
         for style in CollectionSection.CardStyle.allCases {
             let requested = expectation(description: "Collection preview requested")

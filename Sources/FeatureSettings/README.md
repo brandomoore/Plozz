@@ -758,6 +758,12 @@ watch history and planning-list behavior are documented in
   for landscape rows. Once content is selected, a live real-title preview appears
   below the controls without another enclosing card. Empty drafts omit the preview.
   The preview uses the existing artwork preferences and spoiler protection.
+  Settings presentation must forward the active Home snapshot provider for
+  Continue Watching and Watchlist previews, including the mobile Settings sheet.
+  A failing source retains the other sources' preview titles and an explicit
+  retry. Diagnostic submissions record failed preview feed kinds, provider,
+  paging bounds, snapshot availability and safe HTTP route/status evidence in
+  the bounded library journal, never source titles, identifiers or URLs.
   Landscape exposes **Logo: On / Off** for movie/show cards on all platforms,
   defaulting to Off. Older Automatic values migrate to Off; saved On/Off choices
   remain intact. On uses the shared background/logo treatment and is never

@@ -838,9 +838,11 @@ public struct PlexClient: Sendable {
             .init(name: "X-Plex-Container-Size", value: String(limit)),
             .init(name: "includeGuids", value: "1")
         ]
-        let container = try await decodeStreamEnriched(
-            PlexMediaContainerResponse.self, path: parts.path, query: query
-        ).MediaContainer
+        let container = try await HTTPResponseDiagnostics.$route.withValue(.homeShelfPage) {
+            try await decodeStreamEnriched(
+                PlexMediaContainerResponse.self, path: parts.path, query: query
+            ).MediaContainer
+        }
         guard container.Metadata != nil || (container.Hub?.count ?? 0) <= 1 else {
             throw AppError.invalidResponse
         }

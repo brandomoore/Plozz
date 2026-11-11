@@ -1626,6 +1626,7 @@ struct PlozziOSTabShell: View {
                 onSwitchTo: { pendingSwitchProfileID = $0 },
                 systemColorScheme: systemColorScheme
             )
+            .environment(\.homeContentSnapshot, sharedHomeViewModel)
             .environment(\.themeMusicPreviewResolver, {
                 try await ThemeMusicPreviewResolver.resolve(
                     content: homeViewModelBox.existingValue(forKey: homeContentIdentity)?.state.value,

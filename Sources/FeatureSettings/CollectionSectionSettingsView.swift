@@ -330,7 +330,26 @@ struct CollectionSectionSettingsView: View {
                 }
             )
             let pager = HomeContentPager(sources: sources, serverInfo: accounts.sourceServerInfo()) { source, start, limit in
-                try await session.load(source, start: start, limit: limit)
+                let provider = accounts.first(where: source.matches)?.provider.kind
+                let captured = await HTTPResponseDiagnostics.capture {
+                    try await PerformanceDiagnostics.$provider.withValue(provider) {
+                        try await HTTPResponseDiagnostics.$route.withValue(.homeContentPage) {
+                            try await session.load(source, start: start, limit: limit)
+                        }
+                    }
+                }
+                if case let .failure(error) = captured.result, !captured.isCancelled {
+                    LibraryDiagnosticJournal.shared.recordHomeContent(
+                        source: source, provider: provider, start: start, limit: limit,
+                        snapshotAvailable: homeSnapshot != nil,
+                        failure: .init(
+                            section: .browse, error: (error as? AppError) ?? .unknown(""),
+                            responses: captured.responses, paging: captured.paging,
+                            transport: captured.transport, http: captured.http
+                        )
+                    )
+                }
+                return try captured.result.get()
             }
             let page = try await pager.loadNext(limit: 20)
             try Task.checkCancellation()
