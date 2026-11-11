@@ -107,7 +107,9 @@ public enum HomeContentPageLoader {
             } else if id == LibraryHomeRowKind.nextUp.rawValue {
                 page = try await provider.homeRowPage(.nextUp(libraryID: library), startIndex: start, limit: limit)
             } else {
-                if let recommendation, let browseID = recommendation.browseID {
+                if let recommendation, recommendation.items.count > start + limit {
+                    page = .prefix(recommendation.items, startIndex: start, limit: limit)
+                } else if let recommendation, let browseID = recommendation.browseID {
                     page = try await provider.homeRowPage(
                         .recommendation(libraryID: library, kind: kind, browseID: browseID,
                                         anchorIDs: recommendation.items.map(\.id)), startIndex: start, limit: limit

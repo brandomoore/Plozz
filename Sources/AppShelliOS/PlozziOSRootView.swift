@@ -1349,7 +1349,8 @@ struct PlozziOSTabShell: View {
     private static func makeHomeViewModel(
         appModel: PlozziOSAppModel
     ) -> HomeViewModel {
-        HomeViewModel(
+        let scope = appModel.navigationLibrariesScopeKey
+        return HomeViewModel(
             accounts: appModel.accountsProviders.homeAccounts,
             profileNamespace: appModel.profiles.activeNamespace,
             contentStore: appModel.isOfflineMode
@@ -1367,6 +1368,10 @@ struct PlozziOSTabShell: View {
             },
             isLoadingAllowed: { [weak appModel] in
                 appModel?.allowsHomeContentLoading == true
+            },
+            isSnapshotAccessAllowed: { [weak appModel] in
+                guard let appModel else { return false }
+                return appModel.allowsHomeContentAccess && appModel.navigationLibrariesScopeKey == scope
             },
             sectionDiagnostics: appModel.settings.homeVisibility.sectionDiagnostics,
             pendingWatchMutations: { [weak appModel] in

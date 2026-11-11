@@ -530,6 +530,7 @@ public final class HomeViewModel: HomeContentSnapshotProviding {
     @ObservationIgnored private var isInvalidated = false
     @ObservationIgnored private var needsReenrichmentAfterPause = false
     private let isLoadingAllowed: @MainActor () -> Bool
+    private let isSnapshotAccessAllowed: @MainActor () -> Bool
     private var canLoadContent: Bool { !isInvalidated && isLoadingAllowed() }
 
     public init(
@@ -542,6 +543,7 @@ public final class HomeViewModel: HomeContentSnapshotProviding {
         currentVisibility: @escaping () -> HomeLibraryVisibility = { .default },
         prepareVisibility: @escaping @MainActor () async -> Void = {},
         isLoadingAllowed: @escaping @MainActor () -> Bool = { true },
+        isSnapshotAccessAllowed: (@MainActor () -> Bool)? = nil,
         sectionDiagnostics: HomeSectionDiagnosticsModel? = nil,
         pendingWatchMutations: @escaping @Sendable () async -> [WatchMutation] = { [] },
         recentlyAppliedRecency: @escaping @Sendable () async -> [String: AppliedResumeRecord] = { [:] },
@@ -562,6 +564,7 @@ public final class HomeViewModel: HomeContentSnapshotProviding {
         self.currentVisibility = currentVisibility
         self.prepareVisibility = prepareVisibility
         self.isLoadingAllowed = isLoadingAllowed
+        self.isSnapshotAccessAllowed = isSnapshotAccessAllowed ?? isLoadingAllowed
         self.sectionDiagnostics = sectionDiagnostics
         self.pendingWatchMutations = pendingWatchMutations
         self.recentlyAppliedRecency = recentlyAppliedRecency
@@ -2066,7 +2069,7 @@ public final class HomeViewModel: HomeContentSnapshotProviding {
     public func contentSnapshot(
         for kind: HomeGlobalRow, visibility: HomeLibraryVisibility
     ) throws -> [MediaItem] {
-        guard canLoadContent, currentVisibility() == visibility,
+        guard !isInvalidated, isSnapshotAccessAllowed(), currentVisibility() == visibility,
               let content = state.value else { throw AppError.notFound }
         switch kind {
         case .continueWatching: return content.continueWatching

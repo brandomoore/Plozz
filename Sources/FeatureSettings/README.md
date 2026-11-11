@@ -760,6 +760,12 @@ watch history and planning-list behavior are documented in
   The preview uses the existing artwork preferences and spoiler protection.
   Settings presentation must forward the active Home snapshot provider for
   Continue Watching and Watchlist previews, including the mobile Settings sheet.
+  Pausing Home refresh behind mobile Settings does not revoke read access to
+  the authorized, current-profile snapshot; profile/account changes, revoked
+  authorization and mismatched visibility still reject reads.
+  Small recommendation pages reuse the traversal's pinned items. Prefix-based
+  continuation requests include enough items to validate every pinned anchor,
+  even when an individual source's share of a combined page is smaller.
   A failing source retains the other sources' preview titles and an explicit
   retry. Diagnostic submissions record failed preview feed kinds, provider,
   paging bounds, snapshot availability and safe HTTP route/status evidence in

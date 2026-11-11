@@ -86,9 +86,10 @@ final class PlozziOSAppModel {
             && !accountsProviders.activeProfileAwaitsIdentity
     }
 
-    var allowsHomeContentLoading: Bool {
-        isActiveProfileAuthorized && !profiles.activeProfile.needsSetup && !isSettingsPresented
+    var allowsHomeContentAccess: Bool {
+        isActiveProfileAuthorized && !profiles.activeProfile.needsSetup
     }
+    var allowsHomeContentLoading: Bool { allowsHomeContentAccess && !isSettingsPresented }
     var allowsStandalonePlayback: Bool { admissionContext.explicitStandaloneChoice }
     var pendingStandaloneLiveTVEntry: Bool { appAdmission.pendingLiveTVEntry }
 

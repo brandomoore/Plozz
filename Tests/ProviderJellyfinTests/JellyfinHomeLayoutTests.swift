@@ -3,6 +3,77 @@ import CoreModels
 @testable import ProviderJellyfin
 
 final class JellyfinHomeLayoutTests: XCTestCase {
+    func testSmallCustomRecommendationPagesReusePinnedItemsAndExtendWithCompleteAnchors() async throws {
+        for kind: ProviderKind in [.jellyfin, .emby] {
+            let stub = StubHTTPClient()
+            for count in [6, 20, 21, 26] {
+                stub.stub(
+                    pathSuffix: "/Movies/Recommendations",
+                    requiring: [.init(name: "itemLimit", value: String(count))],
+                    json: recommendationJSON(count: min(count, 25))
+                )
+            }
+            let provider = JellyfinProvider(session: session(kind), http: stub)
+            let account = ResolvedAccount(account: .init(id: "account", from: provider.session), provider: provider)
+            let source = HomeContentSource(
+                feed: .recommendation(sectionID: "recommendation:SimilarToRecentlyPlayed:0", kind: .movie),
+                accountID: "account", serverUserID: "selected-user", libraryID: "movies", title: "Recommended"
+            )
+            let loader = HomeContentPageLoader.Session(accounts: [account], visibility: .default) { _ in
+                XCTFail("Recommendation must not request global snapshots")
+                return []
+            }
+            var ids: [String] = []
+            for start in stride(from: 0, to: 25, by: 5) {
+                let page = try await loader.load(source, start: start, limit: 5)
+                ids += page.items.map(\.id)
+                XCTAssertEqual(page.nextOffset, start == 20 ? nil : start + 5)
+                if start < 15 { XCTAssertEqual(stub.sentPaths.count, 1) }
+            }
+            XCTAssertEqual(ids, (0..<25).map(String.init))
+            XCTAssertEqual(stub.sentPaths.count, 3)
+            XCTAssertTrue(stub.sentPaths.allSatisfy { $0 == "/Movies/Recommendations" })
+        }
+    }
+
+    func testSmallRecommendationPageDoesNotTruncateItsOwnIdentityAnchors() async throws {
+        let stub = StubHTTPClient()
+        stub.stub(
+            pathSuffix: "/Movies/Recommendations",
+            requiring: [.init(name: "itemLimit", value: "6")],
+            json: recommendationJSON(count: 6)
+        )
+        stub.stub(
+            pathSuffix: "/Movies/Recommendations",
+            requiring: [.init(name: "itemLimit", value: "20")],
+            json: recommendationJSON(count: 20)
+        )
+        let provider = JellyfinProvider(session: session(), http: stub)
+        let page = try await provider.homeRowPage(
+            .recommendation(
+                libraryID: "movies", kind: .movie, browseID: "SimilarToRecentlyPlayed:category",
+                anchorIDs: (0..<20).map(String.init)
+            ), startIndex: 0, limit: 5
+        )
+        XCTAssertEqual(page.items.map(\.id), (0..<5).map(String.init))
+        XCTAssertEqual(page.nextOffset, 5)
+        do {
+            _ = try await provider.homeRowPage(
+                .recommendation(
+                    libraryID: "movies", kind: .movie, browseID: "SimilarToRecentlyPlayed:category",
+                    anchorIDs: (0..<19).map(String.init) + ["different"]
+                ), startIndex: 0, limit: 5
+            )
+            XCTFail("A genuinely changed shelf must still fail")
+        } catch { XCTAssertEqual(error as? AppError, .notFound) }
+    }
+
+    private func recommendationJSON(count: Int) -> String {
+        let items = (0..<count).map { #"{"Id":"\#($0)","Type":"Movie","Name":"Title \#($0)"}"# }
+            .joined(separator: ",")
+        return #"[{"Items":[\#(items)],"RecommendationType":"SimilarToRecentlyPlayed","CategoryId":"category"}]"#
+    }
+
     func testHomeFeedRequestsIncludeDateAddedMetadata() async throws {
         for kind: ProviderKind in [.jellyfin, .emby] {
             let stub = StubHTTPClient()

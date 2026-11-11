@@ -4,6 +4,29 @@ import XCTest
 
 @MainActor
 final class MultiSourceRowTests: XCTestCase {
+    func testPausedHomeSnapshotsRequireSeparateAuthorizationAndMatchingVisibility() throws {
+        let saved = MediaItem(id: "saved", title: "Saved", kind: .movie)
+        let store = InMemoryHomeContentStore(.init(watchlist: [saved]))
+        var authorized = true
+        var visibility = HomeLibraryVisibility.default
+        let model = HomeViewModel(
+            accounts: [], contentStore: store, currentVisibility: { visibility },
+            isLoadingAllowed: { false }, isSnapshotAccessAllowed: { authorized }
+        )
+        XCTAssertEqual(try model.contentSnapshot(for: .watchlist, visibility: .default), [saved])
+        authorized = false
+        XCTAssertThrowsError(try model.contentSnapshot(for: .watchlist, visibility: .default))
+        authorized = true
+        visibility.setEnabled(false, for: "account:movies")
+        XCTAssertThrowsError(try model.contentSnapshot(for: .watchlist, visibility: .default))
+        visibility = .default
+        model.invalidate()
+        XCTAssertThrowsError(try model.contentSnapshot(for: .watchlist, visibility: .default))
+
+        let defaultGuard = HomeViewModel(accounts: [], contentStore: store, isLoadingAllowed: { false })
+        XCTAssertThrowsError(try defaultGuard.contentSnapshot(for: .watchlist, visibility: .default))
+    }
+
     func testEveryProviderFeedUsesNativeIDsAndInterleavesInHomeAndBrowse() async throws {
         for kind in [ProviderKind.plex, .jellyfin, .emby] {
             let provider = MultiSourceProvider(kind: kind)

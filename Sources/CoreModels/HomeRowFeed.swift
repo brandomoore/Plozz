@@ -53,7 +53,7 @@ public extension MediaProvider {
             items = try await homeNextUp(libraryID: library, limit: count)
         case let .recommendation(library, kind, browseID, anchors):
             let shelves = try await homeHubs(
-                libraryID: library, kind: kind, limit: count, includeUnpromoted: true
+                libraryID: library, kind: kind, limit: max(count, anchors.count), includeUnpromoted: true
             )
             guard let shelf = shelves.first(where: {
                 $0.browseID == browseID && Set(anchors).isSubset(of: Set($0.items.map(\.id)))
