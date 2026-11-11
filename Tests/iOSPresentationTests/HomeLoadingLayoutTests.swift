@@ -107,34 +107,10 @@ final class HomeLoadingLayoutTests: XCTestCase {
     }
 
     private func exerciseLiveRows(kinds: [ProviderKind]) async throws {
-        guard let address = ProcessInfo.processInfo.environment["PLOZZ_LIVE_HOME_ROWS_BROKER"] else {
-            throw XCTSkip("Requires an authorized, read-only internal Home broker.")
-        }
-        guard let broker = URL(string: address),
-              broker.scheme == "http", broker.host == "127.0.0.1", broker.port != nil,
-              broker.user == nil, broker.password == nil, broker.query == nil, broker.fragment == nil else {
-            throw AppError.invalidResponse
-        }
         let http = LiveHomeReadOnlyHTTP()
         var accounts: [ResolvedAccount] = []
         for kind in kinds {
-            let (data, response) = try await URLSession.shared.data(for: URLRequest(
-                url: broker.appendingPathComponent(kind.rawValue), timeoutInterval: 15
-            ))
-            guard (response as? HTTPURLResponse)?.statusCode == 200 else { throw AppError.invalidResponse }
-            let config = try JSONDecoder().decode(LiveHomeConfiguration.self, from: data)
-            guard ["http", "https"].contains(config.baseURL.scheme),
-                  config.baseURL.host != nil, config.baseURL.user == nil, config.baseURL.password == nil,
-                  config.baseURL.query == nil, config.baseURL.fragment == nil, !config.token.isEmpty else {
-                throw AppError.invalidResponse
-            }
-            let session = UserSession(
-                server: .init(id: config.serverID, name: "Internal Home", baseURL: config.baseURL, provider: kind),
-                userID: config.userID, userName: config.username, deviceID: config.deviceID, accessToken: config.token
-            )
-            let provider: any MediaProvider = kind == .plex
-                ? PlexProvider(session: session, http: http) : JellyfinProvider(session: session, http: http)
-            accounts.append(.init(account: Account(id: "live-\(kind.rawValue)", from: session), provider: provider))
+            accounts.append(try await LiveHomeReadOnlyAccount.connect(kind, http: http))
         }
         let fixture = try Fixture()
         defer { fixture.close() }
@@ -297,35 +273,6 @@ final class HomeLoadingLayoutTests: XCTestCase {
         XCTAssertEqual(counts.blocked, 0, "Home/browse must never attempt a write or playback request.")
         XCTAssertGreaterThan(counts.reads, 0)
         print("LIVE_HOME_ROWS providers=\(kinds.count) rows=\(sampled.count) items=\(checkedItems) browsePages=\(browsePages) reads=\(counts.reads) blocked=\(counts.blocked) width=\(Int(width)) height=\(Int(height)) verticalTargets=\(verticalTargets.count) horizontalTargets=3")
-    }
-
-    private struct LiveHomeConfiguration: Decodable {
-        let baseURL: URL
-        let serverID: String
-        let userID: String
-        let username: String
-        let deviceID: String
-        let token: String
-    }
-
-    private actor LiveHomeReadOnlyHTTP: HTTPClient {
-        private let wrapped = URLSessionHTTPClient()
-        private var reads = 0
-        private var blocked = 0
-
-        func counts() -> (reads: Int, blocked: Int) { (reads, blocked) }
-
-        func send(_ endpoint: Endpoint, baseURL: URL) async throws -> (Data, HTTPURLResponse) {
-            let path = endpoint.path.lowercased()
-            guard endpoint.method == .get, endpoint.body == nil,
-                  !path.contains("/:/"), !path.contains("playbackinfo"),
-                  !path.contains("transcode"), !path.contains("/sessions") else {
-                blocked += 1
-                throw AppError.invalidResponse
-            }
-            reads += 1
-            return try await wrapped.send(endpoint, baseURL: baseURL)
-        }
     }
 
     func testFramedLandscapeCardsFitNarrowGridAndNormalRailSlots() async throws {

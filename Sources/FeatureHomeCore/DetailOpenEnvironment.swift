@@ -372,13 +372,23 @@ public struct DetailOpenEnvironment {
         item.editionOpeningSource = seed.editionOpeningSource
         if item.kind == .series { item.seasonID = seed.seasonID }
         item.rejectedSourceIDs.formUnion(seed.rejectedSourceIDs)
-        item.sources = identitySources(item) + item.sources + seed.sources
-        if let account = item.sourceAccountID,
-           !item.sources.contains(where: { $0.accountID == account && $0.itemID == item.id }) {
-            item.sources.append(MediaSourceRef(
-                accountID: account, itemID: item.id, kind: item.kind,
-                providerKind: provider.kind
-            ))
+        item.sources = (seed.sources + item.sources + identitySources(item)).map { source in
+            var source = source
+            source.providerKind = resolveOptionalProvider(source.accountID)?.kind ?? source.providerKind
+            return source
+        }
+        if let account = item.sourceAccountID {
+            var own = item.sources.first { $0.accountID == account && $0.itemID == item.id }
+                ?? MediaSourceRef(accountID: account, itemID: item.id)
+            own.kind = item.kind
+            own.providerKind = provider.kind
+            if !item.versions.isEmpty {
+                own.versions = item.versions
+            } else if [.movie, .episode, .video].contains(item.kind), item.mediaInfo != nil {
+                own.versions = [MediaVersion.synthesized(from: item)]
+            }
+            own.edition = item.edition ?? own.edition
+            item.sources = [own] + item.sources.filter { $0.id != own.id }
         }
         let selection = Self.initialSourceSelection(
             for: item, isDiscovery: false, libraryOrigin: nil,

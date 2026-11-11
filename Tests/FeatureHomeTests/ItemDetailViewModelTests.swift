@@ -947,6 +947,107 @@ final class ItemDetailViewModelTests: XCTestCase {
         XCTAssertEqual(model.state.value?.item.providerIDs["Tmdb"], "2")
     }
 
+    func testOpeningKeepsHigherQualitySourceWhenIndexOnlyKnowsMembership() async throws {
+        let a = MediaItem(
+            id: "a-movie", title: "Movie", kind: .movie, providerIDs: ["Tmdb": "1"], sourceAccountID: "a",
+            versions: [.init(id: "a-file", height: 1080, videoCodec: "h264")]
+        )
+        let b = MediaItem(
+            id: "b-movie", title: "Movie", kind: .movie, providerIDs: ["Tmdb": "1"], sourceAccountID: "b",
+            versions: [.init(id: "b-file", height: 2160, videoCodec: "h264")]
+        )
+        let first = FakeMediaProvider(allItems: [], accountID: "a")
+        let second = FakeMediaProvider(allItems: [b], accountID: "b")
+        let thin = [a, b].map {
+            MediaSourceRef(accountID: $0.sourceAccountID!, itemID: $0.id, kind: .movie, providerKind: .jellyfin)
+        }
+        var merged = a
+        merged.sources = [
+            .init(accountID: "a", itemID: a.id, kind: .movie, versions: a.versions),
+            .init(accountID: "b", itemID: b.id, kind: .movie, versions: b.versions)
+        ]
+        let environment = DetailOpenEnvironment(
+            resolveProvider: { $0 == "b" ? second : first },
+            resolveOptionalProvider: { $0 == "b" ? second : first },
+            identitySources: { _ in thin }, crossServerSourceResolver: nil, onlineTrailerResolver: { _ in [] }
+        )
+        let model = try environment.makeViewModel(for: merged, libraryOrigin: nil)
+        defer { model.suspendEnrichment() }
+        await model.load()
+        XCTAssertEqual(model.state.value?.item.id, b.id)
+        XCTAssertEqual(model.state.value?.item.sourceAccountID, "b")
+        XCTAssertEqual(model.currentSourceForDisplay?.selectableVersions.first?.height, 2160)
+    }
+
+    func testExplicitSwitchRetiresAnOpeningResolverRetainedAfterAnOutage() async throws {
+        let a = MediaItem(id: "offline-a", title: "Movie", kind: .movie, sourceAccountID: "a")
+        let b = MediaItem(id: "available-b", title: "Movie", kind: .movie, sourceAccountID: "b")
+        let first = FakeMediaProvider(allItems: [a], accountID: "a")
+        let second = FakeMediaProvider(allItems: [b], accountID: "b")
+        let sources = [
+            MediaSourceRef(accountID: "a", itemID: a.id, kind: .movie),
+            MediaSourceRef(accountID: "b", itemID: b.id, kind: .movie)
+        ]
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("plozz-opening-switch-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let cache = DetailSnapshotCache(directory: directory)
+        await cache.store(.init(item: a, children: [], sources: sources), for: "a|offline-a")
+        var attempts = 0
+        let model = ItemDetailViewModel(
+            provider: first, itemID: a.id, initialItem: a,
+            sourceAccountID: "a", onlineTrailerResolver: { _ in [] }, initialSources: sources,
+            alternateProviderResolver: { $0 == "b" ? second : first },
+            snapshotCache: cache,
+            openingResolver: {
+                attempts += 1
+                if attempts == 1 { throw AppError.serverUnreachable }
+                return .init(provider: first, item: a, sources: sources, resumeEpisode: nil)
+            }
+        )
+        defer { model.suspendEnrichment() }
+        await model.load()
+        XCTAssertNotNil(model.state.value)
+        XCTAssertEqual(model.sources.count, 2)
+        await model.switchToSource(accountID: "b")
+        XCTAssertEqual(model.state.value?.item.id, b.id)
+        model.updateMetadataLanguage("fr")
+        await model.load()
+        XCTAssertEqual(model.state.value?.item.id, b.id)
+        XCTAssertEqual(model.state.value?.item.sourceAccountID, "b")
+        XCTAssertEqual(attempts, 1)
+    }
+
+    func testColdDiscoveryAndNativeEntryShareDeterministicSourceSelection() async throws {
+        let a = MediaItem(id: "a-owned", title: "Movie", kind: .movie, overview: "A", sourceAccountID: "a")
+        let b = MediaItem(id: "b-owned", title: "Movie", kind: .movie, overview: "B", sourceAccountID: "b")
+        let first = FakeMediaProvider(allItems: [a], accountID: "a")
+        let second = FakeMediaProvider(allItems: [b], accountID: "b")
+        let sources = [
+            MediaSourceRef(accountID: "b", itemID: b.id, kind: .movie),
+            MediaSourceRef(accountID: "a", itemID: a.id, kind: .movie)
+        ]
+        let environment = DetailOpenEnvironment(
+            resolveProvider: { $0 == "b" ? second : first },
+            resolveOptionalProvider: { $0 == "b" ? second : first },
+            identitySources: { _ in [] }, crossServerSourceResolver: { _ in .init(sources: sources) },
+            onlineTrailerResolver: { _ in [] }
+        )
+        let external = MediaItem(
+            id: "external", title: "Movie", kind: .movie, providerIDs: ["Tmdb": "1"],
+            locallyValidatedPlayableSource: false
+        )
+        let native = try environment.makeViewModel(for: a, libraryOrigin: nil)
+        let discovery = try environment.makeViewModel(for: external, libraryOrigin: nil)
+        defer { native.suspendEnrichment(); discovery.suspendEnrichment() }
+        await native.load()
+        await discovery.load()
+        XCTAssertFalse(discovery.isDiscoveryItem)
+        XCTAssertEqual(discovery.state.value?.item.id, native.state.value?.item.id)
+        XCTAssertEqual(discovery.state.value?.item.sourceAccountID, "a")
+        XCTAssertEqual(discovery.state.value?.item.overview, "A")
+    }
+
     func testFrenchDetailRestoresOnlyItsLanguageSnapshot() async throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("plozz-language-snapshot-\(UUID().uuidString)", isDirectory: true)

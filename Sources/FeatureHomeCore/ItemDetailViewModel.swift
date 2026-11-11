@@ -1098,11 +1098,16 @@ public final class ItemDetailViewModel {
             source.locality = provider.connectionLocality
             return source
         }
-        guard let selected = CrossSourceSelector.bestSelection(
-            from: availableSources,
-            capabilities: .detected(),
-            preferring: originSourceAccountID
-        )?.source,
+        var candidate = seed
+        candidate.sources = availableSources
+        candidate.rejectedSourceIDs = rejectedSourceIDs
+        let selection = DetailOpenEnvironment.initialSourceSelection(
+            for: candidate, isDiscovery: false, libraryOrigin: nil,
+            identitySources: { _ in [] },
+            sourceLocality: { alternateProviderResolver($0)?.connectionLocality },
+            sourceIsAvailable: { alternateProviderResolver($0) != nil }
+        )
+        guard let selected = selection.selected,
               let provider = alternateProviderResolver(selected.accountID) else {
             PlozzLog.app.info("Detail ownership probe: no active library source id=\(seed.id)")
             return
@@ -1112,9 +1117,9 @@ public final class ItemDetailViewModel {
         activeProvider = provider
         activeItemID = selected.itemID
         activeSourceAccountID = selected.accountID
-        initialSources = availableSources
+        initialSources = selection.sources
         var owned = seed.selectingSource(selected)
-        owned.sources = availableSources
+        owned.sources = selection.sources
         owned.rejectedSourceIDs = rejectedSourceIDs
         owned.availability = nil
         owned.downloadProgress = nil
@@ -2223,6 +2228,7 @@ public final class ItemDetailViewModel {
               let source = sources.first(where: { $0.accountID == accountID }),
               let provider = alternateProviderResolver(accountID) else { return }
 
+        openingResolver = nil
         // Stop the old server's speculative enrichment so it can't clobber the new
         // server's source list after the switch.
         suspendEnrichment()

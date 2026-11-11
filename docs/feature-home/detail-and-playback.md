@@ -40,11 +40,21 @@ that forces its stale episode onto the hero or Play action. The hydrated series
 owns the title, synopsis, genres and ratings; current provider resume owns the
 playable episode.
 
+Runtime detail preselection preserves an episode or season together with its
+provider-local parent IDs; only the resolved parent enters ordinary series
+source ranking. Direct playback still selects the best playable child copy.
+Opening hydration preserves populated source versions ahead of membership-only
+index refs and applies fresh native stream facts without inventing playable
+versions for series containers. Cold discovery-to-library recovery uses the same
+deterministic policy as native navigation.
+
 Explicit episode information, season navigation, edition opens and server/version
 choices remain deliberate exceptions. Provider-local child IDs stay on their
 owning account. A fresh alternate response must agree on item, account, kind and
 non-conflicting catalog identity. Source errors remain visible; an unavailable
 explicit source is not silently replaced.
+An explicit source switch retires any opening retry retained during a cached
+outage, so a later language refresh cannot restore the original automatic choice.
 
 Changing the app language refreshes retained detail models in place. Old work is
 cancelled and fenced, native metadata is restored before gap filling, and season
@@ -61,6 +71,22 @@ Continue Watching navigation using French native series metadata and a stale
 episode card for both Jellyfin and Plex. Its expected page uses the series
 synopsis and current provider resume episode. The shared-model regression also
 compares multiple source accounts with different provider-local IDs.
+
+`LiveDetailConsistencyTests` is an opt-in, read-only production-provider matrix
+for Jellyfin, Plex and Emby. It compares Search, library and episode-derived
+details, current resume, explicit child navigation, and retained language reloads.
+A combined Jellyfin/Plex case passes a real merged episode through runtime
+preselection before opening its parent and changing sources. Public TMDb checks
+cover French episode metadata, language-isolated cache reuse, and English release
+aliases resolved into French metadata. These are live model checks, not rendered
+navigation or physical-device playback evidence.
+
+The tests reuse the [live Home broker contract](home-rows-and-loading.md#opt-in-live-data-row-verification)
+and read-only HTTP guard through `LiveHomeReadOnlyAccount`, including production
+account tagging on raw provider results. Add `/emby` with the same configuration
+shape and `/metadata` returning an in-memory `tmdbBearerToken`. Credentials remain
+private; the broker and owned simulators must have bounded lifetimes. An opted-in
+run must execute every requested case without skips.
 
 `DetailPlaybackSelectionTests` covers the composed result, including colliding
 account/item/file IDs, same-account editions, removed sources, container/episode
