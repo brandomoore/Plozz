@@ -594,6 +594,7 @@ targets:
     platform: iOS
     sources:
       - path: Tests/iOSPresentationTests
+      - path: Tests/AppShellTests/WatchlistCloudApplyTests.swift
       - path: Tests/FocusIntegrationTests/ContentRefreshSurfaceHostedTests.swift
       - path: Tests/PlaybackPresentationSupport/PlayerSongLayoutPreviewTests.swift
       - path: Tests/PlaybackPresentationSupport/PlayerContinueWatchingPresentationTests.swift

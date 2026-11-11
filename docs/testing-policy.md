@@ -174,12 +174,19 @@ power-cycle behavior, or recovery after tvOS storage eviction.
 `WatchlistCloudReplayTests` separately exercises the production `SyncLedger`
 and file-backed `WatchlistModel` with controlled incoming cloud records. It
 does not contact CloudKit. Its restart-before-publish and missing-sync-ledger
-cases currently reproduce an older cloud removal overwriting a newer local
-re-add. Those assertions are strict expected failures, not evidence of a fix;
-remove the expected-failure wrappers when the underlying sync gap is corrected.
-The controls cover an already-captured unsent re-add, an actually newer remote
-removal, an empty fetch, and another profile's removal. This demonstrates a
-sync failure mechanism, not attribution of an individual user's report.
+cases ensure older cloud removals cannot overwrite newer uncaptured local
+actions. The media sync channel supplies persisted local-capture digests, so
+already-captured actions continue to use the sync ledger's logical-clock result.
+Device-local authorship is saved atomically with the intent and cleared by a
+remote apply; a peer's `.local` origin is not evidence that this device edited
+the item. Legacy files without authorship data remain readable but do not
+invent that evidence.
+Preserved actions are captured for upload again, rather than silently diverging
+from the cloud. The controls cover newer remote removals, clock disagreement,
+uncaptured local removals, native re-add supersession, native imports, empty
+fetches, profile isolation, alias redirects, consecutive remote deliveries, and
+two-peer convergence. This verifies the reproduced failure mechanism, not
+attribution of an individual user's report or actual CloudKit delivery.
 
 ## The two speed wins
 

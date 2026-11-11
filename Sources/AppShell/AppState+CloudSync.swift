@@ -97,6 +97,11 @@ extension AppState {
             },
             applyRecords: { [weak appState] changes in
                 await appState?.applyMediaStateSyncRecords(changes)
+            },
+            applySnapshot: { [weak appState] snapshot in
+                await appState?.applyMediaStateSyncRecords(
+                    snapshot.changes, localCaptureDigests: snapshot.localCaptureDigests
+                )
             }
         )
 
@@ -911,7 +916,9 @@ extension AppState {
         }
     }
 
-    func applyMediaStateSyncRecords(_ changes: SyncLocalChanges) async {
+    func applyMediaStateSyncRecords(
+        _ changes: SyncLocalChanges, localCaptureDigests: [SyncRecordID: Data]? = nil
+    ) async {
         var parsed: [MediaAliasRemoteChange] = []
         var watchlistChanges:
             [String: [WatchlistMediaStateRecordKey: Data]] = [:]
@@ -946,15 +953,18 @@ extension AppState {
         var appliedWatchlistCount = 0
         var rejectedWatchlistCount = 0
         var ignoredDeletedProfileCount = 0
+        var preservedLocalCount = 0
         for profileID in watchlistChanges.keys.sorted() {
             guard let records = watchlistChanges[profileID] else { continue }
             do {
                 let report = try universalWatchlist.applyRemoteSyncRecords(
                     profileID: profileID,
-                    changes: records
+                    changes: records,
+                    localCaptureDigests: localCaptureDigests
                 )
                 appliedWatchlistCount += report.appliedCount
                 rejectedWatchlistCount += report.rejectedCount
+                preservedLocalCount += report.preservedLocalCount
                 ignoredDeletedProfileCount +=
                     report.ignoredDeletedProfileRecordNames.count
                 if report.appliedCount > 0 {
@@ -979,6 +989,10 @@ extension AppState {
             // it: a remote removal that leaves the active count where it was is
             // otherwise invisible to that memo's revision key.
             announceUniversalWatchlistDidChange()
+        }
+        if preservedLocalCount > 0 {
+            PlozzLog.sync.info("Watchlist sync preserved \(preservedLocalCount) newer uncaptured local action(s)")
+            scheduleCloudPublish()
         }
     }
 }
