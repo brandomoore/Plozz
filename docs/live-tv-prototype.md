@@ -1739,8 +1739,11 @@ rather than its letterbox area or caption. Add and Replace return to the actual
 guide in selection mode: the same channel/programme rows, vertical catalog,
 Favorites, Recents, category sidebar and native Search, backed by the same
 profile model and loaded guide. There is no separate channel browser or
-horizontal all-channel shelf. The current audible picture remains in the guide
-preview, and browsing never retunes a Multiview player. Selecting a station or
+horizontal all-channel shelf. On Apple TV, an existing multi-picture composition
+stays behind the guide in its current layout; opening Add or Replace never
+promotes the audible picture to a full-screen preview or hides the other streams.
+The initial single-picture picker and mobile guide use the audible preview.
+Browsing never retunes a Multiview player. Selecting a station or
 programme adds/replaces its live channel, then returns to setup. Already-added
 channels are marked; selecting one returns to it without allocating another
 player. Cancel preserves every stream and the existing composition.
@@ -1754,6 +1757,10 @@ On Apple TV, the picker hides app navigation while retaining the full guide,
 category sidebar and Search. The shell's retained full-screen workspace moves
 the existing guide/player host outside the native tab focus tree, without
 reconstructing players. Closing Multiview restores that host to the shell.
+This full-screen guide does not reserve the app sidebar or top-navigation insets.
+Guide and scrim visibility animate independently of the retained picture layout;
+adding a channel animates existing pictures to their new slots and introduces the
+new picture in its own slot rather than passing through a full-screen frame.
 Filtering scrolls the guide to its first row without taking focus from categories.
 Left from the guide reaches categories; Right
 returns to the filtered guide. These directions reverse in right-to-left layouts.

@@ -404,6 +404,8 @@ public struct LiveChannelPlayerView: View {
                     }
                 }
                 .videoCardFocusSurface()
+                .transition(isMultiview && !reduceMotion
+                    ? .scale(scale: 0.94).combined(with: .opacity) : .identity)
                 #if os(tvOS)
                 .onChange(of: videoCardFocus?.presentsEffect) { old, new in
                     focusHandoff?.cancel(restoringOutput: true)
@@ -635,6 +637,7 @@ public struct LiveChannelPlayerView: View {
                 )
         }
         .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: controlsVisible)
+        .animation(isMultiview && !reduceMotion ? .easeInOut(duration: 0.32) : nil, value: model == nil)
         #if os(iOS)
         .preference(
             key: LiveChannelSystemOverlaysHiddenKey.self,

@@ -457,6 +457,14 @@ struct LiveTVRootFixture: View {
     private var guideContent: some View {
         navigationContent
         .environment(profiles)
+        .transformEnvironment(\.plozzNavigationContentInset) {
+            if ProcessInfo.processInfo.arguments.contains("--multiview-navigation-insets") { $0 = 100 }
+        }
+        .transformEnvironment(\.plozzTopNavigationContentInsets) {
+            if ProcessInfo.processInfo.arguments.contains("--multiview-navigation-insets") {
+                $0 = EdgeInsets(top: 160, leading: 100, bottom: 0, trailing: 100)
+            }
+        }
         .overlay(alignment: .topTrailing) {
             if isActive && !ProcessInfo.processInfo.arguments.contains("--visual-focus-fixture") {
                 HStack {
@@ -477,6 +485,11 @@ struct LiveTVRootFixture: View {
                     .accessibilityValue(state.engines.first?.motionWidths ?? "")
                 Text(hidesNavigation ? "Navigation hidden" : "Navigation visible")
                     .accessibilityIdentifier("multiview-fixture-navigation")
+                if ProcessInfo.processInfo.arguments.contains("--motion-fixture") {
+                    Text(verbatim: "Picture motion")
+                        .accessibilityIdentifier("multiview-fixture-picture-motion")
+                        .accessibilityValue(state.engines.map(\.motionFrames).joined(separator: "|"))
+                }
             }
             .padding(.top, 16)
             .allowsHitTesting(false)
@@ -619,6 +632,46 @@ private struct LiveTVRootFixtureLoader: LiveTVSourceLoading {
 @MainActor
 private final class MultiviewMotionOutput: UIView {
     private var widths: [CGFloat] = []
+    private var frames: [[CGFloat]] = []
+    private var displayLink: CADisplayLink?
+    var motionFrames: String {
+        frames.map { $0.map { String(format: "%.3f", Double($0)) }.joined(separator: ",") }
+            .joined(separator: ";")
+    }
+
+    @MainActor private final class Clock: NSObject {
+        weak var output: MultiviewMotionOutput?
+        init(_ output: MultiviewMotionOutput) { self.output = output }
+        @objc func sample(_ link: CADisplayLink) {
+            guard let output else { link.invalidate(); return }
+            output.sample()
+        }
+    }
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        displayLink?.invalidate()
+        displayLink = nil
+        guard window != nil, ProcessInfo.processInfo.arguments.contains("--motion-fixture") else { return }
+        let link = CADisplayLink(target: Clock(self), selector: #selector(Clock.sample(_:)))
+        displayLink = link
+        link.add(to: .main, forMode: .common)
+    }
+
+    private func sample() {
+        guard let window, let presented = layer.presentation() else { return }
+        let frame = presented.convert(presented.bounds, to: window.layer.presentation() ?? window.layer)
+        var opacity: CGFloat = 1
+        var ancestor: UIView? = self
+        while let current = ancestor {
+            opacity *= current.isHidden ? 0 : CGFloat(current.layer.presentation()?.opacity ?? Float(current.alpha))
+            ancestor = current.superview
+        }
+        let value = [frame.minX, frame.minY, frame.width, frame.height, opacity]
+        guard frames.last != value else { return }
+        frames.append(value)
+        if frames.count > 1_024 { frames.removeFirst() }
+    }
 
     override func layoutSubviews() {
         super.layoutSubviews()
@@ -634,6 +687,7 @@ private final class MultiviewFixtureEngine: LiveChannelEngine {
     let number: Int
     private let output = MultiviewMotionOutput()
     var motionWidths: String { output.accessibilityValue ?? "" }
+    var motionFrames: String { output.motionFrames }
     private let label = UILabel()
     var status: VideoEngineStatus = .ready
     var isPaused = false

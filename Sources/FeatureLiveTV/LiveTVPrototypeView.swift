@@ -374,8 +374,9 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
         GeometryReader { geometry in
             let layout = PrototypePreviewLayout(
                 size: geometry.size, safeAreaInsets: geometry.safeAreaInsets,
-                navigationInset: navigationInset, nativeNavigation: usesNativeFullscreen,
-                topNavigationInsets: topNavigationInsets,
+                navigationInset: isMultiviewWorkspace ? 0 : navigationInset,
+                nativeNavigation: usesNativeFullscreen && !isMultiviewWorkspace,
+                topNavigationInsets: isMultiviewWorkspace ? EdgeInsets() : topNavigationInsets,
                 largeText: typeSize.isAccessibilitySize,
                 isSearching: isSearching, showsCategories: showsCategoryDirectory,
                 showsVideoPreview: playback.preparation.current != nil || playback.pendingWatchChannelID != nil,
@@ -395,7 +396,7 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
                 // Stable pane IDs retain renderers through single/multiple layouts and promotion.
                 ForEach(multiview.panes) { pane in
                     if let prepared = pane.preparation.current {
-                        let slotFrame = showingMultiview
+                        let slotFrame = usesMultiviewLayout
                             ? LiveTVMultiviewGeometry.frame(
                                 for: pane.id, panes: multiview.panes.map(\.id),
                                 primary: multiview.primaryPaneID, layout: multiview.layout,
@@ -408,7 +409,7 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
                             .offsetBy(dx: layout.bounds.minX, dy: layout.bounds.minY)
                             : (expanded ? layout.bounds : layout.videoFrame)
                         #if os(tvOS)
-                        let roundsPicture = showingMultiview && multiview.expandedPaneID == nil
+                        let roundsPicture = usesMultiviewLayout && multiview.expandedPaneID == nil
                         let videoFrame = roundsPicture
                             ? LiveTVMultiviewGeometry.contentFrame(
                                 in: slotFrame, aspectRatio: pane.videoAspectRatio.map { CGFloat($0) })
@@ -418,7 +419,7 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
                         let videoFrame = slotFrame
                         let cornerRadius: CGFloat = showingMultiview && multiview.isEditingLayout ? 10 : 0
                         #endif
-                        let reflectionHeight = !expanded && !showingMultiview && !reduceTransparency
+                        let reflectionHeight = !expanded && !usesMultiviewLayout && !reduceTransparency
                             ? layout.videoReflectionHeight : 0
                         let topReflectionHeight = reflectionHeight > 0 ? layout.videoTopReflectionHeight : 0
                         let leadingReflectionWidth = reflectionHeight > 0 ? layout.videoLeadingReflectionWidth : 0
@@ -450,14 +451,14 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
                             ],
                             startPoint: .leading, endPoint: .trailing
                         )
-                        .opacity(expanded || layout.compact ? 0 : 1)
+                        .opacity(expanded || usesMultiviewLayout || layout.compact ? 0 : 1)
                         .allowsHitTesting(false)
                         .accessibilityHidden(true)
                         #endif
                     }
                     #if os(tvOS)
                     .modifier(PrototypeVideoPlacement(frame:
-                        !showingMultiview && layoutDirection == .rightToLeft
+                        !usesMultiviewLayout && layoutDirection == .rightToLeft
                             ? CGRect(x: geometry.size.width - videoFrame.maxX, y: videoFrame.minY,
                                      width: videoFrame.width, height: videoFrame.height)
                             : videoFrame, focus: videoCardFocus(for: pane, frame: videoFrame)))
@@ -478,10 +479,11 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
                     .zIndex(showingMultiview && multiview.expandedPaneID == nil && pane.preparation.failure == nil
                         ? (pane.id != multiview.primaryPaneID ? 4 : 3) : 0)
                     #endif
-                    .opacity(multiviewSelection != nil
+                    .opacity(multiviewSelection != nil && !usesMultiviewLayout
                         ? (pane.id == multiview.audiblePaneID ? 1 : 0)
                         : (multiview.expandedPaneID == nil || multiview.expandedPaneID == pane.id ? 1 : 0))
                     #if os(tvOS)
+                    .disabled(multiview.isEnabled && !showingMultiview)
                     .allowsHitTesting(!multiview.isEnabled || (showingMultiview
                         && (multiview.expandedPaneID == nil || multiview.expandedPaneID == pane.id)))
                     .accessibilityHidden(multiview.isEnabled && (!showingMultiview
@@ -499,7 +501,7 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
                     .transition(reduceMotion ? .identity : .scale(scale: 0.94).combined(with: .opacity))
                     .animation(playerTransition, value: multiview.expandedPaneID)
                     .animation(playerTransition, value: cornerRadius)
-                    .animation(playerTransition, value: showingMultiview ? videoFrame : nil)
+                    .animation(playerTransition, value: videoFrame)
                     .animation(playerTransition, value: multiviewFocusPresented)
                     .animation(playerTransition, value: preview.isExpanded)
                     #endif
@@ -519,7 +521,7 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
                         y: layout.bounds.midY
                     )
                     .opacity(expanded || model.channels.isEmpty ? 0 : 1)
-                    .animation(reduceMotion ? nil : .easeInOut(duration: 0.32), value: preview.isExpanded)
+                    .animation(playerTransition, value: expanded)
                 #endif
 
                 guideContent(layout, canvasWidth: geometry.size.width)
@@ -544,7 +546,7 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
                 .disabled(expanded || !isActive || showsPreviewIntroduction)
                 .allowsHitTesting(!expanded && isActive && !showsPreviewIntroduction)
                 .accessibilityHidden(expanded || !isActive || showsPreviewIntroduction)
-                .animation(playerTransition, value: preview.isExpanded)
+                .animation(playerTransition, value: expanded)
                 .animation(reduceMotion ? nil : .easeInOut(duration: 0.18), value: isSearching)
                 if showingMultiview {
                     LiveTVMultiviewOverlay(
@@ -652,9 +654,9 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
 
     private func videoCardFocus(for pane: LiveTVMultiviewPane, frame: CGRect) -> VideoCardFocus? {
         #if os(tvOS)
-        guard showingMultiview,
+        guard usesMultiviewLayout,
               multiview.expandedPaneID == nil || multiview.expandedPaneID == pane.id else { return nil }
-        let presentsEffect = multiviewFocusPresented && multiview.expandedPaneID == nil
+        let presentsEffect = showingMultiview && multiviewFocusPresented && multiview.expandedPaneID == nil
         return VideoCardFocus(
             identifier: "live-multiview-pane-\(pane.id.uuidString)",
             title: pane.channel?.name ?? "", audible: pane.id == multiview.audiblePaneID,
@@ -662,7 +664,7 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
             cornerRadius: multiview.expandedPaneID == nil ? LiveTVMultiviewGeometry.videoCornerRadius : 0,
             horizontalInset: presentsEffect ? LiveTVMultiviewGeometry.focusInset(for: frame.width) : 0,
             request: multiviewFocusRequest,
-            prefersFocus: pane.id == (multiviewRequestedFocusID ?? multiview.audiblePaneID),
+            prefersFocus: showingMultiview && pane.id == (multiviewRequestedFocusID ?? multiview.audiblePaneID),
             focused: { focused in
                 if focused { multiviewNativeFocusedPaneID = pane.id }
                 else if multiviewNativeFocusedPaneID == pane.id { multiviewNativeFocusedPaneID = nil }
@@ -675,10 +677,13 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
             promote: { multiview.promote(pane.id) },
             replace: { beginMultiviewSelection(.replace(pane.id)) },
             remove: multiview.panes.count > 1 ? { multiview.remove(pane.id) } : nil,
-            back: { multiviewBackRequest &+= 1 },
+            back: {
+                if multiviewSelection != nil { finishMultiviewSelection() }
+                else { multiviewBackRequest &+= 1 }
+            },
             caption: AnyView(LiveTVMultiviewFocusCaption(
                 channel: pane.channel,
-                isFocused: multiviewFocusPresented && multiviewNativeFocusedPaneID == pane.id)))
+                isFocused: showingMultiview && multiviewFocusPresented && multiviewNativeFocusedPaneID == pane.id)))
         #else
         nil
         #endif
@@ -1962,6 +1967,16 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
     }
 
     private var showingMultiview: Bool { multiview.isEnabled && multiviewSelection == nil }
+    private var usesMultiviewLayout: Bool {
+        showingMultiview || (isMultiviewWorkspace && multiview.panes.count > 1)
+    }
+    private var isMultiviewWorkspace: Bool {
+        #if os(tvOS)
+        multiview.isEnabled
+        #else
+        false
+        #endif
+    }
     private var isGuidePresented: Bool { !showingMultiview && !preview.isExpanded }
 
     private func beginMultiviewSelection(_ selection: LiveTVMultiviewSelection) {

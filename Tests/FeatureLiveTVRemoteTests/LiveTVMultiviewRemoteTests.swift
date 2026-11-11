@@ -124,6 +124,118 @@ final class LiveTVMultiviewRemoteTests: XCTestCase {
     }
 
     @MainActor
+    func testFullscreenPickerDoesNotReserveAppNavigationSpace() {
+        continueAfterFailure = false
+        let app = fixtureApplication()
+        app.launchArguments = ["--live-root-fixture", "--multiview-navigation-insets"]
+        app.launch()
+        defer { app.terminate() }
+        let search = app.buttons["live-tv-search"]
+        XCTAssertTrue(search.waitForExistence(timeout: 10))
+        XCTAssertGreaterThan(search.frame.minX, 100)
+        startProductionChannel(in: app)
+        openMultiviewPicker(in: app)
+        XCTAssertEqual(search.frame.minX, 32, accuracy: 1)
+        XCTAssertLessThanOrEqual(search.frame.minY, 76)
+        chooseGuideChannel(2, in: app)
+        select(app.buttons["live-multiview-add"], in: app)
+        XCTAssertTrue(app.staticTexts["live-multiview-guide-selection"].waitForExistence(timeout: 5))
+        XCTAssertEqual(search.frame.minX, 32, accuracy: 1)
+        XCTAssertLessThanOrEqual(search.frame.minY, 76)
+    }
+
+    @MainActor
+    func testAddingChannelKeepsEveryPictureBehindGuideAndAnimatesIntoItsSlot() throws {
+        continueAfterFailure = false
+        let app = fixtureApplication()
+        app.launchArguments = ["--live-root-fixture", "--motion-fixture"]
+        app.launch()
+        defer { app.terminate() }
+        startProductionChannel(in: app)
+        openMultiviewPicker(in: app)
+        chooseGuideChannel(2, in: app)
+        let motion = app.staticTexts["multiview-fixture-picture-motion"]
+        func frames() -> [[[Double]]] {
+            (motion.value as? String ?? "").split(separator: "|", omittingEmptySubsequences: false).map {
+                $0.split(separator: ";").map { $0.split(separator: ",").compactMap { Double($0) } }
+            }
+        }
+        select(app.buttons["live-multiview-add"], in: app)
+        XCTAssertTrue(app.staticTexts["live-multiview-guide-selection"].waitForExistence(timeout: 5))
+        let backgrounds = NSPredicate { _, _ in
+            let samples = frames()
+            return samples.count == 2 && samples.allSatisfy {
+                guard let last = $0.last, last.count == 5 else { return false }
+                return last[2] < app.frame.width * 0.6 && last[4] > 0.99
+            }
+        }
+        XCTAssertEqual(XCTWaiter.wait(for: [
+            XCTNSPredicateExpectation(predicate: backgrounds, object: nil)
+        ], timeout: 5), .completed, "Both pictures must keep their slots behind the guide, not become a fullscreen preview.")
+        let before = frames()
+        capture("multiview-all-pictures-behind-guide", in: app)
+        chooseGuideChannel(3, in: app)
+        assertMetrics("Engines 3 loads 3 stops 0 audible 1", in: app)
+        let settled = NSPredicate { _, _ in frames().count == 3 && frames().allSatisfy { !$0.isEmpty } }
+        XCTAssertEqual(XCTWaiter.wait(for: [
+            XCTNSPredicateExpectation(predicate: settled, object: nil)
+        ], timeout: 5), .completed)
+        let after = frames()
+        let evidence = XCTAttachment(string: motion.value as? String ?? "")
+        evidence.name = "Guide to three-picture presentation frames"
+        evidence.lifetime = .keepAlways
+        add(evidence)
+        for index in 0..<2 {
+            let start = try XCTUnwrap(before[index].last)[2]
+            let end = try XCTUnwrap(after[index].last)[2]
+            let widths = after[index].dropFirst(before[index].count).map { $0[2] }
+            XCTAssertGreaterThan(abs(start - end), 100)
+            XCTAssertGreaterThan(widths.filter { $0 > min(start, end) + 1 && $0 < max(start, end) - 1 }.count, 3,
+                                 "Each retained renderer must animate into its new slot.")
+            XCTAssertLessThan(widths.max() ?? 0, app.frame.width * 0.6)
+        }
+        let added = after[2].filter { $0[4] > 0.01 }
+        XCTAssertGreaterThan(added.count, 3, "The new picture must animate into view.")
+        XCTAssertLessThan(added.map { $0[2] }.max() ?? 0, app.frame.width * 0.6,
+                          "A new renderer must never appear fullscreen before entering its slot.")
+        capture("multiview-three-pictures-after-guide", in: app)
+        select(app.buttons["live-multiview-add"], in: app)
+        XCTAssertTrue(app.staticTexts["live-multiview-guide-selection"].waitForExistence(timeout: 5))
+        let threeBehindGuide = NSPredicate { _, _ in
+            let samples = frames()
+            return samples.count == 3 && samples.allSatisfy {
+                guard let last = $0.last, last.count == 5 else { return false }
+                return last[2] < app.frame.width * 0.6 && last[4] > 0.99
+            }
+        }
+        XCTAssertEqual(XCTWaiter.wait(for: [
+            XCTNSPredicateExpectation(predicate: threeBehindGuide, object: nil)
+        ], timeout: 5), .completed)
+        XCUIRemote.shared.press(.menu)
+        XCTAssertTrue(app.buttons["live-multiview-add"].waitForExistence(timeout: 5))
+        assertMetrics("Engines 3 loads 3 stops 0 audible 1", in: app)
+        select(app.buttons["live-multiview-add"], in: app)
+        XCTAssertTrue(app.staticTexts["live-multiview-guide-selection"].waitForExistence(timeout: 5))
+        let beforeFourth = frames()
+        chooseGuideChannel(4, in: app)
+        assertMetrics("Engines 4 loads 4 stops 0 audible 1", in: app)
+        let fourReady = NSPredicate { _, _ in frames().count == 4 && frames().allSatisfy { !$0.isEmpty } }
+        XCTAssertEqual(XCTWaiter.wait(for: [
+            XCTNSPredicateExpectation(predicate: fourReady, object: nil)
+        ], timeout: 5), .completed)
+        let four = frames()
+        let startX = try XCTUnwrap(beforeFourth[2].last)[0]
+        let endX = try XCTUnwrap(four[2].last)[0]
+        XCTAssertGreaterThan(abs(startX - endX), 100)
+        XCTAssertGreaterThan(four[2].dropFirst(beforeFourth[2].count).filter {
+            $0[0] > min(startX, endX) + 1 && $0[0] < max(startX, endX) - 1
+        }.count, 3, "The existing bottom picture must slide into its four-picture position.")
+        XCTAssertGreaterThan(four[3].filter { $0[4] > 0.01 && $0[4] < 0.99 }.count, 3)
+        XCTAssertLessThan(four[3].map { $0[2] }.max() ?? 0, app.frame.width * 0.6)
+        capture("multiview-four-pictures-after-guide", in: app)
+    }
+
+    @MainActor
     func testChannelPickerKeepsCategoriesReachableAndAppNavigationHidden() throws {
         try assertChannelPicker(rtl: false)
     }
@@ -1243,9 +1355,9 @@ final class LiveTVMultiviewRemoteTests: XCTestCase {
         XCUIRemote.shared.press(.menu)
         XCTAssertTrue(app.staticTexts["live-multiview-guide-selection"].waitForExistence(timeout: 5))
         select(app.buttons["live-multiview-cancel-selection"], in: app)
-        XCTAssertTrue(app.buttons["live-multiview-add"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["live-channel-multiview"].waitForExistence(timeout: 5))
         assertMetrics("Engines 1 loads 1 stops 0 audible 1", in: app)
-        select(app.buttons["live-multiview-add"], in: app)
+        openMultiviewPicker(in: app)
         chooseGuideChannel(2, in: app)
         assertMetrics("Engines 2 loads 2 stops 0 audible 1", in: app)
         focusAudio("Sports 2", in: app)
