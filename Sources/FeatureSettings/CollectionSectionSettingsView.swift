@@ -81,14 +81,36 @@ struct CollectionSectionSettingsView: View {
 
     var body: some View {
         HomeEditorPage(title: isNew ? Text("Create row") : Text("Edit row"), showsHeader: true) {
-            VStack(alignment: .leading, spacing: 16) {
-                Text(verbatim: draft.title).font(.headline)
-                previewContent
-            }
-            .padding(16)
-            .settingsGroupSurface(cornerRadius: 16)
-            .accessibilityIdentifier("collection-section-preview")
             SettingsSectionGroup {
+                Button { choosingSource = true } label: {
+                    let choice = HomeRowChoice(collectionSection: draft)
+                    HomeEditorRowLabel(
+                        title: Text("Content"),
+                        subtitle: draft.sources.isEmpty ? nil : choice.homeEditorSource(in: accounts),
+                        subtitleProvider: choice.homeEditorProvider(in: accounts)
+                    )
+                }
+                .buttonStyle(SettingsFormButtonStyle())
+                .accessibilityIdentifier("collection-section-source")
+                #if os(tvOS)
+                if !isNew {
+                    HomeEditorAutosavingNameInput(
+                        "Name", name: draft.name, prompt: Text(verbatim: draft.contentTitle),
+                        identifier: "collection-section-name", axis: .horizontal
+                    ) { value in
+                        guard var saved = visibility.visibility.collectionSections.first(where: { $0.id == draft.id })
+                        else { throw AppError.notFound }
+                        saved.name = value
+                        guard canSaveSources(saved) else { throw AppError.notFound }
+                        try visibility.saveCollectionSection(saved, catalog: currentCatalog)
+                        draft.name = value
+                    }
+                } else {
+                    nameInput
+                }
+                #else
+                nameInput
+                #endif
                 SettingsMenuRow(title: "Layout", value: Text(draft.cardStyle.title)) {
                     Picker("Layout", selection: $draft.cardStyle) {
                         ForEach(CollectionSection.CardStyle.allCases, id: \.self) { style in
@@ -108,35 +130,12 @@ struct CollectionSectionSettingsView: View {
                     .accessibilityIdentifier("collection-section-title-logo")
                 }
             }
-            Button { choosingSource = true } label: {
-                let choice = HomeRowChoice(collectionSection: draft)
-                HomeEditorRowLabel(
-                    title: Text("Content"), subtitle: choice.homeEditorSource(in: accounts),
-                    subtitleProvider: choice.homeEditorProvider(in: accounts)
-                )
-            }
-            .buttonStyle(SettingsFormButtonStyle())
-            .accessibilityIdentifier("collection-section-source")
-            SettingsSectionGroup {
-                #if os(tvOS)
-                if !isNew {
-                    HomeEditorAutosavingNameInput(
-                        "Row name", name: draft.name, prompt: Text(verbatim: draft.contentTitle),
-                        identifier: "collection-section-name"
-                    ) { value in
-                        guard var saved = visibility.visibility.collectionSections.first(where: { $0.id == draft.id })
-                        else { throw AppError.notFound }
-                        saved.name = value
-                        guard canSaveSources(saved) else { throw AppError.notFound }
-                        try visibility.saveCollectionSection(saved, catalog: currentCatalog)
-                        draft.name = value
-                    }
-                } else {
-                    nameInput
+            if !draft.sources.isEmpty {
+                VStack(alignment: .leading, spacing: 16) {
+                    Text(verbatim: draft.title).font(.headline)
+                    previewContent
                 }
-                #else
-                nameInput
-                #endif
+                .accessibilityIdentifier("collection-section-preview")
             }
             #if os(tvOS)
             if isNew { explicitSaveAction }
@@ -193,8 +192,8 @@ struct CollectionSectionSettingsView: View {
     }
 
     private var nameInput: some View {
-        SettingsInputRow("Row name") {
-            TextField("Row name", text: $draft.name, prompt: Text(verbatim: draft.contentTitle))
+        SettingsInputRow("Name", axis: .horizontal) {
+            TextField("Name", text: $draft.name, prompt: Text(verbatim: draft.contentTitle))
                 .focused($isNameFocused)
                 .submitLabel(.done)
                 .onSubmit { isNameFocused = false }
@@ -272,8 +271,7 @@ struct CollectionSectionSettingsView: View {
         case .idle, .loading:
             ProgressView("Loading…")
         case .empty:
-            if draft.sources.isEmpty { Text("Choose content for this row.").plozzForeground(.secondary) }
-            else { Text("No titles in this row.").plozzForeground(.secondary) }
+            Text("No titles in this row.").plozzForeground(.secondary)
         case let .failed(error):
             InlineErrorMessage(Text(error.userMessage))
             Button("Retry") { retry += 1 }.plozzActionButton(role: .secondary)

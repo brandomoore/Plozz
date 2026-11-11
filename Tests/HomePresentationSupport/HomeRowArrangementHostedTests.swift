@@ -1646,7 +1646,51 @@ final class HomeRowArrangementHostedTests: XCTestCase {
     }
     #endif
 
-    func testCollectionEditorPreviewsActualTitlesAboveSettingsMenus() async throws {
+    func testCollectionEditorStartsWithCompactSettingsAndNoPreview() async throws {
+        let suite = "EmptyCollectionEditor.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let visibility = HomeLibraryVisibilityModel(store: HomeLibraryVisibilityStore(defaults: defaults))
+        #if os(iOS)
+        let sizes: [DynamicTypeSize] = [.large, .accessibility3]
+        #else
+        let sizes: [DynamicTypeSize] = [.large]
+        #endif
+        for size in sizes {
+            try await withWindow {
+                let editor = CollectionSectionCreationView(
+                    inventory: HomeSectionCatalogModel(), visibility: visibility,
+                    libraries: [], accounts: []
+                )
+                #if os(tvOS)
+                editor.frame(width: SettingsFormMetrics.pageWidth)
+                #else
+                NavigationStack { editor }
+                .environment(\.dynamicTypeSize, size)
+                #endif
+            } inspect: { window in
+                let lines = try await self.capture(window, name: "Create row \(size)")
+                let text = lines.map(\.0).joined(separator: " ")
+                XCTAssertFalse(text.contains("Choose content for this row"), text)
+                XCTAssertFalse(text.contains("No titles in this row"), text)
+                XCTAssertGreaterThan(try self.y("Content", in: lines), try self.y("Name", in: lines))
+                XCTAssertGreaterThan(try self.y("Name", in: lines), try self.y("Layout", in: lines))
+                #if os(iOS)
+                XCTAssertFalse(try self.editorSaveItem(in: window).isEnabled)
+                let field = try XCTUnwrap(self.editorViews(in: window).compactMap { $0 as? UITextField }.first)
+                if !size.isAccessibilitySize {
+                    let name = try XCTUnwrap(lines.first { $0.0 == "Name" }).1
+                    let frame = field.convert(field.bounds, to: window)
+                    XCTAssertEqual(frame.midY, (1 - name.midY) * window.bounds.height, accuracy: 5,
+                                   "The name label and input must share one line.")
+                }
+                #endif
+                XCTAssertTrue(visibility.visibility.collectionSections.isEmpty)
+            }
+        }
+    }
+
+    func testCollectionEditorPreviewsActualTitlesBelowSettingsMenus() async throws {
         for style in CollectionSection.CardStyle.allCases {
             let requested = expectation(description: "Collection preview requested")
             let provider = HomeSettingsLibraryProvider(
@@ -1684,13 +1728,15 @@ final class HomeRowArrangementHostedTests: XCTestCase {
                 XCTAssertTrue(text.contains("Orbit"), "Preview must display the provider's title: \(text)")
                 XCTAssertTrue(text.contains(String(localized: style.title)), text)
                 let layoutY = try self.y("Layout", in: lines)
-                XCTAssertGreaterThan(try self.y("Orbit", in: lines), layoutY)
+                XCTAssertGreaterThan(try self.y("Content", in: lines), try self.y("Name", in: lines))
+                XCTAssertGreaterThan(try self.y("Name", in: lines), layoutY)
+                XCTAssertLessThan(try self.y("Orbit", in: lines), layoutY)
                 if style == .landscape {
-                    XCTAssertTrue(text.contains("Off"), text)
+                    XCTAssertTrue(text.localizedCaseInsensitiveContains("Off"), text)
                     XCTAssertFalse(text.contains("Automatic"), text)
                     let logoY = try self.y("Logo", in: lines)
                     XCTAssertGreaterThan(layoutY, logoY)
-                    XCTAssertGreaterThan(logoY, try self.y("Content", in: lines))
+                    XCTAssertGreaterThan(logoY, try self.y("Orbit", in: lines))
                 } else {
                     XCTAssertFalse(text.contains("Logo"), text)
                 }

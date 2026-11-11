@@ -750,9 +750,11 @@ watch history and planning-list behavior are documented in
   saving a new row: mobile retains the editor's toolbar save, TV existing rows
   autosave, and TV new rows still require Add to Home.
   The editor separates Content from Layout (see [Home terminology](../../CONTEXT.md)).
-  Name the row and choose Posters, Landscape or Featured presentation. A live
-  real-title preview leads the editor, with compact native **Layout** and **Logo**
-  menu rows underneath rather than controls inside the preview.
+  Content, a single-line **Name** input, and **Layout** share one Settings group;
+  the name label stacks above its input at accessibility text sizes.
+  Choose Posters, Landscape or Featured presentation, with **Logo** below Layout
+  for landscape rows. Once content is selected, a live real-title preview appears
+  below the controls without another enclosing card. Empty drafts omit the preview.
   The preview uses the existing artwork preferences and spoiler protection.
   Landscape exposes **Logo: On / Off** for movie/show cards on all platforms,
   defaulting to Off. Older Automatic values migrate to Off; saved On/Off choices

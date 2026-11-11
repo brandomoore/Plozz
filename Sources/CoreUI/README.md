@@ -81,9 +81,13 @@ Ordinary Settings fields use `SettingsInputRow` inside their existing group or
 panel. It supplies a persistent, wrapping label and forwards that name to the
 native input for accessibility without speaking a second static label. Callers
 retain bindings, keyboard/content types, secure entry, focus and submit behavior.
-An optional trailing status shares the label's baseline and secondary type size
-without hiding its accessibility text. Autosaving editors own that status and its
-announcement; the input row does not imply persistence or add a focus target.
+Short form values can opt into `axis: .horizontal` for an inline label and input;
+accessibility text sizes fall back to the stacked layout. Other fields retain
+their existing stacked presentation.
+An optional secondary-sized status shares the label's baseline in the stacked
+layout or sits below the trailing input in the inline layout, without hiding its
+accessibility text. Autosaving editors own that status and its announcement; the
+input row does not imply persistence or add a focus target.
 The row owns no background or outer insets; do not nest settings surfaces around
 it. Search, code-entry, and message-composition controls are intentional exceptions.
 Composite rows use `settingsControlTarget()` inside each control label for separate,
