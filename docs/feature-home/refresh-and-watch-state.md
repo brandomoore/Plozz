@@ -119,7 +119,7 @@ Local timestamp-ordered stores retain their own arbitration.
 
 This is a read-before-write guard, not a server transaction: it cannot prevent a
 simultaneous remote play between the read and write, or establish recency when the
-server omits its timestamp. Whole-season/show cascades remain server-owned;
+server omits its timestamp. Whole-season/show actions are separate bulk intents;
 comparing a parent's timestamp cannot safely order every child's history.
 
 `LiveJellyfinWatchActionTests` uses the authorized loopback broker described above
@@ -132,22 +132,33 @@ new local playback replacing a queued removal, and season/show cascades. It does
 not automate menu gestures or decode video.
 
 The episode-action and newer-playback cases passed on iPhone and iPad simulators.
-The expanded checks also exposed a separate unresolved server behavior: the
+The expanded checks also exposed a separate server behavior: the
 registered internal Jellyfin endpoint (advertising version 12.3.0) acknowledged
 both legacy and modern whole-season/show watched endpoints without changing the
 eight selected episodes. Direct provider requests reproduced this independently
 of the outbox; clearing the parent position was not the cause. A separate
 ten-second convergence wait and an independently seeded watched episode also
-failed the intended watched/unwatched cascade checks. The opt-in cascade
-test intentionally continues to assert the intended child-state behavior, rather
-than treating HTTP success as success or hiding the failure with a skip.
+failed the intended watched/unwatched cascade checks.
 Endpoint evidence: `live-home-rows-69220b1c5bae4b3b80d11bca3324ab32`;
 bounded cascade evidence: `live-home-rows-522371b7a7c547adaeabf8224f7ca71a`.
-Do not generalize
-that endpoint's behavior to every Jellyfin installation, claim the entire live
-matrix passed, or describe it as a permanent Plozz blacklist.
+Do not generalize that endpoint's behavior to every Jellyfin installation or
+describe it as a permanent Plozz blacklist.
 
-Final-source episode verification passed all six selected hosted cases across
+Known season/show actions now use the kind-aware shared watch capability,
+including preceding seasons in Mark Watched Up To Here. Jellyfin/Emby validate
+complete episode membership before the native write, independently read each
+episode's played flag and resume position, and repair unfinished episodes
+individually. Repaired state is verified again. The live server's recursive list
+could reflect the parent's new flag while individual episode state was unchanged,
+so neither HTTP success nor list summaries confirm delivery.
+Normal leaf writes add no container reads and
+other backends retain their timestamp-aware/native behavior. The outbox still
+tracks a container as one destination: retries and concurrent playback within a
+partially applied bulk action are not an atomic per-episode transaction.
+The live cascade case now also restores the durable action after a failed write
+before checking all affected episodes and subsequent playback recovery.
+
+Earlier leaf-reset verification passed all six selected hosted cases across
 iPhone and iPad, with zero skips:
 `live-home-rows-400633da102745d3aa739d400834f6f3`. The broader tvOS package run
 recorded 4,648 passes, 15 skips and one pre-existing Home row visibility failure
@@ -155,6 +166,19 @@ recorded 4,648 passes, 15 skips and one pre-existing Home row visibility failure
 All seven server-playback delivery regressions and all 16 Home pending-outbox
 regressions passed. Package evidence:
 `.build/private-no-clean-tests/9cf60bb0519f4185a0eecd6c22385bd1`.
+
+The container repair passed all eight selected hosted cases across iPhone and
+iPad, with zero skips, including watched/unwatched season and show actions
+restored from the durable queue, independent checks of all eight fixture episodes,
+and subsequent playback returning to Home. Evidence:
+`live-home-rows-5ce3a7096fa544459c2e08e00ce65468`.
+The covering ProviderJellyfinTests, AppRuntimeTests and CoreModelsTests run
+recorded 4,129 passes, 18 skips and no failures:
+`.build/private-no-clean-tests/7bf4aab83491428fb1a446436663b5b6`.
+Deterministic regressions cover Jellyfin/Emby, season boundaries, short pages
+across 205 episodes, misleading list summaries, partial failure/retry, rejected
+authorization and unchanged post-write state. This is not a replay of the
+reporter's account or proof that the original #170 report is resolved.
 
 ## Detail watch-state updates
 

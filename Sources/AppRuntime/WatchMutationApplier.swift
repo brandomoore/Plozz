@@ -155,6 +155,10 @@ public struct AppShellWatchMutationApplier: WatchMutationAuthorizationEnforcing 
     }
 
     public func setPlayed(_ played: Bool, on target: WatchMutationTarget, capturedAt: Date) async throws {
+        try await setPlayed(played, on: target, kind: nil, capturedAt: capturedAt)
+    }
+
+    public func setPlayed(_ played: Bool, on target: WatchMutationTarget, kind: MediaItemKind?, capturedAt: Date) async throws {
         guard await isActive() else { throw AppError.serverUnreachable }
         try await WatchMutationDeliveryAuthorization.check()
         guard let provider = await scopedProvider(for: target.accountID) else {
@@ -163,20 +167,11 @@ public struct AppShellWatchMutationApplier: WatchMutationAuthorizationEnforcing 
         }
         guard await isActive() else { throw AppError.serverUnreachable }
         try await WatchMutationDeliveryAuthorization.check()
-        // A locally-stored played state (the SMB share) is ordered last-writer-wins
-        // by the play's real time, so prefer the timestamped write — otherwise a
-        // late-draining stale played write, stamped at drain time, would clobber a
-        // newer resume. A server-backed provider (Plex/Jellyfin) owns recency and
-        // uses the plain write.
-        if let timestamped = provider as? PlayedStateWriting {
-            try await timestamped.setPlayed(played, itemID: target.itemID, capturedAt: capturedAt)
-            return
-        }
         guard let watch = provider as? WatchStateProviding else {
             FanoutDiagnostics.emit("write.setPlayed acct=\(target.accountID) item=\(target.itemID) -> provider=\(provider.kind.rawValue) NOT WatchStateProviding (no write, treated success)")
             return
         }
-        try await watch.setPlayed(played, itemID: target.itemID)
+        try await watch.setPlayed(played, itemID: target.itemID, kind: kind, capturedAt: capturedAt)
     }
 
     public func setResumePosition(_ seconds: TimeInterval, on target: WatchMutationTarget, capturedAt: Date) async throws {

@@ -8,6 +8,20 @@ final class WatchMutationServerPlaybackTests: XCTestCase {
     private let captured = Date(timeIntervalSince1970: 10_000)
     private let target = WatchMutationTarget(accountID: "account", itemID: "item")
 
+    func testRestoredContainerIntentPreservesKindThroughRuntimeDelivery() async throws {
+        for kind in [MediaItemKind.season, .series] {
+            let provider = PlaybackProbeProvider(lastPlayedAt: .distantPast)
+            var intent = mutation(true)
+            intent.kind = kind
+            let encoded = try JSONEncoder().encode(intent)
+            let queue = WatchStateReconciler(store: InMemoryWatchMutationStore(), applier: applier(provider))
+            await queue.enqueue(try JSONDecoder().decode(WatchMutation.self, from: encoded))
+            await queue.drain()
+            let kinds = await provider.receivedKinds
+            XCTAssertEqual(kinds, [kind])
+        }
+    }
+
     private func mutation(_ played: Bool?, observed: Date? = nil) -> WatchMutation {
         WatchMutation(
             capturedAt: captured, canonicalMediaID: "fixture", played: played, clearResume: true,
@@ -176,6 +190,7 @@ private actor PlaybackProbeProvider: MediaProvider, WatchStateProviding, ResumeS
     private var readFailure = false
     private var afterRead: (@Sendable () -> Void)?
     private(set) var writes: [String] = []
+    private(set) var receivedKinds: [MediaItemKind?] = []
     private(set) var reads = 0
 
     init(kind: ProviderKind = .jellyfin, lastPlayedAt: Date) {
@@ -195,6 +210,10 @@ private actor PlaybackProbeProvider: MediaProvider, WatchStateProviding, ResumeS
         return MediaItem(id: id, title: "Fixture", kind: .episode, resumePosition: 900, lastPlayedAt: lastPlayedAt)
     }
     func setPlayed(_ played: Bool, itemID: String) async throws { writes.append("played:\(played)") }
+    func setPlayed(_ played: Bool, itemID: String, kind: MediaItemKind?, capturedAt: Date) async throws {
+        receivedKinds.append(kind)
+        try await setPlayed(played, itemID: itemID)
+    }
     func setResumePosition(_ seconds: TimeInterval, itemID: String, capturedAt: Date) async throws { writes.append("resume:\(Int(seconds))") }
     func libraries() async throws -> [MediaLibrary] { [] }
     func continueWatching(limit: Int) async throws -> [MediaItem] { [] }

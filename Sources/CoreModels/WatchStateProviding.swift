@@ -16,10 +16,22 @@ import Foundation
 public protocol WatchStateProviding: Sendable {
     /// Marks `itemID` played (`true`) or unplayed (`false`) on the server.
     ///
-    /// For a container item (a season or series id) the backend cascades the
-    /// change to its children, so a whole season can be marked watched with one
-    /// call where the provider supports it.
+    /// Call the kind-aware overload for a known season or series so providers
+    /// can verify and repair servers whose container cascade is incomplete.
     func setPlayed(_ played: Bool, itemID: String) async throws
+    /// Carries known container scope without requiring metadata reads for normal
+    /// episode/movie writes. Capture time still orders local-store writes.
+    func setPlayed(_ played: Bool, itemID: String, kind: MediaItemKind?, capturedAt: Date) async throws
+}
+
+public extension WatchStateProviding {
+    func setPlayed(_ played: Bool, itemID: String, kind: MediaItemKind?, capturedAt: Date) async throws {
+        if let timestamped = self as? any PlayedStateWriting {
+            try await timestamped.setPlayed(played, itemID: itemID, capturedAt: capturedAt)
+        } else {
+            try await setPlayed(played, itemID: itemID)
+        }
+    }
 }
 
 /// Refinement of ``WatchStateProviding`` for a provider whose played state is

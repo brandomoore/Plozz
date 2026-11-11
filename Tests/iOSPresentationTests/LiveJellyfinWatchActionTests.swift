@@ -152,9 +152,25 @@ final class LiveJellyfinWatchActionTests: XCTestCase {
                 if action == .markUnwatched {
                     try await fixture.provider.setPlayed(true, itemID: fixture.config.firstEpisodeID)
                 }
-                let queue = WatchStateReconciler(store: try fixture.makeStore(), applier: fixture.applier)
-                await queue.enqueue(try fixture.intent(action, item: container.taggingSource(fixture.accountID)))
+                let intent = try fixture.intent(action, item: container.taggingSource(fixture.accountID))
+                XCTAssertEqual(intent.kind, container.kind)
+                let initial = WatchStateReconciler(store: try fixture.makeStore(), applier: fixture.applier)
+                await fixture.http.setOffline(true)
+                await initial.enqueue(intent)
+                await initial.drain()
+                let queued = await initial.pendingCount
+                XCTAssertEqual(queued, 1)
+                await fixture.http.setOffline(false)
+                let retryDate = intent.capturedAt.addingTimeInterval(120)
+                let queue = WatchStateReconciler(
+                    store: try fixture.makeStore(), applier: fixture.applier, now: { retryDate }
+                )
+                let restored = await queue.snapshot()
+                XCTAssertEqual(restored.pending.first?.kind, container.kind)
+                await fixture.http.resetCounters()
                 await queue.drain()
+                let containerReads = await fixture.http.containerReads
+                XCTAssertGreaterThan(containerReads, 0, "Container delivery must verify its actual episodes")
                 let pending = await queue.pendingCount
                 XCTAssertEqual(pending, 0)
                 let deadline = ContinuousClock.now.advanced(by: .seconds(10))
@@ -174,7 +190,7 @@ final class LiveJellyfinWatchActionTests: XCTestCase {
             try await fixture.provider.setResumePosition(900, itemID: fixture.config.firstEpisodeID, capturedAt: Date())
             let home = try await fixture.home(pending: [])
             XCTAssertTrue(home.contains { $0.id == fixture.config.firstEpisodeID })
-            print("LIVE_WATCH_ACTION container=\(container.kind.rawValue) episodes=\(expected.count) checkedCascadeAndRecovery")
+            print("LIVE_WATCH_ACTION container=\(container.kind.rawValue) episodes=\(expected.count) checkedDurableCascadeAndRecovery")
         }
     }
 
@@ -269,11 +285,18 @@ final class LiveJellyfinWatchActionTests: XCTestCase {
         private let wrapped = URLSessionHTTPClient()
         private var offline = false
         private var blocked = 0
+        private(set) var containerReads = 0
         func setOffline(_ value: Bool) { offline = value }
         func blockedCount() -> Int { blocked }
-        func resetCounters() { blocked = 0 }
+        func resetCounters() { blocked = 0; containerReads = 0 }
 
         func send(_ endpoint: Endpoint, baseURL: URL) async throws -> (Data, HTTPURLResponse) {
+            let containerRead = endpoint.method == .get
+                && endpoint.queryItems.contains(where: { $0.name == "IncludeItemTypes" && $0.value == "Episode" })
+                && endpoint.queryItems.contains(where: { $0.name == "ParentId" })
+            if containerRead {
+                containerReads += 1
+            }
             if offline && endpoint.method != .get {
                 blocked += 1
                 throw AppError.serverUnreachable

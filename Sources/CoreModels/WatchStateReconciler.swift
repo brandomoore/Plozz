@@ -21,6 +21,7 @@ public protocol WatchMutationApplying: Sendable {
     /// last-writer-wins (the SMB share). Defaults to the timestamp-less
     /// ``setPlayed(_:on:)`` for a server-backed provider that ignores capture time.
     func setPlayed(_ played: Bool, on target: WatchMutationTarget, capturedAt: Date) async throws
+    func setPlayed(_ played: Bool, on target: WatchMutationTarget, kind: MediaItemKind?, capturedAt: Date) async throws
     /// Writes a resume position (seconds) to `target`'s server, session-lessly.
     /// `capturedAt` is the play's real timestamp (see ``ResumeStateWriting``), used
     /// for the server's recency stamp so an offline-drained write doesn't falsely
@@ -59,6 +60,9 @@ public extension WatchMutationApplying {
 
     func setPlayed(_ played: Bool, on target: WatchMutationTarget, capturedAt: Date) async throws {
         try await setPlayed(played, on: target)
+    }
+    func setPlayed(_ played: Bool, on target: WatchMutationTarget, kind: MediaItemKind?, capturedAt: Date) async throws {
+        try await setPlayed(played, on: target, capturedAt: capturedAt)
     }
     func expandTargets(for mutation: WatchMutation) async -> WatchTargetExpansion { .none }
     func scrobbleTrakt(_ intent: TraktScrobbleIntent, source: WatchMutationTarget?) async throws {
@@ -880,8 +884,9 @@ public actor WatchStateReconciler {
                     continue
                 }
                 if let played = mutation.played {
+                    let kind = mutation.kind
                     try await withSourceAuthorization(mutation, target: target) { [applier] in
-                        try await applier.setPlayed(played, on: target, capturedAt: capturedAt)
+                        try await applier.setPlayed(played, on: target, kind: kind, capturedAt: capturedAt)
                     }
                     outcome += "setPlayed(\(played))=OK "
                     try await WatchMutationDeliveryAuthorization.check()
