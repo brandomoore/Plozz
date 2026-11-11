@@ -171,6 +171,16 @@ Close the private broker and owned simulator after collecting evidence.
 A passing LAN WebDAV journey does not prove AllDebrid behavior, physical Apple TV
 power-cycle behavior, or recovery after tvOS storage eviction.
 
+`WatchlistCloudReplayTests` separately exercises the production `SyncLedger`
+and file-backed `WatchlistModel` with controlled incoming cloud records. It
+does not contact CloudKit. Its restart-before-publish and missing-sync-ledger
+cases currently reproduce an older cloud removal overwriting a newer local
+re-add. Those assertions are strict expected failures, not evidence of a fix;
+remove the expected-failure wrappers when the underlying sync gap is corrected.
+The controls cover an already-captured unsent re-add, an actually newer remote
+removal, an empty fetch, and another profile's removal. This demonstrates a
+sync failure mechanism, not attribution of an individual user's report.
+
 ## The two speed wins
 
 ### 1. Build once, run many (`tools/run-tests.sh`)
