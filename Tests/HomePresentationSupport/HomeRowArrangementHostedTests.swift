@@ -1683,6 +1683,12 @@ final class HomeRowArrangementHostedTests: XCTestCase {
                     let frame = field.convert(field.bounds, to: window)
                     XCTAssertEqual(frame.midY, (1 - name.midY) * window.bounds.height, accuracy: 5,
                                    "The name label and input must share one line.")
+                    let contentToName = try (self.y("Content", in: lines) - self.y("Name", in: lines))
+                        * window.bounds.height
+                    let nameToLayout = try (self.y("Name", in: lines) - self.y("Layout", in: lines))
+                        * window.bounds.height
+                    XCTAssertEqual(contentToName, nameToLayout, accuracy: 3,
+                                   "Content, Name, and Layout must have matching single-line row heights.")
                 }
                 #endif
                 XCTAssertTrue(visibility.visibility.collectionSections.isEmpty)

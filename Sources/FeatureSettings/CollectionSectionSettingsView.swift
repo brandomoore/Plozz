@@ -111,7 +111,7 @@ struct CollectionSectionSettingsView: View {
                 #else
                 nameInput
                 #endif
-                SettingsMenuRow(title: "Layout", value: Text(draft.cardStyle.title)) {
+                SettingsMenuRow(title: "Layout", value: Text(draft.cardStyle.title), minimumContentHeight: 44) {
                     Picker("Layout", selection: $draft.cardStyle) {
                         ForEach(CollectionSection.CardStyle.allCases, id: \.self) { style in
                             Text(style.title).tag(style)
@@ -120,7 +120,7 @@ struct CollectionSectionSettingsView: View {
                 }
                 .accessibilityIdentifier("collection-section-card-style")
                 if draft.cardStyle == .landscape {
-                    SettingsMenuRow(title: "Logo", value: Text(draft.titleLogo.title)) {
+                    SettingsMenuRow(title: "Logo", value: Text(draft.titleLogo.title), minimumContentHeight: 44) {
                         Picker("Logo", selection: $draft.titleLogo) {
                             ForEach(LandscapeTitleLogo.allCases, id: \.self) { mode in
                                 Text(mode.title).tag(mode)

@@ -752,6 +752,8 @@ watch history and planning-list behavior are documented in
   The editor separates Content from Layout (see [Home terminology](../../CONTEXT.md)).
   Content, a single-line **Name** input, and **Layout** share one Settings group;
   the name label stacks above its input at accessibility text sizes.
+  Mobile Layout and Logo menus match the other editor rows' 44-point minimum
+  content height before group insets, without changing unrelated Settings menus.
   Choose Posters, Landscape or Featured presentation, with **Logo** below Layout
   for landscape rows. Once content is selected, a live real-title preview appears
   below the controls without another enclosing card. Empty drafts omit the preview.
