@@ -130,6 +130,9 @@ public struct LiveChannelPlayerView: View {
     @State private var opensMultiviewAfterFullscreen = false
     @State private var videoHandoff: VideoPresentationHandoff?
     @State private var focusHandoff: VideoPresentationHandoff?
+    #if os(tvOS)
+    @State private var audioGlow = VideoAudioGlowState()
+    #endif
     @Environment(\.videoCardFocus) private var videoCardFocus
     @State private var engineInitializationFailed = false
     @State private var controlsVisible = true
@@ -383,6 +386,12 @@ public struct LiveChannelPlayerView: View {
                 )
                 let showsReflection = hasInlineControls && !reduceTransparency && isActive
                     && scenePhase == .active && !model.continuesExternally
+                #if os(tvOS)
+                let showsAudioGlow = videoCardFocus?.audible == true && sourceMatches && model.hasPresentedFrame
+                    && isActive && isAuthorized && scenePhase == .active && !reduceTransparency
+                    && (videoCardFocus?.cornerRadius ?? 0) > 0 && !model.continuesExternally
+                    && model.interruption == nil && model.networkBlock == nil
+                #endif
                 ZStack {
                     VideoSurfaceContainer(
                         engine: model.engine, zoom: model.videoZoom.settings,
@@ -410,8 +419,20 @@ public struct LiveChannelPlayerView: View {
                         ))
                     }
                 }
-                .videoCardFocusSurface()
+                .videoCardFocusSurface {
+                    #if os(tvOS)
+                    VideoAudioGlow(state: audioGlow, isActive: showsAudioGlow,
+                                   cornerRadius: videoCardFocus?.cornerRadius ?? 0)
+                    #endif
+                }
                 #if os(tvOS)
+                .onChange(of: showsAudioGlow, initial: true) { _, enabled in
+                    audioGlow.update(engine: model.engine, enabled: enabled)
+                }
+                .onChange(of: ObjectIdentifier(model.engine)) { _, _ in
+                    audioGlow.update(engine: model.engine, enabled: showsAudioGlow)
+                }
+                .onDisappear { audioGlow.stop() }
                 .transition(isMultiview && !reduceMotion ? .opacity : .identity)
                 #else
                 .transition(isMultiview && !reduceMotion

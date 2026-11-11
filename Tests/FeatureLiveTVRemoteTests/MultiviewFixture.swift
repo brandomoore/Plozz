@@ -1,5 +1,6 @@
 import CoreModels
 import CoreUI
+import CoreVideo
 import FeaturePlayback
 import SwiftUI
 import UIKit
@@ -742,6 +743,30 @@ private final class MultiviewFixtureEngine: LiveChannelEngine {
     var motionFrames: String { output.motionFrames }
     private let label = UILabel()
     var status: VideoEngineStatus = .ready
+    var hasPresentedVideoFrame: Bool { liveSnapshot.firstFrameReady }
+    private lazy var previewFrame: CVPixelBuffer = {
+        var buffer: CVPixelBuffer?
+        let result = CVPixelBufferCreate(kCFAllocatorDefault, 24, 14, kCVPixelFormatType_32BGRA, nil, &buffer)
+        precondition(result == kCVReturnSuccess && buffer != nil)
+        let frame = buffer!
+        CVPixelBufferLockBaseAddress(frame, [])
+        defer { CVPixelBufferUnlockBaseAddress(frame, []) }
+        let bytes = CVPixelBufferGetBaseAddress(frame)!.assumingMemoryBound(to: UInt8.self)
+        let stride = CVPixelBufferGetBytesPerRow(frame)
+        for y in 0..<14 {
+            for x in 0..<24 {
+                let offset = y * stride + x * 4
+                bytes[offset] = 220
+                bytes[offset + 1] = number == 1 ? 40 : 200
+                bytes[offset + 2] = 10
+                bytes[offset + 3] = 255
+            }
+        }
+        return frame
+    }()
+    func previewVideoFrame() -> CVPixelBuffer? {
+        ProcessInfo.processInfo.arguments.contains("--audio-glow-fixture") ? previewFrame : nil
+    }
     var isPaused = false
     var currentTime: TimeInterval { 0 }
     var duration: TimeInterval { 0 }

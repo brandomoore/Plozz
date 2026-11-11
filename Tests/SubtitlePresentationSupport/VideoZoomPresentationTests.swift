@@ -1,4 +1,5 @@
 import AVFoundation
+import CoreImage
 import CoreModels
 @testable import EnginePlozzigen
 import SwiftUI
@@ -9,6 +10,146 @@ import XCTest
 
 @MainActor
 final class VideoZoomPresentationTests: XCTestCase {
+    #if os(tvOS)
+    func testAudioGlowFadesOutsideTheNativeFocusedPictureWithoutResizingIt() async throws {
+        struct Surface: UIViewRepresentable {
+            let view: UIView
+            func makeUIView(context: Context) -> UIView { view }
+            func updateUIView(_ uiView: UIView, context: Context) {}
+        }
+        struct Fixture: View {
+            let surface: UIView
+            let glow: VideoAudioGlowState
+            let active: Bool
+            var body: some View {
+                Surface(view: surface)
+                    .videoCardFocusSurface {
+                        VideoAudioGlow(state: glow, isActive: active, cornerRadius: 20)
+                    }
+                    .environment(\.videoCardFocus, VideoCardFocus(
+                        identifier: "audio-glow-test", title: "Video", audible: active, presentsEffect: true,
+                        cornerRadius: 20, horizontalInset: 0, request: 1, prefersFocus: true,
+                        focused: { _ in }, activate: {}, promote: {}, replace: {}))
+                    .frame(width: 640, height: 360)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(Color.black)
+            }
+        }
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        let surface = UIView()
+        surface.backgroundColor = .blue
+        let glow = VideoAudioGlowState()
+        let host = UIHostingController(rootView: Fixture(surface: surface, glow: glow, active: true))
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        try await waitUntil { surface.window != nil && surface.convert(surface.bounds, to: window).width > 650 }
+        try await Task.sleep(for: .milliseconds(700))
+        let frame = surface.convert(surface.bounds, to: window)
+        func edgeIntensity() throws -> Float {
+            let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+                window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+            }
+            let ci = try XCTUnwrap(CIImage(image: image))
+            let scale = image.scale
+            let region = CGRect(x: (frame.midX - 100) * scale,
+                                y: (window.bounds.height - frame.maxY - 8) * scale,
+                                width: 200 * scale, height: 7 * scale)
+            let average = ci.applyingFilter("CIAreaAverage", parameters: [kCIInputExtentKey: CIVector(cgRect: region)])
+            var pixel = [Float](repeating: 0, count: 4)
+            CIContext().render(average, toBitmap: &pixel, rowBytes: 16,
+                               bounds: CGRect(x: 0, y: 0, width: 1, height: 1),
+                               format: .RGBAf, colorSpace: CGColorSpaceCreateDeviceRGB())
+            return (pixel[0] + pixel[1] + pixel[2]) / 3
+        }
+        let active = try edgeIntensity()
+        host.rootView = Fixture(surface: surface, glow: glow, active: false)
+        try await Task.sleep(for: .milliseconds(300))
+        let fading = try edgeIntensity()
+        try await Task.sleep(for: .milliseconds(600))
+        let inactive = try edgeIntensity()
+        XCTAssertGreaterThan(active - inactive, 0.001, "The glow must extend past the lifted native picture.")
+        if !UIAccessibility.isReduceMotionEnabled {
+            XCTAssertGreaterThan(active, fading)
+            XCTAssertGreaterThan(fading, inactive)
+        }
+        host.rootView = Fixture(surface: surface, glow: glow, active: true)
+        try await Task.sleep(for: .milliseconds(300))
+        let appearing = try edgeIntensity()
+        try await Task.sleep(for: .milliseconds(600))
+        let restored = try edgeIntensity()
+        XCTAssertGreaterThan(restored - inactive, 0.001)
+        if !UIAccessibility.isReduceMotionEnabled {
+            XCTAssertGreaterThan(appearing, inactive)
+            XCTAssertGreaterThan(restored, appearing)
+        }
+        XCTAssertEqual(surface.convert(surface.bounds, to: window), frame)
+    }
+
+    func testAudioGlowBorrowsBothDecodersAndStopsWhenInactive() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        let host = UIViewController()
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        let folder = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "Fixtures", withExtension: nil))
+        let engines: [(any VideoEngine, String)] = [
+            (NativeVideoEngine(startsMuted: true), "glow-hd.mp4"),
+            (try PlozzigenVideoEngine(), "glow-software.mkv"),
+            (LibraryLiveChannelEngine(engine: try PlozzigenVideoEngine()), "glow-software.mkv")
+        ]
+        for (engine, filename) in engines {
+            let video = VideoPresentationView(frame: CGRect(x: 0, y: 0, width: 640, height: 360))
+            host.view.addSubview(video)
+            video.attach(engine)
+            let glow = VideoAudioGlowState()
+            defer { glow.stop(); video.removeFromSuperview(); engine.stop() }
+            await engine.load(request: PlaybackRequest(
+                item: MediaItem(id: filename, title: "Synthetic video", kind: .movie),
+                streamURL: folder.appendingPathComponent(filename)), startPosition: 0)
+            try await waitUntil(timeout: 20) { engine.hasPresentedVideoFrame }
+            let item = engine.nowPlayingPlayer?.currentItem
+            let outputs = item?.outputs.count
+            let neutral = glow.colors
+            glow.update(engine: engine, enabled: true)
+            try await waitUntil(timeout: 5) { glow.sampleCount > 0 }
+            XCTAssertNotEqual(glow.colors, neutral, "The indicator must use decoded picture colors.")
+            if filename.hasSuffix("mkv") {
+                XCTAssertNil(item)
+                XCTAssertNotNil(engine.previewVideoFrame())
+                XCTAssertNotNil(engine.previewFrameGeneration)
+            } else {
+                XCTAssertNotNil(item)
+                XCTAssertEqual(item?.outputs.count, try XCTUnwrap(outputs) + 1)
+            }
+            engine.pause()
+            try await Task.sleep(for: .milliseconds(700))
+            let pausedCount = glow.sampleCount
+            try await Task.sleep(for: .milliseconds(600))
+            XCTAssertEqual(glow.sampleCount, pausedCount)
+            let retainedColors = glow.colors
+            glow.update(engine: engine, enabled: false)
+            XCTAssertFalse(glow.isSampling)
+            XCTAssertEqual(glow.colors, retainedColors, "Keep the last palette available during the fade-out.")
+            XCTAssertEqual(item?.outputs.count, outputs)
+            try await Task.sleep(for: .milliseconds(600))
+            XCTAssertEqual(glow.sampleCount, pausedCount)
+        }
+    }
+    #endif
+
     func testPerformancePictureEnabled() async throws {
         try await measurePicture(players: 1, enabled: true)
     }

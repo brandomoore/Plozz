@@ -71,17 +71,22 @@ public extension EnvironmentValues {
 
 public extension View {
     func videoCardFocusSurface() -> some View {
-        modifier(VideoCardFocusModifier())
+        modifier(VideoCardFocusModifier(background: AnyView(EmptyView())))
+    }
+
+    func videoCardFocusSurface<Background: View>(@ViewBuilder background: () -> Background) -> some View {
+        modifier(VideoCardFocusModifier(background: AnyView(background())))
     }
 }
 
 private struct VideoCardFocusModifier: ViewModifier {
     @Environment(\.videoCardFocus) private var configuration
+    let background: AnyView
 
     func body(content: Content) -> some View {
         #if os(tvOS)
         if let configuration {
-            VideoCardSurface(configuration: configuration, content: content)
+            VideoCardSurface(configuration: configuration, content: content, background: background)
                 .transition(.identity)
         } else {
             content
@@ -97,16 +102,19 @@ private struct VideoCardFocusModifier: ViewModifier {
 private struct VideoCardSurface<Content: View>: View {
     let configuration: VideoCardFocus
     let content: Content
+    let background: AnyView
     @FocusState private var focused: Bool
     @State private var handledRequest: Int?
     @State private var handledEffect: Bool?
     @State private var restoringEffect = false
+    @State private var interactionState = VideoCardInteractionState()
 
     var body: some View {
         button
             .buttonStyle(VideoCardButtonStyle(
                 presentsEffect: configuration.presentsEffect,
                 restoringEffect: restoringEffect || handledEffect == false && configuration.presentsEffect))
+            .background { background.allowsHitTesting(false).accessibilityHidden(true) }
             .modifier(VideoCardInset(horizontalInset: configuration.horizontalInset))
         .focusSection()
         .onChange(of: focused) { _, value in
@@ -135,7 +143,9 @@ private struct VideoCardSurface<Content: View>: View {
     }
 
     private var button: some View {
-        Button(action: configuration.activate) {
+        Button {
+            if !interactionState.isPresentingMenu { configuration.activate() }
+        } label: {
             content
                 .clipShape(RoundedRectangle(cornerRadius: configuration.cornerRadius, style: .continuous))
                 .overlay(alignment: .bottomLeading) {
@@ -145,7 +155,7 @@ private struct VideoCardSurface<Content: View>: View {
                         .accessibilityHidden(true)
                 }
                 .contentShape(RoundedRectangle(cornerRadius: configuration.cornerRadius, style: .continuous))
-                .background(VideoCardContextMenu(configuration: configuration))
+                .background(VideoCardContextMenu(configuration: configuration, interactionState: interactionState))
         }
         .buttonBorderShape(.roundedRectangle(radius: configuration.cornerRadius))
         .focused($focused)
@@ -155,8 +165,14 @@ private struct VideoCardSurface<Content: View>: View {
     }
 }
 
+@MainActor
+private final class VideoCardInteractionState {
+    var isPresentingMenu = false
+}
+
 private struct VideoCardContextMenu: UIViewRepresentable {
     let configuration: VideoCardFocus
+    let interactionState: VideoCardInteractionState
     @Environment(\.videoCardFocusMemory) private var focusMemory
     @Environment(\.locale) private var locale
     @Environment(\.isEnabled) private var isEnabled
@@ -165,6 +181,7 @@ private struct VideoCardContextMenu: UIViewRepresentable {
 
     func updateUIView(_ view: MenuView, context: Context) {
         view.configuration = isEnabled ? configuration : nil
+        view.interactionState = interactionState
         view.focusMemory = focusMemory
         view.locale = locale
         view.scheduleFocusCheck()
@@ -174,6 +191,7 @@ private struct VideoCardContextMenu: UIViewRepresentable {
 
     final class MenuView: UIView, UIContextMenuInteractionDelegate {
         var configuration: VideoCardFocus?
+        var interactionState: VideoCardInteractionState?
         weak var focusMemory: VideoCardFocusMemory?
         var locale = Locale.current
         private lazy var interaction = UIContextMenuInteraction(delegate: self)
@@ -246,6 +264,7 @@ private struct VideoCardContextMenu: UIViewRepresentable {
             interaction.dismissMenu()
             interaction.view?.removeInteraction(interaction)
             isPresented = false
+            interactionState?.isPresentingMenu = false
         }
 
         func stop() {
@@ -274,7 +293,7 @@ private struct VideoCardContextMenu: UIViewRepresentable {
                 }
             }
             var actions = [
-                action("Make main picture", symbol: "rectangle.inset.filled", perform: configuration.promote),
+                action("Make main video", symbol: "rectangle.inset.filled", perform: configuration.promote),
                 action("Replace channel", symbol: "arrow.triangle.2.circlepath", perform: configuration.replace)
             ]
             if let remove = configuration.remove {
@@ -288,6 +307,7 @@ private struct VideoCardContextMenu: UIViewRepresentable {
             animator: (any UIContextMenuInteractionAnimating)?
         ) {
             isPresented = true
+            interactionState?.isPresentingMenu = true
         }
 
         func contextMenuInteraction(
@@ -320,6 +340,8 @@ private struct VideoCardContextMenu: UIViewRepresentable {
             let complete: @MainActor () -> Void = { [weak self] in
                 guard let self else { return }
                 self.isPresented = false
+                self.interactionState?.isPresentingMenu = false
+                self.scheduleFocusCheck()
                 let action = self.pendingAction
                 self.pendingAction = nil
                 guard self.window != nil, self.configuration?.identifier == identifier else { return }

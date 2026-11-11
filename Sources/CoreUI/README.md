@@ -70,6 +70,11 @@ last actual native picture owner, before another picture can receive focus.
 The guide stays inside its own visible UIKit region and is enabled only while
 the toolbar owns focus. Its remembered owner is weak; missing or removed
 pictures fall back to ordinary native navigation.
+The optional video background sits behind the clipped picture but inside its
+native focus transform; an audio indicator must not change card sizing or styling.
+Native menu presentation synchronously suppresses the button's activation so
+holding Select cannot also trigger the short-press action. Dismissal restores
+normal activation, whether the menu was cancelled or an action was selected.
 
 `MultiviewLayoutSymbol` supplies real SF Symbol images for native labels and
 menus. Standard two/four-picture grids use Apple's symbols; original custom

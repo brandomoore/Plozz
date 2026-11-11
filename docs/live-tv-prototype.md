@@ -1859,13 +1859,19 @@ Apple TV multiview has no top-left title. Its toolbar is centered beneath the
 pictures, midway through the available lower space, and contains Add channel,
 Layout and More. More holds
 Favorite and, while expanded, Show all. Holding Select on a picture opens its
-native menu for Make main picture, Replace channel and Remove; Remove is
+native menu for Make main video, Replace channel and Remove; Remove is
 available only with multiple pictures. Loading pictures retain their menu, and
 failed pictures expose removal beside recovery actions. Channel actions always
 target their own picture rather than the last audible channel.
 Prepared video menus anchor to the picture without moving or snapshotting its
 renderer. Layout-changing actions wait for the native menu dismissal completion,
 so its returning preview cannot resize or reposition a picture during promotion.
+Holding Select does not also activate or promote the picture; cancellation leaves
+its position unchanged. A short Select or Make main video remains an explicit
+promotion action. The video with sound has a small, soft, live-color glow that
+fades when audio changes and remains visible when focus moves to the toolbar.
+It does not change picture geometry or replace the native focus treatment.
+Reduce Transparency hides the glow; Reduce Motion removes its fades.
 The toolbar keeps visible title-and-icon labels with
 the same native button treatment as normal playback, including the Layout menu.
 Their height stays transport-sized while width follows the action's title.

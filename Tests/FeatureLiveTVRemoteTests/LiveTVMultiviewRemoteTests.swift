@@ -4,6 +4,61 @@ import Vision
 
 final class LiveTVMultiviewRemoteTests: XCTestCase {
     @MainActor
+    func testAudioGlowRemainsOnTheAudibleVideoWhenFocusMovesToTheToolbar() throws {
+        continueAfterFailure = false
+        let app = fixtureApplication()
+        app.launchArguments = ["--live-root-fixture", "--visual-focus-fixture", "--audio-glow-fixture"]
+        app.launch()
+        defer { app.terminate() }
+        startProductionChannel(in: app)
+        openMultiviewPicker(in: app)
+        chooseGuideChannel(2, in: app)
+        select(pane("Sports 1", in: app), in: app, activate: false)
+        select(app.buttons["live-multiview-layout"], in: app, activate: false)
+        assertAudio("Sports 1", in: app)
+        let frames = [settledVideoFrame(1, in: app), settledVideoFrame(2, in: app)]
+        let first = capture("audio-glow-first-video-toolbar-focused", in: app)
+        select(pane("Sports 2", in: app), in: app, activate: false)
+        select(app.buttons["live-multiview-layout"], in: app, activate: false)
+        assertAudio("Sports 2", in: app)
+        XCTAssertEqual(settledVideoFrame(1, in: app), frames[0])
+        XCTAssertEqual(settledVideoFrame(2, in: app), frames[1])
+        let second = capture("audio-glow-second-video-toolbar-focused", in: app)
+        for frame in frames {
+            let nearEdge = CGRect(x: frame.midX - 100, y: frame.maxY + 1, width: 200, height: 8)
+            let farEdge = nearEdge.offsetBy(dx: 0, dy: 35)
+            let glow = pixelDifference(first, second, region: nearEdge, screen: app.frame)
+            XCTAssertGreaterThan(glow.mean, 0.003, "Audio must change the soft glow outside the picture.")
+            XCTAssertLessThan(glow.mean, 0.12, "The indicator should remain subtle.")
+            XCTAssertLessThan(pixelDifference(first, second, region: farEdge, screen: app.frame).mean, 0.002,
+                              "The glow must not spread far into the surrounding content.")
+        }
+        assertMetrics("Engines 2 loads 2 stops 0 audible 1", in: app)
+    }
+
+    @MainActor
+    func testCancellingRepeatedHeldSelectDoesNotPromoteAndShortSelectStillWorks() throws {
+        continueAfterFailure = false
+        let app = launchFourPictureMotionFixture()
+        defer { app.terminate() }
+        select(pane("Sports 4", in: app), in: app, activate: false)
+        for attempt in 1...2 {
+            XCUIRemote.shared.press(.select, forDuration: 1)
+            let menu = app.cells.containing(NSPredicate(format: "label == %@", "Make main video")).firstMatch
+            XCTAssertTrue(menu.waitForExistence(timeout: 5), "Held Select \(attempt) must present its menu.")
+            XCTAssertLessThan(app.otherElements["multiview-fixture-video-4"].frame.width,
+                              app.otherElements["multiview-fixture-video-1"].frame.width * 0.75)
+            XCUIRemote.shared.press(.menu)
+            assertNativeFocus(pane("Sports 4", in: app), in: app)
+            XCTAssertLessThan(app.otherElements["multiview-fixture-video-4"].frame.width,
+                              app.otherElements["multiview-fixture-video-1"].frame.width * 0.75)
+        }
+        XCUIRemote.shared.press(.select)
+        XCTAssertGreaterThan(settledVideoFrame(4, in: app).width, settledVideoFrame(1, in: app).width * 2)
+        assertMetrics("Engines 4 loads 4 stops 0 audible 1", in: app)
+    }
+
+    @MainActor
     func testUpFromToolbarReturnsDirectlyToTheLastFocusedPicture() async throws {
         continueAfterFailure = false
         let app = fixtureApplication()
@@ -252,8 +307,11 @@ final class LiveTVMultiviewRemoteTests: XCTestCase {
         assertAudio("Sports 4", in: app)
         let before = pictureMotion(in: app)
         XCUIRemote.shared.press(.select, forDuration: 1)
-        let menu = app.cells.containing(NSPredicate(format: "label == %@", "Make main picture")).firstMatch
+        let menu = app.cells.containing(NSPredicate(format: "label == %@", "Make main video")).firstMatch
         select(menu, in: app, activate: false)
+        let presented = pictureMotion(in: app)
+        XCTAssertLessThan(try XCTUnwrap(presented[3].last)[2], try XCTUnwrap(presented[0].last)[2] * 0.75,
+                          "Holding Select must only open the menu, not promote the video.")
         let counts = pictureMotion(in: app).map(\.count)
         XCUIRemote.shared.press(.select)
         assertNativeFocus(pane("Sports 4", in: app), in: app)
@@ -1178,7 +1236,7 @@ final class LiveTVMultiviewRemoteTests: XCTestCase {
         )).count, 3)
         XCUIRemote.shared.press(.select, forDuration: 1)
         XCTAssertTrue(app.cells.containing(NSPredicate(format: "label == %@", "Replace channel")).firstMatch.exists)
-        XCTAssertTrue(app.cells.containing(NSPredicate(format: "label == %@", "Make main picture")).firstMatch.exists)
+        XCTAssertTrue(app.cells.containing(NSPredicate(format: "label == %@", "Make main video")).firstMatch.exists)
         selectMenuItem("Remove", in: app)
         assertMetrics("Engines 2 loads 2 stops 1 audible 1", in: app)
         select(pane("Sports 1", in: app), in: app, activate: false)
@@ -1253,7 +1311,7 @@ final class LiveTVMultiviewRemoteTests: XCTestCase {
         XCUIRemote.shared.press(.select, forDuration: 1)
         try await Task.sleep(for: .seconds(11))
         capture("corner-pane-native-context-menu", in: app)
-        selectMenuItem("Make main picture", in: app)
+        selectMenuItem("Make main video", in: app)
         assertAudio("Sports 2", in: app)
         finishSetup(in: app)
         assertVideoFrame(2, equals: app.frame, in: app)

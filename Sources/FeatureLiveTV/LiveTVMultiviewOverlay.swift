@@ -944,7 +944,7 @@ private struct LiveTVMultiviewPaneControl: View {
                 Button("Listen", systemImage: "speaker.wave.2") { editing(); listen() }
                     .disabled(pane.preparation.current == nil)
                 #endif
-                Button("Make main picture", systemImage: "rectangle.inset.filled") { editing(); promote() }
+                Button("Make main video", systemImage: "rectangle.inset.filled") { editing(); promote() }
                     .disabled(pane.preparation.current == nil)
                 Button("Replace channel", systemImage: "arrow.triangle.2.circlepath", action: replace)
                 #if os(tvOS)

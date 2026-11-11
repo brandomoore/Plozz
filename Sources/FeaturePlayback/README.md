@@ -301,6 +301,16 @@ Fullscreen, multiview, external playback, and Reduce Transparency disable the re
 Transparency retains inset-picture rounding; fullscreen restores the unmasked,
 black-backed video surface.
 
+Apple TV Multiview uses a separate, much smaller audio indicator behind the
+audible picture: a low-opacity, blurred 12-point color stroke with an 8-point
+blur, not a focus border. It reuses the same 2 Hz, 24-by-14-pixel color sampler
+and native/software frame access. Neutral footage uses a faint neutral glow.
+The indicator and palette fade over 0.6 seconds without resizing or replacing
+the renderer. Moving focus to the toolbar leaves it on the audible video.
+Muted, unavailable, hidden, fullscreen, external, unauthorized, and background pictures stop sampling;
+Reduce Transparency removes the indicator and Reduce Motion disables its fades.
+The existing Audio on/Muted accessibility value remains authoritative.
+
 When loading a new mobile native source, disconnect the outgoing player from
 the retained `AVPlayerLayer` before teardown and replacement. Retuning must
 present real video frames on that same surface, including on iOS 27.1.
