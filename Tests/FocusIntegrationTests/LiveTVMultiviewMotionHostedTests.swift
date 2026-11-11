@@ -178,7 +178,7 @@ final class LiveTVMultiviewMotionHostedTests: XCTestCase {
         for width in [CGFloat(640), 1600] {
             model.frame = CGRect(x: 100, y: 60, width: width, height: width * 9 / 16)
             var samples: [(container: CGFloat, video: CGFloat)] = []
-            let deadline = ContinuousClock.now + .milliseconds(550)
+            let deadline = ContinuousClock.now + .milliseconds(650)
             while ContinuousClock.now < deadline {
                 try await Task.sleep(for: .milliseconds(16))
                 window.layoutIfNeeded()
@@ -194,7 +194,7 @@ final class LiveTVMultiviewMotionHostedTests: XCTestCase {
         for inset in [CGFloat(0), 28] {
             model.inset = inset
             var widths: [CGFloat] = []
-            let deadline = ContinuousClock.now + .milliseconds(500)
+            let deadline = ContinuousClock.now + .milliseconds(650)
             while ContinuousClock.now < deadline {
                 try await Task.sleep(for: .milliseconds(16))
                 window.layoutIfNeeded()
@@ -227,8 +227,8 @@ final class LiveTVMultiviewMotionHostedTests: XCTestCase {
                         presentsEffect: false, cornerRadius: 20, horizontalInset: model.inset,
                         request: 0, prefersFocus: true, focused: { _ in },
                         activate: {}, promote: {}, replace: {})))
-                    .animation(.easeInOut(duration: 0.32), value: model.frame)
-                    .animation(.easeInOut(duration: 0.32), value: model.inset)
+                    .animation(MultiviewMotion.animation, value: model.frame)
+                    .animation(MultiviewMotion.animation, value: model.inset)
             }
             .ignoresSafeArea()
         }
@@ -258,7 +258,7 @@ final class LiveTVMultiviewMotionHostedTests: XCTestCase {
         for editing in [true, false, true] {
             model.editing = editing
             var intermediateFrames = 0
-            let deadline = ContinuousClock.now + .milliseconds(500)
+            let deadline = ContinuousClock.now + .milliseconds(700)
             while ContinuousClock.now < deadline {
                 try await Task.sleep(for: .milliseconds(16))
                 window.layoutIfNeeded()
@@ -311,7 +311,7 @@ final class LiveTVMultiviewMotionHostedTests: XCTestCase {
                             cornerRadius: 20, horizontalInset: model.editing ? 28 : 0,
                             request: 0, prefersFocus: index == 0, focused: { _ in },
                             activate: {}, promote: {}, replace: {})))
-                        .animation(.easeInOut(duration: 0.32), value: model.editing)
+                        .animation(MultiviewMotion.animation, value: model.editing)
                 }
             }
             .ignoresSafeArea()
@@ -706,6 +706,31 @@ final class LiveTVMultiviewMotionHostedTests: XCTestCase {
         }
     }
 
+    func testPictureLayoutMotionTakesHalfASecondWithoutOvershooting() async throws {
+        let fixture = try await makeFixture()
+        defer { fixture.close() }
+        let start = ContinuousClock.now
+        fixture.model.frame = CGRect(x: 180, y: 120, width: 640, height: 360)
+        var intermediateFrames = 0
+        var completed = false
+        while ContinuousClock.now - start < .seconds(1) {
+            try await Task.sleep(for: .milliseconds(16))
+            fixture.window.layoutIfNeeded()
+            let width = fixture.model.engine.output.bounds.width
+            XCTAssertGreaterThanOrEqual(width, 639)
+            XCTAssertLessThanOrEqual(width, 1921)
+            if width > 641 && width < 1919 { intermediateFrames += 1 }
+            if abs(width - 640) <= 1 {
+                XCTAssertGreaterThan(ContinuousClock.now - start, .milliseconds(430),
+                                     "Layout must not snap or finish at the former 0.32-second pace.")
+                completed = true
+                break
+            }
+        }
+        XCTAssertTrue(completed)
+        XCTAssertGreaterThan(intermediateFrames, 8)
+    }
+
     func testEmbeddedVideoResizesThroughIntermediateBoundsWithoutReplacingOutput() async throws {
         let fixture = try await makeFixture()
         defer { fixture.close() }
@@ -713,7 +738,7 @@ final class LiveTVMultiviewMotionHostedTests: XCTestCase {
         let originalSuperview = output.superview
         let start = output.bounds.width
         fixture.model.frame = CGRect(x: 180, y: 120, width: 640, height: 360)
-        let samples = try await sample(fixture, milliseconds: 420)
+        let samples = try await sample(fixture, milliseconds: 650)
         XCTAssertGreaterThan(samples.filter { $0.width > 641 && $0.width < start - 1 }.count, 2,
                              "The actual engine view must resize, not just its SwiftUI wrapper.")
         try await waitForVideoSize(CGSize(width: 640, height: 360), in: fixture)
@@ -757,7 +782,7 @@ final class LiveTVMultiviewMotionHostedTests: XCTestCase {
         XCTAssertGreaterThan(midWidth, 481)
         XCTAssertLessThan(midWidth, 1919)
         fixture.model.frame = CGRect(x: 80, y: 40, width: 1600, height: 900)
-        let samples = try await sample(fixture, milliseconds: 420)
+        let samples = try await sample(fixture, milliseconds: 650)
         XCTAssertFalse(samples.contains { $0.width < 480 || $0.width > max(midWidth, 1600) + 2 })
         XCTAssertEqual(fixture.model.engine.output.bounds.width, 1600, accuracy: 1)
         XCTAssertEqual(fixture.model.engine.stops, 0)
@@ -771,10 +796,10 @@ final class LiveTVMultiviewMotionHostedTests: XCTestCase {
             let inset = LiveTVMultiviewGeometry.presentationFrame(
                 in: full, aspectRatio: 16 / 9, focusActive: true)
             fixture.model.frame = inset
-            let shrinking = try await sample(fixture, milliseconds: 420)
+            let shrinking = try await sample(fixture, milliseconds: 650)
             XCTAssertEqual(fixture.model.engine.output.bounds.width, inset.width, accuracy: 1)
             fixture.model.frame = full
-            let growing = try await sample(fixture, milliseconds: 420)
+            let growing = try await sample(fixture, milliseconds: 650)
             for samples in [shrinking, growing] {
                 let intermediate = samples.filter { $0.width > inset.width + 1 && $0.width < full.width - 1 }
                 if reduceMotion {
@@ -820,10 +845,10 @@ final class LiveTVMultiviewMotionHostedTests: XCTestCase {
         fixture.model.visible = false
         _ = try await sample(fixture, milliseconds: 80)
         XCTAssertNotNil(output.window, "The outgoing video must remain attached during its transition.")
-        _ = try await sample(fixture, milliseconds: 400)
+        _ = try await sample(fixture, milliseconds: 600)
         XCTAssertNil(output.window)
         fixture.model.visible = true
-        _ = try await sample(fixture, milliseconds: 420)
+        _ = try await sample(fixture, milliseconds: 650)
         XCTAssertTrue(output.window === fixture.window)
     }
 
@@ -885,10 +910,10 @@ final class LiveTVMultiviewMotionHostedTests: XCTestCase {
                             reflectionHeight: 0, cornerRadius: LiveTVMultiviewGeometry.videoCornerRadius))
                         .modifier(PrototypeVideoPlacement(frame: model.frame))
                         .transition(reduceMotion ? .identity : .scale(scale: 0.94).combined(with: .opacity))
-                        .animation(reduceMotion ? nil : .easeInOut(duration: 0.32), value: model.frame)
+                        .animation(reduceMotion ? nil : MultiviewMotion.animation, value: model.frame)
                 }
             }
-            .animation(reduceMotion ? nil : .easeInOut(duration: 0.32), value: model.visible)
+            .animation(reduceMotion ? nil : MultiviewMotion.animation, value: model.visible)
             .ignoresSafeArea()
         }
     }

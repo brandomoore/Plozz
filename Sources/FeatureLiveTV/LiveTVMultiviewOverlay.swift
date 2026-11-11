@@ -17,15 +17,24 @@ enum LiveTVMultiviewGeometry {
     ) -> CGRect {
         let picture = contentFrame(in: slot, aspectRatio: aspectRatio)
         #if os(tvOS)
-        let inset = focusActive ? focusInset(for: picture.width, layout: layout) : 0
+        let inset = focusActive && layout == .corner ? focusInset(for: picture.width) : 0
         return picture.insetBy(dx: inset, dy: inset * picture.height / max(1, picture.width))
         #else
         return picture
         #endif
     }
 
-    static func focusInset(for width: CGFloat, layout: LiveTVMultiviewLayout = .corner) -> CGFloat {
-        layout == .corner ? min(width * 0.2, max(28, width * 0.02)) : 0
+    static func focusInset(for width: CGFloat) -> CGFloat {
+        min(width * 0.2, max(28, width * 0.02))
+    }
+
+    static func focusContainerFrame(
+        for picture: CGRect, horizontalInset: CGFloat, layout: LiveTVMultiviewLayout
+    ) -> CGRect {
+        guard layout != .corner else { return picture }
+        // Packed frames describe the resting video; transparent clearance must not shrink it.
+        return picture.insetBy(
+            dx: -horizontalInset, dy: -horizontalInset * picture.height / max(1, picture.width))
     }
 
     @MainActor
@@ -697,9 +706,9 @@ private struct LiveTVMultiviewPaneViewport: View {
                     .position(x: frame.midX - viewport.minX, y: frame.midY - viewport.minY)
                     .zIndex(pane.id == coordinator.primaryPaneID ? 0 : 1)
                     #if os(tvOS)
-                    .animation(reduceMotion ? nil : .easeInOut(duration: 0.32), value: frame)
-                    .animation(reduceMotion ? nil : .easeInOut(duration: 0.32), value: focusFrame)
-                    .animation(reduceMotion ? nil : .easeInOut(duration: 0.32), value: pictureFrame)
+                    .animation(reduceMotion ? nil : MultiviewMotion.animation, value: frame)
+                    .animation(reduceMotion ? nil : MultiviewMotion.animation, value: focusFrame)
+                    .animation(reduceMotion ? nil : MultiviewMotion.animation, value: pictureFrame)
                     #endif
                 }
 
@@ -712,7 +721,7 @@ private struct LiveTVMultiviewPaneViewport: View {
         #endif
         .position(x: viewport.midX, y: viewport.midY)
         #if os(tvOS)
-        .animation(reduceMotion ? nil : .easeInOut(duration: 0.32), value: viewport)
+        .animation(reduceMotion ? nil : MultiviewMotion.animation, value: viewport)
         #endif
     }
 

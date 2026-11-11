@@ -85,6 +85,31 @@ final class LiveTVMultiviewGeometryTests: XCTestCase {
     }
 
     #if os(tvOS)
+    func testNativeFocusClearancePreservesPackedRestingPictureSizeAndPosition() {
+        let widths: [CGFloat] = [80, 441, 924, 1407]
+        let ratios: [CGFloat] = [4 / 3, 16 / 9, 21 / 9]
+        for layout in [LiveTVMultiviewLayout.sideBySide, .mainAndStack] {
+            for width in widths {
+                for ratio in ratios {
+                    let picture = CGRect(x: 24, y: 73, width: width, height: width / ratio)
+                    let inset = LiveTVMultiviewGeometry.focusInset(for: width)
+                    let container = LiveTVMultiviewGeometry.focusContainerFrame(
+                        for: picture, horizontalInset: inset, layout: layout)
+                    XCTAssertGreaterThan(container.width, picture.width)
+                    let resting = container.insetBy(dx: inset, dy: inset * container.height / container.width)
+                    XCTAssertEqual(resting.minX, picture.minX, accuracy: 0.001)
+                    XCTAssertEqual(resting.minY, picture.minY, accuracy: 0.001)
+                    XCTAssertEqual(resting.width, picture.width, accuracy: 0.001)
+                    XCTAssertEqual(resting.height, picture.height, accuracy: 0.001)
+                    XCTAssertEqual(LiveTVMultiviewGeometry.focusContainerFrame(
+                        for: picture, horizontalInset: 0, layout: layout), picture)
+                    XCTAssertEqual(LiveTVMultiviewGeometry.focusContainerFrame(
+                        for: picture, horizontalInset: inset, layout: .corner), picture)
+                }
+            }
+        }
+    }
+
     func testEditingReservesOnlyMeasuredBottomControlsAndNativeFocusClearance() {
         let size = CGSize(width: 1920, height: 1080)
         let insets = EdgeInsets(top: 24, leading: 24, bottom: 82 + 60 + 24, trailing: 24)

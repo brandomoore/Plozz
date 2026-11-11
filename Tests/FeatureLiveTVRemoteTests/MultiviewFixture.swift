@@ -138,7 +138,7 @@ struct MultiviewFixture: View {
             title: pane.channel?.name ?? "", audible: pane.id == coordinator.audiblePaneID,
             presentsEffect: effect,
             cornerRadius: coordinator.expandedPaneID == nil ? LiveTVMultiviewGeometry.videoCornerRadius : 0,
-            horizontalInset: effect ? LiveTVMultiviewGeometry.focusInset(for: frame.width, layout: coordinator.layout) : 0,
+            horizontalInset: effect ? LiveTVMultiviewGeometry.focusInset(for: frame.width) : 0,
             request: focusRequest, prefersFocus: pane.id == (requestedFocusID ?? coordinator.audiblePaneID),
             focused: { value in
                 if value { nativeFocusedPaneID = pane.id }
@@ -176,6 +176,9 @@ struct MultiviewFixture: View {
                         let roundsPicture = coordinator.isEnabled && coordinator.expandedPaneID == nil
                         let frame = roundsPicture ? LiveTVMultiviewGeometry.contentFrame(
                             in: slot, aspectRatio: pane.videoAspectRatio.map { CGFloat($0) }) : slot
+                        let focus = videoCardFocus(for: pane, frame: frame)
+                        let containerFrame = LiveTVMultiviewGeometry.focusContainerFrame(
+                            for: frame, horizontalInset: focus?.horizontalInset ?? 0, layout: coordinator.layout)
                         LiveChannelPlayerView(
                             channelID: prepared.channel.id, title: prepared.channel.name,
                             input: prepared.input, logoURL: nil,
@@ -215,12 +218,12 @@ struct MultiviewFixture: View {
                                 ))
                             }
                         )
-                        .environment(\.videoCardFocus, videoCardFocus(for: pane, frame: frame))
                         .clipShape(PrototypeVideoClip(
                             reflectionHeight: 0,
                             cornerRadius: roundsPicture ? LiveTVMultiviewGeometry.videoCornerRadius : 0))
-                        .modifier(PrototypeVideoPlacement(frame: frame))
-                        .animation(reduceMotion ? nil : .easeInOut(duration: 0.32), value: frame)
+                        .modifier(PrototypeVideoPlacement(frame: containerFrame, focus: focus))
+                        .animation(reduceMotion ? nil : MultiviewMotion.animation, value: frame)
+                        .animation(reduceMotion ? nil : MultiviewMotion.animation, value: focusPresented)
                         .zIndex(coordinator.isEnabled && coordinator.expandedPaneID == nil && pane.preparation.failure == nil
                             ? (pane.id != coordinator.primaryPaneID ? 4 : 3) : 0)
                         .allowsHitTesting(channelSelection == nil

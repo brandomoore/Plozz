@@ -3,6 +3,17 @@ import SwiftUI
 import UIKit
 #endif
 
+/// Shared picture-layout and renderer-entry motion, separate from native focus timing.
+public enum MultiviewMotion {
+    public static var animation: Animation {
+        #if os(tvOS)
+        .easeInOut(duration: 0.5)
+        #else
+        .easeInOut(duration: 0.32)
+        #endif
+    }
+}
+
 /// Focus belongs to the video surface, not the player or its transport controls.
 public struct VideoCardFocus {
     public let identifier: String

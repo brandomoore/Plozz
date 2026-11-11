@@ -637,7 +637,7 @@ public struct LiveChannelPlayerView: View {
                 )
         }
         .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: controlsVisible)
-        .animation(isMultiview && !reduceMotion ? .easeInOut(duration: 0.32) : nil, value: model == nil)
+        .animation(isMultiview && !reduceMotion ? MultiviewMotion.animation : nil, value: model == nil)
         #if os(iOS)
         .preference(
             key: LiveChannelSystemOverlaysHiddenKey.self,

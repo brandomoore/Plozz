@@ -386,7 +386,8 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
             #if os(iOS)
             let playerTransition: Animation? = reduceMotion ? nil : .smooth(duration: 0.35)
             #else
-            let playerTransition: Animation? = reduceMotion ? nil : .easeInOut(duration: 0.32)
+            let playerTransition: Animation? = reduceMotion ? nil
+                : (isMultiviewWorkspace ? MultiviewMotion.animation : .easeInOut(duration: 0.32))
             #endif
             ZStack(alignment: .topLeading) {
                 #if !os(tvOS)
@@ -416,6 +417,9 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
                                 in: slotFrame, aspectRatio: pane.videoAspectRatio.map { CGFloat($0) })
                             : slotFrame
                         let cornerRadius: CGFloat = roundsPicture ? LiveTVMultiviewGeometry.videoCornerRadius : 0
+                        let focus = videoCardFocus(for: pane, frame: videoFrame)
+                        let containerFrame = LiveTVMultiviewGeometry.focusContainerFrame(
+                            for: videoFrame, horizontalInset: focus?.horizontalInset ?? 0, layout: multiview.layout)
                         #else
                         let videoFrame = slotFrame
                         let cornerRadius: CGFloat = showingMultiview && multiview.isEditingLayout ? 10 : 0
@@ -462,7 +466,7 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
                         !usesMultiviewLayout && layoutDirection == .rightToLeft
                             ? CGRect(x: geometry.size.width - videoFrame.maxX, y: videoFrame.minY,
                                      width: videoFrame.width, height: videoFrame.height)
-                            : videoFrame, focus: videoCardFocus(for: pane, frame: videoFrame)))
+                            : containerFrame, focus: focus))
                     #else
                     .position(
                         x: !showingMultiview && layoutDirection == .rightToLeft
@@ -663,7 +667,7 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
             title: pane.channel?.name ?? "", audible: pane.id == multiview.audiblePaneID,
             presentsEffect: presentsEffect,
             cornerRadius: multiview.expandedPaneID == nil ? LiveTVMultiviewGeometry.videoCornerRadius : 0,
-            horizontalInset: presentsEffect ? LiveTVMultiviewGeometry.focusInset(for: frame.width, layout: multiview.layout) : 0,
+            horizontalInset: presentsEffect ? LiveTVMultiviewGeometry.focusInset(for: frame.width) : 0,
             request: multiviewFocusRequest,
             prefersFocus: showingMultiview && pane.id == (multiviewRequestedFocusID ?? multiview.audiblePaneID),
             focused: { focused in

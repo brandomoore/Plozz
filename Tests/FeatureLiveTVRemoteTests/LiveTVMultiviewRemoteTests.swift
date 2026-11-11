@@ -4,6 +4,51 @@ import Vision
 
 final class LiveTVMultiviewRemoteTests: XCTestCase {
     @MainActor
+    func testNativePictureFocusLiftIsVisibleOutsideItsRestingEdges() {
+        continueAfterFailure = false
+        let app = fixtureApplication()
+        app.launchArguments = ["--live-root-fixture", "--visual-focus-fixture"]
+        app.launch()
+        defer { app.terminate() }
+        startProductionChannel(in: app)
+        openMultiviewPicker(in: app)
+        chooseGuideChannel(2, in: app)
+        for channel in 1...2 {
+            assertNativePictureLift(channel, in: app)
+        }
+        assertMetrics("Engines 2 loads 2 stops 0 audible 1", in: app)
+    }
+
+    @MainActor
+    func testMainAndStackShowsNativeLiftForLargeAndSmallPictures() {
+        let app = launchFourPictureMotionFixture()
+        defer { app.terminate() }
+        for channel in 1...4 {
+            assertNativePictureLift(channel, in: app)
+        }
+        assertMetrics("Engines 4 loads 4 stops 0 audible 1", in: app)
+    }
+
+    @MainActor
+    private func assertNativePictureLift(_ channel: Int, in app: XCUIApplication) {
+        select(app.buttons["live-multiview-layout"], in: app, activate: false)
+        let video = app.otherElements["multiview-fixture-video-\(channel)"]
+        let resting = video.frame
+        let before = capture("picture-\(channel)-native-focus-resting", in: app)
+        select(pane("Sports \(channel)", in: app), in: app, activate: false)
+        assertNativeFocus(pane("Sports \(channel)", in: app), in: app)
+        let after = capture("picture-\(channel)-native-focus-lifted", in: app)
+        XCTAssertGreaterThan(video.frame.width, resting.width + 10)
+        for x in [resting.minX - 6, resting.maxX + 2] {
+            let edge = CGRect(x: x, y: resting.midY - 30, width: 4, height: 60)
+            let change = pixelDifference(before, after, region: edge, screen: app.frame)
+            XCTAssertGreaterThan(change.fraction, 0.8,
+                                 "Native lift must draw the video beyond its resting edge, not just enlarge its AX frame.")
+            XCTAssertGreaterThan(change.mean, 0.15)
+        }
+    }
+
+    @MainActor
     func testPromotingPictureFromMenuKeepsMotionInsideItsOldAndNewSlots() throws {
         let app = launchFourPictureMotionFixture()
         defer { app.terminate() }
@@ -489,8 +534,11 @@ final class LiveTVMultiviewRemoteTests: XCTestCase {
         XCUIRemote.shared.press(.left)
         XCTAssertTrue(app.buttons["live-multiview-layout"].waitForExistence(timeout: 5))
         capture("production-controls-return-after-idle", in: app)
-        XCTAssertLessThan(videos[0].frame.width, app.frame.width / 2)
-        XCTAssertLessThan(videos[1].frame.width, app.frame.width / 2)
+        let restoredWidths = videos.map { $0.frame.width }.sorted()
+        for (restored, original) in zip(restoredWidths, firstFocus.map(\.width).sorted()) {
+            XCTAssertEqual(restored, original, accuracy: 2,
+                           "Waking restores the same resting and natively lifted picture sizes.")
+        }
         assertMetrics("Engines 2 loads 2 stops 0 audible 1", in: app)
         select(app.buttons["live-multiview-layout"], in: app)
         try await Task.sleep(for: .seconds(11))
