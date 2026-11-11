@@ -553,6 +553,13 @@ entry for that control; a later refresh shows newly populated directories.
 Failures are logged and remain unknown, never converted into an empty result.
 This check does not load collection members or populate the full browse cache.
 
+Collection picker choices are not reconstructed from saved IDs or direct item
+reads. A disabled Jellyfin Collections library can disappear from user views and
+return an empty BoxSet list even while a known collection and its members remain
+directly readable. Fresh discovery must clear cached choices in that case.
+The user-facing API does not distinguish disabled from genuinely empty here, so
+Plozz does not invent a disabled status or request administrative library settings.
+
 The synthetic directory ID is navigation identity only. Browsing it uses the same
 cached BoxSet listing without `ParentId`; the in-library shortcut still forwards
 its real library ID. It offers collection sorting, not media filters or a

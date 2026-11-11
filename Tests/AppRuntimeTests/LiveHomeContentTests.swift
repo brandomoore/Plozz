@@ -3,6 +3,7 @@ import CoreNetworking
 import Foundation
 import ProviderJellyfin
 import ProviderPlex
+import ProviderSilo
 import XCTest
 
 private actor LiveRecommendationHTTP: HTTPClient {
@@ -20,6 +21,43 @@ final class LiveHomeContentTests: XCTestCase {
     func testJellyfinCustomRowSourcesAndPaging() async throws { try await verify(.jellyfin) }
     func testEmbyCustomRowSourcesAndPaging() async throws { try await verify(.emby) }
     func testPlexCustomRowSourcesAndPaging() async throws { try await verify(.plex) }
+
+    func testSiloLibraryAndServerRowComposition() async throws {
+        let provider = try await provider(.silo)
+        let account = ResolvedAccount(account: .init(id: "live-silo", from: provider.session), provider: provider)
+        let libraries = try await provider.libraries()
+        let library = try XCTUnwrap(libraries.first { $0.kind == .movie && !$0.isMusic })
+        let layout = try await provider.serverHomeLayout()
+        let sections = try XCTUnwrap(layout).sections
+        XCTAssertFalse(sections.isEmpty, "Native server rows must actually be present")
+        var sources: [HomeContentSource] = [.init(
+            feed: .library(.movie), accountID: account.account.id, serverUserID: provider.session.userID,
+            libraryID: library.id, title: "Internal library"
+        )]
+        sources += sections.prefix(2).map {
+            .init(feed: .server($0), accountID: account.account.id, serverUserID: provider.session.userID,
+                  libraryID: $0.libraryID, title: "Internal server row")
+        }
+        let session = HomeContentPageLoader.Session(accounts: [account], visibility: .default) { _ in
+            XCTFail("Silo library and server rows must not fetch global snapshots")
+            return []
+        }
+        for source in sources {
+            let page = try await session.load(source, start: 0, limit: 5)
+            XCTAssertLessThanOrEqual(page.items.count, 5)
+        }
+        let pager = HomeContentPager(sources: sources, serverInfo: [account].sourceServerInfo()) {
+            try await session.load($0, start: $1, limit: $2)
+        }
+        for limit in [1, 5, 20, 60] {
+            let page = try await pager.loadNext(limit: limit)
+            XCTAssertTrue(page.failures.isEmpty, "Native Silo sources must not silently disappear")
+            XCTAssertFalse(page.items.isEmpty)
+            XCTAssertEqual(Set(page.items.map(\.stablePresentationID)).count, page.items.count)
+            print("LiveHomeContent provider=silo sources=\(sources.count) combinedLimit=\(limit) items=\(page.items.count)")
+            if !page.hasMore { break }
+        }
+    }
 
     func testJellyfinScopedRecommendationReuse() async throws {
         let http = LiveRecommendationHTTP()
@@ -110,9 +148,28 @@ final class LiveHomeContentTests: XCTestCase {
         let serverID: String
         let deviceID: String
         let token: String
+        let siloTokens: SiloTokenPair?
+        let siloProfile: SiloProfile?
     }
 
-    private enum ConfigurationError: Error { case invalid }
+    private struct LiveHomeCredentialStore: RotatingCredentialStoring {
+        let context: ProviderResolutionContext
+
+        func credential(accountID: String, revision: CredentialRevision) throws -> String {
+            guard accountID == context.accountID, revision == context.credentialRevision else {
+                throw AppError.unauthorized
+            }
+            return context.session.accessToken
+        }
+
+        func rotateCredential(
+            accountID: String, revision: CredentialRevision, expected: String, replacement: String
+        ) throws {
+            throw ConfigurationError.unexpectedCredentialRotation
+        }
+    }
+
+    private enum ConfigurationError: Error { case invalid, unexpectedCredentialRotation }
 
     private func provider(_ kind: ProviderKind, http: any HTTPClient = URLSessionHTTPClient()) async throws -> any MediaProvider {
         guard let input = ProcessInfo.processInfo.environment["PLOZZ_LIVE_HOME_BROKER"] else {
@@ -131,6 +188,20 @@ final class LiveHomeContentTests: XCTestCase {
               config.baseURL.host != nil, config.baseURL.user == nil,
               config.baseURL.password == nil, config.baseURL.query == nil else {
             throw ConfigurationError.invalid
+        }
+        if kind == .silo {
+            let tokens = try XCTUnwrap(config.siloTokens)
+            let profile = try XCTUnwrap(config.siloProfile)
+            XCTAssertFalse(profile.has_pin)
+            let session = try await SiloAuthentication(baseURL: config.baseURL, http: http).makeSession(
+                tokens: tokens, profile: profile, profileToken: nil, deviceID: config.deviceID
+            )
+            let context = ProviderResolutionContext(
+                session: session, accountID: "live-silo", credentialRevision: CredentialRevision()
+            )
+            return try SiloProvider(
+                context: context, credentials: LiveHomeCredentialStore(context: context), http: http
+            )
         }
         let session = UserSession(
             server: .init(id: config.serverID, name: "Internal Home verification", baseURL: config.baseURL, provider: kind),
@@ -162,10 +233,16 @@ final class LiveHomeContentTests: XCTestCase {
             sources += shelves.prefix(2).map { source(.recommendation(sectionID: $0.id, kind: .movie)) }
             stage = "collection discovery"
             let collections = try await provider.collections(in: library.id, page: .init(limit: 3))
-            sources += collections.items.prefix(1).map { source(.collection($0.id)) }
+            XCTAssertGreaterThanOrEqual(collections.items.count, 2,
+                                        "\(kind): live acceptance requires two discoverable populated collections")
+            let collectionSources = collections.items.prefix(2).map { source(.collection($0.id)) }
+            sources += collectionSources
             stage = "playlist discovery"
             let playlists = try await provider.videoPlaylists(in: library.id, page: .init(limit: 3))
-            sources += playlists.items.prefix(1).map { source(.playlist($0.id)) }
+            XCTAssertGreaterThanOrEqual(playlists.items.count, 2,
+                                        "\(kind): live acceptance requires two discoverable populated video playlists")
+            let playlistSources = playlists.items.prefix(2).map { source(.playlist($0.id)) }
+            sources += playlistSources
             stage = "history snapshot"
             let history = try await provider.continueWatching(limit: 20).map {
                 $0.taggingSource(account.account.id)
@@ -174,14 +251,17 @@ final class LiveHomeContentTests: XCTestCase {
             let snapshot: HomeContentPageLoader.HomeSnapshot = { _ in history }
 
             var fetchedPages = 0
+            var containerItems: [HomeContentSource: [MediaItem]] = [:]
             for source in sources {
                 stage = "individual \(feedName(source))"
                 let began = ContinuousClock.now
                 let session = HomeContentPageLoader.Session(accounts: [account], visibility: .default, homeSnapshot: snapshot)
                 var start = 0
                 var seen = Set<String>()
+                var loaded: [MediaItem] = []
                 for limit in [1, 5, 20] {
                     let page = try await session.load(source, start: start, limit: limit)
+                    loaded += page.items
                     fetchedPages += 1
                     XCTAssertLessThanOrEqual(page.items.count, limit, "\(kind): \(stage)")
                     XCTAssertTrue(page.items.allSatisfy { !$0.id.isEmpty }, "\(kind): \(stage)")
@@ -191,8 +271,43 @@ final class LiveHomeContentTests: XCTestCase {
                     XCTAssertGreaterThan(next, start, "\(kind): \(stage)")
                     start = next
                 }
+                switch source.feed {
+                case .collection, .playlist:
+                    XCTAssertFalse(loaded.isEmpty, "\(kind): \(stage) requires populated live content")
+                    containerItems[source] = loaded
+                default: break
+                }
                 print("LiveHomeContent provider=\(kind.rawValue) source=\(feedName(source))"
                       + " elapsedMs=\(elapsedMilliseconds(since: began))")
+            }
+
+            for (name, selected) in [
+                ("collections", collectionSources),
+                ("playlists", playlistSources),
+                ("collections-and-playlists", collectionSources + playlistSources)
+            ] {
+                stage = name
+                guard !selected.isEmpty else { continue }
+                let session = HomeContentPageLoader.Session(accounts: [account], visibility: .default, homeSnapshot: snapshot)
+                let pager = HomeContentPager(sources: selected, serverInfo: [account].sourceServerInfo()) {
+                    try await session.load($0, start: $1, limit: $2)
+                }
+                var result: [MediaItem] = []
+                for limit in [1, 5, 20, 60] {
+                    let page = try await pager.loadNext(limit: limit)
+                    XCTAssertTrue(page.failures.isEmpty, "\(kind): \(stage) source failure")
+                    XCTAssertEqual(Set(page.items.map(\.stablePresentationID)).count, page.items.count)
+                    result = page.items
+                    if !page.hasMore { break }
+                }
+                let nativeIDs = Set(result.flatMap { [$0.id] + $0.sources.map(\.itemID) })
+                for selectedSource in selected {
+                    let expected = containerItems[selectedSource] ?? []
+                    XCTAssertTrue(expected.allSatisfy { nativeIDs.contains($0.id) },
+                                  "\(kind): \(stage) dropped a container member")
+                }
+                print("LiveHomeContent provider=\(kind.rawValue) composition=\(name)"
+                      + " sources=\(selected.count) items=\(result.count)")
             }
 
             stage = "combined preview and browse"
@@ -226,8 +341,8 @@ final class LiveHomeContentTests: XCTestCase {
                 if !page.hasMore { break }
             }
             print("LiveHomeContent provider=\(kind.rawValue) sources=\(sources.count)"
-                  + " recommendations=\(min(2, shelves.count)) collections=\(min(1, collections.items.count))"
-                  + " playlists=\(min(1, playlists.items.count)) history=\(history.count)"
+                  + " recommendations=\(min(2, shelves.count)) collections=\(collectionSources.count)"
+                  + " playlists=\(playlistSources.count) history=\(history.count)"
                   + " individualPages=\(fetchedPages) combinedItems=\(count)")
         } catch {
             XCTFail("LiveHomeContent provider=\(kind.rawValue) stage=\(stage)"

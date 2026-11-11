@@ -100,15 +100,26 @@ The broker endpoint must use an unguessable run-specific path and bind only to
 `LiveHomeContentTests` in `AppRuntimeTests` uses the same private broker contract
 with `TEST_RUNNER_PLOZZ_LIVE_HOME_BROKER`. It is read-only and does not enable the
 watch-history tests. It checks production Plex/Jellyfin/Emby custom-row loading:
-small successive pages for libraries, recommendations, sampled collections and
+small successive pages for libraries, recommendations, populated collections and
 playlists, then combined preview/browse pages with a real history snapshot.
 It also combines all three providers' libraries and checks retained playback
 references across merged titles. Page timings are recorded as live-server
 observations, not repeatable benchmark thresholds or physical-device UI evidence.
-Discovery samples at most one movie library, two recommendations, one collection
-and one playlist per provider. Missing optional source fixtures are reported as
-counts, not claimed as exercised coverage. The broker owns temporary logins and
-must close and revoke them after the bounded run.
+Discovery samples one movie library and up to two recommendations, and requires
+two discoverable populated collections and two video playlists per provider.
+Missing required containers fail acceptance rather than silently dropping a
+source type. Collection-only, playlist-only, and mixed-container rows check
+deduplication and retained native member identities without a library feed
+masking missing content. Fixtures must be provisioned separately with permission;
+the tests never create or modify server content.
+
+Native Silo coverage uses the broker's `/silo` response with the common fields
+plus ephemeral `siloTokens` and `siloProfile` objects. It validates library and
+native server-row composition through the production provider, not the Jellyfin
+compatibility port. It does not claim Silo collection, video-playlist, or
+file-share coverage. Fresh Silo credentials must outlive the bounded run; an
+unexpected rotation fails rather than changing the broker-owned login.
+The broker owns temporary logins and must close and revoke them after the run.
 
 `LiveWatchProgressTests` in `AppRuntimeTests` exercises production Jellyfin,
 Emby and Plex resume writers, metadata reads, Continue Watching feeds and the
