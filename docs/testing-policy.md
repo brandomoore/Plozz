@@ -97,6 +97,19 @@ The broker endpoint must use an unguessable run-specific path and bind only to
 
 ## Live watch-state verification
 
+`LiveHomeContentTests` in `AppRuntimeTests` uses the same private broker contract
+with `TEST_RUNNER_PLOZZ_LIVE_HOME_BROKER`. It is read-only and does not enable the
+watch-history tests. It checks production Plex/Jellyfin/Emby custom-row loading:
+small successive pages for libraries, recommendations, sampled collections and
+playlists, then combined preview/browse pages with a real history snapshot.
+It also combines all three providers' libraries and checks retained playback
+references across merged titles. Page timings are recorded as live-server
+observations, not repeatable benchmark thresholds or physical-device UI evidence.
+Discovery samples at most one movie library, two recommendations, one collection
+and one playlist per provider. Missing optional source fixtures are reported as
+counts, not claimed as exercised coverage. The broker owns temporary logins and
+must close and revoke them after the bounded run.
+
 `LiveWatchProgressTests` in `AppRuntimeTests` exercises production Jellyfin,
 Emby and Plex resume writers, metadata reads, Continue Watching feeds and the
 shared Home admission policy. Set `TEST_RUNNER_PLOZZ_LIVE_WATCH_BROKER` to a

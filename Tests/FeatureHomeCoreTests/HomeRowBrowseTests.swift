@@ -418,6 +418,47 @@ final class HomeRowBrowseTests: XCTestCase {
         XCTAssertEqual(model.items.first?.id, "142")
     }
 
+    func testCustomRowFailedCompleteQueryKeepsPreviousProjectionUntilRetry() async throws {
+        let source = Pages(items(143), failureAt: 60)
+        let pager = HomeContentPager(sources: [.init(home: .watchlist), .init(home: .continueWatching)]) {
+            feed, start, limit in
+            if feed.home == .continueWatching { return .init(items: [], nextOffset: nil) }
+            return try await source.falliblePage(start, limit)
+        }
+        let model = HomeRowBrowseModel(title: "Custom row", contentPager: pager)
+        await model.load()
+        XCTAssertEqual(model.items.count, 60)
+        let original = model.items
+        model.query.sort = .init(field: .name, direction: .descending)
+        model.query.filters = .init(filter: .unwatched)
+        await model.load()
+        XCTAssertEqual(model.error, .serverUnreachable)
+        XCTAssertEqual(model.items.map(\.id), original.map(\.id))
+        XCTAssertNotEqual(model.query, model.appliedQuery)
+        await source.recover()
+        await model.load()
+        XCTAssertNil(model.error)
+        XCTAssertFalse(model.hasMore)
+        XCTAssertEqual(model.items.count, 71)
+        XCTAssertEqual(model.items.first?.id, "141")
+        XCTAssertEqual(model.query, model.appliedQuery)
+    }
+
+    func testCustomRowDefaultOrderStillPublishesHealthySourcesWithFailure() async {
+        let healthy = items(3)
+        let pager = HomeContentPager(sources: [.init(home: .watchlist), .init(home: .continueWatching)]) {
+            feed, start, limit in
+            if feed.home == .watchlist { throw AppError.serverUnreachable }
+            return .prefix(healthy, startIndex: start, limit: limit)
+        }
+        let model = HomeRowBrowseModel(title: "Custom row", contentPager: pager)
+        await model.load()
+        XCTAssertEqual(model.items.map(\.id), healthy.map(\.id))
+        XCTAssertEqual(model.error, .serverUnreachable)
+        XCTAssertTrue(model.hasMore)
+        XCTAssertTrue(model.appliedQuery.isDefault)
+    }
+
     func testScopeChangeClearsItemsAndRejectsLatePage() async {
         var current = true
         let gate = PageGate()

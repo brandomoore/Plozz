@@ -173,7 +173,9 @@ public struct JellyfinProvider: LibraryItemBatchProviding, ServerRatingsProvidin
                 localizedTitle: localizedTitle,
                 items: Array(items.prefix(limit)),
                 isHomeDefault: forHome ? false : nil,
-                browseID: "\(recommendation.RecommendationType):\(recommendation.CategoryId ?? subject ?? "")"
+                // Emby reshuffles this endpoint without a continuation cursor.
+                browseID: kind == .emby ? nil
+                    : "\(recommendation.RecommendationType):\(recommendation.CategoryId ?? subject ?? "")"
             )
         }
     }

@@ -16,6 +16,16 @@ public enum HomeContentPageLoader {
         private let homeSnapshot: HomeSnapshot
         private var snapshots: [HomeGlobalRow: [MediaItem]] = [:]
         private var recommendations: [HomeContentSource.ID: LibrarySection] = [:]
+        private struct RecommendationKey: Hashable {
+            let accountID: String
+            let libraryID: String
+            let kind: MediaItemKind
+        }
+        private struct RecommendationCatalog {
+            let gate = ConcurrencyLimiter(limit: 1)
+            var shelves: [LibrarySection]?
+        }
+        private var recommendationCatalogs: [RecommendationKey: RecommendationCatalog] = [:]
         private struct PageKey: Hashable { let source: HomeContentSource.ID; let start: Int; let limit: Int }
         private var pages: [PageKey: HomeRowPage] = [:]
         private let cachesPages: Bool
@@ -44,9 +54,17 @@ public enum HomeContentPageLoader {
                 guard let account = accounts.first(where: source.matches), let library = source.libraryID else {
                     throw AppError.notFound
                 }
-                let shelves = try await account.provider.homeHubs(libraryID: library, kind: kind, limit: 20, includeUnpromoted: true)
+                let catalogKey = RecommendationKey(accountID: account.account.id, libraryID: library, kind: kind)
+                let catalog = recommendationCatalogs[catalogKey] ?? RecommendationCatalog()
+                recommendationCatalogs[catalogKey] = catalog
+                let shelves = try await catalog.gate.runUnlessCancelled {
+                    try await self.recommendationCatalog(catalogKey, provider: account.provider)
+                }
                 try Task.checkCancellation()
-                guard let shelf = shelves.first(where: { $0.id == id }) else { throw AppError.notFound }
+                guard let shelf = shelves.first(where: { $0.id == id }) else {
+                    recommendationCatalogs[catalogKey]?.shelves = nil
+                    throw AppError.notFound
+                }
                 recommendations[source.id] = shelf
             }
             let page = try await HomeContentPageLoader.load(
@@ -56,6 +74,18 @@ public enum HomeContentPageLoader {
             try Task.checkCancellation()
             if cachesPages { pages[key] = page }
             return page
+        }
+
+        private func recommendationCatalog(
+            _ key: RecommendationKey, provider: any MediaProvider
+        ) async throws -> [LibrarySection] {
+            if let shelves = recommendationCatalogs[key]?.shelves { return shelves }
+            let shelves = try await provider.homeHubs(
+                libraryID: key.libraryID, kind: key.kind, limit: 20, includeUnpromoted: true
+            )
+            try Task.checkCancellation()
+            recommendationCatalogs[key]?.shelves = shelves
+            return shelves
         }
 
         private func snapshot(_ kind: HomeGlobalRow) async throws -> [MediaItem] {
@@ -107,7 +137,8 @@ public enum HomeContentPageLoader {
             } else if id == LibraryHomeRowKind.nextUp.rawValue {
                 page = try await provider.homeRowPage(.nextUp(libraryID: library), startIndex: start, limit: limit)
             } else {
-                if let recommendation, recommendation.items.count > start + limit {
+                if let recommendation,
+                   recommendation.browseID == nil || recommendation.items.count > start + limit {
                     page = .prefix(recommendation.items, startIndex: start, limit: limit)
                 } else if let recommendation, let browseID = recommendation.browseID {
                     page = try await provider.homeRowPage(

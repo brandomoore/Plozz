@@ -4,6 +4,70 @@ import XCTest
 
 @MainActor
 final class MultiSourceRowTests: XCTestCase {
+    func testConcurrentRecommendationsShareOneLibraryDiscoverySnapshot() async throws {
+        let provider = MultiSourceProvider()
+        let account = ResolvedAccount(account: .init(id: "account", from: provider.session), provider: provider)
+        let sources = ["shelf", "second-shelf"].map {
+            HomeContentSource(
+                feed: .recommendation(sectionID: $0, kind: .movie),
+                accountID: "account", serverUserID: "viewer", libraryID: "movies", title: "Recommended"
+            )
+        }
+        let loader = HomeContentPageLoader.Session(accounts: [account], visibility: .default) { _ in [] }
+        async let first = loader.load(sources[0], start: 0, limit: 3)
+        async let second = loader.load(sources[1], start: 0, limit: 3)
+        let pages = try await [first, second]
+        XCTAssertEqual(pages.map { $0.items.count }, [3, 3])
+        XCTAssertEqual(pages[0].items.first?.id, "recommendation-0")
+        XCTAssertEqual(pages[1].items.first?.id, "second-0")
+        let calls = await provider.calls
+        XCTAssertEqual(calls.filter { $0 == "catalog:movies" }.count, 1)
+    }
+
+    func testCancelledRecommendationDiscoveryDoesNotPoisonRetry() async throws {
+        let provider = MultiSourceProvider(catalogDelay: .milliseconds(50))
+        let account = ResolvedAccount(account: .init(id: "account", from: provider.session), provider: provider)
+        let source = HomeContentSource(
+            feed: .recommendation(sectionID: "shelf", kind: .movie),
+            accountID: "account", serverUserID: "viewer", libraryID: "movies", title: "Recommended"
+        )
+        let loader = HomeContentPageLoader.Session(accounts: [account], visibility: .default) { _ in [] }
+        let cancelled = Task { try await loader.load(source, start: 0, limit: 3) }
+        await provider.waitForCatalog()
+        cancelled.cancel()
+        do { _ = try await cancelled.value; XCTFail("Cancelled discovery must not publish") }
+        catch { XCTAssertTrue(error is CancellationError) }
+        let retry = try await loader.load(source, start: 0, limit: 3)
+        XCTAssertEqual(retry.items.count, 3)
+        let calls = await provider.calls
+        XCTAssertEqual(calls.filter { $0 == "catalog:movies" }.count, 2)
+    }
+
+    func testRecommendationDiscoveryDoesNotShareAcrossAccountsOrLibraries() async throws {
+        let first = MultiSourceProvider()
+        let second = MultiSourceProvider()
+        let accounts = [
+            ResolvedAccount(account: .init(id: "first", from: first.session), provider: first),
+            ResolvedAccount(account: .init(id: "second", from: second.session), provider: second)
+        ]
+        let loader = HomeContentPageLoader.Session(accounts: accounts, visibility: .default) { _ in [] }
+        for account in accounts {
+            for library in ["movies", "other-movies"] {
+                let source = HomeContentSource(
+                    feed: .recommendation(sectionID: "shelf", kind: .movie),
+                    accountID: account.account.id, serverUserID: "viewer", libraryID: library, title: "Recommended"
+                )
+                let page = try await loader.load(source, start: 0, limit: 3)
+                XCTAssertEqual(page.items.count, 3)
+                XCTAssertTrue(page.items.allSatisfy { $0.sourceAccountID == account.account.id })
+            }
+        }
+        for provider in [first, second] {
+            let calls = await provider.calls
+            XCTAssertEqual(calls, ["catalog:movies", "catalog:other-movies"])
+        }
+    }
+
     func testPausedHomeSnapshotsRequireSeparateAuthorizationAndMatchingVisibility() throws {
         let saved = MediaItem(id: "saved", title: "Saved", kind: .movie)
         let store = InMemoryHomeContentStore(.init(watchlist: [saved]))
@@ -195,9 +259,12 @@ private actor MultiSourceProvider: MediaProvider {
     nonisolated let kind: ProviderKind
     nonisolated let session: UserSession
     var calls: [String] = []
+    let catalogDelay: Duration
+    var catalogWaiters: [CheckedContinuation<Void, Never>] = []
 
-    init(kind: ProviderKind = .jellyfin) {
+    init(kind: ProviderKind = .jellyfin, catalogDelay: Duration = .zero) {
         self.kind = kind
+        self.catalogDelay = catalogDelay
         session = .init(
             server: .init(id: "server", name: "Fixture", baseURL: URL(string: "https://fixture.invalid")!, provider: kind),
             userID: "viewer", userName: "Viewer", deviceID: "device", accessToken: "fixture"
@@ -224,7 +291,18 @@ private actor MultiSourceProvider: MediaProvider {
         return page("library", request: request)
     }
     func homeHubs(libraryID: String, kind: MediaItemKind, limit: Int, includeUnpromoted: Bool) async throws -> [LibrarySection] {
-        [.init(id: "shelf", title: "Recommended", items: Array(items("recommendation").prefix(limit)), browseID: "native-shelf")]
+        calls.append("catalog:\(libraryID)")
+        catalogWaiters.forEach { $0.resume() }
+        catalogWaiters = []
+        if catalogDelay > .zero { try await Task.sleep(for: catalogDelay) }
+        return [
+            .init(id: "shelf", title: "Recommended", items: Array(items("recommendation").prefix(limit)), browseID: "native-shelf"),
+            .init(id: "second-shelf", title: "Other", items: Array(items("second").prefix(limit)), browseID: "native-second")
+        ]
+    }
+    func waitForCatalog() async {
+        if calls.contains(where: { $0.hasPrefix("catalog:") }) { return }
+        await withCheckedContinuation { catalogWaiters.append($0) }
     }
     func homeRowPage(_ feed: HomeRowFeed, startIndex: Int, limit: Int) async throws -> HomeRowPage {
         switch feed {

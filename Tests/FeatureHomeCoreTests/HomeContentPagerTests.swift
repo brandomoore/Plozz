@@ -4,6 +4,32 @@ import XCTest
 @testable import TestSupportPerformance
 
 final class HomeContentPagerTests: XCTestCase {
+    func testUnequalAndEmptySourceMatrixMatchesRoundRobinReference() async throws {
+        for counts in [[0, 0, 0], [0, 1, 7], [7, 0, 1], [1, 7, 0], [21, 3, 11], [3, 21, 11]] {
+            let expected = (0..<(counts.max() ?? 0)).flatMap { item in
+                counts.indices.compactMap { source in item < counts[source] ? "\(source)-\(item)" : nil }
+            }
+            for pageLimit in [1, 2, 5, 20] {
+                let fixture = ContentFixture(counts: counts, pageSizes: [1, 3, 7])
+                let pager = fixture.pager()
+                var previous: [String] = []
+                var finished = false
+                for _ in 0..<100 {
+                    let result = try await pager.loadNext(limit: pageLimit)
+                    let ids = result.items.map(\.id)
+                    XCTAssertEqual(Array(ids.prefix(previous.count)), previous)
+                    XCTAssertEqual(ids, Array(expected.prefix(ids.count)))
+                    XCTAssertTrue(result.failures.isEmpty)
+                    XCTAssertLessThanOrEqual(ids.count - previous.count, pageLimit)
+                    previous = ids
+                    if !result.hasMore { finished = true; break }
+                }
+                XCTAssertTrue(finished)
+                XCTAssertEqual(previous, expected)
+            }
+        }
+    }
+
     func testUnequalPagesKeepRoundRobinOrderAcrossBrowsePages() async throws {
         let fixture = ContentFixture(counts: [20, 4], pageSizes: [1, 3])
         let pager = fixture.pager()

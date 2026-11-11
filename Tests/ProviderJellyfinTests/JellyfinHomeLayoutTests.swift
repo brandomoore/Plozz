@@ -23,17 +23,43 @@ final class JellyfinHomeLayoutTests: XCTestCase {
                 XCTFail("Recommendation must not request global snapshots")
                 return []
             }
+            let total = kind == .emby ? 20 : 25
             var ids: [String] = []
-            for start in stride(from: 0, to: 25, by: 5) {
+            for start in stride(from: 0, to: total, by: 5) {
                 let page = try await loader.load(source, start: start, limit: 5)
                 ids += page.items.map(\.id)
-                XCTAssertEqual(page.nextOffset, start == 20 ? nil : start + 5)
+                XCTAssertEqual(page.nextOffset, start + 5 == total ? nil : start + 5)
                 if start < 15 { XCTAssertEqual(stub.sentPaths.count, 1) }
             }
-            XCTAssertEqual(ids, (0..<25).map(String.init))
-            XCTAssertEqual(stub.sentPaths.count, 3)
+            XCTAssertEqual(ids, (0..<total).map(String.init))
+            XCTAssertEqual(stub.sentPaths.count, kind == .emby ? 1 : 3)
             XCTAssertTrue(stub.sentPaths.allSatisfy { $0 == "/Movies/Recommendations" })
         }
+    }
+
+    func testEmbyRecommendationSnapshotFinishesShortShelvesAndRefreshesInANewSession() async throws {
+        let stub = StubHTTPClient()
+        stub.stubSequence(pathSuffix: "/Movies/Recommendations", jsons: [
+            recommendationJSON(count: 3), recommendationJSON(count: 3, offset: 100)
+        ])
+        let provider = JellyfinProvider(session: session(.emby), http: stub)
+        let account = ResolvedAccount(account: .init(id: "account", from: provider.session), provider: provider)
+        let source = HomeContentSource(
+            feed: .recommendation(sectionID: "recommendation:SimilarToRecentlyPlayed:0", kind: .movie),
+            accountID: "account", serverUserID: "selected-user", libraryID: "movies", title: "Recommended"
+        )
+        let loader = HomeContentPageLoader.Session(accounts: [account], visibility: .default) { _ in [] }
+        let first = try await loader.load(source, start: 0, limit: 1)
+        XCTAssertEqual(first.items.map(\.id), ["0"])
+        let tail = try await loader.load(source, start: 1, limit: 5)
+        XCTAssertEqual(tail.items.map(\.id), ["1", "2"])
+        XCTAssertNil(tail.nextOffset)
+        XCTAssertEqual(stub.sentPaths.count, 1)
+        let refreshed = HomeContentPageLoader.Session(accounts: [account], visibility: .default) { _ in [] }
+        let refreshedPage = try await refreshed.load(source, start: 0, limit: 5)
+        XCTAssertEqual(refreshedPage.items.map(\.id), ["100", "101", "102"])
+        XCTAssertNil(refreshedPage.nextOffset)
+        XCTAssertEqual(stub.sentPaths.count, 2)
     }
 
     func testSmallRecommendationPageDoesNotTruncateItsOwnIdentityAnchors() async throws {
@@ -68,8 +94,37 @@ final class JellyfinHomeLayoutTests: XCTestCase {
         } catch { XCTAssertEqual(error as? AppError, .notFound) }
     }
 
-    private func recommendationJSON(count: Int) -> String {
-        let items = (0..<count).map { #"{"Id":"\#($0)","Type":"Movie","Name":"Title \#($0)"}"# }
+    func testMissingRecommendationCanRetryWithoutReplacingAlreadyPinnedShelf() async throws {
+        let stub = StubHTTPClient()
+        let refreshed = String(recommendationJSON(count: 3, offset: 100).dropLast()) + ","
+            + String(recommendationJSON(count: 3, offset: 200).dropFirst())
+        stub.stubSequence(pathSuffix: "/Movies/Recommendations", jsons: [
+            recommendationJSON(count: 3), refreshed
+        ])
+        let provider = JellyfinProvider(session: session(.emby), http: stub)
+        let account = ResolvedAccount(account: .init(id: "account", from: provider.session), provider: provider)
+        let sources = (0..<2).map {
+            HomeContentSource(
+                feed: .recommendation(sectionID: "recommendation:SimilarToRecentlyPlayed:\($0)", kind: .movie),
+                accountID: "account", serverUserID: "selected-user", libraryID: "movies", title: "Recommended"
+            )
+        }
+        let loader = HomeContentPageLoader.Session(accounts: [account], visibility: .default) { _ in [] }
+        let first = try await loader.load(sources[0], start: 0, limit: 1)
+        XCTAssertEqual(first.items.map(\.id), ["0"])
+        do {
+            _ = try await loader.load(sources[1], start: 0, limit: 1)
+            XCTFail("Missing shelf must remain an explicit error")
+        } catch { XCTAssertEqual(error as? AppError, .notFound) }
+        let recovered = try await loader.load(sources[1], start: 0, limit: 1)
+        XCTAssertEqual(recovered.items.map(\.id), ["200"])
+        let retained = try await loader.load(sources[0], start: 1, limit: 5)
+        XCTAssertEqual(retained.items.map(\.id), ["1", "2"])
+        XCTAssertEqual(stub.sentPaths.count, 2)
+    }
+
+    private func recommendationJSON(count: Int, offset: Int = 0) -> String {
+        let items = (offset..<(offset + count)).map { #"{"Id":"\#($0)","Type":"Movie","Name":"Title \#($0)"}"# }
             .joined(separator: ",")
         return #"[{"Items":[\#(items)],"RecommendationType":"SimilarToRecentlyPlayed","CategoryId":"category"}]"#
     }

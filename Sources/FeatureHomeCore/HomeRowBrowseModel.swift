@@ -116,6 +116,7 @@ public final class HomeRowBrowseModel: Identifiable, Hashable {
                 try Task.checkCancellation()
                 guard token == generation, isCurrent() else { throw CancellationError() }
             } while hasMore && error == nil && !requested.isDefault
+            if !requested.isDefault, let error { throw error }
             let merge = merge
             let watchlistDates = watchlistDates
             while true {
