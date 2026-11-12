@@ -210,7 +210,10 @@ struct CollectionSectionSettingsView: View {
 
     private var sortValue: Text {
         guard let sort = draft.query.sort else { return Text(draft.query.sortTitle) }
-        return Text("\(sort.field.displayName) · \(sort.direction.displayName)")
+        return Text(LocalizedStringResource(
+            "home.custom-row.sort-summary", defaultValue: "\(sort.field.displayName) · \(sort.direction.displayName)",
+            comment: "Compact summary of the selected sort field and direction. Both placeholders are already localized."
+        ))
     }
 
     private var filterValue: Text {

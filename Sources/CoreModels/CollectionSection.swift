@@ -101,10 +101,16 @@ public struct CollectionSection: Codable, Equatable, Sendable, Identifiable {
     public var contentTitle: String { sources.map(\.title).joined(separator: ", ") }
     public var localizedContentTitle: LocalizedStringResource? {
         guard sources.contains(where: { $0.localizedTitle != nil }), let first = sources.first else { return nil }
-        return sources.dropFirst().reduce(first.localizedTitle ?? LocalizedStringResource("\(first.title)")) { result, source in
-            let next = source.localizedTitle ?? LocalizedStringResource("\(source.title)")
+        func sourceTitle(_ source: HomeContentSource) -> LocalizedStringResource {
+            source.localizedTitle ?? LocalizedStringResource(
+                "home.custom-row.source-name", defaultValue: "\(source.title)",
+                comment: "A user-authored or server-provided content-source name. Preserve the placeholder without adding or translating the name."
+            )
+        }
+        return sources.dropFirst().reduce(sourceTitle(first)) { result, source in
+            let next = sourceTitle(source)
             return LocalizedStringResource(
-                "\(result), \(next)",
+                "home.custom-row.sources-title", defaultValue: "\(result), \(next)",
                 comment: "Default custom Home row title joining two content-source names. Each name may itself contain a list."
             )
         }

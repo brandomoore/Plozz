@@ -2267,16 +2267,23 @@ final class HomeRowArrangementHostedTests: XCTestCase {
     private func focusTarget(at point: CGPoint, in window: UIWindow) -> (item: any UIFocusItem, frame: CGRect)? {
         var containers: [any UIFocusItemContainer] = [window]
         var seen = Set<ObjectIdentifier>()
+        var candidates: [String] = []
         while let container = containers.popLast() {
             guard seen.insert(ObjectIdentifier(container)).inserted else { continue }
             let bounds = container.coordinateSpace.convert(window.bounds, from: window)
             for item in container.focusItems(in: bounds) {
                 if let child = item.focusItemContainer { containers.append(child) }
                 if let view = item as? UIView { containers.append(view) }
-                let frame = container.coordinateSpace.convert(item.frame, to: window)
+                let frame = (item as? UIView).map { $0.convert($0.bounds, to: window) }
+                    ?? container.coordinateSpace.convert(item.frame, to: window)
+                candidates.append("\(type(of: item)) focusable=\(item.canBecomeFocused) frame=\(frame)")
                 if !(item is UIScrollView), item.canBecomeFocused, frame.contains(point) { return (item, frame) }
             }
         }
+        let attachment = XCTAttachment(string: "Point: \(point)\n" + candidates.joined(separator: "\n"))
+        attachment.name = "Unresolved native focus target"
+        attachment.lifetime = .keepAlways
+        add(attachment)
         return nil
     }
     #endif
