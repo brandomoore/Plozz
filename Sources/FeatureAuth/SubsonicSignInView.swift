@@ -33,6 +33,9 @@ public struct SubsonicSignInView: View {
                         #endif
                         .autocorrectionDisabled()
                         .accessibilityIdentifier("subsonic-address")
+                }
+                .disabled(model.isConnecting)
+                SettingsSectionGroup {
                     TextField("Username", text: $model.username)
                         .textContentType(.username)
                         #if os(iOS)
@@ -40,8 +43,13 @@ public struct SubsonicSignInView: View {
                         #endif
                         .autocorrectionDisabled()
                         .accessibilityIdentifier("subsonic-username")
-                    Toggle("Use API key", isOn: $model.usesAPIKey)
-                        .onChange(of: model.usesAPIKey) { _, _ in model.password = "" }
+                    Picker("Sign in with", selection: $model.usesAPIKey) {
+                        Text("Password").tag(false)
+                        Text("API Key").tag(true)
+                    }
+                    .pickerStyle(.segmented)
+                    .accessibilityIdentifier("subsonic-auth-method")
+                    .onChange(of: model.usesAPIKey) { _, _ in model.password = "" }
                     if model.usesAPIKey {
                         SecureField("API key", text: $model.password)
                             .accessibilityIdentifier("subsonic-secret")
@@ -49,6 +57,12 @@ public struct SubsonicSignInView: View {
                         SecureField("Password", text: $model.password)
                             .textContentType(.password)
                             .accessibilityIdentifier("subsonic-secret")
+                    }
+                } footer: {
+                    if model.usesAPIKey {
+                        Text("Requires a server that supports API keys.")
+                            .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityIdentifier("subsonic-api-key-help")
                     }
                 }
                 .disabled(model.isConnecting)
