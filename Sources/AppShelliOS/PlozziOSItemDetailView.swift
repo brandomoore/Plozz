@@ -666,6 +666,8 @@ private struct PlozziOSCanonicalItemDetailView: View {
             heroPullDistance = pullDistance
         }
         .ignoresSafeArea(.container, edges: .top)
+        .modifier(PlozziOSNavigationBackground())
+        .modifier(PlozziOSReducedTransparencyScrollFade())
         .navigationTitle(Text(verbatim: ""))
         .task(id: seasonRequestRefreshKey(for: detail)) {
             await refreshVisibleSeasonRequests(for: detail)

@@ -827,8 +827,39 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   heights. Standalone PIN prompts and tvOS keep their existing presentation.
   The detail information band retains its darker 40%-opaque surface.
   Compact mobile detail metadata and actions reveal the page gradient instead
-  of covering it with a solid rectangle; Gradient Off and Reduce Transparency
-  retain the original opaque base. The artwork's existing readability fade stays.
+  of covering it with a solid rectangle, including with Reduce Transparency:
+  the page gradient itself is opaque, not a glass/material surface. Gradient Off
+  retains the original opaque base. The artwork's existing readability fade stays.
+  On iOS 26+, `PlozziOSNavigationBackground` removes full-width scroll-edge
+  backdrops when either system or app transparency is reduced. Native navigation
+  buttons and tabs use Apple's opaque accessibility treatment when the OS
+  reduces transparency. App-only Liquid Glass Off uses
+  `plozzOpaqueNavigationChrome()` for opaque native Back and toolbar surfaces,
+  retaining the original actions, menus and navigation gestures. Shared tab
+  shells and dialog presenters install it; toolbar updates are observed through
+  a passive UIKit update link without requesting continuous frames or replacing
+  navigation delegates. Back uses a temporary native back item; restoration also
+  refreshes UIKit's cached Back rendering, with pixel coverage for the live
+  On/Off transition in both themes. Multi-item
+  UIKit groups are temporarily separated because UIKit otherwise ignores their
+  shared-background visibility. Turning glass back on restores their grouping
+  and surfaces without replacing the navigation stack.
+  The opaque navigation fill is precomposed from the theme's decorative gradient
+  colors (or raised surface with Gradient Off), with a subtle outline. It does
+  not sample artwork or scrolling content. Selected tabs retain an accent-colored
+  label on a quiet opaque highlight, rather than inverting to a white pill.
+  `PlozzOpaqueTabBar` replaces the floating bottom controls in app-only Off mode,
+  retaining the configured destination order, labels, badges and Settings action.
+  Overflow scrolls horizontally; the underlying native TabView retains its
+  selection and navigation state. The tab bridge hides the native bar and
+  includes the replacement in music-dock clearance. Hero artwork and the page
+  background continue behind the controls. Normal iPhone
+  scroll-edge effects, older iOS navigation, and Mac's clear top edge are preserved.
+  Pushed detail scroll views apply this policy locally; the tab shell's edge
+  preference alone does not cover subsequent navigation destinations. Home and
+  detail pages add a noninteractive, page-colored status-area fade only as they
+  scroll under reduced transparency, preserving status-text readability without
+  covering the hero at rest or restoring a full-width opaque footer.
   Native tvOS cards display their local portion of a shared page-mesh texture,
   with the information band precomposed because TVUIKit replaces fill alpha.
   A background-only tint layer applies each card's wash without fading text or
@@ -840,8 +871,16 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   detail page's darker information band. Nested workspace pages inherit that
   background instead of painting another gradient. Native focus,
   clipping and text remain TVUIKit-owned.
+  On iOS, reduced-transparency Settings groups reuse that page-aligned texture
+  with their normal tint and outline, instead of switching to flat charcoal.
+  `SettingsPageSurface` owns the texture for pushed pages, including pages inside
+  sheets; shared dialog presenters provide it to other presented content.
+  The texture contains only the decorative background, so foreground content
+  cannot show through a group. Rendering coverage compares On/Off pixels in dark,
+  light and pure-black themes and verifies that changing content underneath does
+  not alter the opaque fill. Gradient Off retains the theme's solid raised fill.
   Text stays opaque and native focus geometry is unchanged. Gradient Off or
-  Reduce Transparency restores both the solid band and solid card fills.
+  Reduce Transparency restores both the solid band and solid card fills on tvOS.
 - **Episode loading preview** — the tvOS entry overlay leaves gutters and caption
   spacing transparent to the owning page, including artwork-tinted gradients.
   Only the real cards' drawing is hidden while their lazy layout realizes the

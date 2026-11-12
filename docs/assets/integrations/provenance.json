@@ -1,0 +1,349 @@
+{
+  "purpose": "README integration badges, rendered at 4x for legibility on high-density screens. Display height: 40 pixels.",
+  "treatment": "Brand glyphs from the listed sources on a neutral labeled badge. Simple Icons glyphs receive display colors; bundled marks and the WeTrakr image retain their artwork. Protocol badges use generic storage/TV symbols, not invented brand logos.",
+  "licenses": {
+    "simpleIcons": {
+      "license": "CC0-1.0",
+      "url": "https://github.com/simple-icons/simple-icons/blob/develop/LICENSE.md"
+    },
+    "phosphor": {
+      "license": "MIT",
+      "copyright": "Copyright (c) 2023 Phosphor Icons",
+      "notice": "phosphor-LICENSE.txt",
+      "url": "https://github.com/phosphor-icons/core/blob/main/LICENSE"
+    },
+    "brands": "Brand marks belong to their respective owners. Use identifies compatible services and does not imply affiliation, sponsorship or endorsement. Plozz licensing does not relicense third-party marks."
+  },
+  "images": [
+    {
+      "file": "jellyfin.png",
+      "label": "Jellyfin",
+      "kind": "simple",
+      "source": {
+        "package": "@iconify-json/simple-icons",
+        "version": "1.2.87",
+        "icon": "jellyfin"
+      },
+      "sourceSha256": "9def169e230abe0689dd16cc46fc5d5ae3280edce9ef21f2e741b355b8ff4756",
+      "sha256": "b08b325344259be1cfdb0c51c292bbdceff6ac12dc8436e333bd46dca698ffe2",
+      "dimensions": [
+        528,
+        160
+      ]
+    },
+    {
+      "file": "plex.png",
+      "label": "Plex",
+      "kind": "simple",
+      "source": {
+        "package": "@iconify-json/simple-icons",
+        "version": "1.2.87",
+        "icon": "plex"
+      },
+      "sourceSha256": "4f39cbfb17402af07b64e772e7268b49e31679b6f308d61e534659ca7f6a110e",
+      "sha256": "e0af46e872ef129cd93592e0370a250b6d1f0d7ef7f8cdfd5c7cf532b60015ba",
+      "dimensions": [
+        432,
+        160
+      ]
+    },
+    {
+      "file": "emby.png",
+      "label": "Emby",
+      "kind": "simple",
+      "source": {
+        "package": "@iconify-json/simple-icons",
+        "version": "1.2.87",
+        "icon": "emby"
+      },
+      "sourceSha256": "6e7f649b64415ddba88230e37548e4b8aea1738604ebdc49dcd025976f179287",
+      "sha256": "6a58bf8cc6f5ccfc6fe9dd1d10ea01abfd9e1e90c91d79d7f127a6f91ffb61a9",
+      "dimensions": [
+        432,
+        160
+      ]
+    },
+    {
+      "file": "silo.png",
+      "label": "Silo",
+      "kind": "bundled",
+      "source": {
+        "repositoryPath": "Sources/CoreUI/Resources/ProviderAssets.xcassets/SiloLogo.imageset/silo-logo.svg"
+      },
+      "sourceSha256": "80359d6a46ba0b4f30d4d8e411e9f38d99a20053fbefcc89c066de9e0a4417ba",
+      "sha256": "42e4d07cd81ec167b95163787f49857e38febde4f97b84a6ec4c7156cddbd3f3",
+      "dimensions": [
+        432,
+        160
+      ]
+    },
+    {
+      "file": "smb.png",
+      "label": "SMB",
+      "kind": "phosphor",
+      "source": {
+        "package": "@iconify-json/ph",
+        "version": "1.2.2",
+        "icon": "hard-drives"
+      },
+      "sourceSha256": "d542a74d91e7e04531282c36ba2ffa8994e3a207cf9e6d8445950662b9db32bc",
+      "sha256": "c6f8f25d94eff43725190297ed1941dd3e0ac2f341ae543a0b66e05e5a755d2f",
+      "dimensions": [
+        432,
+        160
+      ]
+    },
+    {
+      "file": "webdav.png",
+      "label": "WebDAV",
+      "kind": "phosphor",
+      "source": {
+        "package": "@iconify-json/ph",
+        "version": "1.2.2",
+        "icon": "hard-drives"
+      },
+      "sourceSha256": "d542a74d91e7e04531282c36ba2ffa8994e3a207cf9e6d8445950662b9db32bc",
+      "sha256": "36275a4b92457f063ffddf66154d2ccf670cfb7d32dab62e4b426dd803d211ab",
+      "dimensions": [
+        464,
+        160
+      ]
+    },
+    {
+      "file": "nfs.png",
+      "label": "NFS",
+      "kind": "phosphor",
+      "source": {
+        "package": "@iconify-json/ph",
+        "version": "1.2.2",
+        "icon": "hard-drives"
+      },
+      "sourceSha256": "d542a74d91e7e04531282c36ba2ffa8994e3a207cf9e6d8445950662b9db32bc",
+      "sha256": "e15e174bc4c8883b2ba6d1ae958c1e5bb182e1c66fde7591200d039875a51d01",
+      "dimensions": [
+        432,
+        160
+      ]
+    },
+    {
+      "file": "sftp.png",
+      "label": "SFTP",
+      "kind": "phosphor",
+      "source": {
+        "package": "@iconify-json/ph",
+        "version": "1.2.2",
+        "icon": "hard-drives"
+      },
+      "sourceSha256": "d542a74d91e7e04531282c36ba2ffa8994e3a207cf9e6d8445950662b9db32bc",
+      "sha256": "b7dc96a9863022260ffbb4adbfb771ef7c4feb7c588c48861fe38e26c9926744",
+      "dimensions": [
+        432,
+        160
+      ]
+    },
+    {
+      "file": "ftp.png",
+      "label": "FTP",
+      "kind": "phosphor",
+      "source": {
+        "package": "@iconify-json/ph",
+        "version": "1.2.2",
+        "icon": "hard-drives"
+      },
+      "sourceSha256": "d542a74d91e7e04531282c36ba2ffa8994e3a207cf9e6d8445950662b9db32bc",
+      "sha256": "d2a3e43454617c929a279fd0001a020c80ec0f41dad171c3703d66af95c66987",
+      "dimensions": [
+        432,
+        160
+      ]
+    },
+    {
+      "file": "m3u.png",
+      "label": "M3U",
+      "kind": "phosphor",
+      "source": {
+        "package": "@iconify-json/ph",
+        "version": "1.2.2",
+        "icon": "television"
+      },
+      "sourceSha256": "2717f979fc73f892a26dd57d82b3e128e73f8b068bedb376c8370270dced204a",
+      "sha256": "248f41811033ff519949bf1d4ba64cf345301544c41a7a563fa87e55180bb131",
+      "dimensions": [
+        432,
+        160
+      ]
+    },
+    {
+      "file": "xtream.png",
+      "label": "Xtream",
+      "kind": "phosphor",
+      "source": {
+        "package": "@iconify-json/ph",
+        "version": "1.2.2",
+        "icon": "television"
+      },
+      "sourceSha256": "2717f979fc73f892a26dd57d82b3e128e73f8b068bedb376c8370270dced204a",
+      "sha256": "828a047f6e7a7204fce4e7dc9951a84c9caf9d9ff3cae35dc98fc74723dc69c6",
+      "dimensions": [
+        464,
+        160
+      ]
+    },
+    {
+      "file": "xmltv.png",
+      "label": "XMLTV",
+      "kind": "phosphor",
+      "source": {
+        "package": "@iconify-json/ph",
+        "version": "1.2.2",
+        "icon": "television"
+      },
+      "sourceSha256": "2717f979fc73f892a26dd57d82b3e128e73f8b068bedb376c8370270dced204a",
+      "sha256": "c08e4d1df89601a0e4b2e781dd094ca8861890e334105159e1a2b3af4dcb2075",
+      "dimensions": [
+        432,
+        160
+      ]
+    },
+    {
+      "file": "trakt.png",
+      "label": "Trakt",
+      "kind": "simple",
+      "source": {
+        "package": "@iconify-json/simple-icons",
+        "version": "1.2.87",
+        "icon": "trakt"
+      },
+      "sourceSha256": "842cbda16994a6535525d253fdd65504d0ee5426de15a6bf4bc693efc40b58e9",
+      "sha256": "a815687da9982e4c3b3478ba2870d36c152f7d277e901b07f576eac340f61a7e",
+      "dimensions": [
+        432,
+        160
+      ]
+    },
+    {
+      "file": "simkl.png",
+      "label": "Simkl",
+      "kind": "simple",
+      "source": {
+        "package": "@iconify-json/simple-icons",
+        "version": "1.2.87",
+        "icon": "simkl"
+      },
+      "sourceSha256": "f4ae0d967c101b12269362a80bda4658697370d99ce932f61fdbcce1ff900cce",
+      "sha256": "ec1fca68ec8103db7395430eeb083a8c649a1f2bfdd10c8ef0e80c5732042f11",
+      "dimensions": [
+        432,
+        160
+      ]
+    },
+    {
+      "file": "wetrakr.png",
+      "label": "WeTrakr",
+      "kind": "official",
+      "source": {
+        "url": "https://wetrakr.com/assets/images/we_small.png"
+      },
+      "sourceSha256": "a6ea9e0482ee3f17f6a7dfdc36b4786e0a0c27ac14e8411c03e9b96d4e5fbb65",
+      "sha256": "29b01af04260158a89534d02f557e9b4bc925d211f6d4b8a9d2d13c523f2c022",
+      "dimensions": [
+        496,
+        160
+      ]
+    },
+    {
+      "file": "anilist.png",
+      "label": "AniList",
+      "kind": "simple",
+      "source": {
+        "package": "@iconify-json/simple-icons",
+        "version": "1.2.87",
+        "icon": "anilist"
+      },
+      "sourceSha256": "e28c95295d321173aa43705de6d8b37cc1c70070113528032acf8d8bffb42b89",
+      "sha256": "0a296f89a2fed0bf05d85b49b7abcb9958367f3bc5e298be6c04b79ad8f89732",
+      "dimensions": [
+        496,
+        160
+      ]
+    },
+    {
+      "file": "myanimelist.png",
+      "label": "MyAnimeList",
+      "kind": "simple",
+      "source": {
+        "package": "@iconify-json/simple-icons",
+        "version": "1.2.87",
+        "icon": "myanimelist"
+      },
+      "sourceSha256": "a4bf0d79644e52fc1974c80e052022fdba6d6640b536b0ab6a3e864c03157e25",
+      "sha256": "f3c21ea72006e7c695d37e37360aafe04f5f9da1c069071601954c0875134f0d",
+      "dimensions": [
+        624,
+        160
+      ]
+    },
+    {
+      "file": "lastfm.png",
+      "label": "Last.fm",
+      "kind": "simple",
+      "source": {
+        "package": "@iconify-json/simple-icons",
+        "version": "1.2.87",
+        "icon": "lastdotfm"
+      },
+      "sourceSha256": "48dc20e0f8cfbc8156ad552a6bfac0060e06b283c64b53a15b96901344ee1bc3",
+      "sha256": "28857060e83577484876673d8cf44a242fc9103f8c5f142b573acfa5d06f4f05",
+      "dimensions": [
+        496,
+        160
+      ]
+    },
+    {
+      "file": "icloud.png",
+      "label": "iCloud",
+      "kind": "simple",
+      "source": {
+        "package": "@iconify-json/simple-icons",
+        "version": "1.2.87",
+        "icon": "icloud"
+      },
+      "sourceSha256": "facba1b7db50b6ed9797b70901d69a849ebf5d22d2a39ba1a6f045a9c97aa6ca",
+      "sha256": "0dcdcecc6db1d88711359d128c0bb9ceb5c1f7d6e6aec672456c6d0c586068f9",
+      "dimensions": [
+        464,
+        160
+      ]
+    },
+    {
+      "file": "seerr.png",
+      "label": "Seerr",
+      "kind": "bundled",
+      "source": {
+        "repositoryPath": "App/Resources/Assets.xcassets/SeerrIcon.imageset/seerr-monochrome.svg"
+      },
+      "sourceSha256": "9338bba01337265859f935385125020c404f8931ffe0950b7f02b1cb674a6b29",
+      "sha256": "2fb162b2f6b38f75ab24ed52c2830dbe6da14f8f64427f8091d4807f44addb80",
+      "dimensions": [
+        432,
+        160
+      ]
+    },
+    {
+      "file": "sentry.png",
+      "label": "Sentry",
+      "kind": "simple",
+      "source": {
+        "package": "@iconify-json/simple-icons",
+        "version": "1.2.87",
+        "icon": "sentry"
+      },
+      "sourceSha256": "8f3e5da9ebf32bdbf777fd97ed02a0ff7a646033f18401e0c64459b7590a5300",
+      "sha256": "90958b0cbce8488b52f5b1e672e5979c0004d055f956b47aec0c24756a20b1a8",
+      "dimensions": [
+        464,
+        160
+      ]
+    }
+  ]
+}
