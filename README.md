@@ -1,404 +1,88 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/brandomoore/brando/main/logos/plozz.svg" alt="Plozz logo" width="128" />
+  <img src="https://raw.githubusercontent.com/brandomoore/brando/main/logos/plozz.svg" alt="Plozz logo" width="96" />
 </p>
 
-<h1 align="center">Plozz</h1>
+# Plozz — media player for Apple TV, iPhone and iPad
 
-<p align="center">
-  A completely free, open-source media player for <b>Jellyfin</b>, <b>Plex</b>, <b>Emby</b>, and <b>Silo</b> —
-  native on Apple TV, iPhone, and iPad.
-  <br />
-  It also supports <b>WebDAV, SMB, SFTP, FTP, and NFS</b>
-</p>
-
-<p align="center">
-  <a href="https://plozz.app"><b>plozz.app</b></a>
-</p>
+**Free and open source. No ads or paywalls.** Watch movies and TV shows from
+**Jellyfin, Plex, Emby and Silo**, browse your network shares, or play your own
+IPTV channels in a native Apple app.
 
 <p align="center">
   <a href="https://apps.apple.com/app/plozz-player/id6782668147"><img src="docs/assets/app-store-badge.svg" alt="Download Plozz Player on the App Store" width="180" /></a>
 </p>
 
 <p align="center">
-  <a href="https://plozz.app/discord"><img src="https://img.shields.io/badge/Join_the_community-5865F2?style=for-the-badge&amp;logo=discord&amp;logoColor=white" alt="Join the Plozz community on Discord" /></a>
+  <a href="https://plozz.app">Website</a> ·
+  <a href="https://docs.plozz.app">User guide</a> ·
+  <a href="https://plozz.app/discord">Discord</a> ·
+  <a href="https://testflight.apple.com/join/EKfReNMu">TestFlight</a>
 </p>
+
+## On every screen
 
 <p align="center">
-  <a href="https://github.com/brandomoore/Plozz/releases"><img src="https://img.shields.io/github/v/release/brandomoore/Plozz?include_prereleases&sort=date&display_name=release&label=Latest%20build&color=orange&logo=apple" alt="Latest GitHub build, including TestFlight releases" /></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/License-GPL--3.0-blue.svg" alt="License: GPL-3.0" /></a>
-  <a href="https://www.apple.com/apple-tv-4k/"><img src="https://img.shields.io/badge/Platform-tvOS%20%C2%B7%20iOS%20%C2%B7%20iPadOS-black.svg?logo=apple" alt="Platform: tvOS, iOS, iPadOS" /></a>
-  <a href="https://github.com/sponsors/brandomoore"><img src="https://img.shields.io/badge/Donate-%E2%9D%A4-db61a2?logo=githubsponsors&logoColor=white" alt="Donate" /></a>
+  <img src="docs/assets/app-store/apple-tv-c41faea853.jpg" width="800" alt="Plozz on Apple TV: Sol Levante on the Home screen with Continue Watching, from the App Store gallery" />
 </p>
-
----
-
-## A look at it
-
 <p align="center">
-  <img src="docs/assets/screenshots/tv-home-licensed-1fb96bffee.jpg" width="412" alt="Plozz Home on Apple TV with Sol Levante artwork and Continue Watching" />
-  <img src="docs/assets/screenshots/tv-library-licensed-aea97840a6.jpg" width="412" alt="Plozz on Apple TV browsing a populated library with licensed film artwork" />
+  <img src="docs/assets/app-store/iphone-aa16c735c5.jpg" width="28%" alt="Plozz on iPhone: Home, Continue Watching and mobile navigation, from the App Store gallery" />
+  &nbsp;&nbsp;
+  <img src="docs/assets/app-store/ipad-00b342355d.jpg" width="46%" alt="Plozz on iPad: Home with Continue Watching, Live TV and movie libraries, from the App Store gallery" />
 </p>
-
 <p align="center">
-  <sub><b>Home</b> — return to what you're watching.</sub>
-  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-  <sub><b>Library</b> — browse, sort and filter your media.</sub>
+  <sub>Apple TV · iPhone · iPad — <a href="https://plozz.app/media-credits/">Screenshot media credits</a></sub>
 </p>
 
-<p align="center">
-  <img src="docs/assets/screenshots/tv-player-licensed-96e9b81d2f.jpg" width="412" alt="Plozz playback controls during Wing It!" />
-  <img src="docs/assets/screenshots/tv-subtitles-licensed-a7ae03ca39.jpg" width="412" alt="Plozz's subtitle style editor during Wing It! with scene-description captions" />
-</p>
+## What you can do
 
-<p align="center">
-  <sub><b>Player</b> — playback controls over your video.</sub>
-  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-  <sub><b>Subtitles</b> — style captions while you watch.</sub>
-</p>
+- **Bring your libraries together.** Connect multiple servers, or browse SMB,
+  NFS, WebDAV, SFTP and FTP shares with artwork and metadata.
+- **Watch your way.** Resume playback, choose audio tracks, and customize
+  subtitles, including two languages at once.
+- **Take it offline.** Download movies and episodes on iPhone and iPad.
+- **Watch Live TV.** Use your own playlists and supported server channels,
+  browse the guide, or watch several channels in Multiview. Live TV is experimental.
+- **Play your music.** Browse albums and artists from Plex, Jellyfin or Emby.
+- **Make it yours.** Set up profiles, themes and layouts; connect watch trackers
+  and Seerr requests.
 
-<p align="center">
-  <img src="docs/assets/screenshots/iphone-library-licensed-c25db35ada.jpg" width="230" alt="Plozz on iPhone with several rows of licensed film artwork and saved playback progress" />
-  &nbsp;&nbsp;&nbsp;&nbsp;
-  <img src="docs/assets/screenshots/ipad-home-licensed-4a234f3e0d.jpg" width="374" alt="Plozz on iPad with Sol Levante artwork, several Continue Watching entries and a populated library" />
-</p>
+[Explore features](https://plozz.app/features/) ·
+[Supported formats](https://plozz.app/formats/) ·
+[Setup guides](https://docs.plozz.app)
 
-<p align="center">
-  <sub><b>iPhone and iPad</b> — your library on another screen. Real app captures with <a href="https://plozz.app/media-credits/">media credits and licenses</a>; <a href="docs/screenshots.md">capture details</a>.</sub>
-</p>
+## Get started
 
-<p align="center"><sub>More screens, including iPhone and iPad, are on <a href="https://plozz.app">plozz.app</a>.</sub></p>
+Install **[Plozz Player](https://apps.apple.com/app/plozz-player/id6782668147)**
+on tvOS, iOS or iPadOS 18 or later, then connect your server, network share or
+IPTV source. **Plozz supplies no movies, music, channels or subscriptions.**
+Features vary by device and provider; server permissions and provider
+subscription requirements still apply.
 
-## What it is
+## Help and contribute
 
-Plozz plays the movies, shows, and music on **your** server, on your Apple TV,
-iPhone, and iPad. It's free and open source.
+[Report a bug or request a feature](https://github.com/brandomoore/Plozz/issues/new/choose) ·
+[Build and contribute](.github/CONTRIBUTING.md) ·
+[Release notes](https://github.com/brandomoore/Plozz/releases)
 
-It talks to Jellyfin, Plex, Emby, and Silo, and it can read a plain network share
-directly if you don't run a server at all. Connect more than one and Plozz
-can bring them together in one library, while keeping individual libraries
-available when you want them.
+Keep passwords, tokens and private server URLs out of public issues.
+If Plozz is useful to you, [donations are welcome](https://github.com/sponsors/brandomoore).
+It's free either way.
 
-## Features
+## License and credits
 
-### Your servers, together
+[GPL-3.0](LICENSE) with an [App Store Exception](LICENSE-EXCEPTION.md).
+© 2026 Brandon Moore. See [NOTICE.md](NOTICE.md) for bundled software notices.
 
-- **Jellyfin, Plex, Emby, and native Silo** — connect directly to your media
-  servers. Silo uses its native API, not its Jellyfin-compatibility connection:
-  approve the device in your browser, choose a Silo profile, and keep that
-  profile's library access, watch history, and watchlist.
-- **Network shares too** — SMB, NFS, WebDAV, SFTP, and FTP. A bare folder of
-  files becomes a real library with artwork, descriptions, ratings, and cast.
-  Browse folders as grids on both iOS and tvOS, with recognized movies and
-  shows opening their usual details, seasons, and episodes.
-  Choose **Mixed (Automatic)** on a common parent to include its Movies,
-  TV Shows, and Anime subfolders together. Choose **Anime** for an anime-only
-  root; films and episodes are identified automatically. Dedicated roots can
-  also use **Movies**, **TV Shows**, or **Personal Videos**.
-  Recognized titles stay in detail navigation during library scans. Choose
-  **More actions > Browse Files** on a title to inspect its original folders
-  and individual files; unknown or mixed folders remain browsable grids.
-  Choose movie, TV, mixed, or personal-video content, with a separate anime
-  option. Personal videos stay as files without movie or TV matching.
-  Library scans run while the app is active: normal passes skip unchanged
-  folders, while a daily deep pass (or **Scan now**) rechecks all contents,
-  including changes a server's folder timestamps cannot reveal.
-  (Share support is still evolving.)
-- **One merged library** — connect several servers and see one set of rows
-  instead of picking a server first.
-- **Jump to a letter** — an A–Z menu for name-sorted individual and combined
-  Plex, Jellyfin, Emby, and Silo libraries, on all three platforms. Apple TV also
-  has a fast-scroll letter rail. Deep Silo and combined-library jumps load on
-  demand, show progress, and can be cancelled without losing your place.
-  Other sorts and collection-member lists keep their own ordering.
-- **Common Sense Media in Ratings** — Plex movie and show details can display
-  a recommended age independently of review scores, with separate detail-header
-  controls for each. Open the tile for topic-by-topic guidance when the viewing
-  Plex account has eligible Plex Pass access.
-- **Sync watch history across servers** — optional, and off until you ask for it.
-- **Found automatically** — Plozz looks for Jellyfin, Emby, Silo, and Seerr
-  servers on your local network. Silo discovery checks its standard port 8090;
-  custom ports, remote addresses, and reverse-proxy paths can be entered manually.
-- **Server sign-in** — Jellyfin **Quick Connect**, Plex **Link**, and
-  Silo **browser approval**. Emby also supports password sign-in.
-
-### Watching
-
-- **Continue Watching without an app-imposed cutoff** — all titles supplied by
-  your servers remain reachable, ordered by recency. Older next-up episodes move
-  back instead of disappearing; server settings and your removals still apply.
-- **Plays essentially anything** — HDR, AV1, and the awkward files
-  other clients hand back to you, powered by
-  [AetherEngine](https://github.com/superuser404notfound/AetherEngine).
-  ([The full format list](https://github.com/superuser404notfound/AetherEngine/blob/main/docs/formats.md).)
-- **Surround audio** — ordinary multichannel playback and native spatial audio
-  from compatible streams and equipment. Height-channel conversion is not available.
-  [Compatibility details](docs/playback-engines.md#spatial-audio).
-- **Change versions without leaving the player** — switch between files or
-  editions on the active server on Apple TV, iPhone, and iPad. Keep your
-  playback position, pause state, speed, quality limit, and matching audio and
-  subtitle choices. Different cuts can have different timelines; switching
-  never silently picks another edition or server.
-- **Control streaming quality on iPhone and iPad** — choose a preset or a
-  custom resolution and total bitrate limit for Plex, Jellyfin, Emby, and Silo
-  movies and episodes. Save separate per-profile defaults for local networks,
-  remote Wi-Fi/Ethernet, and cellular, or change just the current video.
-  Maximum is the local/remote default; cellular starts at 720p / 2 Mbps.
-  The original plays when it fits the limit; otherwise the server converts it.
-  Codec preferences and forced conversion are available where supported;
-  conversion can change HDR and audio formats.
-  These controls are separate from downloads and don't apply to Apple TV,
-  music, Live TV, or file shares.
-- **Know what is actually playing** — Info and streaming-quality details show
-  measured dimensions, video/audio formats, and known dynamic range for the
-  current converted stream. Playback diagnostics keep the original file,
-  selected limit, stream bitrate, and network throughput distinct. A source
-  badge is not a claim about the TV's HDMI output mode.
-- **Subtitles you can actually read** — change font, size, weight, colour,
-  opacity, background, shadow, position, and HDR brightness from inside the
-  player. Position adjusts in 0.5% steps from -5% to 100%, with consistent sizing
-  across fonts. 0% aligns to the bottom edge, 100% to the top; negative values allow cropping.
-  Extra Line Position (Above, Center, or Below) controls how additional lines
-  expand. Above is the default.
-- **Two subtitle tracks at once** — for learning a language, or for a household
-  that doesn't share one.
-- **Find subtitles in the player** — search and download through supported
-  servers' subtitle services, including native Silo, with language and
-  accessibility preferences.
-- **Mark as watched** — a whole season, or everything up to a given episode.
-- **Watched and unwatched indicators** — a checkmark, or an unwatched corner
-  badge in the Infuse / classic-Plex style, on every poster.
-
-Streaming capabilities depend on the server and its configuration. Silo's
-current native API supports H.264 conversion at 480p, 720p, 1080p, and 4K;
-unsupported 240p/1440p and HEVC **conversion** choices are unavailable.
-This does not prevent playing an existing HEVC file. Custom bitrate limits
-include audio. Plozz checks Silo's returned playback plan against the selected
-limits and refuses an incompatible plan rather than quietly using Maximum.
-
-### Take it offline
-
-- **Downloads on iPhone and iPad** — save movies and episodes for playback
-  without a server connection, with local artwork and metadata for browsing.
-  Playback prefers an available download over streaming, even when another
-  server or version is selected.
-  Native Silo downloads are supported too; they use the server's download
-  permissions and preparation options, not a temporary playback link.
-  Missing artwork is repaired when the source is reachable on an allowed network,
-  without downloading the video again. Compact artwork-led lists keep large
-  libraries scannable, with per-title progress, status, and trailing actions.
-  Downloaded shows group compact episode rows by season; season removal lives
-  in the season menu. Show rows reflect their downloaded
-  episodes' live progress. Completed shows, movies, and episodes use the same
-  filled download icon as media cards, with neutral counts and sizes instead of
-  repeated completion text. Tap a row to open it; the trailing menu is its only
-  accessory.
-  Only the Downloads navigation item displays queue progress; Watchlist retains
-  its bookmark.
-  Progress display updates are batched rather than redrawing at network-callback
-  speed; completion, pause, failure, and removal updates remain immediate.
-  Episode badges observe their own download, so another episode's progress
-  does not refresh the whole season list.
-  Show and season download actions share artwork, title, contextual counts, and
-  a compact Download All, Pause All, or Resume All control. Show headers retain
-  completed download counts without inventing an unknown total episode count.
-  When space is tight, the action moves below the details before its label wraps.
-  With Ask Before Downloading enabled, every new download opens a confirmation.
-  With it disabled, a single movie or episode with one version starts immediately
-  using the saved quality, without opening a preparation sheet. Multiple versions and season/show downloads still
-  open the selection sheet before queueing.
-  Single-episode downloads show version choices directly. Season/show downloads
-  use season sections with one row per episode and nested version lists.
-  Version rows identify their server and, for network shares, their relative folder.
-  Tap a downloaded episode's button to confirm removing that offline copy;
-  other saved versions remain available.
-  Individual episode preparation appears on that episode's row; bulk preparation
-  stays with the season or show action.
-  Episode download rows reserve one caption line to keep ordinary progress
-  updates from shifting the list, while allowing larger text to expand.
-  Visible episode text stays vertically centered and gently repositions when
-  status appears or disappears, unless Reduce Motion is enabled.
-  Tappable download progress indicators include a pause symbol while downloading
-  and a resume triangle when paused, keeping the same neutral progress ring.
-  One version is preselected using the existing explicit,
-  remembered-series, and device-compatible version selection rules. You can
-  exclude episodes or deliberately select multiple versions, which keep separate
-  saved files and download controls. Equal filenames
-  or sizes do not prove files are identical, so alternatives remain available.
-- **Choose download quality separately** — streaming preferences don't change
-  your saved download settings. Available renditions and background-transfer
-  behavior depend on the provider. Apple TV does not offer offline downloads.
-  User-requested downloads check the same usable device capacity shown in
-  Downloads, including space iOS can reclaim, before starting the transfer.
-- **Follow downloads outside Plozz** — on iOS/iPadOS 26 or later, user-started
-  downloads request the system's continued-processing Live Activity, including
-  Dynamic Island on supported iPhones. One activity tracks the active queue
-  using per-item progress, including measured rendition preparation; time
-  estimates use only known sizes and current throughput. Receiving every byte
-  is not completion until offline validation finishes.
-  The title names the current movie or show, including episode numbers. The
-  subtitle shows the current step through sequential downloads (for example,
-  "Downloading 1 of 2") and its measured percentage or preparation/finalization
-  stage. Finished counts are explicitly labeled "Completed" rather than shown
-  as an ambiguous fraction; paused or failed peers also use completed counts.
-  The main progress indicator remains queue-wide. Parallel transfers show an
-  active count instead of presenting one arbitrary episode as the only download.
-  Network-share transfers can continue while the system grants execution.
-  Cancellation or expiration pauses the activity's downloads without deleting
-  partial files; resume them in Plozz. Saved network and speed-limit policies
-  still apply. If iOS declines the request, normal download behavior remains:
-  eligible HTTP transfers use background URL sessions, while in-process
-  transfers require the app to stay active.
-  Pause and resume reuse eligible background transfers, including downloads
-  started by an older app version.
-- **Completion notifications** — individual downloads and whole season/show
-  batches have separate profile settings. Completion notifications default to
-  on for profiles without saved preferences, require device permission, and
-  preserve existing opt-outs. Tapping a new completion notification opens the
-  downloaded movie or episode, or the downloaded show/season for a batch,
-  without autoplaying. Cold launches and profile changes retain the normal
-  profile and Plex PIN gates; removed or replaced downloads report that they
-  are unavailable. Terminal notices are committed with the download
-  record and replayed after interruption, without notifying about old downloads
-  merely because the app was upgraded. A batch produces one completion notice,
-  not one per episode. After a cold relaunch, unfinished transfers still need
-  reconciliation and offline validation before completion can be announced.
-
-### Music
-
-- **Your Plex, Jellyfin, or Emby music library too** — browse albums and
-  artists, queue things up, and keep listening with a mini-player while you
-  carry on browsing. Audio keeps playing in the background.
-
-### Live TV
-
-- **Your own channels and guide** — combine M3U playlists, optional XMLTV
-  guides, and authorized Plex, Jellyfin, or Emby Live TV channels on Apple TV,
-  iPhone, and iPad. Search the guide, save favorites, and return to recently
-  watched channels.
-- **Multiview and library channels** — watch several channels together or
-  build a scheduled lineup from your own library.
-
-Live TV is still experimental. Native Silo Live TV integration is not offered,
-and Plozz does not supply channels or an IPTV subscription.
-[Live TV setup and capabilities](docs/live-tv-prototype.md).
-
-### Make it yours
-
-- **Themes** — light, dark, or Pure Black.
-- **Layout** — change how dense the rows are, whether the big hero banner shows
-  at all, and how navigation behaves.
-- **Profiles on every device** — keep library choices, layout, playback, and
-  subtitle preferences with the active Plozz profile. Apple TV system-user
-  support and Plex Home/Silo server-profile selection keep the right identity
-  in view. Server-side access and watch history still belong to the server user
-  you choose; device-wide settings remain device-wide. The iPhone/iPad picker
-  uses a compact, theme-aware grid with a subtle staggered entrance, skipped
-  with Reduce Motion. Larger households scroll, and accessible text wraps.
-- **Set up another device** — use nearby-device setup, a QR code, or a pairing
-  code to import an existing setup. iCloud sync carries profiles, settings, and
-  server details; Silo asks you to approve each receiving device independently.
-  Servers still needing sign-in remain available in **Settings > iCloud Sync**
-  rather than disappearing from the import.
-- **Circadian mode** — warms and dims the app at times you choose, so late-night
-  viewing isn't a floodlight.
-
-### Connected services
-
-- **Trackers** — Trakt, AniList, MyAnimeList, Simkl, and Last.fm, across movies,
-  TV, anime, and music.
-- **Seerr** — request something you don't have without leaving search.
-
-Seerr profile links belong to the server where you chose that user. Reconnecting
-to the same address, including after an API-key change, keeps those links.
-Switching servers requires relinking in Settings; requests never fall back to
-the administrator because a link is stale. Links saved by older versions need
-one confirmation. After replacing a Seerr database at the same address, relink
-profiles manually.
-
-TV requests track each season separately. The request button summarizes pending
-or processing seasons, while its menu shows individual season states and offers
-only missing, unrequested seasons. Requesting one season never marks the whole
-series as requested; failed requests remain visible for attention in Seerr.
-
-## Comparing Apple TV media players
-
-Looking for a **free Infuse alternative** for your own movies and TV shows?
-Plozz is a **completely free Apple TV media player**, with native apps for
-iPhone and iPad too. There is no Plozz subscription, paid feature unlock, or
-advertising. The source code is available under the [GPL-3.0 license](LICENSE),
-so you can inspect it, build it yourself, and contribute.
-
-If you're choosing between Apple TV media apps, here's where Plozz fits:
-
-- **Coming from Infuse or VLC?** Play from your NAS or network shares over
-  SMB, NFS, WebDAV, SFTP, or FTP, with artwork and library browsing. You don't
-  need to run a media server.
-- **Considering VidHub?** Plozz also organizes your own files and server
-  libraries, with all features free and the source available to inspect.
-- **Coming from MrMC?** Keep your Plex, Emby, or network-share sources and
-  try a native Apple TV interface, with iPhone and iPad apps too.
-- **Using the Plex or Emby app?** Keep your existing server and use Plozz as
-  an alternative client. Connect multiple servers and browse them together,
-  including libraries from other supported providers.
-- **Using Swiftfin for Jellyfin?** Plozz is another open-source Jellyfin client
-  for Apple TV, with Plex, Emby, Silo, and network shares available in the same
-  app.
-
-Plozz is an independent project, not affiliated with these apps. These comparisons
-are not a promise of feature-for-feature parity.
-You bring your own media; server-side permissions and any provider subscription
-requirements still apply. Plozz replaces the player, not your media server.
-
-## Getting started
-
-Download **[Plozz Player on the App Store](https://apps.apple.com/app/plozz-player/id6782668147)**
-for Apple TV, iPhone and iPad.
-
-To try upcoming changes, join the optional
-[TestFlight beta](https://testflight.apple.com/join/EKfReNMu).
-
-You'll need an Apple TV, iPhone, or iPad running tvOS/iOS/iPadOS 18 or later,
-plus a Jellyfin, Plex, Emby, or Silo server—or a network share—with your own
-media on it. Plozz will offer to set up compatible servers it finds, and you can
-enter an address for anything it can't discover.
-
-Plozz itself is free. Server-side permissions, hardware, configuration, and any
-provider subscription requirements still apply to features such as conversion
-or detailed Plex family guidance.
-
-## Found a bug? Want something?
-
-[**Open an issue**](https://github.com/brandomoore/Plozz/issues/new/choose) and pick
-a template — 🐞 **Bug report** or ✨ **Feature request**. Bug reports are read and
-they do get fixed; feature requests genuinely shape what gets built next.
-
-Please don't paste tokens, passwords, or credentialed server URLs into an issue.
-
-## Contributing
-
-Pull requests are welcome. Building the app, running the tests, the module
-layout, how localization works, and the release process are all in
-[**CONTRIBUTING.md**](.github/CONTRIBUTING.md), with the deeper notes in
-[`docs/`](docs/).
-
-## Donate
-
-Plozz will always be free and open source, with no paywall, ads, or obligation.
-If it's useful to you, donations toward upkeep are welcome — and not donating is
-completely okay.
-
-**[Donate via GitHub Sponsors](https://github.com/sponsors/brandomoore)** — one-time
-or recurring.
-
-## Credits & attribution
+<details>
+<summary>Service acknowledgments and media attribution</summary>
 
 Plozz is an unofficial client and is not affiliated with, endorsed, or certified
 by any of the services below.
 
-- **AetherEngine** — on-device playback engine (FFmpeg demux → VideoToolbox
-  decode) by Vincent Herbst, LGPL-3.0 with an App Store exception.
+- **AetherEngine** — on-device playback engine by Vincent Herbst,
+  LGPL-3.0 with an App Store exception.
   [superuser404notfound/AetherEngine](https://github.com/superuser404notfound/AetherEngine).
-  Its bundled FFmpeg is a decode-only, LGPL-3.0 build (see [`NOTICE.md`](NOTICE.md)).
+  Its bundled FFmpeg is a decode-only, LGPL-3.0 build (see [NOTICE.md](NOTICE.md)).
 - **The Movie Database (TMDB)** — some artwork and metadata is provided by the
   TMDB API. This product uses the TMDB API but is not endorsed or certified by
   TMDB. TMDB's marks and logos are trademarks of TMDB.
@@ -414,14 +98,13 @@ by any of the services below.
 
 - **OMDb API** — optional IMDb ratings enrichment (requires your own OMDb key).
 - **AniList** — keyless community scores for anime titles.
-- **Plex**, **Jellyfin**, **Emby**, and **Silo** — compatible media servers.
-  Plozz does not supply media; you bring your own library. Names and logos belong
-  to their respective owners.
+- **Plex, Jellyfin, Emby and Silo** — compatible media servers. Names and logos
+  belong to their respective owners.
+- **Screenshot artwork** — [creators, licenses and adaptations](https://plozz.app/media-credits/);
+  [image provenance](docs/screenshots.md). Demonstration media is not bundled
+  with Plozz and is not covered by the app's license.
 
-## License
-
-[GPL-3.0](LICENSE), with an [App Store Exception](LICENSE-EXCEPTION.md)
-© 2026 Brandon Moore
+</details>
 
 <!-- app-family:start -->
 <!-- Generated by https://github.com/brandomoore/brando — edit apps.json there, not this block. -->

@@ -1,0 +1,39 @@
+{
+  "source": "https://apps.apple.com/us/app/plozz-player/id6782668147",
+  "retrievedAt": "2026-11-12",
+  "storefront": "us",
+  "appStoreVersion": "2026.11.4",
+  "method": "Apple-hosted JPEG derivatives of the published App Store opening artwork; no local cropping, compositing or interface retouching",
+  "mediaCredits": "../screenshots/media-credits.json",
+  "publicMediaCredits": "https://plozz.app/media-credits/",
+  "scope": "App Store promotional compositions containing real app captures and licensed demonstration artwork. Publication on the App Store is not independent rights clearance. The earlier raw-capture provenance does not identify these newer app captures.",
+  "screenshots": [
+    {
+      "file": "apple-tv-c41faea853.jpg",
+      "platform": "tvOS",
+      "dimensions": [1600, 900],
+      "sha256": "c41faea85353f948207dfa57a8e1e05f759087cc9e0933029012f03851644093",
+      "sourceUrl": "https://is1-ssl.mzstatic.com/image/thumb/PurpleSource211/v4/76/cd/ba/76cdbad6-0395-7b8f-f054-f1ea489577bb/01-opening-tv-1920x1080.png/1600x900bb.jpg",
+      "catalogUrl": "https://itunes.apple.com/lookup?id=6782668147&country=us&entity=tvSoftware",
+      "review": "Sol Levante hero with Continue Watching artwork from the credited demonstration library."
+    },
+    {
+      "file": "iphone-aa16c735c5.jpg",
+      "platform": "iOS",
+      "dimensions": [660, 1434],
+      "sha256": "aa16c735c520678245ab9b78fbb465e98a32a88e54491c41cc5d1d97edd1852f",
+      "sourceUrl": "https://is1-ssl.mzstatic.com/image/thumb/PurpleSource221/v4/90/4d/8e/904d8e57-9fcf-d9b2-8296-b7fd374c5158/01-opening-iphone-1206x2622.png/660x1434bb.jpg",
+      "catalogUrl": "https://itunes.apple.com/lookup?id=6782668147&country=us",
+      "review": "Sol Levante hero, Continue Watching and decorative film cards from the credited demonstration library."
+    },
+    {
+      "file": "ipad-00b342355d.jpg",
+      "platform": "iPadOS",
+      "dimensions": [1080, 1440],
+      "sha256": "00b342355d4a1d4d9b62b401da73ca8c871a1a27978a9b46274545880b46ee70",
+      "sourceUrl": "https://is1-ssl.mzstatic.com/image/thumb/PurpleSource211/v4/8f/d7/19/8fd71932-3e3f-b913-1d16-b49149dbc681/01-opening-ipad-2064x2752.png/1080x1440bb.jpg",
+      "catalogUrl": "https://itunes.apple.com/lookup?id=6782668147&country=us",
+      "review": "Sol Levante hero, Continue Watching, demonstration Live TV channels and film cards from the credited demonstration library."
+    }
+  ]
+}

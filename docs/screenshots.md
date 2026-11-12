@@ -1,6 +1,15 @@
 # Screenshots and media credits
 
-The README uses real Plozz simulator captures. Home and library views use a
+The README uses the published App Store opening artwork for Apple TV, iPhone
+and iPad, with real app captures in promotional layouts. Local, content-versioned
+JPEG copies keep the gallery independent of Apple's image URLs.
+[App Store image records](assets/app-store/provenance.json) retain the source
+URLs, retrieval date, dimensions and hashes. These are Apple-hosted derivatives,
+not new captures or submission-sized originals; no local retouching was applied.
+The older raw-capture records below do not establish the app revision of these
+newer captures.
+
+The retained raw simulator screenshots show Home and library views using a
 catalog of 20 real film titles, including multiple in-progress films at distinct
 playback positions. Full-bleed covers use licensed film frames and historical
 public-domain artwork. Online metadata and artwork are disabled for capture.
@@ -13,7 +22,7 @@ The demonstration library is not bundled with Plozz.
 - [Media records](assets/screenshots/media-credits.json) and
   [public credits](https://plozz.app/media-credits/) identify creators, source
   evidence, licenses and crop/adaptation notices. Third-party media is not
-  licensed under Plozz's MIT license.
+  licensed under Plozz's GPL-3.0 license or App Store Exception.
 - The separately retained `demo-media-source.zip` describes the previous
   procedural collection, not the current screenshots.
 
@@ -58,7 +67,7 @@ title, blank poster, loading screen or timed-out request is not a usable image.
 Keep progress values within each actual video's runtime.
 
 Native PNGs can be normalized to sRGB with an opaque alpha channel removed.
-README JPEGs are proportionally resized from those originals. Do not stretch
+Raw-capture JPEGs are proportionally resized from those originals. Do not stretch
 screens, replace app text, add fictional controls or paint over unapproved art.
 Keep portrait iPad captures portrait unless the app was genuinely captured in
 landscape.
