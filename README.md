@@ -34,9 +34,7 @@ with **iCloud**.
   <sub>Apple TV · iPhone · iPad — <a href="https://plozz.app/media-credits/">Screenshot media credits</a></sub>
 </p>
 
-## Your media, together
-
-### Media servers
+## Media servers
 
 <p>
   <a href="https://jellyfin.org"><img src="docs/assets/integrations/jellyfin.png" height="40" alt="Jellyfin" /></a>
@@ -48,7 +46,7 @@ with **iCloud**.
 Bring your servers together or browse each one separately. Search, filter and
 sort your collection, jump to a letter, and pick up where you left off.
 
-### Network shares
+## Network shares
 
 <p>
   <a href="https://plozz.app/network-shares/"><img src="docs/assets/integrations/smb.png" height="40" alt="SMB" /></a>
@@ -62,7 +60,7 @@ Play directly from your NAS or file server over **SMB, WebDAV, NFS, SFTP or FTP*
 Find artwork and details for your movies and shows, use your own artwork and metadata files,
 or browse personal videos as folders. No media server required.
 
-### Live TV and IPTV
+## Live TV and IPTV
 
 <p>
   <a href="https://plozz.app/live-tv/"><img src="docs/assets/integrations/m3u.png" height="40" alt="M3U playlists" /></a>
