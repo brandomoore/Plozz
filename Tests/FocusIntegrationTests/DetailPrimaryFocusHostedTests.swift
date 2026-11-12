@@ -69,7 +69,11 @@ final class DetailPrimaryFocusHostedTests: XCTestCase {
                 .preferredColorScheme(.dark)
             )
             window.makeKeyAndVisible()
+            try await waitUntil { UIFocusSystem.focusSystem(for: window)?.focusedItem != nil }
+            try await waitForHostedLayout(window)
             var text = ""
+            var playFrame: CGRect?
+            var episodesFrame: CGRect?
             try await waitUntil {
                 let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
                     window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
@@ -78,12 +82,21 @@ final class DetailPrimaryFocusHostedTests: XCTestCase {
                 request.recognitionLanguages = ["en-US"]
                 try VNImageRequestHandler(cgImage: XCTUnwrap(image.cgImage)).perform([request])
                 text = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ")
+                playFrame = request.results?.first {
+                    $0.topCandidates(1).first?.string.contains(String(localized: episode.playActionTitle)) == true
+                }?.boundingBox
+                episodesFrame = request.results?.first {
+                    $0.topCandidates(1).first?.string == "Episodes"
+                }?.boundingBox
                 return text.contains("quiet village") && text.contains("8.7")
                     && text.contains(String(localized: episode.playActionTitle))
+                    && episodesFrame != nil
             }
             XCTAssertFalse(text.contains("murderer"), text)
             XCTAssertFalse(text.contains("2.3"), text)
             XCTAssertTrue(text.contains(String(localized: episode.playActionTitle)), text)
+            XCTAssertGreaterThan(try XCTUnwrap(playFrame).minY, try XCTUnwrap(episodesFrame).maxY,
+                                 "A series without season tabs must not draw Episodes over the hero action.")
             capture(window, name: "series-header-episode-context-\(explicitEpisode)")
         }
     }

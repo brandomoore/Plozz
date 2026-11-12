@@ -1,5 +1,6 @@
 import CoreUI
 import FeatureShareOnboarding
+import Observation
 import SwiftUI
 import UIKit
 
@@ -7,27 +8,41 @@ struct ShareLocationList: View {
     let locations: [UnifiedAddShareModel.LocationItem]
     let onSelect: (UnifiedAddShareModel.LocationItem) -> Void
 
-    @State private var viewport = Viewport()
+    @State private var viewport = ViewportState()
 
     var body: some View {
         NativeList(
-            locations: locations, onSelect: onSelect, onViewport: { viewport = $0 }
+            locations: locations, onSelect: onSelect, onViewport: { viewport.value = $0 }
         )
-        .frame(height: viewport.height > 0 ? viewport.height : 620)
-        // Reserve space inside native cells for the shared focus card and shadow,
-        // without narrowing the rows or clipping their horizontal overflow.
-        .padding(.horizontal, -32)
-        .mask(VerticalEdgeFadeMask(
-            topFade: viewport.top ? 34 : 0,
-            bottomFade: viewport.bottom ? 34 : 0,
-            horizontalOverhang: 400
-        ))
+        .modifier(ViewportLayout(viewport: viewport))
     }
 
     fileprivate struct Viewport: Equatable {
         var height: CGFloat = 620
         var top = false
         var bottom = false
+    }
+
+    @Observable
+    fileprivate final class ViewportState {
+        var value = Viewport()
+    }
+
+    private struct ViewportLayout: ViewModifier {
+        let viewport: ViewportState
+
+        func body(content: Content) -> some View {
+            let value = viewport.value
+            // Viewport feedback updates only the container, not every hosted row.
+            content
+                .frame(height: value.height > 0 ? value.height : 620)
+                .padding(.horizontal, -32)
+                .mask(VerticalEdgeFadeMask(
+                    topFade: value.top ? 34 : 0,
+                    bottomFade: value.bottom ? 34 : 0,
+                    horizontalOverhang: 400
+                ))
+        }
     }
 }
 
@@ -77,8 +92,17 @@ private struct NativeList: UIViewRepresentable {
     @MainActor
     final class Coordinator: NSObject, UITableViewDataSource, UITableViewDelegate {
         var parent: NativeList
-        var environment = EnvironmentValues()
+        var environment = EnvironmentValues() {
+            didSet { environmentGeneration += 1 }
+        }
+        private var environmentGeneration = 0
         private var lastViewport: ShareLocationList.Viewport?
+
+        private struct RowConfiguration: Equatable {
+            let isFocused: Bool
+            let isHighlighted: Bool
+            let environmentGeneration: Int
+        }
 
         init(_ parent: NativeList) { self.parent = parent }
 
@@ -98,8 +122,18 @@ private struct NativeList: UIViewRepresentable {
             cell.accessibilityLabel = item.name
             cell.accessibilityIdentifier = "share-location:\(item.path)"
             cell.accessibilityTraits = .button
-            cell.configurationUpdateHandler = { [weak self] cell, state in
+            var lastConfiguration: RowConfiguration?
+            cell.configurationUpdateHandler = { [weak self, weak tableView] cell, state in
                 guard let self else { return }
+                let configuration = RowConfiguration(
+                    isFocused: state.isFocused, isHighlighted: state.isHighlighted,
+                    environmentGeneration: self.environmentGeneration
+                )
+                guard configuration != lastConfiguration else { return }
+                lastConfiguration = configuration
+                #if DEBUG
+                (tableView as? FolderTableView)?.rowConfigurationCount += 1
+                #endif
                 cell.contentConfiguration = UIHostingConfiguration {
                     SettingsFocusRow(isFocused: state.isFocused, isPressed: state.isHighlighted, size: .prominent) {
                         HStack(spacing: 16) {
@@ -143,8 +177,11 @@ private struct NativeList: UIViewRepresentable {
     }
 }
 
-private final class FolderTableView: UITableView {
+final class FolderTableView: UITableView {
     var onLayout: ((FolderTableView) -> Void)?
+    #if DEBUG
+    fileprivate(set) var rowConfigurationCount = 0
+    #endif
 
     override func layoutSubviews() {
         super.layoutSubviews()

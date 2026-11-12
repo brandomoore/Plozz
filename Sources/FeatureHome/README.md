@@ -948,6 +948,8 @@ records on both platforms; error dialogs, playback routing and timeouts are unch
   and prepared rail target are retained; the rail does not claim initial focus
   or bypass the cinematic entrance. Returning from a child page retains the
   existing focus-restoration behavior rather than claiming Play again.
+  Series with loose episodes but no season tabs retain the same browser-stage
+  spacing, so the Episodes heading cannot overlap the resting hero action.
   Episode-rail re-entry measures the remembered card before revealing it.
   An already-visible card keeps its horizontal position instead of snapping to
   the leading edge when focus moves to Seasons, the hero, or lower details.

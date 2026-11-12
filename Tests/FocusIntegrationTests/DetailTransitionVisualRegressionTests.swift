@@ -563,6 +563,19 @@ final class DetailTransitionVisualRegressionTests: XCTestCase {
             controller.play(itemID: "hero", resolvedURL: video, muted: true)
             controller.claimSurface(.detail, itemID: "hero")
             try await waitUntil { controller.isPlaying && controller.duration > 0 }
+            if !controller.isPlaying || controller.duration <= 0 {
+                let attachment = XCTAttachment(string:
+                    "ready=\(controller.isReady) playing=\(controller.isPlaying) paused=\(controller.isPaused) "
+                        + "duration=\(controller.duration) rate=\(controller.player.rate) "
+                        + "status=\(String(describing: controller.player.currentItem?.status)) "
+                        + "itemDuration=\(String(describing: controller.player.currentItem?.duration.seconds)) "
+                        + "timeControl=\(controller.player.timeControlStatus.rawValue) "
+                        + "waiting=\(String(describing: controller.player.reasonForWaitingToPlay))"
+                )
+                attachment.name = "borrowed-trailer-readiness"
+                attachment.lifetime = .keepAlways
+                self.add(attachment)
+            }
             let request = try XCTUnwrap(controller.beginFullScreen(itemID: "hero", from: .detail))
             let surface = try XCTUnwrap(controller.fullScreenSurface(id: request))
             let engine = BorrowedTrailerEngine(player: controller.player, surface: surface)

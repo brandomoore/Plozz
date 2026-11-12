@@ -303,6 +303,7 @@ struct SeriesEpisodeBrowser<SeasonContent: View, EpisodeContent: View>: View {
                 maxHeight: SeriesEpisodeBrowserLayout.episodeRailHeight,
                 alignment: .topLeading
             )
+            .padding(.top, showsSeasons ? 0 : SeriesEpisodeBrowserLayout.seasonBarHeight)
 
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)

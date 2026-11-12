@@ -1534,10 +1534,13 @@ tests. Run `39857697957` also exhausted a full 40-minute execution window while
 still progressing through the expanded hosted suite. Both attempts of run
 `41421118241` reached the 40-minute compilation deadline before tests could
 start; the retry was still compiling the hosted test target. CI now allows
-60 minutes for compilation and 90 minutes for hosted execution, within a
-170-minute job limit including setup and evidence retention. This changes only
-the cold-build budget, not test assertions, performance thresholds, or the
-execution deadline. Local build and execution defaults remain 40 minutes unless
+60 minutes for compilation and 120 minutes for hosted execution, within a
+200-minute job limit including setup and evidence retention. Run `43265633256`
+completed 966 of 1,131 hosted methods before the former 90-minute execution
+limit interrupted a still-progressing streaming test. Its completed methods
+alone consumed 88.4 minutes; the native-reopen case completed rather than
+hanging. The longer suite budget does not change individual-test allowances,
+test assertions, or performance thresholds. Local build and execution defaults remain 40 minutes unless
 `PLOZZ_FOCUS_BUILD_TIMEOUT` or `PLOZZ_FOCUS_TEST_TIMEOUT` is set;
 test failures, timeouts, and unreadable `xcresult` summaries still fail closed.
 Individual hosted tests also have a ten-minute XCTest execution allowance,

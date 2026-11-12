@@ -25,7 +25,7 @@ final class ShareFolderBrowserHostedTests: XCTestCase {
         try await wait { model.step == .pickLocation && model.locationLoad == .loaded }
         let window = UIWindow(windowScene: scene)
         window.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
-        window.rootViewController = UIHostingController(rootView:
+        func content(_ scheme: ColorScheme) -> some View {
             UnifiedAddShareView(
                 isPageReady: false,
                 onBack: {},
@@ -33,9 +33,12 @@ final class ShareFolderBrowserHostedTests: XCTestCase {
                 onWebDAVConfigured: { _ in XCTFail("Browsing must not save an account") },
                 viewModel: model
             )
-            .environment(\.themePalette, .pureBlack)
-            .preferredColorScheme(.dark)
-        )
+            .environment(\.themePalette, scheme == .dark ? .pureBlack : .light)
+            .environment(\.colorScheme, scheme)
+            .preferredColorScheme(scheme)
+        }
+        let host = FolderFocusHost(rootView: content(.dark))
+        window.rootViewController = host
         window.makeKeyAndVisible()
         defer {
             window.isHidden = true
@@ -101,6 +104,14 @@ final class ShareFolderBrowserHostedTests: XCTestCase {
                 XCTAssertFalse(cell.clipsToBounds)
                 XCTAssertFalse(cell.contentView.clipsToBounds)
             }
+            try await waitForHostedLayout(window)
+            let folderTable = try XCTUnwrap(table as? FolderTableView)
+            let configurations = folderTable.rowConfigurationCount
+            for cell in table.visibleCells {
+                cell.configurationUpdateHandler?(cell, cell.configurationState)
+            }
+            XCTAssertEqual(folderTable.rowConfigurationCount, configurations,
+                           "Unchanged native cell state must not rebuild hosted folder content.")
             let outer = try XCTUnwrap(scrollViews(in: window).first { $0 !== scroll })
             outer.scrollRectToVisible(scroll.convert(scroll.bounds, to: outer), animated: false)
             table.scrollToRow(at: IndexPath(row: model.locations.count - 1, section: 0), at: .bottom, animated: false)
@@ -116,6 +127,21 @@ final class ShareFolderBrowserHostedTests: XCTestCase {
             XCTAssertTrue(target.canBecomeFocused, "Deep lazy rows must expose a native focus target.")
             let frame = try XCTUnwrap(NavigationRowFocusRequester.frame(of: target, relativeTo: window))
             XCTAssertTrue(window.bounds.contains(frame), "The realized deep row must be onscreen.")
+            let system = try XCTUnwrap(UIFocusSystem.focusSystem(for: window))
+            host.target = target
+            system.requestFocusUpdate(to: host)
+            system.updateFocusIfNeeded()
+            try await wait { system.focusedItem === target }
+            host.target = nil
+            try await waitForHostedLayout(window)
+            let beforeThemeChange = folderTable.rowConfigurationCount
+            host.rootView = content(.light)
+            try await waitForHostedLayout(window)
+            XCTAssertGreaterThan(folderTable.rowConfigurationCount, beforeThemeChange,
+                                 "An environment change must refresh already-realized folder rows.")
+            XCTAssertTrue(system.focusedItem === target)
+            host.rootView = content(.dark)
+            try await waitForHostedLayout(window)
             XCTAssertGreaterThan(scroll.contentOffset.y, 30_000)
             XCTAssertTrue(model.canNavigateUp)
             model.navigateUp()
@@ -135,6 +161,15 @@ final class ShareFolderBrowserHostedTests: XCTestCase {
             try await Task.sleep(for: .milliseconds(20))
         }
         XCTAssertTrue(predicate())
+    }
+}
+
+@MainActor
+private final class FolderFocusHost<Content: View>: UIHostingController<Content> {
+    weak var target: (any UIFocusEnvironment)?
+
+    override var preferredFocusEnvironments: [any UIFocusEnvironment] {
+        target.map { [$0] } ?? super.preferredFocusEnvironments
     }
 }
 

@@ -160,7 +160,7 @@ class WorkflowTests(unittest.TestCase):
                 self.assertIn("    needs: guards\n", block)
                 self.assertEqual(block.count("needs:"), 1)
                 self.assertIn("    runs-on: xcode-27\n", block)
-                timeout = {"app-build": 60, "package-tests": 80, "hosted-focus": 170}[lane]
+                timeout = {"app-build": 60, "package-tests": 80, "hosted-focus": 200}[lane]
                 self.assertIn(f"    timeout-minutes: {timeout}\n", block)
                 self.assertIn(f"          lane: {lane}\n", block)
                 self.assertIn("uses: ./.github/actions/ci-prepare", block)
@@ -202,10 +202,10 @@ class WorkflowTests(unittest.TestCase):
         self.assertGreaterEqual(package_job_minutes * 60 - package_deadline, 15 * 60,
                                 "Keep setup, timeout teardown, and diagnostic uploads inside the outer job budget.")
         self.assertIn("run: tools/run-focus-tests.sh\n", JOBS["hosted-focus"])
-        self.assertIn('PLOZZ_FOCUS_TEST_TIMEOUT: "5400"', JOBS["hosted-focus"])
+        self.assertIn('PLOZZ_FOCUS_TEST_TIMEOUT: "7200"', JOBS["hosted-focus"])
         self.assertEqual(
             re.findall(r"PLOZZ_FOCUS_TEST_TIMEOUT:\s*([^\n]+)", WORKFLOW + PREPARE),
-            ['"5400"'],
+            ['"7200"'],
         )
         self.assertEqual(
             re.findall(r"PLOZZ_FOCUS_BUILD_TIMEOUT:\s*([^\n]+)", WORKFLOW + PREPARE),

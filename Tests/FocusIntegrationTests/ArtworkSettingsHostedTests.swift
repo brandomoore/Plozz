@@ -1053,6 +1053,20 @@ final class ArtworkSettingsHostedTests: XCTestCase {
                       ContinuousClock.now < returnDeadline {
                     try await Task.sleep(for: .milliseconds(20))
                 }
+                if navigation.awaitingFocus || system.focusedItem == nil {
+                    let candidates = self.focusItems(in: window).map {
+                        "\(type(of: $0)): \((try? self.nativeFrame($0, in: window)).map(String.init(describing:)) ?? "missing")"
+                    }
+                    let attachment = XCTAttachment(string:
+                        "page=\(page.rawValue) returnGeneration=\(navigation.returnFocusGeneration) "
+                            + "presented=\(navigation.isPresented) awaitingFocus=\(navigation.awaitingFocus) "
+                            + "keyWindow=\(window.isKeyWindow) focused=\(String(describing: system.focusedItem))\n"
+                            + candidates.joined(separator: "\n")
+                    )
+                    attachment.name = "hero-return-focus-\(page.rawValue)"
+                    attachment.lifetime = .keepAlways
+                    self.add(attachment)
+                }
                 XCTAssertFalse(navigation.awaitingFocus, "Wait for native return focus before blocking on OCR.")
                 let returned = try await self.capture(window, name: "hero-return-\(page.rawValue)", includeMaster: true)
                 if page != .titles {
