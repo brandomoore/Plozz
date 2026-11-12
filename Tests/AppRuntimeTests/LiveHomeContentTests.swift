@@ -1,10 +1,26 @@
 import CoreModels
 import CoreNetworking
+import FeatureHomeCore
 import Foundation
 import ProviderJellyfin
 import ProviderPlex
 import ProviderSilo
 import XCTest
+@testable import TestSupportPerformance
+
+private actor LiveQueryPages {
+    private(set) var requests = 0
+    private(set) var populated = Set<HomeContentSource.ID>()
+
+    func begin() throws {
+        requests += 1
+        guard requests <= 600 else { throw AppError.invalidResponse }
+    }
+
+    func record(_ source: HomeContentSource, page: HomeRowPage) {
+        if !page.items.isEmpty { populated.insert(source.id) }
+    }
+}
 
 private actor LiveRecommendationHTTP: HTTPClient {
     private let client = URLSessionHTTPClient()
@@ -18,6 +34,164 @@ private actor LiveRecommendationHTTP: HTTPClient {
 
 /// Read-only production-provider checks using a private, ephemeral credential broker.
 final class LiveHomeContentTests: XCTestCase {
+    @MainActor
+    func testPerformanceJellyfinSavedQueries() async throws {
+        try await measureSavedQueries([.jellyfin], scenario: "home-live-jellyfin-queries")
+    }
+
+    @MainActor
+    func testPerformanceEmbySavedQueries() async throws {
+        try await measureSavedQueries([.emby], scenario: "home-live-emby-queries")
+    }
+
+    @MainActor
+    func testPerformancePlexSavedQueries() async throws {
+        try await measureSavedQueries([.plex], scenario: "home-live-plex-queries")
+    }
+
+    @MainActor
+    func testPerformanceSiloSavedQueries() async throws {
+        try await measureSavedQueries([.silo], scenario: "home-live-silo-queries")
+    }
+
+    @MainActor
+    func testPerformanceCombinedSavedQueries() async throws {
+        try await measureSavedQueries([.plex, .jellyfin, .emby], scenario: "home-live-combined-queries")
+    }
+
+    @MainActor
+    private func measureSavedQueries(_ kinds: [ProviderKind], scenario: String) async throws {
+        try await PerformanceProbe.measure(self, scenario: scenario) {
+            var accounts: [ResolvedAccount] = []
+            var sources: [HomeContentSource] = []
+            for kind in kinds {
+                let provider = try await self.provider(kind)
+                let account = ResolvedAccount(account: .init(id: "live-\(kind.rawValue)", from: provider.session),
+                                              provider: provider)
+                accounts.append(account)
+                let libraries = try await provider.libraries()
+                let movies = try XCTUnwrap(libraries.first { $0.kind == .movie && !$0.isMusic })
+                let shows = try XCTUnwrap(libraries.first { $0.kind == .series && !$0.isMusic })
+                func source(_ feed: HomeContentSource.Feed, library: MediaLibrary) -> HomeContentSource {
+                    .init(feed: feed, accountID: account.account.id, serverUserID: provider.session.userID,
+                          libraryID: library.id, title: "Internal query source")
+                }
+                sources += [source(.library(.movie), library: movies), source(.library(.series), library: shows)]
+                if kind != .silo {
+                    let collections = try await provider.collections(in: movies.id, page: .init(limit: 2))
+                    let playlists = try await provider.videoPlaylists(in: movies.id, page: .init(limit: 2))
+                    XCTAssertEqual(collections.items.count, 2)
+                    XCTAssertEqual(playlists.items.count, 2)
+                    sources += collections.items.map { source(.collection($0.id), library: movies) }
+                    sources += playlists.items.map { source(.playlist($0.id), library: movies) }
+                }
+            }
+            let session = HomeContentPageLoader.Session(accounts: accounts, visibility: .default) { _ in
+                XCTFail("These live sources must not substitute synthetic Home snapshots")
+                return []
+            }
+            let pages = LiveQueryPages()
+            let pager = HomeContentPager(sources: sources, serverInfo: accounts.sourceServerInfo()) {
+                try await pages.begin()
+                let page = try await session.load($0, start: $1, limit: $2)
+                await pages.record($0, page: page)
+                return page
+            }
+            let initialQuery = HomeContentQuery(sort: .init(field: .name, direction: .descending))
+            let started = ContinuousClock.now
+            let preview = try await pager.load(limit: 20, query: initialQuery)
+            let cold = Self.nanoseconds(started.duration(to: .now))
+            XCTAssertTrue(preview.failures.isEmpty)
+            XCTAssertFalse(preview.hasMore, "Explicit sorting must complete membership")
+            XCTAssertGreaterThan(preview.items.count, 20)
+            let inventory = try await pager.loadAll().items
+            let dated = inventory.compactMap { $0.librarySortValues?.dateAdded }
+            let released = inventory.compactMap(\.productionYear)
+            let runtimes = inventory.compactMap(\.runtime)
+            XCTAssertGreaterThan(Set(dated).count, 1, "Date Added must exercise real differing timestamps")
+            XCTAssertGreaterThan(Set(released).count, 1, "Release ordering must exercise real differing years")
+            XCTAssertGreaterThan(Set(runtimes).count, 1, "Runtime ordering must exercise real differing durations")
+            let fetched = await pages.requests
+            let populated = await pages.populated
+            XCTAssertEqual(populated, Set(sources.map(\.id)), "Every selected live source must contribute actual data")
+            XCTAssertEqual(Set(inventory.map(\.stablePresentationID)).count, inventory.count)
+            let model = HomeRowBrowseModel(title: "Live query", contentPager: pager, query: initialQuery)
+            await model.load()
+            XCTAssertNil(model.error)
+            XCTAssertTrue(model.items == preview.items, "Editor and opened grid must use the same ordering")
+
+            var warm = 0
+            var maximumGap = 0
+            var ticks = 0
+            let heartbeat = Task { @MainActor in
+                var previous = ContinuousClock.now
+                while !Task.isCancelled {
+                    do { try await Task.sleep(for: .milliseconds(2)) } catch { break }
+                    let now = ContinuousClock.now
+                    maximumGap = max(maximumGap, Self.nanoseconds(previous.duration(to: now)))
+                    previous = now
+                    ticks += 1
+                }
+            }
+            defer { heartbeat.cancel() }
+            for field in HomeContentQuery.sortFields {
+                for direction in [SortDirection.ascending, .descending] {
+                    let sort = SortDescriptor(field: field, direction: direction)
+                    // The original comparator is an independent path from the cached-key index sort.
+                    let expected = await Task.detached {
+                        inventory.sorted { MediaItemSortOrder.isOrderedBefore($0, $1, sort: sort) }
+                            .map(\.stablePresentationID)
+                    }.value
+                    model.query = .init(sort: sort)
+                    let began = ContinuousClock.now
+                    await model.load()
+                    warm += Self.nanoseconds(began.duration(to: .now))
+                    XCTAssertNil(model.error)
+                    XCTAssertTrue(model.items.map(\.stablePresentationID) == expected,
+                                  "Live order differs for \(field) \(direction)")
+                }
+            }
+            for media in [WatchlistMediaFilter.movies, .shows] {
+                for filter in [LibraryFilter.unwatched, .inProgress] {
+                    model.query = .init(media: media, filters: .init(filter: filter))
+                    await model.load()
+                    let expected = inventory.filter { item in
+                        let matchesMedia = media == .movies ? item.kind == .movie
+                            : [.series, .season, .episode].contains(item.kind)
+                        let matchesWatch = filter == .unwatched
+                            ? !(item.librarySortValues?.watched ?? item.isPlayed)
+                            : !item.isPlayed && ((item.resumePosition ?? 0) > 0 || (item.playedPercentage ?? 0) > 0)
+                        return matchesMedia && matchesWatch
+                    }
+                    XCTAssertNil(model.error)
+                    XCTAssertTrue(model.items.map(\.stablePresentationID) == expected.map(\.stablePresentationID),
+                                  "Live filter differs for \(media) \(filter)")
+                }
+            }
+            model.query = .init(sort: .init(field: .runtime, direction: .descending))
+            let abandoned = Task { await model.load() }
+            await Task.yield()
+            abandoned.cancel()
+            model.query = initialQuery
+            await model.load()
+            await abandoned.value
+            XCTAssertNil(model.error)
+            XCTAssertEqual(model.appliedQuery, initialQuery)
+            XCTAssertTrue(model.items == preview.items, "Cancelled query must not replace the current result")
+            let finalRequests = await pages.requests
+            XCTAssertEqual(finalRequests, fetched, "Warm sorting and filtering must not refetch real-server pages")
+            XCTAssertGreaterThan(ticks, 0)
+            return ["items": inventory.count, "sources": sources.count, "pages": fetched,
+                    "datedItems": dated.count, "releaseYearItems": released.count, "runtimeItems": runtimes.count,
+                    "coldNanoseconds": cold, "warmEightQueriesNanoseconds": warm,
+                    "maximumMainActorGapNanoseconds": maximumGap]
+        }
+    }
+
+    private static func nanoseconds(_ duration: Duration) -> Int {
+        Int(duration.components.seconds) * 1_000_000_000 + Int(duration.components.attoseconds / 1_000_000_000)
+    }
+
     func testJellyfinCustomRowSourcesAndPaging() async throws { try await verify(.jellyfin) }
     func testEmbyCustomRowSourcesAndPaging() async throws { try await verify(.emby) }
     func testPlexCustomRowSourcesAndPaging() async throws { try await verify(.plex) }

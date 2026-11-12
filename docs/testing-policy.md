@@ -121,6 +121,17 @@ file-share coverage. Fresh Silo credentials must outlive the bounded run; an
 unexpected rotation fails rather than changing the broker-owned login.
 The broker owns temporary logins and must close and revoke them after the run.
 
+The opt-in performance scenarios `home-live-{jellyfin,emby,plex,silo,combined}-queries`
+use that same broker via `PLOZZ_LIVE_HOME_BROKER`. Each sample starts a fresh
+production provider/pager, completes one movie and one TV library per account,
+and includes two populated collections and playlists for Plex/Jellyfin/Emby.
+Traversal is capped at 600 source-page calls per sample. They verify all four
+saved sort fields in both directions, media/watch filters, preview/grid agreement,
+cancelled query replacement and zero warm page refetches. Timings distinguish
+fresh client inventory loading from eight warm query projections; the server's
+own caches are not cleared. Main-actor wake-up gaps are simulator scheduling
+observations, not rendered-frame or physical-iPhone evidence.
+
 `LiveWatchProgressTests` in `AppRuntimeTests` exercises production Jellyfin,
 Emby and Plex resume writers, metadata reads, Continue Watching feeds and the
 shared Home admission policy. Set `TEST_RUNNER_PLOZZ_LIVE_WATCH_BROKER` to a

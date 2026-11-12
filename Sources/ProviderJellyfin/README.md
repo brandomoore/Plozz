@@ -4,6 +4,11 @@ Shared Jellyfin/Emby implementation of `CoreModels.MediaProvider`. Both use the
 MediaBrowser API lineage and intentionally share one implementation so every
 supported capability remains at parity.
 
+Home-row sources explicitly request `SortName`, `DateCreated`, `ProductionYear`,
+and `PremiereDate` for local saved sorting. Emby omits release metadata without
+those fields; assuming Jellyfin's default response silently turns release sorting
+into name sorting. This applies to library, collection, playlist, and Home feeds.
+
 ## Responsibility
 
 - `JellyfinProvider` (the `MediaProvider` conformer) — libraries, items,

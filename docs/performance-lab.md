@@ -1342,6 +1342,41 @@ It checks row height and rendered heading/title bounds on both platforms.
 Editor loading, partial failure, query filtering and TV focus retain separate
 hosted checks. No physical deployment is needed for these workloads.
 
+#### Real-server saved-query acceptance
+
+The explicit `home-live-{jellyfin,emby,plex,silo,combined}-queries` scenarios
+use production providers against authorized live servers, not fixture data.
+Run `a8ae80e732054058ac25803a894ec92a` passed all five scenarios with no skips,
+one warmup and five retained optimized iPhone-simulator samples per scenario.
+Each sample fully loads movie/TV libraries and, for Plex/Jellyfin/Emby, two
+populated collections and two playlists. Combined uses all three providers.
+
+| Source | Unique items | Source pages | Fresh inventory, median | Eight warm sorts, total median |
+| --- | ---: | ---: | ---: | ---: |
+| Jellyfin | 1,523 | 31 | 5,916 ms | 35.23 ms |
+| Emby | 1,830 | 36 | 1,640 ms | 45.45 ms |
+| Plex | 1,815 | 35 | 15,760 ms | 44.40 ms |
+| Silo | 1,826 | 32 | 2,262 ms | 46.44 ms |
+| Combined | 1,918 | 102 | 15,893 ms | 53.70 ms |
+
+These are observed current-path timings, not a live-server before/after speedup.
+Fresh means a new client/provider/pager; server caches are not cleared.
+Discovery precedes the fresh-inventory timer. Warm sorts cover Name, Date Added,
+Release Date and Runtime in both directions and perform no additional source-page
+fetches. Media/watch filters, preview/grid agreement and cancelled-query
+replacement also pass. Real metadata must include differing dates, years and
+durations, so a missing-field fallback cannot masquerade as sorting coverage.
+This caught Emby's omitted release fields: explicitly requesting `ProductionYear`
+and `PremiereDate` restored release sorting instead of silently falling back to
+names. The provider regression also covers explicit field-list overrides.
+
+Warm projection is small at these library sizes, but complete first inventories
+still take seconds, especially Plex and combined rows. This does **not** establish
+an instant first sorted preview or physical-device UI smoothness. Median
+per-sample maximum main-actor wake-up gaps were 3.5–5.0 ms; those are simulator
+scheduling observations, not frame measurements. Results do not cover every server
+version, network condition, provider, or larger library.
+
 ### Jellyfin Home recommendation reuse
 
 `home-recommendation-navigation` runs production `JellyfinProvider.homeHubs`

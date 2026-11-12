@@ -286,6 +286,17 @@ SCENARIOS = {
         "description": "Cancel and replace four 20,000-title queries, filter mixed watch states, and measure main-actor scheduling.",
         "counters": ["items", "heartbeatTicks", "maximumMainActorGapNanoseconds"],
     },
+    **{
+        f"home-live-{provider}-queries": {
+            "suite": "network", "target": "AppRuntimeTests", "explicitOnly": True,
+            "test": f"LiveHomeContentTests/testPerformance{provider.title()}SavedQueries",
+            "file": "Tests/AppRuntimeTests/LiveHomeContentTests.swift",
+            "description": "Authorized real-server row inventory, eight sorts, watch/media filters and cancelled query replacement.",
+            "counters": ["items", "sources", "pages", "datedItems", "releaseYearItems", "runtimeItems", "coldNanoseconds",
+                         "warmEightQueriesNanoseconds", "maximumMainActorGapNanoseconds"],
+        }
+        for provider in ("jellyfin", "emby", "plex", "silo", "combined")
+    },
     "home-saved-row-queries": {
         "suite": "network", "target": "FeatureHomeCoreTests",
         "test": "HomeContentPagerTests/testPerformanceSavedRowQueries",
@@ -881,7 +892,7 @@ def configure_scheme(tree):
         action.remove(old)
     variables = ET.SubElement(action, "EnvironmentVariables")
     ET.SubElement(variables, "EnvironmentVariable", key="PLOZZ_PERFORMANCE", value="1", isEnabled="YES")
-    for name in ("PLOZZ_JELLYFIN_HOME_BROKER", "PLOZZ_MUSIC_BROKER"):
+    for name in ("PLOZZ_JELLYFIN_HOME_BROKER", "PLOZZ_MUSIC_BROKER", "PLOZZ_LIVE_HOME_BROKER"):
         broker = os.environ.get(name)
         if not broker:
             continue
