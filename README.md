@@ -15,7 +15,7 @@ with **iCloud**.
 
 <p align="center">
   <a href="https://plozz.app">Website</a> ·
-  <a href="https://docs.plozz.app">User guide</a> ·
+  <a href="https://docs.plozz.app">Docs</a> ·
   <a href="https://plozz.app/discord">Discord</a> ·
   <a href="https://testflight.apple.com/join/EKfReNMu">TestFlight</a>
 </p>
@@ -82,6 +82,8 @@ Live TV is experimental; Plozz supplies no channels or IPTV subscription.
 | --- | --- |
 | **Music on iOS, iPadOS and tvOS** | Albums, artists, tracks and playlists from Plex, Jellyfin and Emby, with a mini-player, queue, shuffle, repeat and background audio. |
 | **Video playback** | HDR, HEVC and AV1 support, audio-track selection, playback speed, resume, and multichannel audio with compatible streams and equipment. |
+| **Playback shortcuts** | Manual or automatic intro/credits skipping and chapter navigation where available, plus optional next-episode autoplay. |
+| **Picture in Picture and AirPlay** | Watch on iPhone and iPad while multitasking or send video to another screen, depending on the playback path. Saved sidecar subtitles stay in the in-app player. |
 | **Subtitles** | Two tracks at once; adjustable font, size, color, background and position; subtitle search through supported servers. |
 | **Versions and quality** | Switch files or editions on the active server without leaving the player. Set streaming-quality limits on iPhone and iPad. |
 | **Offline downloads** | Save movies and episodes on iPhone and iPad, choose download quality, and browse saved artwork and metadata offline. |
@@ -102,7 +104,7 @@ Media files and offline downloads stay on their devices. Sign-in transfer
 depends on the service and platform; Silo requires approval on each device.
 [Sync controls and limits](https://docs.plozz.app/profiles-and-sync/).
 
-## Keep your trackers in sync
+## Trackers and requests
 
 <p>
   <a href="https://trakt.tv"><img src="docs/assets/integrations/trakt.png" height="40" alt="Trakt" /></a>
@@ -129,9 +131,12 @@ without leaving Plozz.
 
 - **Profiles:** separate library choices, playback preferences and subtitle
   settings. Server users still control access and watch history.
+- **Viewing controls:** Kids profiles, parental PINs, profile locks and
+  spoiler protection.
 - **Appearance:** light, dark and Pure Black themes, adjustable row density,
   hero artwork and navigation layout.
 - **Circadian mode:** warm and dim the interface on your schedule.
+- **Apple TV Top Shelf:** Continue Watching and Recently Added on the Home Screen.
 
 ## Diagnostics, with your permission
 
@@ -159,7 +164,7 @@ not App Store builds.
 
 [Explore features](https://plozz.app/features/) ·
 [Supported formats](https://plozz.app/formats/) ·
-[Setup guides](https://docs.plozz.app)
+[Docs](https://docs.plozz.app)
 
 ## Help and contribute
 
