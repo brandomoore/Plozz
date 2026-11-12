@@ -6,6 +6,7 @@ import FeatureAuthCore
 import CryptoKit
 import FeatureLiveTVCore
 import CoreSecureStore
+import CoreUI
 
 /// The accounts + providers hub, extracted from `AppState`.
 ///
@@ -106,6 +107,28 @@ public final class AccountsProvidersModel {
 
     /// This device's stable client identifier.
     public var deviceID: String { accountStore.deviceID() }
+
+    public func configureAuthenticatedArtwork() {
+        ArtworkSession.authenticatedLoader = { [weak self] reference in
+            guard let self else { throw AppError.cancelled }
+            let profileID = self.profilesModel.activeProfileID
+            @MainActor func authorizedProvider() throws -> any AuthenticatedArtworkProviding {
+                guard self.localProviders == nil, !self.accountSelectionIsUnavailable,
+                      self.profilesModel.activeProfileID == profileID,
+                      self.homeAccounts.contains(where: {
+                          $0.account.id == reference.accountID
+                            && self.credentialRevision($0.account) == reference.credentialRevision
+                      }),
+                      let provider = self.provider(forAccountID: reference.accountID)
+                        as? any AuthenticatedArtworkProviding else { throw AppError.unauthorized }
+                return provider
+            }
+            let bytes = try await authorizedProvider().artworkData(for: reference)
+            try Task.checkCancellation()
+            _ = try authorizedProvider()
+            return bytes
+        }
+    }
 
     public func downloadUserID(for accountID: String, profileID: String) -> String? {
         guard profilesModel.activeProfileID == profileID, activeAccountIDs.contains(accountID),
@@ -267,7 +290,7 @@ public final class AccountsProvidersModel {
         case .jellyfin: .jellyfin
         case .emby: .emby
         case .iptv: .iptv
-        case .mediaShare, .silo: nil
+        case .mediaShare, .silo, .subsonic: nil
         }
     }
 

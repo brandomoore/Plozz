@@ -504,6 +504,8 @@ targets:
       - path: Tests/AuthPresentationSupport/ServerAddressNavigationFixture.swift
       - path: Tests/AuthPresentationSupport/PlexHomeOnboardingFixture.swift
       - path: Tests/FeatureLiveTVRemoteTests/NavigationRailFixture.swift
+      - path: Tests/FeatureLiveTVRemoteTests/MultiviewFixture.swift
+      - path: Tests/FeatureLiveTVRemoteTests/SourceOnboardingFixture.swift
       - path: App/Resources/Assets.xcassets
       - path: App/Resources/CommunityAssets.xcassets
       - path: App/Resources/Localizable.xcstrings
@@ -674,6 +676,7 @@ targets:
       - path: Tests/HomeRemoteTests
       - path: Tests/HomePresentationSupport/DetailSelectionInteractionTests.swift
       - path: Tests/HomePresentationSupport/ContentRefreshReturnInteractionTests.swift
+      - path: Tests/FeatureLiveTVRemoteTests/LiveTVMultiviewRemoteTests.swift
       - path: Tests/PlaybackPresentationSupport/PlaybackFailureInteractionTests.swift
       - path: Tests/PlaybackPresentationSupport/DiscReviewScreenshotTests.swift
       - path: Tests/LiveTVPresentationSupport/IPTVOrganizationInteractionTests.swift

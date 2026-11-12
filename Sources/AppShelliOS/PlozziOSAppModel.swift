@@ -904,6 +904,7 @@ final class PlozziOSAppModel {
             guard let self else { throw CancellationError() }
             return try await self.plexHomeUsers.resolveCloudToken(for: account, expectedRevision: revision)
         }
+        accountsProviders.configureAuthenticatedArtwork()
         authenticatedHTTPResolver.configure { [weak accountsProviders] locator in
             guard let accountsProviders,
                   let account = accountsProviders.accounts.first(where: {

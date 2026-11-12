@@ -41,6 +41,10 @@ Asynchronous transport fixture waits use bounded elapsed deadlines, not a count
 of `Task.yield()` calls. Yield counts do not guarantee that cancellation,
 shutdown, or lease-release workers have received time to finish.
 
+Plex authentication tests await `waitForPlexPINRequirementCheck()` before
+asserting switch completion. The switch includes off-main offline PIN-verifier
+generation; yielding the test actor does not wait for that work to finish.
+
 Native subtitle coverage adopts externally selected HLS renditions both
 immediately and after fixed callback-scheduling delays. Every case must retain
 the paused position and fence the previous extraction output; the delays are

@@ -961,10 +961,6 @@ public struct RootView: View {
             presenter: appState.transientStatusPresenter,
             palette: resolvedPalette
         )
-        .guidePreparationOverlay(
-            model: appState.guidePreparation, presenter: appState.transientStatusPresenter,
-            palette: resolvedPalette
-        )
         // Resumes setup that was abandoned part-way — quit mid-flow, or synced
         // from a device where it was never finished. The gate is persisted, so a
         // profile left behind it would otherwise never import a watchlist at all.
@@ -991,10 +987,6 @@ public struct RootView: View {
             onDismiss: rootPresentationDidDismiss
         ) {
             rootPresentationContent
-                .guidePreparationOverlay(
-                    model: appState.guidePreparation, presenter: appState.transientStatusPresenter,
-                    palette: resolvedPalette
-                )
                 .environment(\.themePalette, resolvedPalette)
                 .environment(\.gradientBackgroundsEnabled, appState.profileSettings.themeModel.gradientEnabled)
                 .environment(\.colorScheme, resolvedPalette.isLight ? .light : .dark)
@@ -1371,6 +1363,10 @@ private struct OnboardingPageContent: View {
                         throw IPTVAuthViewModel.CompletionError.persistence
                     }
                 },
+                onSubsonicAuthenticated: { [profileID = appState.profilesModel.activeProfileID] session in
+                    guard appState.profilesModel.activeProfileID == profileID else { throw AppError.cancelled }
+                    guard appState.didAuthenticate(session) else { throw AppError.invalidResponse }
+                },
                 onPlexAuthenticatedMany: { sessions in appState.didAuthenticatePlexMany(sessions) },
                 onShareConfigured: { draft in
                     appState.didConfigureShare(
@@ -1431,7 +1427,17 @@ private struct OnboardingPageContent: View {
             )
 
         case let .authenticating(server):
-            if server.provider == .plex {
+            if server.provider == .subsonic {
+                SubsonicSignInView(
+                    deviceID: appState.accountsProviders.deviceID,
+                    address: server.baseURL.absoluteString,
+                    onAuthenticated: { [profileID = appState.profilesModel.activeProfileID] session in
+                        guard appState.profilesModel.activeProfileID == profileID else { throw AppError.cancelled }
+                        guard appState.didAuthenticate(session) else { throw AppError.invalidResponse }
+                    },
+                    onCancel: { appState.cancelAuthentication() }
+                )
+            } else if server.provider == .plex {
                 ProgressView("Finishing Plex sign-in…")
                     .font(.title2)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)

@@ -30,6 +30,12 @@ public struct AccountReauthenticationView<ManagedSignIn: View>: View {
                     },
                     onCancel: cancel
                 )
+            } else if model.account.server.provider == .subsonic {
+                SubsonicSignInView(
+                    deviceID: model.deviceID, address: model.account.server.baseURL.absoluteString,
+                    username: model.account.userName, onAuthenticated: model.complete, onCancel: cancel
+                )
+                .id(attempt)
             } else {
                 if model.account.server.provider == .plex {
                     PlexReauthenticationLink(model: model, onCancel: cancel)

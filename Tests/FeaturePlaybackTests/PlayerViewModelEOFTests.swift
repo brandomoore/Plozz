@@ -2012,6 +2012,26 @@ final class PlayerViewModelEOFTests: XCTestCase {
         await viewModel.stop()
     }
 
+    func testSDRHintAndConfirmedSDRUseFrameRatePreferenceForEntryAndExit() async throws {
+        for frameRate in [false, true] {
+            let request = try makeNetworkFileRequest(
+                metadata: MediaSourceMetadata(video: .init(videoRangeType: "SDR")))
+            let engine = SpyVideoEngine()
+            let model = PlayerViewModel(
+                provider: RecordingPlaybackProvider(request: request), itemID: request.item.id,
+                playbackSettings: .init(fadeOnFrameRateChange: frameRate),
+                engineFactory: EngineFactory(
+                    makeNative: { _ in SpyVideoEngine() }, makePlozzigen: { engine }))
+            await model.load()
+            XCTAssertEqual(model.effectiveDynamicRange, .awaitingEngineProbe(hint: .sdr))
+            XCTAssertEqual(model.fadesOnFrameRateChange, frameRate)
+            XCTAssertEqual(model.exitVeilKind, frameRate ? .frameRate : nil)
+            engine.onProbedSourceFactsChanged?(.init(range: .sdr))
+            XCTAssertEqual(model.exitVeilKind, frameRate ? .frameRate : nil)
+            await model.stop()
+        }
+    }
+
     func testExitVeilKindFollowsTheProfilesFadeToggles() async throws {
         // Both fades off: leaving any title dismisses immediately, no black.
         let request = try makeNetworkFileRequest(

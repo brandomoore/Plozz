@@ -695,7 +695,9 @@ final class AutomaticSignInTests: XCTestCase {
         let env = launch(house)
         let flow = env.flow
         let profileID = env.profiles.activeProfileID
+        let tokenResolution = expectation(description: "The in-flight switch reaches server token resolution")
         env.plex.plexServerTokenResolve = { _, _, _ in
+            tokenResolution.fulfill()
             await MainActor.run { flow.switchProfile(to: profileID) }
             return "stale-server-token"
         }
@@ -705,6 +707,7 @@ final class AutomaticSignInTests: XCTestCase {
         env.plex.ensurePlexIdentityForActiveProfile()
         env.plex.submitPlexPIN("2468")
         await env.plex.waitForPlexPINRequirementCheck()
+        await fulfillment(of: [tokenResolution], timeout: 1)
         XCTAssertNotNil(env.plex.pendingPlexPINRequest)
         XCTAssertNil(env.plex.discoverToken(for: "account"))
         XCTAssertNil(try house.startup.load())

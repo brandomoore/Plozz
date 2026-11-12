@@ -92,7 +92,17 @@ struct AddServerView: View {
     @ViewBuilder
     private func connectionContent(for provider: ProviderKind) -> some View {
         Group {
-            if provider == .iptv {
+            if provider == .subsonic {
+                SubsonicSignInView(
+                    deviceID: appModel.deviceID, address: address, showsCancelButton: false,
+                    onAuthenticated: {
+                        guard appModel.profiles.activeProfileID == initialProfileID else { throw AppError.cancelled }
+                        guard appModel.persist([$0]) else { throw AppError.invalidResponse }
+                        dismiss()
+                    },
+                    onCancel: { dismiss() }
+                )
+            } else if provider == .iptv {
                 IPTVSignInView(
                     deviceID: appModel.deviceID,
                     address: initialIPTVPlaylist?.playlistURL.absoluteString ?? address,

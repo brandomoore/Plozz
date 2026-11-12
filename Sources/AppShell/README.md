@@ -87,6 +87,13 @@ registry.
   Home/detail views register their visible surface and perform the typed action.
   Follow [state management](../../docs/state-management.md).
 
+- **TV guide progress stays with setup and its source.** Playlist setup reserves
+  inline space above Continue; leaving setup never cancels guide preparation.
+  Settings shows progress and the resulting status beside the playlist and in
+  its details, without a persistent TV overlay. iPhone/iPad retain their toast.
+  Live-only IPTV profiles default to Live TV, including when discovery is
+  configured; actual movie/show libraries retain the normal Home default.
+
 - **Discover is optional and adult-profile-only.** Every navigation style uses
   the shared navigation policy: Seerr configuration enables Discover by default,
   while explicit Show/Hide choices survive connection changes. Child profiles
@@ -138,6 +145,12 @@ registry.
   data-loading regions wait for their existing readiness notification.
   `EmptyPinnedNavigationTests` covers entry, return, cold startup, and retained
   Live TV while switching back to Settings and empty Home.
+
+- **Live TV owns the guide-to-categories directional handoff.** The native guide
+  declares horizontal-input ownership while it has a category exit, so pinned
+  navigation cannot interpret a held Left or swipe as an unused page-edge move.
+  Categories remain outside that ownership: a subsequent Left can open navigation,
+  and Back retains its existing navigation behavior.
 
 - **Native Sidebar owns its screen insets.** Its startup focus host fills the
   window so the native sidebar, scrim, controls and scrolling page viewport do

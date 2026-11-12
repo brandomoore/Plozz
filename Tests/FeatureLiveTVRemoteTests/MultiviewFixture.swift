@@ -1,16 +1,19 @@
 import CoreModels
 import CoreUI
+import CoreVideo
 import FeaturePlayback
 import SwiftUI
 import UIKit
 @testable import FeatureLiveTV
 @testable import FeatureLiveTVCore
+@testable import AppShell
 
 private enum MultiviewFixtureCatalog {
     static let delaysPreparation = ProcessInfo.processInfo.arguments.contains("--pending-multiview-fixture")
     static let channels = (1...4).map {
         LiveTVPrototypeChannel(
-            id: "sports-\($0)", number: $0, name: "Sports \($0)", category: "Sports",
+            id: "sports-\($0)", number: $0, name: "Sports \($0)",
+            category: ProcessInfo.processInfo.arguments.contains("--multiview-categories") && $0 > 2 ? "News" : "Sports",
             symbol: "tv", accent: $0, source: delaysPreparation && $0 == 2 ? .jellyfin : .iptv, tagline: "",
             streamURL: URL(string: "https://example.invalid/sports-\($0).m3u8")!,
             configuredSourceID: delaysPreparation && $0 == 2 ? "fixture" : nil
@@ -119,6 +122,40 @@ struct MultiviewFixture: View {
     @State private var state = MultiviewFixtureState()
     @State private var isFavorite = false
     @State private var channelSelection: LiveTVMultiviewSelection?
+    @State private var focusPresented = false
+    @State private var nativeFocusedPaneID: UUID?
+    @State private var focusRequest = 0
+    @State private var backRequest = 0
+    @State private var requestedFocusID: UUID?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private func videoCardFocus(for pane: LiveTVMultiviewPane, frame: CGRect) -> VideoCardFocus? {
+        let coordinator = state.coordinator
+        guard coordinator.isEnabled, channelSelection == nil,
+              coordinator.expandedPaneID == nil || coordinator.expandedPaneID == pane.id else { return nil }
+        let effect = focusPresented && coordinator.expandedPaneID == nil
+        return VideoCardFocus(
+            identifier: "live-multiview-pane-\(pane.id.uuidString)",
+            title: pane.channel?.name ?? "", audible: pane.id == coordinator.audiblePaneID,
+            presentsEffect: effect,
+            cornerRadius: coordinator.expandedPaneID == nil ? LiveTVMultiviewGeometry.videoCornerRadius : 0,
+            horizontalInset: effect ? LiveTVMultiviewGeometry.focusInset(for: frame.width) : 0,
+            request: focusRequest, prefersFocus: pane.id == (requestedFocusID ?? coordinator.audiblePaneID),
+            focused: { value in
+                if value { nativeFocusedPaneID = pane.id }
+                else if nativeFocusedPaneID == pane.id { nativeFocusedPaneID = nil }
+            },
+            activate: {
+                coordinator.selectAudio(pane.id)
+                coordinator.promote(pane.id)
+            },
+            promote: { coordinator.promote(pane.id) },
+            replace: { channelSelection = .replace(pane.id) },
+            remove: coordinator.panes.count > 1 ? { coordinator.remove(pane.id) } : nil,
+            back: { backRequest &+= 1 },
+            caption: AnyView(LiveTVMultiviewFocusCaption(
+                channel: pane.channel, isFocused: focusPresented && nativeFocusedPaneID == pane.id)))
+    }
 
     var body: some View {
         GeometryReader { geometry in
@@ -128,14 +165,21 @@ struct MultiviewFixture: View {
                 Color.black.ignoresSafeArea()
                 ForEach(coordinator.panes) { pane in
                     if let prepared = pane.preparation.current {
-                        let frame = coordinator.isEnabled ? LiveTVMultiviewGeometry.frame(
+                        let slot = coordinator.isEnabled ? LiveTVMultiviewGeometry.frame(
                             for: pane.id, panes: coordinator.panes.map(\.id),
                             primary: coordinator.primaryPaneID, layout: coordinator.layout,
                             corner: coordinator.corner, insetSize: coordinator.insetSize,
                             expanded: coordinator.expandedPaneID, size: bounds.size,
                             isEditing: coordinator.isEditingLayout,
-                            aspectRatio: pane.videoAspectRatio.map { CGFloat($0) }
+                            aspectRatio: pane.videoAspectRatio.map { CGFloat($0) },
+                            aspectRatios: LiveTVMultiviewGeometry.aspectRatios(in: coordinator.panes)
                         ).offsetBy(dx: bounds.minX, dy: bounds.minY) : CGRect(origin: .zero, size: geometry.size)
+                        let roundsPicture = coordinator.isEnabled && coordinator.expandedPaneID == nil
+                        let frame = roundsPicture ? LiveTVMultiviewGeometry.contentFrame(
+                            in: slot, aspectRatio: pane.videoAspectRatio.map { CGFloat($0) }) : slot
+                        let focus = videoCardFocus(for: pane, frame: frame)
+                        let containerFrame = LiveTVMultiviewGeometry.focusContainerFrame(
+                            for: frame, horizontalInset: focus?.horizontalInset ?? 0, layout: coordinator.layout)
                         LiveChannelPlayerView(
                             channelID: prepared.channel.id, title: prepared.channel.name,
                             input: prepared.input, logoURL: nil,
@@ -151,11 +195,18 @@ struct MultiviewFixture: View {
                             onVideoAspectRatioChange: {
                                 coordinator.updateVideoAspectRatio($0, paneID: pane.id, preparedID: prepared.id)
                             },
-                            onMultiview: { coordinator.begin() },
+                            onMultiview: {
+                                guard coordinator.begin() else { return false }
+                                channelSelection = .add
+                                return true
+                            },
                             outputGroup: state.output, outputID: pane.id,
                             isAudible: pane.id == coordinator.audiblePaneID,
                             countsAsWatching: coordinator.isEnabled,
                             isMultiview: coordinator.isEnabled,
+                            displayTransitionSettings: {
+                                PlaybackSettings(fadeOnDynamicRangeChange: false, fadeOnFrameRateChange: false)
+                            },
                             program: state.guide.currentProgram(for: prepared.channel.id)?.playerInfo,
                             loadOnNow: { state.playerItems(withPrograms: true) },
                             onTuneChannel: { _ in },
@@ -168,23 +219,39 @@ struct MultiviewFixture: View {
                                 ))
                             }
                         )
-                        .frame(width: frame.width, height: frame.height)
-                        .clipShape(RoundedRectangle(
-                            cornerRadius: coordinator.isEnabled && coordinator.isEditingLayout ? 10 : 0))
-                        .position(x: frame.midX, y: frame.midY)
-                        .zIndex(coordinator.isEnabled && pane.id != coordinator.primaryPaneID ? 1 : 0)
-                        .allowsHitTesting(!coordinator.isEnabled)
-                        .accessibilityHidden(coordinator.isEnabled)
+                        .modifier(PrototypeVideoPlacement(frame: containerFrame, focus: focus))
+                        .animation(nil, value: focusPresented)
+                        .animation(coordinator.isEditingLayout ? nil : (reduceMotion ? nil : MultiviewMotion.animation),
+                                   value: coordinator.isEditingLayout)
+                        .animation(reduceMotion ? nil : MultiviewMotion.animation, value: frame)
+                        .zIndex(coordinator.isEnabled && coordinator.expandedPaneID == nil && pane.preparation.failure == nil
+                            ? (pane.id != coordinator.primaryPaneID ? 4 : 3) : 0)
+                        .allowsHitTesting(channelSelection == nil
+                            && (coordinator.expandedPaneID == nil || coordinator.expandedPaneID == pane.id))
+                        .accessibilityHidden(channelSelection != nil
+                            || (coordinator.expandedPaneID != nil && coordinator.expandedPaneID != pane.id))
                         .opacity(coordinator.expandedPaneID == nil || coordinator.expandedPaneID == pane.id ? 1 : 0)
                     }
                 }
                 if coordinator.isEnabled && channelSelection == nil {
                     LiveTVMultiviewOverlay(
                         coordinator: coordinator,
+                        onFocusPresentationChange: { focusPresented = $0 },
+                        nativeFocusedPaneID: nativeFocusedPaneID,
+                        onRestoreVideoFocus: {
+                            requestedFocusID = coordinator.audiblePaneID
+                            focusRequest &+= 1
+                        },
+                        onRequestVideoFocus: {
+                            requestedFocusID = $0
+                            focusRequest &+= 1
+                        },
+                        backRequest: backRequest,
                         exit: { _ = coordinator.exit() },
                         returnToGuide: { _ = coordinator.exit() },
                         addChannel: { channelSelection = .add },
-                        replaceChannel: { channelSelection = .replace($0) }
+                        replaceChannel: { channelSelection = .replace($0) },
+                        isFavorite: isFavorite, toggleFavorite: { isFavorite.toggle() }
                     )
                     .frame(width: bounds.width, height: bounds.height)
                     .position(x: bounds.midX, y: bounds.midY)
@@ -208,6 +275,7 @@ struct MultiviewFixture: View {
                         Text(verbatim: state.metrics)
                             .font(.caption2)
                             .accessibilityIdentifier("multiview-fixture-metrics")
+                            .accessibilityValue(state.engines.first?.motionWidths ?? "")
                         Spacer()
                     }
                     .frame(maxWidth: .infinity)
@@ -293,6 +361,12 @@ struct LiveTVRootFixture: View {
     @State private var profiles = ProfilesModel(store: SourceSmokeProfiles())
     @State private var sources: SourceSmokeStore
     @State private var imports: LiveTVPrototypeImportModel
+    @State private var hidesNavigation = false
+    @State private var nativeSelection = NavigationRailDestination.liveTV
+    @State private var nativeHandoff = NavigationDestinationFocusHandoff()
+    private var usesNativeFullscreen: Bool {
+        !ProcessInfo.processInfo.arguments.contains("--inline-live-tv")
+    }
 
     init() {
         let configuration = LiveTVSourcesConfiguration(playlists: [
@@ -308,42 +382,98 @@ struct LiveTVRootFixture: View {
         ))
     }
 
+    @ViewBuilder
     var body: some View {
-        NavigationStack {
-            LiveTVPrototypeView(
-                isActive: isActive,
-                usesNativeFullscreen: true,
-                preferencesStore: LiveTVRootFixtureStorage.preferences,
-                viewSettingsStore: LiveTVRootFixtureSettings(),
-                sourceStore: sources,
-                serverAuthorizationID: "fixture-\(hostRevision)",
-                importModel: imports,
-                profileID: profiles.activeProfileID,
-                preferencesNamespace: profiles.activeNamespace,
-                sourceApprovalContext: { [profiles] in LiveTVSourceApprovalContext(profiles: profiles) }
-            ) { playback in
-                LiveChannelPlayerView(
-                    channelID: playback.channel.id, title: playback.channel.name,
-                    input: playback.input, logoURL: nil,
-                    makeEngine: { state.makeEngine() },
-                    onPreviousChannel: playback.previousChannel, onNextChannel: playback.nextChannel,
-                    isFavorite: playback.isFavorite, canToggleFavorite: playback.canToggleFavorite,
-                    onToggleFavorite: playback.onToggleFavorite,
-                    isExpanded: playback.isExpanded, usesNativeFullscreen: !playback.isMultiview,
-                    isActive: playback.isPlaybackActive, onReturnToGuide: playback.returnToGuide,
-                    playPauseRequest: playback.playPauseRequest, onPlaybackStarted: playback.playbackStarted,
-                    reportingID: playback.reportingID, onPlaybackUpdate: playback.playbackUpdate,
-                    onPlaybackFailed: playback.playbackFailed,
-                    onVideoAspectRatioChange: playback.videoAspectRatioChanged,
-                    onMultiview: playback.canOpenMultiview ? playback.openMultiview : nil,
-                    outputGroup: state.output, outputID: playback.paneID, isAudible: playback.isAudible,
-                    countsAsWatching: playback.countsAsWatching, isMultiview: playback.isMultiview,
-                    isAuthorized: playback.isAuthorized
-                )
+        if ProcessInfo.processInfo.arguments.contains("--multiview-native-sidebar") {
+            NativeSidebarNavigation(
+                selection: nativeSelection, handoff: nativeHandoff,
+                content: TabView(selection: $nativeSelection) {
+                    Tab("Home", systemImage: "house", value: NavigationRailDestination.home) {
+                        Button("Fixture home") {}
+                    }
+                    Tab("Live TV", systemImage: "tv", value: NavigationRailDestination.liveTV) {
+                        NativeSidebarFocusDestination(
+                            destination: .liveTV, selection: nativeSelection,
+                            handoff: nativeHandoff, content: guide)
+                    }
+                }.tabViewStyle(.sidebarAdaptable))
+                .environment(\.layoutDirection, ProcessInfo.processInfo.arguments.contains("--multiview-rtl")
+                    ? .rightToLeft : .leftToRight)
+        } else {
+            guide
+        }
+    }
+
+    private var guide: some View {
+        RetainedFullscreenWorkspace { guideContent }
+            .ignoresSafeArea()
+    }
+
+    private var liveTVContent: some View {
+        LiveTVPrototypeView(
+            isActive: isActive,
+            usesNativeFullscreen: usesNativeFullscreen,
+            preferencesStore: LiveTVRootFixtureStorage.preferences,
+            viewSettingsStore: LiveTVRootFixtureSettings(),
+            sourceStore: sources,
+            serverAuthorizationID: "fixture-\(hostRevision)",
+            onExpandedChange: { hidesNavigation = $0 },
+            importModel: imports,
+            profileID: profiles.activeProfileID,
+            preferencesNamespace: profiles.activeNamespace,
+            sourceApprovalContext: { [profiles] in LiveTVSourceApprovalContext(profiles: profiles) }
+        ) { playback in
+            LiveChannelPlayerView(
+                channelID: playback.channel.id, title: playback.channel.name,
+                input: playback.input, logoURL: nil,
+                makeEngine: { state.makeEngine() },
+                onPreviousChannel: playback.previousChannel, onNextChannel: playback.nextChannel,
+                isFavorite: playback.isFavorite, canToggleFavorite: playback.canToggleFavorite,
+                onToggleFavorite: playback.onToggleFavorite,
+                isExpanded: playback.isExpanded,
+                usesNativeFullscreen: usesNativeFullscreen && !playback.isMultiview,
+                isActive: playback.isPlaybackActive, onReturnToGuide: playback.returnToGuide,
+                playPauseRequest: playback.playPauseRequest, onPlaybackStarted: playback.playbackStarted,
+                reportingID: playback.reportingID, onPlaybackUpdate: playback.playbackUpdate,
+                onPlaybackFailed: playback.playbackFailed,
+                onVideoAspectRatioChange: playback.videoAspectRatioChanged,
+                onMultiview: playback.canOpenMultiview ? playback.openMultiview : nil,
+                outputGroup: state.output, outputID: playback.paneID, isAudible: playback.isAudible,
+                countsAsWatching: playback.countsAsWatching, isMultiview: playback.isMultiview,
+                displayTransitionSettings: {
+                    PlaybackSettings(fadeOnDynamicRangeChange: false, fadeOnFrameRateChange: false)
+                },
+                isAuthorized: playback.isAuthorized
+            )
+        }
+    }
+
+    @ViewBuilder
+    private var navigationContent: some View {
+        if usesNativeFullscreen {
+            NavigationStack { liveTVContent }
+        } else {
+            liveTVContent
+        }
+    }
+
+    private var guideContent: some View {
+        navigationContent
+        .environment(profiles)
+        .transformEnvironment(\.plozzNavigationContentInset) {
+            if ProcessInfo.processInfo.arguments.contains("--multiview-navigation-insets") { $0 = 100 }
+        }
+        .transformEnvironment(\.plozzTopNavigationContentInsets) {
+            if ProcessInfo.processInfo.arguments.contains("--multiview-navigation-insets") {
+                $0 = EdgeInsets(top: 160, leading: 100, bottom: 0, trailing: 100)
             }
         }
-        .environment(profiles)
         .overlay(alignment: .topTrailing) {
+            if ProcessInfo.processInfo.arguments.contains("--loading-multiview-fixture") {
+                Button("Release pictures") { state.engines.forEach { $0.presentFirstFrame() } }
+                    .accessibilityIdentifier("multiview-fixture-release-pictures")
+                    .padding(24)
+            }
             if isActive && !ProcessInfo.processInfo.arguments.contains("--visual-focus-fixture") {
                 HStack {
                     Button("Refresh host") { hostRevision += 1 }
@@ -360,6 +490,14 @@ struct LiveTVRootFixture: View {
                 Text(verbatim: state.metrics)
                     .font(.caption2)
                     .accessibilityIdentifier("multiview-fixture-metrics")
+                    .accessibilityValue(state.engines.first?.motionWidths ?? "")
+                Text(hidesNavigation ? "Navigation hidden" : "Navigation visible")
+                    .accessibilityIdentifier("multiview-fixture-navigation")
+                if ProcessInfo.processInfo.arguments.contains("--motion-fixture") {
+                    Text(verbatim: "Picture motion")
+                        .accessibilityIdentifier("multiview-fixture-picture-motion")
+                        .accessibilityValue(state.engines.map(\.motionFrames).joined(separator: "|"))
+                }
             }
             .padding(.top, 16)
             .allowsHitTesting(false)
@@ -379,6 +517,21 @@ private struct MultiviewFocusDiagnostics: UIViewRepresentable {
     final class Probe: UIView {
         private var timer: Timer?
         private let report = UILabel()
+        private let focusHistory = UILabel()
+        private var focusEvents: [String] = []
+        private let guideMotion = UILabel()
+        private var guideSamples: [[CGFloat]] = []
+        private weak var guide: UICollectionView?
+        private var displayLink: CADisplayLink?
+
+        private final class Clock: NSObject {
+            weak var probe: Probe?
+            init(_ probe: Probe) { self.probe = probe }
+            @objc func sample(_ link: CADisplayLink) {
+                guard let probe else { link.invalidate(); return }
+                probe.sampleGuide()
+            }
+        }
 
         init() {
             super.init(frame: .zero)
@@ -387,6 +540,16 @@ private struct MultiviewFocusDiagnostics: UIViewRepresentable {
             report.font = .systemFont(ofSize: 10)
             report.textColor = .white
             report.isUserInteractionEnabled = false
+            focusHistory.accessibilityIdentifier = "multiview-fixture-focus-history"
+            focusHistory.text = "Focus history"
+            focusHistory.font = .systemFont(ofSize: 10)
+            focusHistory.textColor = .white
+            focusHistory.isUserInteractionEnabled = false
+            guideMotion.accessibilityIdentifier = "multiview-fixture-guide-motion"
+            guideMotion.text = "Guide motion"
+            guideMotion.font = .systemFont(ofSize: 10)
+            guideMotion.textColor = .white
+            guideMotion.isUserInteractionEnabled = false
         }
 
         required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
@@ -397,6 +560,20 @@ private struct MultiviewFocusDiagnostics: UIViewRepresentable {
             guard let window else { return }
             report.frame = CGRect(x: 80, y: window.bounds.height - 32, width: window.bounds.width - 160, height: 20)
             window.addSubview(report)
+            if ProcessInfo.processInfo.arguments.contains("--motion-fixture") {
+                guideMotion.frame = report.frame.offsetBy(dx: 0, dy: -44)
+                window.addSubview(guideMotion)
+                let link = CADisplayLink(target: Clock(self), selector: #selector(Clock.sample(_:)))
+                displayLink = link
+                link.add(to: .main, forMode: .common)
+            }
+            if ProcessInfo.processInfo.arguments.contains("--focus-history-fixture") {
+                focusHistory.frame = report.frame.offsetBy(dx: 0, dy: -22)
+                window.addSubview(focusHistory)
+                NotificationCenter.default.addObserver(
+                    self, selector: #selector(recordFocus(_:)),
+                    name: UIFocusSystem.didUpdateNotification, object: nil)
+            }
             timer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
                 MainActor.assumeIsolated { self?.sample() }
             }
@@ -407,6 +584,49 @@ private struct MultiviewFocusDiagnostics: UIViewRepresentable {
             timer?.invalidate()
             timer = nil
             report.removeFromSuperview()
+            focusHistory.removeFromSuperview()
+            guideMotion.removeFromSuperview()
+            displayLink?.invalidate()
+            displayLink = nil
+            NotificationCenter.default.removeObserver(self)
+        }
+
+        private func sampleGuide() {
+            guard let window else { return }
+            if guide?.window !== window {
+                func find(_ view: UIView) -> UICollectionView? {
+                    if let collection = view as? UICollectionView,
+                       collection.collectionViewLayout is PrototypeGuideCollectionLayout { return collection }
+                    return view.subviews.lazy.compactMap(find).first
+                }
+                guide = find(window)
+            }
+            guard let guide, let presented = guide.layer.presentation() else { return }
+            let frame = presented.convert(presented.bounds, to: window.layer.presentation() ?? window.layer)
+            var opacity: CGFloat = 1
+            var layer: CALayer? = presented
+            while let current = layer {
+                opacity *= current.isHidden ? 0 : CGFloat(current.opacity)
+                layer = current.superlayer
+            }
+            let sample = [frame.minX, frame.minY, frame.width, frame.height, opacity]
+            guard guideSamples.last != sample else { return }
+            guideSamples.append(sample)
+            if guideSamples.count > 1_024 { guideSamples.removeFirst() }
+            guideMotion.accessibilityValue = guideSamples.map {
+                $0.map { String(format: "%.3f", Double($0)) }.joined(separator: ",")
+            }.joined(separator: ";")
+        }
+
+        @objc private func recordFocus(_ notification: Notification) {
+            guard let window,
+                  let context = notification.userInfo?[UIFocusSystem.focusUpdateContextUserInfoKey] as? UIFocusUpdateContext,
+                  let next = context.nextFocusedItem,
+                  let localFrame = NativeFocusRegion.frame(of: next, in: self) else { return }
+            let frame = convert(localFrame, to: window)
+            focusEvents.append("\(frame.midX),\(frame.midY),\(frame.width),\(frame.height),\(context.focusHeading.rawValue)")
+            if focusEvents.count > 128 { focusEvents.removeFirst() }
+            focusHistory.accessibilityValue = focusEvents.joined(separator: ";")
         }
 
         private func sample() {
@@ -416,6 +636,18 @@ private struct MultiviewFocusDiagnostics: UIViewRepresentable {
                 "keyWindow=\(window.isKeyWindow)",
                 "focused=\(focused.map { String(describing: type(of: $0)) } ?? "nil")"
             ]
+            func visitGuides(_ view: UIView) {
+                for guide in view.layoutGuides.compactMap({ $0 as? UIFocusGuide }) {
+                    pieces.append("returnGuide=\(guide.isEnabled):\(view.convert(guide.layoutFrame, to: window)):targets=\(guide.preferredFocusEnvironments.count)")
+                    for target in guide.preferredFocusEnvironments {
+                        if let frame = NativeFocusRegion.frame(of: target as? any UIFocusItem, in: self) {
+                            pieces.append("returnTarget=\(convert(frame, to: window))")
+                        }
+                    }
+                }
+                for child in view.subviews { visitGuides(child) }
+            }
+            if ProcessInfo.processInfo.arguments.contains("--focus-history-fixture") { visitGuides(window) }
             if let focused {
                 pieces.append("itemFrame=\(focused.frame)")
                 var windowFrame = (focused as? UIView).map { $0.convert($0.bounds, to: window) }
@@ -500,11 +732,154 @@ private struct LiveTVRootFixtureLoader: LiveTVSourceLoading {
 }
 
 @MainActor
+private final class MultiviewMotionOutput: UIView {
+    private let accessibilityProbe = AccessibilityProbe()
+    private let labelProbe = LabelProbe()
+    var probeIdentifier: String? {
+        get { accessibilityProbe.accessibilityIdentifier }
+        set { accessibilityProbe.accessibilityIdentifier = newValue }
+    }
+
+    private final class AccessibilityProbe: UIView {
+        weak var output: UIView?
+        override var accessibilityFrame: CGRect {
+            get {
+                guard let output, output.window != nil else { return .zero }
+                return UIAccessibility.convertToScreenCoordinates(output.bounds, in: output)
+            }
+
+            set {}
+        }
+    }
+
+    func exposeLabel(_ label: UILabel, identifier: String) {
+        labelProbe.source = label
+        labelProbe.accessibilityIdentifier = identifier
+    }
+
+    private final class LabelProbe: UILabel {
+        weak var source: UILabel?
+        override var accessibilityValue: String? {
+            get { source?.accessibilityValue }
+            set {}
+        }
+        override var accessibilityLabel: String? {
+            get { source?.text }
+            set {}
+        }
+        override var accessibilityFrame: CGRect {
+            get {
+                guard let source, source.window != nil else { return .zero }
+                return UIAccessibility.convertToScreenCoordinates(source.bounds, in: source)
+            }
+            set {}
+        }
+    }
+
+    private var widths: [CGFloat] = []
+    private var frames: [[CGFloat]] = []
+    private var displayLink: CADisplayLink?
+    var motionFrames: String {
+        frames.map { $0.map { String(format: "%.3f", Double($0)) }.joined(separator: ",") }
+            .joined(separator: ";")
+    }
+
+    @MainActor private final class Clock: NSObject {
+        weak var output: MultiviewMotionOutput?
+        init(_ output: MultiviewMotionOutput) { self.output = output }
+        @objc func sample(_ link: CADisplayLink) {
+            guard let output else { link.invalidate(); return }
+            output.sample()
+        }
+    }
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        accessibilityProbe.removeFromSuperview()
+        labelProbe.removeFromSuperview()
+        if let window {
+            // Read the real renderer through a separate test-only accessibility probe;
+            // a native video button intentionally hides its implementation descendants.
+            accessibilityProbe.output = self
+            accessibilityProbe.frame = window.bounds
+            accessibilityProbe.isAccessibilityElement = true
+            accessibilityProbe.isUserInteractionEnabled = false
+            window.addSubview(accessibilityProbe)
+            labelProbe.frame = window.bounds
+            labelProbe.isAccessibilityElement = true
+            labelProbe.isUserInteractionEnabled = false
+            window.addSubview(labelProbe)
+        }
+        displayLink?.invalidate()
+        displayLink = nil
+        guard window != nil, ProcessInfo.processInfo.arguments.contains("--motion-fixture") else { return }
+        let link = CADisplayLink(target: Clock(self), selector: #selector(Clock.sample(_:)))
+        displayLink = link
+        link.add(to: .main, forMode: .common)
+    }
+
+    private func sample() {
+        guard let window, let presented = layer.presentation() else { return }
+        var ancestorLayer: CALayer? = presented
+        while let current = ancestorLayer, current.model() !== window.layer {
+            ancestorLayer = current.superlayer
+        }
+        // A detached presentation tree has no window coordinates during native reparenting.
+        guard ancestorLayer != nil else { return }
+        let frame = presented.convert(presented.bounds, to: window.layer.presentation() ?? window.layer)
+        var opacity: CGFloat = 1
+        var ancestor: CALayer? = presented
+        while let current = ancestor {
+            opacity *= current.isHidden ? 0 : CGFloat(current.opacity)
+            ancestor = current.superlayer
+        }
+        let value = [frame.minX, frame.minY, frame.width, frame.height, opacity]
+        guard frames.last != value else { return }
+        frames.append(value)
+        if frames.count > 1_024 { frames.removeFirst() }
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        guard ProcessInfo.processInfo.arguments.contains("--motion-fixture"),
+              widths.last != bounds.width else { return }
+        widths.append(bounds.width)
+        accessibilityValue = widths.map { String(format: "%.2f", Double($0)) }.joined(separator: ",")
+    }
+}
+
+@MainActor
 private final class MultiviewFixtureEngine: LiveChannelEngine {
     let number: Int
-    private let output = UIView()
+    private let output = MultiviewMotionOutput()
+    var motionWidths: String { output.accessibilityValue ?? "" }
+    var motionFrames: String { output.motionFrames }
     private let label = UILabel()
     var status: VideoEngineStatus = .ready
+    var hasPresentedVideoFrame: Bool { liveSnapshot.firstFrameReady }
+    private lazy var previewFrame: CVPixelBuffer = {
+        var buffer: CVPixelBuffer?
+        let result = CVPixelBufferCreate(kCFAllocatorDefault, 24, 14, kCVPixelFormatType_32BGRA, nil, &buffer)
+        precondition(result == kCVReturnSuccess && buffer != nil)
+        let frame = buffer!
+        CVPixelBufferLockBaseAddress(frame, [])
+        defer { CVPixelBufferUnlockBaseAddress(frame, []) }
+        let bytes = CVPixelBufferGetBaseAddress(frame)!.assumingMemoryBound(to: UInt8.self)
+        let stride = CVPixelBufferGetBytesPerRow(frame)
+        for y in 0..<14 {
+            for x in 0..<24 {
+                let offset = y * stride + x * 4
+                bytes[offset] = 220
+                bytes[offset + 1] = number == 1 ? 40 : 200
+                bytes[offset + 2] = 10
+                bytes[offset + 3] = 255
+            }
+        }
+        return frame
+    }()
+    func previewVideoFrame() -> CVPixelBuffer? {
+        ProcessInfo.processInfo.arguments.contains("--audio-glow-fixture") ? previewFrame : nil
+    }
     var isPaused = false
     var currentTime: TimeInterval { 0 }
     var duration: TimeInterval { 0 }
@@ -521,9 +896,13 @@ private final class MultiviewFixtureEngine: LiveChannelEngine {
     var onLiveSourceReset: (@MainActor () -> Void)?
     var supportsConcurrentPlayback: Bool { true }
     var capabilities: PlayerEngineCapabilities { [.videoZoom] }
+    var probedSourceFacts: EngineProbedSourceFacts? {
+        .init(range: .sdr, videoWidth: 1920, videoHeight: 1080)
+    }
     var loads = 0
     var stops = 0
     var audible = false
+    var audioActivations = 0
     var liveSnapshot = LiveChannelEngineSnapshot(
         phase: .playing, firstFrameReady: true, position: 100,
         bufferedPosition: 110, seekableRange: 90...110,
@@ -532,6 +911,10 @@ private final class MultiviewFixtureEngine: LiveChannelEngine {
 
     init(number: Int) {
         self.number = number
+        if number > 1, ProcessInfo.processInfo.arguments.contains("--loading-multiview-fixture") {
+            liveSnapshot.firstFrameReady = false
+            liveSnapshot.phase = .loading
+        }
         if ProcessInfo.processInfo.arguments.contains("--visual-focus-fixture") {
             audioTracks = [
                 MediaTrack(id: 1, kind: .audio, displayTitle: "English", language: "eng"),
@@ -540,10 +923,10 @@ private final class MultiviewFixtureEngine: LiveChannelEngine {
             subtitleTracks = [MediaTrack(id: 3, kind: .subtitle, displayTitle: "English", language: "eng")]
         }
         output.backgroundColor = number == 1 ? .systemBlue : .systemTeal
-        output.accessibilityIdentifier = "multiview-fixture-video-\(number)"
+        output.probeIdentifier = "multiview-fixture-video-\(number)"
         label.textColor = .white
         label.font = .preferredFont(forTextStyle: .headline)
-        label.accessibilityIdentifier = "multiview-fixture-player-\(number)"
+        output.exposeLabel(label, identifier: "multiview-fixture-player-\(number)")
         label.translatesAutoresizingMaskIntoConstraints = false
         output.addSubview(label)
         NSLayoutConstraint.activate([
@@ -552,7 +935,16 @@ private final class MultiviewFixtureEngine: LiveChannelEngine {
         ])
     }
 
-    func configureLiveOutput(_ policy: LiveChannelOutputPolicy) { audible = policy.isAudible }
+    func configureLiveOutput(_ policy: LiveChannelOutputPolicy) {
+        if policy.isAudible, !audible { audioActivations += 1 }
+        audible = policy.isAudible
+        label.accessibilityValue = String(audioActivations)
+    }
+    func presentFirstFrame() {
+        liveSnapshot.firstFrameReady = true
+        liveSnapshot.phase = .playing
+        onProgress?()
+    }
     func loadLive(url: URL, httpHeaders: [String: String]) async {
         loads += 1
         status = .ready

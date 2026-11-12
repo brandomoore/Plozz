@@ -134,12 +134,14 @@ final class HandoffDiagnosticsRedactionTests: XCTestCase {
 
 final class ProviderKindTests: XCTestCase {
     func testDedicatedServersAreFirstClassProviders() {
-        XCTAssertEqual(Set(ProviderKind.allCases), [.jellyfin, .emby, .plex, .silo, .iptv, .mediaShare])
-        XCTAssertEqual(ProviderKind.allCases, [.jellyfin, .plex, .emby, .silo, .iptv, .mediaShare])
+        XCTAssertEqual(Set(ProviderKind.allCases), [.jellyfin, .emby, .plex, .silo, .iptv, .mediaShare, .subsonic])
+        XCTAssertEqual(ProviderKind.allCases, [.jellyfin, .plex, .emby, .silo, .iptv, .mediaShare, .subsonic])
         XCTAssertEqual(ProviderKind.jellyfin.displayName, "Jellyfin")
         XCTAssertEqual(ProviderKind.emby.displayName, "Emby")
         XCTAssertEqual(ProviderKind.plex.displayName, "Plex")
         XCTAssertEqual(ProviderKind.silo.displayName, "Silo")
+        XCTAssertEqual(ProviderKind.subsonic.displayName, "Navidrome (Subsonic)")
+        XCTAssertFalse(ProviderKind.subsonic.usesMediaBrowserAPI)
         XCTAssertFalse(ProviderKind.silo.usesMediaBrowserAPI)
         XCTAssertEqual(ProviderKind.mediaShare.displayName, "Media Share")
         XCTAssertTrue(ProviderKind.emby.usesMediaBrowserAPI)

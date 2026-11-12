@@ -6,6 +6,50 @@ import UIKit
 
 @MainActor
 final class LiveTVCategorySearchInteractionTests: XCTestCase {
+    #if os(tvOS)
+    func testPinnedNavigationWaitsForCategoryEntryAndStillAcceptsBack() {
+        continueAfterFailure = false
+        let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.FocusHost")
+        app.launchArguments = [
+            "--navigation-fixture", "--navigation-live-tv", "--navigation-short", "--navigation-guide",
+            "--category-search-guide-first", "-AppleLanguages", "(en)", "-AppleLocale", "en_US"
+        ]
+        app.launch()
+        defer { app.terminate() }
+        let categories = app.buttons["live-tv-sidebar-category-all"]
+        let navigation = app.buttons["Navigation"]
+        XCTAssertTrue(channel("Arena One", in: app).waitForExistence(timeout: 15))
+
+        for _ in 0..<3 {
+            let guide = NSPredicate { _, _ in
+                self.containsFocus(self.channel("Arena One", in: app))
+                    || self.containsFocus(app.buttons["Matchday Live"].firstMatch)
+            }
+            XCTAssertEqual(XCTWaiter.wait(
+                for: [XCTNSPredicateExpectation(predicate: guide, object: nil)], timeout: 5
+            ), .completed, app.debugDescription)
+            // Move from programme content to the channel's leading control first.
+            if containsFocus(app.buttons["Matchday Live"].firstMatch) {
+                XCUIRemote.shared.press(.left)
+            }
+            XCUIRemote.shared.press(.left, forDuration: 0.4)
+            XCTAssertTrue(categories.wait(for: \.hasFocus, toEqual: true, timeout: 5), app.debugDescription)
+            XCTAssertFalse(navigation.isEnabled, "Opening categories must not expand pinned navigation.")
+            capture("pinned-navigation-stays-collapsed-at-categories", in: app)
+            XCUIRemote.shared.press(.left)
+            XCTAssertTrue(navigation.wait(for: \.isEnabled, toEqual: true, timeout: 5))
+            XCUIRemote.shared.press(.right)
+            XCTAssertTrue(categories.wait(for: \.hasFocus, toEqual: true, timeout: 5))
+            XCUIRemote.shared.press(.right)
+        }
+        XCUIRemote.shared.press(.menu)
+        XCTAssertTrue(app.buttons["live-tv-search"].wait(for: \.hasFocus, toEqual: true, timeout: 5))
+        XCUIRemote.shared.press(.menu)
+        XCTAssertTrue(navigation.wait(for: \.isEnabled, toEqual: true, timeout: 5),
+                      "Back must retain the guide-to-controls-to-navigation path.")
+    }
+    #endif
+
     #if os(iOS)
     func testToolbarSearchSpansCategoriesAndRestoresThePreviousCategory() {
         XCUIDevice.shared.orientation = .portrait

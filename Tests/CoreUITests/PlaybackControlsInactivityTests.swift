@@ -43,10 +43,55 @@ final class PlaybackControlsInactivityTests: XCTestCase {
 }
 
 #if DEBUG && os(tvOS)
+import SwiftUI
 import UIKit
 
 @MainActor
 final class TVFocusActivityObserverTests: XCTestCase {
+    func testMenuOwnershipAndProgrammaticUpdatesDoNotWakeIdleControls() {
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 600, height: 400))
+        let controller = UIViewController()
+        window.rootViewController = controller
+        controller.view.frame = window.bounds
+        window.addSubview(controller.view)
+        let observer = TVFocusActivityObserver.ObserverView(frame: window.bounds)
+        let control = FocusItem(frame: CGRect(x: 40, y: 40, width: 100, height: 100))
+        controller.view.addSubview(observer)
+        controller.view.addSubview(control)
+        let menu = FocusItem(frame: control.frame)
+        window.addSubview(menu)
+        defer { observer.stop() }
+        var activity = 0
+        var ownership: [Bool] = []
+        var failedMoves: [MoveCommandDirection] = []
+        observer.ignoresProgrammaticFocusChanges = true
+        observer.observesDirectionalPresses = false
+        observer.onActivity = { activity += 1 }
+        observer.onFocusOutsideContent = { ownership.append($0) }
+        observer.onFailedMove = { failedMoves.append($0) }
+        observer.observeFocusUpdate(previous: control, next: control, heading: [])
+        XCTAssertEqual(activity, 0)
+        XCTAssertEqual(ownership, [false])
+        observer.observeFocusUpdate(previous: control, next: menu, heading: [])
+        observer.observeFocusUpdate(previous: menu, next: control, heading: [])
+        XCTAssertEqual(ownership, [false, true, false])
+        XCTAssertEqual(activity, 0)
+        XCTAssertFalse(observer.observePress(.rightArrow, focusedItem: control))
+        XCTAssertEqual(activity, 0, "A style-changing HUD must wait for native navigation to finish.")
+        observer.observeFocusUpdate(previous: control, next: control, heading: .right)
+        XCTAssertEqual(activity, 1)
+        observer.observeFailedMove(previous: control, heading: .right)
+        XCTAssertEqual(failedMoves, [.right])
+        XCTAssertEqual(activity, 2, "A declined move still wakes controls at the boundary.")
+        let otherWindow = UIWindow(frame: window.frame)
+        otherWindow.addSubview(menu)
+        observer.observeFocusUpdate(previous: menu, next: menu, heading: .left)
+        observer.observeFailedMove(previous: menu, heading: .left)
+        XCTAssertEqual(activity, 2)
+        XCTAssertEqual(ownership, [false, true, false, false])
+        XCTAssertEqual(failedMoves, [.right])
+    }
+
     func testNativeFocusAndDirectionalPressesRefreshOnlyThisHUDWithoutConsumingInput() {
         let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 600, height: 400))
         let observer = TVFocusActivityObserver.ObserverView(

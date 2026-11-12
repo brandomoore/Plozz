@@ -475,6 +475,9 @@ private struct LiveTVSourcesContent: View {
     }
 
     private struct LiveTVConfiguredSourceRow: View {
+        #if os(tvOS)
+        @Environment(LiveTVGuidePreparationModel.self) private var guidePreparation: LiveTVGuidePreparationModel?
+        #endif
         let source: LiveTVConfiguredSourceItem
         let model: LiveTVSourceManagementModel
         let imports: LiveTVPrototypeImportModel?
@@ -556,6 +559,13 @@ private struct LiveTVSourcesContent: View {
                     }
                     .buttonStyle(SettingsFocusButtonStyle(size: .contained))
                     .accessibilityIdentifier("live-tv-source-details-\(source.id)")
+                    #if os(tvOS)
+                    if source.isEnabled, let preparation = guidePreparation?.statuses[source.accountID] {
+                        LiveTVGuidePreparationStatus(status: preparation)
+                            .font(SettingsRowMetrics.descriptionFont)
+                            .padding(.horizontal, SettingsRowMetrics.horizontalPadding)
+                    }
+                    #endif
                     if source.isEnabled, let imports {
                         LiveTVSourceErrors(imports: imports, sourceID: source.id, retry: retrySource)
                     }
@@ -1320,9 +1330,13 @@ struct LiveTVServerSourceSummary: View {
                     Text("Ready to load").font(.caption)
                 }
                 if let preparation = guidePreparation?.statuses[source.accountID] {
+                    #if os(tvOS)
+                    LiveTVGuidePreparationStatus(status: preparation)
+                    #else
                     if preparation.phase != .loading {
                         LiveTVGuidePreparationStatus(status: preparation)
                     }
+                    #endif
                 } else if status.guidePhase == .loading {
                     ProgressView("Loading guide")
                         .accessibilityIdentifier("live-tv-source-guide-loading-\(source.id)")

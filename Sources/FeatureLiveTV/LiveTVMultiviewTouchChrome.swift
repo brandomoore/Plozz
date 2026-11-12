@@ -18,6 +18,7 @@ struct LiveTVMultiviewTouchChrome: View {
     let onEditingInsetsChange: (EdgeInsets) -> Void
     @State private var headerHeight: CGFloat = 0
     @State private var toolbarHeight: CGFloat = 0
+    @State private var isPortrait = false
     @Environment(\.plozzReduceTransparency) private var reduceTransparency
     @ScaledMetric(relativeTo: .body) private var glyphHeight: CGFloat = 24
 
@@ -53,6 +54,7 @@ struct LiveTVMultiviewTouchChrome: View {
         // The player canvas is physical-screen sized. Its parent passes the
         // original safe area before expanding that canvas under system chrome.
         .padding(safeAreaInsets)
+        .onGeometryChange(for: Bool.self) { $0.size.height > $0.size.width } action: { isPortrait = $0 }
         .foregroundStyle(.white)
         .tint(.white)
         .environment(\.themePalette, ThemePalette.dark)
@@ -124,17 +126,17 @@ struct LiveTVMultiviewTouchChrome: View {
                         .accessibilityIdentifier("live-multiview-add")
                 }
                 Menu {
-                    LiveTVMultiviewLayoutOptions(coordinator: coordinator, setup: setup)
+                    LiveTVMultiviewLayoutOptions(coordinator: coordinator, setup: setup, isPortrait: isPortrait)
                 } label: {
-                    toolLabel("Layout", symbol: "rectangle.split.2x1")
+                    toolLabel("Layout", image: layoutSymbol)
                 }
                 .accessibilityIdentifier("live-multiview-layout")
                 .simultaneousGesture(TapGesture().onEnded { editing() })
             } else if coordinator.expandedPaneID != nil {
-                Button(action: collapse) { toolLabel("Show all", symbol: "rectangle.split.2x2") }
+                Button(action: collapse) { toolLabel("Show all", image: layoutSymbol) }
                     .accessibilityIdentifier("live-multiview-collapse")
             } else {
-                Button(action: setup) { toolLabel("Edit layout", symbol: "rectangle.split.2x2") }
+                Button(action: setup) { toolLabel("Edit layout", image: layoutSymbol) }
                     .accessibilityIdentifier("live-multiview-edit")
             }
             if coordinator.panes.count > 1 {
@@ -201,8 +203,18 @@ struct LiveTVMultiviewTouchChrome: View {
     }
 
     private func toolLabel(_ title: LocalizedStringResource, symbol: String) -> some View {
+        toolLabel(title, image: Image(systemName: symbol))
+    }
+
+    private var layoutSymbol: Image {
+        MultiviewLayoutSymbol(
+            layout: coordinator.layout, count: coordinator.panes.count, corner: coordinator.corner,
+            insetSize: coordinator.insetSize, isPortrait: isPortrait).image
+    }
+
+    private func toolLabel(_ title: LocalizedStringResource, image: Image) -> some View {
         VStack(spacing: 6) {
-            Image(systemName: symbol)
+            image
                 .font(.body.weight(.semibold))
                 .frame(height: glyphHeight)
             Text(title)
