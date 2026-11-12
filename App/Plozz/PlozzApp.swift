@@ -3,6 +3,7 @@ import AppShell
 import AppRuntime
 import CoreModels
 import CoreUI
+import FeatureSettings
 #if DEBUG
 import FeaturePlayback
 #endif
@@ -10,12 +11,14 @@ import FeaturePlayback
 /// Plozz — an open-source tvOS client for Jellyfin, Emby, Plex, and media shares.
 @main
 struct PlozzApp: App {
+    @State private var launchPrepared: Bool
     #if DEBUG
     @State private var showsSubtitleFileMatchPreview = SubtitleFileMatchPreview.isRequested()
     #endif
 
     init() {
         _ = AppInstallation.current
+        _launchPrepared = State(initialValue: SyncSetupLaunchPreparation.prepare())
         ProcessSignalPolicy.ignoreBrokenPipe()
         URLCache.shared = URLCache(
             memoryCapacity: 64 * 1024 * 1024,   // 64 MB in memory
@@ -36,17 +39,23 @@ struct PlozzApp: App {
             // only way a household can run Plozz in a language other than the
             // device's. See CoreUI.AppLanguageScope.
             AppLanguageScope {
-                #if DEBUG
-                if showsSubtitleFileMatchPreview {
-                    SubtitleFileMatchPreview {
-                        showsSubtitleFileMatchPreview = false
+                if !launchPrepared {
+                    ICloudSetupUnavailableView {
+                        launchPrepared = SyncSetupLaunchPreparation.prepare()
                     }
                 } else {
+                    #if DEBUG
+                    if showsSubtitleFileMatchPreview {
+                        SubtitleFileMatchPreview {
+                            showsSubtitleFileMatchPreview = false
+                        }
+                    } else {
+                        RootView()
+                    }
+                    #else
                     RootView()
+                    #endif
                 }
-                #else
-                RootView()
-                #endif
             }
             // Back must never quit the app just because focus hasn't settled —
             // see `TVBackButtonGuard`.

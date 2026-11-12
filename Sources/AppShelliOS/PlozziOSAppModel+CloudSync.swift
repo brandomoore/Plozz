@@ -65,7 +65,7 @@ extension PlozziOSAppModel {
         )
 
         // Tracker sign-ins. Same shared bridge on both shells; the payload is
-        // encrypted end-to-end, and the Keychain stays the local store of record.
+        // stored in encrypted CloudKit fields; Keychain remains the local store.
         let trackerTokenChannel = CloudConfigSyncService.ChannelConfiguration(
             schema: .trackerTokensV1,
             stateFileURL: syncDir.appendingPathComponent(
@@ -91,11 +91,7 @@ extension PlozziOSAppModel {
         ) { [weak model] _ in
             Task { @MainActor in
                 guard let model else { return }
-                await model.traktService.refreshStatus()
-                await model.simklService.refreshStatus()
-                await model.wetrakrService.refreshStatus()
-                await model.anilistService.refreshStatus()
-                await model.malService.refreshStatus()
+                await model.refreshSyncedTrackerSignIns()
             }
         }
 
@@ -107,6 +103,8 @@ extension PlozziOSAppModel {
         Task { await TraktSharedRefreshBootstrap.synchronizeKnownAccounts() }
 
         var channels = [mediaChannel, trackerTokenChannel]
+        channels.append(model.providerCredentialSync.channel(
+            stateFileURL: syncDir.appendingPathComponent("cloud-provider-credentials-v1.sealed")))
         channels.append(Self.makeLiveTVSyncChannel(
             bridge: model.liveTVPortableSync,
             stateFileURL: syncDir.appendingPathComponent("cloud-live-tv-state-v1.json")
@@ -409,7 +407,8 @@ extension PlozziOSAppModel {
     /// one-time "set it up here?" prompt for any newly-detected media server. Mirrors
     /// tvOS `AppState.refreshPendingSyncedServers()`.
     func refreshPendingSyncedServers() {
-        var store = PendingSyncedServersStore()
+        providerCredentialSync.reconcile()
+        let store = PendingSyncedServersStore()
         let localIDs = Set(accountsProviders.accounts.map(\.id))
         // Household-removed (tombstoned) servers are hidden and never prompted here.
         let removedIDs = RemovedAccountsStore().removedIDs
@@ -421,22 +420,7 @@ extension PlozziOSAppModel {
         }
         pendingSyncedServers = store.pending(excludingLocal: localIDs)
             .filter { !removedIDs.contains($0.id) }
-        guard SyncSetupFeatureFlag().isEnabled, pendingSyncedServerPrompt == nil else { return }
-        let newly = store.newlyPending(excludingLocal: localIDs)
-            .filter { !removedIDs.contains($0.id) }
-        // Only nudge for media servers we can sign into here (Jellyfin/Emby/Plex), AND
-        // only when there's no synced login already waiting — if this device already has
-        // the iCloud-Keychain credential (e.g. published by the user's iPhone),
-        // `autoConnectFromSyncedCredentials()` signs in silently, so a manual "add this
-        // server?" prompt would be redundant. Media shares are set up differently.
-        if let first = newly.first(where: { $0.provider != .mediaShare && !hasPortableCredential($0.id) }) {
-            pendingSyncedServerPrompt = first
-        }
-        // Mark every newly-pending id prompted (including skipped media shares and
-        // auto-connectable ones) so the one-time nudge never re-fires for them.
-        if !newly.isEmpty {
-            store.markPrompted(newly.map(\.id))
-        }
+        // Do not prompt before the separately delivered credentials arrive.
     }
 
     /// Stop surfacing a synced server the user doesn't want here.
@@ -469,19 +453,16 @@ extension PlozziOSAppModel {
     /// would falsely announce "we found X" for a server that's already present. So it
     /// starts from `pendingSyncedServers` (already excludes the local roster and
     /// removed tombstones) and additionally drops anything that will silently
-    /// auto-connect from an iCloud-Keychain credential (`hasPortableCredential` — the
-    /// iOS→iOS case, which needs no screen at all). What remains is servers whose only
-    /// login lives on a device that can't hand it over automatically — in practice the
-    /// Apple TV. Media shares (NFS/SMB/WebDAV/…) are INCLUDED: they're never published
-    /// to the synced credential store (so never auto-connect) but the pairing transfer
-    /// this page runs DOES bring them over, so listing them keeps the "we found" summary
-    /// honest — otherwise a share would appear only after setup, which is confusing.
+    /// auto-connect through the shared encrypted credential channel. Remaining
+    /// entries need manual attention, such as a protected Silo profile or a
+    /// device-local SSH key.
     var pendingServersNeedingSetup: [SyncedAccountDescriptor] {
         pendingSyncedServers.filter { !hasPortableCredential($0.id) }
     }
 
     var pendingSetupOffers: [SyncedAccountDescriptor] {
-        PendingSyncedServersStore().setupOffers(
+        guard providerCredentialSync.isReadyForManualSetup else { return [] }
+        return PendingSyncedServersStore().setupOffers(
             from: pendingServersNeedingSetup.filter(\.provider.permitsCredentialTransfer)
         )
     }
@@ -558,7 +539,7 @@ extension PlozziOSAppModel {
         guard cloudSync != nil else { return }
         withObservationTracking {
             _ = profiles.profiles
-            _ = accountsProviders.accounts.count
+            _ = accountsProviders.accounts
         } onChange: { [weak self] in
             Task { @MainActor in
                 self?.scheduleCloudPublish()
@@ -586,6 +567,23 @@ extension PlozziOSAppModel {
         }
     }
 
+    func completeICloudOnboarding(_ enabled: Bool) {
+        guard syncSetup.needsOnboardingChoice else { return }
+        if enabled {
+            setSyncSetupEnabled(true)
+        } else {
+            syncSetup.setEnabled(false)
+        }
+    }
+
+    private func refreshSyncedTrackerSignIns() async {
+        await traktService.refreshStatus()
+        await simklService.refreshStatus()
+        await wetrakrService.refreshStatus()
+        await anilistService.refreshStatus()
+        await malService.refreshStatus()
+    }
+
     /// Turn cross-device Sync & Setup on/off. Enabling activates CloudKit sync;
     /// disabling stops publishing but never deletes the shared cloud config.
     func setSyncSetupEnabled(_ on: Bool) {
@@ -593,9 +591,18 @@ extension PlozziOSAppModel {
             PlozzLog.sync.info("iCloud Sync cannot be enabled during recovery")
             return
         }
+        if !on, syncSetup.isEnabled {
+            do {
+                try TrackerTokenSyncBridge.preserveLocalSignInsBeforeDisablingSync()
+            } catch {
+                PlozzLog.sync.error("Could not preserve local tracker sign-ins; iCloud Sync remains enabled")
+                return
+            }
+        }
         syncSetup.setEnabled(on)
         guard !isOfflineMode else { return }
         if !on {
+            providerCredentialSync.cancel()
             cloudPublishTask?.cancel()
             portableCredentialPublisher.cancelPendingPublication()
         }
@@ -605,6 +612,7 @@ extension PlozziOSAppModel {
             Task {
                 guard !isOfflineMode else { return }
                 await config.activate()
+                await refreshSyncedTrackerSignIns()
             }
             armCloudConfigObservation()
             scheduleCloudPublish()
@@ -621,9 +629,11 @@ extension PlozziOSAppModel {
     func syncCloudOnForeground() {
         guard !isOfflineMode else { return }
         guard SyncSetupFeatureFlag().isEnabled else { return }
+        accountsProviders.reloadAccounts()
         let config = cloudSync
         Task {
             await config?.fetchNow()
+            providerCredentialSync.reconcile()
         }
         heartbeatHouseholdPresence()
         checkForSyncSetupOffer()
@@ -926,6 +936,7 @@ extension PlozziOSAppModel {
         guard result == .completed else { return result }
         guard await authorized() else { return .interrupted }
         do {
+            try providerCredentialSync.eraseLocalState()
             try TrackerTokenSyncBridge.eraseLocalTokens()
             try await removeAllPortableCredentials()
             guard await authorized() else { return .interrupted }

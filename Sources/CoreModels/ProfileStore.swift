@@ -155,6 +155,13 @@ public final class ProfileStore: ProfilePersisting, @unchecked Sendable {
 
     // MARK: Profiles
 
+    /// Read-only installation evidence, before bootstrap creates a default.
+    public func hasPersistedProfiles() throws -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        if defaults.data(forKey: profilesKey) != nil { return true }
+        return try secureStore?.readString(for: profilesKey) != nil
+    }
+
     public func loadProfiles() -> [Profile] {
         lock.lock(); defer { lock.unlock() }
         return loadProfilesLocked()

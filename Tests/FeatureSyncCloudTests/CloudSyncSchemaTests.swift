@@ -4,6 +4,17 @@ import CloudKit
 @testable import FeatureSyncCloud
 
 final class CloudSyncSchemaTests: XCTestCase {
+    func testProviderCredentialsNeverUsePlaintextRecordFields() throws {
+        let schema = CloudSyncSchemaDescriptor.providerCredentialsV1
+        let record = CKRecord(recordType: schema.recordType, recordID: schema.recordID(forRecordName: "providerCredential:test"))
+        let payload = Data("test-credential".utf8)
+        SyncUpload(recordName: record.recordID.recordName, value: payload, editedAt: 1, systemFields: nil)
+            .populate(record, schema: schema)
+        XCTAssertNil(record[schema.fieldValue])
+        XCTAssertEqual(record.encryptedValues[schema.fieldValue] as? Data, payload)
+        XCTAssertEqual(SyncRemoteRecord(ckRecord: record, schema: schema)?.value, payload)
+        XCTAssertNotEqual(schema.zoneName, CloudSyncSchemaDescriptor.configV3.zoneName)
+    }
 
     func testConfigV3ConstantsRemainUnchanged() {
         let schema = CloudSyncSchemaDescriptor.configV3

@@ -11,6 +11,21 @@ final class ProfileStoreTests: XCTestCase {
 
     // MARK: Migration
 
+    func testInstallationProbeDoesNotCreateOrMigrateProfiles() throws {
+        let defaults = makeDefaults()
+        let secure = InMemorySecureStoringDouble()
+        let store = ProfileStore(defaults: defaults, secureStore: secure)
+        XCTAssertFalse(try store.hasPersistedProfiles())
+        XCTAssertNil(secure.string(for: "com.plozz.profiles.v1"))
+        let legacy = ProfileStore(defaults: defaults)
+        _ = legacy.migrateLegacyIfNeeded(defaultName: "Original", defaultActiveAccountIDs: [])
+        XCTAssertTrue(try store.hasPersistedProfiles())
+        XCTAssertNil(secure.string(for: "com.plozz.profiles.v1"))
+        XCTAssertNotNil(defaults.data(forKey: "com.plozz.profiles.v1"))
+        _ = store.loadProfiles()
+        XCTAssertTrue(try ProfileStore(defaults: makeDefaults(), secureStore: secure).hasPersistedProfiles())
+    }
+
     func testMigrationCreatesSingleDefaultProfile() {
         let store = ProfileStore(defaults: makeDefaults())
         let profiles = store.migrateLegacyIfNeeded(defaultName: "Me", defaultActiveAccountIDs: ["a1"])

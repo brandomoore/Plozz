@@ -827,6 +827,17 @@ public final class AppState {
     public private(set) lazy var cloudSync: CloudConfigSyncService? = Self.makeCloudSync(for: self)
 
     @ObservationIgnored
+    lazy var providerCredentialSync = ProviderCredentialSync(
+        accounts: accountsProviders.accountStore,
+        canRestore: { [weak self] in self?.profileFlow.managementRequiresParentalPIN == false },
+        didRestore: { [weak self] in
+            guard let self else { return }
+            accountsProviders.reloadAccounts()
+            apply(.accountsChanged(accountsProviders.accounts))
+            refreshPendingSyncedServers()
+        })
+
+    @ObservationIgnored
     public private(set) lazy var liveTVPortableSync: LiveTVPortableSyncBridge? =
         Self.makeLiveTVPortableSync(profiles: profilesModel)
     @ObservationIgnored
@@ -1781,11 +1792,12 @@ public final class AppState {
            previousAccount.credentialRevision != persisted.credentialRevision {
             mediaShare.accountService.retireCredential(for: previousAccount)
         }
-        accountsProviders.reloadAccounts()
-        selectNewlyAddedUserIfNeeded(account)
         // A (re)added server clears any household-removal tombstone for it, so its
         // descriptor syncs again and peers stop treating it as removed.
         clearRemovalTombstone(for: account.id)
+        providerCredentialSync.didAuthenticateLocally(accountID: account.id)
+        accountsProviders.reloadAccounts()
+        selectNewlyAddedUserIfNeeded(account)
         // Flow finished — next add-account starts at the chooser.
         pendingOnboardingProvider = nil
         pendingIPTVPlaylist = nil
@@ -1843,6 +1855,8 @@ public final class AppState {
         do {
             for session in sessions {
                 let registration = try accountsProviders.accountStore.registerAuthenticatedSession(session)
+                clearRemovalTombstone(for: registration.account.id)
+                providerCredentialSync.didAuthenticateLocally(accountID: registration.account.id)
                 if let previousAccount = registration.previousAccount,
                    previousAccount.credentialRevision != registration.account.credentialRevision {
                     mediaShare.accountService.retireCredential(for: previousAccount)
@@ -1858,7 +1872,6 @@ public final class AppState {
             return
         }
         accountsProviders.reloadAccounts()
-        addedIDs.forEach(clearRemovalTombstone)   // (re)add clears removal tombstones
         pendingOnboardingProvider = nil
         guard !addedIDs.isEmpty else {
             apply(.authenticationFailed(.unknown("")))
@@ -2570,6 +2583,8 @@ public final class AppState {
             apply(.accountsChanged(accountsProviders.accounts))
             return
         }
+        var pending = PendingSyncedServersStore()
+        pending.ignore(id)
         if let removedAccount {
             mediaShare.accountService.retireCredential(for: removedAccount)
         }

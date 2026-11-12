@@ -525,15 +525,17 @@ public struct RootView: View {
 
     public var body: some View {
         Group {
-            if needsDiagnosticConsent {
+            if needsDiagnosticConsent || appState.syncSetup.needsOnboardingChoice {
                 Group {
                     if !startupLogoIntroCompleted {
                         launchView
                             .background { AppBackground(palette: resolvedPalette) }
-                    } else {
+                    } else if needsDiagnosticConsent {
                         CrashReportingConsentView { enabled in
                             appState.crashReportingModel.isEnabled = enabled
                         }
+                    } else {
+                        ICloudOnboardingView(onChoice: appState.completeICloudOnboarding)
                     }
                 }
                 .environment(\.themePalette, resolvedPalette)
@@ -552,7 +554,7 @@ public struct RootView: View {
             }
         }
         .onOpenURL { url in
-            if needsDiagnosticConsent || showsStartupLogo {
+            if needsDiagnosticConsent || appState.syncSetup.needsOnboardingChoice || showsStartupLogo {
                 deferredStartupURL = url
             } else {
                 appState.handle(url: url)

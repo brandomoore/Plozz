@@ -7,8 +7,9 @@ import CoreModels
 // One CKRecord per synced entity in a single custom zone. The record NAME is the
 // ledger's `SyncRecordID` (e.g. "profile:<id>", "setting:<pid>:<key>"), so CloudKit's
 // own record identity IS the sync key — no separate id field to drift. Fields are
-// flat and NON-SECRET: the entity kind, the canonical value blob, and the
-// mutation-boundary edit clock. Nothing here can carry a token.
+// flat: the entity kind, canonical value blob, and mutation-boundary edit clock.
+// Config values are non-secret. Credential schemas put their value only in
+// encryptedValues; plaintext kind/clock fields never contain credentials.
 //
 // Config V3 keeps its original type, zone, and fields. Additional descriptors use
 // disjoint zones/types while sharing this mapping and service implementation.
@@ -20,9 +21,8 @@ public struct CloudSyncSchemaDescriptor: Sendable, Equatable {
     }
 
     public let recordType: String
-    /// Whether the payload rides in `encryptedValues`, which CloudKit encrypts
-    /// end-to-end so the field is unreadable to anyone but this iCloud account —
-    /// including Apple. Required for anything carrying a credential.
+    /// Encrypt the payload before upload using CloudKit's encrypted fields.
+    /// Exclusive owner access to encryption keys requires Advanced Data Protection.
     public let encryptsValue: Bool
     public let zoneName: String
     public let fieldKind: String
@@ -69,6 +69,13 @@ public struct CloudSyncSchemaDescriptor: Sendable, Equatable {
         encryptsValue: true,
         zoneName: "PlozzTrackerTokensV1Zone",
         kindDerivation: .prefixBeforeFirstColon
+    )
+
+    public static let providerCredentialsV1 = CloudSyncSchemaDescriptor(
+        recordType: "PlozzProviderCredentialsV1Record",
+        encryptsValue: true,
+        zoneName: "PlozzProviderCredentialsV1Zone",
+        maximumPayloadBytes: 512 * 1_024
     )
 
     public static let mediaStateV1 = CloudSyncSchemaDescriptor(

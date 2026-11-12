@@ -2,28 +2,58 @@ import Foundation
 
 // MARK: - Sync & Setup feature flag
 //
-// v1 cross-device Sync & Setup is ON by default: a fresh install participates in the
-// household so the "open a new device and your stuff is already there" experience
-// works without the user first hunting for a toggle. Turning it OFF is respected and
-// sticky (an explicit `false` is never overridden). The flag is a plain,
+// Existing installations retain their default-on behavior. New installations
+// wait for the onboarding choice, whose primary action is Enable iCloud Sync.
+// An explicit false is never overridden. The flag is a plain,
 // household/device-wide `UserDefaults` bool (NOT per-profile): syncing is a device
 // capability, not a per-profile preference.
 
 public struct SyncSetupFeatureFlag: Sendable {
     public static let storageKey = "com.plozz.syncSetup.enabled"
+    private static let onboardingKey = "com.plozz.syncSetup.onboardingPending"
 
     private let defaults: UserDefaults
     public init(defaults: UserDefaults = .standard) { self.defaults = defaults }
 
+    public var needsOnboardingChoice: Bool { defaults.bool(forKey: Self.onboardingKey) }
+    public var usesOnboardingConsent: Bool { defaults.object(forKey: Self.onboardingKey) != nil }
+
+    /// Existing installations keep their historical tracker sign-in policy.
+    /// On installations shown the new consent screen, it also gates iCloud Keychain.
+    public var allowsAutomaticSignInSync: Bool {
+        !usesOnboardingConsent || isEnabled
+    }
+
+    public var needsLaunchPreparation: Bool {
+        defaults.object(forKey: Self.storageKey) == nil
+            && defaults.object(forKey: Self.onboardingKey) == nil
+    }
+
+    /// Run before constructing profiles or any sync service. The pending marker
+    /// survives relaunch even though startup subsequently creates a local profile.
+    public func prepareForLaunch(hasExistingInstallation: Bool) {
+        guard needsLaunchPreparation else { return }
+        if hasExistingInstallation {
+            defaults.set(true, forKey: Self.storageKey)
+        } else {
+            defaults.set(true, forKey: Self.onboardingKey)
+        }
+    }
+
     public var isEnabled: Bool {
-        // Default ON: an unset flag (fresh install, or an existing user who never
-        // touched the toggle) reads as enabled. An explicit `false` the user chose
-        // is preserved — we only default when no value has been written.
+        // After launch preparation, only existing installations retain the
+        // historical default. Pending consent and explicit opt-outs stay off.
         get {
+            guard !needsOnboardingChoice else { return false }
             guard defaults.object(forKey: Self.storageKey) != nil else { return true }
             return defaults.bool(forKey: Self.storageKey)
         }
-        nonmutating set { defaults.set(newValue, forKey: Self.storageKey) }
+        nonmutating set {
+            defaults.set(newValue, forKey: Self.storageKey)
+            if defaults.object(forKey: Self.onboardingKey) != nil {
+                defaults.set(false, forKey: Self.onboardingKey)
+            }
+        }
     }
 }
 

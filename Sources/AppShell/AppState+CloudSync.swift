@@ -37,9 +37,9 @@ public final class CloudSyncUIModel {
 //   • `applyRemoteConfigSnapshot(_:)` — reconcile an incoming merged snapshot into
 //     the app's stores, CONFIG-ONLY: it imports/updates the profile roster,
 //     settings and membership, but never signs a device in and never touches the
-//     Keychain (Apple-correct shared-roster model; credentials stay with pairing).
+//     Keychain. ProviderCredentialSync owns the separate encrypted sign-in channel.
 //
-// Everything is gated on `SyncSetupFeatureFlag` (device-wide, OFF by default) and
+// Everything is gated on the device-wide `SyncSetupFeatureFlag` consent choice and
 // is idempotent + loop-safe: applying a remote change leaves the local state equal
 // to the mirror, so the observation-driven re-publish it triggers is a no-op.
 extension AppState {
@@ -106,7 +106,7 @@ extension AppState {
         )
 
         // Tracker sign-ins. Same shared bridge on both shells; the payload is
-        // encrypted end-to-end, and the Keychain stays the local store of record.
+        // stored in encrypted CloudKit fields; Keychain remains the local store.
         let trackerTokenChannel = CloudConfigSyncService.ChannelConfiguration(
             schema: .trackerTokensV1,
             stateFileURL: syncDir.appendingPathComponent(
@@ -132,11 +132,7 @@ extension AppState {
         ) { [weak appState] _ in
             Task { @MainActor in
                 guard let appState else { return }
-                await appState.traktService.refreshStatus()
-                await appState.simklService.refreshStatus()
-                await appState.wetrakrService.refreshStatus()
-                await appState.anilistService.refreshStatus()
-                await appState.malService.refreshStatus()
+                await appState.refreshSyncedTrackerSignIns()
             }
         }
 
@@ -148,6 +144,8 @@ extension AppState {
         Task { await TraktSharedRefreshBootstrap.synchronizeKnownAccounts() }
 
         var channels = [mediaChannel, trackerTokenChannel]
+        channels.append(appState.providerCredentialSync.channel(
+            stateFileURL: syncDir.appendingPathComponent("cloud-provider-credentials-v1.sealed")))
         channels.append(Self.makeLiveTVSyncChannel(
             bridge: appState.liveTVPortableSync,
             stateFileURL: syncDir.appendingPathComponent("cloud-live-tv-state-v1.json")
@@ -198,9 +196,11 @@ extension AppState {
     /// another device appears promptly (tvOS push is unreliable).
     public func syncCloudOnForeground() {
         guard SyncSetupFeatureFlag().isEnabled else { return }
+        accountsProviders.reloadAccounts()
         let config = cloudSync
         Task {
             await config?.fetchNow()
+            providerCredentialSync.reconcile()
         }
         heartbeatHouseholdPresence()
         checkForSyncSetupOffer()
@@ -331,6 +331,7 @@ extension AppState {
         guard result == .completed else { return result }
         guard await authorized() else { return .interrupted }
         do {
+            try providerCredentialSync.eraseLocalState()
             try TrackerTokenSyncBridge.eraseLocalTokens()
             try LiveTVSourceStorage.eraseAllSources()
             for id in profilesModel.profiles.map(\.id) {
@@ -639,21 +640,19 @@ extension AppState {
     /// prompt for any newly-detected server. Runs after applying config so
     /// `accountsProviders.accounts` reflects this device.
     public func refreshPendingSyncedServers() {
-        var store = PendingSyncedServersStore()
+        providerCredentialSync.reconcile()
+        let store = PendingSyncedServersStore()
         let localIDs = Set(accountsProviders.accounts.map(\.id))
         // Household-removed (tombstoned) servers are hidden here and never prompted.
         let removedIDs = RemovedAccountsStore().removedIDs
-        if let prompt = cloudSyncUI.pendingServerPrompt, removedIDs.contains(prompt.id) {
+        if let prompt = cloudSyncUI.pendingServerPrompt,
+           removedIDs.contains(prompt.id) || localIDs.contains(prompt.id) {
             cloudSyncUI.pendingServerPrompt = nil
         }
-        let newly = store.newlyPending(excludingLocal: localIDs).filter { !removedIDs.contains($0.id) }
         cloudSyncUI.pendingSyncedServers = store.pending(excludingLocal: localIDs)
             .filter { !removedIDs.contains($0.id) }
-        if SyncSetupFeatureFlag().isEnabled, cloudSyncUI.pendingServerPrompt == nil,
-           let first = newly.first {
-            cloudSyncUI.pendingServerPrompt = first
-            store.markPrompted(newly.map(\.id))
-        }
+        // Credentials can arrive after descriptors. Keep fallback sign-in in
+        // Settings instead of interrupting automatic setup with an early prompt.
     }
 
     /// Whether the delete UI should offer the "Everywhere" vs "This device" choice —
@@ -750,7 +749,7 @@ extension AppState {
         guard cloudSync != nil else { return }
         withObservationTracking {
             _ = profilesModel.profiles
-            _ = accountsProviders.accounts.count
+            _ = accountsProviders.accounts
         } onChange: { [weak self] in
             Task { @MainActor in
                 self?.scheduleCloudPublish()
@@ -776,6 +775,24 @@ extension AppState {
         }
     }
 
+    public func completeICloudOnboarding(_ enabled: Bool) {
+        guard syncSetup.needsOnboardingChoice else { return }
+        if enabled {
+            setSyncSetupEnabled(true)
+        } else {
+            // Nothing has started yet; declining must not touch the cloud household.
+            syncSetup.setEnabled(false)
+        }
+    }
+
+    private func refreshSyncedTrackerSignIns() async {
+        await traktService.refreshStatus()
+        await simklService.refreshStatus()
+        await wetrakrService.refreshStatus()
+        await anilistService.refreshStatus()
+        await malService.refreshStatus()
+    }
+
     /// Turn cross-device Sync & Setup on/off. Enabling activates CloudKit sync and
     /// starts observing; disabling stops publishing but NEVER deletes the shared
     /// cloud config (other devices keep syncing).
@@ -784,18 +801,29 @@ extension AppState {
             PlozzLog.sync.info("iCloud Sync cannot be enabled during recovery")
             return
         }
+        if !on, syncSetup.isEnabled {
+            do {
+                try TrackerTokenSyncBridge.preserveLocalSignInsBeforeDisablingSync()
+            } catch {
+                PlozzLog.sync.error("Could not preserve local tracker sign-ins; iCloud Sync remains enabled")
+                return
+            }
+        }
         syncSetup.setEnabled(on)
         let config = cloudSync
         guard let config else { return }
         if on {
             Task {
                 await config.activate()
+                await refreshSyncedTrackerSignIns()
             }
             armCloudConfigObservation()
             scheduleCloudPublish()
             heartbeatHouseholdPresence()
             startSyncSetupOfferPolling()
         } else {
+            providerCredentialSync.cancel()
+            cloudPublishTask?.cancel()
             HouseholdDevicesStore().remove(deviceID: accountsProviders.accountStore.deviceID())
             syncSetupOfferPollTask?.cancel()
             syncSetupOfferPollTask = nil

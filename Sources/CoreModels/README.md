@@ -95,6 +95,15 @@ language every other module speaks.
 
 ## Invariants
 
+- New installations prepare `SyncSetupFeatureFlag` before profile bootstrap.
+  iCloud Sync stays off until the onboarding choice; Enable iCloud Sync is the primary
+  action, and Not now persists an opt-out. Pending choices survive restart.
+  Existing profile installations and explicit sync settings retain their behavior.
+  On installations shown the choice, declining also keeps non-Trakt tracker
+  sign-ins device-local instead of adopting or publishing iCloud Keychain items.
+  Existing installations retain their historical tracker sign-in policy.
+  An unreadable installation blocks app startup with Retry, rather than guessing
+  whether consent is needed. No preference is changed until classification succeeds.
 - **No SwiftUI / AVKit / UIKit imports.** This module compiles on Linux so
   pure-logic tests can run there. UI lives in `CoreUI` and feature modules.
 - **Never hold secrets.** Tokens are owned by `FeatureAuth` (Keychain). Types

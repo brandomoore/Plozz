@@ -235,6 +235,20 @@ registry.
   codes remain readable when focus inverts the surface. The QR, nearby devices,
   and manual code entry stay on one page in distinct sections.
 
+- **Automatic server sign-ins.** TV and mobile use AppRuntime's
+  `ProviderCredentialSync`, separately from non-secret server descriptors.
+  Private CloudKit encrypted fields carry managed-server tokens, portable
+  share credentials and Silo bootstrap authority; local copies stay in
+  Keychain and encrypted ledgers. Endpoint authority comes from the encrypted
+  record, never from an advisory descriptor. Restoration checks server/user
+  identity, consent, household removal, local dismissal and parental authority,
+  including after asynchronous enrollment. Generated SSH keys remain local;
+  Silo requires bound independent-device enrollment and never transfers PIN
+  proofs. Failed automatic sign-ins retain manual setup. Apple-account changes
+  invalidate cached authority and suppress old local credentials until fresh
+  authentication rather than uploading them to a different account. Encryption
+  does not imply Apple lacks key access without Advanced Data Protection.
+
 - **Bounded setup summaries.** Both sending and receiving use CoreUI's shared
   scrolling summary on TV and mobile. Group accounts by physical server, retain
   per-server transfer scope and pending sign-in state, and wrap full server and

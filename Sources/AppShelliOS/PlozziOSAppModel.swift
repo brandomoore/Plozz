@@ -230,6 +230,18 @@ final class PlozziOSAppModel {
     @ObservationIgnored
     lazy var portableCredentialPublisher = Self.makePortableCredentialPublisher()
 
+    @ObservationIgnored
+    lazy var providerCredentialSync = ProviderCredentialSync(
+        accounts: accountStore,
+        enabled: { SyncSetupFeatureFlag().isEnabled && !OfflineMode.shared.isEnabled },
+        canRestore: { [weak self] in self?.managementRequiresParentalPIN == false },
+        didRestore: { [weak self] in
+            guard let self else { return }
+            reloadAccountsAndCrashContext()
+            clearFirstRunStepIfHouseholdSetUp()
+            refreshPendingSyncedServers()
+        })
+
     /// A same-Apple-ID device is asking to be set up; drives a one-tap source-side
     /// confirmation before any credential is pushed (nil = no pending offer).
     var pendingSyncSetupOffer: SyncPairingRendezvous?
@@ -1009,6 +1021,7 @@ final class PlozziOSAppModel {
         identityIndex.reset()
         if enabled {
             accountsProviders.localProviders = [:]
+            providerCredentialSync.cancel()
             cloudPublishTask?.cancel()
             portableCredentialPublisher.cancelPendingPublication()
             await cloudSync?.deactivateAndCancel()
@@ -2952,6 +2965,7 @@ final class PlozziOSAppModel {
                 let account = registration.account
                 // A (re)added server clears any household-removal tombstone for it.
                 clearRemovalTombstone(for: account.id)
+                providerCredentialSync.didAuthenticateLocally(accountID: account.id)
                 if registration.previousAccount == nil || activateIPTVAccount {
                     try accountsProviders.includeIPTVAccountInActiveProfile(account)
                     addedLiveTV = addedLiveTV || account.server.provider == .iptv
@@ -3213,6 +3227,8 @@ final class PlozziOSAppModel {
             // (and isn't re-offered to the user's other devices). Without this, sync's
             // auto-connect immediately re-adds the account the user just removed.
             removePortableCredential(id)
+            var pending = PendingSyncedServersStore()
+            pending.ignore(id)
             accountError = nil
         } catch {
             accountError = error.localizedDescription

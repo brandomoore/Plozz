@@ -280,6 +280,11 @@ public actor CloudConfigSyncService {
     /// ignored (generation fencing).
     private var engineGeneration = 0
     private var accountGeneration = 0
+    private var identityAdmissionRevision = 0
+    private var fullResyncChanges: [String: SyncLocalChanges] = [:]
+    private var fullResyncReceipts: [String: [SyncRecordID: Data]] = [:]
+    private var fullResyncOwner: UUID?
+    private var verifiedAccountIdentity: String?
     private var isReconcilingInventory = false
     /// Set after an iCloud account SWITCH: blocks publishing until we've successfully
     /// fetched the new account's real state, so this device never uploads the previous
@@ -465,9 +470,29 @@ public actor CloudConfigSyncService {
     /// A fetch of the CURRENT account succeeded (or real data arrived): the server
     /// state is now known, so it's safe to lift a post-switch suspension and to let a
     /// baseline-less device publish. Single choke point for both publish gates.
-    private func markServerStateConfirmed() {
+    private func markServerStateConfirmed() async {
+        guard verifiedAccountIdentity != nil, !isFullResyncing else { return }
         suspendPublishUntilFetch = false
         didConfirmServerState = true
+        let generation = accountGeneration
+        let currentEngineGeneration = engineGeneration
+        for channel in channels where channel.applySnapshot != nil {
+            guard !isFullResyncing, currentEngineGeneration == engineGeneration else { return }
+            await apply([:], to: channel)
+            guard generation == accountGeneration, currentEngineGeneration == engineGeneration,
+                  !isFullResyncing, isActive else { return }
+        }
+        engine?.state.add(pendingRecordZoneChanges: pendingLedgerChanges())
+    }
+
+    func pendingLedgerChanges() -> [CKSyncEngine.PendingRecordZoneChange] {
+        channels.flatMap { channel in
+            channel.ledger.pendingUploads().map {
+                .saveRecord(channel.schema.recordID(forRecordName: $0.recordName))
+            } + channel.ledger.pendingDeletes().map {
+                .deleteRecord(channel.schema.recordID(forRecordName: $0))
+            }
+        }
     }
 
     // MARK: Lifecycle
@@ -498,16 +523,16 @@ public actor CloudConfigSyncService {
         }
         guard await accountIsAvailable() else { setStatus(.signedOut); return }
         guard !isErasing, isActive, config.isEnabled() else { return }
+        guard await stageLocalChangesBeforeFetch() else { return }
         ensureEngine()
         guard let engine else { return }
         setStatus(.idle)
-        await logAccountIdentity()
         engine.state.add(pendingDatabaseChanges: channels.map { .saveZone(CKRecordZone(zoneID: $0.schema.zoneID)) })
         for channel in channels { await cleanupLegacyZonesIfNeeded(for: channel) }
         // Fetch before publish — the anti-clobber ordering.
         do {
             try await fetchChangesDetached(engine)
-            markServerStateConfirmed()
+            await markServerStateConfirmed()
             recordFirstRunCloudFetch()
         }
         catch { setDiagnostic("activate fetch: \(Self.describe(error))") }
@@ -608,9 +633,10 @@ public actor CloudConfigSyncService {
             return
         }
         guard isActive, await accountIsAvailable() else { return }
+        guard await stageLocalChangesBeforeFetch() else { return }
         ensureEngine()
         guard let engine else { return }
-        if (try? await fetchChangesDetached(engine)) != nil { markServerStateConfirmed() }
+        if (try? await fetchChangesDetached(engine)) != nil { await markServerStateConfirmed() }
         await publishLocalChanges()
         guard isActive, engine === self.engine else { return }
         try? await sendChangesDetached(engine)
@@ -626,11 +652,12 @@ public actor CloudConfigSyncService {
             return
         }
         guard await accountIsAvailable() else { setStatus(.signedOut); return }
+        guard await stageLocalChangesBeforeFetch() else { return }
         ensureEngine()
         guard let engine else { return }
         setStatus(.syncing)
         var syncError: Error?
-        do { try await fetchChangesDetached(engine); markServerStateConfirmed() }
+        do { try await fetchChangesDetached(engine); await markServerStateConfirmed() }
         catch { syncError = error }
         await publishLocalChanges()
         guard isActive, engine === self.engine else { return }
@@ -676,7 +703,8 @@ public actor CloudConfigSyncService {
     /// creates is deliberate and safe.
     @discardableResult
     public func publishLocalChanges(bypassBaselineGate: Bool = false) async -> Bool {
-        guard !isErasing, isActive, config.isEnabled(), let engine else { return false }
+        guard verifiedAccountIdentity != nil,
+              !isErasing, isActive, config.isEnabled(), let engine else { return false }
         var completed = true
         for channel in channels {
             let published = await publish(channel, engine: engine, bypassBaselineGate: bypassBaselineGate)
@@ -922,16 +950,27 @@ public actor CloudConfigSyncService {
         guard await accountIsAvailable() else { setStatus(.signedOut); return .unavailable }
         guard !isFullResyncing else { return .interrupted }
         guard restorePersistedStateIfNeeded() else { return .failed }
+        let previousLedgers = channels.map(\.ledger)
+        let previousEngineState = engineState
+        let previousAccountGeneration = accountGeneration
+        let owner = UUID()
+        fullResyncOwner = owner
+        defer { if fullResyncOwner == owner { fullResyncOwner = nil } }
+        var committed = false
         setStatus(.syncing)
         PlozzLog.sync.info("CloudSync: redownload — full resync (keep local, reset token)")
         // S3: block all publishing while the baselines are cleared, so a concurrent
         // observation/manual publish can't re-mark everything dirty and resurrect
         // peer deletions. Lifted in every exit path below.
         isFullResyncing = true
+        fullResyncChanges = [:]
+        fullResyncReceipts = [:]
         for channel in channels { channel.ledger.beginFullResync() }
         rebuildEngine(resetState: true)   // nil token ⇒ COMPLETE re-fetch; fences old events
         guard let engine else {
-            abortFullResync()
+            isFullResyncing = false
+            for (channel, ledger) in zip(channels, previousLedgers) { channel.ledger = ledger }
+            engineState = previousEngineState
             setStatus(.error, error: "engine unavailable")
             return .failed
         }
@@ -939,10 +978,8 @@ public actor CloudConfigSyncService {
             engine.state.add(pendingDatabaseChanges: channels.map { .saveZone(CKRecordZone(zoneID: $0.schema.zoneID)) })
             try await fetchChangesDetached(engine)
             guard isActive, engine === self.engine else {
-                abortFullResync()
-                return .interrupted
+                throw CancellationError()
             }
-            markServerStateConfirmed()
             var confirmedDeletedByZone: [String: Set<SyncRecordID>] = [:]
             var finalizedByZone: [String: SyncLocalChanges] = [:]
             var deletedCaptureDigestsByZone: [String: [SyncRecordID: Data]] = [:]
@@ -957,12 +994,16 @@ public actor CloudConfigSyncService {
                 if !candidates.isEmpty {
                     let verdict = await verifyDeletionCandidates(candidates, schema: channel.schema)
                     guard isActive, engine === self.engine else {
-                        abortFullResync()
-                        return .interrupted
+                        throw CancellationError()
                     }
+                    guard verdict.completed else { throw CloudSyncStateCodec.Failure.unavailable }
                     confirmedDeleted = verdict.confirmedDeleted
                     if !verdict.stillPresent.isEmpty {
-                        _ = channel.ledger.applyFetched(saved: verdict.stillPresent, deleted: [], now: nowMillis())
+                        let recovered = channel.ledger.applyFetched(
+                            saved: verdict.stillPresent, deleted: [], now: nowMillis())
+                        for (key, value) in recovered {
+                            fullResyncChanges[channel.schema.zoneName, default: [:]].updateValue(value, forKey: key)
+                        }
                         PlozzLog.sync.info(
                             "CloudSync[\(channel.schema.zoneName)]: redownload — \(verdict.stillPresent.count) record(s) missing from the fetch still exist on the server; kept"
                         )
@@ -971,21 +1012,28 @@ public actor CloudConfigSyncService {
                 confirmedDeletedByZone[channel.schema.zoneName] = confirmedDeleted
             }
             for channel in channels {
-                deletedCaptureDigestsByZone[channel.schema.zoneName] = channel.captureReceipts(
+                var receipts = fullResyncReceipts[channel.schema.zoneName, default: [:]]
+                receipts.merge(channel.captureReceipts(
                     for: Array(confirmedDeletedByZone[channel.schema.zoneName, default: []])
-                )
-                finalizedByZone[channel.schema.zoneName] = channel.ledger
+                ), uniquingKeysWith: { _, latest in latest })
+                deletedCaptureDigestsByZone[channel.schema.zoneName] = receipts
+                let deletions = channel.ledger
                     .endFullResync(
                         confirmedDeleted: confirmedDeletedByZone[
                             channel.schema.zoneName,
                             default: []
                         ]
                     )
+                var finalized = fullResyncChanges[channel.schema.zoneName, default: [:]]
+                for (key, value) in deletions { finalized.updateValue(value, forKey: key) }
+                finalizedByZone[channel.schema.zoneName] = finalized
             }
-            isFullResyncing = false
-            guard persist() else { return .failed }
+            guard persist(committingFullResync: true) else { throw CloudSyncStateCodec.Failure.unavailable }
+            committed = true
             reportRecordCount()
             for channel in channels {
+                guard fullResyncOwner == owner, previousAccountGeneration == accountGeneration,
+                      isActive, engine === self.engine else { throw CancellationError() }
                 guard let finalized = finalizedByZone[channel.schema.zoneName],
                       !finalized.isEmpty else {
                     continue
@@ -994,7 +1042,13 @@ public actor CloudConfigSyncService {
                     finalized, to: channel,
                     deletedCaptureDigests: deletedCaptureDigestsByZone[channel.schema.zoneName, default: [:]]
                 )
+                guard fullResyncOwner == owner, previousAccountGeneration == accountGeneration,
+                      isActive, engine === self.engine else { throw CancellationError() }
             }
+            isFullResyncing = false
+            fullResyncChanges = [:]
+            fullResyncReceipts = [:]
+            await markServerStateConfirmed()
             guard isActive, engine === self.engine else { return .interrupted }
             // Requeue anything still dirty / pending-delete without re-stamping.
             var pending: [CKSyncEngine.PendingRecordZoneChange] = []
@@ -1009,6 +1063,7 @@ public actor CloudConfigSyncService {
             guard isActive, engine === self.engine else { return .interrupted }
             if let error = failures.error { throw error }
             let total = channels.reduce(0) { $0 + $1.ledger.count }
+            rebuildEngine()
             setStatus(.idle, syncedNow: true)
             PlozzLog.sync.info("CloudSync: redownload complete — \(total) record(s)")
             return .completed
@@ -1017,19 +1072,26 @@ public actor CloudConfigSyncService {
             // (that would delete records the fetch simply didn't reach). Abort the
             // resync for EVERY channel WITHOUT producing any deletions; a later
             // successful fetch re-establishes the true baseline.
-            for channel in channels { channel.ledger.abortFullResync() }
+            guard fullResyncOwner == owner, previousAccountGeneration == accountGeneration else { return .interrupted }
             isFullResyncing = false
-            persist()
+            fullResyncChanges = [:]
+            fullResyncReceipts = [:]
+            if !committed {
+                for (channel, ledger) in zip(channels, previousLedgers) { channel.ledger = ledger }
+                hasRestoredLocalState = true
+                self.engine = nil
+                engineGeneration += 1
+                engineState = previousEngineState
+                didConfirmServerState = false
+                persist()
+            } else {
+                self.engine = nil
+                engineGeneration += 1
+            }
             setDiagnostic("redownload: \(Self.describe(error))")
             setStatus(.error, error: (error as NSError).localizedDescription)
             return .failed
         }
-    }
-
-    private func abortFullResync() {
-        for channel in channels { channel.ledger.abortFullResync() }
-        isFullResyncing = false
-        persist()
     }
 
     // MARK: Engine setup
@@ -1055,7 +1117,7 @@ public actor CloudConfigSyncService {
         if resetState { engineState = nil }
         var configuration = CKSyncEngine.Configuration(
             database: container.privateCloudDatabase, stateSerialization: engineState, delegate: self)
-        configuration.automaticallySync = true
+        configuration.automaticallySync = !isFullResyncing
         engine = CKSyncEngine(configuration)
         PlozzLog.sync.info("CloudSync: engine initialized (gen \(engineGeneration), resetState=\(resetState))")
     }
@@ -1167,8 +1229,113 @@ public actor CloudConfigSyncService {
         // false makes them all no-op instead of trapping. See
         // `hasCloudKitEntitlement`.
         guard hasCloudKitEntitlement else { return false }
-        do { return try await container.accountStatus() == .available }
+        do {
+            let generation = accountGeneration
+            let status = try await container.accountStatus()
+            guard generation == accountGeneration else { return false }
+            guard status == .available else {
+                if status == .noAccount, verifiedAccountIdentity != nil {
+                    try await resetForAccountChange()
+                }
+                return false
+            }
+            let identity = try await container.userRecordID().recordName
+            guard generation == accountGeneration, config.isEnabled(), isActive else { return false }
+            return await confirmAccountIdentity(identity)
+        }
         catch { PlozzLog.sync.error("CloudSync: accountStatus failed: \(error.localizedDescription)"); return false }
+    }
+
+    /// Validate ownership before loading a cursor into CKSyncEngine or admitting
+    /// cached credentials. The marker survives sign-out and process termination.
+    func confirmAccountIdentity(_ identity: String) async -> Bool {
+        guard !identity.isEmpty else { return false }
+        identityAdmissionRevision += 1
+        let admission = identityAdmissionRevision
+        if verifiedAccountIdentity == identity { return true }
+        let url = config.stateFileURL.appendingPathExtension("account")
+        do {
+            let previous: String?
+            do { previous = try JSONDecoder().decode(String.self, from: Data(contentsOf: url)) }
+            catch CocoaError.fileReadNoSuchFile { previous = nil }
+            let generation: Int
+            if let previous, previous != identity {
+                generation = try await resetForAccountChange()
+            } else {
+                generation = accountGeneration
+            }
+            guard generation == accountGeneration, admission == identityAdmissionRevision else { return false }
+            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try JSONEncoder().encode(identity).write(to: url, options: .atomic)
+            verifiedAccountIdentity = identity
+            return true
+        } catch {
+            guard admission == identityAdmissionRevision, !(error is CancellationError) else { return false }
+            verifiedAccountIdentity = nil
+            setDiagnostic("Cloud account identity could not be verified; synchronization remains paused")
+            return false
+        }
+    }
+
+    @discardableResult
+    private func resetForAccountChange() async throws -> Int {
+        verifiedAccountIdentity = nil
+        fullResyncOwner = nil
+        isFullResyncing = false
+        fullResyncChanges = [:]
+        fullResyncReceipts = [:]
+        accountGeneration += 1
+        let generation = accountGeneration
+        engineGeneration += 1
+        engine = nil
+        guard restorePersistedStateIfNeeded() else { throw CloudSyncStateCodec.Failure.unavailable }
+        failures = CloudSyncFailures()
+        engineState = nil
+        didConfirmServerState = false
+        for channel in channels { channel.ledger = SyncLedger() }
+        suspendPublishUntilFetch = true
+        for channel in channels {
+            guard generation == accountGeneration else { throw CancellationError() }
+            let reset = channel.onAccountSwitch
+            await outsideDelegateContext { await reset() }
+            guard generation == accountGeneration else { throw CancellationError() }
+            channel.ledgerAuthority = channel.currentAuthority
+        }
+        guard persist() else { throw CloudSyncStateCodec.Failure.unavailable }
+        return generation
+    }
+
+    /// Capture against the verified previous baseline without uploading. A fetch
+    /// must not erase edits made while disabled or before the debounce completed.
+    func stageLocalChangesBeforeFetch() async -> Bool {
+        guard !isFullResyncing, verifiedAccountIdentity != nil, restorePersistedStateIfNeeded() else { return false }
+        let generation = accountGeneration
+        for channel in channels where channel.ledger.hasServerBaseline {
+            var staged = false
+            for _ in 0..<4 {
+                let revision = channel.ledger.remoteRevision
+                do {
+                    let desired: [SyncRecordID: Data]
+                    if let capture = channel.captureSnapshot {
+                        desired = try await capture(channel.snapshot())
+                    } else {
+                        desired = await channel.captureRecords(channel.ledger.syncedValues())
+                    }
+                    guard !isFullResyncing, generation == accountGeneration, config.isEnabled() else { return false }
+                    guard revision == channel.ledger.remoteRevision else { continue }
+                    _ = channel.ledger.reconcileLocal(
+                        desired: desired.filter { !Self.isDirectTrackerRecord($0.key, schema: channel.schema) },
+                        now: nowMillis(), synthesizeDeletions: channel.isHydrated())
+                    staged = true
+                    break
+                } catch {
+                    setDiagnostic("Local changes could not be preserved before fetching cloud changes")
+                    return false
+                }
+            }
+            guard staged else { return false }
+        }
+        return persist()
     }
 
     // MARK: Persistence
@@ -1478,8 +1645,11 @@ public actor CloudConfigSyncService {
 
     /// Commit every channel before the primary file can advance the engine cursor.
     @discardableResult
-    func persist() -> Bool {
+    func persist(committingFullResync: Bool = false) -> Bool {
         guard restorePersistedStateIfNeeded() else { return false }
+        // A full refetch is a transaction: neither callbacks nor its cursor may
+        // commit until missing-record verification has finished.
+        if isFullResyncing, !committingFullResync { return true }
         var authorityChanged = false
         for channel in channels where channel.ledgerAuthority != channel.currentAuthority {
             channel.ledger = SyncLedger()
@@ -1602,7 +1772,7 @@ extension CloudConfigSyncService: CKSyncEngineDelegate {
         case .willFetchChanges, .willSendChanges:
             setStatus(.syncing)
         case .didFetchChanges:
-            if explicitFetches == 0, failures.fetchError == nil { markServerStateConfirmed() }
+            if explicitFetches == 0, failures.fetchError == nil { await markServerStateConfirmed() }
             setStatus(.idle, syncedNow: true)
         case .didSendChanges:
             setStatus(.idle, syncedNow: true)
@@ -1623,7 +1793,8 @@ extension CloudConfigSyncService: CKSyncEngineDelegate {
         // automaticallySync after a rebuild) or a deactivated service must not
         // produce a batch — its saves would use stale tags/values and its
         // completion event is ignored, diverging cloud from ledger state.
-        guard isActive, syncEngine === engine else {
+        guard isActive, verifiedAccountIdentity != nil, didConfirmServerState,
+              !isFullResyncing, syncEngine === engine else {
             PlozzLog.sync.info("CloudSync: ignoring batch request from a stale or deactivated engine")
             return nil
         }
@@ -1678,7 +1849,6 @@ extension CloudConfigSyncService: CKSyncEngineDelegate {
     // MARK: Event handlers
 
     private func handleAccountChange(_ event: CKSyncEngine.Event.AccountChange) async {
-        accountGeneration += 1
         switch event.changeType {
         case .signIn:
             // Fires on EVERY engine init for the SAME account too. Do NOTHING to any
@@ -1696,19 +1866,15 @@ extension CloudConfigSyncService: CKSyncEngineDelegate {
             // device's OWN local config (signed-in accounts, profiles, local media
             // aliases) is kept; it legitimately belongs to the device.
             PlozzLog.sync.info("CloudSync: accountChange switchAccounts — clearing ledgers + remote-derived state, suspending publish")
-            failures = CloudSyncFailures()
-            for channel in channels { channel.ledger = SyncLedger() }
-            suspendPublishUntilFetch = true
-            persist()
-            for channel in channels {
-                let onAccountSwitch = channel.onAccountSwitch
-                await outsideDelegateContext { await onAccountSwitch() }
+            do {
+                try await resetForAccountChange()
+                Task.detached { await self.activate() }
+            } catch {
+                setDiagnostic("Cloud account switch could not safely reset local sync state")
             }
         case .signOut:
-            failures = CloudSyncFailures()
-            for channel in channels { channel.ledger = SyncLedger() }
-            suspendPublishUntilFetch = true
-            persist()
+            do { try await resetForAccountChange() }
+            catch { setDiagnostic("Cloud sign-out could not safely reset local sync state") }
             setStatus(.signedOut)
         @unknown default:
             break
@@ -1756,7 +1922,13 @@ extension CloudConfigSyncService: CKSyncEngineDelegate {
             let changes = channel.ledger.applyFetched(saved: incoming, deleted: deletedNames, now: nowMillis())
             guard persist() else { return }
             reportRecordCount()
-            if !changes.isEmpty {
+            if isFullResyncing {
+                for (key, value) in changes {
+                    fullResyncChanges[channel.schema.zoneName, default: [:]].updateValue(value, forKey: key)
+                }
+                fullResyncReceipts[channel.schema.zoneName, default: [:]].merge(
+                    deletedCaptureDigests, uniquingKeysWith: { _, latest in latest })
+            } else if !changes.isEmpty {
                 await apply(changes, to: channel, deletedCaptureDigests: deletedCaptureDigests)
                 PlozzLog.sync.info("CloudSync[\(channel.schema.zoneName)]: applied \(changes.count) change(s) from \(incoming.count) fetched, \(deletedNames.count) deleted")
             }
