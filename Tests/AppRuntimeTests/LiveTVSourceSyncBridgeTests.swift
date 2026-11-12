@@ -18,6 +18,10 @@ final class LiveTVSourceSyncBridgeTests: XCTestCase {
         let initial = try await sender.bridge.capture(sender.snapshot([:]))
         await receiver.bridge.apply(receiver.snapshot(initial))
         XCTAssertEqual(try receiver.store.load().playlists, [source])
+        let cachedChannels = try await receiver.cache.playlist(source: source)
+        let cachedGuide = try await receiver.cache.freshness(kind: "guide", sourceID: "stable-guide")
+        XCTAssertNil(cachedChannels, "Restoring a source must not load/index its channel catalogue")
+        XCTAssertNil(cachedGuide, "Programme-guide loading must stay outside the initial setup wait")
         let echo = try await receiver.bridge.capture(receiver.snapshot(initial))
         XCTAssertEqual(echo, initial)
 
@@ -65,6 +69,8 @@ final class LiveTVSourceSyncBridgeTests: XCTestCase {
         for device in [receiver, chunksFirst] {
             await device.bridge.apply(device.snapshot(records))
             XCTAssertEqual(try device.store.load().playlists, [source])
+            let indexedChannels = try await device.cache.playlist(source: source)
+            XCTAssertNil(indexedChannels, "Restoration copies the imported file without indexing its channels")
             let imported = try await device.cache.importedPlaylist(id: id)
             XCTAssertEqual(imported.channels.first?.streamURL?.absoluteString, "https://example.test/live.m3u8")
             let echo = try await device.bridge.capture(device.snapshot(records))

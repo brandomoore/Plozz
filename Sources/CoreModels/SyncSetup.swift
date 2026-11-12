@@ -94,6 +94,14 @@ public enum InitialSetupRestorationPhase: Hashable, Sendable {
     case stopping
 }
 
+public enum InitialSetupRestorationActivity: Hashable, Sendable {
+    case checkingICloud
+    case profilesAndSettings
+    case servers
+    case liveTVSources
+    case signingInToServers
+}
+
 // MARK: - Descriptor / authorization split
 //
 // The core safety rule for cross-device sync (see the Sync & Setup research):

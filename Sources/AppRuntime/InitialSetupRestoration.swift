@@ -8,6 +8,7 @@ public final class InitialSetupRestoration {
     public typealias Phase = InitialSetupRestorationPhase
 
     public private(set) var phase: Phase = .hidden
+    public private(set) var activity: InitialSetupRestorationActivity?
     public private(set) var isManualSetupPending: Bool
     public private(set) var completedManualSetupProfileID: String?
     @ObservationIgnored private var task: Task<Void, Never>?
@@ -26,6 +27,7 @@ public final class InitialSetupRestoration {
         self.completedManualSetupProfileID = flag.completedManualSetupProfileID
         if flag.isInitialRestorationPending && !flag.isManualSetupPending {
             phase = .checking
+            activity = .checkingICloud
         }
     }
 
@@ -38,6 +40,7 @@ public final class InitialSetupRestoration {
         generation += 1
         let current = generation
         phase = .checking
+        activity = .checkingICloud
         presentationTask = Task { [weak self] in
             do {
                 try await Task.sleep(for: Self.progressDelay)
@@ -59,6 +62,7 @@ public final class InitialSetupRestoration {
             presentationTask?.cancel()
             presentationTask = nil
             phase = completed ? .hidden : .unavailable
+            activity = nil
             if completed {
                 flag.isInitialRestorationPending = false
                 onRestored()
@@ -74,6 +78,16 @@ public final class InitialSetupRestoration {
     func offerManualSetup() {
         guard phase == .checking || phase == .restoring else { return }
         phase = .slow
+    }
+
+    /// Retained callbacks cannot overwrite a retry, a manual handoff, or normal app content.
+    public func activityReporter() -> @MainActor @Sendable (InitialSetupRestorationActivity?) -> Void {
+        let current = generation
+        return { [weak self] activity in
+            guard let self, generation == current,
+                  phase == .checking || phase == .restoring || phase == .slow else { return }
+            self.activity = activity
+        }
     }
 
     public func setUpManually(
@@ -94,12 +108,14 @@ public final class InitialSetupRestoration {
         presentationTask?.cancel()
         presentationTask = nil
         phase = .stopping
+        activity = nil
         manualSetupTask = Task { [weak self] in
             await pause()
             await restorationTask?.value
             guard let self, generation == current else { return }
             manualSetupTask = nil
             phase = .hidden
+            activity = nil
             onReady()
         }
     }
@@ -130,6 +146,7 @@ public final class InitialSetupRestoration {
         isManualSetupPending = flag.isManualSetupPending
         completedManualSetupProfileID = flag.completedManualSetupProfileID
         phase = .hidden
+        activity = nil
     }
 
     func waitForCompletion() async {

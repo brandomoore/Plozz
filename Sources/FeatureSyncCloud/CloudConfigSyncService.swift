@@ -36,6 +36,20 @@ import TraktService
 // disjoint even though they share one engine, one container, and one delegate.
 public actor CloudConfigSyncService {
 
+    struct InitialSetupFetchProgress {
+        private var activeZones: [(CKRecordZone.ID, InitialSetupRestorationActivity)] = []
+        var activity: InitialSetupRestorationActivity? { activeZones.first?.1 }
+
+        mutating func begin(_ zoneID: CKRecordZone.ID, activity: InitialSetupRestorationActivity) {
+            guard !activeZones.contains(where: { $0.0 == zoneID }) else { return }
+            activeZones.append((zoneID, activity))
+        }
+
+        mutating func end(_ zoneID: CKRecordZone.ID) {
+            activeZones.removeAll { $0.0 == zoneID }
+        }
+    }
+
     // MARK: Dependencies
 
     /// The PRIMARY channel's configuration. Kept API-compatible with the
@@ -305,6 +319,10 @@ public actor CloudConfigSyncService {
     private var isFullResyncing = false
     private var isPreparingInitialSetup = false
     private var engineAutomaticallySyncs = false
+    private var initialSetupFetchProgress = InitialSetupFetchProgress()
+    private var initialSetupActivityHandler: (@Sendable (InitialSetupRestorationActivity) async -> Void)?
+    private var initialSetupActivityID: UUID?
+    private var reportedInitialSetupActivity: InitialSetupRestorationActivity?
     private var isErasing = false
     /// False after `deactivate()`; true again after the next `activate()`. Fences
     /// every public entry point AND every delegate callback, so a disabled service
@@ -506,7 +524,10 @@ public actor CloudConfigSyncService {
     /// repeatedly. Re-arms the service if a prior `deactivate()` had fenced it.
     /// Returns whether this activation fetched the current account's cloud state.
     @discardableResult
-    public func activate(initialSetupOnly: Bool = false) async -> Bool {
+    public func activate(
+        initialSetupOnly: Bool = false,
+        onInitialSetupActivity: (@Sendable (InitialSetupRestorationActivity) async -> Void)? = nil
+    ) async -> Bool {
         guard !isErasing else { return false }
         isActive = true
         guard config.isEnabled() else {
@@ -514,6 +535,21 @@ public actor CloudConfigSyncService {
             return false
         }
         isPreparingInitialSetup = initialSetupOnly
+        let activityID = UUID()
+        initialSetupActivityID = activityID
+        initialSetupActivityHandler = initialSetupOnly ? onInitialSetupActivity : nil
+        initialSetupFetchProgress = .init()
+        reportedInitialSetupActivity = nil
+        defer {
+            if initialSetupActivityID == activityID {
+                initialSetupActivityHandler = nil
+                initialSetupActivityID = nil
+                initialSetupFetchProgress = .init()
+                reportedInitialSetupActivity = nil
+            }
+        }
+        await reportInitialSetupActivity(.checkingICloud)
+        guard !isErasing, isActive, config.isEnabled() else { return false }
         // Reported as `disabled` rather than `signedOut`: the user has not signed
         // out of anything, this build simply cannot do cloud sync at all.
         guard hasCloudKitEntitlement else {
@@ -547,6 +583,11 @@ public actor CloudConfigSyncService {
             if initialSetupOnly {
                 for channel in channels where initialSetupZoneIDs.contains(channel.schema.zoneID)
                     && channel.applySnapshot != nil {
+                    guard isActive, config.isEnabled(), engine === self.engine,
+                          accountGeneration == activationAccountGeneration else { return false }
+                    if let activity = initialSetupActivity(for: channel.schema.zoneID) {
+                        await reportInitialSetupActivity(activity)
+                    }
                     guard isActive, config.isEnabled(), engine === self.engine,
                           accountGeneration == activationAccountGeneration else { return false }
                     await apply([:], to: channel)
@@ -1181,6 +1222,24 @@ public actor CloudConfigSyncService {
             config.schema, .providerCredentialsV1, .liveTVSourcesV1
         ].map { $0.scoped(to: config.installation) }
         return channels.filter { schemas.contains($0.schema) }.map { $0.schema.zoneID }
+    }
+
+    func initialSetupActivity(for zoneID: CKRecordZone.ID) -> InitialSetupRestorationActivity? {
+        if zoneID == schema.zoneID { return .profilesAndSettings }
+        if zoneID == CloudSyncSchemaDescriptor.providerCredentialsV1.scoped(to: config.installation).zoneID {
+            return .servers
+        }
+        if zoneID == CloudSyncSchemaDescriptor.liveTVSourcesV1.scoped(to: config.installation).zoneID {
+            return .liveTVSources
+        }
+        return nil
+    }
+
+    private func reportInitialSetupActivity(_ activity: InitialSetupRestorationActivity) async {
+        guard isPreparingInitialSetup, let handler = initialSetupActivityHandler,
+              reportedInitialSetupActivity != activity else { return }
+        reportedInitialSetupActivity = activity
+        await outsideDelegateContext { await handler(activity) }
     }
 
     private func fetchChangesDetached(
@@ -1823,8 +1882,15 @@ extension CloudConfigSyncService: CKSyncEngineDelegate {
         case .didFetchRecordZoneChanges(let e):
             failures.record(e.error, for: .fetchZone(e.zoneID))
             if let error = e.error { setDiagnostic("zone fetch failed: \(Self.ckCodeName(error))") }
-        case .willFetchRecordZoneChanges:
-            break
+            if isPreparingInitialSetup {
+                initialSetupFetchProgress.end(e.zoneID)
+                await reportInitialSetupActivity(initialSetupFetchProgress.activity ?? .checkingICloud)
+            }
+        case .willFetchRecordZoneChanges(let e):
+            if isPreparingInitialSetup, let activity = initialSetupActivity(for: e.zoneID) {
+                initialSetupFetchProgress.begin(e.zoneID, activity: activity)
+                await reportInitialSetupActivity(initialSetupFetchProgress.activity ?? activity)
+            }
         @unknown default:
             PlozzLog.sync.info("CloudSync: unknown event")
         }

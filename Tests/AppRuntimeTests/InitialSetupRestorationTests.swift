@@ -164,6 +164,61 @@ final class InitialSetupRestorationTests: XCTestCase {
         await model.waitForCompletion()
         XCTAssertEqual(model.phase, .hidden)
     }
+
+    func testActivityClearsOnCompletionAndCancellation() async {
+        let model = makeModel()
+        let gate = RestorationGate()
+        model.start { await gate.wait() }
+        await gate.waitUntilStarted()
+        let report = model.activityReporter()
+        report(.servers)
+        gate.finish(true)
+        await model.waitForCompletion()
+        XCTAssertNil(model.activity)
+        report(.liveTVSources)
+        XCTAssertNil(model.activity)
+
+        let cancelled = RestorationGate()
+        model.start { await cancelled.wait() }
+        await cancelled.waitUntilStarted()
+        let cancelledReport = model.activityReporter()
+        cancelledReport(.servers)
+        model.cancel()
+        XCTAssertNil(model.activity)
+        cancelledReport(.liveTVSources)
+        XCTAssertNil(model.activity)
+        cancelled.finish(false)
+    }
+
+    func testActivityIsRealWorkAndStaleReportsCannotOverwriteRetryOrManualSetup() async {
+        let model = makeModel()
+        model.start { false }
+        let oldReport = model.activityReporter()
+        await model.waitForCompletion()
+        oldReport(.servers)
+        XCTAssertNil(model.activity)
+
+        let gate = RestorationGate()
+        model.start { await gate.wait() }
+        await gate.waitUntilStarted()
+        XCTAssertEqual(model.activity, .checkingICloud)
+        let report = model.activityReporter()
+        report(.profilesAndSettings)
+        model.showProgress()
+        XCTAssertEqual(model.activity, .profilesAndSettings)
+        report(.liveTVSources)
+        oldReport(.servers)
+        XCTAssertEqual(model.activity, .liveTVSources)
+        model.offerManualSetup()
+        XCTAssertEqual(model.activity, .liveTVSources, "Slowness must retain the actual unfinished work")
+        model.setUpManually(pause: {})
+        report(.servers)
+        XCTAssertNil(model.activity)
+        gate.finish(true)
+        await model.waitForManualSetup()
+        report(.checkingICloud)
+        XCTAssertNil(model.activity)
+    }
 }
 
 @MainActor

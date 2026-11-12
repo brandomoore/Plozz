@@ -182,6 +182,7 @@ final class ProviderCredentialSyncTests: XCTestCase {
             bridge.apply(.init(sequence: 1, authority: bridge.snapshotAuthority,
                 records: [record.recordName: try JSONEncoder().encode(record)]))
             await gate.waitUntilStarted()
+            XCTAssertTrue(bridge.isRestoringSignIn)
             if mode == "cancelled" { bridge.cancel() }
             if mode == "disabled" { enabled = false }
             if mode == "manualSetup" {
@@ -201,6 +202,7 @@ final class ProviderCredentialSyncTests: XCTestCase {
             await gate.release()
             await cleanup.waitUntilRecorded()
             await bridge.finishPendingRestoration()
+            XCTAssertFalse(bridge.isRestoringSignIn)
             XCTAssertTrue(receiver.loadAccounts().isEmpty, mode)
             let cancelled = await cleanup.wasCancelled
             XCTAssertEqual(cancelled, false, "Cleanup must not inherit cancellation: \(mode)")

@@ -91,6 +91,33 @@ final class CloudSyncRestorationTests: XCTestCase {
             CloudSyncSchemaDescriptor.liveTVSourcesV1.zoneID
         ]))
         XCTAssertFalse(FileManager.default.fileExists(atPath: folder.path))
+        let configActivity = await service.initialSetupActivity(for: CloudSyncSchemaDescriptor.configV3.zoneID)
+        let serverActivity = await service.initialSetupActivity(for: CloudSyncSchemaDescriptor.providerCredentialsV1.zoneID)
+        let sourceActivity = await service.initialSetupActivity(for: CloudSyncSchemaDescriptor.liveTVSourcesV1.zoneID)
+        let guideActivity = await service.initialSetupActivity(for: CloudSyncSchemaDescriptor.liveTVStateV1.zoneID)
+        XCTAssertEqual(configActivity, .profilesAndSettings)
+        XCTAssertEqual(serverActivity, .servers)
+        XCTAssertEqual(sourceActivity, .liveTVSources)
+        XCTAssertNil(guideActivity, "Guide/channel content is not an initial setup stage")
+    }
+
+    func testConcurrentFetchesKeepTheCurrentActivityUntilItsActualCompletion() {
+        var progress = CloudConfigSyncService.InitialSetupFetchProgress()
+        let profileZone = CloudSyncSchemaDescriptor.configV3.zoneID
+        let sourceZone = CloudSyncSchemaDescriptor.liveTVSourcesV1.zoneID
+        let serverZone = CloudSyncSchemaDescriptor.providerCredentialsV1.zoneID
+        XCTAssertNil(progress.activity)
+        progress.begin(profileZone, activity: .profilesAndSettings)
+        progress.begin(sourceZone, activity: .liveTVSources)
+        progress.begin(serverZone, activity: .servers)
+        XCTAssertEqual(progress.activity, .profilesAndSettings)
+        progress.end(serverZone)
+        XCTAssertEqual(progress.activity, .profilesAndSettings, "Other completions must not churn the visible status")
+        progress.end(profileZone)
+        XCTAssertEqual(progress.activity, .liveTVSources, "Show the actual outstanding source fetch")
+        progress.begin(sourceZone, activity: .liveTVSources)
+        progress.end(sourceZone)
+        XCTAssertNil(progress.activity, "Duplicate starts must not leave a phantom loading stage")
     }
 
     func testReloadOfAnInactiveServiceReportsUnavailableWithoutTouchingStorage() async {

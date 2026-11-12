@@ -25,7 +25,8 @@ final class ICloudOnboardingHostedTests: XCTestCase {
 
     private func render(
         width: CGFloat, height: CGFloat, typeSize: DynamicTypeSize, scheme: ColorScheme,
-        restorationPhase: InitialSetupRestorationPhase? = nil
+        restorationPhase: InitialSetupRestorationPhase? = nil,
+        restorationActivity: InitialSetupRestorationActivity = .liveTVSources
     ) async throws {
         try await waitUntil {
             UIApplication.shared.connectedScenes.contains { $0.activationState == .foregroundActive }
@@ -42,6 +43,7 @@ final class ICloudOnboardingHostedTests: XCTestCase {
                 if let restorationPhase {
                     ICloudRestorationView(
                         phase: restorationPhase,
+                        activity: restorationActivity,
                         onRetry: { choices.append(true) },
                         onSetUpManually: { choices.append(false) }
                     )
@@ -84,7 +86,7 @@ final class ICloudOnboardingHostedTests: XCTestCase {
             window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
         }
         let attachment = XCTAttachment(image: image)
-        attachment.name = "iCloud-onboarding-\(Int(width))-\(typeSize)-\(scheme)-\(String(describing: restorationPhase))"
+        attachment.name = "iCloud-onboarding-\(Int(width))-\(typeSize)-\(scheme)-\(String(describing: restorationPhase))-\(restorationActivity)"
         attachment.lifetime = .keepAlways
         add(attachment)
         let request = VNRecognizeTextRequest()
@@ -110,6 +112,18 @@ final class ICloudOnboardingHostedTests: XCTestCase {
             }
             if restorationPhase == .checking {
                 XCTAssertFalse(text.contains("Restoring setup"))
+            }
+            if restorationPhase == .restoring || restorationPhase == .slow {
+                let expectedActivity = switch restorationActivity {
+                case .checkingICloud: "Checking iCloud"
+                case .profilesAndSettings: "Restoring profiles and settings"
+                case .servers: "Restoring servers"
+                case .liveTVSources: "Restoring Live TV sources"
+                case .signingInToServers: "Signing in to servers"
+                }
+                XCTAssertTrue(text.contains(expectedActivity), "Missing active work: \(text)")
+            } else {
+                XCTAssertFalse(text.contains("Restoring Live TV sources"), "Inactive screens must not announce work")
             }
         } else {
             labels = ["iCloud Sync", "Enable iCloud Sync", "Not now", "Settings"]
@@ -168,6 +182,19 @@ final class ICloudOnboardingHostedTests: XCTestCase {
                                      scheme: scheme, restorationPhase: phase)
                 }
             }
+        }
+    }
+
+    func testAllActualRestorationActivitiesRender() async throws {
+        #if os(tvOS)
+        let size: (CGFloat, CGFloat) = (1920, 1080)
+        #else
+        let size: (CGFloat, CGFloat) = (393, 852)
+        #endif
+        for activity in [InitialSetupRestorationActivity.checkingICloud, .profilesAndSettings, .servers,
+                         .liveTVSources, .signingInToServers] {
+            try await render(width: size.0, height: size.1, typeSize: .large, scheme: .dark,
+                             restorationPhase: .restoring, restorationActivity: activity)
         }
     }
 

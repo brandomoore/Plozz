@@ -60,6 +60,7 @@ public final class ProviderCredentialSync {
     private var resetPending = false
     private var latestSequence: UInt64?
     private var needsReconciliation = false
+    public private(set) var isRestoringSignIn = false
     private static let stateKey = "provider-credentials.v1"
     private static let resetKey = "com.plozz.providerSyncResetPending.v1"
 
@@ -199,6 +200,7 @@ public final class ProviderCredentialSync {
         task = nil
         authorityConfirmed = false
         latestSequence = nil
+        isRestoringSignIn = false
     }
 
     private func accountChanged() {
@@ -281,6 +283,10 @@ public final class ProviderCredentialSync {
 
                 for record in candidates {
                     guard isCurrent(record, generation: current) else { continue }
+                    isRestoringSignIn = true
+                    defer {
+                        if generation == current { isRestoringSignIn = false }
+                    }
                     do {
                         try await restore(record, generation: current)
                     } catch is CancellationError {

@@ -540,6 +540,8 @@ public struct RootView: View {
                     } else {
                         ICloudRestorationView(
                             phase: appState.initialSetupRestoration.phase,
+                            activity: appState.initialSetupRestoration.activity
+                                ?? (appState.providerCredentialSync.isRestoringSignIn ? .signingInToServers : nil),
                             onRetry: appState.restoreInitialICloudSetup,
                             onSetUpManually: appState.setUpManuallyAfterICloudRestore
                         )

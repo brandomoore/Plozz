@@ -100,6 +100,8 @@ public struct PlozziOSRootView: View {
             } else if appModel.initialSetupRestoration.phase != .hidden {
                 ICloudRestorationView(
                     phase: appModel.initialSetupRestoration.phase,
+                    activity: appModel.initialSetupRestoration.activity
+                        ?? (appModel.providerCredentialSync.isRestoringSignIn ? .signingInToServers : nil),
                     onRetry: appModel.restoreInitialICloudSetup,
                     onSetUpManually: appModel.setUpManuallyAfterICloudRestore
                 )

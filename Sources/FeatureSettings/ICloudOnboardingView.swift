@@ -28,15 +28,18 @@ public struct ICloudRestorationView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @AccessibilityFocusState private var headingFocused: Bool
     private let phase: InitialSetupRestorationPhase
+    private let activity: InitialSetupRestorationActivity?
     private let onRetry: () -> Void
     private let onSetUpManually: () -> Void
     private var hasFailed: Bool { phase == .unavailable }
 
     public init(
-        phase: InitialSetupRestorationPhase, onRetry: @escaping () -> Void,
+        phase: InitialSetupRestorationPhase, activity: InitialSetupRestorationActivity? = nil,
+        onRetry: @escaping () -> Void,
         onSetUpManually: @escaping () -> Void
     ) {
         self.phase = phase
+        self.activity = activity
         self.onRetry = onRetry
         self.onSetUpManually = onSetUpManually
     }
@@ -58,10 +61,16 @@ public struct ICloudRestorationView: View {
                         OnboardingHeader(heading)
                             .accessibilityAddTraits(.isHeader)
                             .accessibilityFocused($headingFocused)
+                        if let visibleActivity {
+                            Text(visibleActivity.restorationMessage)
+                                .multilineTextAlignment(.center)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .accessibilityIdentifier("icloud-restoration-activity")
+                        }
                         Group {
                             if hasFailed {
                                 Text("Check your connection and iCloud sign-in, or set up manually.")
-                            } else if phase == .slow {
+                            } else if phase == .slow && visibleActivity == nil {
                                 Text("Taking longer than expected. You can wait or set up manually.")
                             }
                         }
@@ -89,6 +98,14 @@ public struct ICloudRestorationView: View {
         .task(id: phase) {
             headingFocused = phase != .checking && phase != .hidden
         }
+        .onChange(of: visibleActivity) { previous, current in
+            guard previous != nil, let current else { return }
+            AccessibilityNotification.Announcement(String(localized: current.restorationMessage)).post()
+        }
+    }
+
+    private var visibleActivity: InitialSetupRestorationActivity? {
+        phase == .restoring || phase == .slow ? activity : nil
     }
 
     private var heading: Text {
@@ -96,6 +113,18 @@ public struct ICloudRestorationView: View {
         case .unavailable: Text("Couldn't restore your setup")
         case .stopping: Text("Preparing manual setup…")
         default: Text("Restoring setup from iCloud…")
+        }
+    }
+}
+
+private extension InitialSetupRestorationActivity {
+    var restorationMessage: LocalizedStringResource {
+        switch self {
+        case .checkingICloud: "Checking iCloud…"
+        case .profilesAndSettings: "Restoring profiles and settings…"
+        case .servers: "Restoring servers…"
+        case .liveTVSources: "Restoring Live TV sources…"
+        case .signingInToServers: "Signing in to servers…"
         }
     }
 }

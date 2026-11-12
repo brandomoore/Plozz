@@ -801,8 +801,12 @@ extension AppState {
         initialSetupRestoration.start(operation: { [weak self] in
             guard let self, SyncSetupFeatureFlag().allowsAutomaticSync,
                   let config = self.cloudSync else { return false }
-            let fetched = await config.activate(initialSetupOnly: true)
+            let report = self.initialSetupRestoration.activityReporter()
+            let fetched = await config.activate(initialSetupOnly: true, onInitialSetupActivity: { activity in
+                await report(activity)
+            })
             guard !Task.isCancelled, SyncSetupFeatureFlag().allowsAutomaticSync else { return false }
+            report(nil)
             self.providerCredentialSync.reconcile()
             await self.providerCredentialSync.finishPendingRestoration()
             return fetched && !Task.isCancelled && SyncSetupFeatureFlag().allowsAutomaticSync

@@ -57,6 +57,12 @@ registry.
   initial fetch never confirms the unfetched channels or permits publication.
   Progress appears after 250 ms, without a minimum display time; after eight
   seconds it offers Set up manually. Failures offer Retry and Set up manually.
+  One short detail names the actual iCloud fetch/apply work or active server
+  sign-in. Concurrent zone fetches keep the current detail until that work
+  finishes; there is no timed checklist, percentage, or estimated completion.
+  Live TV restoration transfers source settings and imported playlist files,
+  not channel indexing or programme-guide downloads. Those remain owned by
+  the presented Live TV runtime rather than the onboarding gate.
   Manual setup persists a temporary automatic-sync pause without changing
   consent, drains restoration before revealing setup, and resumes only after
   explicit manual completion for the authorized profile (including after a
