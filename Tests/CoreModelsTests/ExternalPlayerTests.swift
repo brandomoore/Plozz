@@ -169,8 +169,8 @@ final class ExternalPlayerTests: XCTestCase {
                 XCTAssertEqual(URLComponents(string: nested)?.percentEncodedPassword, password)
             }
         }
-        source.percentEncodedPassword = "fixture:secret"
-        let rawColon = try XCTUnwrap(source.url)
+        let rawColon = try XCTUnwrap(URL(string: "https://fixture:fixture:secret@server.test/media.mkv"))
+        XCTAssertEqual(URLComponents(url: rawColon, resolvingAgainstBaseURL: false)?.password, "fixture:secret")
         for player in [ExternalPlayer.nativePlayer, .infuse] {
             XCTAssertFalse(ExternalPlayerURL.isSupportedMediaURL(rawColon, player: player, allowPassword: true))
         }
