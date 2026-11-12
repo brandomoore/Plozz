@@ -711,7 +711,7 @@ public final class LiveTVPortableSyncBridge {
 
     private func mayApply(_ profileID: String, epoch: String) -> Bool {
         !Task.isCancelled
-            && (!followsMainSync || SyncSetupFeatureFlag(defaults: defaults).isEnabled)
+            && (!followsMainSync || SyncSetupFeatureFlag(defaults: defaults).allowsAutomaticSync)
             && epoch == LiveTVPortableSyncPreferenceStore.storageEpoch(defaults: defaults)
             && profiles.profiles.contains { $0.id == profileID }
             && adapter(profileID).isEnabled

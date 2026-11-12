@@ -158,7 +158,7 @@ extension AppState {
         return CloudConfigSyncService(.init(
             containerIdentifier: cloudContainerIdentifier,
             stateFileURL: configStateURL,
-            isEnabled: { SyncSetupFeatureFlag().isEnabled },
+            isEnabled: { SyncSetupFeatureFlag().allowsAutomaticSync },
             captureRecords: { [weak appState] fallback in
                 guard let appState else { return [:] }
                 return await appState.captureSyncRecords(fallback: fallback)
@@ -195,7 +195,7 @@ extension AppState {
     /// Lightweight pull when the app comes to the foreground, so config changed on
     /// another device appears promptly (tvOS push is unreliable).
     public func syncCloudOnForeground() {
-        guard SyncSetupFeatureFlag().isEnabled else { return }
+        guard SyncSetupFeatureFlag().allowsAutomaticSync else { return }
         accountsProviders.reloadAccounts()
         let config = cloudSync
         Task {
@@ -215,7 +215,7 @@ extension AppState {
     /// in the loop (matching Apple's "set up new device" pattern) — but it's zero typing:
     /// no code, no QR. Mirrors the iOS source-side behavior so a TV can set up a phone.
     public func checkForSyncSetupOffer() {
-        guard SyncSetupFeatureFlag().isEnabled,
+        guard SyncSetupFeatureFlag().allowsAutomaticSync,
               !isPresentingSyncSetup,
               cloudSyncUI.pendingSyncSetupOffer == nil else { return }
         let localIDs = Set(accountsProviders.accounts.map(\.id))
@@ -255,7 +255,7 @@ extension AppState {
     /// Apple TV without the user backgrounding the app (tvOS push is unreliable).
     /// Idempotent; guarded on the feature flag each tick.
     func startSyncSetupOfferPolling() {
-        guard SyncSetupFeatureFlag().isEnabled, syncSetupOfferPollTask == nil else { return }
+        guard SyncSetupFeatureFlag().allowsAutomaticSync, syncSetupOfferPollTask == nil else { return }
         syncSetupOfferPollTask = Task { [weak self] in
             var tick = 0
             while !Task.isCancelled {
@@ -264,7 +264,7 @@ extension AppState {
                 tick += 1
                 let fetchConfig = tick % 4 == 0   // ~every 32s
                 let keepGoing = await MainActor.run { () -> Bool in
-                    guard let self, SyncSetupFeatureFlag().isEnabled else { return self != nil }
+                    guard let self, SyncSetupFeatureFlag().allowsAutomaticSync else { return self != nil }
                     self.checkForSyncSetupOffer()
                     if fetchConfig {
                         let config = self.cloudSync
@@ -667,7 +667,7 @@ extension AppState {
 
     /// Register this Apple TV in the household presence registry.
     func heartbeatHouseholdPresence() {
-        guard SyncSetupFeatureFlag().isEnabled else { return }
+        guard SyncSetupFeatureFlag().allowsAutomaticSync else { return }
         HouseholdDevicesStore().heartbeat(
             deviceID: accountsProviders.accountStore.deviceID(),
             deviceName: DeviceDisplayName.current(fallback: "Apple TV"))
@@ -712,7 +712,7 @@ extension AppState {
     /// Activate the engine (if enabled) and start observing local config changes.
     func startCloudSyncIfEnabled() {
         TraktSharedRefreshBootstrap.install(containerIdentifier: Self.cloudContainerIdentifier)
-        guard SyncSetupFeatureFlag().isEnabled else { return }
+        guard SyncSetupFeatureFlag().allowsAutomaticSync else { return }
         // Never start a real CloudKit engine inside a unit-test host. xctest runs
         // without the app's iCloud entitlement, so CloudKit traps (SIGTRAP) the
         // moment the container is touched — which kills the whole test process and
@@ -720,6 +720,10 @@ extension AppState {
         // when unset, and a test host's UserDefaults is always unset, so every test
         // that reached `bootstrap()` hit this.
         guard !Self.isRunningUnitTests else { return }
+        if initialSetupRestoration.needsRestoration {
+            restoreInitialICloudSetup()
+            return
+        }
         guard cloudSync != nil else {
             PlozzLog.sync.error("CloudSync: no writable state dir — sync unavailable")
             return
@@ -760,7 +764,7 @@ extension AppState {
 
     /// Coalesce a burst of edits into one publish shortly after they settle.
     public func scheduleCloudPublish() {
-        guard SyncSetupFeatureFlag().isEnabled,
+        guard SyncSetupFeatureFlag().allowsAutomaticSync,
               cloudSync != nil else {
             return
         }
@@ -794,14 +798,46 @@ extension AppState {
     }
 
     public func restoreInitialICloudSetup() {
-        initialSetupRestoration.start { [weak self] in
-            guard let self, self.syncSetup.isEnabled, let config = self.cloudSync else { return false }
-            let fetched = await config.activate()
+        initialSetupRestoration.start(operation: { [weak self] in
+            guard let self, SyncSetupFeatureFlag().allowsAutomaticSync,
+                  let config = self.cloudSync else { return false }
+            let fetched = await config.activate(initialSetupOnly: true)
+            guard !Task.isCancelled, SyncSetupFeatureFlag().allowsAutomaticSync else { return false }
             self.providerCredentialSync.reconcile()
             await self.providerCredentialSync.finishPendingRestoration()
-            await self.refreshSyncedTrackerSignIns()
-            return fetched && self.syncSetup.isEnabled && self.providerCredentialSync.isReadyForManualSetup
+            return fetched && !Task.isCancelled && SyncSetupFeatureFlag().allowsAutomaticSync
+                && self.providerCredentialSync.isReadyForManualSetup
+        }, onRestored: { [weak self] in
+            self?.finishInitialICloudSetup()
+        })
+    }
+
+    public func setUpManuallyAfterICloudRestore() {
+        initialSetupRestoration.setUpManually(pause: { [weak self] in
+            guard let self else { return }
+            providerCredentialSync.cancel()
+            cloudPublishTask?.cancel()
+            syncSetupOfferPollTask?.cancel()
+            syncSetupOfferPollTask = nil
+            cloudSyncUI.pendingSyncSetupOffer = nil
+            await cloudSync?.deactivateAndCancel()
+        }, onReady: { [weak self] in self?.continueManualICloudSetupIfReady() })
+    }
+
+    public func continueManualICloudSetupIfReady() {
+        guard isActiveProfileAuthorized, !profilesModel.activeProfile.needsSetup,
+              initialSetupRestoration.isManualSetupPending,
+              initialSetupRestoration.phase == .hidden else { return }
+        guard initialSetupRestoration.resumeAfterManualSetup(for: profilesModel.activeProfileID) else {
+            profileFlow.resumeSetupIfNeeded(manualICloudSetup: true)
+            return
         }
+        finishInitialICloudSetup()
+    }
+
+    private func finishInitialICloudSetup() {
+        startCloudSyncIfEnabled()
+        Task { await refreshSyncedTrackerSignIns() }
     }
 
     /// Turn cross-device Sync & Setup on/off. Enabling activates CloudKit sync and
@@ -823,7 +859,7 @@ extension AppState {
         let isInitialSetup = on && syncSetup.needsOnboardingChoice
         syncSetup.setEnabled(on)
         if isInitialSetup { restoreInitialICloudSetup() }
-        if !on { initialSetupRestoration.dismiss() }
+        if !on { initialSetupRestoration.cancel() }
         let config = cloudSync
         guard let config else { return }
         if on {

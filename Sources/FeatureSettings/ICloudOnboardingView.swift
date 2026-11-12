@@ -1,4 +1,5 @@
 #if canImport(SwiftUI)
+import CoreModels
 import CoreUI
 import SwiftUI
 
@@ -26,45 +27,57 @@ public struct ICloudRestorationView: View {
     @Environment(\.themePalette) private var palette
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @AccessibilityFocusState private var headingFocused: Bool
-    private let hasFailed: Bool
+    private let phase: InitialSetupRestorationPhase
     private let onRetry: () -> Void
-    private let onContinue: () -> Void
+    private let onSetUpManually: () -> Void
+    private var hasFailed: Bool { phase == .unavailable }
 
-    public init(hasFailed: Bool, onRetry: @escaping () -> Void, onContinue: @escaping () -> Void) {
-        self.hasFailed = hasFailed
+    public init(
+        phase: InitialSetupRestorationPhase, onRetry: @escaping () -> Void,
+        onSetUpManually: @escaping () -> Void
+    ) {
+        self.phase = phase
         self.onRetry = onRetry
-        self.onContinue = onContinue
+        self.onSetUpManually = onSetUpManually
     }
 
     public var body: some View {
         GeometryReader { geometry in
             ScrollView {
                 VStack(spacing: 32) {
-                    if hasFailed || reduceMotion {
-                        Image(systemName: hasFailed ? "icloud.slash" : "icloud")
-                            .font(.largeTitle)
-                            .accessibilityHidden(true)
-                    } else {
-                        ProgressView()
-                            .controlSize(.large)
-                            .accessibilityHidden(true)
-                    }
-                    OnboardingHeader(hasFailed
-                        ? Text("Couldn't restore your setup")
-                        : Text("Restoring setup from iCloud…"))
-                        .accessibilityAddTraits(.isHeader)
-                        .accessibilityFocused($headingFocused)
-                    Group {
-                        if hasFailed {
-                            Text("Check your connection and iCloud sign-in, or continue with manual setup.")
+                    if phase != .checking && phase != .hidden {
+                        if hasFailed || reduceMotion {
+                            Image(systemName: hasFailed ? "icloud.slash" : "icloud")
+                                .font(.largeTitle)
+                                .accessibilityHidden(true)
                         } else {
-                            Text("You can continue while iCloud Sync finishes.")
+                            ProgressView()
+                                .controlSize(.large)
+                                .accessibilityHidden(true)
+                        }
+                        OnboardingHeader(heading)
+                            .accessibilityAddTraits(.isHeader)
+                            .accessibilityFocused($headingFocused)
+                        Group {
+                            if hasFailed {
+                                Text("Check your connection and iCloud sign-in, or set up manually.")
+                            } else if phase == .slow {
+                                Text("Taking longer than expected. You can wait or set up manually.")
+                            }
+                        }
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                        if hasFailed || phase == .slow {
+                            ICloudRestorationActions(
+                                hasFailed: hasFailed, onRetry: onRetry, onSetUpManually: onSetUpManually
+                            )
+                            .id(phase)
+                            Text("Manual setup pauses restoration until you're finished. iCloud Sync stays on.")
+                                .font(.footnote)
+                                .plozzForeground(.secondary)
+                                .multilineTextAlignment(.center)
                         }
                     }
-                    .multilineTextAlignment(.center)
-                    .fixedSize(horizontal: false, vertical: true)
-                    ICloudRestorationActions(hasFailed: hasFailed, onRetry: onRetry, onContinue: onContinue)
-                        .id(hasFailed)
                 }
                 .frame(maxWidth: 760)
                 .padding(32)
@@ -73,8 +86,16 @@ public struct ICloudRestorationView: View {
         }
         .background { AppBackground(palette: palette) }
         .accessibilityIdentifier("icloud-restoration")
-        .task(id: hasFailed) {
-            headingFocused = true
+        .task(id: phase) {
+            headingFocused = phase != .checking && phase != .hidden
+        }
+    }
+
+    private var heading: Text {
+        switch phase {
+        case .unavailable: Text("Couldn't restore your setup")
+        case .stopping: Text("Preparing manual setup…")
+        default: Text("Restoring setup from iCloud…")
         }
     }
 }
@@ -82,7 +103,7 @@ public struct ICloudRestorationView: View {
 private struct ICloudRestorationActions: View {
     let hasFailed: Bool
     let onRetry: () -> Void
-    let onContinue: () -> Void
+    let onSetUpManually: () -> Void
     private enum Action: Hashable { case retry, proceed }
     @FocusState private var focusedAction: Action?
 
@@ -94,10 +115,10 @@ private struct ICloudRestorationActions: View {
                     .focused($focusedAction, equals: .retry)
                     .accessibilityIdentifier("icloud-restoration-retry")
             }
-            Button("Continue", action: onContinue)
+            Button("Set up manually", action: onSetUpManually)
                 .plozzActionButton(role: .secondary)
                 .focused($focusedAction, equals: .proceed)
-                .accessibilityIdentifier("icloud-restoration-continue")
+                .accessibilityIdentifier("icloud-restoration-manual")
         }
         .controlSize(.large)
         #if os(tvOS)

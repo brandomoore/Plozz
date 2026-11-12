@@ -99,9 +99,9 @@ public struct PlozziOSRootView: View {
                     .environment(\.colorScheme, resolvedPalette.isLight ? .light : .dark)
             } else if appModel.initialSetupRestoration.phase != .hidden {
                 ICloudRestorationView(
-                    hasFailed: appModel.initialSetupRestoration.phase == .unavailable,
+                    phase: appModel.initialSetupRestoration.phase,
                     onRetry: appModel.restoreInitialICloudSetup,
-                    onContinue: appModel.initialSetupRestoration.dismiss
+                    onSetUpManually: appModel.setUpManuallyAfterICloudRestore
                 )
                 .environment(\.themePalette, resolvedPalette)
                 .environment(\.colorScheme, resolvedPalette.isLight ? .light : .dark)
@@ -109,6 +109,13 @@ public struct PlozziOSRootView: View {
                 appContent
                     .task { consumeDeferredPairingURL() }
             }
+        }
+        .onChange(
+            of: appModel.isActiveProfileAuthorized && !appModel.profiles.activeProfile.needsSetup
+                && !appModel.isOfflineMode && appModel.initialSetupRestoration.phase == .hidden,
+            initial: true
+        ) { _, ready in
+            if ready { appModel.continueManualICloudSetupIfReady() }
         }
         .onOpenURL { url in
             if ExternalPlaybackRuntime.shared.receive(url) { return }
@@ -216,6 +223,7 @@ public struct PlozziOSRootView: View {
             set: { if !$0 { appModel.cancelProfileOnboarding() } }
         )) {
             PlozziOSProfileOnboardingCover(appModel: appModel)
+                .interactiveDismissDisabled(appModel.initialSetupRestoration.isManualSetupPending)
         }
         .task { appModel.resumeProfileOnboardingIfNeeded() }
         .liveChannelSystemOverlays()

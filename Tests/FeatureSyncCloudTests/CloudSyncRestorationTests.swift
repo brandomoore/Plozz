@@ -70,6 +70,27 @@ final class CloudSyncRestorationTests: XCTestCase {
         let restored = await service.hasRestoredLocalState
         XCTAssertFalse(restored)
         XCTAssertFalse(FileManager.default.fileExists(atPath: folder.path))
+        let initialFetched = await service.activate(initialSetupOnly: true)
+        XCTAssertFalse(initialFetched)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: folder.path))
+    }
+
+    func testInitialSetupFetchIncludesRoutingEssentialsButNotOptionalContent() async {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let extras: [CloudSyncSchemaDescriptor] = [
+            .mediaStateV1, .trackerTokensV1, .providerCredentialsV1, .liveTVStateV1, .liveTVSourcesV1
+        ]
+        let service = CloudConfigSyncService(configuration(folder.appendingPathComponent("config.json")), channels:
+            extras.map { schema in
+                .init(schema: schema, stateFileURL: folder.appendingPathComponent(schema.zoneName),
+                      captureRecords: { $0 }, applyRecords: { _ in })
+            })
+        let zones = await service.initialSetupZoneIDs
+        XCTAssertEqual(Set(zones), Set([
+            CloudSyncSchemaDescriptor.configV3.zoneID, CloudSyncSchemaDescriptor.providerCredentialsV1.zoneID,
+            CloudSyncSchemaDescriptor.liveTVSourcesV1.zoneID
+        ]))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: folder.path))
     }
 
     func testReloadOfAnInactiveServiceReportsUnavailableWithoutTouchingStorage() async {

@@ -233,7 +233,7 @@ final class PlozziOSAppModel {
     @ObservationIgnored
     lazy var providerCredentialSync = ProviderCredentialSync(
         accounts: accountStore,
-        enabled: { SyncSetupFeatureFlag().isEnabled && !OfflineMode.shared.isEnabled },
+        enabled: { SyncSetupFeatureFlag().allowsAutomaticSync && !OfflineMode.shared.isEnabled },
         canRestore: { [weak self] in self?.managementRequiresParentalPIN == false },
         didRestore: { [weak self] in
             guard let self else { return }
@@ -1478,7 +1478,7 @@ final class PlozziOSAppModel {
     /// Resuming asks the question that was never answered: importing anyway is
     /// the leak the gate exists to prevent, and clearing it without asking is the
     /// same thing by another route.
-    func resumeProfileOnboardingIfNeeded() {
+    func resumeProfileOnboardingIfNeeded(manualICloudSetup: Bool = false) {
         // `profileOnboardingID` — not just the step — because creation claims the
         // id and origin synchronously and only raises the step a runloop turn
         // later (so the editor sheet can close first). Switching into the new
@@ -1490,7 +1490,7 @@ final class PlozziOSAppModel {
         guard profileOnboardingStep == nil, profileOnboardingID == nil,
               pendingFirstRunStep == nil, plexHomeUsers.pendingPlexUserSelection == nil,
               pendingLibrarySelection == nil else { return }
-        guard profiles.activeProfile.needsSetup else { return }
+        guard profiles.activeProfile.needsSetup || manualICloudSetup else { return }
         profileOnboardingID = profiles.activeProfileID
         profileOnboardingStep = .libraries
     }
@@ -1517,6 +1517,10 @@ final class PlozziOSAppModel {
         } else {
             profileOnboardingStep = nil
             profileOnboardingID = nil
+            if id == profiles.activeProfileID, profiles.profiles.contains(where: { $0.id == id }) {
+                initialSetupRestoration.completeManualSetup(for: id)
+                continueManualICloudSetupIfReady()
+            }
         }
     }
 
@@ -3150,6 +3154,8 @@ final class PlozziOSAppModel {
             appliesPlexIdentityAfterLibrarySelection = false
             plexHomeUsers.ensurePlexIdentityForActiveProfile()
         }
+        initialSetupRestoration.completeManualSetup(for: profiles.activeProfileID)
+        continueManualICloudSetupIfReady()
     }
 
     private func preparePostSignInOnboarding(

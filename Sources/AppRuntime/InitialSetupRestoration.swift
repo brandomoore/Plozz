@@ -1,37 +1,142 @@
 import Observation
+import CoreModels
 
-/// Presentation for the first opt-in only; dismissing it leaves automatic sync running.
+/// First-run routing stays gated until essential setup is known or sync has paused for manual setup.
 @MainActor
 @Observable
 public final class InitialSetupRestoration {
-    public enum Phase: Equatable {
-        case hidden
-        case restoring
-        case unavailable
-    }
+    public typealias Phase = InitialSetupRestorationPhase
 
     public private(set) var phase: Phase = .hidden
+    public private(set) var isManualSetupPending: Bool
+    public private(set) var completedManualSetupProfileID: String?
     @ObservationIgnored private var task: Task<Void, Never>?
+    @ObservationIgnored private var presentationTask: Task<Void, Never>?
+    @ObservationIgnored private var manualSetupTask: Task<Void, Never>?
+    @ObservationIgnored private let flag: SyncSetupFeatureFlag
+    @ObservationIgnored private var generation = 0
 
-    public init() {}
+    static let progressDelay: Duration = .milliseconds(250)
+    static let manualSetupDelay: Duration = .seconds(8)
+    public var needsRestoration: Bool { flag.isInitialRestorationPending }
 
-    public func start(operation: @escaping @MainActor () async -> Bool) {
-        guard task == nil else { return }
-        phase = .restoring
-        task = Task { [weak self] in
-            let completed = await operation()
-            guard let self else { return }
-            task = nil
-            guard phase == .restoring else { return }
-            phase = completed ? .hidden : .unavailable
+    public init(flag: SyncSetupFeatureFlag = .init()) {
+        self.flag = flag
+        self.isManualSetupPending = flag.isManualSetupPending
+        self.completedManualSetupProfileID = flag.completedManualSetupProfileID
+        if flag.isInitialRestorationPending && !flag.isManualSetupPending {
+            phase = .checking
         }
     }
 
-    public func dismiss() {
+    public func start(
+        operation: @escaping @MainActor () async -> Bool,
+        onRestored: @escaping @MainActor () -> Void = {}
+    ) {
+        guard task == nil, !isManualSetupPending else { return }
+        flag.isInitialRestorationPending = true
+        generation += 1
+        let current = generation
+        phase = .checking
+        presentationTask = Task { [weak self] in
+            do {
+                try await Task.sleep(for: Self.progressDelay)
+                guard self?.generation == current else { return }
+                self?.showProgress()
+                try await Task.sleep(for: Self.manualSetupDelay - Self.progressDelay)
+                guard self?.generation == current else { return }
+                self?.offerManualSetup()
+            } catch is CancellationError {
+                return
+            } catch {
+                assertionFailure("Unexpected restoration clock failure: \(error)")
+            }
+        }
+        task = Task { [weak self] in
+            let completed = await operation()
+            guard let self, generation == current else { return }
+            task = nil
+            presentationTask?.cancel()
+            presentationTask = nil
+            phase = completed ? .hidden : .unavailable
+            if completed {
+                flag.isInitialRestorationPending = false
+                onRestored()
+            }
+        }
+    }
+
+    func showProgress() {
+        guard phase == .checking else { return }
+        phase = .restoring
+    }
+
+    func offerManualSetup() {
+        guard phase == .checking || phase == .restoring else { return }
+        phase = .slow
+    }
+
+    public func setUpManually(
+        pause: @escaping @MainActor () async -> Void,
+        onReady: @escaping @MainActor () -> Void = {}
+    ) {
+        guard phase == .slow || phase == .unavailable else { return }
+        flag.isManualSetupPending = true
+        flag.isInitialRestorationPending = false
+        flag.completedManualSetupProfileID = nil
+        completedManualSetupProfileID = nil
+        isManualSetupPending = true
+        generation += 1
+        let current = generation
+        let restorationTask = task
+        task?.cancel()
+        task = nil
+        presentationTask?.cancel()
+        presentationTask = nil
+        phase = .stopping
+        manualSetupTask = Task { [weak self] in
+            await pause()
+            await restorationTask?.value
+            guard let self, generation == current else { return }
+            manualSetupTask = nil
+            phase = .hidden
+            onReady()
+        }
+    }
+
+    public func completeManualSetup(for profileID: String) {
+        guard isManualSetupPending, phase == .hidden else { return }
+        flag.completedManualSetupProfileID = profileID
+        completedManualSetupProfileID = profileID
+    }
+
+    @discardableResult
+    public func resumeAfterManualSetup(for profileID: String) -> Bool {
+        guard isManualSetupPending, phase == .hidden,
+              completedManualSetupProfileID == profileID else { return false }
+        flag.isManualSetupPending = false
+        isManualSetupPending = false
+        completedManualSetupProfileID = nil
+        return true
+    }
+
+    public func cancel() {
+        flag.isInitialRestorationPending = false
+        generation += 1
+        task?.cancel()
+        task = nil
+        presentationTask?.cancel()
+        presentationTask = nil
+        isManualSetupPending = flag.isManualSetupPending
+        completedManualSetupProfileID = flag.completedManualSetupProfileID
         phase = .hidden
     }
 
     func waitForCompletion() async {
         await task?.value
+    }
+
+    func waitForManualSetup() async {
+        await manualSetupTask?.value
     }
 }

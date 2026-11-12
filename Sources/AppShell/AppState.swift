@@ -2053,6 +2053,8 @@ public final class AppState {
         profileFlow.completeAppearanceSetup(for: profilesModel.activeProfileID)
         apply(.navigationSelected)
         plexHomeUsers.ensurePlexIdentityForActiveProfile()
+        initialSetupRestoration.completeManualSetup(for: profilesModel.activeProfileID)
+        continueManualICloudSetupIfReady()
     }
 
     /// Sets or clears (`nil`) a profile's PIN gate.
@@ -2094,7 +2096,13 @@ public final class AppState {
     }
 
     public func finishProfileSetupFlow() {
+        let completedID = profileFlow.pendingSetupProfile?.id
         profileFlow.finishSetupFlow()
+        if let completedID, completedID == profilesModel.activeProfileID,
+           profilesModel.profiles.contains(where: { $0.id == completedID }) {
+            initialSetupRestoration.completeManualSetup(for: completedID)
+            continueManualICloudSetupIfReady()
+        }
     }
 
     public func completeProfileAppearanceSetup(for id: String) {

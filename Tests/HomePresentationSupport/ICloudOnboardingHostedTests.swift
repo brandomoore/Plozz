@@ -1,4 +1,5 @@
 import CoreUI
+import CoreModels
 import FeatureSettings
 import SwiftUI
 import UIKit
@@ -24,7 +25,7 @@ final class ICloudOnboardingHostedTests: XCTestCase {
 
     private func render(
         width: CGFloat, height: CGFloat, typeSize: DynamicTypeSize, scheme: ColorScheme,
-        restorationFailure: Bool? = nil
+        restorationPhase: InitialSetupRestorationPhase? = nil
     ) async throws {
         try await waitUntil {
             UIApplication.shared.connectedScenes.contains { $0.activationState == .foregroundActive }
@@ -38,11 +39,11 @@ final class ICloudOnboardingHostedTests: XCTestCase {
         window.overrideUserInterfaceStyle = scheme == .dark ? .dark : .light
         window.rootViewController = UIHostingController(rootView:
             Group {
-                if let restorationFailure {
+                if let restorationPhase {
                     ICloudRestorationView(
-                        hasFailed: restorationFailure,
+                        phase: restorationPhase,
                         onRetry: { choices.append(true) },
-                        onContinue: { choices.append(false) }
+                        onSetUpManually: { choices.append(false) }
                     )
                 } else {
                     ICloudOnboardingView { choices.append($0) }
@@ -59,13 +60,22 @@ final class ICloudOnboardingHostedTests: XCTestCase {
             window.rootViewController = nil
             previous?.makeKeyAndVisible()
         }
+        let expectedFocus: String? = switch restorationPhase {
+        case nil: "Enable iCloud Sync"
+        case .unavailable: "Retry"
+        case .slow: "Set up manually"
+        default: nil
+        }
         #if os(tvOS)
-        try await waitUntil { UIFocusSystem(for: window)?.focusedItem != nil }
+        if expectedFocus != nil {
+            try await waitUntil { UIFocusSystem(for: window)?.focusedItem != nil }
+        }
         #endif
         func spinners(in view: UIView) -> [UIActivityIndicatorView] {
             (view as? UIActivityIndicatorView).map { [$0] } ?? view.subviews.flatMap(spinners)
         }
-        if restorationFailure == false, !UIAccessibility.isReduceMotionEnabled {
+        if let restorationPhase, [.restoring, .slow, .stopping].contains(restorationPhase),
+           !UIAccessibility.isReduceMotionEnabled {
             try await waitUntil { !spinners(in: window).isEmpty }
         }
         // Only the native indeterminate spinner is allowed to keep animating during capture.
@@ -74,7 +84,7 @@ final class ICloudOnboardingHostedTests: XCTestCase {
             window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
         }
         let attachment = XCTAttachment(image: image)
-        attachment.name = "iCloud-onboarding-\(Int(width))-\(typeSize)-\(scheme)-\(String(describing: restorationFailure))"
+        attachment.name = "iCloud-onboarding-\(Int(width))-\(typeSize)-\(scheme)-\(String(describing: restorationPhase))"
         attachment.lifetime = .keepAlways
         add(attachment)
         let request = VNRecognizeTextRequest()
@@ -85,10 +95,22 @@ final class ICloudOnboardingHostedTests: XCTestCase {
         let strings = observations.compactMap { $0.topCandidates(1).first?.string }
         let text = strings.joined(separator: " ")
         let labels: [String]
-        if let restorationFailure {
-            labels = restorationFailure
-                ? ["Couldn't restore your setup", "Retry", "Continue"]
-                : ["Restoring setup from iCloud", "Continue"]
+        if let restorationPhase {
+            labels = switch restorationPhase {
+            case .unavailable: ["Couldn't restore your setup", "Retry", "Set up manually", "iCloud Sync stays on"]
+            case .slow: ["Restoring setup from iCloud", "Set up manually", "iCloud Sync stays on"]
+            case .restoring: ["Restoring setup from iCloud"]
+            case .stopping: ["Preparing manual setup"]
+            case .hidden, .checking: []
+            }
+            XCTAssertFalse(text.contains("Continue"))
+            if restorationPhase != .slow && restorationPhase != .unavailable {
+                XCTAssertFalse(text.contains("Set up manually"))
+                XCTAssertFalse(text.contains("Retry"))
+            }
+            if restorationPhase == .checking {
+                XCTAssertFalse(text.contains("Restoring setup"))
+            }
         } else {
             labels = ["iCloud Sync", "Enable iCloud Sync", "Not now", "Settings"]
         }
@@ -97,7 +119,7 @@ final class ICloudOnboardingHostedTests: XCTestCase {
         }
         XCTAssertTrue(choices.isEmpty, "Rendering/default focus must never accept iCloud for the user.")
         #if os(tvOS)
-        let expectedFocus = restorationFailure.map { $0 ? "Retry" : "Continue" } ?? "Enable iCloud Sync"
+        guard let expectedFocus else { return }
         let button = try XCTUnwrap(observations.first {
             $0.topCandidates(1).first?.string == expectedFocus
         })
@@ -124,14 +146,14 @@ final class ICloudOnboardingHostedTests: XCTestCase {
         XCTAssertTrue(nativeFrame.intersects(frame(button)), "\(expectedFocus) must receive initial focus.")
         for observation in observations {
             guard let label = observation.topCandidates(1).first?.string,
-                  ["Retry", "Continue", "Enable iCloud Sync", "Not now"].contains(label),
+                  ["Retry", "Set up manually", "Enable iCloud Sync", "Not now"].contains(label),
                   label != expectedFocus else { continue }
             XCTAssertFalse(nativeFrame.intersects(frame(observation)), "\(label) must not receive initial focus.")
         }
         #endif
     }
 
-    func testRestorationAndFailureRenderWithAnAccessibleExit() async throws {
+    func testRestorationShowsManualSetupOnlyWhenSlowOrUnavailable() async throws {
         #if os(tvOS)
         let sizes: [(CGFloat, CGFloat, DynamicTypeSize)] = [(1920, 1080, .large)]
         #else
@@ -139,11 +161,11 @@ final class ICloudOnboardingHostedTests: XCTestCase {
             (393, 852, .large), (393, 852, .accessibility1), (1024, 1366, .large)
         ]
         #endif
-        for failed in [false, true] {
+        for phase in [InitialSetupRestorationPhase.checking, .restoring, .slow, .unavailable, .stopping] {
             for scheme in [ColorScheme.dark, .light] {
                 for (width, height, typeSize) in sizes {
                     try await render(width: width, height: height, typeSize: typeSize,
-                                     scheme: scheme, restorationFailure: failed)
+                                     scheme: scheme, restorationPhase: phase)
                 }
             }
         }

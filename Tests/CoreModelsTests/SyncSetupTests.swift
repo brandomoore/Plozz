@@ -64,6 +64,27 @@ final class SyncSetupTests: XCTestCase {
 
     // MARK: Descriptor is token-free and derived correctly
 
+    func testManualSetupPauseDoesNotChangeConsentAndOptOutClearsIt() throws {
+        let suite = "SyncSetupManual.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let flag = SyncSetupFeatureFlag(defaults: defaults)
+        flag.isEnabled = true
+        flag.isManualSetupPending = true
+        XCTAssertTrue(flag.isEnabled)
+        XCTAssertFalse(flag.allowsAutomaticSync)
+        XCTAssertFalse(flag.allowsAutomaticSignInSync)
+        let restarted = SyncSetupFeatureFlag(defaults: defaults)
+        XCTAssertTrue(restarted.isManualSetupPending)
+        restarted.completedManualSetupProfileID = "profile"
+        restarted.isEnabled = false
+        XCTAssertFalse(flag.isManualSetupPending)
+        XCTAssertNil(flag.completedManualSetupProfileID)
+        XCTAssertFalse(flag.allowsAutomaticSync)
+        restarted.isEnabled = true
+        XCTAssertTrue(flag.allowsAutomaticSync)
+    }
+
     func testDescriptorFromAccountCarriesNoSecretAndKeepsIdentity() {
         let server = MediaServer(
             id: "srv1", name: "Home", baseURL: url("https://jelly.example.com"),

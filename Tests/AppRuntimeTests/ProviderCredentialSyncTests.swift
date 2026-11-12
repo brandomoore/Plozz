@@ -150,7 +150,7 @@ final class ProviderCredentialSyncTests: XCTestCase {
     }
 
     func testRevocationAndCancellationDuringEnrollmentDiscardTheNewSession() async throws {
-        for mode in ["revoked", "deleted", "cancelled", "disabled", "removed"] {
+        for mode in ["revoked", "deleted", "cancelled", "disabled", "removed", "manualSetup"] {
             let suite = "ProviderEnrollmentRace.\(UUID())"
             let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
             defer { defaults.removePersistentDomain(forName: suite) }
@@ -169,9 +169,10 @@ final class ProviderCredentialSyncTests: XCTestCase {
             let gate = EnrollmentGate()
             let cleanup = CleanupObservation()
             var enabled = true
+            let flag = SyncSetupFeatureFlag(defaults: defaults)
             let bridge = ProviderCredentialSync(
                 accounts: receiver, storage: InMemorySecureStore(), defaults: defaults,
-                enabled: { enabled }, didRestore: {},
+                enabled: { enabled && flag.allowsAutomaticSync }, didRestore: {},
                 enroll: { _, account, deviceID in
                     await gate.pause()
                     return UserSession(server: account.server, userID: account.userID,
@@ -183,6 +184,11 @@ final class ProviderCredentialSyncTests: XCTestCase {
             await gate.waitUntilStarted()
             if mode == "cancelled" { bridge.cancel() }
             if mode == "disabled" { enabled = false }
+            if mode == "manualSetup" {
+                flag.isManualSetupPending = true
+                bridge.cancel()
+                XCTAssertTrue(flag.isEnabled, "Manual setup preserves consent")
+            }
             if mode == "removed" {
                 var removed = RemovedAccountsStore(defaults: defaults)
                 removed.markRemoved(account.id, at: 1)

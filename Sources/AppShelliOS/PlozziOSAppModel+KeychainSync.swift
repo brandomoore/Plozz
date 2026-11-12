@@ -25,7 +25,7 @@ extension PlozziOSAppModel {
         let store = KeychainStore(service: portableCredService, userIndependent: false, synchronizable: true)
         return SerializedCredentialPublisher(
             store: store, clearStore: { try store.removeAll() },
-            isEnabled: { SyncSetupFeatureFlag().isEnabled },
+            isEnabled: { SyncSetupFeatureFlag().allowsAutomaticSync },
             onFailure: { operation, error in
                 if case KeychainError.unexpectedStatus(let status) = error {
                     PlozzLog.auth.error("KeychainSync: \(operation.rawValue) failed, status=\(status)")
@@ -116,7 +116,7 @@ extension PlozziOSAppModel {
     /// already omits those, so they still require a manual re-add on each device.
     func publishPortableCredentials() {
         guard !isOfflineMode else { return }
-        guard SyncSetupFeatureFlag().isEnabled else { return }
+        guard SyncSetupFeatureFlag().allowsAutomaticSync else { return }
         let accounts = accountsProviders.accounts
         let accountStore = accountStore
         portableCredentialPublisher.publish {
@@ -188,7 +188,7 @@ extension PlozziOSAppModel {
     /// Both shells restore servers through the same identity and consent gates.
     func autoConnectFromSyncedCredentials() {
         guard !isOfflineMode else { return }
-        guard SyncSetupFeatureFlag().isEnabled else { return }
+        guard SyncSetupFeatureFlag().allowsAutomaticSync else { return }
         providerCredentialSync.reconcile()
         adoptSyncedSeerrConnection(from: portableCredStore)
     }

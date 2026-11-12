@@ -303,6 +303,8 @@ public actor CloudConfigSyncService {
     /// SHARED: a token reset rebuilds the ONE engine, so every channel's zone is
     /// re-fetched from scratch together.
     private var isFullResyncing = false
+    private var isPreparingInitialSetup = false
+    private var engineAutomaticallySyncs = false
     private var isErasing = false
     /// False after `deactivate()`; true again after the next `activate()`. Fences
     /// every public entry point AND every delegate callback, so a disabled service
@@ -471,7 +473,7 @@ public actor CloudConfigSyncService {
     /// state is now known, so it's safe to lift a post-switch suspension and to let a
     /// baseline-less device publish. Single choke point for both publish gates.
     private func markServerStateConfirmed() async {
-        guard verifiedAccountIdentity != nil, !isFullResyncing else { return }
+        guard verifiedAccountIdentity != nil, !isFullResyncing, !isPreparingInitialSetup else { return }
         suspendPublishUntilFetch = false
         didConfirmServerState = true
         let generation = accountGeneration
@@ -504,13 +506,14 @@ public actor CloudConfigSyncService {
     /// repeatedly. Re-arms the service if a prior `deactivate()` had fenced it.
     /// Returns whether this activation fetched the current account's cloud state.
     @discardableResult
-    public func activate() async -> Bool {
+    public func activate(initialSetupOnly: Bool = false) async -> Bool {
         guard !isErasing else { return false }
         isActive = true
         guard config.isEnabled() else {
             deactivate()
             return false
         }
+        isPreparingInitialSetup = initialSetupOnly
         // Reported as `disabled` rather than `signedOut`: the user has not signed
         // out of anything, this build simply cannot do cloud sync at all.
         guard hasCloudKitEntitlement else {
@@ -532,15 +535,33 @@ public actor CloudConfigSyncService {
         var fetched = false
         setStatus(.idle)
         engine.state.add(pendingDatabaseChanges: channels.map { .saveZone(CKRecordZone(zoneID: $0.schema.zoneID)) })
-        for channel in channels { await cleanupLegacyZonesIfNeeded(for: channel) }
+        if !initialSetupOnly {
+            for channel in channels { await cleanupLegacyZonesIfNeeded(for: channel) }
+        }
         // Fetch before publish — the anti-clobber ordering.
         do {
-            try await fetchChangesDetached(engine)
-            await markServerStateConfirmed()
+            let options = initialSetupOnly
+                ? CKSyncEngine.FetchChangesOptions(scope: .zoneIDs(initialSetupZoneIDs))
+                : CKSyncEngine.FetchChangesOptions()
+            try await fetchChangesDetached(engine, options: options)
+            if initialSetupOnly {
+                for channel in channels where initialSetupZoneIDs.contains(channel.schema.zoneID)
+                    && channel.applySnapshot != nil {
+                    guard isActive, config.isEnabled(), engine === self.engine,
+                          accountGeneration == activationAccountGeneration else { return false }
+                    await apply([:], to: channel)
+                }
+            } else {
+                await markServerStateConfirmed()
+            }
             recordFirstRunCloudFetch()
             fetched = true
         }
         catch { setDiagnostic("activate fetch: \(Self.describe(error))") }
+        if initialSetupOnly {
+            return fetched && isActive && config.isEnabled() && engine === self.engine
+                && accountGeneration == activationAccountGeneration
+        }
         // publishLocalChanges enforces the suspend / baseline / resync gates itself, so
         // a fresh device whose fetch failed simply no-ops instead of clobbering.
         await publishLocalChanges()
@@ -635,6 +656,7 @@ public actor CloudConfigSyncService {
     /// publish genuine local diffs (for every channel) and send — the anti-clobber
     /// ordering.
     public func fetchNow() async {
+        guard !isPreparingInitialSetup else { return }
         guard config.isEnabled() else {
             deactivate()
             return
@@ -653,6 +675,7 @@ public actor CloudConfigSyncService {
 
     /// Manual "Sync Now": fetch → publish (every channel) → send.
     public func syncNow() async {
+        guard !isPreparingInitialSetup else { return }
         guard isActive else { return }
         guard config.isEnabled() else {
             deactivate()
@@ -710,7 +733,7 @@ public actor CloudConfigSyncService {
     /// creates is deliberate and safe.
     @discardableResult
     public func publishLocalChanges(bypassBaselineGate: Bool = false) async -> Bool {
-        guard verifiedAccountIdentity != nil,
+        guard verifiedAccountIdentity != nil, !isPreparingInitialSetup,
               !isErasing, isActive, config.isEnabled(), let engine else { return false }
         var completed = true
         for channel in channels {
@@ -1104,7 +1127,8 @@ public actor CloudConfigSyncService {
     // MARK: Engine setup
 
     private func ensureEngine() {
-        guard engine == nil else { return }
+        let automaticallySync = !isFullResyncing && !isPreparingInitialSetup
+        guard engine == nil || engineAutomaticallySyncs != automaticallySync else { return }
         rebuildEngine()
     }
 
@@ -1124,8 +1148,9 @@ public actor CloudConfigSyncService {
         if resetState { engineState = nil }
         var configuration = CKSyncEngine.Configuration(
             database: container.privateCloudDatabase, stateSerialization: engineState, delegate: self)
-        configuration.automaticallySync = !isFullResyncing
+        configuration.automaticallySync = !isFullResyncing && !isPreparingInitialSetup
         engine = CKSyncEngine(configuration)
+        engineAutomaticallySyncs = configuration.automaticallySync
         PlozzLog.sync.info("CloudSync: engine initialized (gen \(engineGeneration), resetState=\(resetState))")
     }
 
@@ -1151,14 +1176,23 @@ public actor CloudConfigSyncService {
     // escape hatch CloudKit's own message prescribes. Routing every engine call
     // through here makes the trap unreachable no matter which path leaked the
     // context, and `.value` preserves the caller's ordering/awaiting semantics.
-    private func fetchChangesDetached(_ engine: CKSyncEngine) async throws {
+    var initialSetupZoneIDs: [CKRecordZone.ID] {
+        let schemas: [CloudSyncSchemaDescriptor] = [
+            config.schema, .providerCredentialsV1, .liveTVSourcesV1
+        ].map { $0.scoped(to: config.installation) }
+        return channels.filter { schemas.contains($0.schema) }.map { $0.schema.zoneID }
+    }
+
+    private func fetchChangesDetached(
+        _ engine: CKSyncEngine, options: CKSyncEngine.FetchChangesOptions = .init()
+    ) async throws {
         explicitFetches += 1
         defer {
             explicitFetches -= 1
             if isActive, engine === self.engine { setStatus(.idle, syncedNow: true) }
         }
         do {
-            try await Task.detached(priority: .userInitiated) { try await engine.fetchChanges() }.value
+            try await Task.detached(priority: .userInitiated) { try await engine.fetchChanges(options) }.value
         } catch {
             guard isActive, engine === self.engine else { throw CancellationError() }
             failures.record(error, for: .fetchDatabase)
@@ -1735,6 +1769,9 @@ extension CloudConfigSyncService: CKSyncEngineDelegate {
         _ context: CKSyncEngine.FetchChangesContext, syncEngine: CKSyncEngine
     ) async -> CKSyncEngine.FetchChangesOptions {
         var options = context.options
+        if isPreparingInitialSetup {
+            options.scope = .zoneIDs(initialSetupZoneIDs.filter(options.scope.contains))
+        }
         if config.installation.firstRunCaseID != nil {
             options.scope = .zoneIDs(channels.map(\.schema.zoneID).filter(options.scope.contains))
         }
@@ -1800,8 +1837,8 @@ extension CloudConfigSyncService: CKSyncEngineDelegate {
         // automaticallySync after a rebuild) or a deactivated service must not
         // produce a batch — its saves would use stale tags/values and its
         // completion event is ignored, diverging cloud from ledger state.
-        guard isActive, verifiedAccountIdentity != nil, didConfirmServerState,
-              !isFullResyncing, syncEngine === engine else {
+        guard isActive, config.isEnabled(), verifiedAccountIdentity != nil, didConfirmServerState,
+              !isFullResyncing, !isPreparingInitialSetup, syncEngine === engine else {
             PlozzLog.sync.info("CloudSync: ignoring batch request from a stale or deactivated engine")
             return nil
         }

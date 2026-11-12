@@ -51,10 +51,20 @@ registry.
 
 - **First-run iCloud opt-in shows restoration, not an empty setup page.**
   Both shells use `InitialSetupRestoration` and `ICloudRestorationView` until
-  the initial cloud fetch and queued provider sign-in restoration finish.
-  Failed/unavailable fetches offer Retry and Continue. Continue dismisses only
-  this presentation, leaving automatic sync enabled and running. Ordinary
-  launches and Settings toggles do not show this first-run interstitial.
+  the initial configuration, provider credentials, Live TV sources and queued
+  provider sign-in attempts finish. Watchlist/media state, tracker checks,
+  publication and inventory reconciliation follow in the background. A scoped
+  initial fetch never confirms the unfetched channels or permits publication.
+  Progress appears after 250 ms, without a minimum display time; after eight
+  seconds it offers Set up manually. Failures offer Retry and Set up manually.
+  Manual setup persists a temporary automatic-sync pause without changing
+  consent, drains restoration before revealing setup, and resumes only after
+  explicit manual completion for the authorized profile (including after a
+  relaunch). Partially restored profiles review Libraries in the existing setup
+  flow without resetting their saved preferences; already-restored readiness
+  alone cannot resume sync.
+  An interrupted first restore resumes after relaunch. Other ordinary launches
+  and Settings toggles do not show this interstitial.
   A finished attempt does not assert every server signed in or another device
   received changes; existing per-server manual setup remains available.
 

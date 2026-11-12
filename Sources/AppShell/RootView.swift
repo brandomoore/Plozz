@@ -539,9 +539,9 @@ public struct RootView: View {
                         ICloudOnboardingView(onChoice: appState.completeICloudOnboarding)
                     } else {
                         ICloudRestorationView(
-                            hasFailed: appState.initialSetupRestoration.phase == .unavailable,
+                            phase: appState.initialSetupRestoration.phase,
                             onRetry: appState.restoreInitialICloudSetup,
-                            onContinue: appState.initialSetupRestoration.dismiss
+                            onSetUpManually: appState.setUpManuallyAfterICloudRestore
                         )
                     }
                 }
@@ -559,6 +559,13 @@ public struct RootView: View {
                         }
                     }
             }
+        }
+        .onChange(
+            of: appState.isActiveProfileAuthorized && !appState.profilesModel.activeProfile.needsSetup
+                && appState.initialSetupRestoration.phase == .hidden,
+            initial: true
+        ) { _, ready in
+            if ready { appState.continueManualICloudSetupIfReady() }
         }
         .onOpenURL { url in
             if needsDiagnosticConsent || appState.syncSetup.needsOnboardingChoice

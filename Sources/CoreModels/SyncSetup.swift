@@ -11,6 +11,9 @@ import Foundation
 public struct SyncSetupFeatureFlag: Sendable {
     public static let storageKey = "com.plozz.syncSetup.enabled"
     private static let onboardingKey = "com.plozz.syncSetup.onboardingPending"
+    private static let manualSetupKey = "com.plozz.syncSetup.manualSetupPending"
+    private static let manualSetupCompletionKey = "com.plozz.syncSetup.manualSetupCompletedProfile"
+    private static let restorationKey = "com.plozz.syncSetup.initialRestorationPending"
 
     private let defaults: UserDefaults
     public init(defaults: UserDefaults = .standard) { self.defaults = defaults }
@@ -21,8 +24,29 @@ public struct SyncSetupFeatureFlag: Sendable {
     /// Existing installations keep their historical tracker sign-in policy.
     /// On installations shown the new consent screen, it also gates iCloud Keychain.
     public var allowsAutomaticSignInSync: Bool {
-        !usesOnboardingConsent || isEnabled
+        !isManualSetupPending && (!usesOnboardingConsent || isEnabled)
     }
+
+    /// Keep the user's consent while holding incoming setup changes during manual onboarding.
+    public var isManualSetupPending: Bool {
+        get { defaults.bool(forKey: Self.manualSetupKey) }
+        nonmutating set {
+            defaults.set(newValue, forKey: Self.manualSetupKey)
+            if !newValue { completedManualSetupProfileID = nil }
+        }
+    }
+
+    public var completedManualSetupProfileID: String? {
+        get { defaults.string(forKey: Self.manualSetupCompletionKey) }
+        nonmutating set { defaults.set(newValue, forKey: Self.manualSetupCompletionKey) }
+    }
+
+    public var isInitialRestorationPending: Bool {
+        get { defaults.bool(forKey: Self.restorationKey) }
+        nonmutating set { defaults.set(newValue, forKey: Self.restorationKey) }
+    }
+
+    public var allowsAutomaticSync: Bool { isEnabled && !isManualSetupPending }
 
     public var needsLaunchPreparation: Bool {
         defaults.object(forKey: Self.storageKey) == nil
@@ -50,11 +74,24 @@ public struct SyncSetupFeatureFlag: Sendable {
         }
         nonmutating set {
             defaults.set(newValue, forKey: Self.storageKey)
+            if !newValue {
+                isManualSetupPending = false
+                isInitialRestorationPending = false
+            }
             if defaults.object(forKey: Self.onboardingKey) != nil {
                 defaults.set(false, forKey: Self.onboardingKey)
             }
         }
     }
+}
+
+public enum InitialSetupRestorationPhase: Hashable, Sendable {
+    case hidden
+    case checking
+    case restoring
+    case slow
+    case unavailable
+    case stopping
 }
 
 // MARK: - Descriptor / authorization split

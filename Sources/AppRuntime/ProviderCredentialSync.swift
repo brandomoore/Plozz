@@ -67,7 +67,7 @@ public final class ProviderCredentialSync {
         accounts: any AccountPersisting,
         storage: any SecureStoring = KeychainStore(service: "com.plozz.provider-sync.v1"),
         defaults: UserDefaults = .standard,
-        enabled: @escaping () -> Bool = { SyncSetupFeatureFlag().isEnabled },
+        enabled: @escaping () -> Bool = { SyncSetupFeatureFlag().allowsAutomaticSync },
         canRestore: @escaping () -> Bool = { true },
         didRestore: @escaping () -> Void,
         enroll: @escaping @Sendable (SiloSyncCredential, Account, String) async throws -> UserSession = { credential, account, deviceID in

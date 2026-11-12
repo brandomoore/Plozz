@@ -117,7 +117,7 @@ extension PlozziOSAppModel {
         return CloudConfigSyncService(.init(
             containerIdentifier: cloudContainerIdentifier,
             stateFileURL: configStateURL,
-            isEnabled: { SyncSetupFeatureFlag().isEnabled && !OfflineMode.shared.isEnabled },
+            isEnabled: { SyncSetupFeatureFlag().allowsAutomaticSync && !OfflineMode.shared.isEnabled },
             captureRecords: { [weak model] fallback in
                 guard let model else { return [:] }
                 return await model.captureSyncRecords(fallback: fallback)
@@ -479,7 +479,7 @@ extension PlozziOSAppModel {
     /// Record this device in the household presence registry (so peers know it exists).
     func heartbeatHouseholdPresence() {
         guard !isOfflineMode else { return }
-        guard SyncSetupFeatureFlag().isEnabled else { return }
+        guard SyncSetupFeatureFlag().allowsAutomaticSync else { return }
         HouseholdDevicesStore().heartbeat(
             deviceID: deviceID,
             deviceName: DeviceDisplayName.current(fallback: UIDevice.current.name))
@@ -518,9 +518,13 @@ extension PlozziOSAppModel {
     // MARK: Lifecycle + change observation
 
     func startCloudSyncIfEnabled() {
+        if initialSetupRestoration.needsRestoration, !Self.isRunningUnitTests {
+            restoreInitialICloudSetup()
+            return
+        }
         guard !isOfflineMode else { return }
         TraktSharedRefreshBootstrap.install(containerIdentifier: Self.cloudContainerIdentifier)
-        guard SyncSetupFeatureFlag().isEnabled else { return }
+        guard SyncSetupFeatureFlag().allowsAutomaticSync else { return }
         guard !Self.isRunningUnitTests else { return }
         let config = cloudSync
         guard let config else { return }
@@ -550,7 +554,7 @@ extension PlozziOSAppModel {
 
     func scheduleCloudPublish() {
         guard !isOfflineMode else { return }
-        guard SyncSetupFeatureFlag().isEnabled,
+        guard SyncSetupFeatureFlag().allowsAutomaticSync,
               cloudSync != nil else {
             return
         }
@@ -585,16 +589,45 @@ extension PlozziOSAppModel {
     }
 
     func restoreInitialICloudSetup() {
-        initialSetupRestoration.start { [weak self] in
-            guard let self, self.syncSetup.isEnabled, !self.isOfflineMode,
+        initialSetupRestoration.start(operation: { [weak self] in
+            guard let self, SyncSetupFeatureFlag().allowsAutomaticSync, !self.isOfflineMode,
                   let config = self.cloudSync else { return false }
-            let fetched = await config.activate()
+            let fetched = await config.activate(initialSetupOnly: true)
+            guard !Task.isCancelled, SyncSetupFeatureFlag().allowsAutomaticSync else { return false }
             self.providerCredentialSync.reconcile()
             await self.providerCredentialSync.finishPendingRestoration()
-            await self.refreshSyncedTrackerSignIns()
-            return fetched && self.syncSetup.isEnabled && !self.isOfflineMode
+            return fetched && !Task.isCancelled && SyncSetupFeatureFlag().allowsAutomaticSync && !self.isOfflineMode
                 && self.providerCredentialSync.isReadyForManualSetup
+        }, onRestored: { [weak self] in
+            self?.finishInitialICloudSetup()
+        })
+    }
+
+    func setUpManuallyAfterICloudRestore() {
+        initialSetupRestoration.setUpManually(pause: { [weak self] in
+            guard let self else { return }
+            providerCredentialSync.cancel()
+            cloudPublishTask?.cancel()
+            portableCredentialPublisher.cancelPendingPublication()
+            pendingSyncSetupOffer = nil
+            await cloudSync?.deactivateAndCancel()
+        }, onReady: { [weak self] in self?.continueManualICloudSetupIfReady() })
+    }
+
+    func continueManualICloudSetupIfReady() {
+        guard !isOfflineMode, isActiveProfileAuthorized, !profiles.activeProfile.needsSetup,
+              initialSetupRestoration.isManualSetupPending,
+              initialSetupRestoration.phase == .hidden else { return }
+        guard initialSetupRestoration.resumeAfterManualSetup(for: profiles.activeProfileID) else {
+            resumeProfileOnboardingIfNeeded(manualICloudSetup: true)
+            return
         }
+        finishInitialICloudSetup()
+    }
+
+    private func finishInitialICloudSetup() {
+        startCloudSyncIfEnabled()
+        Task { await refreshSyncedTrackerSignIns() }
     }
 
     /// Turn cross-device Sync & Setup on/off. Enabling activates CloudKit sync;
@@ -615,7 +648,7 @@ extension PlozziOSAppModel {
         let isInitialSetup = on && syncSetup.needsOnboardingChoice
         syncSetup.setEnabled(on)
         if isInitialSetup { restoreInitialICloudSetup() }
-        if !on { initialSetupRestoration.dismiss() }
+        if !on { initialSetupRestoration.cancel() }
         guard !isOfflineMode else { return }
         if !on {
             providerCredentialSync.cancel()
@@ -646,7 +679,7 @@ extension PlozziOSAppModel {
     /// Lightweight foreground pull (iOS). Same effect as tapping Sync Now's fetch.
     func syncCloudOnForeground() {
         guard !isOfflineMode else { return }
-        guard SyncSetupFeatureFlag().isEnabled else { return }
+        guard SyncSetupFeatureFlag().allowsAutomaticSync else { return }
         accountsProviders.reloadAccounts()
         let config = cloudSync
         Task {
@@ -668,7 +701,7 @@ extension PlozziOSAppModel {
     /// shared/stale Apple ID can't silently harvest tokens (matches Apple's "set up new
     /// device" pattern, which also confirms on the source).
     func checkForSyncSetupOffer() {
-        guard SyncSetupFeatureFlag().isEnabled, pendingSyncSetupOffer == nil else { return }
+        guard SyncSetupFeatureFlag().allowsAutomaticSync, pendingSyncSetupOffer == nil else { return }
         let localIDs = Set(accountsProviders.accounts.map(\.id))
         guard !localIDs.isEmpty else { return }         // nothing to give
         // Pairing hands another device this household's servers, profiles and
