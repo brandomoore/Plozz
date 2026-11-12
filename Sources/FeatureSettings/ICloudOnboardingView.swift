@@ -70,7 +70,7 @@ public struct ICloudRestorationView: View {
                         Group {
                             if hasFailed {
                                 Text("Check your connection and iCloud sign-in, or set up manually.")
-                            } else if phase == .slow && visibleActivity == nil {
+                            } else if phase == .slow {
                                 Text("Taking longer than expected. You can wait or set up manually.")
                             }
                         }

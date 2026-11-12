@@ -62,14 +62,17 @@ final class ProviderCredentialSyncTests: XCTestCase {
                 let receiver = AccountStore(secureStore: receiverStorage)
                 let cache = InMemorySecureStore()
                 var restoreCount = 0
+                var progressCount = 0
                 let bridge = ProviderCredentialSync(accounts: receiver, storage: cache, defaults: defaults,
-                                                    enabled: { true }, didRestore: { restoreCount += 1 })
+                                                    enabled: { true }, didRestore: { restoreCount += 1 },
+                                                    onProgress: { progressCount += 1 })
                 var pending = PendingSyncedServersStore(defaults: defaults)
                 if !credentialsFirst { pending.upsertSynced(SyncedAccountDescriptor(account: account)) }
                 bridge.apply(.init(sequence: 1, authority: bridge.snapshotAuthority, records: records))
                 await bridge.finishPendingRestoration()
                 if credentialsFirst {
                     XCTAssertTrue(receiver.loadAccounts().isEmpty)
+                    XCTAssertEqual(progressCount, 0, "No candidate means no invented progress")
                     pending.upsertSynced(SyncedAccountDescriptor(account: account))
                     bridge.reconcile()
                     await bridge.finishPendingRestoration()
@@ -79,6 +82,7 @@ final class ProviderCredentialSyncTests: XCTestCase {
                 bridge.apply(.init(sequence: 2, authority: bridge.snapshotAuthority, records: records))
                 await bridge.finishPendingRestoration()
                 XCTAssertEqual(restoreCount, 1)
+                XCTAssertEqual(progressCount, 2, "Only actual attempt start/completion count, not duplicate snapshots")
                 let restarted = AccountStore(secureStore: receiverStorage)
                 XCTAssertEqual(restarted.token(for: account.id), token)
             }
@@ -170,9 +174,11 @@ final class ProviderCredentialSyncTests: XCTestCase {
             let cleanup = CleanupObservation()
             var enabled = true
             let flag = SyncSetupFeatureFlag(defaults: defaults)
+            var progressCount = 0
             let bridge = ProviderCredentialSync(
                 accounts: receiver, storage: InMemorySecureStore(), defaults: defaults,
                 enabled: { enabled && flag.allowsAutomaticSync }, didRestore: {},
+                onProgress: { progressCount += 1 },
                 enroll: { _, account, deviceID in
                     await gate.pause()
                     return UserSession(server: account.server, userID: account.userID,
@@ -183,6 +189,7 @@ final class ProviderCredentialSyncTests: XCTestCase {
                 records: [record.recordName: try JSONEncoder().encode(record)]))
             await gate.waitUntilStarted()
             XCTAssertTrue(bridge.isRestoringSignIn)
+            XCTAssertEqual(progressCount, 1)
             if mode == "cancelled" { bridge.cancel() }
             if mode == "disabled" { enabled = false }
             if mode == "manualSetup" {
@@ -203,6 +210,9 @@ final class ProviderCredentialSyncTests: XCTestCase {
             await cleanup.waitUntilRecorded()
             await bridge.finishPendingRestoration()
             XCTAssertFalse(bridge.isRestoringSignIn)
+            if mode == "cancelled" || mode == "manualSetup" || mode == "disabled" {
+                XCTAssertEqual(progressCount, 1, "Late cancelled work must not announce new progress")
+            }
             XCTAssertTrue(receiver.loadAccounts().isEmpty, mode)
             let cancelled = await cleanup.wasCancelled
             XCTAssertEqual(cancelled, false, "Cleanup must not inherit cancellation: \(mode)")

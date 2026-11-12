@@ -4,11 +4,11 @@ import CoreModels
 
 @MainActor
 final class InitialSetupRestorationTests: XCTestCase {
-    private func makeModel() -> InitialSetupRestoration {
+    private func makeModel(now: @escaping () -> ContinuousClock.Instant = { .now }) -> InitialSetupRestoration {
         let suite = "InitialSetupRestorationTests.\(UUID())"
         let defaults = UserDefaults(suiteName: suite)!
         addTeardownBlock { defaults.removePersistentDomain(forName: suite) }
-        return InitialSetupRestoration(flag: SyncSetupFeatureFlag(defaults: defaults))
+        return InitialSetupRestoration(flag: SyncSetupFeatureFlag(defaults: defaults), now: now)
     }
 
     func testProgressRemainsUntilRestoreFinishes() async {
@@ -37,7 +37,7 @@ final class InitialSetupRestorationTests: XCTestCase {
         XCTAssertEqual(model.phase, .hidden)
         XCTAssertEqual(completions, 1)
         XCTAssertEqual(InitialSetupRestoration.progressDelay, .milliseconds(250))
-        XCTAssertEqual(InitialSetupRestoration.manualSetupDelay, .seconds(8))
+        XCTAssertEqual(InitialSetupRestoration.inactivityDelay, .seconds(60))
     }
 
     func testFailureOffersRetryWithoutClaimingSuccess() async {
@@ -72,7 +72,8 @@ final class InitialSetupRestorationTests: XCTestCase {
     }
 
     func testManualSetupWaitsForPauseAndLateRestorationBeforeReleasingRouting() async {
-        let model = makeModel()
+        let clock = RestorationClock()
+        let model = makeModel(now: { clock.now })
         let gate = RestorationGate()
         let pause = RestorationGate()
         model.start(operation: {
@@ -83,6 +84,7 @@ final class InitialSetupRestorationTests: XCTestCase {
         await gate.waitUntilStarted()
         model.setUpManually(pause: { XCTFail("Manual setup is not offered before the slow threshold") })
         XCTAssertEqual(model.phase, .checking)
+        clock.advance(.seconds(60))
         model.offerManualSetup()
         XCTAssertEqual(model.phase, .slow)
         var manualRoutingPrepared = false
@@ -191,7 +193,8 @@ final class InitialSetupRestorationTests: XCTestCase {
     }
 
     func testActivityIsRealWorkAndStaleReportsCannotOverwriteRetryOrManualSetup() async {
-        let model = makeModel()
+        let clock = RestorationClock()
+        let model = makeModel(now: { clock.now })
         model.start { false }
         let oldReport = model.activityReporter()
         await model.waitForCompletion()
@@ -209,6 +212,7 @@ final class InitialSetupRestorationTests: XCTestCase {
         report(.liveTVSources)
         oldReport(.servers)
         XCTAssertEqual(model.activity, .liveTVSources)
+        clock.advance(.seconds(60))
         model.offerManualSetup()
         XCTAssertEqual(model.activity, .liveTVSources, "Slowness must retain the actual unfinished work")
         model.setUpManually(pause: {})
@@ -219,6 +223,81 @@ final class InitialSetupRestorationTests: XCTestCase {
         report(.checkingICloud)
         XCTAssertNil(model.activity)
     }
+
+    func testRecoveryRequiresSixtySecondsWithoutProgressNotTotalElapsedTime() async {
+        let clock = RestorationClock()
+        let model = makeModel(now: { clock.now })
+        let gate = RestorationGate()
+        model.start { await gate.wait() }
+        await gate.waitUntilStarted()
+        model.showProgress()
+        let report = model.activityReporter()
+
+        clock.advance(.seconds(8))
+        model.offerManualSetup()
+        XCTAssertEqual(model.phase, .restoring, "Ordinary restoration must not promote manual setup")
+        for _ in 0..<4 {
+            clock.advance(.seconds(40))
+            report(.liveTVSources)
+            model.offerManualSetup()
+            XCTAssertEqual(model.phase, .restoring, "Repeated batches count even when the label stays the same")
+        }
+        clock.advance(.seconds(59))
+        model.offerManualSetup()
+        XCTAssertEqual(model.phase, .restoring)
+        clock.advance(.seconds(1))
+        model.offerManualSetup()
+        XCTAssertEqual(model.phase, .slow)
+
+        report(.liveTVSources)
+        XCTAssertEqual(model.phase, .restoring, "New data hides the escape route without another user action")
+        model.offerManualSetup()
+        XCTAssertEqual(model.phase, .restoring, "An old queued deadline cannot override fresh progress")
+        clock.advance(.seconds(59))
+        model.recordProgress()
+        clock.advance(.seconds(59))
+        model.offerManualSetup()
+        XCTAssertEqual(model.phase, .restoring, "Provider work resets the same inactivity window")
+        clock.advance(.seconds(1))
+        model.offerManualSetup()
+        XCTAssertEqual(model.phase, .slow)
+        gate.finish(true)
+        await model.waitForCompletion()
+        XCTAssertEqual(model.phase, .hidden)
+    }
+
+    func testRetryStartsANewInactivityWindowAndIgnoresOldProgress() async {
+        let clock = RestorationClock()
+        let model = makeModel(now: { clock.now })
+        model.start { false }
+        let staleReport = model.activityReporter()
+        await model.waitForCompletion()
+        XCTAssertEqual(model.phase, .unavailable, "Failure offers recovery immediately, without a timeout")
+        clock.advance(.seconds(120))
+        let gate = RestorationGate()
+        model.start { await gate.wait() }
+        await gate.waitUntilStarted()
+        model.showProgress()
+        model.offerManualSetup()
+        XCTAssertEqual(model.phase, .restoring)
+        clock.advance(.seconds(59))
+        staleReport(.servers)
+        clock.advance(.seconds(1))
+        model.offerManualSetup()
+        XCTAssertEqual(model.phase, .slow, "Stale progress must not postpone recovery for the retry")
+        model.cancel()
+        model.recordProgress()
+        clock.advance(.seconds(60))
+        model.offerManualSetup()
+        XCTAssertEqual(model.phase, .hidden)
+        gate.finish(false)
+    }
+}
+
+@MainActor
+private final class RestorationClock {
+    var now = ContinuousClock.now
+    func advance(_ duration: Duration) { now += duration }
 }
 
 @MainActor

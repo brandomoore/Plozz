@@ -13,21 +13,30 @@ public final class InitialSetupRestoration {
     public private(set) var completedManualSetupProfileID: String?
     @ObservationIgnored private var task: Task<Void, Never>?
     @ObservationIgnored private var presentationTask: Task<Void, Never>?
+    @ObservationIgnored private var inactivityTask: Task<Void, Never>?
     @ObservationIgnored private var manualSetupTask: Task<Void, Never>?
     @ObservationIgnored private let flag: SyncSetupFeatureFlag
+    @ObservationIgnored private let now: () -> ContinuousClock.Instant
+    @ObservationIgnored private var lastProgress: ContinuousClock.Instant?
     @ObservationIgnored private var generation = 0
 
     static let progressDelay: Duration = .milliseconds(250)
-    static let manualSetupDelay: Duration = .seconds(8)
+    static let inactivityDelay: Duration = .seconds(60)
     public var needsRestoration: Bool { flag.isInitialRestorationPending }
 
-    public init(flag: SyncSetupFeatureFlag = .init()) {
+    public convenience init(flag: SyncSetupFeatureFlag = .init()) {
+        self.init(flag: flag, now: { .now })
+    }
+
+    init(flag: SyncSetupFeatureFlag, now: @escaping () -> ContinuousClock.Instant) {
         self.flag = flag
+        self.now = now
         self.isManualSetupPending = flag.isManualSetupPending
         self.completedManualSetupProfileID = flag.completedManualSetupProfileID
         if flag.isInitialRestorationPending && !flag.isManualSetupPending {
             phase = .checking
             activity = .checkingICloud
+            recordProgress()
         }
     }
 
@@ -41,14 +50,12 @@ public final class InitialSetupRestoration {
         let current = generation
         phase = .checking
         activity = .checkingICloud
+        recordProgress()
         presentationTask = Task { [weak self] in
             do {
                 try await Task.sleep(for: Self.progressDelay)
                 guard self?.generation == current else { return }
                 self?.showProgress()
-                try await Task.sleep(for: Self.manualSetupDelay - Self.progressDelay)
-                guard self?.generation == current else { return }
-                self?.offerManualSetup()
             } catch is CancellationError {
                 return
             } catch {
@@ -61,6 +68,8 @@ public final class InitialSetupRestoration {
             task = nil
             presentationTask?.cancel()
             presentationTask = nil
+            inactivityTask?.cancel()
+            inactivityTask = nil
             phase = completed ? .hidden : .unavailable
             activity = nil
             if completed {
@@ -76,8 +85,29 @@ public final class InitialSetupRestoration {
     }
 
     func offerManualSetup() {
-        guard phase == .checking || phase == .restoring else { return }
+        guard phase == .checking || phase == .restoring,
+              let lastProgress, lastProgress.duration(to: now()) >= Self.inactivityDelay else { return }
         phase = .slow
+    }
+
+    /// Only call for observed work, not a spinner, timer, or repeated view update.
+    public func recordProgress() {
+        guard phase == .checking || phase == .restoring || phase == .slow else { return }
+        lastProgress = now()
+        if phase == .slow { phase = .restoring }
+        inactivityTask?.cancel()
+        let current = generation
+        inactivityTask = Task { [weak self] in
+            do {
+                try await Task.sleep(for: Self.inactivityDelay)
+                guard !Task.isCancelled, self?.generation == current else { return }
+                self?.offerManualSetup()
+            } catch is CancellationError {
+                return
+            } catch {
+                assertionFailure("Unexpected restoration inactivity clock failure: \(error)")
+            }
+        }
     }
 
     /// Retained callbacks cannot overwrite a retry, a manual handoff, or normal app content.
@@ -87,6 +117,7 @@ public final class InitialSetupRestoration {
             guard let self, generation == current,
                   phase == .checking || phase == .restoring || phase == .slow else { return }
             self.activity = activity
+            self.recordProgress()
         }
     }
 
@@ -107,6 +138,8 @@ public final class InitialSetupRestoration {
         task = nil
         presentationTask?.cancel()
         presentationTask = nil
+        inactivityTask?.cancel()
+        inactivityTask = nil
         phase = .stopping
         activity = nil
         manualSetupTask = Task { [weak self] in
@@ -143,6 +176,8 @@ public final class InitialSetupRestoration {
         task = nil
         presentationTask?.cancel()
         presentationTask = nil
+        inactivityTask?.cancel()
+        inactivityTask = nil
         isManualSetupPending = flag.isManualSetupPending
         completedManualSetupProfileID = flag.completedManualSetupProfileID
         phase = .hidden

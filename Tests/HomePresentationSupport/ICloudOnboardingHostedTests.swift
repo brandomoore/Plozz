@@ -100,7 +100,7 @@ final class ICloudOnboardingHostedTests: XCTestCase {
         if let restorationPhase {
             labels = switch restorationPhase {
             case .unavailable: ["Couldn't restore your setup", "Retry", "Set up manually", "iCloud Sync stays on"]
-            case .slow: ["Restoring setup from iCloud", "Set up manually", "iCloud Sync stays on"]
+            case .slow: ["Restoring setup from iCloud", "Taking longer than expected", "Set up manually", "iCloud Sync stays on"]
             case .restoring: ["Restoring setup from iCloud"]
             case .stopping: ["Preparing manual setup"]
             case .hidden, .checking: []

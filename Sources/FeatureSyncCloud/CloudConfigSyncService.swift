@@ -322,7 +322,6 @@ public actor CloudConfigSyncService {
     private var initialSetupFetchProgress = InitialSetupFetchProgress()
     private var initialSetupActivityHandler: (@Sendable (InitialSetupRestorationActivity) async -> Void)?
     private var initialSetupActivityID: UUID?
-    private var reportedInitialSetupActivity: InitialSetupRestorationActivity?
     private var isErasing = false
     /// False after `deactivate()`; true again after the next `activate()`. Fences
     /// every public entry point AND every delegate callback, so a disabled service
@@ -539,13 +538,11 @@ public actor CloudConfigSyncService {
         initialSetupActivityID = activityID
         initialSetupActivityHandler = initialSetupOnly ? onInitialSetupActivity : nil
         initialSetupFetchProgress = .init()
-        reportedInitialSetupActivity = nil
         defer {
             if initialSetupActivityID == activityID {
                 initialSetupActivityHandler = nil
                 initialSetupActivityID = nil
                 initialSetupFetchProgress = .init()
-                reportedInitialSetupActivity = nil
             }
         }
         await reportInitialSetupActivity(.checkingICloud)
@@ -1236,9 +1233,7 @@ public actor CloudConfigSyncService {
     }
 
     private func reportInitialSetupActivity(_ activity: InitialSetupRestorationActivity) async {
-        guard isPreparingInitialSetup, let handler = initialSetupActivityHandler,
-              reportedInitialSetupActivity != activity else { return }
-        reportedInitialSetupActivity = activity
+        guard isPreparingInitialSetup, let handler = initialSetupActivityHandler else { return }
         await outsideDelegateContext { await handler(activity) }
     }
 
@@ -1851,6 +1846,14 @@ extension CloudConfigSyncService: CKSyncEngineDelegate {
         case .accountChange(let e):
             await handleAccountChange(e)
         case .fetchedRecordZoneChanges(let e):
+            let fetchedZones = Set(e.modifications.map { $0.record.recordID.zoneID }
+                + e.deletions.map { $0.recordID.zoneID })
+            if isPreparingInitialSetup,
+               let activity = initialSetupZoneIDs.filter({ fetchedZones.contains($0) })
+                .compactMap({ initialSetupActivity(for: $0) }).first {
+                await reportInitialSetupActivity(initialSetupFetchProgress.activity ?? activity)
+                guard isActive, syncEngine === engine else { return }
+            }
             await handleFetchedRecordZoneChanges(e)
         case .sentRecordZoneChanges(let e):
             await handleSentRecordZoneChanges(e, syncEngine: syncEngine)

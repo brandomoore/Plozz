@@ -240,7 +240,8 @@ final class PlozziOSAppModel {
             reloadAccountsAndCrashContext()
             clearFirstRunStepIfHouseholdSetUp()
             refreshPendingSyncedServers()
-        })
+        },
+        onProgress: { [weak self] in self?.initialSetupRestoration.recordProgress() })
 
     /// A same-Apple-ID device is asking to be set up; drives a one-tap source-side
     /// confirmation before any credential is pushed (nil = no pending offer).

@@ -55,8 +55,14 @@ registry.
   provider sign-in attempts finish. Watchlist/media state, tracker checks,
   publication and inventory reconciliation follow in the background. A scoped
   initial fetch never confirms the unfetched channels or permits publication.
-  Progress appears after 250 ms, without a minimum display time; after eight
-  seconds it offers Set up manually. Failures offer Retry and Set up manually.
+  Progress appears after 250 ms, without a minimum display time. Healthy
+  restoration has no action button. Only after 60 seconds without observable
+  progress does it explain the delay and offer Set up manually as a secondary
+  recovery action. Cloud fetch batches/stages and provider sign-in attempts
+  reset that inactivity window, even when the displayed activity is unchanged.
+  Resumed progress hides the recovery action again. This is a conservative
+  inactivity fallback, not proof of a hang; CloudKit exposes no byte-level
+  transfer progress here. Failures offer primary Retry and secondary manual setup.
   One short detail names the actual iCloud fetch/apply work or active server
   sign-in. Concurrent zone fetches keep the current detail until that work
   finishes; there is no timed checklist, percentage, or estimated completion.

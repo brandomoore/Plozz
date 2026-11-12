@@ -52,6 +52,7 @@ public final class ProviderCredentialSync {
     private let enabled: () -> Bool
     private let canRestore: () -> Bool
     private let didRestore: () -> Void
+    private let onProgress: () -> Void
     private let enroll: @Sendable (SiloSyncCredential, Account, String) async throws -> UserSession
     private let discard: @Sendable (UserSession) async -> Void
     private var task: Task<Void, Never>?
@@ -71,6 +72,7 @@ public final class ProviderCredentialSync {
         enabled: @escaping () -> Bool = { SyncSetupFeatureFlag().allowsAutomaticSync },
         canRestore: @escaping () -> Bool = { true },
         didRestore: @escaping () -> Void,
+        onProgress: @escaping () -> Void = {},
         enroll: @escaping @Sendable (SiloSyncCredential, Account, String) async throws -> UserSession = { credential, account, deviceID in
             #if os(tvOS)
             let platform = "tvos"
@@ -97,6 +99,7 @@ public final class ProviderCredentialSync {
         self.enabled = enabled
         self.canRestore = canRestore
         self.didRestore = didRestore
+        self.onProgress = onProgress
         self.enroll = enroll
         self.discard = discard
     }
@@ -284,8 +287,12 @@ public final class ProviderCredentialSync {
                 for record in candidates {
                     guard isCurrent(record, generation: current) else { continue }
                     isRestoringSignIn = true
+                    onProgress()
                     defer {
-                        if generation == current { isRestoringSignIn = false }
+                        if generation == current {
+                            isRestoringSignIn = false
+                            if enabled(), canRestore(), !Task.isCancelled { onProgress() }
+                        }
                     }
                     do {
                         try await restore(record, generation: current)

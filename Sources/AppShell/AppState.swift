@@ -835,7 +835,8 @@ public final class AppState {
             accountsProviders.reloadAccounts()
             apply(.accountsChanged(accountsProviders.accounts))
             refreshPendingSyncedServers()
-        })
+        },
+        onProgress: { [weak self] in self?.initialSetupRestoration.recordProgress() })
 
     @ObservationIgnored
     public private(set) lazy var liveTVPortableSync: LiveTVPortableSyncBridge? =
