@@ -602,6 +602,18 @@ final class HomeHeroFullWidthPresentationTests: XCTestCase {
 
     private final class NavigationDelegateFixture: NSObject, UINavigationControllerDelegate {}
 
+    private func registerDetailProvider(_ provider: SeriesHeaderMobileProvider, in app: PlozziOSAppModel) throws {
+        let session = provider.session
+        let account = Account(
+            id: try XCTUnwrap(provider.show.sourceAccountID), server: session.server,
+            userID: session.userID, userName: session.userName, deviceID: session.deviceID
+        )
+        app.accountsProviders.registry.register(.jellyfin) { _ in provider }
+        try app.accountsProviders.accountStore.add(account, token: "fixture")
+        app.accountsProviders.reloadAccounts()
+        XCTAssertNotNil(app.accountsProviders.provider(forAccountID: account.id))
+    }
+
     func testOpaqueNavigationSelectedLabelContrast() {
         for palette in [ThemePalette.dark, .light, .pureBlack] {
             for gradient in [true, false] {
@@ -699,6 +711,7 @@ final class HomeHeroFullWidthPresentationTests: XCTestCase {
             accountStore: AccountStore(secureStore: InMemorySecureStore()),
             profileStore: ProfileStore(defaults: defaults)
         )
+        try registerDetailProvider(provider, in: app)
         app.settings.heroBackground.settings.detailMode = .off
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
         try await withWindow(
@@ -887,6 +900,7 @@ final class HomeHeroFullWidthPresentationTests: XCTestCase {
             accountStore: AccountStore(secureStore: InMemorySecureStore()),
             profileStore: ProfileStore(defaults: defaults)
         )
+        try registerDetailProvider(provider, in: app)
         app.settings.heroBackground.settings.detailMode = .off
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
         try await withWindow(
