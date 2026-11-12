@@ -1,7 +1,8 @@
 # Screenshots and media credits
 
-The README uses the published App Store opening artwork for Apple TV, iPhone
-and iPad, with real app captures in promotional layouts. Local, content-versioned
+The README uses selected published App Store artwork: Home on Apple TV,
+offline downloads on iPhone, and Live TV on iPad. Each image highlights a
+different feature, with real app captures in promotional layouts. Local, content-versioned
 JPEG copies keep the gallery independent of Apple's image URLs.
 [App Store image records](assets/app-store/provenance.json) retain the source
 URLs, retrieval date, dimensions and hashes. These are Apple-hosted derivatives,

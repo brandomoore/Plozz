@@ -26,9 +26,9 @@ with **iCloud**.
   <img src="docs/assets/app-store/apple-tv-c41faea853.jpg" width="800" alt="Plozz on Apple TV: Sol Levante on the Home screen with Continue Watching, from the App Store gallery" />
 </p>
 <p align="center">
-  <img src="docs/assets/app-store/iphone-aa16c735c5.jpg" width="28%" alt="Plozz on iPhone: Home, Continue Watching and mobile navigation, from the App Store gallery" />
+  <img src="docs/assets/app-store/iphone-downloads-72b644fffb.jpg" width="28%" alt="Plozz on iPhone: download movies and episodes to watch offline, from the App Store gallery" />
   &nbsp;&nbsp;
-  <img src="docs/assets/app-store/ipad-00b342355d.jpg" width="46%" alt="Plozz on iPad: Home with Continue Watching, Live TV and movie libraries, from the App Store gallery" />
+  <img src="docs/assets/app-store/ipad-live-tv-bb4b2090d4.jpg" width="46%" alt="Plozz on iPad: Live TV playback and channel guide, from the App Store gallery" />
 </p>
 <p align="center">
   <sub>Apple TV · iPhone · iPad — <a href="https://plozz.app/media-credits/">Screenshot media credits</a></sub>
