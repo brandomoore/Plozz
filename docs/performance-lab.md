@@ -1681,6 +1681,70 @@ FeatureHomeCoreTests passed 3,758 tests with 11 skips
 (`fa04254110934e0a84646ad9274714a0`); the final bootstrap edge-case addition and
 Home tests passed separately (`cd8c62325c854f858243263abfbb8ace`).
 
+### Final live-inventory attribution
+
+The bounded follow-up retained the rolling loader unchanged. With authorized
+live-provider credentials, set `TEST_RUNNER_PLOZZ_LIVE_PAGE_ATTRIBUTION=1` when
+running the saved-query scenarios. The test reads
+`PLOZZ_LIVE_PAGE_ATTRIBUTION=1` and attaches three serial first-page observations
+per source during the discarded warmup only. Sources are indexed in discovery
+order: movie library, series library, two collections, and two playlists.
+Attachments contain counts, bytes, and timings, never source IDs or payloads.
+Repeated pages must preserve full ordered metadata.
+
+The helper reuses existing request/decode diagnostics, combining their disjoint
+fast and slow completion buffers and rejecting dropped or unfinished spans.
+Request sums describe serial page calls, not parallel inventory wall time.
+Residuals include mapping, pagination, scheduling, and instrumentation overhead;
+they are not pure mapping CPU measurements. Millisecond diagnostics quantize
+short operations. Plex uses its own decoder without the shared decode span, so
+its decode count is zero and decoding remains in the residual, not absent.
+
+Run `a5172fcd1a9e4deebd0de2f89c6d02db` used Xcode 27.1, the optimized iPhone
+simulator lane, and real servers. All three saved-query scenarios passed without
+skips, including complete metadata/order parity and warm-query checks. Median
+first-page attribution for 200 movies:
+
+| Provider | Page wall | HTTP request | Shared Swift decode | Remaining client work |
+| --- | ---: | ---: | ---: | ---: |
+| Jellyfin | 430 ms | 408 ms | 3 ms | 19 ms |
+| Emby | 74 ms | 52 ms | 2 ms | 20 ms |
+| Plex | 2,069 ms | 2,010 ms | Not separately instrumented | 52 ms, including decode |
+
+Each column is a median of its own observations, so columns need not sum
+exactly. These representative pages are not identical cross-provider
+catalogs. The series libraries especially differ: Jellyfin's selected library
+returned one series, whereas Emby and Plex returned 200. This is evidence about
+these configured servers, not an inherent provider performance ranking.
+
+A separate bounded, sequential transport probe used production-shaped movie
+queries with gzip and retained no authenticated payloads. Median request-start
+to response-header times were 483/91/1,875 ms for Jellyfin/Emby/Plex; body reads
+were 15/6/24 ms. Compressed payloads were approximately 117/43/211 KB.
+Header waiting includes connection/network overhead and server processing; it
+does not identify a server database or CPU bottleneck. Decompression was under
+one millisecond. Python JSON parsing in that probe is not Swift decode evidence.
+
+Two count/no-count/no-count/count sequences per Jellyfin/Emby library preserved
+the exact returned item arrays. Movie header medians with/without totals were
+483/453 ms for Jellyfin and 91/60 ms for Emby, with overlapping, noisy samples.
+This did not establish a worthwhile complete-inventory improvement. Removing
+totals also requires a deliberate continuation-contract change, not simply
+dropping a query parameter. Plex series pages confirmed the existing enriched
+HTTP 500 followed by a successful lean request; the typically 14-18 ms failed
+request was small relative to enriched movie response waiting.
+
+The five retained complete-inventory samples in the app run had medians of
+1.79 seconds for Jellyfin, 0.63 seconds for Emby, and 5.68 seconds for Plex.
+These are fresh client inventories, not cleared server caches or physical-device
+results, and the changed toolchain means this is not a before/after comparison
+against the preceding runs. No additional production optimization is claimed.
+This round stops here: request waiting dominates the remaining Plex cost, and
+neither increased concurrency, deferred metadata, nor speculative pagination
+changes are justified by this attribution. Sub-three-second complete Plex
+inventory remains unmet; existing full metadata and warm interaction behavior
+are preserved.
+
 ### Jellyfin Home recommendation reuse
 
 `home-recommendation-navigation` runs production `JellyfinProvider.homeHubs`

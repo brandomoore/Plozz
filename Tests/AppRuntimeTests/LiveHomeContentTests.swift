@@ -404,6 +404,9 @@ final class LiveHomeContentTests: XCTestCase {
                 }
                 XCTAssertTrue(inventory == original.items,
                               "Bulk requests must preserve every item and its complete presentation/playback metadata")
+                if ProcessInfo.processInfo.environment["PLOZZ_LIVE_PAGE_ATTRIBUTION"] == "1" {
+                    try await self.attachPageAttribution(session: session, sources: sources, scenario: scenario)
+                }
                 verifiedBatchParity = true
             }
             let dated = inventory.compactMap { $0.librarySortValues?.dateAdded }
@@ -487,6 +490,54 @@ final class LiveHomeContentTests: XCTestCase {
                     "coldNanoseconds": cold, "warmEightQueriesNanoseconds": warm,
                     "maximumMainActorGapNanoseconds": maximumGap]
         }
+    }
+
+    @MainActor
+    private func attachPageAttribution(
+        session: HomeContentPageLoader.Session, sources: [HomeContentSource], scenario: String
+    ) async throws {
+        struct Sample: Encodable {
+            let source: Int
+            let iteration: Int
+            let items: Int
+            let wallMilliseconds: Double
+            let requestMilliseconds: Int
+            let decodeMilliseconds: Int
+            let requestCount: Int
+            let decodeCount: Int
+            let responseBytes: Int
+        }
+        var samples: [Sample] = []
+        for (index, source) in sources.enumerated() {
+            var reference: [MediaItem]?
+            for iteration in 0..<3 {
+                PerformanceDiagnostics.shared.start()
+                defer { PerformanceDiagnostics.shared.stop() }
+                let began = ContinuousClock.now
+                let page = try await session.load(source, start: 0, limit: 200)
+                let wall = Double(Self.nanoseconds(began.duration(to: .now))) / 1_000_000
+                let snapshot = try XCTUnwrap(PerformanceDiagnostics.shared.snapshot())
+                XCTAssertEqual(snapshot.dropped, 0)
+                XCTAssertTrue(snapshot.active.isEmpty)
+                let completed = snapshot.recent + snapshot.slow
+                let requests = completed.filter { $0.operation == .serverRequest }
+                let decodes = completed.filter { $0.operation == .serverDecode }
+                XCTAssertFalse(requests.isEmpty)
+                if let reference { XCTAssertTrue(page.items == reference, "Profiling must retain page metadata") }
+                else { reference = page.items }
+                samples.append(.init(
+                    source: index, iteration: iteration, items: page.items.count, wallMilliseconds: wall,
+                    requestMilliseconds: requests.reduce(0) { $0 + $1.elapsedMilliseconds },
+                    decodeMilliseconds: decodes.reduce(0) { $0 + $1.elapsedMilliseconds },
+                    requestCount: requests.count, decodeCount: decodes.count,
+                    responseBytes: requests.reduce(0) { $0 + ($1.metrics.bytes ?? 0) }
+                ))
+            }
+        }
+        let attachment = XCTAttachment(data: try JSONEncoder().encode(samples), uniformTypeIdentifier: "public.json")
+        attachment.name = "\(scenario)-page-attribution"
+        attachment.lifetime = .keepAlways
+        add(attachment)
     }
 
     private static func nanoseconds(_ duration: Duration) -> Int {
