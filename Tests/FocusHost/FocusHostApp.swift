@@ -284,7 +284,10 @@ private struct ExternalPlayerSettingsFixture: View {
 
 private struct CollectionRowEditorFixture: View {
     @State private var visibility = HomeLibraryVisibilityModel(
-        store: HomeLibraryVisibilityStore(namespace: "collection-row-editor-fixture")
+        store: HomeLibraryVisibilityStore(namespace:
+            ProcessInfo.processInfo.arguments.contains("--collection-row-isolated")
+                ? "collection-row-editor-\(UUID())" : "collection-row-editor-fixture"
+        )
     )
     @State private var navigation = SettingsPageNavigation<String>()
     @State private var account: ResolvedAccount?
@@ -303,7 +306,10 @@ private struct CollectionRowEditorFixture: View {
                         titleLogo: ProcessInfo.processInfo.arguments.contains("--collection-row-logo-on") ? .on : .default
                     ),
                     isNew: isNew, inventory: HomeSectionCatalogModel(), visibility: visibility,
-                    libraries: [], accounts: [account]
+                    libraries: [AggregatedLibrary(
+                        accountID: account.account.id, accountName: "Viewer", serverName: "Sample library",
+                        providerKind: .jellyfin, library: MediaLibrary(id: "movies", title: "Movies", kind: .movie)
+                    )], accounts: [account]
                 )
             } else {
                 ProgressView()
@@ -359,10 +365,11 @@ private struct CollectionRowEditorFixture: View {
     }
 }
 
-private struct CollectionRowEditorProvider: MediaProvider {
+private struct CollectionRowEditorProvider: MediaProvider, CapabilityReporting {
     let background: URL
     let logo: URL
     let kind: ProviderKind = .jellyfin
+    let capabilities: ProviderCapability = [.video, .libraryCollections, .videoPlaylists]
     let session = UserSession(
         server: MediaServer(
             id: "fixture", name: "Sample library", baseURL: URL(string: "https://fixture.invalid")!,
@@ -371,7 +378,21 @@ private struct CollectionRowEditorProvider: MediaProvider {
         userID: "viewer", userName: "Viewer", deviceID: "fixture", accessToken: "fixture"
     )
 
-    func libraries() async throws -> [MediaLibrary] { [] }
+    func libraries() async throws -> [MediaLibrary] {
+        [MediaLibrary(id: "movies", title: "Movies", kind: .movie)]
+    }
+    func collections(in libraryID: String, page: PageRequest) async throws -> MediaPage {
+        MediaPage(
+            items: page.startIndex == 0 ? [MediaItem(id: "classics", title: "Movie classics", kind: .collection)] : [],
+            startIndex: page.startIndex, totalCount: 1
+        )
+    }
+    func videoPlaylists(in libraryID: String, page: PageRequest) async throws -> MediaPage {
+        MediaPage(
+            items: page.startIndex == 0 ? [MediaItem(id: "marathon", title: "Movie marathon", kind: .playlist)] : [],
+            startIndex: page.startIndex, totalCount: 1
+        )
+    }
     func continueWatching(limit: Int) async throws -> [MediaItem] { [] }
     func latest(limit: Int) async throws -> [MediaItem] { [] }
     func items(in containerID: String, kind: MediaItemKind, page: PageRequest) async throws -> MediaPage {

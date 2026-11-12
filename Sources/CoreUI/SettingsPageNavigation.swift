@@ -181,6 +181,7 @@ public struct SettingsPageStack<Route: Hashable, Root: View, Destination: View>:
     let destination: (Route) -> Destination
     @Environment(\.isEnabled) private var isEnabled
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var contentViewport: HomeRowPreviewViewport?
 
     public init(
         navigation: SettingsPageNavigation<Route>, pageWidth: CGFloat,
@@ -210,6 +211,9 @@ public struct SettingsPageStack<Route: Hashable, Root: View, Destination: View>:
                     subpages(in: geometry.size)
                 }
             }
+            .onGeometryChange(for: HomeRowPreviewViewport.self) {
+                HomeRowPreviewViewport(width: $0.size.width, trailingSafeAreaInset: $0.safeAreaInsets.trailing)
+            } action: { contentViewport = $0 }
         }
         .plozzFullScreenCover(isPresented: Binding(
             get: { presentsSubpagesFullScreen && !navigation.pages.isEmpty },
@@ -280,6 +284,9 @@ public struct SettingsPageStack<Route: Hashable, Root: View, Destination: View>:
             }
         )
         return content()
+            .environment(\.homeRowPreviewViewport, contentViewport ?? HomeRowPreviewViewport(
+                width: viewport.width, trailingSafeAreaInset: 0
+            ))
             .frame(width: size.width, height: size.height, alignment: .topLeading)
             .frame(width: viewport.width, height: viewport.height, alignment: .top)
             .environment(\.settingsPageContext, context)

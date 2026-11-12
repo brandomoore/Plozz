@@ -210,6 +210,7 @@ public struct MediaRowView: View {
     #if os(tvOS)
     @Environment(\.mediaRowHeaderTrailingInset) private var pageTrailingSafeInset
     @State private var portraitViewportWidth: CGFloat = 0
+    @Environment(\.mediaRowSizingViewportWidth) private var sizingViewportWidth
     @State private var trailingSafeInset: CGFloat = 0
     #endif
 
@@ -1055,7 +1056,7 @@ public struct MediaRowView: View {
         case .poster:
             #if os(tvOS)
             return metrics.portraitRowSlotWidth(
-                viewportWidth: portraitViewportWidth,
+                viewportWidth: sizingViewportWidth ?? portraitViewportWidth,
                 leadingInset: leadingInset,
                 cardStyle: cardStyle
             )

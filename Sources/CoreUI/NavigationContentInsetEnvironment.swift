@@ -193,6 +193,9 @@ public final class PlozzPinnedSidebarInteraction: ObservableObject {
 }
 
 public extension EnvironmentValues {
+    /// The root-page gutter remains stable while pushed pages hide the navigation chrome.
+    @Entry var plozzNavigationRootContentInset: CGFloat? = nil
+
     /// The leading inset the navigation chrome has applied to page content.
     var plozzNavigationContentInset: CGFloat {
         get { self[PlozzNavigationContentInsetKey.self] }

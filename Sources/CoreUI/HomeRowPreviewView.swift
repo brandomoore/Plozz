@@ -2,6 +2,18 @@
 import CoreModels
 import SwiftUI
 
+#if os(tvOS)
+struct HomeRowPreviewViewport: Equatable {
+    let width: CGFloat
+    let trailingSafeAreaInset: CGFloat
+}
+
+extension EnvironmentValues {
+    @Entry var homeRowPreviewViewport: HomeRowPreviewViewport? = nil
+    @Entry var mediaRowSizingViewportWidth: CGFloat? = nil
+}
+#endif
+
 /// The Home presentation without routing, playback, trailers or context actions.
 public struct HomeRowPreviewView: View {
     private let title: Text
@@ -10,6 +22,13 @@ public struct HomeRowPreviewView: View {
     private let spoilers: SpoilerSettings
     private let hasMore: Bool
     @Environment(\.plozzCardStyle) private var cardStyle
+    #if os(tvOS)
+    @Environment(\.homeRowPreviewViewport) private var viewport
+    @Environment(\.plozzNavigationContentInset) private var navigationInset
+    @Environment(\.plozzNavigationRootContentInset) private var rootNavigationInset
+    @Environment(\.plozzPinnedSidebarActive) private var pinnedSidebarActive
+    @Environment(\.plozzNavigationStyle) private var navigationStyle
+    #endif
 
     public init(
         title: Text, items: [MediaItem], style: CollectionSection.CardStyle,
@@ -28,7 +47,28 @@ public struct HomeRowPreviewView: View {
             .environment(\.mediaItemNavigator, nil)
             .environment(\.homeRowEditAction, nil)
             .environment(\.plozzCardCaptionView, .home)
+            #if os(tvOS)
+            .environment(\.mediaRowSizingViewportWidth, sizingViewportWidth)
+            .environment(\.plozzNavigationContentInset, 0)
+            .environment(\.plozzPinnedSidebarActive, false)
+            #endif
     }
+
+    #if os(tvOS)
+    private var sizingViewportWidth: CGFloat? {
+        guard let viewport else { return nil }
+        let navigationInset = rootNavigationInset ?? self.navigationInset
+        switch style {
+        case .poster:
+            // Home posters extend through the trailing safe area, but not the navigation gutter.
+            return viewport.width + viewport.trailingSafeAreaInset - (pinnedSidebarActive ? navigationInset : 0)
+        case .featured:
+            return viewport.width + (navigationStyle == .rail ? viewport.trailingSafeAreaInset : 0) - navigationInset
+        case .landscape:
+            return nil
+        }
+    }
+    #endif
 
     @ViewBuilder private var row: some View {
         if style == .featured {

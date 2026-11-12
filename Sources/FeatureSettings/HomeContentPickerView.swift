@@ -32,7 +32,6 @@ struct HomeContentPickerView: View {
                 Button { choosingPlaylists = true } label: { HomeEditorRowLabel(title: Text("Playlists")) }
                     .accessibilityIdentifier("home-content-playlists")
             }
-            .buttonStyle(SettingsFormButtonStyle())
             SettingsSectionGroup("Home") {
                 ForEach(HomeGlobalRow.allCases, id: \.self) { kind in
                     choice(.init(home: kind))
@@ -71,13 +70,13 @@ struct HomeContentPickerView: View {
         #endif
         .settingsPageDestination(isPresented: $choosingCollections) {
             HeroCollectionPickerView(
-                selections: containerSelections(playlists: false), libraries: availableLibraries,
+                selections: $selections[containers: false, allowsEmpty: allowsEmpty], libraries: availableLibraries,
                 accounts: accounts, showsSelectionSummary: false
             )
         }
         .settingsPageDestination(isPresented: $choosingPlaylists) {
             HeroCollectionPickerView(
-                selections: containerSelections(playlists: true), libraries: availableLibraries,
+                selections: $selections[containers: true, allowsEmpty: allowsEmpty], libraries: availableLibraries,
                 accounts: accounts, playlists: true, showsSelectionSummary: false
             )
         }
@@ -136,43 +135,47 @@ struct HomeContentPickerView: View {
         }
         .accessibilityIdentifier("home-content-choice-\(source.home?.rawValue ?? "server")")
     }
+}
 
-    private func containerSelections(playlists: Bool) -> Binding<[HeroCollectionSelection]> {
-        func matches(_ source: HomeContentSource) -> Bool {
-            if playlists, case .playlist = source.feed { return true }
-            if !playlists, case .collection = source.feed { return true }
-            return false
-        }
-        return Binding(
-            get: {
-                selections.filter(matches).compactMap { source in
-                    guard let accountID = source.accountID else { return nil }
-                    let id: String
-                    switch source.feed {
-                    case let .collection(value), let .playlist(value): id = value
-                    default: return nil
-                    }
-                    return HeroCollectionSelection(
-                        accountID: accountID, libraryID: source.libraryID,
-                        collectionID: id, title: source.title, serverUserID: source.serverUserID
-                    )
+private extension Array where Element == HomeContentSource {
+    // Keep the original state location observable through retained Settings destinations.
+    subscript(containers playlists: Bool, allowsEmpty allowsEmpty: Bool) -> [HeroCollectionSelection] {
+        get {
+            filter { $0.isContainer(playlists: playlists) }.compactMap { source in
+                guard let accountID = source.accountID else { return nil }
+                let id: String
+                switch source.feed {
+                case let .collection(value), let .playlist(value): id = value
+                default: return nil
                 }
-            },
-            set: { values in
-                let incoming = values.map {
-                    HomeContentSource(
-                        feed: playlists ? .playlist($0.collectionID) : .collection($0.collectionID),
-                        accountID: $0.accountID, serverUserID: $0.serverUserID,
-                        libraryID: $0.libraryID, title: $0.title
-                    )
-                }
-                let ids = Set(incoming.map(\.id))
-                var result = selections.filter { !matches($0) || ids.contains($0.id) }
-                let existing = Set(result.map(\.id))
-                result += incoming.filter { !existing.contains($0.id) }
-                if allowsEmpty || !result.isEmpty { selections = result }
+                return HeroCollectionSelection(
+                    accountID: accountID, libraryID: source.libraryID,
+                    collectionID: id, title: source.title, serverUserID: source.serverUserID
+                )
             }
-        )
+        }
+        set {
+            let incoming = newValue.map {
+                HomeContentSource(
+                    feed: playlists ? .playlist($0.collectionID) : .collection($0.collectionID),
+                    accountID: $0.accountID, serverUserID: $0.serverUserID,
+                    libraryID: $0.libraryID, title: $0.title
+                )
+            }
+            let ids = Set(incoming.map(\.id))
+            var result = filter { !$0.isContainer(playlists: playlists) || ids.contains($0.id) }
+            let existing = Set(result.map(\.id))
+            result += incoming.filter { !existing.contains($0.id) }
+            if allowsEmpty || !result.isEmpty { self = result }
+        }
+    }
+}
+
+private extension HomeContentSource {
+    func isContainer(playlists: Bool) -> Bool {
+        if playlists, case .playlist = feed { return true }
+        if !playlists, case .collection = feed { return true }
+        return false
     }
 }
 

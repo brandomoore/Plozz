@@ -5,6 +5,7 @@ import CoreModels
 import HeroUI
 import MetadataKit
 #if os(tvOS)
+@testable import AppShell
 @testable import FeatureHome
 #elseif os(iOS)
 @testable import AppShelliOS
@@ -145,6 +146,39 @@ extension HomeRowArrangementHostedTests {
                            "Checkable and navigation rows must have the same single-line content height.")
         }
     }
+
+    #if os(tvOS)
+    func testTVSettingsGroupUsesBalancedInsets() async throws {
+        var group = CGRect.zero
+        var row = CGRect.zero
+        try await withWindow {
+            SettingsSectionGroup {
+                Button {} label: { HomeEditorRowLabel(title: Text("Collections")) }
+                    .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { row = $0 }
+            }
+            .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { group = $0 }
+            .frame(width: SettingsFormMetrics.pageWidth)
+        } inspect: { window in
+            _ = try await self.capture(window, name: "Custom row shared insets")
+            XCTAssertGreaterThan(row.height, 0)
+            let leading = row.minX - group.minX
+            let trailing = group.maxX - row.maxX
+            // The group reserves eight points before its surface, outside the row insets.
+            let top = row.minY - group.minY - 8
+            let bottom = group.maxY - row.maxY
+            let geometry = XCTAttachment(string:
+                "group=\(group) row=\(row) leading=\(leading) trailing=\(trailing) top=\(top) bottom=\(bottom)"
+            )
+            geometry.name = "Custom row shared inset geometry"
+            geometry.lifetime = .keepAlways
+            self.add(geometry)
+            XCTAssertEqual(leading, 16, accuracy: 1)
+            XCTAssertEqual(leading, trailing, accuracy: 1)
+            XCTAssertEqual(top, bottom, accuracy: 1)
+            XCTAssertEqual(leading, top, accuracy: 1, "The shared tvOS group must not add wider horizontal padding.")
+        }
+    }
+    #endif
 
 }
 
@@ -1675,6 +1709,20 @@ final class HomeRowArrangementHostedTests: XCTestCase {
                 XCTAssertFalse(text.contains("No titles in this row"), text)
                 XCTAssertGreaterThan(try self.y("Content", in: lines), try self.y("Name", in: lines))
                 XCTAssertGreaterThan(try self.y("Name", in: lines), try self.y("Layout", in: lines))
+                #if os(tvOS)
+                let name = try XCTUnwrap(lines.first { $0.0 == "Name" }).1
+                let sort = try XCTUnwrap(lines.first { $0.0 == "Sort" }).1
+                XCTAssertEqual(
+                    name.minX * window.bounds.width, sort.minX * window.bounds.width, accuracy: 4,
+                    "Name must share the control-label keyline, not the group's outer inset."
+                )
+                let geometry = XCTAttachment(string:
+                    "Name x=\(name.minX * window.bounds.width), Sort x=\(sort.minX * window.bounds.width)"
+                )
+                geometry.name = "Custom row Name keyline"
+                geometry.lifetime = .keepAlways
+                self.add(geometry)
+                #endif
                 #if os(iOS)
                 XCTAssertFalse(try self.editorSaveItem(in: window).isEnabled)
                 let field = try XCTUnwrap(self.editorViews(in: window).compactMap { $0 as? UITextField }.first)
@@ -1791,15 +1839,20 @@ final class HomeRowArrangementHostedTests: XCTestCase {
             let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
             defer { defaults.removePersistentDomain(forName: suite) }
             let visibility = HomeLibraryVisibilityModel(store: HomeLibraryVisibilityStore(defaults: defaults))
+            #if os(tvOS)
+            let navigation = SettingsPageNavigation<String>()
+            #endif
             try await withWindow {
-                CollectionSectionSettingsView(
+                let editor = CollectionSectionSettingsView(
                     section: section, isNew: true, inventory: HomeSectionCatalogModel(),
                     visibility: visibility, libraries: [], accounts: [account]
                 )
                 #if os(tvOS)
-                .frame(width: SettingsFormMetrics.pageWidth)
+                SettingsPageStack(
+                    navigation: navigation, pageWidth: SettingsFormMetrics.pageWidth, onRootBack: {}
+                ) { editor } destination: { _ in EmptyView() }
                 #elseif os(iOS)
-                .environment(\.plozzMetrics, .touch(density: .standard))
+                editor.environment(\.plozzMetrics, .touch(density: .standard))
                 #endif
             } inspect: { window in
                 await self.fulfillment(of: [requested], timeout: 5)
@@ -1818,17 +1871,57 @@ final class HomeRowArrangementHostedTests: XCTestCase {
                 } else {
                     XCTAssertFalse(text.contains("Logo"), text)
                 }
+                #if os(tvOS)
+                let sort = try XCTUnwrap(lines.first { $0.0 == "Sort" }).1
+                let sortTarget = try XCTUnwrap(self.focusTarget(at: CGPoint(
+                    x: sort.midX * window.bounds.width, y: (1 - sort.midY) * window.bounds.height
+                ), in: window))
+                let settingsLeading = sortTarget.frame.minX - 16
+                #endif
                 let previewLines = try await self.capture(window, name: "Scrolled collection preview \(style.rawValue)",
                                                          beforeCapture: { try self.scrollToBottom(window) })
                 XCTAssertTrue(previewLines.contains { $0.0.contains("Orbit") },
                               "Preview must display the provider's title: \(previewLines.map(\.0))")
                 XCTAssertGreaterThan(try self.y("Weekend picks", in: previewLines), try self.y("Orbit", in: previewLines))
+                #if os(tvOS)
+                let heading = try XCTUnwrap(previewLines.filter { $0.0 == "Weekend picks" }
+                    .min { $0.1.minX < $1.1.minX }).1
+                let image = try await self.snapshot(window, name: "Collection preview keyline \(style.rawValue)")
+                let bitmap = try XCTUnwrap(image.cgImage)
+                let headingLeading = try self.textInkBounds(
+                    heading, bitmap: bitmap, pixels: self.rgba(bitmap)
+                ).minX
+                XCTAssertGreaterThanOrEqual(
+                    headingLeading, settingsLeading - 5,
+                    "The preview heading must not bleed left of the settings surface."
+                )
+                XCTAssertLessThanOrEqual(headingLeading, settingsLeading + 5)
+                #endif
                 XCTAssertTrue(visibility.visibility.collectionSections.isEmpty, "Previewing does not save a section.")
             }
         }
     }
 
     func testCustomRowPreviewMatchesHomeGeometry() async throws {
+        try await verifyCustomRowPreviewMatchesHomeGeometry(navigationInset: 0)
+    }
+
+    #if os(tvOS)
+    func testCustomRowPreviewMatchesPinnedHomeGeometry() async throws {
+        try await verifyCustomRowPreviewMatchesHomeGeometry(navigationInset: 240)
+    }
+
+    func testCustomRowPreviewMatchesHomeWhenNavigationIsHidden() async throws {
+        try await verifyCustomRowPreviewMatchesHomeGeometry(
+            navigationInset: NavigationRailMetrics.contentInset, previewNavigationInset: 0
+        )
+    }
+    #endif
+
+    private func verifyCustomRowPreviewMatchesHomeGeometry(
+        navigationInset: CGFloat, previewNavigationInset: CGFloat? = nil
+    ) async throws {
+        let scenario = "inset-\(navigationInset)-settings-inset-\(previewNavigationInset ?? navigationInset)"
         let items: [MediaItem] = [
             .init(id: "orbit", title: "Orbit", kind: .movie, productionYear: 2020, runtime: 7_200,
                   resumePosition: 300, allowsTitleBasedMetadataMatching: false),
@@ -1853,12 +1946,34 @@ final class HomeRowArrangementHostedTests: XCTestCase {
                     let browse: (() -> Void)? = density == .compact ? {} : nil
                     var heights: [CGFloat] = []
                     var labels: [[(String, CGRect)]] = []
+                    #if os(tvOS)
+                    var cards: [CGRect] = []
+                    var textSizes: [[String: CGSize]] = []
+                    #endif
                     for preview in [false, true] {
                         var height: CGFloat = 0
+                        #if os(tvOS)
+                        let navigation = SettingsPageNavigation<String>()
+                        var previewFrame = CGRect.zero
+                        #endif
                         try await withWindow {
                             Group {
                                 if preview {
+                                    #if os(tvOS)
+                                    SettingsPageStack(
+                                        navigation: navigation, pageWidth: SettingsFormMetrics.pageWidth, onRootBack: {}
+                                    ) {
+                                        HomeRowPreviewView(
+                                            title: Text("Weekend"), items: items, style: style, hasMore: browse != nil
+                                        )
+                                        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: {
+                                            previewFrame = $0
+                                            height = $0.height
+                                        }
+                                    } destination: { _ in EmptyView() }
+                                    #else
                                     HomeRowPreviewView(title: Text("Weekend"), items: items, style: style, hasMore: browse != nil)
+                                    #endif
                                 } else if style == .featured {
                                     FeaturedMediaRow(
                                         title: Text("Weekend"), items: items, scope: ObjectIdentifier(controller),
@@ -1888,24 +2003,99 @@ final class HomeRowArrangementHostedTests: XCTestCase {
                             #endif
                             .environment(\.plozzCardStyle, cardStyle)
                             .environment(\.plozzCardCaptionView, .home)
-                            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height = $0 }
+                            #if os(tvOS)
+                            .environment(\.plozzNavigationStyle, navigationInset > 0 ? .rail : .tabBar)
+                            .environment(\.plozzNavigationRootContentInset, navigationInset)
+                            .environment(
+                                \.plozzNavigationContentInset,
+                                preview ? previewNavigationInset ?? navigationInset : navigationInset
+                            )
+                            .environment(\.plozzPinnedSidebarActive, navigationInset > 0)
+                            #endif
+                            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: {
+                                #if os(tvOS)
+                                if !preview { height = $0 }
+                                #else
+                                height = $0
+                                #endif
+                            }
                             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                            #if os(tvOS)
+                            // Match HomeView's rail-only trailing-safe-area expansion.
+                            .ignoresSafeArea(.container, edges: !preview && navigationInset > 0 ? .trailing : [])
+                            #endif
                         } inspect: { window in
                             labels.append(try await self.capture(
-                                window, name: "Home parity \(style)-\(cardStyle)-\(density)-preview-\(preview)"
+                                window, name: "Home parity \(style)-\(cardStyle)-\(density)-\(scenario)-preview-\(preview)"
                             ))
                             heights.append(height)
+                            #if os(tvOS)
+                            let title = try XCTUnwrap(labels.last?.first { $0.0.hasPrefix("Orbit") }?.1)
+                            let target = try XCTUnwrap(self.focusTarget(at: CGPoint(
+                                x: title.midX * window.bounds.width,
+                                y: (1 - title.maxY) * window.bounds.height - 60
+                            ), in: window))
+                            try await self.focus(target.item, in: window)
+                            let view = try XCTUnwrap(target.item as? UIView)
+                            cards.append(CGRect(origin: view.convert(.zero, to: window), size: view.bounds.size))
+                            let focusedImage = try await self.snapshot(
+                                window, name: "Focused parity \(style)-\(cardStyle)-\(density)-\(scenario)-preview-\(preview)"
+                            )
+                            labels[labels.count - 1] = try self.recognizedText(in: focusedImage)
+                            let bitmap = try XCTUnwrap(focusedImage.cgImage)
+                            let pixels = try self.rgba(bitmap)
+                            var sizes: [String: CGSize] = [:]
+                            for title in ["Weekend", "Orbit"] {
+                                let box = try XCTUnwrap(labels.last?.first { $0.0 == title }?.1)
+                                sizes[title] = try self.textInkBounds(
+                                    box, bitmap: bitmap, pixels: pixels, minimumBrightness: 200, isolatesLine: true
+                                ).size
+                            }
+                            textSizes.append(sizes)
+                            if preview {
+                                let heading = try XCTUnwrap(labels.last?.first { $0.0 == "Weekend" }?.1)
+                                let leading = heading.minX * window.bounds.width - previewFrame.minX
+                                let cardLeading = view.convert(.zero, to: window).x - previewFrame.minX
+                                let keyline = XCTAttachment(string:
+                                    "\(style)-\(cardStyle)-\(density) \(scenario): settings=\(previewFrame), heading offset=\(leading), focused card offset=\(cardLeading)"
+                                )
+                                keyline.name = "Custom preview keyline parity"
+                                keyline.lifetime = .keepAlways
+                                add(keyline)
+                                XCTAssertGreaterThanOrEqual(leading, -3)
+                                XCTAssertLessThanOrEqual(leading, 5, "A Settings preview must not inherit Home's navigation gutter.")
+                                XCTAssertGreaterThanOrEqual(cardLeading, -24, "Native focus may extend its resting edge.")
+                                XCTAssertLessThanOrEqual(cardLeading, 5, "The preview rail must share its settings column's leading edge.")
+                            }
+                            #endif
                         }
                     }
                     XCTAssertGreaterThan(heights[0], 0)
                     XCTAssertEqual(heights[0], heights[1], accuracy: 1, "\(style)-\(cardStyle)-\(density)")
+                    #if os(tvOS)
+                    XCTAssertEqual(cards[0].width, cards[1].width, accuracy: 1, "\(style)-\(cardStyle)-\(density)")
+                    XCTAssertEqual(cards[0].height, cards[1].height, accuracy: 1, "\(style)-\(cardStyle)-\(density)")
+                    let geometry = XCTAttachment(string:
+                        "\(style)-\(cardStyle)-\(density) \(scenario): Home=\(cards[0]), constrained settings=\(cards[1]); Home glyphs=\(textSizes[0]), preview glyphs=\(textSizes[1])"
+                    )
+                    geometry.name = "Custom preview viewport parity"
+                    geometry.lifetime = .keepAlways
+                    add(geometry)
+                    #endif
                     for title in ["Weekend", "Orbit"] {
+                        #if os(tvOS)
+                        let home = try XCTUnwrap(textSizes[0][title])
+                        let preview = try XCTUnwrap(textSizes[1][title])
+                        XCTAssertEqual(home.width, preview.width, accuracy: 2, title)
+                        XCTAssertEqual(home.height, preview.height, accuracy: 2, title)
+                        #else
                         let home = try XCTUnwrap(labels[0].first { $0.0.hasPrefix(title) }?.1, "\(labels[0])")
                         let preview = try XCTUnwrap(labels[1].first { $0.0.hasPrefix(title) }?.1, "\(labels[1])")
                         XCTAssertEqual(home.minX, preview.minX, accuracy: 0.005, title)
                         XCTAssertEqual(home.minY, preview.minY, accuracy: 0.005, title)
                         XCTAssertEqual(home.width, preview.width, accuracy: 0.005, title)
                         XCTAssertEqual(home.height, preview.height, accuracy: 0.005, title)
+                        #endif
                     }
                 }
             }
@@ -3954,22 +4144,45 @@ final class HomeRowArrangementHostedTests: XCTestCase {
     private func textInkBounds(
         _ observation: VNRecognizedTextObservation, bitmap: CGImage, pixels: [UInt8]
     ) throws -> CGRect {
+        try textInkBounds(observation.boundingBox, bitmap: bitmap, pixels: pixels)
+    }
+
+    private func textInkBounds(
+        _ box: CGRect, bitmap: CGImage, pixels: [UInt8], minimumBrightness: UInt8 = 80,
+        isolatesLine: Bool = false
+    ) throws -> CGRect {
         // Vision locates words; its approximate boxes are not glyph geometry.
-        let box = observation.boundingBox
         let search = CGRect(
             x: box.minX * CGFloat(bitmap.width), y: (1 - box.maxY) * CGFloat(bitmap.height),
             width: box.width * CGFloat(bitmap.width), height: box.height * CGFloat(bitmap.height)
         ).insetBy(dx: -12, dy: -12).intersection(CGRect(x: 0, y: 0, width: bitmap.width, height: bitmap.height))
         var ink = CGRect.null
+        var lines: [CGRect] = []
         for y in Int(search.minY)..<Int(search.maxY) {
+            var rowInk = CGRect.null
             for x in Int(search.minX)..<Int(search.maxX) {
                 let offset = (y * bitmap.width + x) * 4
-                if pixels[offset] > 80, pixels[offset + 1] > 80, pixels[offset + 2] > 80 {
-                    ink = ink.union(CGRect(x: x, y: y, width: 1, height: 1))
+                if pixels[offset] > minimumBrightness,
+                   pixels[offset + 1] > minimumBrightness,
+                   pixels[offset + 2] > minimumBrightness {
+                    rowInk = rowInk.union(CGRect(x: x, y: y, width: 1, height: 1))
+                }
+            }
+            ink = ink.union(rowInk)
+            if isolatesLine, !rowInk.isNull {
+                if let previous = lines.last, previous.maxY == CGFloat(y) {
+                    lines[lines.count - 1] = previous.union(rowInk)
+                } else {
+                    lines.append(rowInk)
                 }
             }
         }
         XCTAssertFalse(ink.isNull)
+        if isolatesLine {
+            // Borderless focus makes metadata white too; measure only the title's ink band.
+            let centerY = (1 - box.midY) * CGFloat(bitmap.height)
+            return try XCTUnwrap(lines.min { abs($0.midY - centerY) < abs($1.midY - centerY) })
+        }
         return ink
     }
 
@@ -4044,13 +4257,17 @@ final class HomeRowArrangementHostedTests: XCTestCase {
         _ window: UIWindow, name: String, scale: CGFloat = 1, beforeCapture: (() throws -> Void)? = nil
     ) async throws -> [(String, CGRect)] {
         let image = try await snapshot(window, name: name, scale: scale, beforeCapture: beforeCapture)
+        return try recognizedText(in: image, includesInverted: scale > 1)
+    }
+
+    private func recognizedText(in image: UIImage, includesInverted: Bool = false) throws -> [(String, CGRect)] {
         let request = VNRecognizeTextRequest()
         request.recognitionLevel = .accurate
         request.recognitionLanguages = ["en-US"]
         request.minimumTextHeight = 0.001
         let original = try XCTUnwrap(image.cgImage)
         var images = [original]
-        if scale > 1 {
+        if includesInverted {
             let inverted = CIImage(cgImage: original).applyingFilter("CIColorInvert")
             images.append(try XCTUnwrap(CIContext().createCGImage(inverted, from: inverted.extent)))
         }

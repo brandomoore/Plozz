@@ -310,9 +310,7 @@ struct CollectionSectionSettingsView: View {
                 title: draft.localizedTitle.map(Text.init) ?? Text(verbatim: draft.title),
                 items: items, style: draft.cardStyle, spoilers: spoilerSettings, hasMore: previewHasMore
             )
-            #if os(tvOS)
-            .padding(.horizontal, -SettingsFormMetrics.pageInset)
-            #else
+            #if !os(tvOS)
             .padding(.horizontal, -24)
             #endif
             .accessibilityIdentifier("collection-section-preview-cards")
