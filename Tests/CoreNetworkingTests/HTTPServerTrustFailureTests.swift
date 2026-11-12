@@ -13,7 +13,7 @@ final class HTTPServerTrustFailureTests: XCTestCase {
         defer { session.invalidateAndCancel() }
         let http = URLSessionHTTPClient(session: session)
         for code in [
-            URLError.Code.secureConnectionFailed, .serverCertificateHasBadDate, .serverCertificateUntrusted,
+            URLError.Code.serverCertificateHasBadDate, .serverCertificateUntrusted,
             .serverCertificateHasUnknownRoot, .serverCertificateNotYetValid,
             .clientCertificateRejected, .clientCertificateRequired
         ] {
@@ -37,7 +37,7 @@ final class HTTPServerTrustFailureTests: XCTestCase {
         let session = URLSession(configuration: configuration)
         defer { session.invalidateAndCancel() }
         let http = URLSessionHTTPClient(session: session)
-        for code in [URLError.Code.cannotConnectToHost, .timedOut, .cancelled] {
+        for code in [URLError.Code.cannotConnectToHost, .timedOut, .secureConnectionFailed, .cancelled] {
             for reportsTrust in [true, false] {
                 var endpoint = Endpoint(path: "/\(code.rawValue)")
                 endpoint.reportsServerTrustFailures = reportsTrust
