@@ -32,6 +32,12 @@ cache that every feature module reuses on tvOS and iOS/iPadOS — guarded behind
 
 ## Responsibility
 
+TV Settings editors can use `settingsPageBackConfirmation` to request confirmation
+for both the header Back button and remote Back on the current page. Pass `nil`
+when no unsaved changes need protection. Explicit `SettingsPageDismiss`
+still dismisses directly after saving or confirming discard; retained parent
+pages do not intercept a nested page's Back.
+
 `RetainedFullscreenWorkspace` presents the same tvOS hosting controller outside
 app navigation, then returns it to its original container. Place the feature's
 state and focus owners inside it, and inject required app models into its content.

@@ -3,6 +3,107 @@ import Vision
 
 @MainActor
 final class SettingsWorkspaceRemoteTests: XCTestCase {
+    func testNewRowExitOnlyPromptsForChangesAndCanDiscard() throws {
+        let app = try launchCollectionExitFixture()
+        defer { app.terminate() }
+        try activateCollectionEditorButton("fixture-open-row", in: app)
+        try focus(pageBack(in: app), in: app)
+        XCUIRemote.shared.press(.menu)
+        XCTAssertTrue(app.buttons["fixture-open-row"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.alerts.firstMatch.exists, "An untouched row must close without prompting.")
+
+        try activateCollectionEditorButton("fixture-open-row", in: app)
+        try activateCollectionEditorButton("collection-section-source", in: app)
+        try activateCollectionEditorButton("home-content-choice-watchlist", in: app)
+        XCUIRemote.shared.press(.menu)
+        XCTAssertTrue(app.buttons["collection-section-source"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.alerts.firstMatch.exists, "Returning from Content must retain the draft silently.")
+
+        try focus(pageBack(in: app), in: app)
+        XCUIRemote.shared.press(.menu)
+        XCTAssertTrue(app.alerts["Save this row?"].waitForExistence(timeout: 5))
+        try activateRowExitAction("Keep Editing", in: app)
+        XCTAssertTrue(app.buttons["collection-section-source"].waitForExistence(timeout: 5))
+        try activateCollectionEditorButton("collection-section-source", in: app)
+        XCTAssertTrue(app.buttons["home-content-remove-watchlist"].waitForExistence(timeout: 5))
+        try activateCollectionEditorButton("home-content-remove-watchlist", in: app)
+        XCUIRemote.shared.press(.menu)
+        try activateCollectionEditorButton("settings-workspace-back", in: app)
+        XCTAssertTrue(app.buttons["fixture-open-row"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.alerts.firstMatch.exists, "Reverting every edit must clear the exit confirmation.")
+
+        try activateCollectionEditorButton("fixture-open-row", in: app)
+        try activateCollectionEditorButton("collection-section-source", in: app)
+        try activateCollectionEditorButton("home-content-choice-watchlist", in: app)
+        XCUIRemote.shared.press(.menu)
+        try activateCollectionEditorButton("settings-workspace-back", in: app)
+        XCTAssertTrue(app.alerts["Save this row?"].waitForExistence(timeout: 5))
+        try activateRowExitAction("Discard", in: app)
+        XCTAssertTrue(app.staticTexts["Saved rows: 0"].waitForExistence(timeout: 5))
+        try activateCollectionEditorButton("fixture-open-row", in: app)
+        XCTAssertFalse(app.buttons["collection-section-save"].isEnabled)
+        try focus(pageBack(in: app), in: app)
+        XCUIRemote.shared.press(.menu)
+        XCTAssertTrue(app.buttons["fixture-open-row"].waitForExistence(timeout: 5))
+    }
+
+    func testNewRowCanAddToHomeFromExitConfirmation() throws {
+        let app = try launchCollectionExitFixture()
+        defer { app.terminate() }
+        try activateCollectionEditorButton("fixture-open-row", in: app)
+        try activateCollectionEditorButton("collection-section-source", in: app)
+        try activateCollectionEditorButton("home-content-choice-watchlist", in: app)
+        try activateCollectionEditorButton("home-content-done", in: app)
+        try focus(pageBack(in: app), in: app)
+        XCUIRemote.shared.press(.menu)
+        XCTAssertTrue(app.alerts["Save this row?"].waitForExistence(timeout: 5))
+        try activateRowExitAction("Add to Home", in: app)
+        XCTAssertTrue(app.staticTexts["Saved rows: 1"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.alerts.firstMatch.exists)
+    }
+
+    func testNewRowWithOnlyLayoutChangesCannotSaveOnExit() throws {
+        let app = try launchCollectionExitFixture()
+        defer { app.terminate() }
+        try activateCollectionEditorButton("fixture-open-row", in: app)
+        try activateCollectionEditorButton("collection-section-card-style", in: app)
+        let choice = app.cells.containing(.any, identifier: "Landscape").firstMatch
+        try focus(choice, in: app)
+        XCUIRemote.shared.press(.select)
+        try focus(pageBack(in: app), in: app)
+        XCUIRemote.shared.press(.menu)
+        XCTAssertTrue(app.alerts["Save this row?"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.alerts.buttons.matching(identifier: "Add to Home")
+            .matching(NSPredicate(format: "enabled == false")).firstMatch.exists)
+        try activateRowExitAction("Keep Editing", in: app)
+        XCTAssertTrue(app.buttons["collection-section-title-logo"].waitForExistence(timeout: 5))
+        XCUIRemote.shared.press(.menu)
+        try activateRowExitAction("Discard", in: app)
+        XCTAssertTrue(app.staticTexts["Saved rows: 0"].waitForExistence(timeout: 5))
+    }
+
+    private func activateRowExitAction(_ title: String, in app: XCUIApplication) throws {
+        let button = app.alerts["Save this row?"].buttons.matching(identifier: title).firstMatch
+        try focus(button, in: app)
+        XCUIRemote.shared.press(.select)
+        XCTAssertTrue(app.alerts["Save this row?"].waitForNonExistence(timeout: 5))
+    }
+
+    private func launchCollectionExitFixture() throws -> XCUIApplication {
+        #if !targetEnvironment(simulator)
+        throw XCTSkip("Simulator-only custom-row fixture.")
+        #else
+        continueAfterFailure = false
+        let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.FocusHost")
+        app.launchArguments = [
+            "--collection-row-editor-fixture", "--collection-row-isolated",
+            "--collection-row-exit", "-AppleLanguages", "(en)"
+        ]
+        app.launch()
+        return app
+        #endif
+    }
+
     func testCustomRowContentNavigationHasVisibleNativeFocus() throws {
         let app = try launchIsolatedCollectionEditor(existing: false)
         defer { app.terminate() }

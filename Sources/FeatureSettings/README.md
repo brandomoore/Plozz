@@ -769,6 +769,11 @@ watch history and planning-list behavior are documented in
   playlist drill-ins do not repeat that summary. Done returns one level without
   saving a new row: mobile retains the editor's toolbar save, TV existing rows
   autosave, and TV new rows still require Add to Home.
+  Leaving a changed new row on TV, using either the header Back button or the
+  remote, asks whether to Add to Home, Discard, or Keep Editing. Add to Home
+  remains unavailable without valid content, and a failed save keeps the editor
+  open with its error. Untouched or fully reverted drafts leave without prompting;
+  navigating into Content does not count as leaving the editor.
   Container selections project the original sources binding through a writable
   key path, so checkmarks update immediately in retained TV destinations without
   a separate selection cache.

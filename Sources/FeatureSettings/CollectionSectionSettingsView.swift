@@ -40,6 +40,9 @@ struct CollectionSectionSettingsView: View {
     @State private var choosingSource = false
     @State private var saveFailed = false
     @State private var preferencesSaveFailed = false
+    #if os(tvOS)
+    @State private var exitConfirmation = SettingsPageBackConfirmation()
+    #endif
     @FocusState private var isNameFocused: Bool
     @Environment(CardStyleSettingsModel.self) private var cards
     @Environment(\.homeContentSnapshot) private var homeSnapshot
@@ -190,6 +193,13 @@ struct CollectionSectionSettingsView: View {
         .onChange(of: draft.titleLogo) { _, _ in saveExistingPreferences() }
         .onChange(of: draft.sources) { _, _ in saveExistingPreferences() }
         .onChange(of: draft.query) { _, _ in saveExistingPreferences() }
+        .settingsPageBackConfirmation(isNew && draft != original ? exitConfirmation : nil)
+        .alert("Save this row?", isPresented: $exitConfirmation.isPresented) {
+            Button("Add to Home", action: saveAndDismiss)
+                .disabled(!canSaveSources(draft))
+            Button("Discard", role: .destructive, action: dismiss)
+            Button("Keep Editing", role: .cancel) {}
+        }
         #endif
         .settingsPageDestination(isPresented: $choosingSource) {
             HomeContentPickerView(
@@ -231,15 +241,7 @@ struct CollectionSectionSettingsView: View {
     }
 
     private var explicitSaveAction: some View {
-        Button {
-            do {
-                try save()
-                dismiss()
-            } catch {
-                saveFailed = true
-                PlozzLog.app.error("Could not save collection section")
-            }
-        } label: {
+        Button(action: saveAndDismiss) {
             Group {
                 if isNew { Text("Add to Home") }
                 else { Text("Save changes") }
@@ -249,6 +251,16 @@ struct CollectionSectionSettingsView: View {
         .plozzPageActionButton()
         .disabled(!canSaveSources(draft))
         .accessibilityIdentifier("collection-section-save")
+    }
+
+    private func saveAndDismiss() {
+        do {
+            try save()
+            dismiss()
+        } catch {
+            saveFailed = true
+            PlozzLog.app.error("Could not save collection section")
+        }
     }
 
     #if os(tvOS)
