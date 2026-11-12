@@ -3,10 +3,57 @@ import SwiftUI
 import CoreModels
 import CoreUI
 
+private enum MusicLayout {
+    #if os(iOS)
+    static let isMobile = true
+    static let gridMinimum: CGFloat = 156
+    static let artworkWidth: CGFloat? = nil
+    static let title: Font = .title.bold()
+    static let screenPadding: CGFloat = 20
+    #else
+    static let isMobile = false
+    static let gridMinimum: CGFloat = 280
+    static let artworkWidth: CGFloat? = 480
+    static let title: Font = .system(size: 40, weight: .bold)
+    static let screenPadding = PlozzTheme.Metrics.screenPadding
+    #endif
+}
+
 // MARK: - Landing
 
 struct MusicLandingView: View {
     @State var viewModel: MusicLandingViewModel
+    @State private var retryRevision = 0
+    let controller: AudioPlaybackController
+    let onSelectRoute: (MusicRoute) -> Void
+    let onPlayTrack: (MusicTrack) -> Void
+    var layout: MusicLandingLayout = .default
+
+    var body: some View {
+        ContentStateView(state: viewModel.state, emptyMessage: "No music found in your libraries.", onRetry: { retryRevision += 1 }) { content in
+            MusicLandingContent(
+                content: content, controller: controller, onSelectRoute: onSelectRoute,
+                onPlayTrack: onPlayTrack, layout: layout
+            )
+        }
+        .navigationEntryFocus(viewModel.state == .idle || viewModel.state.isLoading ? .pending : nil)
+        .task(id: retryRevision) { await viewModel.load() }
+        // Refresh the rails once a play has actually been recorded on the server,
+        // so "Recently Played" reflects what was just listened to without needing
+        // an app relaunch. `.task(id:)` coalesces a burst of finished tracks into a
+        // single trailing refresh, and the initial token value (0) is skipped so
+        // this never double-fetches on first appearance. The short delay gives the
+        // server a moment to index the play before we re-query.
+        .task(id: controller.recentPlayReportToken) {
+            guard controller.recentPlayReportToken > 0 else { return }
+            do { try await Task.sleep(for: .seconds(1.5)) } catch { return }
+            await viewModel.load()
+        }
+    }
+}
+
+struct MusicLandingContent: View {
+    let content: MusicLandingViewModel.Content
     let controller: AudioPlaybackController
     let onSelectRoute: (MusicRoute) -> Void
     let onPlayTrack: (MusicTrack) -> Void
@@ -16,35 +63,20 @@ struct MusicLandingView: View {
     @Environment(\.plozzNavigationContentInset) private var navigationContentInset
 
     var body: some View {
-        ContentStateView(state: viewModel.state, emptyMessage: "No music found in your libraries.", onRetry: { Task { await viewModel.load() } }) { content in
-            let firstSection = firstRenderedSection(content)
-            ScrollView {
-                VStack(alignment: .leading, spacing: metrics.rowSpacing) {
-                    // The page is composed by iterating the data-driven layout, so
-                    // reordering or hiding a section is a value change, not a rewrite.
-                    ForEach(layout.visibleSections, id: \.self) { section in
-                        sectionView(section, content: content, isFirst: section == firstSection)
-                    }
+        let firstSection = firstRenderedSection(content)
+        ScrollView {
+            VStack(alignment: .leading, spacing: metrics.rowSpacing) {
+                ForEach(layout.visibleSections, id: \.self) { section in
+                    sectionView(section, content: content, isFirst: section == firstSection)
                 }
-                .padding(.vertical, metrics.rowSpacing)
             }
-            // Never clip a focused card's lift, shadow or border.
-            .scrollClipDisabled()
-            .scrollsTopNavigation()
+            .padding(.top, MusicLayout.isMobile ? 12 : metrics.rowSpacing)
+            .padding(.bottom, metrics.rowSpacing)
         }
-        .navigationEntryFocus(viewModel.state == .idle || viewModel.state.isLoading ? .pending : nil)
-        .task { if case .idle = viewModel.state { await viewModel.load() } }
-        // Refresh the rails once a play has actually been recorded on the server,
-        // so "Recently Played" reflects what was just listened to without needing
-        // an app relaunch. `.task(id:)` coalesces a burst of finished tracks into a
-        // single trailing refresh, and the initial token value (0) is skipped so
-        // this never double-fetches on first appearance. The short delay gives the
-        // server a moment to index the play before we re-query.
-        .task(id: controller.recentPlayReportToken) {
-            guard controller.recentPlayReportToken > 0 else { return }
-            try? await Task.sleep(for: .seconds(1.5))
-            await viewModel.load()
-        }
+        #if os(tvOS)
+        .scrollClipDisabled()
+        #endif
+        .scrollsTopNavigation()
     }
 
     /// The first section that will actually render given the loaded content, so
@@ -71,7 +103,7 @@ struct MusicLandingView: View {
 
     @ViewBuilder
     private func sectionView(_ section: MusicLandingSection, content: MusicLandingViewModel.Content, isFirst: Bool) -> some View {
-        let trailing: AnyView? = isFirst ? nowPlayingTrailing : nil
+        let trailing: AnyView? = isFirst && !MusicLayout.isMobile ? nowPlayingTrailing : nil
         switch section {
         case .recentlyPlayed:
             if !content.recentlyPlayed.isEmpty {
@@ -124,13 +156,19 @@ struct MusicLandingView: View {
     /// scrolling Now Playing card pinned to the trailing screen edge. Both insets
     /// are the standard `screenPadding`, so the card's right margin matches the
     /// buttons' left margin. No header — the labelled buttons are self-evident.
+    @ViewBuilder
     private func entryTiles(trailing: AnyView?) -> some View {
+        #if os(iOS)
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                browseButtons
+            }
+        }
+        .contentMargins(.horizontal, MusicLayout.screenPadding, for: .scrollContent)
+        .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
+        #else
         HStack(alignment: .center, spacing: metrics.cardSpacing) {
-            BrowseButton(title: "Playlists") { onSelectRoute(.grid(.playlist)) }
-                .navigationEntryFocus(.fallback)
-            BrowseButton(title: "Albums") { onSelectRoute(.grid(.album)) }
-            BrowseButton(title: "Artists") { onSelectRoute(.grid(.artist)) }
-            BrowseButton(title: "Genres") { onSelectRoute(.grid(.genre)) }
+            browseButtons
             Spacer(minLength: metrics.cardSpacing)
             if let trailing { trailing }
         }
@@ -139,6 +177,17 @@ struct MusicLandingView: View {
             PlozzTheme.Metrics.screenPadding + navigationContentInset
         )
         .padding(.trailing, PlozzTheme.Metrics.screenPadding)
+        #endif
+    }
+
+    private var browseButtons: some View {
+        Group {
+            BrowseButton(title: "Playlists") { onSelectRoute(.grid(.playlist)) }
+                .navigationEntryFocus(.fallback)
+            BrowseButton(title: "Albums") { onSelectRoute(.grid(.album)) }
+            BrowseButton(title: "Artists") { onSelectRoute(.grid(.artist)) }
+            BrowseButton(title: "Genres") { onSelectRoute(.grid(.genre)) }
+        }
     }
 }
 
@@ -155,6 +204,7 @@ private struct BrowseButton: View {
     @Environment(\.plozzReduceTransparency) private var reduceTransparency
     @Environment(\.plozzMetrics) private var metrics
     @Environment(\.plozzCardFocusStyle) private var focusStyle
+    @Environment(\.themePalette) private var palette
 
     /// The glass lift is this button's focus outline, so with the outline off it
     /// keeps its resting surface (and therefore its resting ink) on focus.
@@ -172,7 +222,14 @@ private struct BrowseButton: View {
             customButton
         }
         #else
-        customButton
+        Button(action: action) {
+            Text(title).font(.subheadline.weight(.medium))
+                .fixedSize(horizontal: true, vertical: false)
+        }
+        .modifier(MobileMusicBrowseStyle())
+        .buttonBorderShape(.capsule)
+        .controlSize(.large)
+        .tint(palette.primaryText)
         #endif
     }
 
@@ -194,6 +251,22 @@ private struct BrowseButton: View {
             .plozzCardFocusTransition(isFocused: isFocused)
     }
 }
+
+#if os(iOS)
+private struct MobileMusicBrowseStyle: ViewModifier {
+    @Environment(\.plozzReducePanelGlass) private var reducePanelGlass
+    @Environment(\.plozzReduceTransparency) private var reduceTransparency
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if reducePanelGlass || reduceTransparency {
+            content.buttonStyle(.bordered)
+        } else {
+            content.plozzActionButton(role: .secondary)
+        }
+    }
+}
+#endif
 
 #if os(tvOS)
 private struct NativeMusicBrowseButton: View {
@@ -238,17 +311,19 @@ private struct MusicRow<Content: View>: View {
     @Environment(\.plozzCardFocusStyle) private var focusStyle
 
     var body: some View {
-        VStack(alignment: .leading, spacing: metrics.sectionTitleSpacing) {
+        VStack(alignment: .leading, spacing: MusicLayout.isMobile ? 12 : metrics.sectionTitleSpacing) {
             HStack(spacing: 24) {
-                Text(title).font(.system(size: metrics.sectionHeaderFontSize, weight: .bold))
+                Text(title)
+                    .font(MusicLayout.isMobile ? .title2.bold() : .system(size: metrics.sectionHeaderFontSize, weight: .bold))
+                    .accessibilityAddTraits(.isHeader)
                 Spacer()
                 if let trailing { trailing }
             }
             .padding(
                 .leading,
-                PlozzTheme.Metrics.screenPadding + navigationContentInset
+                MusicLayout.screenPadding + navigationContentInset
             )
-            .padding(.trailing, PlozzTheme.Metrics.screenPadding)
+            .padding(.trailing, MusicLayout.screenPadding)
 
             PinnedSidebarLeadingFade(
                 isActive: pinnedSidebarActive,
@@ -260,12 +335,12 @@ private struct MusicRow<Content: View>: View {
                     // The eager HStack kept every card's glass effect live, so fast
                     // focus moves recomputed every card's SDF and lagged navigation.
                     // Matches the lazy rails used elsewhere (MediaRowView/HomeView).
-                    LazyHStack(alignment: .top, spacing: metrics.cardSpacing) {
+                    LazyHStack(alignment: .top, spacing: MusicLayout.isMobile ? 12 : metrics.cardSpacing) {
                         content()
                     }
-                    .padding(.horizontal, PlozzTheme.Metrics.screenPadding)
+                    .padding(.horizontal, MusicLayout.screenPadding)
                     // Reserve space for focus growth without changing row spacing.
-                    .padding(.vertical, metrics.railShadowClearance)
+                    .padding(.vertical, MusicLayout.isMobile ? 0 : metrics.railShadowClearance)
                 }
                 #if os(tvOS)
                 .scrollClipDisabled(focusStyle.usesSystemEffect)
@@ -273,8 +348,8 @@ private struct MusicRow<Content: View>: View {
                 // Match the shared rails: a tight `railTopPadding`-based gap above the
                 // cards (not the wide `railVerticalPadding` used below the row), so the
                 // section header hugs the cards instead of floating far above them.
-                .padding(.top, metrics.railTopClearanceOffset)
-                .padding(.bottom, metrics.railBottomClearanceOffset)
+                .padding(.top, MusicLayout.isMobile ? 0 : metrics.railTopClearanceOffset)
+                .padding(.bottom, MusicLayout.isMobile ? 0 : metrics.railBottomClearanceOffset)
             }
         }
     }
@@ -292,11 +367,14 @@ struct MusicPageHeader: View {
 
     var body: some View {
         HStack(alignment: .center, spacing: 24) {
-            Text(title).font(titleFont)
+            Text(title).font(MusicLayout.isMobile ? .largeTitle.bold() : titleFont)
+                .accessibilityAddTraits(.isHeader)
             Spacer(minLength: 24)
+            #if os(tvOS)
             NowPlayingCard(controller: controller)
+            #endif
         }
-        .padding(.horizontal, PlozzTheme.Metrics.screenPadding)
+        .padding(.horizontal, MusicLayout.screenPadding)
     }
 }
 
@@ -313,7 +391,7 @@ struct MusicGridView: View {
         // Density-scaled adaptive columns: a wider minimum at higher density gives
         // fewer, bigger tiles (and matches the larger music cards), so the music
         // grids respond to the UI-density setting like the movie/show wall.
-        let columns = [GridItem(.adaptive(minimum: (280 * metrics.scale).rounded()), spacing: metrics.gridSpacing)]
+        let columns = [GridItem(.adaptive(minimum: MusicLayout.isMobile ? MusicLayout.gridMinimum : (280 * metrics.scale).rounded()), spacing: metrics.gridSpacing)]
         return ContentStateView(state: viewModel.state, emptyMessage: emptyMessage, onRetry: { Task { await viewModel.loadMore() } }) { _ in
             ScrollView {
                 VStack(alignment: .leading, spacing: metrics.rowSpacing) {
@@ -323,7 +401,7 @@ struct MusicGridView: View {
                     LazyVGrid(columns: columns, spacing: metrics.gridSpacing) {
                         content
                     }
-                    .padding(.horizontal, PlozzTheme.Metrics.screenPadding)
+                    .padding(.horizontal, MusicLayout.screenPadding)
                     if viewModel.hasMore {
                         ProgressView()
                             .onAppear { Task { await viewModel.loadMore() } }
@@ -426,7 +504,7 @@ private struct GenreCard: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
                 .padding(18)
         }
-        .frame(width: 280, height: 160)
+        .frame(width: MusicLayout.isMobile ? nil : 280, height: MusicLayout.isMobile ? 120 : 160)
         .plozzCardArtworkClip(shape)
         .overlay {
             if !focusStyle.usesSystemEffect {
@@ -529,7 +607,16 @@ struct ArtistDetailView: View {
     @Environment(\.plozzMetrics) private var metrics
 
     var body: some View {
-        let columns = [GridItem(.adaptive(minimum: (280 * metrics.scale).rounded()), spacing: metrics.gridSpacing)]
+        #if os(iOS)
+        MobileMusicArtistDetail(
+            artist: viewModel.artist,
+            albums: viewModel.albums,
+            onSelectAlbum: onSelectAlbum
+        )
+        .task { await viewModel.load() }
+        .detailOpenFeedback()
+        #else
+        let columns = [GridItem(.adaptive(minimum: MusicLayout.isMobile ? MusicLayout.gridMinimum : (280 * metrics.scale).rounded()), spacing: metrics.gridSpacing)]
         return ScrollView {
             VStack(alignment: .leading, spacing: metrics.rowSpacing) {
                 HStack(alignment: .top, spacing: 32) {
@@ -541,9 +628,9 @@ struct ArtistDetailView: View {
                         pinIdentity: viewModel.artist.id
                     )
                         .clipShape(Circle())
-                        .frame(width: 260, height: 260)
+                        .frame(width: MusicLayout.isMobile ? 96 : 260, height: MusicLayout.isMobile ? 96 : 260)
                     VStack(alignment: .leading, spacing: 12) {
-                        Text(viewModel.artist.name).font(.system(size: 56, weight: .bold))
+                        Text(viewModel.artist.name).font(MusicLayout.isMobile ? .title.bold() : .system(size: 56, weight: .bold))
                         if !viewModel.artist.genres.isEmpty {
                             Text(
                                 GenreDisplayFormatter.displayNames(
@@ -557,13 +644,17 @@ struct ArtistDetailView: View {
                     }
                     Spacer()
                     // Now Playing card scrolls with the page, pinned top-right.
+                    #if os(tvOS)
                     NowPlayingCard(controller: controller)
+                    #endif
                 }
                 .padding(.horizontal, PlozzTheme.Metrics.screenPadding)
                 // Make the hero its own focus section so pressing Up from anywhere
                 // in the albums grid below reliably lands on the Now Playing card,
                 // even when it's far to the right (off the album's vertical axis).
+                #if os(tvOS)
                 .focusSection()
+                #endif
 
                 Text("Albums").font(.system(size: metrics.sectionHeaderFontSize, weight: .bold))
                     .padding(.horizontal, PlozzTheme.Metrics.screenPadding)
@@ -577,13 +668,16 @@ struct ArtistDetailView: View {
                 // Own focus section so pressing Down from the Now Playing card
                 // (pinned top-right of the hero) drops back into the grid, even
                 // though no album sits directly beneath it.
+                #if os(tvOS)
                 .focusSection()
+                #endif
             }
             .padding(.vertical, metrics.rowSpacing)
         }
         .scrollClipDisabled()
         .task { await viewModel.load() }
         .detailOpenFeedback()
+        #endif
     }
 }
 
@@ -599,6 +693,19 @@ struct AlbumDetailView: View {
     @FocusState private var playFocused: Bool
 
     var body: some View {
+        #if os(iOS)
+        MobileMusicAlbumDetail(
+            album: viewModel.album,
+            tracks: viewModel.tracks,
+            nowPlayingTrack: controller.currentTrack,
+            isPlaying: controller.isPlaying,
+            onPlay: { play(from: nil) },
+            onShuffle: shuffle,
+            onPlayTrack: { play(from: $0) }
+        )
+        .task { await viewModel.load() }
+        .detailOpenFeedback()
+        #else
         MusicDetailLayout(
             tracks: viewModel.tracks,
             artworkFallback: viewModel.album.artworkURL,
@@ -619,9 +726,10 @@ struct AlbumDetailView: View {
             try? await Task.sleep(for: .milliseconds(50))
             if !viewModel.tracks.isEmpty { playFocused = true }
         }
+        #endif
     }
 
-    private let columnWidth: CGFloat = 480
+    private let columnWidth = MusicLayout.artworkWidth
 
     private var infoColumn: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -634,8 +742,10 @@ struct AlbumDetailView: View {
                 ),
                 pinIdentity: viewModel.album.id
             )
+                .aspectRatio(1, contentMode: .fit)
                 .frame(width: columnWidth, height: columnWidth)
-            Text(viewModel.album.title).font(.system(size: 40, weight: .bold)).lineLimit(3)
+                .frame(maxWidth: MusicLayout.isMobile ? 360 : nil)
+            Text(viewModel.album.title).font(MusicLayout.title).lineLimit(3)
             Text(viewModel.album.subtitleLine).font(.body).plozzForeground(.secondary).lineLimit(2)
             if let count = viewModel.album.trackCount {
                 Text("\(count) tracks · \(MusicFormat.duration(viewModel.album.totalDuration))")
@@ -655,9 +765,11 @@ struct AlbumDetailView: View {
             // The Now Playing card sits under the Play/Shuffle buttons. It shows
             // whenever something is playing (including a track from this very
             // album) so the user always has a quick way back to the player.
+            #if os(tvOS)
             NowPlayingCard(controller: controller, fillWidth: true)
                 .frame(width: columnWidth)
                 .padding(.top, 12)
+            #endif
         }
     }
 
@@ -704,6 +816,19 @@ struct PlaylistDetailView: View {
     @FocusState private var playFocused: Bool
 
     var body: some View {
+        #if os(iOS)
+        MobileMusicPlaylistDetail(
+            playlist: viewModel.playlist,
+            tracks: viewModel.tracks,
+            nowPlayingTrack: controller.currentTrack,
+            isPlaying: controller.isPlaying,
+            onPlay: { play(from: nil) },
+            onShuffle: shuffle,
+            onPlayTrack: { play(from: $0) }
+        )
+        .task { await viewModel.load() }
+        .detailOpenFeedback()
+        #else
         MusicDetailLayout(
             tracks: viewModel.tracks,
             artworkFallback: viewModel.playlist.artworkURL,
@@ -726,15 +851,18 @@ struct PlaylistDetailView: View {
             try? await Task.sleep(for: .milliseconds(50))
             if !viewModel.tracks.isEmpty { playFocused = true }
         }
+        #endif
     }
 
-    private let columnWidth: CGFloat = 480
+    private let columnWidth = MusicLayout.artworkWidth
 
     private var infoColumn: some View {
         VStack(alignment: .leading, spacing: 16) {
             MusicArtworkImage(url: viewModel.playlist.artworkURL, systemPlaceholder: "music.note.list")
+                .aspectRatio(1, contentMode: .fit)
                 .frame(width: columnWidth, height: columnWidth)
-            Text(viewModel.playlist.title).font(.system(size: 40, weight: .bold)).lineLimit(3)
+                .frame(maxWidth: MusicLayout.isMobile ? 360 : nil)
+            Text(viewModel.playlist.title).font(MusicLayout.title).lineLimit(3)
             Text("\(viewModel.tracks.count) tracks").font(.body).plozzForeground(.secondary)
             PlayShuffleButtons(
                 isEmpty: viewModel.tracks.isEmpty,
@@ -749,9 +877,11 @@ struct PlaylistDetailView: View {
             // The Now Playing card sits under the Play/Shuffle buttons. It shows
             // whenever something is playing (including a track from this very
             // playlist) so the user always has a quick way back to the player.
+            #if os(tvOS)
             NowPlayingCard(controller: controller, fillWidth: true)
                 .frame(width: columnWidth)
                 .padding(.top, 12)
+            #endif
         }
     }
 
@@ -881,6 +1011,20 @@ struct MusicDetailLayout<InfoColumn: View>: View {
     @State private var infoHeight: CGFloat = 0
 
     var body: some View {
+        #if os(iOS)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 24) {
+                info.frame(maxWidth: .infinity, alignment: .center)
+                TrackListView(
+                    tracks: tracks, artworkFallback: artworkFallback,
+                    showArtist: showArtist, showArtwork: showArtwork,
+                    nowPlayingTrack: nowPlayingTrack, isPlaying: isPlaying,
+                    onPlayTrack: onPlayTrack
+                )
+            }
+            .padding()
+        }
+        #else
         GeometryReader { geo in
             // Give the album/playlist info column ~a third of the screen so the
             // Play and Shuffle buttons fit comfortably side by side.
@@ -952,6 +1096,7 @@ struct MusicDetailLayout<InfoColumn: View>: View {
             .padding(.leading, PlozzTheme.Metrics.screenPadding)
             .padding(.trailing, trailingPad)
         }
+        #endif
     }
 }
 
@@ -969,7 +1114,9 @@ struct TrackListView: View {
     /// Whether the player is actively playing (vs paused) — drives whether the
     /// equalizer bars animate or sit still.
     var isPlaying: Bool = false
+    var nowPlayingTint: Color = .accentColor
     let onPlayTrack: (MusicTrack) -> Void
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         // LazyVStack so only the on-screen rows are built — playlists can hold
@@ -979,15 +1126,16 @@ struct TrackListView: View {
             ForEach(Array(tracks.enumerated()), id: \.offset) { index, track in
                 let isCurrent = nowPlayingTrack.map { track.isSameQueueEntry(as: $0) } ?? false
                 Button { onPlayTrack(track) } label: {
-                    HStack(spacing: 20) {
+                    HStack(spacing: MusicLayout.isMobile ? 12 : 20) {
                         leadingAccessory(track: track, index: index, isCurrent: isCurrent)
                         VStack(alignment: .leading, spacing: 2) {
                             Text(track.title)
                                 .font(.headline)
-                                .foregroundStyle(isCurrent ? Color.accentColor : .primary)
-                                .lineLimit(1)
+                                .foregroundStyle(isCurrent ? nowPlayingTint : .primary)
+                                .lineLimit(MusicLayout.isMobile ? nil : 1)
                             if showArtist, let artist = track.artistName {
-                                Text(artist).font(.subheadline).plozzForeground(.secondary).lineLimit(1)
+                                Text(artist).font(.subheadline).plozzForeground(.secondary)
+                                    .lineLimit(MusicLayout.isMobile ? nil : 1)
                             }
                         }
                         Spacer()
@@ -996,7 +1144,7 @@ struct TrackListView: View {
                             .plozzForeground(.secondary)
                     }
                     .padding(.vertical, 14)
-                    .padding(.horizontal, 22)
+                    .padding(.horizontal, MusicLayout.isMobile ? 0 : 22)
                     .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                 }
                 .buttonStyle(TrackRowButtonStyle())
@@ -1046,20 +1194,20 @@ struct TrackListView: View {
     private func leadingAccessory(track: MusicTrack, index: Int, isCurrent: Bool) -> some View {
         if showArtwork {
             trackArtwork(for: track)
-            .frame(width: 72, height: 72)
+            .frame(width: MusicLayout.isMobile ? 48 : 72, height: MusicLayout.isMobile ? 48 : 72)
             .overlay {
                 if isCurrent {
                     ZStack {
                         RoundedRectangle(cornerRadius: 8, style: .continuous)
                             .fill(.black.opacity(0.45))
-                        NowPlayingEqualizer(isAnimating: isPlaying)
+                        NowPlayingEqualizer(isAnimating: isPlaying && !reduceMotion, tint: nowPlayingTint)
                     }
                 }
             }
         } else {
             Group {
                 if isCurrent {
-                    NowPlayingEqualizer(isAnimating: isPlaying)
+                    NowPlayingEqualizer(isAnimating: isPlaying && !reduceMotion, tint: nowPlayingTint)
                 } else {
                     Text(track.trackNumber.map(String.init) ?? "\(index + 1)")
                         .font(.headline.monospacedDigit())
@@ -1068,7 +1216,7 @@ struct TrackListView: View {
                         .fixedSize(horizontal: true, vertical: false)
                 }
             }
-            .frame(width: 56, alignment: .trailing)
+            .frame(width: MusicLayout.isMobile ? 28 : 56, alignment: .trailing)
         }
     }
 }

@@ -21,6 +21,8 @@ public enum HomeContentPageLoader {
         private let homeSnapshot: HomeSnapshot
         private let recommendationScope: HomeRecommendationScope?
         private let refreshRecommendations: Bool
+        private let expandsRecentlyAdded: Bool
+        private let identitySources: @Sendable (MediaItem) -> [MediaSourceRef]
         private var snapshots: [HomeGlobalRow: [MediaItem]] = [:]
         private var recommendations: [HomeContentSource.ID: LibrarySection] = [:]
         private struct RecommendationKey: Hashable {
@@ -42,6 +44,8 @@ public enum HomeContentPageLoader {
             accounts: [ResolvedAccount], visibility: HomeLibraryVisibility, cachesPages: Bool = false,
             recommendationScope: HomeRecommendationScope? = HomeRecommendationScope.current,
             refreshRecommendations: Bool = false,
+            expandsRecentlyAdded: Bool = false,
+            identitySources: @escaping @Sendable (MediaItem) -> [MediaSourceRef] = { _ in [] },
             homeSnapshot: @escaping HomeSnapshot
         ) {
             self.accounts = accounts
@@ -50,13 +54,18 @@ public enum HomeContentPageLoader {
             self.recommendationScope = recommendationScope
             self.refreshRecommendations = refreshRecommendations
             self.cachesPages = cachesPages
+            self.expandsRecentlyAdded = expandsRecentlyAdded
+            self.identitySources = identitySources
         }
 
         public func load(_ source: HomeContentSource, start: Int, limit: Int) async throws -> HomeRowPage {
             guard recommendationScope?.isActive != false else { throw CancellationError() }
-            return try await HomeRecommendationScope.$current.withValue(recommendationScope) {
+            let page = try await HomeRecommendationScope.$current.withValue(recommendationScope) {
                 try await loadScoped(source, start: start, limit: limit)
             }
+            try Task.checkCancellation()
+            guard recommendationScope?.isActive != false else { throw CancellationError() }
+            return page
         }
 
         private func loadScoped(_ source: HomeContentSource, start: Int, limit: Int) async throws -> HomeRowPage {
@@ -115,10 +124,56 @@ public enum HomeContentPageLoader {
 
         private func snapshot(_ kind: HomeGlobalRow) async throws -> [MediaItem] {
             if let items = snapshots[kind] { return items }
-            let items = try await homeSnapshot(kind)
+            let items = kind == .recentlyAdded && expandsRecentlyAdded
+                ? try await completeRecentlyAdded() : try await homeSnapshot(kind)
             try Task.checkCancellation()
             snapshots[kind] = items
             return items
+        }
+
+        private func completeRecentlyAdded() async throws -> [MediaItem] {
+            var groups: [[MediaItem]] = []
+            for account in accounts {
+                try Task.checkCancellation()
+                let discovered = try await account.provider.libraries()
+                let hasDisabled = visibility.disabledKeys.contains { $0.hasPrefix(account.account.id + ":") }
+                let allowed = discovered.isEmpty && !hasDisabled ? nil : discovered.filter {
+                    !$0.isMusic && visibility.isEnabled("\(account.account.id):\($0.id)")
+                }.map(\.id)
+                if allowed?.isEmpty == true { continue }
+                let allowedIDs = allowed.map(Set.init)
+                var items: [MediaItem] = []
+                var seen = Set<String>()
+                var offset: Int? = 0
+                while let start = offset {
+                    try Task.checkCancellation()
+                    guard recommendationScope?.isActive != false else { throw CancellationError() }
+                    let page = try await account.provider.homeRowPage(
+                        .latest(libraryIDs: allowed), startIndex: start, limit: PageRequest.defaultLimit
+                    )
+                    guard page.nextOffset.map({ $0 > start }) ?? true,
+                          page.items.count <= PageRequest.defaultLimit else { throw AppError.invalidResponse }
+                    let fresh = page.items.filter { seen.insert($0.stablePresentationID).inserted }
+                    guard page.items.isEmpty || !fresh.isEmpty || page.nextOffset == nil else {
+                        throw AppError.invalidResponse
+                    }
+                    let candidates = visibility.hideWatchedRecentlyAdded
+                        ? try await account.provider.recentlyAddedWatchState(fresh) : fresh
+                    items += candidates.map { $0.taggingSource(account.account.id) }.filter {
+                        [.movie, .series, .season, .episode].contains($0.kind)
+                            && ($0.libraryID.map { allowedIDs?.contains($0) ?? true } ?? true)
+                            && $0.isVisibleOnHome(isLibraryVisible: visibility.isEnabled)
+                            && (!visibility.hideWatchedRecentlyAdded || !HomeRecentlyAddedPolicy.isWatched($0))
+                    }
+                    offset = page.nextOffset
+                }
+                groups.append(items)
+            }
+            try Task.checkCancellation()
+            let serverInfo = accounts.sourceServerInfo()
+            return MediaItemMerger.merge(
+                HomeContentPager.interleave(groups), serverInfo: { serverInfo[$0] }, identitySources: identitySources
+            )
         }
     }
 

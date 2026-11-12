@@ -70,10 +70,6 @@ public struct HomeContentSource: Codable, Hashable, Sendable, Identifiable {
         return nil
     }
 
-    public var displayTitle: String {
-        localizedTitle.map { String(localized: $0) } ?? title
-    }
-
     public var libraryKey: String? {
         guard let accountID, let libraryID else { return nil }
         return "\(accountID):\(libraryID)"

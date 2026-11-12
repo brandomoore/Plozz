@@ -109,6 +109,19 @@ final class ArtworkSettingsHostedTests: XCTestCase {
                 .frame(width: SettingsFormMetrics.pageWidth)
             ) { window in
                 let system = try XCTUnwrap(UIFocusSystem.focusSystem(for: window))
+                var previous: CGRect?
+                for option in MusicPlayerAppearance.pickerOrder {
+                    let parts = option == .matchTheme ? ["Match App", "Theme"] : [String(localized: option.displayName)]
+                    var frame = CGRect.null
+                    for part in parts {
+                        frame = frame.union(try XCTUnwrap(self.collectionLabelFrames(
+                            in: window, matchingText: part
+                        ).first).frame)
+                    }
+                    XCTAssertTrue(window.bounds.contains(frame), "Every player choice must fit")
+                    if let previous { XCTAssertLessThan(previous.maxX, frame.minX) }
+                    previous = frame
+                }
                 let title = target == "music-style" ? "Dark" : "Show album, quality & lyrics source"
                 let label = try XCTUnwrap(self.collectionLabelFrames(in: window, matchingText: title).first)
                 let focused = try self.nativeFocusedFrame(system, in: window)

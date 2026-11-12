@@ -44,32 +44,35 @@ public struct CollectionSection: Codable, Equatable, Sendable, Identifiable {
     public var sources: [HomeContentSource]
     public var cardStyle: CardStyle
     public var titleLogo: LandscapeTitleLogo
+    public var query: HomeContentQuery
 
     public init(
         id: String = UUID().uuidString, name: String = "",
         source: HeroCollectionSelection, cardStyle: CardStyle = .poster,
-        titleLogo: LandscapeTitleLogo = .default
+        titleLogo: LandscapeTitleLogo = .default, query: HomeContentQuery = .init()
     ) {
         self.id = id
         self.name = name
         self.sources = [.init(collection: source)]
         self.cardStyle = cardStyle
         self.titleLogo = titleLogo
+        self.query = query
     }
 
     public init(
         id: String = UUID().uuidString, name: String = "",
         sources: [HomeContentSource], cardStyle: CardStyle = .poster,
-        titleLogo: LandscapeTitleLogo = .default
+        titleLogo: LandscapeTitleLogo = .default, query: HomeContentQuery = .init()
     ) {
         self.id = id
         self.name = name
         self.sources = HomeContentSource.normalized(sources)
         self.cardStyle = cardStyle
         self.titleLogo = titleLogo
+        self.query = query
     }
 
-    private enum CodingKeys: CodingKey { case id, name, source, sources, cardStyle, titleLogo }
+    private enum CodingKeys: CodingKey { case id, name, source, sources, cardStyle, titleLogo, query }
 
     public init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
@@ -82,6 +85,7 @@ public struct CollectionSection: Codable, Equatable, Sendable, Identifiable {
         }
         cardStyle = try values.decode(CardStyle.self, forKey: .cardStyle)
         titleLogo = try values.decodeIfPresent(LandscapeTitleLogo.self, forKey: .titleLogo) ?? .default
+        query = try values.decodeIfPresent(HomeContentQuery.self, forKey: .query) ?? .init()
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -91,10 +95,26 @@ public struct CollectionSection: Codable, Equatable, Sendable, Identifiable {
         try values.encode(sources, forKey: .sources)
         try values.encode(cardStyle, forKey: .cardStyle)
         try values.encode(titleLogo, forKey: .titleLogo)
+        try values.encode(query, forKey: .query)
     }
 
-    public var contentTitle: String { sources.map(\.displayTitle).joined(separator: ", ") }
+    public var contentTitle: String { sources.map(\.title).joined(separator: ", ") }
+    public var localizedContentTitle: LocalizedStringResource? {
+        guard sources.contains(where: { $0.localizedTitle != nil }), let first = sources.first else { return nil }
+        return sources.dropFirst().reduce(first.localizedTitle ?? LocalizedStringResource("\(first.title)")) { result, source in
+            let next = source.localizedTitle ?? LocalizedStringResource("\(source.title)")
+            return LocalizedStringResource(
+                "\(result), \(next)",
+                comment: "Default custom Home row title joining two content-source names. Each name may itself contain a list."
+            )
+        }
+    }
+
+    public var localizedTitle: LocalizedStringResource? {
+        name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? localizedContentTitle : nil
+    }
     public var collectionSources: [HeroCollectionSelection] { sources.compactMap(\.collection) }
+    public var usesWatchlistDates: Bool { sources.count == 1 && sources.first?.home == .watchlist }
 
     public func availableSources(
         accounts: [ResolvedAccount], visibility: HomeLibraryVisibility

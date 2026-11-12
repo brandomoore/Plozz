@@ -113,7 +113,7 @@ struct HomeContentPickerView: View {
                 feed: feed, accountID: account.account.id,
                 serverUserID: account.plexHomeUserID ?? account.provider.session.userID,
                 libraryID: choice.serverRow?.section.libraryID ?? choice.library?.library.id,
-                title: choice.localizedTitle.map { String(localized: $0) } ?? choice.title
+                title: choice.title
             )
         }
     }
@@ -224,7 +224,7 @@ private struct HomeContentSelectionSummary: View {
                     #else
                     .buttonStyle(.borderless)
                     #endif
-                    .accessibilityLabel(Text("Remove \(source.displayTitle)"))
+                    .accessibilityLabel(Text("Remove \(source.localizedTitle.map(Text.init) ?? Text(verbatim: source.title))"))
                     .accessibilityIdentifier("home-content-remove-\(source.home?.rawValue ?? "server")")
                     .disabled(!allowsEmpty && selections.count == 1)
                 }

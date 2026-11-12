@@ -154,40 +154,30 @@ public struct HomeRowBrowseView<Card: View>: View {
     }
 
     private var sortControl: some View {
-        BrowseSortMenu(
-            sort: model.query.sort ?? .default,
-            fields: [.name, .dateAdded, .releaseDate, .runtime],
-            isDefault: model.query.sort == nil,
-            onReset: { model.query.sort = nil },
-            onChange: { model.query.sort = $0 }
-        )
+        Menu {
+            HomeContentSortOptions(query: $model.query)
+        } label: {
+            Label {
+                Text(model.query.sortTitle)
+            } icon: {
+                Image(systemName: "arrow.up.arrow.down")
+            }
+            #if os(iOS)
+            .frame(minWidth: 44, minHeight: 44)
+            #endif
+        }
+        .accessibilityLabel(Text("Sort: \(model.query.sortTitle)"))
         .accessibilityIdentifier("home-row-sort-menu")
     }
 
     private var filterControl: some View {
         BrowseFilterMenu(
-            activeCount: model.query.filters.activeCount + (model.query.media == .all ? 0 : 1),
-            summary: filterSummary
+            activeCount: model.query.activeFilterCount,
+            summary: model.query.filterSummary(in: locale)
         ) {
-            Picker("Filter", selection: $model.query.media) {
-                ForEach(WatchlistMediaFilter.allCases, id: \.self) { Text($0.displayName).tag($0) }
-            }
-            Picker("Filter", selection: $model.query.filters.filter) {
-                Text("All").tag(LibraryFilter.all)
-                Text("Unwatched").tag(LibraryFilter.unwatched)
-                Text("In Progress").tag(LibraryFilter.inProgress)
-            }
+            HomeContentFilterOptions(query: $model.query)
         }
         .accessibilityIdentifier("home-row-filter-menu")
     }
 
-    private var filterSummary: String {
-        var labels = [model.query.filters.summary(in: locale)].filter { !$0.isEmpty }
-        if model.query.media != .all {
-            var title = model.query.media.displayName
-            title.locale = locale
-            labels.insert(String(localized: title), at: 0) // l10n:content — existing localized filter choice
-        }
-        return labels.joined(separator: " · ")
-    }
 }

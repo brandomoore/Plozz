@@ -35,20 +35,29 @@ public struct HomeCollectionRow: Equatable, Sendable {
         force: Bool = false, serverInfo: [String: SourceServerInfo] = [:],
         identitySources: (MediaItem) -> [MediaSourceRef] = { _ in [] }
     ) -> Self {
-        guard !sourceItems.isEmpty, force || definition.sources.contains(where: { $0.home != nil }) else { return self }
+        let canReconstruct = !definition.sources.isEmpty && definition.sources.allSatisfy {
+            guard let kind = $0.home, home[kind] != nil else { return false }
+            return definition.query.isDefault || kind != .recentlyAdded
+        }
+        guard !sourceItems.isEmpty || canReconstruct,
+              force || definition.sources.contains(where: {
+                  $0.home != nil && (definition.query.isDefault || $0.home != .recentlyAdded)
+              }) else { return self }
         var row = self
         let groups = definition.sources.map { source -> [MediaItem] in
             guard source.libraryKey.map(visibility.isEnabled) != false else { return [] }
-            if let kind = source.home, let items = home[kind] {
-                return Array(items.prefix(limit + 1))
+            if let kind = source.home, let items = home[kind],
+               definition.query.isDefault || kind != .recentlyAdded {
+                return definition.query.isDefault ? Array(items.prefix(limit + 1)) : items
             }
             return sourceItems[source] ?? []
         }
         let interleaved = HomeAggregator.interleave(groups)
         let merged = definition.sources.count == 1 ? interleaved
             : MediaItemMerger.merge(interleaved, serverInfo: { serverInfo[$0] }, identitySources: identitySources)
-        row.items = Array(merged.prefix(limit))
-        row.hasMore = !continuingSources.isEmpty || merged.count > limit
+        let projected = definition.query.applying(to: merged, watchlistDates: definition.usesWatchlistDates)
+        row.items = Array(projected.prefix(limit))
+        row.hasMore = !continuingSources.isEmpty || projected.count > limit
         return row
     }
 
@@ -56,6 +65,7 @@ public struct HomeCollectionRow: Equatable, Sendable {
         .init(
             section: LibrarySection(
                 id: definition.rowID.presentationID, title: definition.title,
+                localizedTitle: definition.localizedTitle,
                 style: definition.cardStyle == .poster ? .poster : .landscape, items: items, hasMore: hasMore
             ),
             isLoading: isLoading, failure: failure, browseItem: definition.collectionItem,

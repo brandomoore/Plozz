@@ -16,9 +16,10 @@ enum HomeRowBrowseFactory {
         if let definition = row.choice.collectionSection {
             let sources = definition.availableSources(accounts: accounts, visibility: visibility)
             let session = HomeContentPageLoader.Session(
-                accounts: accounts, visibility: visibility, recommendationScope: recommendationScope, homeSnapshot: homeSnapshot
+                accounts: accounts, visibility: visibility, recommendationScope: recommendationScope,
+                expandsRecentlyAdded: !definition.query.isDefault, identitySources: identitySources, homeSnapshot: homeSnapshot
             )
-            let recent: HomeRowBrowseModel? = sources.contains(where: { $0.home == .recentlyAdded }) ? make(
+            let recent: HomeRowBrowseModel? = definition.query.isDefault && sources.contains(where: { $0.home == .recentlyAdded }) ? make(
                 .init(choice: .init(id: .global(.recentlyAdded), title: "", isProviderDefault: false),
                       source: .home(.init(kind: .recentlyAdded, items: []))),
                 accounts: accounts, visibility: visibility, libraries: libraries,
@@ -34,8 +35,9 @@ enum HomeRowBrowseFactory {
             }
             let admitted = !sources.isEmpty && visibility.isHomeRowVisible(row.choice)
             return HomeRowBrowseModel(
-                title: definition.title, style: .poster,
-                contentPager: pager, isCurrent: { admitted && isCurrent() }
+                title: definition.title, localizedTitle: definition.localizedTitle, style: .poster,
+                contentPager: pager, watchlistDates: definition.usesWatchlistDates,
+                query: definition.query, isCurrent: { admitted && isCurrent() }
             )
         }
         var loaders: [HomeRowBrowseModel.PageLoader] = []

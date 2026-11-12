@@ -4,6 +4,67 @@ import XCTest
 @testable import TestSupportPerformance
 
 final class HomeContentPagerTests: XCTestCase {
+    func testSavedSortReadsWholeSourcesAndReusesInventoryForFurtherQueries() async throws {
+        let fixture = ContentFixture(counts: [241, 130], pageSizes: [13, 7])
+        let pager = fixture.pager()
+        let original = try await pager.loadNext(limit: 20)
+        XCTAssertEqual(original.items.first?.id, "0-0")
+        let query = HomeContentQuery(sort: .init(field: .name, direction: .descending))
+        let sorted = try await pager.load(limit: 20, query: query)
+        XCTAssertFalse(sorted.hasMore)
+        XCTAssertEqual(sorted.items.count, 371)
+        XCTAssertEqual(sorted.items.first?.id, "1-129")
+        let before = await fixture.metrics()
+        let ascending = try await pager.load(limit: 20, query: .init(sort: .default))
+        let after = await fixture.metrics()
+        XCTAssertEqual(before.requests, after.requests)
+        XCTAssertEqual(ascending.items.first?.id, "0-0")
+        let restored = try await pager.load(limit: 20, query: .init())
+        XCTAssertEqual(Array(restored.items.prefix(20)), original.items)
+        XCTAssertLessThanOrEqual(after.maximumConcurrent, 3)
+    }
+
+    func testSavedFilterFindsLateMatchesAndIncludesEpisodesWithoutReordering() async throws {
+        let sources = ContentFixture(counts: [260]).sources
+        let pager = HomeContentPager(sources: sources) { _, start, limit in
+            let end = min(start + limit, 260)
+            let items = (start..<end).map {
+                MediaItem(id: "\($0)", title: "Title \($0)", kind: $0 < 240 ? .movie : .episode)
+            }
+            return .init(items: items, nextOffset: end < 260 ? end : nil)
+        }
+        let result = try await pager.load(limit: 20, query: .init(media: .shows))
+        XCTAssertEqual(result.items.map(\.id), (240..<260).map(String.init))
+        XCTAssertFalse(result.hasMore)
+        XCTAssertEqual(result.groups.values.first?.count, 260)
+    }
+
+    func testSavedQueryDoesNotPublishPartialInventoryAndCancellationIsRetryable() async throws {
+        let fixture = ContentFixture(counts: [250, 250], failing: [1], delay: .milliseconds(5))
+        let pager = fixture.pager()
+        let query = HomeContentQuery(sort: .default)
+        do { _ = try await pager.load(limit: 20, query: query); XCTFail("Partial inventory cannot be globally sorted") }
+        catch { XCTAssertEqual(error as? AppError, .serverUnreachable) }
+        await fixture.recover()
+        let cancelled = Task { try await pager.load(limit: 20, query: query) }
+        cancelled.cancel()
+        do { _ = try await cancelled.value; XCTFail("Cancellation cannot publish") }
+        catch { XCTAssertTrue(error is CancellationError || error as? AppError == .cancelled) }
+        let result = try await pager.load(limit: 20, query: query)
+        XCTAssertEqual(result.items.count, 500)
+        XCTAssertTrue(result.failures.isEmpty)
+    }
+
+    func testCompleteInventoryRetainsAllDuplicatePlaybackSources() async throws {
+        let fixture = ContentFixture(counts: Array(repeating: 230, count: 8), overlapping: true)
+        let result = try await fixture.pager().load(limit: 20, query: .init(sort: .default))
+        XCTAssertEqual(result.items.count, 230)
+        XCTAssertTrue(result.items.allSatisfy { $0.sources.count == 8 })
+        let metrics = await fixture.metrics()
+        XCTAssertLessThanOrEqual(metrics.maximumConcurrent, 3)
+        XCTAssertEqual(metrics.items, 1_840)
+    }
+
     func testUnequalAndEmptySourceMatrixMatchesRoundRobinReference() async throws {
         for counts in [[0, 0, 0], [0, 1, 7], [7, 0, 1], [1, 7, 0], [21, 3, 11], [3, 21, 11]] {
             let expected = (0..<(counts.max() ?? 0)).flatMap { item in

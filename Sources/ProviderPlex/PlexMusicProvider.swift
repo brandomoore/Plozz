@@ -441,6 +441,7 @@ extension PlexProvider: MusicProvider {
             albumTitle: dto.parentTitle,
             albumID: dto.parentRatingKey,
             artistName: dto.grandparentTitle ?? dto.originalTitle,
+            artistID: dto.grandparentRatingKey,
             trackNumber: dto.index,
             discNumber: dto.parentIndex,
             duration: PlexTime.seconds(fromMilliseconds: dto.duration),
@@ -458,6 +459,23 @@ extension PlexProvider: MusicProvider {
             totalDuration: PlexTime.seconds(fromMilliseconds: dto.duration),
             lastPlayedAt: dto.lastViewedAt.map { Date(timeIntervalSince1970: TimeInterval($0)) }
         )
+    }
+}
+
+extension PlexProvider: MusicFeedbackProviding {
+    public var musicFeedbackKind: MusicFeedbackKind { .rating }
+
+    public func musicFeedback(for trackID: String) async throws -> MusicFeedback {
+        let detail = try await client.metadata(ratingKey: trackID)
+        return .rating(detail.userRating.map { $0 / 2 })
+    }
+
+    public func setMusicFeedback(_ feedback: MusicFeedback, for trackID: String) async throws {
+        guard case let .rating(stars) = feedback,
+              stars.map({ $0.isFinite && (0...5).contains($0) }) ?? true else {
+            throw AppError.invalidResponse
+        }
+        try await client.setMusicRating(stars.map { $0 * 2 }, ratingKey: trackID)
     }
 }
 

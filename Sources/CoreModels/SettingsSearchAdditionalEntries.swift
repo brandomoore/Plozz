@@ -39,7 +39,7 @@ extension SettingsSearchCatalog {
         .init("rating-source-order", page: .detailRatingSources, title: "Rating sources & order",
               keywords: "review scores ratings critics community priority order", platform: .mobile),
         .init("music-style", page: .musicPlayer, title: "Music player",
-              keywords: "music now playing lyrics album quality", platform: .television),
+              keywords: "music now playing appearance color colour dark light pure black theme"),
         .init("music-track-details", page: .musicPlayer, title: "Show album, quality & lyrics source",
               keywords: "music now playing lyrics album quality", platform: .television),
         .init("circadian-mode-tv", page: .circadian, title: "Circadian schedule",

@@ -198,7 +198,8 @@ extension HomeRowChoice {
     func homeEditorSource(in accounts: [ResolvedAccount]) -> Text {
         if library == nil, let collectionSection, collectionSection.sources.count == 1,
            let source = collectionSection.sources.first, let account = accounts.first(where: source.matches) {
-            return Text(verbatim: "\(source.displayTitle) · \(account.account.server.name)")
+            return (source.localizedTitle.map(Text.init) ?? Text(verbatim: source.title))
+                + Text(verbatim: " · \(account.account.server.name)")
         }
         return homeEditorSource
     }
@@ -219,7 +220,9 @@ extension HomeRowChoice {
             return library.library.displayName + Text(verbatim: " · \(library.serverName)")
         }
         if let serverRow { return Text(verbatim: serverRow.serverName) }
-        if let collectionSection { return Text(verbatim: collectionSection.contentTitle) }
+        if let collectionSection {
+            return collectionSection.localizedContentTitle.map(Text.init) ?? Text(verbatim: collectionSection.contentTitle)
+        }
         return id == .liveTV ? Text("All live sources") : Text("All libraries")
     }
 }

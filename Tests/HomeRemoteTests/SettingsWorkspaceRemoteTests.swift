@@ -3,6 +3,45 @@ import Vision
 
 @MainActor
 final class SettingsWorkspaceRemoteTests: XCTestCase {
+    func testSavedRowSortAndFilterUseNativeMenusAndSurviveRelaunch() throws {
+        #if targetEnvironment(simulator)
+        continueAfterFailure = false
+        let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.FocusHost")
+        app.launchArguments = ["--collection-row-editor-fixture", "--collection-row-existing", "-AppleLanguages", "(en)"]
+        app.launch()
+        defer { app.terminate() }
+        let sort = app.buttons["collection-section-sort"]
+        let filter = app.buttons["collection-section-filter"]
+        XCTAssertTrue(sort.waitForExistence(timeout: 5))
+        try focus(sort, in: app)
+        XCUIRemote.shared.press(.select)
+        try focus(app.cells.containing(.any, identifier: "Release Date").firstMatch, in: app)
+        XCUIRemote.shared.press(.select)
+        let changed = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            (sort.value as? String)?.contains("Release Date") == true
+        }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [changed], timeout: 5), .completed)
+        try focus(filter, in: app)
+        XCUIRemote.shared.press(.select)
+        try focus(app.cells.containing(.any, identifier: "TV Shows").firstMatch, in: app)
+        XCUIRemote.shared.press(.select)
+        let filtered = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            filter.value as? String == "TV Shows"
+        }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [filtered], timeout: 5), .completed)
+        capture("saved-row-query-native-controls", in: app)
+        app.terminate()
+        app.launch()
+        XCTAssertTrue(sort.waitForExistence(timeout: 5))
+        XCTAssertTrue((sort.value as? String)?.contains("Release Date") == true)
+        XCTAssertEqual(filter.value as? String, "TV Shows")
+        XCTAssertFalse(app.buttons["collection-section-save"].exists)
+        XCTAssertFalse(app.staticTexts["Couldn't update this row. Try again."].exists)
+        #else
+        throw XCTSkip("Simulator-only custom-row editing.")
+        #endif
+    }
+
     func testContentPickerSummaryRemovalAndDonePreserveExistingRow() throws {
         #if targetEnvironment(simulator)
         continueAfterFailure = false

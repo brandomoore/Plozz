@@ -55,6 +55,7 @@ final class MusicNowPlayingOwnershipTests: XCTestCase {
         await fulfillment(of: [started], timeout: 3)
         let outgoing = try XCTUnwrap(publisher.player?.currentItem)
         controller.pause()
+        let selectionPosition = controller.currentTime
         controller.play(at: 2)
         await fulfillment(of: [resolving], timeout: 3)
         NotificationCenter.default.post(name: .AVPlayerItemDidPlayToEndTime, object: outgoing)
@@ -62,7 +63,11 @@ final class MusicNowPlayingOwnershipTests: XCTestCase {
         XCTAssertEqual(controller.index, 2)
         XCTAssertEqual(controller.currentTrack?.id, "requested")
         XCTAssertEqual(completions.map(\.0), ["outgoing"])
+        #if os(iOS)
+        XCTAssertEqual(completions.first?.1 ?? -1, selectionPosition, accuracy: 0.1)
+        #else
         XCTAssertEqual(completions.first?.1 ?? -1, 10, accuracy: 0.1)
+        #endif
         controller.stop()
         await gate.release()
         await fulfillment(of: [resolved], timeout: 3)

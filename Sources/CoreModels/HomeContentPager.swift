@@ -46,6 +46,98 @@ public actor HomeContentPager {
         try await gate.runUnlessCancelled { try await self.advance(limit: limit) }
     }
 
+    public nonisolated static func interleave<T>(_ groups: [[T]]) -> [T] {
+        var result: [T] = []
+        result.reserveCapacity(groups.reduce(0) { $0 + $1.count })
+        for offset in 0..<(groups.map(\.count).max() ?? 0) {
+            for group in groups where offset < group.count { result.append(group[offset]) }
+        }
+        return result
+    }
+
+    /// Alternate ordering and filters require complete membership. Never return
+    /// a sorted prefix or silently accept a failed source as a complete result.
+    public nonisolated func load(
+        limit: Int, query: HomeContentQuery, watchlistDates: Bool = false
+    ) async throws -> Snapshot {
+        guard limit > 0, limit <= PageRequest.defaultLimit else { throw AppError.invalidResponse }
+        if query.isDefault { return try await loadNext(limit: limit) }
+        let result = try await loadAll()
+        try Task.checkCancellation()
+        return Snapshot(
+            items: query.applying(to: result.items, watchlistDates: watchlistDates),
+            hasMore: false, failures: result.failures,
+            groups: result.groups, continuingSources: result.continuingSources
+        )
+    }
+
+    public nonisolated func loadAll() async throws -> Snapshot {
+        try await gate.runUnlessCancelled { try await self.complete() }
+    }
+
+    private func complete() async throws -> Snapshot {
+        if cursors.allSatisfy({ $0.offset == nil && $0.position == $0.buffer.count }) {
+            try Task.checkCancellation()
+            return Snapshot(
+                items: items, hasMore: false, failures: [:],
+                groups: Dictionary(uniqueKeysWithValues: sources.indices.map { (sources[$0], cursors[$0].emitted) }),
+                continuingSources: []
+            )
+        }
+        let sources = sources
+        let loader = loader
+        let current = cursors
+        let completed = try await withThrowingTaskGroup(of: (Int, Cursor).self) { group in
+            let fetch: @Sendable (Int) async throws -> (Int, Cursor) = { index in
+                var cursor = current[index]
+                cursor.emitted += cursor.buffer.dropFirst(cursor.position)
+                cursor.buffer = []
+                cursor.position = 0
+                while let start = cursor.offset {
+                    try Task.checkCancellation()
+                    let page = try await loader(sources[index], start, PageRequest.defaultLimit)
+                    guard page.nextOffset.map({ $0 > start }) ?? true,
+                          page.items.count <= PageRequest.defaultLimit else { throw AppError.invalidResponse }
+                    let fresh = page.items.filter { cursor.seen.insert($0.stablePresentationID).inserted }
+                    guard page.items.isEmpty || !fresh.isEmpty || page.nextOffset == nil else {
+                        throw AppError.invalidResponse
+                    }
+                    cursor.emitted += fresh
+                    cursor.offset = page.nextOffset
+                }
+                try Task.checkCancellation()
+                return (index, cursor)
+            }
+            var queued = 0
+            for index in sources.indices.prefix(3) {
+                group.addTask { try await fetch(index) }
+                queued += 1
+            }
+            var next = current
+            while let (index, cursor) = try await group.next() {
+                next[index] = cursor
+                if queued < sources.count {
+                    let index = queued
+                    group.addTask { try await fetch(index) }
+                    queued += 1
+                }
+            }
+            return next
+        }
+        try Task.checkCancellation()
+        let interleaved = Self.interleave(completed.map(\.emitted))
+        let merged = sources.count == 1 ? interleaved
+            : MediaItemMerger.merge(interleaved, serverInfo: { serverInfo[$0] }, identitySources: identitySources)
+        try Task.checkCancellation()
+        cursors = completed
+        items = merged
+        return Snapshot(
+            items: merged, hasMore: false, failures: [:],
+            groups: Dictionary(uniqueKeysWithValues: sources.indices.map { (sources[$0], completed[$0].emitted) }),
+            continuingSources: []
+        )
+    }
+
     private func advance(limit: Int) async throws -> Snapshot {
         guard limit > 0, limit <= PageRequest.defaultLimit else { throw AppError.invalidResponse }
         try Task.checkCancellation()

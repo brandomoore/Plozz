@@ -4,6 +4,144 @@ import XCTest
 
 @MainActor
 final class MultiSourceRowTests: XCTestCase {
+    func testSavedQueriesAgreeAcrossPreviewHomeAndBrowseForNativeFeeds() async throws {
+        for kind in [ProviderKind.plex, .jellyfin, .emby] {
+            let provider = MultiSourceProvider(kind: kind, memberCount: 137)
+            let account = ResolvedAccount(account: .init(id: "account", from: provider.session), provider: provider)
+            let sources: [HomeContentSource] = [
+                .init(feed: .collection("collection"), accountID: "account", serverUserID: "viewer",
+                      libraryID: "movies", title: "Collection"),
+                .init(feed: .playlist("playlist"), accountID: "account", serverUserID: "viewer",
+                      libraryID: "movies", title: "Playlist"),
+                .init(feed: .library(.movie), accountID: "account", serverUserID: "viewer",
+                      libraryID: "movies", title: "Movies"),
+                .init(feed: .recommendation(sectionID: "shelf", kind: .movie), accountID: "account",
+                      serverUserID: "viewer", libraryID: "movies", title: "Recommended")
+            ]
+            let definition = CollectionSection(
+                sources: sources, query: .init(sort: .init(field: .name, direction: .descending), media: .movies)
+            )
+            let visibility = settings(definition)
+            let session = HomeContentPageLoader.Session(accounts: [account], visibility: visibility) { _ in [] }
+            let pager = HomeContentPager(sources: sources) { try await session.load($0, start: $1, limit: $2) }
+            let preview = try await pager.load(limit: 20, query: definition.query)
+            let content = await HomeAggregator().unmergedContent(from: [account], visibility: visibility)
+            let row = try XCTUnwrap(content.collectionRows.first)
+            XCTAssertNil(row.failure)
+            XCTAssertEqual(row.items, Array(preview.items.prefix(20)))
+            XCTAssertEqual(row.items.first?.id, "recommendation-136")
+            let browser = HomeRowBrowseFactory.make(
+                .init(choice: .init(collectionSection: definition), source: .library(row.row)),
+                accounts: [account], visibility: visibility, isCurrent: { true }
+            )
+            XCTAssertEqual(browser.query, definition.query)
+            await browser.load()
+            XCTAssertNil(browser.error)
+            XCTAssertEqual(browser.items, preview.items)
+            XCTAssertFalse(browser.hasMore)
+            XCTAssertTrue(row.hasMore)
+        }
+    }
+
+    func testSavedRecentlyAddedQueryUsesFullMembershipInsteadOfHomeSnapshot() async throws {
+        let provider = MultiSourceProvider()
+        let account = ResolvedAccount(account: .init(id: "account", from: provider.session), provider: provider)
+        let definition = CollectionSection(
+            sources: [.init(home: .recentlyAdded)], query: .init(sort: .init(field: .name, direction: .descending))
+        )
+        let visibility = settings(definition)
+        let session = HomeContentPageLoader.Session(
+            accounts: [account], visibility: visibility, expandsRecentlyAdded: true
+        ) { _ in XCTFail("A sorted Recent row must not use a bounded Home snapshot"); return [] }
+        let pager = HomeContentPager(sources: definition.sources) { try await session.load($0, start: $1, limit: $2) }
+        let preview = try await pager.load(limit: 20, query: definition.query)
+        let content = await HomeAggregator().unmergedContent(from: [account], visibility: visibility)
+        let row = try XCTUnwrap(content.collectionRows.first)
+        XCTAssertNil(row.failure)
+        XCTAssertEqual(row.items.first?.id, "latest-179")
+        XCTAssertEqual(row.items, Array(preview.items.prefix(20)))
+        let browser = HomeRowBrowseFactory.make(
+            .init(choice: .init(collectionSection: definition), source: .library(row.row)),
+            accounts: [account], visibility: visibility, isCurrent: { true }
+        )
+        await browser.load()
+        XCTAssertNil(browser.error)
+        XCTAssertEqual(browser.items, preview.items)
+        let projected = row.resolving(home: [.recentlyAdded: []], visibility: visibility)
+        XCTAssertEqual(projected.items, row.items, "A shorter native Home snapshot cannot overwrite full query membership")
+    }
+
+    func testSavedWatchlistQueryUsesAddedDatesAndRefreshesItsFilteredSnapshot() {
+        let old = MediaItem(id: "old", title: "Zulu", kind: .movie, watchlistAddedAt: Date(timeIntervalSince1970: 1))
+        let new = MediaItem(id: "new", title: "Alpha", kind: .movie, watchlistAddedAt: Date(timeIntervalSince1970: 2))
+        let source = HomeContentSource(home: .watchlist)
+        let definition = CollectionSection(
+            sources: [source], query: .init(sort: .init(field: .dateAdded, direction: .ascending), media: .movies)
+        )
+        var row = HomeCollectionRow(definition: definition)
+        row.sourceItems = [source: [new, old]]
+        let resolved = row.resolving(home: [.watchlist: [new, old]], visibility: settings(definition))
+        XCTAssertEqual(resolved.items.map(\.id), ["old", "new"])
+        let refreshed = resolved.resolving(home: [.watchlist: [new]], visibility: settings(definition))
+        XCTAssertEqual(refreshed.items.map(\.id), ["new"])
+    }
+
+    func testWatchMutationRefillsSavedUnwatchedRowBeyondTheVisiblePrefix() async throws {
+        let provider = MultiSourceProvider(memberCount: 45)
+        let account = ResolvedAccount(account: .init(id: "account", from: provider.session), provider: provider)
+        let definition = CollectionSection(
+            sources: [.init(feed: .playlist("playlist"), accountID: "account", serverUserID: "viewer",
+                            libraryID: "movies", title: "Playlist")],
+            query: .init(filters: .init(filter: .unwatched))
+        )
+        let visibility = settings(definition)
+        let model = HomeViewModel(accounts: [account], currentVisibility: { visibility })
+        await model.load()
+        XCTAssertEqual(model.state.value?.collectionRows.first?.items.first?.id, "playlist-0")
+        model.applyWatchedState(.init(itemIDs: ["playlist-0"], played: true))
+        let row = try XCTUnwrap(model.state.value?.collectionRows.first)
+        XCTAssertEqual(row.items.count, 20)
+        XCTAssertEqual(row.items.first?.id, "playlist-1")
+        XCTAssertEqual(row.items.last?.id, "playlist-20")
+        model.invalidate()
+    }
+
+    func testCachedQueriedWatchlistReconstructsFromCurrentRuntimeMembership() {
+        let old = MediaItem(id: "old", title: "Zulu", kind: .movie)
+        let new = MediaItem(id: "new", title: "Alpha", kind: .movie)
+        let definition = CollectionSection(
+            sources: [.init(home: .watchlist)],
+            query: .init(sort: .init(field: .name, direction: .ascending))
+        )
+        let cached = HomeCollectionRow(definition: definition, items: [old], hasMore: true)
+        let refreshed = cached.resolving(home: [.watchlist: [old, new]], visibility: settings(definition))
+        XCTAssertEqual(refreshed.items.map(\.id), ["new", "old"])
+        XCTAssertFalse(refreshed.hasMore)
+        let empty = refreshed.resolving(home: [.watchlist: []], visibility: settings(definition))
+        XCTAssertTrue(empty.items.isEmpty)
+    }
+
+    func testCachedQueriedRowsDoNotReconstructMissingProviderOrRecentMembership() {
+        let old = MediaItem(id: "old", title: "Zulu", kind: .movie)
+        let new = MediaItem(id: "new", title: "Alpha", kind: .movie)
+        let sources: [HomeContentSource] = [
+            .init(home: .recentlyAdded),
+            .init(feed: .playlist("playlist"), accountID: "account", serverUserID: "viewer",
+                  libraryID: "movies", title: "Playlist")
+        ]
+        for source in sources {
+            let definition = CollectionSection(
+                sources: [.init(home: .watchlist), source],
+                query: .init(sort: .init(field: .name, direction: .ascending))
+            )
+            let cached = HomeCollectionRow(definition: definition, items: [old], hasMore: true)
+            let refreshed = cached.resolving(
+                home: [.watchlist: [new], .recentlyAdded: [new]], visibility: settings(definition)
+            )
+            XCTAssertEqual(refreshed, cached)
+        }
+    }
+
     func testRecommendationScopeSurvivesSettingsPauseButRefreshesAndRetiresWithHome() async throws {
         let provider = MultiSourceProvider()
         let account = ResolvedAccount(account: .init(id: "account", from: provider.session), provider: provider)
@@ -56,6 +194,22 @@ final class MultiSourceRowTests: XCTestCase {
         XCTAssertEqual(discoveredScopes, [scope.id])
         scope.invalidate()
         do { _ = try await loader.load(source, start: 0, limit: 3); XCTFail("Retired traversal must stop") }
+        catch { XCTAssertTrue(error is CancellationError) }
+    }
+
+    func testPageLoaderRejectsScopeRetiredDuringItsFinalResponse() async throws {
+        let provider = MultiSourceProvider(catalogDelay: .milliseconds(50))
+        let account = ResolvedAccount(account: .init(id: "account", from: provider.session), provider: provider)
+        let scope = HomeRecommendationScope()
+        let source = HomeContentSource(
+            feed: .recommendation(sectionID: "shelf", kind: .movie),
+            accountID: "account", serverUserID: "viewer", libraryID: "movies", title: "Recommended"
+        )
+        let loader = HomeContentPageLoader.Session(accounts: [account], visibility: .default, recommendationScope: scope) { _ in [] }
+        let request = Task { try await loader.load(source, start: 0, limit: 3) }
+        await provider.waitForCatalog()
+        scope.invalidate()
+        do { _ = try await request.value; XCTFail("An in-flight response cannot outlive its profile scope") }
         catch { XCTAssertTrue(error is CancellationError) }
     }
 
@@ -316,18 +470,20 @@ private actor MultiSourceProvider: MediaProvider {
     var calls: [String] = []
     var discoveredScopes: [UUID?] = []
     let catalogDelay: Duration
+    let memberCount: Int
     var catalogWaiters: [CheckedContinuation<Void, Never>] = []
 
-    init(kind: ProviderKind = .jellyfin, catalogDelay: Duration = .zero) {
+    init(kind: ProviderKind = .jellyfin, catalogDelay: Duration = .zero, memberCount: Int = 8) {
         self.kind = kind
         self.catalogDelay = catalogDelay
+        self.memberCount = memberCount
         session = .init(
             server: .init(id: "server", name: "Fixture", baseURL: URL(string: "https://fixture.invalid")!, provider: kind),
             userID: "viewer", userName: "Viewer", deviceID: "device", accessToken: "fixture"
         )
     }
-    private func items(_ prefix: String, count: Int = 8) -> [MediaItem] {
-        (0..<count).map { MediaItem(id: "\(prefix)-\($0)", title: "\(prefix) \($0)", kind: .movie, libraryID: "movies") }
+    private func items(_ prefix: String, count: Int? = nil) -> [MediaItem] {
+        (0..<(count ?? memberCount)).map { MediaItem(id: "\(prefix)-\($0)", title: "\(prefix) \($0)", kind: .movie, libraryID: "movies") }
     }
     private func page(_ prefix: String, request: PageRequest) -> MediaPage {
         let all = items(prefix)

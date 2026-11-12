@@ -7,6 +7,26 @@ system green appearance instead of inheriting the page's monochrome navigation t
 
 The Settings screen and its detail pages. Profile-aware and integration-aware.
 
+On mobile, Appearance starts with the shared visual theme cards, Gradient
+Backgrounds and Liquid Glass. Cards, Artwork and Circadian Mode form a separate
+group below. Theme search results open Appearance directly.
+Theme previews on mobile and TV update immediately with Gradient Backgrounds,
+using the app's shared ambient mesh or the theme's flat background. System
+continues to preview both light and dark.
+
+On mobile beta builds, Appearance → Music player sits beneath the theme controls
+in the same group and exposes the per-profile choices Match App Theme (default),
+Artwork, Black, Dark, and Light. Its visual cards reuse the app-theme picker
+layout and shared preview-card styling, with each platform's actual player
+background. Match App Theme previews the current app theme and Gradient Backgrounds;
+explicit choices stay independent. The picker updates the active player's
+settings model directly, without changing the app theme or music browsing pages.
+Preview-card title heights match only within each visible row; wrapped labels
+do not add empty space to other rows or single-column accessibility layouts.
+Settings search reaches the same
+control; production mobile builds hide the page and its search entry. The TV-only track
+details toggle is not offered on mobile.
+
 Ordinary Settings text inputs use CoreUI's `SettingsInputRow` for a persistent
 label above the native field. Existing settings groups/panels own backgrounds and
 insets; the row does not add another surface or replace native editing, secure
@@ -750,14 +770,20 @@ watch history and planning-list behavior are documented in
   saving a new row: mobile retains the editor's toolbar save, TV existing rows
   autosave, and TV new rows still require Add to Home.
   The editor separates Content from Layout (see [Home terminology](../../CONTEXT.md)).
-  Content, a single-line **Name** input, and **Layout** share one Settings group;
+  Content, a single-line **Name** input, **Sort**, **Filter**, and **Layout** share one Settings group;
   the name label stacks above its input at accessibility text sizes.
-  Mobile Layout and Logo menus match the other editor rows' 44-point minimum
+  Mobile Sort, Filter, Layout and Logo menus match the other editor rows' 44-point minimum
   content height before group insets, without changing unrelated Settings menus.
   Choose Posters, Landscape or Featured presentation, with **Logo** below Layout
   for landscape rows. Once content is selected, a live real-title preview appears
   below the controls without another enclosing card. Empty drafts omit the preview.
   The preview uses the existing artwork preferences and spoiler protection.
+  Sort defaults to Source order, preserving playlist sequence. The saved sort,
+  direction and media/watch-status filters also apply to Home and the initial
+  opened grid. Query changes cancel stale preview work and reuse complete
+  membership within the same scoped editor session. Large sources take longer
+  with an explicit query because ordering/filtering must cover the whole source,
+  not just the first preview page. Errors remain visible with Retry.
   Settings presentation must forward the active Home snapshot provider for
   Continue Watching and Watchlist previews, including the mobile Settings sheet.
   Pausing Home refresh behind mobile Settings does not revoke read access to
@@ -908,12 +934,12 @@ watch history and planning-list behavior are documented in
   Appearance, Screens & Navigation, Trackers, Language. Compact mobile windows
   use native push navigation; regular-width windows use a sidebar and detail stack.
   Both mobile layouts share their category section and destinations. Appearance
-  groups Theme, Cards, Artwork, and Circadian Mode; Display
+  starts with inline theme previews and controls, followed by Music player on beta
+  builds. Cards, Artwork, and Circadian Mode form the next group; Display
   Size is last inside Cards. Screens & Navigation groups App navigation,
-  All screens, Home, Libraries, and Movie & show details; Music player remains TV-only because mobile does
-  not implement those presentation choices. Mobile navigation editing includes
-  every enabled video library from the shared discovery inventory; Music remains
-  TV-only. Refreshing Libraries updates the available shortcuts
+  All screens, Home, Libraries, and Movie & show details. Mobile navigation editing includes
+  every enabled video library from the shared discovery inventory and Music on beta
+  builds when a music library is available. Refreshing Libraries updates the available shortcuts
   without resetting saved hide/order choices.
   Home, Downloads, and Search are the iPhone/iPad defaults, even before content
   discovery. Watchlist, Live TV, Settings, All Libraries, and individual libraries

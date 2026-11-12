@@ -33,6 +33,7 @@ import UIKit
 @MainActor
 @Observable
 final class PlozziOSAppModel {
+    let music: PlozziOSMusicRuntime? = AppReleaseChannel.current.isBeta ? PlozziOSMusicRuntime() : nil
     private let appAdmission: AppAdmissionModel
     let offlineMode: PlozziOSOfflineModeModel
     var isOfflineModeAvailable: Bool {

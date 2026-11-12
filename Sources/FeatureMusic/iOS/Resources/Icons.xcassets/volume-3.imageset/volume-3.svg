@@ -1,0 +1,23 @@
+<!--
+tags: [music, sound, speaker, volume, mute, muted, silent, audio]
+category: Media
+note: Composed here on Tabler's 24x24 grid rather than downloaded — the cone is
+      the third path of volume.svg verbatim, and the cross replaces the two wave
+      arcs in the space they occupied. Redraw from tabler.io/icons if it ever
+      needs to match upstream byte for byte.
+-->
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+>
+  <path d="M6 15h-2a1 1 0 0 1 -1 -1v-4a1 1 0 0 1 1 -1h2l3.5 -4.5a.8 .8 0 0 1 1.5 .5v14a.8 .8 0 0 1 -1.5 .5l-3.5 -4.5" />
+  <path d="M16 10l4 4" />
+  <path d="M16 14l4 -4" />
+</svg>

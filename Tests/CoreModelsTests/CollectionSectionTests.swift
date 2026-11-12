@@ -14,6 +14,7 @@ final class CollectionSectionTests: XCTestCase {
         XCTAssertEqual(restored.titleLogo, .on)
         XCTAssertEqual(restored.collectionSources.first?.collectionID, "collection")
         XCTAssertEqual(restored.sources.count, 1)
+        XCTAssertTrue(restored.query.isDefault)
         XCTAssertEqual(try JSONDecoder().decode(CollectionSection.self, from: JSONEncoder().encode(restored)), restored)
     }
 
@@ -154,6 +155,8 @@ final class CollectionSectionTests: XCTestCase {
         edited.name = "New name"
         edited.cardStyle = .landscape
         edited.titleLogo = .on
+        edited.query = .init(sort: .init(field: .releaseDate, direction: .descending), media: .movies,
+                             filters: .init(filter: .unwatched))
         try model.saveCollectionSection(edited, catalog: catalog)
         XCTAssertEqual(model.visibility.collectionSections, [edited])
         XCTAssertEqual(catalog.sections(in: model.visibility).enabled, expected)
@@ -169,6 +172,36 @@ final class CollectionSectionTests: XCTestCase {
         let exported = ProfileSettingsTransfer.capture(namespace: nil, defaults: defaults)
         ProfileSettingsTransfer.apply(exported, namespace: "imported", defaults: defaults)
         XCTAssertEqual(HomeLibraryVisibilityStore(defaults: defaults, namespace: "imported").load(), model.visibility.intent)
+    }
+
+    func testExistingMultiSourceRowsDefaultToSourceOrderAndQueriesRoundTrip() throws {
+        var row = section
+        row.sources.append(.init(home: .watchlist))
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(row)) as? [String: Any])
+        object.removeValue(forKey: "query")
+        let legacy = try JSONDecoder().decode(CollectionSection.self, from: JSONSerialization.data(withJSONObject: object))
+        XCTAssertEqual(legacy, row)
+        for field in HomeContentQuery.sortFields {
+            for direction in SortDirection.allCases {
+                row.query = .init(sort: .init(field: field, direction: direction), media: .shows,
+                                  filters: .init(filter: .inProgress))
+                XCTAssertEqual(try JSONDecoder().decode(CollectionSection.self, from: JSONEncoder().encode(row)), row)
+            }
+        }
+        XCTAssertEqual(row.id, section.id)
+    }
+
+    func testAppTitlesRemainDeferredAndUserNamesRemainVerbatim() throws {
+        let source = HomeContentSource(home: .watchlist)
+        var row = CollectionSection(sources: [source])
+        XCTAssertNotNil(row.localizedTitle)
+        XCTAssertEqual(row.localizedTitle?.key, source.localizedTitle?.key)
+        row.sources.append(section.sources[0])
+        XCTAssertNotNil(row.localizedContentTitle)
+        row.name = "My Watchlist"
+        XCTAssertNil(row.localizedTitle)
+        XCTAssertEqual(row.title, "My Watchlist")
+        XCTAssertNil(section.localizedTitle)
     }
 
     func testLegacySettingsAndOfflineSourceIntentRemainIntact() throws {

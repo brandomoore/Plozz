@@ -33,6 +33,8 @@ struct CollectionSectionSettingsView: View {
     @State private var preview: LoadState<[MediaItem]> = .idle
     @State private var previewFailure: AppError?
     @State private var loadedRequest: PreviewRequest?
+    @State private var previewPager: HomeContentPager?
+    @State private var pagerRequest: PreviewRequest?
     @State private var retry = 0
     @State private var choosingSource = false
     @State private var saveFailed = false
@@ -41,6 +43,7 @@ struct CollectionSectionSettingsView: View {
     @Environment(CardStyleSettingsModel.self) private var cards
     @Environment(\.plozzMetrics) private var metrics
     @Environment(\.homeContentSnapshot) private var homeSnapshot
+    @Environment(\.locale) private var locale
     @SettingsPageDismiss private var dismiss
 
     init(
@@ -65,6 +68,13 @@ struct CollectionSectionSettingsView: View {
         let disabledLibraries: Set<String>
         let profile: ObjectIdentifier
         let retry: Int
+        var query: HomeContentQuery
+
+        func sharesContent(with other: Self) -> Bool {
+            sources == other.sources && credentials == other.credentials
+                && disabledLibraries == other.disabledLibraries && profile == other.profile && retry == other.retry
+                && (!sources.contains { $0.home == .recentlyAdded } || query.isDefault == other.query.isDefault)
+        }
     }
 
     private var request: PreviewRequest {
@@ -75,7 +85,7 @@ struct CollectionSectionSettingsView: View {
                  $0.provider.session.userID, $0.plexHomeUserID ?? ""]
             },
             disabledLibraries: visibility.visibility.disabledKeys,
-            profile: ObjectIdentifier(visibility), retry: retry
+            profile: ObjectIdentifier(visibility), retry: retry, query: draft.query
         )
     }
 
@@ -95,7 +105,7 @@ struct CollectionSectionSettingsView: View {
                 #if os(tvOS)
                 if !isNew {
                     HomeEditorAutosavingNameInput(
-                        "Name", name: draft.name, prompt: Text(verbatim: draft.contentTitle),
+                        "Name", name: draft.name, prompt: draft.localizedContentTitle.map(Text.init) ?? Text(verbatim: draft.contentTitle),
                         identifier: "collection-section-name", axis: .horizontal
                     ) { value in
                         guard var saved = visibility.visibility.collectionSections.first(where: { $0.id == draft.id })
@@ -111,6 +121,14 @@ struct CollectionSectionSettingsView: View {
                 #else
                 nameInput
                 #endif
+                SettingsMenuRow(title: "Sort", value: sortValue, minimumContentHeight: 44) {
+                    HomeContentSortOptions(query: $draft.query)
+                }
+                .accessibilityIdentifier("collection-section-sort")
+                SettingsMenuRow(title: "Filter", value: filterValue, minimumContentHeight: 44) {
+                    HomeContentFilterOptions(query: $draft.query)
+                }
+                .accessibilityIdentifier("collection-section-filter")
                 SettingsMenuRow(title: "Layout", value: Text(draft.cardStyle.title), minimumContentHeight: 44) {
                     Picker("Layout", selection: $draft.cardStyle) {
                         ForEach(CollectionSection.CardStyle.allCases, id: \.self) { style in
@@ -132,7 +150,7 @@ struct CollectionSectionSettingsView: View {
             }
             if !draft.sources.isEmpty {
                 VStack(alignment: .leading, spacing: 16) {
-                    Text(verbatim: draft.title).font(.headline)
+                    (draft.localizedTitle.map(Text.init) ?? Text(verbatim: draft.title)).font(.headline)
                     previewContent
                 }
                 .accessibilityIdentifier("collection-section-preview")
@@ -173,6 +191,7 @@ struct CollectionSectionSettingsView: View {
         .onChange(of: draft.cardStyle) { _, _ in saveExistingPreferences() }
         .onChange(of: draft.titleLogo) { _, _ in saveExistingPreferences() }
         .onChange(of: draft.sources) { _, _ in saveExistingPreferences() }
+        .onChange(of: draft.query) { _, _ in saveExistingPreferences() }
         #endif
         .settingsPageDestination(isPresented: $choosingSource) {
             HomeContentPickerView(
@@ -191,9 +210,18 @@ struct CollectionSectionSettingsView: View {
         inventory.currentCatalog(libraries: libraries, accounts: accounts, visibility: visibility)
     }
 
+    private var sortValue: Text {
+        guard let sort = draft.query.sort else { return Text(draft.query.sortTitle) }
+        return Text("\(sort.field.displayName) · \(sort.direction.displayName)")
+    }
+
+    private var filterValue: Text {
+        draft.query.activeFilterCount == 0 ? Text("All") : Text(verbatim: draft.query.filterSummary(in: locale))
+    }
+
     private var nameInput: some View {
         SettingsInputRow("Name", axis: .horizontal) {
-            TextField("Name", text: $draft.name, prompt: Text(verbatim: draft.contentTitle))
+            TextField("Name", text: $draft.name, prompt: draft.localizedContentTitle.map(Text.init) ?? Text(verbatim: draft.contentTitle))
                 .focused($isNameFocused)
                 .submitLabel(.done)
                 .onSubmit { isNameFocused = false }
@@ -231,6 +259,7 @@ struct CollectionSectionSettingsView: View {
             saved.cardStyle = draft.cardStyle
             saved.titleLogo = draft.titleLogo
             saved.sources = draft.sources
+            saved.query = draft.query
             guard canSaveSources(saved) else { throw AppError.notFound }
             try visibility.saveCollectionSection(saved, catalog: currentCatalog)
             preferencesSaveFailed = false
@@ -300,6 +329,10 @@ struct CollectionSectionSettingsView: View {
                 .padding(8)
             }
             .scrollIndicators(.hidden)
+            #if os(tvOS)
+            .focusable()
+            #endif
+            .accessibilityIdentifier("collection-section-preview-cards")
         }
     }
 
@@ -325,7 +358,8 @@ struct CollectionSectionSettingsView: View {
             guard !sources.isEmpty else { throw AppError.notFound }
             let session = HomeContentPageLoader.Session(
                 accounts: accounts, visibility: settings,
-                recommendationScope: homeSnapshot?.recommendationScope, refreshRecommendations: retry > 0, homeSnapshot: { kind in
+                recommendationScope: homeSnapshot?.recommendationScope, refreshRecommendations: retry > 0,
+                expandsRecentlyAdded: !requested.query.isDefault, homeSnapshot: { kind in
                     guard let homeSnapshot else { throw AppError.notFound }
                     return try await homeSnapshot.contentSnapshot(for: kind, visibility: settings)
                 }
@@ -352,10 +386,23 @@ struct CollectionSectionSettingsView: View {
                 }
                 return try captured.result.get()
             }
-            let page = try await pager.loadNext(limit: 20)
+            let activePager: HomeContentPager
+            if pagerRequest?.sharesContent(with: requested) == true, let previewPager {
+                activePager = previewPager
+            } else {
+                previewPager = pager
+                pagerRequest = requested
+                activePager = pager
+            }
+            guard homeSnapshot?.recommendationScope?.isActive != false else { throw CancellationError() }
+            let page = try await activePager.load(
+                limit: 20, query: requested.query,
+                watchlistDates: requested.sources.count == 1 && requested.sources.first?.home == .watchlist
+            )
             try Task.checkCancellation()
+            guard homeSnapshot?.recommendationScope?.isActive != false else { throw CancellationError() }
             guard request == requested else { return }
-            let items = page.items
+            let items = Array(page.items.prefix(20))
             previewFailure = sources.compactMap { page.failures[$0.id] }.first
             if previewFailure != nil { PlozzLog.app.error("Some custom row preview sources could not be loaded") }
             if items.isEmpty, let failure = previewFailure {

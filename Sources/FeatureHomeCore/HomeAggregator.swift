@@ -932,17 +932,29 @@ public struct HomeAggregator: Sendable {
             })
         case let .collection(definition, snapshots):
             do {
+                let expandedSession = HomeContentPageLoader.Session(
+                    accounts: accounts, visibility: visibility, expandsRecentlyAdded: true,
+                    identitySources: identitySources, homeSnapshot: { kind in
+                        guard let snapshot = snapshots[kind] else { throw AppError.notFound }
+                        return try snapshot.get()
+                    }
+                )
                 let pager = HomeContentPager(
                     sources: definition.availableSources(accounts: accounts, visibility: visibility),
                     serverInfo: accounts.sourceServerInfo(), identitySources: identitySources
                 ) { source, start, limit in
+                    if !definition.query.isDefault, source.home == .recentlyAdded {
+                        return try await expandedSession.load(source, start: start, limit: limit)
+                    }
                     if let kind = source.home {
                         guard let snapshot = snapshots[kind] else { throw AppError.notFound }
                         return .prefix(try snapshot.get(), startIndex: start, limit: limit)
                     }
                     return try await collectionSession.load(source, start: start, limit: limit)
                 }
-                let result = try await pager.loadNext(limit: previewRequestLimit)
+                let result = try await pager.load(
+                    limit: previewRequestLimit, query: definition.query, watchlistDates: definition.usesWatchlistDates
+                )
                 try Task.checkCancellation()
                 let failure = definition.sources.compactMap { result.failures[$0.id] }.first
                 if failure != nil { PlozzLog.app.error("Some custom Home row sources could not be loaded") }
@@ -950,7 +962,8 @@ public struct HomeAggregator: Sendable {
                     definition: definition, items: Array(result.items.prefix(perLibraryLimit)),
                     failure: failure, hasMore: result.hasMore || result.items.count > perLibraryLimit
                 )
-                row.sourceItems = result.groups.mapValues { Array($0.prefix(perLibraryLimit)) }
+                row.sourceItems = definition.query.isDefault
+                    ? result.groups.mapValues { Array($0.prefix(perLibraryLimit)) } : result.groups
                 row.sourceFailures = result.failures
                 row.continuingSources = result.continuingSources
                 return .collection(row)
@@ -1250,15 +1263,7 @@ public struct HomeAggregator: Sendable {
     /// second of every group, and so on. Preserves each group's internal order
     /// and gives every account fair top-of-row placement.
     static func interleave<T>(_ groups: [[T]]) -> [T] {
-        let maxCount = groups.map(\.count).max() ?? 0
-        var result: [T] = []
-        result.reserveCapacity(groups.reduce(0) { $0 + $1.count })
-        for offset in 0..<maxCount {
-            for group in groups where offset < group.count {
-                result.append(group[offset])
-            }
-        }
-        return result
+        HomeContentPager.interleave(groups)
     }
 
     /// Whole milliseconds between two `ContinuousClock` instants, for PLZBOOT

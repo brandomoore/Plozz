@@ -3,26 +3,7 @@ import CoreNetworking
 import Foundation
 import Observation
 
-public struct HomeRowBrowseQuery: Equatable, Sendable {
-    public var sort: CoreModels.SortDescriptor?
-    public var media: WatchlistMediaFilter = .all
-    public var filters: LibraryFilters = .all
-
-    public init() {}
-    public var isDefault: Bool { sort == nil && media == .all && filters.isEmpty }
-
-    public func applying(to items: [MediaItem], watchlistDates: Bool = false) -> [MediaItem] {
-        let filtered = items.filter {
-            (media == .all || (media == .movies ? $0.kind == .movie : [.series, .season, .episode].contains($0.kind)))
-                && LibraryQueryRecord($0, includeFormats: false).matches(filters)
-        }
-        guard let sort else { return filtered }
-        if watchlistDates {
-            return WatchlistBrowsePreferences(sort: sort).items(from: filtered)
-        }
-        return filtered.sorted { MediaItemSortOrder.isOrderedBefore($0, $1, sort: sort) }
-    }
-}
+public typealias HomeRowBrowseQuery = HomeContentQuery
 
 @MainActor
 @Observable
@@ -57,6 +38,7 @@ public final class HomeRowBrowseModel: Identifiable, Hashable {
         style: LibrarySection.Style = .poster,
         snapshot: [MediaItem] = [], loaders: [PageLoader] = [], contentPager: HomeContentPager? = nil,
         snapshotProvider: (@MainActor () -> [MediaItem]?)? = nil, watchlistDates: Bool = false,
+        query: HomeRowBrowseQuery = .init(),
         isCurrent: @escaping @MainActor () -> Bool = { true },
         merge: @escaping @Sendable ([[MediaItem]]) -> [MediaItem] = { $0.flatMap { $0 } }
     ) {
@@ -70,10 +52,11 @@ public final class HomeRowBrowseModel: Identifiable, Hashable {
         self.merge = merge
         self.snapshotProvider = snapshotProvider
         self.watchlistDates = watchlistDates
+        self.query = query
         groups = contentPager != nil ? [[]] : loaders.isEmpty ? [snapshot] : Array(repeating: [], count: loaders.count)
         offsets = Array(repeating: 0, count: loaders.count)
         hasMore = contentPager != nil || !loaders.isEmpty
-        items = contentPager == nil && loaders.isEmpty ? snapshot : []
+        items = contentPager == nil && loaders.isEmpty ? query.applying(to: snapshot, watchlistDates: watchlistDates) : []
     }
 
     public var liveSnapshot: [MediaItem]? { snapshotProvider?() }
@@ -112,7 +95,7 @@ public final class HomeRowBrowseModel: Identifiable, Hashable {
         defer { if token == generation { isLoading = false } }
         do {
             repeat {
-                if hasMore { try await appendPage(generation: token) }
+                if hasMore { try await appendPage(generation: token, complete: !requested.isDefault) }
                 try Task.checkCancellation()
                 guard token == generation, isCurrent() else { throw CancellationError() }
             } while hasMore && error == nil && !requested.isDefault
@@ -156,9 +139,10 @@ public final class HomeRowBrowseModel: Identifiable, Hashable {
         error = .notFound
     }
 
-    private func appendPage(generation token: Int) async throws {
+    private func appendPage(generation token: Int, complete: Bool = false) async throws {
         if let contentPager {
-            let result = try await contentPager.loadNext(limit: PageRequest.defaultLimit)
+            let result = complete ? try await contentPager.loadAll()
+                : try await contentPager.loadNext(limit: PageRequest.defaultLimit)
             try Task.checkCancellation()
             guard token == generation, isCurrent() else { throw CancellationError() }
             groups = [result.items]

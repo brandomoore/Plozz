@@ -253,7 +253,8 @@ public final class HomeViewModel: HomeContentSnapshotProviding {
                 collectionRows: collectionRows.map { row in
                     var row = row
                     row.items = Array(row.items.prefix(perRow))
-                    row.sourceItems = row.sourceItems.mapValues { Array($0.prefix(perRow)) }
+                    row.sourceItems = row.definition.query.isDefault
+                        ? row.sourceItems.mapValues { Array($0.prefix(perRow)) } : [:]
                     return row
                 },
                 recentlyAddedCandidates: recentlyAddedCandidates.map {
@@ -1681,6 +1682,13 @@ public final class HomeViewModel: HomeContentSnapshotProviding {
             var row = row
             row.items = row.items.map { apply(mutation, to: $0) }
             row.sourceItems = row.sourceItems.mapValues { $0.map { apply(mutation, to: $0) } }
+            if !row.definition.query.isDefault {
+                row.items = row.definition.query.applying(to: row.items, watchlistDates: row.definition.usesWatchlistDates)
+                row = row.resolving(
+                    home: [:], visibility: currentVisibility(), force: true,
+                    serverInfo: accounts.sourceServerInfo(), identitySources: identitySources
+                )
+            }
             return row
         }
     }
@@ -2407,9 +2415,11 @@ public final class HomeViewModel: HomeContentSnapshotProviding {
     }
 
     private struct CollectionRefreshWork {
-        let provider: any MediaProvider
+        let account: ResolvedAccount
+        var provider: any MediaProvider { account.provider }
         let visibility: HomeLibraryVisibility
         let loadGeneration: UInt64
+        let completeMembership: Bool
     }
 
     private func collectionRefreshWork(for request: HomeCollectionRefreshQueue.Request) -> CollectionRefreshWork? {
@@ -2426,7 +2436,11 @@ public final class HomeViewModel: HomeContentSnapshotProviding {
             return nil
         }
         return CollectionRefreshWork(
-            provider: account.provider, visibility: visibility, loadGeneration: loadGeneration
+            account: account, visibility: visibility, loadGeneration: loadGeneration,
+            completeMembership: visibility.collectionSections.contains {
+                !$0.query.isDefault && $0.collectionSources.contains { $0.id == request.source.id }
+                    && visibility.isHomeRowVisible(HomeRowChoice(collectionSection: $0))
+            }
         )
     }
 
@@ -2468,14 +2482,28 @@ public final class HomeViewModel: HomeContentSnapshotProviding {
                     guard let work = self?.collectionRefreshWork(for: request) else { continue }
                     let result: Result<HomeRowPreview, AppError>
                     do {
-                        let page = try await CollectionPreviewLoader.load(
-                            selection: request.source, limit: HomeCollectionRefreshQueue.previewLimit + 1,
-                            provider: work.provider, visibility: work.visibility
-                        )
-                        result = .success(HomeRowPreview(
-                            page.items.filter { $0.kind == .movie || $0.kind == .series },
-                            limit: HomeCollectionRefreshQueue.previewLimit
-                        ))
+                        if work.completeMembership {
+                            let pager = HomeContentPager(sources: [.init(collection: request.source)]) { source, start, limit in
+                                try await HomeContentPageLoader.load(
+                                    source, start: start, limit: limit,
+                                    accounts: [work.account], visibility: work.visibility,
+                                    homeSnapshot: { _ in throw AppError.notFound }
+                                )
+                            }
+                            let snapshot = try await pager.loadAll()
+                            result = .success(HomeRowPreview(
+                                snapshot.items, limit: HomeCollectionRefreshQueue.previewLimit, retainsCandidates: true
+                            ))
+                        } else {
+                            let page = try await CollectionPreviewLoader.load(
+                                selection: request.source, limit: HomeCollectionRefreshQueue.previewLimit + 1,
+                                provider: work.provider, visibility: work.visibility
+                            )
+                            result = .success(HomeRowPreview(
+                                page.items.filter { $0.kind == .movie || $0.kind == .series },
+                                limit: HomeCollectionRefreshQueue.previewLimit
+                            ))
+                        }
                     } catch {
                         if Task.isCancelled || error is CancellationError || error as? AppError == .cancelled { return }
                         PlozzLog.app.error("Watchlist-triggered collection refresh failed")
@@ -2518,7 +2546,7 @@ public final class HomeViewModel: HomeContentSnapshotProviding {
             switch result {
             case let .success(preview):
                 content.collectionRows[index].sourceItems[source] = preview.items
-                if preview.hasMore { content.collectionRows[index].continuingSources.insert(source.id) }
+                if preview.hasMore && !work.completeMembership { content.collectionRows[index].continuingSources.insert(source.id) }
                 else { content.collectionRows[index].continuingSources.remove(source.id) }
                 content.collectionRows[index].sourceFailures[source.id] = nil
                 content.collectionRows[index] = content.collectionRows[index].resolving(

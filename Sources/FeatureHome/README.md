@@ -604,13 +604,30 @@ records on both platforms; error dialogs, playback routing and timeouts are unch
   `HomeContentPager` interleaves source order across uneven pages and merges
   duplicates through `MediaItemMerger`. It serializes competing browse advances,
   bounds provider fan-out to three, adapts page sizes for overlap, and caps scans
-  instead of draining a library to fill a preview. Cancellation commits no cursor
+  instead of draining a library to fill a default preview. Cancellation commits no cursor
   changes; partial source failures retain usable cards and remain retryable.
   Custom Home rows share one three-request lane and reuse identical preview
   pages during a Home load. Their work does not occupy native Home feed lanes.
   **See all** uses the same composition in the poster grid. Recently Added
   retains native full-feed paging rather than stopping at the Home preview;
   Watchlist and Continue Watching use profile-curated runtime snapshots.
+  Custom rows persist a shared `HomeContentQuery`: Source order (the default),
+  Name, Date Added, Release Date or Runtime with a direction, plus movie/show and
+  Unwatched/In Progress filters. Preview, Home and the initial grid use the same
+  query. Source order preserves curated playlists; the TV Shows filter includes
+  seasons and episodes in feeds that admit them. A Watchlist-only row uses its
+  saved-added dates rather than library-added dates.
+  Explicit queries read complete membership before projecting results, not just
+  the first page. Large sources consequently cost more network I/O and memory.
+  Full traversal uses bounded pages and at most three source requests, merges
+  once after collection, supports cancellation and fails visibly if any source
+  cannot complete. Changing queries in one editor reuses its scoped inventory;
+  Retry or changing credentials, sources or visibility starts a new traversal.
+  Recently Added queries expand the native feed beyond the Home preview.
+  Watch mutations reproject retained candidates and collection refreshes retain
+  full membership for queried rows. Durable Home snapshots keep only the
+  already-projected preview, never a truncated inventory posing as complete.
+  Grid changes remain temporary and do not overwrite the saved row query.
   A traversal pins snapshots to prevent offset shifts, while Home presentation
   reflects current shared-feed membership. All card styles open title details.
   Recommendations from the same account/library/kind share one bounded discovery

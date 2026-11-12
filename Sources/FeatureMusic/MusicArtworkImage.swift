@@ -26,6 +26,7 @@ struct MusicArtworkImage: View {
     /// `PlozzCardCaption.subtitleColor(...)` so it flips with focus + reduced
     /// transparency. Falls back to `.secondary` when nil.
     var placeholderColor: Color? = nil
+    var onResolveReference: ((ArtworkReference?) -> Void)? = nil
     @Environment(\.themePalette) private var palette
     @Environment(\.plozzArtworkPolicy) private var artworkPolicy
 
@@ -37,7 +38,8 @@ struct MusicArtworkImage: View {
         showsMediaEdge: Bool = true,
         asyncFallbackURL: (@Sendable () async -> URL?)? = nil,
         pinIdentity: String? = nil,
-        placeholderColor: Color? = nil
+        placeholderColor: Color? = nil,
+        onResolveReference: ((ArtworkReference?) -> Void)? = nil
     ) {
         self.url = url
         self.systemPlaceholder = systemPlaceholder
@@ -47,6 +49,7 @@ struct MusicArtworkImage: View {
         self.asyncFallbackURL = asyncFallbackURL
         self.pinIdentity = pinIdentity
         self.placeholderColor = placeholderColor
+        self.onResolveReference = onResolveReference
     }
 
     var body: some View {
@@ -54,11 +57,13 @@ struct MusicArtworkImage: View {
             RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                 .fill(palette.fill)
             FallbackAsyncImage(
-                urls: [url].compactMap { $0 },
+                references: [url].compactMap { $0 }.map(ArtworkReference.remote),
                 variant: variant,
                 artworkPolicy: artworkPolicy.forArea(.music),
                 asyncFallbackURL: asyncFallbackURL,
-                pinIdentity: pinIdentity
+                onResolveReference: onResolveReference,
+                pinIdentity: pinIdentity,
+                content: ArtworkFillImage.init
             ) {
                 placeholder
             }
@@ -161,7 +166,18 @@ struct MusicCard: View {
             customCard
         }
         #else
-        customCard
+        Button(action: action) {
+            VStack(alignment: .leading, spacing: 8) {
+                artwork.frame(width: 150, height: 150)
+                Text(title).font(.headline).lineLimit(2)
+                if let subtitle {
+                    Text(subtitle).font(.subheadline).foregroundStyle(.secondary).lineLimit(2)
+                }
+            }
+            .frame(width: 150, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
         #endif
     }
 
@@ -334,6 +350,24 @@ struct ArtistCard: View {
     @Environment(\.plozzMetrics) private var metrics
 
     var body: some View {
+        #if os(iOS)
+        Button(action: action) {
+            VStack(spacing: 8) {
+                MusicArtworkImage(
+                    url: artist.artworkURL,
+                    systemPlaceholder: "music.mic",
+                    cornerRadius: 75,
+                    asyncFallbackURL: MusicArtworkFallback.artistImage(name: artist.name),
+                    pinIdentity: artist.id
+                )
+                .frame(width: 150, height: 150)
+                .clipShape(Circle())
+                Text(artist.name).font(.headline).lineLimit(2)
+            }
+            .frame(width: 150)
+        }
+        .buttonStyle(.plain)
+        #else
         let diameter = metrics.artistTileDiameter
         let slot = diameter + metrics.circleFocusPadding * 2
         CircularFocusTile(
@@ -359,6 +393,7 @@ struct ArtistCard: View {
             }
         )
         .plozzCircularFocusStyle()
+        #endif
     }
 }
 

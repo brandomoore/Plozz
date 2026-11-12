@@ -153,7 +153,7 @@ public struct HomePresentationRow: Identifiable, Equatable, Sendable {
         }
         for var row in content.collectionRows {
             guard let definition = visibility.collectionSections.first(where: {
-                $0.id == row.definition.id && $0.sources == row.definition.sources
+                $0.id == row.definition.id && $0.sources == row.definition.sources && $0.query == row.definition.query
             }), definition.sources.contains(where: { $0.libraryKey.map(visibility.isEnabled) != false }) else { continue }
             row.definition = definition
             row = row.resolving(home: [

@@ -8,6 +8,51 @@ import XCTest
 
 @MainActor
 final class DialogPresentationHostedTests: XCTestCase {
+    #if os(iOS)
+    func testSettingsNavigationKeepsThePageBackgroundInsideASheet() async throws {
+        for palette in [ThemePalette.pureBlack, .dark, .light] {
+            for gradient in [false, true] {
+                try await withFixture(palette: palette, gradient: gradient) { window, host, probe in
+                    probe.showSettings = true
+                    try await waitUntil { host.presentedViewController != nil }
+                    let sheet = try XCTUnwrap(host.presentedViewController)
+                    try await waitForPresentation(sheet)
+                    try await Task.sleep(for: .milliseconds(300))
+                    let frame = sheet.view.convert(sheet.view.bounds, to: window)
+                    let root = try XCTUnwrap(snapshot(window, name: "settings-root").cgImage)
+                    let rootPixels = try rgba(root)
+                    for depth in [1, 2, 0] {
+                        probe.settingsPath = Array(0..<depth)
+                        try await Task.sleep(for: .milliseconds(600))
+                        let image = try XCTUnwrap(snapshot(window, name: "settings-depth-\(depth)").cgImage)
+                        let pixels = try rgba(image)
+                        for point in [
+                            CGPoint(x: frame.minX + 8, y: frame.midY),
+                            CGPoint(x: frame.midX, y: frame.maxY - 60),
+                            CGPoint(x: frame.midX, y: frame.minY + 70)
+                        ] {
+                            let offset = (Int(point.y) * image.width + Int(point.x)) * 4
+                            for channel in 0..<3 {
+                                XCTAssertEqual(
+                                    Double(pixels[offset + channel]), Double(rootPixels[offset + channel]), accuracy: 3,
+                                    "Depth \(depth), gradient \(gradient): pushed Settings must match its root at \(point)"
+                                )
+                                if palette == .pureBlack, !gradient {
+                                    XCTAssertLessThanOrEqual(
+                                        pixels[offset + channel], 8, "Black must retain the shared near-black palette"
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    probe.showSettings = false
+                    try await waitUntil { host.presentedViewController == nil }
+                }
+            }
+        }
+    }
+    #endif
+
     func testProfileActionsSheetOwnsItsWholeBackgroundAcrossThemes() async throws {
         for palette in [ThemePalette.pureBlack, .dark, .light] {
             for gradient in [false, true] {
@@ -219,6 +264,8 @@ private final class DialogPresentationProbe {
     var showPlain = false
     var showCover = false
     var showFloating = false
+    var showSettings = false
+    var settingsPath: [Int] = []
     var dismissals = 0
     var presenterOwnsBackground: Bool?
     var sheetOwnsBackground: Bool?
@@ -228,6 +275,7 @@ private final class DialogPresentationProbe {
 
 private struct DialogPresentationFixture: View {
     @Bindable var probe: DialogPresentationProbe
+    @Environment(\.themePalette) private var palette
 
     var body: some View {
         Color.purple.ignoresSafeArea()
@@ -273,7 +321,29 @@ private struct DialogPresentationFixture: View {
                 }
                 .background(DialogOwnershipProbe { probe.sheetOwnsBackground = $0 })
             }
+            #if os(iOS)
+            .plozzSheet(isPresented: $probe.showSettings) {
+                NavigationStack(path: $probe.settingsPath) {
+                    settingsPage
+                        .navigationDestination(for: Int.self) { _ in settingsPage }
+                }
+                .environment(\.colorScheme, palette.isLight ? .light : .dark)
+                .presentationDragIndicator(.hidden)
+            }
+            #endif
     }
+
+    #if os(iOS)
+    private var settingsPage: some View {
+        List {
+            SettingsSectionGroup {
+                Text("Settings content")
+            }
+        }
+        .settingsPageSurface()
+        .navigationTitle("Settings")
+    }
+    #endif
 }
 
 private struct DialogOwnershipProbe: View {
