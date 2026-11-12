@@ -46,7 +46,8 @@ public struct ProviderBrandMark: View {
         case .plex: "PlexLogo"
         case .emby: "EmbyLogo"
         case .silo: "SiloLogo"
-        case .mediaShare, .iptv, .subsonic: ""
+        case .subsonic: "NavidromeLogo"
+        case .mediaShare, .iptv: ""
         }
     }
 
@@ -67,8 +68,7 @@ public struct ProviderBrandMark: View {
         switch provider {
         case .mediaShare: "externaldrive.connected.to.line.below.fill"
         case .iptv: "antenna.radiowaves.left.and.right"
-        case .subsonic: "music.note"
-        case .jellyfin, .plex, .emby, .silo: nil
+        case .jellyfin, .plex, .emby, .silo, .subsonic: nil
         }
     }
 
