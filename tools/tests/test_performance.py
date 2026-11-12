@@ -62,6 +62,21 @@ Binary Images:
 
 
 class EvidenceTests(unittest.TestCase):
+    def test_live_saved_queries_require_explicit_selection_and_loopback_broker(self):
+        names = [f"home-live-{kind}-queries" for kind in ("jellyfin", "emby", "plex", "silo", "combined")]
+        self.assertEqual(performance.select(None, names, "iOS"), sorted(names))
+        for suite in ("core", "network", "all"):
+            self.assertTrue(set(names).isdisjoint(performance.select(suite, None)))
+        with patch.dict("os.environ", {"PLOZZ_LIVE_HOME_BROKER": "http://127.0.0.1:8123/private-path"}, clear=True):
+            tree = performance.package_scheme(["AppRuntimeTests"])
+            values = {row.get("key"): row.get("value")
+                      for row in tree.getroot().findall("TestAction/EnvironmentVariables/EnvironmentVariable")}
+            self.assertEqual(values["PLOZZ_LIVE_HOME_BROKER"], "http://127.0.0.1:8123/private-path")
+        for address in ("https://example.com/config", "http://127.0.0.1:8123/?token=secret"):
+            with patch.dict("os.environ", {"PLOZZ_LIVE_HOME_BROKER": address}, clear=True):
+                with self.assertRaises(performance.Failure):
+                    performance.package_scheme(["AppRuntimeTests"])
+
     def test_live_music_requires_explicit_selection_and_loopback_broker(self):
         names = ["music-plex-live", "music-jellyfin-live", "music-subsonic-live"]
         self.assertEqual(performance.select(None, names, "iOS"), sorted(names))
@@ -228,6 +243,7 @@ class EvidenceTests(unittest.TestCase):
             "sync-unchanged", "library-unchanged", "multi-share-scanning", "catalog-import", "watchlist-artwork-rehydration",
             "live-tv-schedule-capture", "live-tv-schedule-sync", "poster-preview-admission",
             "seek-generated-80ms", "seek-generated-180ms", "identity-unchanged-servers",
+            "home-single-collection-row", "home-multi-source-row", "home-overlapping-source-browse",
         })
         self.assertEqual(performance.select(None, ["guide-large-batches"]), ["guide-large-batches"])
         self.assertEqual(performance.select(None, ["poster-preview-admission"]),

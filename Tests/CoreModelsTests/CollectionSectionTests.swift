@@ -2,6 +2,60 @@ import XCTest
 @testable import CoreModels
 
 final class CollectionSectionTests: XCTestCase {
+    func testLegacySingularSourceMigratesWithoutChangingRowIdentityOrAppearance() throws {
+        let legacy = """
+        {"id":"legacy","name":"My row","source":{"accountID":"account","libraryID":"movies",
+        "collectionID":"collection","title":"Collection","serverUserID":"viewer"},"cardStyle":"landscape","titleLogo":"on"}
+        """
+        let restored = try JSONDecoder().decode(CollectionSection.self, from: Data(legacy.utf8))
+        XCTAssertEqual(restored.id, "legacy")
+        XCTAssertEqual(restored.name, "My row")
+        XCTAssertEqual(restored.cardStyle, .landscape)
+        XCTAssertEqual(restored.titleLogo, .on)
+        XCTAssertEqual(restored.collectionSources.first?.collectionID, "collection")
+        XCTAssertEqual(restored.sources.count, 1)
+        XCTAssertTrue(restored.query.isDefault)
+        XCTAssertEqual(try JSONDecoder().decode(CollectionSection.self, from: JSONEncoder().encode(restored)), restored)
+    }
+
+    @MainActor
+    func testMixedSourcesRoundTripInSelectionOrderAndRejectAnEmptyRow() throws {
+        let sources = section.sources + [
+            HomeContentSource(home: .watchlist),
+            .init(feed: .playlist("playlist"), accountID: "account", serverUserID: "viewer", libraryID: "movies", title: "Playlist"),
+            .init(feed: .library(.movie), accountID: "account", serverUserID: "viewer", libraryID: "movies", title: "Movies"),
+            .init(feed: .recommendation(sectionID: "popular", kind: .movie),
+                  accountID: "account", serverUserID: "viewer", libraryID: "movies", title: "Popular")
+        ]
+        let combined = CollectionSection(id: "combined", sources: sources + [sources[0]])
+        XCTAssertEqual(combined.sources, sources)
+        XCTAssertNil(combined.collectionItem)
+        XCTAssertEqual(try JSONDecoder().decode(CollectionSection.self, from: JSONEncoder().encode(combined)), combined)
+        let model = HomeLibraryVisibilityModel(store: MemoryHomeVisibilityStore())
+        try model.saveCollectionSection(combined, catalog: .init(libraries: []))
+        XCTAssertEqual(model.visibility.collectionSections, [combined])
+        XCTAssertThrowsError(try model.saveCollectionSection(.init(sources: []), catalog: .init(libraries: [])))
+        XCTAssertEqual(model.visibility.collectionSections, [combined])
+    }
+
+    func testSourceIdentityIncludesViewerAndFeedButNotDisplayName() {
+        let first = section.sources[0]
+        let renamed = HomeContentSource(
+            feed: first.feed, accountID: first.accountID, serverUserID: first.serverUserID,
+            libraryID: first.libraryID, title: "New server title"
+        )
+        XCTAssertEqual(first.id, renamed.id)
+        XCTAssertEqual(HomeContentSource.normalized([first, renamed]), [first])
+        XCTAssertNotEqual(first.id, HomeContentSource(
+            feed: first.feed, accountID: first.accountID, serverUserID: "other-viewer",
+            libraryID: first.libraryID, title: first.title
+        ).id)
+        XCTAssertNotEqual(first.id, HomeContentSource(
+            feed: .playlist("collection"), accountID: first.accountID, serverUserID: first.serverUserID,
+            libraryID: first.libraryID, title: first.title
+        ).id)
+    }
+
     private var section: CollectionSection {
         .init(id: "section", source: .init(
             accountID: "account", libraryID: "movies", collectionID: "collection",
@@ -15,12 +69,12 @@ final class CollectionSectionTests: XCTestCase {
         edited.cardStyle = .landscape
         edited.titleLogo = .off
         XCTAssertEqual(edited.title, "My movies")
-        XCTAssertEqual(edited.source, section.source)
+        XCTAssertEqual(edited.sources, section.sources)
         XCTAssertEqual(edited.rowID, .section("section"))
         XCTAssertNotEqual(edited.rowID, .server(accountID: "account", section: "section"))
-        XCTAssertEqual(edited.collectionItem.id, "collection")
-        XCTAssertEqual(edited.collectionItem.sourceAccountID, "account")
-        XCTAssertEqual(edited.collectionItem.libraryID, "movies")
+        XCTAssertEqual(edited.collectionItem?.id, "collection")
+        XCTAssertEqual(edited.collectionItem?.sourceAccountID, "account")
+        XCTAssertEqual(edited.collectionItem?.libraryID, "movies")
         XCTAssertEqual(try JSONDecoder().decode(CollectionSection.self, from: JSONEncoder().encode(edited)), edited)
         edited.name = " \n "
         XCTAssertEqual(edited.title, "Server collection")
@@ -33,7 +87,7 @@ final class CollectionSectionTests: XCTestCase {
             edited.cardStyle = style
             let restored = try JSONDecoder().decode(CollectionSection.self, from: JSONEncoder().encode(edited))
             XCTAssertEqual(restored, edited)
-            XCTAssertEqual(restored.source, section.source)
+            XCTAssertEqual(restored.sources, section.sources)
             XCTAssertEqual(restored.rowID, section.rowID)
         }
     }
@@ -47,7 +101,7 @@ final class CollectionSectionTests: XCTestCase {
         )
         XCTAssertEqual(section.titleLogo, .off)
         XCTAssertEqual(legacy.titleLogo, .off)
-        XCTAssertEqual(legacy.source, section.source)
+        XCTAssertEqual(legacy.sources, section.sources)
         XCTAssertEqual(LandscapeTitleLogo.allCases, [.on, .off])
         for mode in LandscapeTitleLogo.allCases {
             var edited = section
@@ -101,6 +155,8 @@ final class CollectionSectionTests: XCTestCase {
         edited.name = "New name"
         edited.cardStyle = .landscape
         edited.titleLogo = .on
+        edited.query = .init(sort: .init(field: .releaseDate, direction: .descending), media: .movies,
+                             filters: .init(filter: .unwatched))
         try model.saveCollectionSection(edited, catalog: catalog)
         XCTAssertEqual(model.visibility.collectionSections, [edited])
         XCTAssertEqual(catalog.sections(in: model.visibility).enabled, expected)
@@ -116,6 +172,36 @@ final class CollectionSectionTests: XCTestCase {
         let exported = ProfileSettingsTransfer.capture(namespace: nil, defaults: defaults)
         ProfileSettingsTransfer.apply(exported, namespace: "imported", defaults: defaults)
         XCTAssertEqual(HomeLibraryVisibilityStore(defaults: defaults, namespace: "imported").load(), model.visibility.intent)
+    }
+
+    func testExistingMultiSourceRowsDefaultToSourceOrderAndQueriesRoundTrip() throws {
+        var row = section
+        row.sources.append(.init(home: .watchlist))
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(row)) as? [String: Any])
+        object.removeValue(forKey: "query")
+        let legacy = try JSONDecoder().decode(CollectionSection.self, from: JSONSerialization.data(withJSONObject: object))
+        XCTAssertEqual(legacy, row)
+        for field in HomeContentQuery.sortFields {
+            for direction in SortDirection.allCases {
+                row.query = .init(sort: .init(field: field, direction: direction), media: .shows,
+                                  filters: .init(filter: .inProgress))
+                XCTAssertEqual(try JSONDecoder().decode(CollectionSection.self, from: JSONEncoder().encode(row)), row)
+            }
+        }
+        XCTAssertEqual(row.id, section.id)
+    }
+
+    func testAppTitlesRemainDeferredAndUserNamesRemainVerbatim() throws {
+        let source = HomeContentSource(home: .watchlist)
+        var row = CollectionSection(sources: [source])
+        XCTAssertNotNil(row.localizedTitle)
+        XCTAssertEqual(row.localizedTitle?.key, source.localizedTitle?.key)
+        row.sources.append(section.sources[0])
+        XCTAssertNotNil(row.localizedContentTitle)
+        row.name = "My Watchlist"
+        XCTAssertNil(row.localizedTitle)
+        XCTAssertEqual(row.title, "My Watchlist")
+        XCTAssertNil(section.localizedTitle)
     }
 
     func testLegacySettingsAndOfflineSourceIntentRemainIntact() throws {
@@ -148,7 +234,7 @@ final class CollectionSectionTests: XCTestCase {
     func testTwoSectionsCanUseTheSameCollectionIndependently() throws {
         let model = HomeLibraryVisibilityModel(store: MemoryHomeVisibilityStore())
         let catalog = HomeSectionCatalog(libraries: [])
-        let second = CollectionSection(id: "second", name: "Featured picks", source: section.source, cardStyle: .landscape)
+        let second = CollectionSection(id: "second", name: "Featured picks", sources: section.sources, cardStyle: .landscape)
         try model.saveCollectionSection(section, catalog: catalog)
         try model.saveCollectionSection(second, catalog: catalog)
         try model.setHomeSectionVisible(false, id: section.rowID, catalog: catalog)

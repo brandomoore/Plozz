@@ -3,6 +3,34 @@ import XCTest
 
 @MainActor
 final class HomeSectionCatalogModelTests: XCTestCase {
+    func testCatalogPropagatesRecommendationOwnershipAndExplicitRetry() async throws {
+        let suite = "HomeCatalogRecommendations.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let visibility = HomeLibraryVisibilityModel(store: HomeLibraryVisibilityStore(defaults: defaults))
+        visibility.useRowDefaults(.combined)
+        let provider = HomeCatalogProvider()
+        let account = ResolvedAccount(account: Account(from: provider.session), provider: provider)
+        let library = AggregatedLibrary(
+            accountID: account.account.id, accountName: "Viewer", serverName: "Server", providerKind: .plex,
+            library: .init(id: "movies", title: "Movies", kind: .movie)
+        )
+        let model = HomeSectionCatalogModel()
+        let scope = HomeRecommendationScope()
+        for refresh in [false, true] {
+            await model.load(
+                libraries: [library], accounts: [account], visibility: visibility,
+                recommendationScope: scope, refreshRecommendations: refresh
+            )
+        }
+        let scopes = await provider.recommendationScopes
+        let refreshes = await provider.recommendationRefreshes
+        XCTAssertEqual(scopes, [scope.id, scope.id])
+        XCTAssertEqual(refreshes, [false, true])
+        XCTAssertNil(HomeRecommendationScope.current)
+        XCTAssertFalse(HomeRecommendationScope.refreshRequested)
+    }
+
     func testCurrentCatalogUsesAuthorizedLocalChoicesBeforeLoadingAndAfterIdentityChanges() async throws {
         let suite = "HomeCatalogImmediate.\(UUID())"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
@@ -241,6 +269,8 @@ private actor HomeCatalogProvider: MediaProvider {
     private var requested = false
     private var hasPromotedRows = true
     private(set) var requestCount = 0
+    private(set) var recommendationScopes: [UUID?] = []
+    private(set) var recommendationRefreshes: [Bool] = []
 
     func setFailure(_ value: AppError?) { failure = value }
     func removePromotedRows() { hasPromotedRows = false }
@@ -266,6 +296,8 @@ private actor HomeCatalogProvider: MediaProvider {
         )
     }
     func homeHubs(libraryID: String, kind: MediaItemKind, limit: Int, includeUnpromoted: Bool) async throws -> [LibrarySection] {
+        recommendationScopes.append(HomeRecommendationScope.current?.id)
+        recommendationRefreshes.append(HomeRecommendationScope.refreshRequested)
         if let failure { throw failure }
         return [.init(id: "recommended", title: "Recommended", items: [])]
     }

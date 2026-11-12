@@ -126,6 +126,8 @@ public protocol MetadataEnrichmentProvider: Sendable {
     var capabilities: Set<MetadataCapability> { get }
     /// The provider's operational envelope.
     var policy: ProviderPolicy { get }
+    /// A fallback may serve text interactively while keeping expensive art idle-only.
+    func supports(_ field: MetadataField, at tier: MetadataWorkTier) -> Bool
     /// Resolve as many of `missing` as possible for `query`. Never throws; returns an
     /// empty enrichment when nothing could be resolved.
     func enrich(_ query: MetadataQuery, missing: Set<MetadataField>) async -> MetadataEnrichment
@@ -138,6 +140,8 @@ public protocol MetadataEnrichmentProvider: Sendable {
 }
 
 public extension MetadataEnrichmentProvider {
+    func supports(_ field: MetadataField, at tier: MetadataWorkTier) -> Bool { true }
+
     /// The subset of `missing` this provider could conceivably fill (its capabilities
     /// intersect the capability covering each field). The pipeline uses this to skip
     /// a provider with nothing to offer for the remaining fields.

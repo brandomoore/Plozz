@@ -1,4 +1,5 @@
 import CoreModels
+import CryptoKit
 import Foundation
 import Observation
 
@@ -12,20 +13,24 @@ public struct WatchlistRemoteApplyReport: Equatable, Sendable {
     public let appliedRecordNames: [String]
     public let rejectedRecordNames: [String]
     public let ignoredDeletedProfileRecordNames: [String]
+    public let preservedLocalRecordNames: [String]
 
     public init(
         appliedRecordNames: [String] = [],
         rejectedRecordNames: [String] = [],
-        ignoredDeletedProfileRecordNames: [String] = []
+        ignoredDeletedProfileRecordNames: [String] = [],
+        preservedLocalRecordNames: [String] = []
     ) {
         self.appliedRecordNames = appliedRecordNames.sorted()
         self.rejectedRecordNames = rejectedRecordNames.sorted()
         self.ignoredDeletedProfileRecordNames =
             ignoredDeletedProfileRecordNames.sorted()
+        self.preservedLocalRecordNames = preservedLocalRecordNames.sorted()
     }
 
     public var appliedCount: Int { appliedRecordNames.count }
     public var rejectedCount: Int { rejectedRecordNames.count }
+    public var preservedLocalCount: Int { preservedLocalRecordNames.count }
 }
 
 @MainActor
@@ -154,6 +159,8 @@ public final class WatchlistModel {
             )
         )!
         replace(intent, in: &state)
+        state.locallyAuthoredAliasIDs.removeAll { $0 == aliasID }
+        if origin == .local { state.locallyAuthoredAliasIDs.append(aliasID) }
         try persist(state, profileID: profileID)
         return intent
     }
@@ -187,6 +194,7 @@ public final class WatchlistModel {
             )
         )!
         replace(intent, in: &state)
+        state.locallyAuthoredAliasIDs.append(aliasID)
         try persist(state, profileID: profileID)
         if activeProfileID == profileID {
             localPresentationItems[aliasID] = nil
@@ -287,6 +295,7 @@ public final class WatchlistModel {
         else { return false }
         state.intents[index].metadata.removalSupersededAt = date
         state.intents[index].changedAt = date
+        state.locallyAuthoredAliasIDs.append(aliasID)
         try persist(state, profileID: profileID)
         return true
     }
@@ -328,6 +337,15 @@ public final class WatchlistModel {
         guard rekeyed != state.intents else {
             snapshotsByProfile[profileID] = snapshot
             return
+        }
+        let locallyAuthored = Set(state.locallyAuthoredAliasIDs)
+        state.locallyAuthoredAliasIDs = state.intents.compactMap { intent in
+            guard locallyAuthored.contains(intent.aliasID) else { return nil }
+            let resolved = aliasSnapshot.resolvedAliasID(for: intent.aliasID) ?? intent.aliasID
+            guard let winner = snapshot.intentsByAliasID[resolved],
+                  winner.changedAt == intent.changedAt,
+                  winner.desiredState == intent.desiredState else { return nil }
+            return resolved
         }
         state.intents = rekeyed
         try persist(state, profileID: profileID, aliasSnapshot: aliasSnapshot)
@@ -460,7 +478,8 @@ public final class WatchlistModel {
     @discardableResult
     public func applyRemoteSyncRecords(
         profileID: String,
-        changes: [WatchlistMediaStateRecordKey: Data]
+        changes: [WatchlistMediaStateRecordKey: Data],
+        localCaptureDigests: [SyncRecordID: Data]? = nil
     ) throws -> WatchlistRemoteApplyReport {
         if removedProfileIDs.contains(profileID) {
             return WatchlistRemoteApplyReport(
@@ -472,6 +491,7 @@ public final class WatchlistModel {
         var state = statesByProfile[profileID]!
         var applied: [String] = []
         var rejected: [String] = []
+        var preserved: [String] = []
         for (key, bytes) in changes.sorted(by: {
             $0.key.recordName < $1.key.recordName
         }) {
@@ -486,9 +506,23 @@ public final class WatchlistModel {
                 rejected.append(key.recordName)
                 continue
             }
-            // SyncLedger already resolved the logical-clock conflict. Apply its
-            // winning canonical value exactly so capture(apply(bytes)) == bytes.
+            if let localCaptureDigests,
+               let local = state.intents.first(where: { $0.aliasID == key.aliasID }),
+               state.locallyAuthoredAliasIDs.contains(key.aliasID),
+               local.changedAt > incoming.changedAt {
+                guard let localBytes = CanonicalJSON.encode(WatchlistIntentSyncDTO(intent: local)) else {
+                    throw DurableLocalStateError.malformedPayload
+                }
+                // A durable action can precede its debounced sync capture. The
+                // ledger cannot resolve that unseen action, including after restart.
+                if localCaptureDigests[key.recordName] != Data(SHA256.hash(data: localBytes)) {
+                    preserved.append(key.recordName)
+                    continue
+                }
+            }
+            // Captured actions still use the ledger's logical-clock decision.
             replace(incoming, in: &state)
+            state.locallyAuthoredAliasIDs.removeAll { $0 == key.aliasID }
             state.nextRank = max(
                 state.nextRank,
                 incoming.rank == UInt64.max
@@ -502,7 +536,8 @@ public final class WatchlistModel {
         }
         return WatchlistRemoteApplyReport(
             appliedRecordNames: applied,
-            rejectedRecordNames: rejected
+            rejectedRecordNames: rejected,
+            preservedLocalRecordNames: preserved
         )
     }
 
@@ -647,7 +682,8 @@ public final class WatchlistModel {
             version: state.version,
             nextRank: state.nextRank,
             intents: state.intents,
-            migration: state.migration
+            migration: state.migration,
+            locallyAuthoredAliasIDs: state.locallyAuthoredAliasIDs
         )
         let store = try store(for: profileID)
         try store.save(canonical)

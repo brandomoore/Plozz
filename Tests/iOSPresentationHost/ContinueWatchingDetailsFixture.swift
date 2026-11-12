@@ -70,7 +70,12 @@ struct ContinueWatchingDetailsFixture: View {
 
     var body: some View {
         Group {
-            if ProcessInfo.processInfo.arguments.contains("--browse-server-films") {
+            if ProcessInfo.processInfo.arguments.contains("--details-search") {
+                NavigationStack {
+                    PlozziOSSearchView(appModel: appModel, onShowSettings: {})
+                        .plozziOSItemNavigation(appModel: appModel)
+                }
+            } else if ProcessInfo.processInfo.arguments.contains("--browse-server-films") {
                 PlozziOSTabShell(
                     appModel: appModel, homeViewModelBox: homeViewModelBox,
                     onAddServer: {}, showingSettings: .constant(false),
@@ -86,7 +91,9 @@ struct ContinueWatchingDetailsFixture: View {
         .environment(sidebar)
         .environment(\.themePalette, .dark)
         .environment(\.plozzMetrics, .touch(density: .standard))
-        .environment(\.locale, Locale(identifier: "en_US"))
+        .environment(\.locale, Locale(identifier:
+            ProcessInfo.processInfo.arguments.contains("--detail-route-parity") ? "fr" : "en_US"
+        ))
         .preferredColorScheme(.dark)
     }
 
@@ -98,7 +105,7 @@ struct ContinueWatchingDetailsFixture: View {
     }
 }
 
-private struct ContinueWatchingDetailsProvider: MediaProvider {
+private struct ContinueWatchingDetailsProvider: MediaProvider, SeriesResumeProviding {
     let kind: ProviderKind
     private var serverFilms: Bool {
         ProcessInfo.processInfo.arguments.contains("--browse-server-films")
@@ -152,7 +159,13 @@ private struct ContinueWatchingDetailsProvider: MediaProvider {
         }
     }
     func continueWatching(limit: Int) async throws -> [MediaItem] {
-        [try await item(id: "episode"), try await item(id: "movie")]
+        if ProcessInfo.processInfo.arguments.contains("--detail-route-parity") {
+            return [try await item(id: "recent-episode")]
+        }
+        return [try await item(id: "episode"), try await item(id: "movie")]
+    }
+    func resumeEpisode(inSeries seriesID: String) async throws -> MediaItem? {
+        try await item(id: "episode")
     }
     func latest(limit: Int) async throws -> [MediaItem] {
         if ProcessInfo.processInfo.arguments.contains("--browse-movies") {
@@ -197,7 +210,8 @@ private struct ContinueWatchingDetailsProvider: MediaProvider {
             item.overview = "Movie-specific synopsis."
         case "series":
             item = .init(id: id, title: "Fixture show", kind: .series)
-            item.overview = "Whole-show synopsis."
+            item.overview = ProcessInfo.processInfo.arguments.contains("--detail-route-parity")
+                ? "Description FR de la serie." : "Whole-show synopsis."
         case "season":
             item = .init(id: id, title: "Season 1", kind: .season)
             item.seriesID = "series"
@@ -218,7 +232,10 @@ private struct ContinueWatchingDetailsProvider: MediaProvider {
         if itemID == "season" { return [try await item(id: "episode"), try await item(id: "recent-episode")] }
         return []
     }
-    func search(query: String, limit: Int) async throws -> [MediaItem] { [] }
+    func search(query: String, limit: Int) async throws -> [MediaItem] {
+        ProcessInfo.processInfo.arguments.contains("--detail-route-parity")
+            ? [try await item(id: "series")] : []
+    }
     func playbackInfo(for itemID: String) async throws -> PlaybackRequest { throw AppError.notFound }
     func reportPlayback(_ progress: PlaybackProgress, event: PlaybackEvent) async throws {}
     func imageURL(itemID: String, kind: ImageKind, maxWidth: Int?) -> URL? { nil }

@@ -253,6 +253,24 @@ final class PlexHubsTests: XCTestCase {
         )
     }
 
+    func testRecommendationPage404RetainsSafeShelfRouteAndDoesNotFallBack() async throws {
+        let stub = StubHTTPClient()
+        stub.stub(pathSuffix: "/hubs/library/1/similar", json: "{}", status: 404)
+        let provider = PlexProvider(session: makeSession(), http: stub)
+        let captured = await HTTPResponseDiagnostics.capture {
+            try await provider.homeRowPage(
+                .recommendation(libraryID: "1", kind: .movie, browseID: "/hubs/library/1/similar"),
+                startIndex: 0, limit: 7
+            )
+        }
+        guard case let .failure(error) = captured.result else { return XCTFail("404 must remain a failure") }
+        XCTAssertEqual(error as? AppError, .notFound)
+        let failure = try XCTUnwrap(captured.http.last)
+        XCTAssertEqual(failure.route, .homeShelfPage)
+        XCTAssertEqual(failure.httpStatus, 404)
+        XCTAssertEqual(stub.sentPaths.count, 1)
+    }
+
     /// A representative `/hubs/sections/1` payload:
     ///  - Recently Added  → dropped (base row duplicate)
     ///  - On Deck         → dropped (base row duplicate)

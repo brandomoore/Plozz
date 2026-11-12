@@ -23,6 +23,7 @@ actor JellyfinDiscoveryRequests<Value: Sendable> {
 
     private var flights: [String: Flight] = [:]
     var waitingReaderCount: Int { flights.values.reduce(0) { $0 + $1.readers.count } }
+    func contains(key: String) -> Bool { flights[key] != nil }
 
     func run(key: String, operation: @escaping @Sendable () async throws -> Value) async throws -> Value {
         let readerID = UUID()

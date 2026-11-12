@@ -234,6 +234,7 @@ struct HomeSectionsSettingsView: View {
     let accounts: [ResolvedAccount]
     let visibility: HomeLibraryVisibilityModel
     let spoilerSettings: SpoilerSettings
+    @Environment(\.homeContentSnapshot) private var homeSnapshot
     @State private var inventory: HomeSectionCatalogModel
     @Environment(HeroSettingsModel.self) private var hero
     @Environment(HeroBackgroundSettingsModel.self) private var heroBackground
@@ -415,7 +416,10 @@ struct HomeSectionsSettingsView: View {
         .task(id: HomeSectionCatalogModel.loadID(
             libraries: libraries, accounts: accounts, visibility: visibility, revision: reloadRevision
         )) {
-            await inventory.load(libraries: libraries, accounts: accounts, visibility: visibility)
+            await inventory.load(
+                libraries: libraries, accounts: accounts, visibility: visibility,
+                recommendationScope: homeSnapshot?.recommendationScope, refreshRecommendations: reloadRevision > 0
+            )
         }
         .onChange(of: requestID) { _, _ in
             reorderSession = nil

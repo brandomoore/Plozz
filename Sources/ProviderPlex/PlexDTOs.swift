@@ -662,8 +662,11 @@ struct PlexConnectionDTO: Decodable {
 // silently dropping a 4K Dolby Vision file to a coarse/empty badge set. These
 // helpers accept any of the representations so a single quirky field can never
 // nuke an item's technical badges.
+// Most stream fields are absent. Check presence before trying representations
+// so sparse library responses do not construct several errors per missing field.
 extension KeyedDecodingContainer {
     func flexibleBool(_ key: Key) -> Bool? {
+        guard contains(key) else { return nil }
         if let value = try? decode(Bool.self, forKey: key) { return value }
         if let value = try? decode(Int.self, forKey: key) { return value != 0 }
         if let value = try? decode(String.self, forKey: key) {
@@ -677,6 +680,7 @@ extension KeyedDecodingContainer {
     }
 
     func flexibleInt(_ key: Key) -> Int? {
+        guard contains(key) else { return nil }
         if let value = try? decode(Int.self, forKey: key) { return value }
         if let value = try? decode(String.self, forKey: key) { return Int(value) }
         if let value = try? decode(Double.self, forKey: key) { return Int(value) }
@@ -684,12 +688,14 @@ extension KeyedDecodingContainer {
     }
 
     func flexibleDouble(_ key: Key) -> Double? {
+        guard contains(key) else { return nil }
         if let value = try? decode(Double.self, forKey: key) { return value }
         if let value = try? decode(String.self, forKey: key) { return Double(value) }
         return nil
     }
 
     func flexibleString(_ key: Key) -> String? {
+        guard contains(key) else { return nil }
         if let value = try? decode(String.self, forKey: key) { return value }
         if let value = try? decode(Int.self, forKey: key) { return String(value) }
         if let value = try? decode(Double.self, forKey: key) { return String(value) }

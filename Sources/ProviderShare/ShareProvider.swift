@@ -1119,6 +1119,8 @@ extension ShareProvider: WatchStateProviding {
 }
 
 extension ShareProvider: PlayedStateWriting {
+    public var usesLocalWatchStateOnly: Bool { true }
+
     /// Outbox-drained played write: use the play's real `capturedAt` (not the
     /// drain time) so a stale played write that drains after a newer re-watch
     /// can't overwrite the newer resume state — the local store orders writes by

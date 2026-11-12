@@ -12,6 +12,17 @@ workloads once, keeps five measured repetitions, checks work-count invariants,
 and compares source-identified baseline/candidate evidence without hardware
 deployment or automatic retries. Normal suites skip those opt-in probes.
 
+State/lifecycle coordination follows [state management](state-management.md).
+Drive it with a deterministic harness (fake clock and synthetic foreground/
+surface transitions), not UI timing. Run the same scenario matrix for each
+platform profile. Shared fixtures and constants live in `Tests/TestSupport*`.
+
+Tests use named constants or shared fixtures for repeated values, thresholds,
+surface identities, item IDs, and expected actions where sharing improves the
+test. Keep expected values independent of production code when that behavior
+is what the test verifies. Hosted adapter tests complement the pure lifecycle
+harness; the latter cannot prove real notification delivery or task cancellation.
+
 Render-dependent playback transitions belong in the app-hosted suite. Use a
 mounted video surface and a real HLS fixture for native-player continuity; a
 local MP4 may select the software decoder and cannot prove AVPlayer item reuse.
@@ -101,6 +112,41 @@ The broker endpoint must use an unguessable run-specific path and bind only to
 
 ## Live watch-state verification
 
+`LiveHomeContentTests` in `AppRuntimeTests` uses the same private broker contract
+with `TEST_RUNNER_PLOZZ_LIVE_HOME_BROKER`. It is read-only and does not enable the
+watch-history tests. It checks production Plex/Jellyfin/Emby custom-row loading:
+small successive pages for libraries, recommendations, populated collections and
+playlists, then combined preview/browse pages with a real history snapshot.
+It also combines all three providers' libraries and checks retained playback
+references across merged titles. Page timings are recorded as live-server
+observations, not repeatable benchmark thresholds or physical-device UI evidence.
+Discovery samples one movie library and up to two recommendations, and requires
+two discoverable populated collections and two video playlists per provider.
+Missing required containers fail acceptance rather than silently dropping a
+source type. Collection-only, playlist-only, and mixed-container rows check
+deduplication and retained native member identities without a library feed
+masking missing content. Fixtures must be provisioned separately with permission;
+the tests never create or modify server content.
+
+Native Silo coverage uses the broker's `/silo` response with the common fields
+plus ephemeral `siloTokens` and `siloProfile` objects. It validates library and
+native server-row composition through the production provider, not the Jellyfin
+compatibility port. It does not claim Silo collection, video-playlist, or
+file-share coverage. Fresh Silo credentials must outlive the bounded run; an
+unexpected rotation fails rather than changing the broker-owned login.
+The broker owns temporary logins and must close and revoke them after the run.
+
+The opt-in performance scenarios `home-live-{jellyfin,emby,plex,silo,combined}-queries`
+use that same broker via `PLOZZ_LIVE_HOME_BROKER`. Each sample starts a fresh
+production provider/pager, completes one movie and one TV library per account,
+and includes two populated collections and playlists for Plex/Jellyfin/Emby.
+Traversal is capped at 600 source-page calls per sample. They verify all four
+saved sort fields in both directions, media/watch filters, preview/grid agreement,
+cancelled query replacement and zero warm page refetches. Timings distinguish
+fresh client inventory loading from eight warm query projections; the server's
+own caches are not cleared. Main-actor wake-up gaps are simulator scheduling
+observations, not rendered-frame or physical-iPhone evidence.
+
 `LiveWatchProgressTests` in `AppRuntimeTests` exercises production Jellyfin,
 Emby and Plex resume writers, metadata reads, Continue Watching feeds and the
 shared Home admission policy. Set `TEST_RUNNER_PLOZZ_LIVE_WATCH_BROKER` to a
@@ -127,6 +173,59 @@ items, queued resets, fresh provider/store/model instances and an untouched cont
 item. The broker may supply two explicit `resetEpisodeIDs` from a bounded approved
 sample. These cases verify persisted zero progress and an unplayed flag, not just
 successful HTTP writes. They restore the sampled item's watched/resume values.
+
+## Live WebDAV Watchlist journeys
+
+`LiveWebDAVWatchlistInteractionTests` in `PlozzHomeRemoteTests` is an opt-in
+tvOS simulator journey through the production shell, account configuration,
+profile stores, WebDAV provider, and file-backed Watchlist. Ordinary runs skip
+it. Use a fresh, caller-owned simulator and the `PlozzHomeFixtureTests` scheme
+with normal ad-hoc simulator signing: an unsigned host cannot exercise Keychain
+persistence. This fixture disables CloudKit, so it measures local persistence,
+not cloud delivery or recovery.
+
+Set `TEST_RUNNER_PLOZZ_WEBDAV_JOURNEY_BROKER` to a private loopback endpoint
+following the credential-broker protections above. Its JSON response contains
+`baseURL`, `username`, and `password`, resolved in memory. The authorized root
+must contain `Movies/` with a playable movie and `TV/` with the demo series
+`Caminandes`. Use licensed, disposable test media and dedicated internal
+credentials; the test does not write to the WebDAV server.
+
+Select `testLiveWebDAVWatchlistUserJourneys` first. It saves the series,
+backgrounds and cold-launches the app three times, adds/removes/re-adds a movie,
+observes playback progress, verifies separate profile Watchlists, and exits
+immediately after saving. It checks restored cards as well as model counts.
+The full journey requires fresh state rather than silently deleting or repairing
+an earlier run's data.
+
+For the separate reboot check, shut down and boot **that same owned simulator**
+without erasing it, set `TEST_RUNNER_PLOZZ_WEBDAV_JOURNEY_RESTORE_ONLY=1`, and select
+`testPreviouslySavedItemsRestoreAfterDeviceRestart`. This phase only inspects the
+existing saved items; it never re-adds them. The diagnostic receipt and local
+`com.plozz.app` logs identify saved counts and storage location; include info
+messages and bound log capture to the run. Retain XCTest screenshots, hierarchy
+attachments, and the authoritative result summary, including on failure.
+
+Close the private broker and owned simulator after collecting evidence.
+A passing LAN WebDAV journey does not prove AllDebrid behavior, physical Apple TV
+power-cycle behavior, or recovery after tvOS storage eviction.
+
+`WatchlistCloudReplayTests` separately exercises the production `SyncLedger`
+and file-backed `WatchlistModel` with controlled incoming cloud records. It
+does not contact CloudKit. Its restart-before-publish and missing-sync-ledger
+cases ensure older cloud removals cannot overwrite newer uncaptured local
+actions. The media sync channel supplies persisted local-capture digests, so
+already-captured actions continue to use the sync ledger's logical-clock result.
+Device-local authorship is saved atomically with the intent and cleared by a
+remote apply; a peer's `.local` origin is not evidence that this device edited
+the item. Legacy files without authorship data remain readable but do not
+invent that evidence.
+Preserved actions are captured for upload again, rather than silently diverging
+from the cloud. The controls cover newer remote removals, clock disagreement,
+uncaptured local removals, native re-add supersession, native imports, empty
+fetches, profile isolation, alias redirects, consecutive remote deliveries, and
+two-peer convergence. This verifies the reproduced failure mechanism, not
+attribution of an individual user's report or actual CloudKit delivery.
 
 ## The two speed wins
 

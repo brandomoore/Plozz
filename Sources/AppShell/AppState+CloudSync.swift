@@ -37,9 +37,9 @@ public final class CloudSyncUIModel {
 //   • `applyRemoteConfigSnapshot(_:)` — reconcile an incoming merged snapshot into
 //     the app's stores, CONFIG-ONLY: it imports/updates the profile roster,
 //     settings and membership, but never signs a device in and never touches the
-//     Keychain (Apple-correct shared-roster model; credentials stay with pairing).
+//     Keychain. ProviderCredentialSync owns the separate encrypted sign-in channel.
 //
-// Everything is gated on `SyncSetupFeatureFlag` (device-wide, OFF by default) and
+// Everything is gated on the device-wide `SyncSetupFeatureFlag` consent choice and
 // is idempotent + loop-safe: applying a remote change leaves the local state equal
 // to the mirror, so the observation-driven re-publish it triggers is a no-op.
 extension AppState {
@@ -97,11 +97,16 @@ extension AppState {
             },
             applyRecords: { [weak appState] changes in
                 await appState?.applyMediaStateSyncRecords(changes)
+            },
+            applySnapshot: { [weak appState] snapshot in
+                await appState?.applyMediaStateSyncRecords(
+                    snapshot.changes, localCaptureDigests: snapshot.localCaptureDigests
+                )
             }
         )
 
         // Tracker sign-ins. Same shared bridge on both shells; the payload is
-        // encrypted end-to-end, and the Keychain stays the local store of record.
+        // stored in encrypted CloudKit fields; Keychain remains the local store.
         let trackerTokenChannel = CloudConfigSyncService.ChannelConfiguration(
             schema: .trackerTokensV1,
             stateFileURL: syncDir.appendingPathComponent(
@@ -127,11 +132,7 @@ extension AppState {
         ) { [weak appState] _ in
             Task { @MainActor in
                 guard let appState else { return }
-                await appState.traktService.refreshStatus()
-                await appState.simklService.refreshStatus()
-                await appState.wetrakrService.refreshStatus()
-                await appState.anilistService.refreshStatus()
-                await appState.malService.refreshStatus()
+                await appState.refreshSyncedTrackerSignIns()
             }
         }
 
@@ -143,6 +144,8 @@ extension AppState {
         Task { await TraktSharedRefreshBootstrap.synchronizeKnownAccounts() }
 
         var channels = [mediaChannel, trackerTokenChannel]
+        channels.append(appState.providerCredentialSync.channel(
+            stateFileURL: syncDir.appendingPathComponent("cloud-provider-credentials-v1.sealed")))
         channels.append(Self.makeLiveTVSyncChannel(
             bridge: appState.liveTVPortableSync,
             stateFileURL: syncDir.appendingPathComponent("cloud-live-tv-state-v1.json")
@@ -155,7 +158,7 @@ extension AppState {
         return CloudConfigSyncService(.init(
             containerIdentifier: cloudContainerIdentifier,
             stateFileURL: configStateURL,
-            isEnabled: { SyncSetupFeatureFlag().isEnabled },
+            isEnabled: { SyncSetupFeatureFlag().allowsAutomaticSync },
             captureRecords: { [weak appState] fallback in
                 guard let appState else { return [:] }
                 return await appState.captureSyncRecords(fallback: fallback)
@@ -192,10 +195,12 @@ extension AppState {
     /// Lightweight pull when the app comes to the foreground, so config changed on
     /// another device appears promptly (tvOS push is unreliable).
     public func syncCloudOnForeground() {
-        guard SyncSetupFeatureFlag().isEnabled else { return }
+        guard SyncSetupFeatureFlag().allowsAutomaticSync else { return }
+        accountsProviders.reloadAccounts()
         let config = cloudSync
         Task {
             await config?.fetchNow()
+            providerCredentialSync.reconcile()
         }
         heartbeatHouseholdPresence()
         checkForSyncSetupOffer()
@@ -210,7 +215,7 @@ extension AppState {
     /// in the loop (matching Apple's "set up new device" pattern) — but it's zero typing:
     /// no code, no QR. Mirrors the iOS source-side behavior so a TV can set up a phone.
     public func checkForSyncSetupOffer() {
-        guard SyncSetupFeatureFlag().isEnabled,
+        guard SyncSetupFeatureFlag().allowsAutomaticSync,
               !isPresentingSyncSetup,
               cloudSyncUI.pendingSyncSetupOffer == nil else { return }
         let localIDs = Set(accountsProviders.accounts.map(\.id))
@@ -250,7 +255,7 @@ extension AppState {
     /// Apple TV without the user backgrounding the app (tvOS push is unreliable).
     /// Idempotent; guarded on the feature flag each tick.
     func startSyncSetupOfferPolling() {
-        guard SyncSetupFeatureFlag().isEnabled, syncSetupOfferPollTask == nil else { return }
+        guard SyncSetupFeatureFlag().allowsAutomaticSync, syncSetupOfferPollTask == nil else { return }
         syncSetupOfferPollTask = Task { [weak self] in
             var tick = 0
             while !Task.isCancelled {
@@ -259,7 +264,7 @@ extension AppState {
                 tick += 1
                 let fetchConfig = tick % 4 == 0   // ~every 32s
                 let keepGoing = await MainActor.run { () -> Bool in
-                    guard let self, SyncSetupFeatureFlag().isEnabled else { return self != nil }
+                    guard let self, SyncSetupFeatureFlag().allowsAutomaticSync else { return self != nil }
                     self.checkForSyncSetupOffer()
                     if fetchConfig {
                         let config = self.cloudSync
@@ -326,6 +331,7 @@ extension AppState {
         guard result == .completed else { return result }
         guard await authorized() else { return .interrupted }
         do {
+            try providerCredentialSync.eraseLocalState()
             try TrackerTokenSyncBridge.eraseLocalTokens()
             try LiveTVSourceStorage.eraseAllSources()
             for id in profilesModel.profiles.map(\.id) {
@@ -634,21 +640,19 @@ extension AppState {
     /// prompt for any newly-detected server. Runs after applying config so
     /// `accountsProviders.accounts` reflects this device.
     public func refreshPendingSyncedServers() {
-        var store = PendingSyncedServersStore()
+        providerCredentialSync.reconcile()
+        let store = PendingSyncedServersStore()
         let localIDs = Set(accountsProviders.accounts.map(\.id))
         // Household-removed (tombstoned) servers are hidden here and never prompted.
         let removedIDs = RemovedAccountsStore().removedIDs
-        if let prompt = cloudSyncUI.pendingServerPrompt, removedIDs.contains(prompt.id) {
+        if let prompt = cloudSyncUI.pendingServerPrompt,
+           removedIDs.contains(prompt.id) || localIDs.contains(prompt.id) {
             cloudSyncUI.pendingServerPrompt = nil
         }
-        let newly = store.newlyPending(excludingLocal: localIDs).filter { !removedIDs.contains($0.id) }
         cloudSyncUI.pendingSyncedServers = store.pending(excludingLocal: localIDs)
             .filter { !removedIDs.contains($0.id) }
-        if SyncSetupFeatureFlag().isEnabled, cloudSyncUI.pendingServerPrompt == nil,
-           let first = newly.first {
-            cloudSyncUI.pendingServerPrompt = first
-            store.markPrompted(newly.map(\.id))
-        }
+        // Credentials can arrive after descriptors. Keep fallback sign-in in
+        // Settings instead of interrupting automatic setup with an early prompt.
     }
 
     /// Whether the delete UI should offer the "Everywhere" vs "This device" choice —
@@ -663,7 +667,7 @@ extension AppState {
 
     /// Register this Apple TV in the household presence registry.
     func heartbeatHouseholdPresence() {
-        guard SyncSetupFeatureFlag().isEnabled else { return }
+        guard SyncSetupFeatureFlag().allowsAutomaticSync else { return }
         HouseholdDevicesStore().heartbeat(
             deviceID: accountsProviders.accountStore.deviceID(),
             deviceName: DeviceDisplayName.current(fallback: "Apple TV"))
@@ -708,7 +712,7 @@ extension AppState {
     /// Activate the engine (if enabled) and start observing local config changes.
     func startCloudSyncIfEnabled() {
         TraktSharedRefreshBootstrap.install(containerIdentifier: Self.cloudContainerIdentifier)
-        guard SyncSetupFeatureFlag().isEnabled else { return }
+        guard SyncSetupFeatureFlag().allowsAutomaticSync else { return }
         // Never start a real CloudKit engine inside a unit-test host. xctest runs
         // without the app's iCloud entitlement, so CloudKit traps (SIGTRAP) the
         // moment the container is touched — which kills the whole test process and
@@ -716,6 +720,10 @@ extension AppState {
         // when unset, and a test host's UserDefaults is always unset, so every test
         // that reached `bootstrap()` hit this.
         guard !Self.isRunningUnitTests else { return }
+        if initialSetupRestoration.needsRestoration {
+            restoreInitialICloudSetup()
+            return
+        }
         guard cloudSync != nil else {
             PlozzLog.sync.error("CloudSync: no writable state dir — sync unavailable")
             return
@@ -745,7 +753,7 @@ extension AppState {
         guard cloudSync != nil else { return }
         withObservationTracking {
             _ = profilesModel.profiles
-            _ = accountsProviders.accounts.count
+            _ = accountsProviders.accounts
         } onChange: { [weak self] in
             Task { @MainActor in
                 self?.scheduleCloudPublish()
@@ -756,7 +764,7 @@ extension AppState {
 
     /// Coalesce a burst of edits into one publish shortly after they settle.
     public func scheduleCloudPublish() {
-        guard SyncSetupFeatureFlag().isEnabled,
+        guard SyncSetupFeatureFlag().allowsAutomaticSync,
               cloudSync != nil else {
             return
         }
@@ -771,6 +779,71 @@ extension AppState {
         }
     }
 
+    public func completeICloudOnboarding(_ enabled: Bool) {
+        guard syncSetup.needsOnboardingChoice else { return }
+        if enabled {
+            setSyncSetupEnabled(true)
+        } else {
+            // Nothing has started yet; declining must not touch the cloud household.
+            syncSetup.setEnabled(false)
+        }
+    }
+
+    private func refreshSyncedTrackerSignIns() async {
+        await traktService.refreshStatus()
+        await simklService.refreshStatus()
+        await wetrakrService.refreshStatus()
+        await anilistService.refreshStatus()
+        await malService.refreshStatus()
+    }
+
+    public func restoreInitialICloudSetup() {
+        initialSetupRestoration.start(operation: { [weak self] in
+            guard let self, SyncSetupFeatureFlag().allowsAutomaticSync,
+                  let config = self.cloudSync else { return false }
+            let report = self.initialSetupRestoration.activityReporter()
+            let fetched = await config.activate(initialSetupOnly: true, onInitialSetupActivity: { activity in
+                await report(activity)
+            })
+            guard !Task.isCancelled, SyncSetupFeatureFlag().allowsAutomaticSync else { return false }
+            report(nil)
+            self.providerCredentialSync.reconcile()
+            await self.providerCredentialSync.finishPendingRestoration()
+            return fetched && !Task.isCancelled && SyncSetupFeatureFlag().allowsAutomaticSync
+                && self.providerCredentialSync.isReadyForManualSetup
+        }, onRestored: { [weak self] in
+            self?.finishInitialICloudSetup()
+        })
+    }
+
+    public func setUpManuallyAfterICloudRestore() {
+        initialSetupRestoration.setUpManually(pause: { [weak self] in
+            guard let self else { return }
+            providerCredentialSync.cancel()
+            cloudPublishTask?.cancel()
+            syncSetupOfferPollTask?.cancel()
+            syncSetupOfferPollTask = nil
+            cloudSyncUI.pendingSyncSetupOffer = nil
+            await cloudSync?.deactivateAndCancel()
+        }, onReady: { [weak self] in self?.continueManualICloudSetupIfReady() })
+    }
+
+    public func continueManualICloudSetupIfReady() {
+        guard isActiveProfileAuthorized, !profilesModel.activeProfile.needsSetup,
+              initialSetupRestoration.isManualSetupPending,
+              initialSetupRestoration.phase == .hidden else { return }
+        guard initialSetupRestoration.resumeAfterManualSetup(for: profilesModel.activeProfileID) else {
+            profileFlow.resumeSetupIfNeeded(manualICloudSetup: true)
+            return
+        }
+        finishInitialICloudSetup()
+    }
+
+    private func finishInitialICloudSetup() {
+        startCloudSyncIfEnabled()
+        Task { await refreshSyncedTrackerSignIns() }
+    }
+
     /// Turn cross-device Sync & Setup on/off. Enabling activates CloudKit sync and
     /// starts observing; disabling stops publishing but NEVER deletes the shared
     /// cloud config (other devices keep syncing).
@@ -779,18 +852,34 @@ extension AppState {
             PlozzLog.sync.info("iCloud Sync cannot be enabled during recovery")
             return
         }
+        if !on, syncSetup.isEnabled {
+            do {
+                try TrackerTokenSyncBridge.preserveLocalSignInsBeforeDisablingSync()
+            } catch {
+                PlozzLog.sync.error("Could not preserve local tracker sign-ins; iCloud Sync remains enabled")
+                return
+            }
+        }
+        let isInitialSetup = on && syncSetup.needsOnboardingChoice
         syncSetup.setEnabled(on)
+        if isInitialSetup { restoreInitialICloudSetup() }
+        if !on { initialSetupRestoration.cancel() }
         let config = cloudSync
         guard let config else { return }
         if on {
-            Task {
-                await config.activate()
+            if !isInitialSetup {
+                Task {
+                    await config.activate()
+                    await refreshSyncedTrackerSignIns()
+                }
             }
             armCloudConfigObservation()
             scheduleCloudPublish()
             heartbeatHouseholdPresence()
             startSyncSetupOfferPolling()
         } else {
+            providerCredentialSync.cancel()
+            cloudPublishTask?.cancel()
             HouseholdDevicesStore().remove(deviceID: accountsProviders.accountStore.deviceID())
             syncSetupOfferPollTask?.cancel()
             syncSetupOfferPollTask = nil
@@ -911,7 +1000,9 @@ extension AppState {
         }
     }
 
-    func applyMediaStateSyncRecords(_ changes: SyncLocalChanges) async {
+    func applyMediaStateSyncRecords(
+        _ changes: SyncLocalChanges, localCaptureDigests: [SyncRecordID: Data]? = nil
+    ) async {
         var parsed: [MediaAliasRemoteChange] = []
         var watchlistChanges:
             [String: [WatchlistMediaStateRecordKey: Data]] = [:]
@@ -946,15 +1037,18 @@ extension AppState {
         var appliedWatchlistCount = 0
         var rejectedWatchlistCount = 0
         var ignoredDeletedProfileCount = 0
+        var preservedLocalCount = 0
         for profileID in watchlistChanges.keys.sorted() {
             guard let records = watchlistChanges[profileID] else { continue }
             do {
                 let report = try universalWatchlist.applyRemoteSyncRecords(
                     profileID: profileID,
-                    changes: records
+                    changes: records,
+                    localCaptureDigests: localCaptureDigests
                 )
                 appliedWatchlistCount += report.appliedCount
                 rejectedWatchlistCount += report.rejectedCount
+                preservedLocalCount += report.preservedLocalCount
                 ignoredDeletedProfileCount +=
                     report.ignoredDeletedProfileRecordNames.count
                 if report.appliedCount > 0 {
@@ -979,6 +1073,10 @@ extension AppState {
             // it: a remote removal that leaves the active count where it was is
             // otherwise invisible to that memo's revision key.
             announceUniversalWatchlistDidChange()
+        }
+        if preservedLocalCount > 0 {
+            PlozzLog.sync.info("Watchlist sync preserved \(preservedLocalCount) newer uncaptured local action(s)")
+            scheduleCloudPublish()
         }
     }
 }

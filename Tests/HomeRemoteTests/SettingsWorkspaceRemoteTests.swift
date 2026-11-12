@@ -3,6 +3,100 @@ import Vision
 
 @MainActor
 final class SettingsWorkspaceRemoteTests: XCTestCase {
+    func testSavedRowSortAndFilterUseNativeMenusAndSurviveRelaunch() throws {
+        #if targetEnvironment(simulator)
+        continueAfterFailure = false
+        let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.FocusHost")
+        app.launchArguments = ["--collection-row-editor-fixture", "--collection-row-existing", "-AppleLanguages", "(en)"]
+        app.launch()
+        defer { app.terminate() }
+        let sort = app.buttons["collection-section-sort"]
+        let filter = app.buttons["collection-section-filter"]
+        XCTAssertTrue(sort.waitForExistence(timeout: 5))
+        try focus(sort, in: app)
+        XCUIRemote.shared.press(.select)
+        try focus(app.cells.containing(.any, identifier: "Release Date").firstMatch, in: app)
+        XCUIRemote.shared.press(.select)
+        let changed = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            (sort.value as? String)?.contains("Release Date") == true
+        }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [changed], timeout: 5), .completed)
+        try focus(filter, in: app)
+        XCUIRemote.shared.press(.select)
+        try focus(app.cells.containing(.any, identifier: "TV Shows").firstMatch, in: app)
+        XCUIRemote.shared.press(.select)
+        let filtered = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            filter.value as? String == "TV Shows"
+        }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [filtered], timeout: 5), .completed)
+        capture("saved-row-query-native-controls", in: app)
+        app.terminate()
+        app.launch()
+        XCTAssertTrue(sort.waitForExistence(timeout: 5))
+        XCTAssertTrue((sort.value as? String)?.contains("Release Date") == true)
+        XCTAssertEqual(filter.value as? String, "TV Shows")
+        XCTAssertFalse(app.buttons["collection-section-save"].exists)
+        XCTAssertFalse(app.staticTexts["Couldn't update this row. Try again."].exists)
+        #else
+        throw XCTSkip("Simulator-only custom-row editing.")
+        #endif
+    }
+
+    func testContentPickerSummaryRemovalAndDonePreserveExistingRow() throws {
+        #if targetEnvironment(simulator)
+        continueAfterFailure = false
+        let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.FocusHost")
+        app.launchArguments = ["--collection-row-editor-fixture", "--collection-row-existing", "-AppleLanguages", "(en)"]
+        app.launch()
+        defer { app.terminate() }
+        func select(_ identifier: String) throws {
+            let button = app.buttons.matching(identifier: identifier)
+                .matching(NSPredicate(format: "enabled == true")).firstMatch
+            XCTAssertTrue(button.waitForExistence(timeout: 5), app.debugDescription)
+            try focus(button, in: app)
+            XCUIRemote.shared.press(.select)
+        }
+        try select("collection-section-source")
+        let watchlist = app.buttons["home-content-choice-watchlist"]
+        XCTAssertTrue(watchlist.waitForExistence(timeout: 5))
+        if !app.buttons["home-content-remove-watchlist"].exists {
+            try select("home-content-choice-watchlist")
+        }
+        let removeOther = app.buttons["home-content-remove-server"].firstMatch
+        if removeOther.exists {
+            try focus(removeOther, in: app)
+            XCUIRemote.shared.press(.select)
+        }
+        if app.buttons["home-content-remove-continueWatching"].exists {
+            try select("home-content-remove-continueWatching")
+        }
+        let watchlistRemoval = app.buttons["home-content-remove-watchlist"]
+        XCTAssertTrue(watchlistRemoval.waitForExistence(timeout: 5))
+        XCTAssertFalse(watchlistRemoval.isEnabled, "An existing row must retain its last source.")
+        XCTAssertFalse(watchlist.isEnabled)
+        try select("home-content-choice-continueWatching")
+        XCTAssertTrue(app.buttons["home-content-remove-continueWatching"].waitForExistence(timeout: 5))
+        XCTAssertTrue(watchlistRemoval.isEnabled)
+        capture("content-selected-summary", in: app)
+        try select("home-content-collections")
+        try select("home-content-done")
+        XCTAssertTrue(watchlist.waitForExistence(timeout: 5), "Nested Done must return to Content, not the editor.")
+        try select("home-content-remove-continueWatching")
+        XCTAssertTrue(app.buttons["home-content-remove-continueWatching"].waitForNonExistence(timeout: 5))
+        XCTAssertFalse(watchlistRemoval.isEnabled)
+        try select("home-content-done")
+        XCTAssertTrue(app.buttons["collection-section-source"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["home-content-choice-watchlist"].exists)
+        XCTAssertFalse(app.buttons["collection-section-save"].exists)
+        try select("collection-section-source")
+        XCTAssertTrue(watchlistRemoval.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["home-content-remove-continueWatching"].exists)
+        capture("content-selection-retained", in: app)
+        #else
+        throw XCTSkip("Simulator-only custom-row editing.")
+        #endif
+    }
+
     func testExistingCollectionPreferencesAutosaveWithoutASaveButton() throws {
         #if targetEnvironment(simulator)
         continueAfterFailure = false

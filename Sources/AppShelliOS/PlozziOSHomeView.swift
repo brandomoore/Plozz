@@ -429,6 +429,21 @@ struct PlozziOSHomeView: View {
                 for: appModel.settings.homeVisibility.visibility
             )
         }
+        .contentRefreshSurface(
+            id: ContentRefreshSurfaceID(kind: .home),
+            isVisible: homeIsFrontmost && homeHasAppeared && appModel.allowsHomeContentLoading
+                && playbackRequest == nil && pendingResumeRequest == nil
+        ) { request in
+            switch request.action {
+            case .reloadHome:
+                await viewModel.loadIfNeeded(
+                    for: appModel.settings.homeVisibility.visibility,
+                    trigger: request.reason.diagnosticTrigger
+                )
+            case .reloadSeriesContext, .refreshWatchStateOnly:
+                break
+            }
+        }
         .task(id: featuredStatusKey) {
             guard featuredStatusKey.isActive else { return }
             await refreshFeaturedStatusLoop()
@@ -691,7 +706,7 @@ struct PlozziOSHomeView: View {
             // `PlozziOSFeaturedRow(items: featuredItems, appModel: appModel)`
             // here — the view itself is left in place.
 
-            ForEach(HomePresentationRow.resolve(
+            ForEach(viewModel.presentationRows(
                 rows: rows, content: content, visibility: visibility.visibility, liveTV: liveTV,
                 presentation: appModel.settings.libraryPresentation.settings
             )) { presentation in
@@ -720,7 +735,7 @@ struct PlozziOSHomeView: View {
                         )
                     case let .library(row):
                         PlozziOSHomeLibraryPresentationRow(
-                            presentation: presentation, row: row,
+                            choice: presentation.choice, row: row,
                             appModel: appModel, viewModel: viewModel,
                             coordinator: featuredTrailers, controller: trailerController,
                             isActive: row.collectionCardStyle == .featured
@@ -2774,7 +2789,7 @@ private struct PlozziOSHomeRowFailure: View {
 
 struct PlozziOSHomeLibraryPresentationRow: View, Equatable {
     @Environment(\.plozziOSIsRunningOnMac) private var isRunningOnMac
-    let presentation: HomePresentationRow
+    let choice: HomeRowChoice
     let row: HomeLibrarySectionGroup.Row
     let appModel: PlozziOSAppModel
     let viewModel: HomeViewModel
@@ -2784,10 +2799,14 @@ struct PlozziOSHomeLibraryPresentationRow: View, Equatable {
     @Binding var rowBrowser: HomeRowBrowseModel?
     @Binding var showingHomeCustomization: Bool
 
+    private var presentation: HomePresentationRow {
+        HomePresentationRow(choice: choice, source: .library(row))
+    }
+
     nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
         // Bindings address the same owning Home state for this model/row identity.
         // Settings read inside body still invalidate through Observation/environment.
-        lhs.presentation == rhs.presentation && lhs.row == rhs.row
+        lhs.choice == rhs.choice && lhs.row == rhs.row
             && lhs.appModel === rhs.appModel && lhs.viewModel === rhs.viewModel
             && lhs.coordinator === rhs.coordinator && lhs.controller === rhs.controller
             && lhs.isActive == rhs.isActive
@@ -3064,91 +3083,69 @@ struct PlozziOSHomeMediaRail: View {
                     .plozzForeground(.secondary)
                     .padding(.horizontal, PlozziOSPageLayout.horizontalInset(for: horizontalSizeClass))
             }
-            ScrollView(.horizontal) {
-                LazyHStack(
-                    alignment: .top,
-                    spacing: PlozziOSMediaRailLayout.stackSpacing(
-                        metrics: metrics,
-                        cardStyle: cardStyle
-                    )
-                ) {
-                    ForEach(MediaRowView.presentationElements(
-                        items: items,
-                        loadingPlaceholderCount: loadingPlaceholderCount
-                    )) { element in
-                        switch element {
-                        case .item(let item):
-                            PlozziOSHomeMediaCard(
-                                item: item,
-                                isLandscape: style == .landscape,
-                                interaction: interaction,
-                                showsResumeChip: showsResumeChip,
-                                showsSeriesArtwork: showsSeriesArtwork,
-                                isPendingRemoval: pendingRemovalIDs.contains(
-                                    item.stablePresentationID
-                                ),
-                                provider: provider(for: item)
-                            )
-                            .frame(
-                                width: metrics.cardSlotWidth(
-                                    for: style,
-                                    cardStyle: cardStyle,
-                                    showsSeriesArtwork: showsSeriesArtwork
-                                )
-                            )
-                            .onAppear {
-                                if prefetchesArtwork {
-                                    prefetchArtwork(around: item)
-                                }
-                            }
-                        case .loadingPlaceholder:
-                            PlozziOSPosterCard(
-                                item: nil,
-                                style: style,
-                                showsSeriesArtwork: showsSeriesArtwork,
-                                reservesSubtitleSpace: style == .poster || showsSeriesArtwork
-                            )
-                            .frame(
-                                width: metrics.cardSlotWidth(
-                                    for: style,
-                                    cardStyle: cardStyle,
-                                    showsSeriesArtwork: showsSeriesArtwork
-                                )
-                            )
-                        }
-                    }
-                    ForEach(liveChannels) { channel in
-                        HomeLiveTVCard(
-                            channel: channel,
+            PlozziOSMediaRailScroll(
+                onLoadMore: onLoadMore,
+                trailingPlaceholderWidth: CGFloat(loadingPlaceholderCount) * (
+                    metrics.cardSlotWidth(
+                        for: style, cardStyle: cardStyle, showsSeriesArtwork: showsSeriesArtwork
+                    ) + PlozziOSMediaRailLayout.stackSpacing(metrics: metrics, cardStyle: cardStyle)
+                ),
+                onNavigationInteraction: onNavigationInteraction
+            ) {
+                ForEach(MediaRowView.presentationElements(
+                    items: items,
+                    loadingPlaceholderCount: loadingPlaceholderCount
+                )) { element in
+                    switch element {
+                    case .item(let item):
+                        PlozziOSHomeMediaCard(
+                            item: item,
+                            isLandscape: style == .landscape,
+                            interaction: interaction,
+                            showsResumeChip: showsResumeChip,
+                            showsSeriesArtwork: showsSeriesArtwork,
+                            isPendingRemoval: pendingRemovalIDs.contains(
+                                item.stablePresentationID
+                            ),
+                            provider: provider(for: item)
+                        )
+                        .frame(
                             width: metrics.cardSlotWidth(
-                                for: .landscape, cardStyle: cardStyle,
+                                for: style,
+                                cardStyle: cardStyle,
+                                showsSeriesArtwork: showsSeriesArtwork
+                            )
+                        )
+                        .onAppear {
+                            if prefetchesArtwork {
+                                prefetchArtwork(around: item)
+                            }
+                        }
+                    case .loadingPlaceholder:
+                        PlozziOSPosterCard(
+                            item: nil,
+                            style: style,
+                            showsSeriesArtwork: showsSeriesArtwork,
+                            reservesSubtitleSpace: style == .poster || showsSeriesArtwork
+                        )
+                        .frame(
+                            width: metrics.cardSlotWidth(
+                                for: style,
+                                cardStyle: cardStyle,
                                 showsSeriesArtwork: showsSeriesArtwork
                             )
                         )
                     }
                 }
-            }
-            .loadingMoreOnScroll(
-                onLoadMore,
-                trailingPlaceholderWidth: CGFloat(loadingPlaceholderCount) * (
-                    metrics.cardSlotWidth(
-                        for: style, cardStyle: cardStyle, showsSeriesArtwork: showsSeriesArtwork
-                    ) + PlozziOSMediaRailLayout.stackSpacing(metrics: metrics, cardStyle: cardStyle)
-                )
-            )
-            .contentMargins(
-                .horizontal,
-                PlozziOSMediaRailLayout.artworkAlignedInset(
-                    PlozziOSPageLayout.horizontalInset(for: horizontalSizeClass, usesDesktopSizing: metrics.usesDesktopSizing),
-                    metrics: metrics, cardStyle: cardStyle),
-                for: .scrollContent
-            )
-            .plozziOSMediaRailClearance()
-            .onScrollGeometryChange(for: CGFloat.self) {
-                $0.contentOffset.x
-            } action: { oldOffset, newOffset in
-                guard oldOffset != newOffset else { return }
-                onNavigationInteraction()
+                ForEach(liveChannels) { channel in
+                    HomeLiveTVCard(
+                        channel: channel,
+                        width: metrics.cardSlotWidth(
+                            for: .landscape, cardStyle: cardStyle,
+                            showsSeriesArtwork: showsSeriesArtwork
+                        )
+                    )
+                }
             }
         }
         .task(id: artworkPrefetchIdentity) {

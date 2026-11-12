@@ -689,11 +689,13 @@ public final class ProfileFlowModel {
     /// Resuming asks the question that was never answered, which is the only
     /// answer that's both safe and correct: importing anyway is the leak the gate
     /// exists to prevent, and clearing it without asking is the same thing.
-    public func resumeSetupIfNeeded() {
+    public func resumeSetupIfNeeded(manualICloudSetup: Bool = false) {
         guard pendingSetupProfile == nil, plexHomeUsers.pendingPlexUserSelection == nil else { return }
         let active = profilesModel.activeProfile
         if active.needsSetup {
             appearanceSetupStore.markPending(profileID: active.id)
+            pendingSetupProfile = active
+        } else if manualICloudSetup {
             pendingSetupProfile = active
         } else if appearanceSetupStore.isPending(profileID: active.id) {
             isPickingAppearanceForNewProfile = true

@@ -518,6 +518,17 @@ final class HomeSettingsReturnTests: XCTestCase {
         XCTAssertEqual(loaded.count, duringLoading ? 2 : 40)
         app.screenshotDirector.tab = "settings"
         try await wait { app.isSettingsPresented && !model.isRefreshing }
+        XCTAssertFalse(app.allowsHomeContentLoading)
+        XCTAssertTrue(app.allowsHomeContentAccess)
+        let snapshot = try XCTUnwrap(model.state.value)
+        XCTAssertEqual(
+            try model.contentSnapshot(for: .continueWatching, visibility: app.settings.homeVisibility.visibility),
+            snapshot.continueWatching
+        )
+        XCTAssertEqual(
+            try model.contentSnapshot(for: .watchlist, visibility: app.settings.homeVisibility.visibility),
+            snapshot.watchlist
+        )
         let before = requests.home.withLock { $0 }
         try await Task.sleep(for: .seconds(2))
         XCTAssertEqual(requests.home.withLock { $0 }, before, "Home must remain paused behind Settings.")

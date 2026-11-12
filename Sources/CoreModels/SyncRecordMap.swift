@@ -408,7 +408,8 @@ public enum CanonicalJSON {
 /// (name + avatar + color + creation order). Every account-linked field
 /// (Plex Home / Seerr / linked account / bindings) is DELIBERATELY excluded — those
 /// depend on a local sign-in and are device-specific, and including them is exactly
-/// what broke the round-trip invariant in V2.
+/// what broke the round-trip invariant in V2. Import provenance is identity-only:
+/// it can match an explicitly requested import but never establishes a binding.
 public struct ProfileSyncDTO: Codable, Hashable, Sendable {
     public var id: String
     public var name: String
@@ -442,6 +443,7 @@ public struct ProfileSyncDTO: Codable, Hashable, Sendable {
     /// Whether the profile still owes its setup pass. Synced so a half-created
     /// profile doesn't start importing on a second device either.
     public var isAwaitingSetup: Bool?
+    public var plexHomeImportIdentity: PlexHomeImportIdentity?
 
     public init(profile p: Profile) {
         self.id = p.id
@@ -461,6 +463,7 @@ public struct ProfileSyncDTO: Codable, Hashable, Sendable {
         self.isKidsProfile = p.isKidsProfile
         self.kidsProfileRevision = p.effectiveKidsProfileRevision
         self.isAwaitingSetup = p.isAwaitingSetup
+        self.plexHomeImportIdentity = p.plexHomeImportIdentity
     }
 
     /// Merge this DTO's cosmetic fields into an existing profile, preserving ALL
@@ -520,6 +523,7 @@ public struct ProfileSyncDTO: Codable, Hashable, Sendable {
             p.isKidsProfile = isKidsProfile
         }
         p.isAwaitingSetup = isAwaitingSetup
+        p.plexHomeImportIdentity = plexHomeImportIdentity
         return p
     }
 
@@ -533,6 +537,7 @@ public struct ProfileSyncDTO: Codable, Hashable, Sendable {
             lock: lock, lockRevision: lockRevision,
             parentalPIN: parentalPIN, parentalPINRevision: parentalPINRevision,
             kidsProfileRevision: kidsProfileRevision,
-            isKidsProfile: isKidsProfile, isAwaitingSetup: isAwaitingSetup)
+            isKidsProfile: isKidsProfile, isAwaitingSetup: isAwaitingSetup,
+            plexHomeImportIdentity: plexHomeImportIdentity)
     }
 }

@@ -37,16 +37,6 @@ func resolveProvider(_ accountID: String?, in accounts: [ResolvedAccount]) throw
     return account.provider
 }
 
-struct MediaSourceUnavailableView: View {
-    var body: some View {
-        ContentUnavailableView(
-            "Source Unavailable",
-            systemImage: "externaldrive.badge.exclamationmark",
-            description: Text("Connect or enable this source in Settings, then try again.")
-        )
-    }
-}
-
 /// Resolves a specific account id to its provider, or `nil` when that account is
 /// no longer signed in. Used by the detail page to fetch a merged title's
 /// *alternate* servers' versions/watch-state for the server picker — a missing

@@ -1,10 +1,11 @@
 import Foundation
 import CoreModels
+import CoreNetworking
 import CoreSecureStore
 import TraktService
 
 /// Mirrors tracker sign-ins between devices through the app's existing
-/// end-to-end encrypted CloudKit channel.
+/// encrypted CloudKit channel.
 ///
 /// Why this exists at all: tokens belong in the Keychain, and they still live
 /// there on every device. But Apple documents that tvOS accepts
@@ -15,10 +16,18 @@ import TraktService
 /// sign-in between iPhone and iPad but can neither reach nor leave the Apple TV,
 /// which is the device most likely to be signed in first.
 ///
-/// The payload rides in `encryptedValues`, so the field is readable only by this
-/// iCloud account — not by Apple, and not by anything inspecting the container.
+/// The payload rides in `encryptedValues`. Exclusive access to CloudKit encryption
+/// keys depends on the user's Advanced Data Protection setting.
 /// The Keychain remains the store of record on each device; this is transport.
 public enum TrackerTokenSyncBridge {
+    static let signedOutValue = Data("Plozz.TrackerSignedOut.v1".utf8)
+    public static func preserveLocalSignInsBeforeDisablingSync() throws {
+        guard SyncSetupFeatureFlag().usesOnboardingConsent else { return }
+        try SyncedTokenRegistry.preserveDeviceSignIns(
+            SyncedTokenRegistry.shared.knownAccounts().filter { !TraktSharedRefreshBootstrap.manages($0) }
+        )
+    }
+
     public static func erasureStores(profileNamespaces: [String?]) -> [any TraktTokenStoring] {
         // Register inactive profiles as well as the currently constructed services.
         var stores: [any TraktTokenStoring] = Set(profileNamespaces + [nil]).flatMap { namespace in
@@ -80,8 +89,17 @@ public enum TrackerTokenSyncBridge {
         for account in SyncedTokenRegistry.shared.knownAccounts() {
             guard !TraktSharedRefreshBootstrap.manages(account) else { continue }
             let name = recordName(for: account)
+            let local = KeychainStore(
+                service: account.service, userIndependent: false,
+                fallbackToPerUser: false, synchronizable: false)
+            if local.string(for: SyncedTokenBox<String>.localAuthenticationKey(account.account)) != nil,
+               let raw = local.string(for: account.account) {
+                records[name] = Data(raw.utf8)
+                continue
+            }
             if SyncedTokenRegistry.shared.isSignedOut(account) {
-                // Omitted below, which is how the ledger expresses a deletion.
+                // Explicit intent survives even when this is the last credential.
+                records[name] = signedOutValue
                 signedOut.insert(name)
                 continue
             }
@@ -102,12 +120,14 @@ public enum TrackerTokenSyncBridge {
             // waiting for a remote edit it may never get.
             records[name] = value
             let store = SyncedTokenRegistry.store(for: account)
-            if store.string(for: account.account) == nil,
+            if value != signedOutValue, store.string(for: account.account) == nil,
                let raw = String(data: value, encoding: .utf8) {
-                try? store.setString(raw, for: account.account)
-                FanoutDiagnostics.emit(
-                    "keychain.cloudHeal account=\(account.account)"
-                )
+                do {
+                    try store.setString(raw, for: account.account)
+                    FanoutDiagnostics.emit("keychain.cloudHeal account=\(account.account)")
+                } catch {
+                    PlozzLog.sync.error("Tracker credential recovery could not save to Keychain")
+                }
             }
         }
         return records
@@ -131,14 +151,22 @@ public enum TrackerTokenSyncBridge {
             }
             guard let account = account(fromRecordName: name) else { continue }
             let store = SyncedTokenRegistry.store(for: account)
-            guard let value else {
+            guard let value, value != signedOutValue else {
                 // Another device signed out. Match it, and remember that this is
                 // a sign-out rather than a gap, so the next capture doesn't
                 // publish the token straight back.
                 SyncedTokenRegistry.shared.markSignedOut(account)
-                if store.string(for: account.account) != nil {
-                    try? store.removeValue(for: account.account)
+                do {
+                    try store.removeValue(for: account.account)
+                    let local = KeychainStore(
+                        service: account.service, userIndependent: false,
+                        fallbackToPerUser: false, synchronizable: false
+                    )
+                    try local.removeValue(for: SyncedTokenBox<String>.localAuthenticationKey(account.account))
+                    try local.removeValue(for: account.account)
                     touched.append(account)
+                } catch {
+                    PlozzLog.sync.error("Remote tracker sign-out could not remove a local credential")
                 }
                 continue
             }
@@ -146,7 +174,11 @@ public enum TrackerTokenSyncBridge {
             // Don't rewrite an identical token; that would churn the Keychain and
             // re-trigger the change handler on every fetch.
             guard store.string(for: account.account) != raw else { continue }
-            try? store.setString(raw, for: account.account)
+            do { try store.setString(raw, for: account.account) }
+            catch {
+                PlozzLog.sync.error("Remote tracker sign-in could not be saved to Keychain")
+                continue
+            }
             SyncedTokenRegistry.shared.clearSignedOut(account)
             SyncedTokenRegistry.shared.register(
                 service: account.service,

@@ -2,6 +2,7 @@ import AppShelliOS
 import AppRuntime
 import CoreModels
 import CoreUI
+import FeatureSettings
 import SwiftUI
 import UIKit
 
@@ -36,10 +37,12 @@ private final class PlozziOSAppDelegate: NSObject, UIApplicationDelegate {
 
 @main
 struct PlozziOSApp: App {
+    @State private var launchPrepared: Bool
     @UIApplicationDelegateAdaptor(PlozziOSAppDelegate.self) private var appDelegate
 
     init() {
         _ = AppInstallation.current
+        _launchPrepared = State(initialValue: SyncSetupLaunchPreparation.prepare())
         ProcessSignalPolicy.ignoreBrokenPipe()
         URLCache.shared = URLCache(
             memoryCapacity: 64 * 1024 * 1024,
@@ -50,8 +53,16 @@ struct PlozziOSApp: App {
 
     var body: some Scene {
         WindowGroup {
-            PlozziOSRootView()
-                .diagnosticRecordingStatus()
+            Group {
+                if launchPrepared {
+                    PlozziOSRootView()
+                } else {
+                    ICloudSetupUnavailableView {
+                        launchPrepared = SyncSetupLaunchPreparation.prepare()
+                    }
+                }
+            }
+            .diagnosticRecordingStatus()
         }
     }
 }

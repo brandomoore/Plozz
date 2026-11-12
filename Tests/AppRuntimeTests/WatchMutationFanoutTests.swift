@@ -17,7 +17,7 @@ import CoreModels
 /// instead. So this parameter matters for movies and other non-episode kinds.
 /// These tests pin both halves of that contract.
 final class WatchMutationFanoutTests: XCTestCase {
-    func testUnwatchedResetRetainsObservedServerTimeWithoutChangingTheActionClock() throws {
+    func testResetActionsRetainObservedServerTimeWithoutChangingTheActionClock() throws {
         let actionTime = Date(timeIntervalSince1970: 1_000)
         let serverTime = actionTime.addingTimeInterval(1)
         let item = MediaItem(
@@ -33,7 +33,16 @@ final class WatchMutationFanoutTests: XCTestCase {
         let watched = try XCTUnwrap(WatchMutationFactory.playedToggle(
             item: item, played: true, primaryAccountID: "origin", crossServerSync: false, capturedAt: actionTime
         ))
-        XCTAssertTrue(watched.observedLastPlayedAt.isEmpty)
+        XCTAssertEqual(watched.observedLastPlayedAt, ["origin:movie": serverTime])
+        let removal = try XCTUnwrap(WatchMutationFactory.removeFromContinueWatching(
+            item: item, primaryAccountID: "origin", crossServerSync: false, capturedAt: actionTime
+        ))
+        XCTAssertEqual(removal.capturedAt, actionTime)
+        XCTAssertEqual(removal.observedLastPlayedAt, ["origin:movie": serverTime])
+        for action in [reset, watched, removal] {
+            let restored = try JSONDecoder().decode(WatchMutation.self, from: JSONEncoder().encode(action))
+            XCTAssertTrue(restored.isExplicitReset)
+        }
     }
 
     @MainActor

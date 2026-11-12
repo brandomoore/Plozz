@@ -32,6 +32,11 @@ configuration and credentials out of committed guidance.
   reduced-effects fallbacks. Finalize UI behavior and source copy with the
   maintainer before starting translation work.
 
+For state ownership, cancellation, lifecycle adapters, and deterministic tests,
+follow [state management](docs/state-management.md). Language, view, fixture,
+and comment conventions live in the [Swift/SwiftUI guidelines](docs/swiftui-guidelines.md);
+do not duplicate those rules here.
+
 ## Build and verify
 
 Use `tools/generate-project.sh`, not bare XcodeGen. `project.yml` and

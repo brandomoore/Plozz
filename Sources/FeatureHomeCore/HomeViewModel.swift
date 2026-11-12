@@ -162,7 +162,7 @@ private final class HeroExposureState {
 /// network result is held unfiltered and toggles take effect without a reload.
 @MainActor
 @Observable
-public final class HomeViewModel {
+public final class HomeViewModel: HomeContentSnapshotProviding {
     public struct Content: Equatable, Sendable, Codable {
         public var continueWatching: [MediaItem]
         public var latest: [MediaItem]
@@ -253,6 +253,8 @@ public final class HomeViewModel {
                 collectionRows: collectionRows.map { row in
                     var row = row
                     row.items = Array(row.items.prefix(perRow))
+                    row.sourceItems = row.definition.query.isDefault
+                        ? row.sourceItems.mapValues { Array($0.prefix(perRow)) } : [:]
                     return row
                 },
                 recentlyAddedCandidates: recentlyAddedCandidates.map {
@@ -300,11 +302,24 @@ public final class HomeViewModel {
                 collectionRows: collectionRows.map { row in
                     var row = row
                     row.items = row.items.map { $0.sanitizingArtworkCredentials() }
+                    row.sourceItems = row.sourceItems.mapValues { $0.map { $0.sanitizingArtworkCredentials() } }
                     return row
                 },
                 recentlyAddedCandidates: recentlyAddedCandidates?.map { $0.sanitizingArtworkCredentials() }
             )
         }
+    }
+
+    public func presentationRows(
+        rows: [HomeRow], content: Content, visibility: HomeLibraryVisibility,
+        liveTV: HomeLiveTVSnapshot = .empty, presentation: LibraryPresentationSettings = .default,
+        showsEmptySectionMessages: Bool = true
+    ) -> [HomePresentationRow] {
+        HomePresentationRow.resolve(
+            rows: rows, content: content, visibility: visibility, liveTV: liveTV, presentation: presentation,
+            showsEmptySectionMessages: showsEmptySectionMessages,
+            serverInfo: accounts.sourceServerInfo(), identitySources: identitySources
+        )
     }
 
     public private(set) var state: LoadState<Content> = .idle {
@@ -516,6 +531,7 @@ public final class HomeViewModel {
     @ObservationIgnored private var isInvalidated = false
     @ObservationIgnored private var needsReenrichmentAfterPause = false
     private let isLoadingAllowed: @MainActor () -> Bool
+    private let isSnapshotAccessAllowed: @MainActor () -> Bool
     private var canLoadContent: Bool { !isInvalidated && isLoadingAllowed() }
 
     public init(
@@ -528,6 +544,7 @@ public final class HomeViewModel {
         currentVisibility: @escaping () -> HomeLibraryVisibility = { .default },
         prepareVisibility: @escaping @MainActor () async -> Void = {},
         isLoadingAllowed: @escaping @MainActor () -> Bool = { true },
+        isSnapshotAccessAllowed: (@MainActor () -> Bool)? = nil,
         sectionDiagnostics: HomeSectionDiagnosticsModel? = nil,
         pendingWatchMutations: @escaping @Sendable () async -> [WatchMutation] = { [] },
         recentlyAppliedRecency: @escaping @Sendable () async -> [String: AppliedResumeRecord] = { [:] },
@@ -548,6 +565,7 @@ public final class HomeViewModel {
         self.currentVisibility = currentVisibility
         self.prepareVisibility = prepareVisibility
         self.isLoadingAllowed = isLoadingAllowed
+        self.isSnapshotAccessAllowed = isSnapshotAccessAllowed ?? isLoadingAllowed
         self.sectionDiagnostics = sectionDiagnostics
         self.pendingWatchMutations = pendingWatchMutations
         self.recentlyAppliedRecency = recentlyAppliedRecency
@@ -648,6 +666,7 @@ public final class HomeViewModel {
                 if let mutation = MediaItemMutation.from(note) {
                     self.applyWatchedState(mutation)
                 } else {
+                    self.recommendationContext.refresh()
                     self.schedulePlaybackReload()
                 }
             }
@@ -657,12 +676,14 @@ public final class HomeViewModel {
         ) { [weak self] note in
             MainActor.assumeIsolated {
                 guard let change = note.object as? WatchlistProviderChange else { return }
+                self?.recommendationContext.refresh()
                 self?.scheduleCollectionRefresh(after: change)
             }
         }
     }
 
     deinit {
+        recommendationContext.invalidate()
         if let watchMutationObserver { NotificationCenter.default.removeObserver(watchMutationObserver) }
         if let watchlistProviderObserver { NotificationCenter.default.removeObserver(watchlistProviderObserver) }
         collectionRefreshTask?.cancel()
@@ -712,6 +733,7 @@ public final class HomeViewModel {
     /// not wait for deinit while an outstanding load still retains the model.
     public func invalidate() {
         isInvalidated = true
+        recommendationContext.invalidate()
         cancelPendingLoad()
         topShelfPublishTask?.cancel()
         durableWatchlistRefreshTask?.cancel()
@@ -723,9 +745,11 @@ public final class HomeViewModel {
     /// detail), so binding `load()` directly to the task would reload on every
     /// back-navigation — flashing the skeleton and resetting focus to the top.
     /// This guard makes the reappearance a no-op while still reacting to a genuine
-    /// This guard makes the reappearance a no-op while still reacting to a genuine
     /// change: hiding/showing/disabling a library, or flipping the merge switch.
-    public func loadIfNeeded(for visibility: HomeLibraryVisibility) async {
+    public func loadIfNeeded(
+        for visibility: HomeLibraryVisibility,
+        trigger: String = "appear"
+    ) async {
         guard canLoadContent else { return }
         if isLoading {
             if !Task.isCancelled { retryCancelledPreparation = true }
@@ -760,9 +784,9 @@ public final class HomeViewModel {
                 // reloading there would reshuffle the row under the viewer for
                 // nothing.
                 let age = lastLoadedAt.map { Date().timeIntervalSince($0) }
-                let isStale = (age ?? .infinity) > policy.refreshAfter
+                let isStale = (age ?? .infinity) >= policy.refreshAfter
                 ContinueWatchingDiagnostics.emit(ContinueWatchingDiagnostics.refreshLine(
-                    trigger: "appear",
+                    trigger: trigger,
                     willReload: isStale,
                     reason: isStale
                         ? "stale age=\(age.map { String(format: "%.0fs", $0) } ?? "never") > \(Int(policy.refreshAfter))s"
@@ -783,7 +807,7 @@ public final class HomeViewModel {
             break
         }
         ContinueWatchingDiagnostics.emit(ContinueWatchingDiagnostics.refreshLine(
-            trigger: "appear",
+            trigger: trigger,
             willReload: true,
             reason: "visibility-changed-or-not-loaded"
         ))
@@ -812,6 +836,7 @@ public final class HomeViewModel {
             wantsReloadAfterCurrent = true
             return
         }
+        recommendationContext.refresh()
         let diagnostic = PerformanceDiagnostics.shared.begin(
             .homeLoad, metrics: .init(accounts: accounts.count)
         )
@@ -942,13 +967,16 @@ public final class HomeViewModel {
         // fetched Continue Watching row so a reload doesn't revert it to stale
         // pre-play order while the server catches up (r8-cw-outbox-patch).
         var content: Content
+        let recommendationContext = recommendationContext
         if !visibility.usesIndividualHomeRows {
             let aggregationTask = Task.detached(priority: .userInitiated) {
-                await aggregator.content(
-                    from: accounts, policy: policy, visibility: visibility,
-                    identitySources: identitySources, onContinueWatching: receiveResume,
-                    onProgress: receiveProgress
-                )
+                await HomeRecommendationScope.$current.withValue(recommendationContext) {
+                    await aggregator.content(
+                        from: accounts, policy: policy, visibility: visibility,
+                        identitySources: identitySources, onContinueWatching: receiveResume,
+                        onProgress: receiveProgress
+                    )
+                }
             }
             self.aggregationTask = aggregationTask
             let merged = await aggregationTask.value
@@ -1002,11 +1030,13 @@ public final class HomeViewModel {
             // full library inventory feeds the Libraries tiles, and each library the
             // user opted rows into contributes a block below.
             let unmergedTask = Task.detached(priority: .userInitiated) {
-                await aggregator.unmergedContent(
-                    from: accounts, policy: policy, visibility: visibility,
-                    identitySources: identitySources, onContinueWatching: receiveResume,
-                    onProgress: receiveProgress
-                )
+                await HomeRecommendationScope.$current.withValue(recommendationContext) {
+                    await aggregator.unmergedContent(
+                        from: accounts, policy: policy, visibility: visibility,
+                        identitySources: identitySources, onContinueWatching: receiveResume,
+                        onProgress: receiveProgress
+                    )
+                }
             }
             self.unmergedTask = unmergedTask
             let unmerged = await unmergedTask.value
@@ -1390,6 +1420,7 @@ public final class HomeViewModel {
     /// flip its badge without a refetch. A watchlist add/remove also inserts/removes
     /// the title from the Watchlist row.
     public func applyWatchedState(_ mutation: MediaItemMutation) {
+        recommendationContext.refresh()
         if mutation.refreshContinueWatching || mutation.refreshEpisodeCounts {
             if accounts.contains(where: { account in
                 mutation.itemIDs.contains {
@@ -1616,11 +1647,13 @@ public final class HomeViewModel {
         _ rows: [HomeCollectionRow], previous: [HomeCollectionRow]
     ) -> [HomeCollectionRow] {
         rows.map { row in
-            guard row.isLoading || row.failure != nil,
+            guard row.items.isEmpty, row.isLoading || row.failure != nil,
                   let cached = previous.first(where: { $0.definition == row.definition }) else { return row }
             var row = row
             row.items = cached.items
             row.hasMore = cached.hasMore
+            row.sourceItems = cached.sourceItems
+            row.continuingSources = cached.continuingSources
             return row
         }
     }
@@ -1650,6 +1683,14 @@ public final class HomeViewModel {
         rows.map { row in
             var row = row
             row.items = row.items.map { apply(mutation, to: $0) }
+            row.sourceItems = row.sourceItems.mapValues { $0.map { apply(mutation, to: $0) } }
+            if !row.definition.query.isDefault {
+                row.items = row.definition.query.applying(to: row.items, watchlistDates: row.definition.usesWatchlistDates)
+                row = row.resolving(
+                    home: [:], visibility: currentVisibility(), force: true,
+                    serverInfo: accounts.sourceServerInfo(), identitySources: identitySources
+                )
+            }
             return row
         }
     }
@@ -2021,6 +2062,13 @@ public final class HomeViewModel {
         return scoped
     }
 
+    @ObservationIgnored private let recommendationContext = HomeRecommendationScope()
+
+    public var recommendationScope: HomeRecommendationScope? {
+        guard !isInvalidated, isSnapshotAccessAllowed() else { return nil }
+        return recommendationContext
+    }
+
     public func browseRow(_ row: HomePresentationRow) -> HomeRowBrowseModel {
         let visibility = currentVisibility()
         let snapshot: (@MainActor () -> [MediaItem]?)?
@@ -2036,9 +2084,29 @@ public final class HomeViewModel {
         if case let .loaded(content) = state { libraries = content.libraries } else { libraries = [] }
         return HomeRowBrowseFactory.make(
             row, accounts: accounts, visibility: visibility, libraries: libraries,
-            identitySources: identitySources, snapshotProvider: snapshot
+            identitySources: identitySources, snapshotProvider: snapshot,
+            recommendationScope: recommendationScope,
+            homeSnapshot: { [weak self] kind in
+                guard let self else { throw AppError.notFound }
+                return try await self.contentSnapshot(for: kind, visibility: visibility)
+            }
         ) { [weak self] in
             self?.currentVisibility() == visibility
+        }
+    }
+
+    public func contentSnapshot(
+        for kind: HomeGlobalRow, visibility: HomeLibraryVisibility
+    ) throws -> [MediaItem] {
+        guard !isInvalidated, isSnapshotAccessAllowed(), currentVisibility() == visibility,
+              let content = state.value else { throw AppError.notFound }
+        switch kind {
+        case .continueWatching: return content.continueWatching
+        case .watchlist: return content.watchlist
+        case .recentlyAdded:
+            return HomeRecentlyAddedPolicy.items(
+                content.recentlyAddedCandidates ?? content.latest, hideWatched: visibility.hideWatchedRecentlyAdded, limit: .max
+            )
         }
     }
 
@@ -2329,10 +2397,12 @@ public final class HomeViewModel {
         guard change.profileNamespace == profileNamespace else { return }
         let visibility = currentVisibility()
         let sections = visibility.collectionSections.filter {
-            $0.source.accountID == change.accountID && $0.source.serverUserID == change.serverUserID
+            $0.collectionSources.contains {
+                $0.accountID == change.accountID && $0.serverUserID == change.serverUserID
+                    && $0.libraryKey.map(visibility.isEnabled) != false
+                    && accounts.contains(where: $0.matches)
+            }
                 && visibility.isHomeRowVisible(HomeRowChoice(collectionSection: $0))
-                && $0.source.libraryKey.map(visibility.isEnabled) != false
-                && accounts.contains(where: $0.source.matches)
         }
         guard !sections.isEmpty else { return }
         collectionRefreshQueue.enqueue(sections, now: .now)
@@ -2347,9 +2417,11 @@ public final class HomeViewModel {
     }
 
     private struct CollectionRefreshWork {
-        let provider: any MediaProvider
+        let account: ResolvedAccount
+        var provider: any MediaProvider { account.provider }
         let visibility: HomeLibraryVisibility
         let loadGeneration: UInt64
+        let completeMembership: Bool
     }
 
     private func collectionRefreshWork(for request: HomeCollectionRefreshQueue.Request) -> CollectionRefreshWork? {
@@ -2357,7 +2429,7 @@ public final class HomeViewModel {
         let visibility = currentVisibility()
         guard !isLoading, state.value != nil,
               visibility.collectionSections.contains(where: {
-                  $0.source.id == request.source.id
+                  $0.collectionSources.contains(where: { $0.id == request.source.id })
                       && visibility.isHomeRowVisible(HomeRowChoice(collectionSection: $0))
               }),
               request.source.libraryKey.map(visibility.isEnabled) != false,
@@ -2366,7 +2438,11 @@ public final class HomeViewModel {
             return nil
         }
         return CollectionRefreshWork(
-            provider: account.provider, visibility: visibility, loadGeneration: loadGeneration
+            account: account, visibility: visibility, loadGeneration: loadGeneration,
+            completeMembership: visibility.collectionSections.contains {
+                !$0.query.isDefault && $0.collectionSources.contains { $0.id == request.source.id }
+                    && visibility.isHomeRowVisible(HomeRowChoice(collectionSection: $0))
+            }
         )
     }
 
@@ -2408,14 +2484,28 @@ public final class HomeViewModel {
                     guard let work = self?.collectionRefreshWork(for: request) else { continue }
                     let result: Result<HomeRowPreview, AppError>
                     do {
-                        let page = try await CollectionPreviewLoader.load(
-                            selection: request.source, limit: HomeCollectionRefreshQueue.previewLimit + 1,
-                            provider: work.provider, visibility: work.visibility
-                        )
-                        result = .success(HomeRowPreview(
-                            page.items.filter { $0.kind == .movie || $0.kind == .series },
-                            limit: HomeCollectionRefreshQueue.previewLimit
-                        ))
+                        if work.completeMembership {
+                            let pager = HomeContentPager(sources: [.init(collection: request.source)]) { source, start, limit in
+                                try await HomeContentPageLoader.load(
+                                    source, start: start, limit: limit,
+                                    accounts: [work.account], visibility: work.visibility,
+                                    homeSnapshot: { _ in throw AppError.notFound }
+                                )
+                            }
+                            let snapshot = try await pager.loadAll()
+                            result = .success(HomeRowPreview(
+                                snapshot.items, limit: HomeCollectionRefreshQueue.previewLimit, retainsCandidates: true
+                            ))
+                        } else {
+                            let page = try await CollectionPreviewLoader.load(
+                                selection: request.source, limit: HomeCollectionRefreshQueue.previewLimit + 1,
+                                provider: work.provider, visibility: work.visibility
+                            )
+                            result = .success(HomeRowPreview(
+                                page.items.filter { $0.kind == .movie || $0.kind == .series },
+                                limit: HomeCollectionRefreshQueue.previewLimit
+                            ))
+                        }
                     } catch {
                         if Task.isCancelled || error is CancellationError || error as? AppError == .cancelled { return }
                         PlozzLog.app.error("Watchlist-triggered collection refresh failed")
@@ -2448,14 +2538,31 @@ public final class HomeViewModel {
         }
         collectionRefreshQueue.finish(request, now: .now)
         var changed = false
-        for index in content.collectionRows.indices where content.collectionRows[index].definition.source.id == request.source.id {
+        for index in content.collectionRows.indices where content.collectionRows[index].definition.collectionSources.contains(where: {
+            $0.id == request.source.id
+        }) {
             let previous = content.collectionRows[index]
+            guard let source = previous.definition.sources.first(where: { $0.collection?.id == request.source.id }) else {
+                continue
+            }
             switch result {
             case let .success(preview):
-                content.collectionRows[index].items = preview.items
-                content.collectionRows[index].hasMore = preview.hasMore
-                content.collectionRows[index].failure = nil
+                content.collectionRows[index].sourceItems[source] = preview.items
+                if preview.hasMore && !work.completeMembership { content.collectionRows[index].continuingSources.insert(source.id) }
+                else { content.collectionRows[index].continuingSources.remove(source.id) }
+                content.collectionRows[index].sourceFailures[source.id] = nil
+                content.collectionRows[index] = content.collectionRows[index].resolving(
+                    home: [.continueWatching: content.continueWatching, .watchlist: content.watchlist,
+                           .recentlyAdded: HomeRecentlyAddedPolicy.items(
+                            content.recentlyAddedCandidates ?? content.latest,
+                            hideWatched: work.visibility.hideWatchedRecentlyAdded, limit: .max
+                           )], visibility: work.visibility, force: true,
+                    serverInfo: accounts.sourceServerInfo(), identitySources: identitySources
+                )
+                content.collectionRows[index].failure = content.collectionRows[index].definition.sources
+                    .compactMap { content.collectionRows[index].sourceFailures[$0.id] }.first
             case let .failure(error):
+                content.collectionRows[index].sourceFailures[source.id] = error
                 content.collectionRows[index].failure = error
             }
             content.collectionRows[index].isLoading = false
@@ -2543,7 +2650,7 @@ public final class HomeViewModel {
 
         func targetKey(_ accountID: String, _ itemID: String) -> String { accountID + "\u{1}" + itemID }
         let pendingByTarget: [String: [WatchMutation]] = pending.reduce(into: [:]) { acc, m in
-            for t in m.optimisticTargets { acc[targetKey(t.accountID, t.itemID), default: []].append(m) }
+            for t in m.effectiveOptimisticTargets { acc[targetKey(t.accountID, t.itemID), default: []].append(m) }
         }
 
         func newestMatch(for item: MediaItem) -> WatchMutation? {
@@ -2579,7 +2686,7 @@ public final class HomeViewModel {
                 : clampInflatedRecency(rawItem, appliedRecency: appliedRecency, now: now, clampFreshness: clampFreshness)
             guard let m = newestMatch(for: item) else { overlaid.append(item); continue }
             // Ignore a pending write the server has already superseded with a newer play.
-            let observedReset = m.played == false && m.clearResume
+            let observedReset = m.clearResume
                 && hasObservedPlayback(item, in: m)
             guard m.capturedAt >= (item.lastPlayedAt ?? .distantPast) || observedReset else {
                 overlaid.append(item)

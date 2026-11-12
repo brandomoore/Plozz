@@ -106,6 +106,74 @@ final class WatchlistModelTests: XCTestCase {
         XCTAssertFalse(try localPresentationRow(model).locallyValidatedPlayableSource)
     }
 
+    func testFileBackedShareWatchlistSurvivesColdModelsWithoutCatalogOrNativeDestinations() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("PlozzShareWatchlistRestart-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let aliasDirectory = root.appendingPathComponent("Aliases", isDirectory: true)
+        let watchlistDirectory = root.appendingPathComponent("Watchlist", isDirectory: true)
+        let items = [
+            MediaItem(
+                id: "series/Custom Series", title: "Custom Series", kind: .series,
+                sourceAccountID: "share:webdav.example:443/media#viewer"
+            ),
+            MediaItem(
+                id: "movies/Custom Film.mkv", title: "Custom Film", kind: .movie,
+                sourceAccountID: "share:webdav.example:443/media#viewer"
+            )
+        ]
+        let originalAliases = MediaAliasLedgerModel(storageDirectory: aliasDirectory)
+        let original = WatchlistModel(storageDirectory: watchlistDirectory)
+        try await originalAliases.activate(profileID: "p")
+        try original.activate(profileID: "p")
+        var savedIDs: [MediaAliasID] = []
+        for item in items {
+            let evidence = try XCTUnwrap(MediaAliasEvidence(item: item))
+            let aliasID = try await originalAliases.resolveOrCreate(
+                profileID: "p", evidence: evidence
+            )
+            savedIDs.append(aliasID)
+            try original.add(
+                profileID: "p", aliasID: aliasID, kind: item.kind,
+                presentation: evidence.presentation
+            )
+            original.retainLocalPresentation(item, aliasID: aliasID, scope: "warm")
+        }
+
+        let restoredAliases = MediaAliasLedgerModel(storageDirectory: aliasDirectory)
+        let restored = WatchlistModel(storageDirectory: watchlistDirectory)
+        try await restoredAliases.activate(profileID: "p")
+        try restored.activate(profileID: "p")
+        XCTAssertEqual(try restored.retireNativeImports(profileID: "p"), 0)
+        let aliases = restoredAliases.activeSnapshot
+        let union = restored.union(
+            profileID: "p", nativeView: .empty,
+            aliasSnapshot: aliases, enabledDestinationIDs: []
+        )
+        XCTAssertEqual(union.activeAliasIDs, Set(savedIDs))
+        let coldRows = try restored.presentationSnapshot(
+            profileID: "p", union: union, aliasSnapshot: aliases,
+            currentItemsByAliasID: [:], localPresentationScope: "cold"
+        )
+        XCTAssertEqual(Set(coldRows.map(\.item.title)), Set(items.map(\.title)))
+        XCTAssertTrue(coldRows.allSatisfy { !$0.item.locallyValidatedPlayableSource })
+        XCTAssertTrue(coldRows.allSatisfy { $0.item.sourceAccountID == nil })
+
+        let candidates = WatchlistPresentationResolver.indexCurrentItems(items, in: aliases)
+        XCTAssertEqual(Set(candidates.keys), Set(savedIDs))
+        let recoveredRows = try restored.presentationSnapshot(
+            profileID: "p", union: union, aliasSnapshot: aliases,
+            currentItemsByAliasID: candidates, localPresentationScope: "cold"
+        )
+        XCTAssertEqual(Set(recoveredRows.map(\.item.id)), Set(items.map(\.id)))
+        XCTAssertTrue(recoveredRows.allSatisfy { $0.item.locallyValidatedPlayableSource })
+
+        try restored.activate(profileID: "other")
+        XCTAssertTrue(restored.activeSnapshot.orderedEntries.isEmpty)
+        try restored.activate(profileID: "p")
+        XCTAssertEqual(restored.activeSnapshot.activeAliasIDs, Set(savedIDs))
+    }
+
     func testRetainedPresentationFollowsAliasRedirectAndFreshCandidate() throws {
         let model = WatchlistModel()
         let original = MediaAliasID()
