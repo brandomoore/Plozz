@@ -85,13 +85,16 @@ final class VideoZoomPresentationTests: XCTestCase {
         try await Task.sleep(for: .milliseconds(650))
         XCTAssertEqual(try edgeIntensity(), initial, accuracy: 0.001,
                        "A newly audible picture must wait before showing its glow.")
-        try await Task.sleep(for: .milliseconds(750))
+        try await Task.sleep(for: .milliseconds(1250))
         let entering = try edgeIntensity()
-        try await Task.sleep(for: .milliseconds(1300))
+        try await Task.sleep(for: .milliseconds(800))
+        let midway = try edgeIntensity()
+        try await Task.sleep(for: .milliseconds(1700))
         let active = try edgeIntensity()
         if !reduceMotion {
             XCTAssertGreaterThan(entering, initial)
-            XCTAssertGreaterThan(active, entering, "Fade-in must still be progressing after the dwell delay.")
+            XCTAssertGreaterThan(midway, entering)
+            XCTAssertGreaterThan(active, midway, "The three-second fade-in must continue beyond its old 1.5-second duration.")
         } else {
             XCTAssertEqual(entering, active, accuracy: 0.001)
         }
@@ -127,9 +130,9 @@ final class VideoZoomPresentationTests: XCTestCase {
         try await Task.sleep(for: .milliseconds(650))
         XCTAssertEqual(try edgeIntensity(), inactive, accuracy: 0.001,
                        "Returning to the picture must start a fresh dwell delay.")
-        try await Task.sleep(for: .milliseconds(750))
+        try await Task.sleep(for: .milliseconds(1250))
         let appearing = try edgeIntensity()
-        try await Task.sleep(for: .milliseconds(1300))
+        try await Task.sleep(for: .milliseconds(2500))
         let restored = try edgeIntensity()
         XCTAssertGreaterThan(restored - inactive, 0.005)
         if !reduceMotion {

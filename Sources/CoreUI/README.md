@@ -63,6 +63,10 @@ ordinary layout changes retain their own animation. Reduce Motion skips these
 surface animations.
 Only the picture is rounded and clipped. Callers must not clip the outer card
 or its clearance, because the native shadow needs to feather beyond it.
+An opaque black backing extends 40 points beyond the video inside the native
+floating clip, matching Home's scrim-outset treatment. This covers differences
+between the video mask and native corners without adding an outer black border
+or clipping the audio glow.
 Multiview scopes `VideoCardFocusMemory` to its workspace. The toolbar's
 `VideoCardFocusReturnGuide` bridges the empty space above the controls to the
 last actual native picture owner, before another picture can receive focus.

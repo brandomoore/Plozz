@@ -40,7 +40,7 @@ struct VideoAudioGlow: View {
             .stroke(LinearGradient(colors: state.colors, startPoint: .leading, endPoint: .trailing), lineWidth: 96)
             .blur(radius: 96)
             .opacity(isPresented ? 0.36 : 0)
-            .animation(reduceMotion ? nil : .easeInOut(duration: 1.5), value: isPresented)
+            .animation(reduceMotion ? nil : .easeInOut(duration: isPresented ? 3 : 1.5), value: isPresented)
             .animation(reduceMotion ? nil : .easeInOut(duration: 1.5), value: state.colors)
             .task(id: isActive) {
                 if isActive {

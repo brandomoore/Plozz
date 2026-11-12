@@ -310,9 +310,10 @@ It reuses the same 2 Hz, 24-by-14-pixel color sampler
 and native/software frame access. Neutral footage uses a faint neutral glow.
 The indicator waits for one second of continuous activation before fading in.
 Moving away cancels that pending activation and starts fading the old glow out
-immediately. Both directions and palette changes fade over 1.5 seconds, retargeting
-from their displayed state without resizing or replacing the renderer. Audio
-changes immediately; only the glow waits. Moving focus to the toolbar leaves it
+immediately. Fade-in takes three seconds; fade-out and palette changes retain
+their 1.5-second duration, retargeting from their displayed state without resizing
+or replacing the renderer. Audio changes immediately; only the glow waits.
+Moving focus to the toolbar leaves it
 on the audible video.
 Muted, unavailable, hidden, fullscreen, external, unauthorized, and background pictures stop sampling;
 Reduce Transparency removes the indicator and Reduce Motion disables its fades.

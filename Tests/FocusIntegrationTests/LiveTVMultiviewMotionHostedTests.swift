@@ -1016,6 +1016,69 @@ final class LiveTVMultiviewMotionHostedTests: XCTestCase {
             from: CGRect(x: 0, y: 0, width: 1920, height: 1080), interruptsEntry: true)
     }
 
+    func testNativeFocusedVideoBackingCoversDisplacedContentCorners() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let model = FocusEntryModel(initialFrame: CGRect(x: 12, y: 214, width: 948, height: 533.25))
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
+        window.rootViewController = UIHostingController(rootView: FocusEntryPage(model: model))
+        window.makeKeyAndVisible()
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        try await Task.sleep(for: .milliseconds(700))
+        model.editing = true
+        try await Task.sleep(for: .milliseconds(800))
+        let frame = model.engine.output.convert(model.engine.output.bounds, to: window)
+        var ancestor = model.engine.output.superview
+        while ancestor != nil, !(ancestor is TVCardView) { ancestor = ancestor?.superview }
+        let card = try XCTUnwrap(ancestor as? TVCardView)
+        XCTAssertTrue(card.isFocused)
+        let content = try XCTUnwrap(card.contentView.subviews.first { model.engine.output.isDescendant(of: $0) })
+        let corners = [
+            CGPoint(x: frame.minX + 12, y: frame.minY + 12),
+            CGPoint(x: frame.maxX - 12, y: frame.minY + 12),
+            CGPoint(x: frame.minX + 12, y: frame.maxY - 12),
+            CGPoint(x: frame.maxX - 12, y: frame.maxY - 12)
+        ]
+        // Exercise coverage within the native floating clip, including content
+        // displaced in each direction rather than only its resting geometry.
+        for offset in [CGPoint.zero, CGPoint(x: 8, y: 8), CGPoint(x: -8, y: -8),
+                       CGPoint(x: 8, y: -8), CGPoint(x: -8, y: 8)] {
+            content.transform = CGAffineTransform(translationX: offset.x, y: offset.y)
+            try await Task.sleep(for: .milliseconds(50))
+            let format = UIGraphicsImageRendererFormat()
+            format.scale = 1
+            let image = UIGraphicsImageRenderer(bounds: window.bounds, format: format).image { _ in
+                window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+            }
+            let attachment = XCTAttachment(image: image)
+            attachment.name = "Focused video corner coverage \(offset)"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+            let bitmap = try XCTUnwrap(image.cgImage)
+            for corner in corners {
+                let sample = try XCTUnwrap(bitmap.cropping(to: CGRect(
+                    x: corner.x.rounded(.down), y: corner.y.rounded(.down), width: 1, height: 1)))
+                var pixel = [UInt8](repeating: 0, count: 4)
+                try pixel.withUnsafeMutableBytes { bytes in
+                    let context = try XCTUnwrap(CGContext(
+                        data: bytes.baseAddress, width: 1, height: 1, bitsPerComponent: 8,
+                        bytesPerRow: 4, space: CGColorSpaceCreateDeviceRGB(),
+                        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+                    context.draw(sample, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+                }
+                XCTAssertLessThanOrEqual(Int(pixel[1]) - Int(pixel[2]), 5,
+                                         "The green backdrop must not show through a covered card corner: \(pixel)")
+            }
+        }
+        content.transform = .identity
+    }
+
     private func assertNativeFocusChromeEntry(from initialFrame: CGRect, interruptsEntry: Bool = false) async throws {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
             .first { $0.activationState == .foregroundActive })

@@ -193,6 +193,7 @@ private struct NativeVideoCard<Content: View>: UIViewRepresentable {
         let card = Card()
         let idle = IdleControl()
         private let motion = UIView()
+        private let backing = UIView()
         let backgroundHost: UIView & UIContentView
         var host: (UIView & UIContentView)?
         var interactionState: VideoCardInteractionState?
@@ -219,6 +220,9 @@ private struct NativeVideoCard<Content: View>: UIViewRepresentable {
             addSubview(idle)
             motion.addSubview(background)
             motion.addSubview(card)
+            backing.backgroundColor = .black
+            backing.isUserInteractionEnabled = false
+            card.contentView.addSubview(backing)
             background.isUserInteractionEnabled = false
             card.contentView.clipsToBounds = false
             card.onFocus = { [weak self] coordinator in self?.nativeFocusChanged(coordinator) }
@@ -284,6 +288,9 @@ private struct NativeVideoCard<Content: View>: UIViewRepresentable {
             card.frame = bounds.insetBy(dx: -max(0, intrinsic.width - bounds.width) / 2,
                                        dy: -max(0, intrinsic.height - bounds.height) / 2)
             card.layoutIfNeeded()
+            // Cover the floating clip where the video and native corner masks
+            // diverge, without expanding the hosted content's layout or hit area.
+            backing.frame = card.contentView.bounds.insetBy(dx: -40, dy: -40)
             if changingMode { preserveOrigin() }
             else if resized, animator?.isRunning != true {
                 UIView.performWithoutAnimation { motion.transform = focusTransform }
