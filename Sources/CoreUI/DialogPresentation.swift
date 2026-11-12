@@ -78,6 +78,9 @@ private struct PlozzDialogContent<Content: View>: View {
         .onExitCommand { dismiss() }
         #else
         content
+            #if os(iOS)
+            .plozzOpaqueNavigationChrome()
+            #endif
             .scrollContentBackground(.hidden)
             .environment(\.plozzDialogBackgroundOwned, style == .standard)
             .presentationBackground(style == .standard
@@ -140,6 +143,9 @@ public extension View {
     ) -> some View {
         fullScreenCover(isPresented: isPresented, onDismiss: onDismiss) {
             content().environment(\.plozzDialogBackgroundOwned, false)
+                #if os(iOS)
+                .plozzOpaqueNavigationChrome()
+                #endif
                 #if os(tvOS)
                 .environment(\.settingsPageContext, nil)
                 #endif
@@ -152,6 +158,9 @@ public extension View {
     ) -> some View {
         fullScreenCover(item: item, onDismiss: onDismiss) { item in
             content(item).environment(\.plozzDialogBackgroundOwned, false)
+                #if os(iOS)
+                .plozzOpaqueNavigationChrome()
+                #endif
                 #if os(tvOS)
                 .environment(\.settingsPageContext, nil)
                 #endif

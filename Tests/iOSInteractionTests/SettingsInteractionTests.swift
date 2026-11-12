@@ -26,6 +26,72 @@ final class SettingsInteractionTests: XCTestCase {
         verifyNavigationRetention(directPresentation: false)
     }
 
+    func testOpaqueNavigationPreservesSettingsBackAndTabActions() {
+        verifyNavigationRetention(
+            directPresentation: false, settingsFirst: true, arguments: ["--opaque-navigation"]
+        )
+        XCTAssertFalse(app.tabBars.firstMatch.isHittable)
+        let search = app.buttons.matching(NSPredicate(format: "label == %@", "Search")).firstMatch
+        XCTAssertTrue(search.isHittable)
+        search.tap()
+        XCTAssertTrue(app.textFields["Search your libraries"].waitForExistence(timeout: 5))
+        capture("opaque-search-navigation")
+        app.buttons.matching(NSPredicate(format: "label == %@", "Downloads")).firstMatch.tap()
+        XCTAssertTrue(app.buttons["Download Settings"].waitForExistence(timeout: 5))
+        app.buttons["Download Settings"].tap()
+        XCTAssertTrue(app.buttons["BackButton"].waitForExistence(timeout: 5))
+        let edge = app.windows.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.005, dy: 0.5))
+        let destination = app.windows.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.8, dy: 0.5))
+        edge.press(forDuration: 0.1, thenDragTo: destination)
+        XCTAssertTrue(app.buttons["Download Settings"].waitForExistence(timeout: 5),
+                      "Opaque Back styling must preserve the native edge-swipe gesture.")
+    }
+
+    func testLiquidGlassToggleRestoresNativeTabsWithoutLosingPushedPage() {
+        launchNavigation(settingsFirst: true, arguments: ["--opaque-navigation"])
+        let downloads = app.buttons.matching(NSPredicate(format: "label == %@", "Downloads")).firstMatch
+        XCTAssertTrue(downloads.waitForExistence(timeout: 10))
+        downloads.tap()
+        app.buttons["Download Settings"].tap()
+        XCTAssertTrue(app.buttons["BackButton"].waitForExistence(timeout: 5))
+        for value in ["On", "Off"] {
+            app.buttons.matching(NSPredicate(format: "label == %@", "Settings")).firstMatch.tap()
+            let appearance = categoryButton("Appearance")
+            reveal(appearance, settingsMenu: true)
+            appearance.tap()
+            let glass = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Liquid Glass")).firstMatch
+            reveal(glass)
+            glass.tap()
+            app.buttons[value].tap()
+            app.buttons["BackButton"].firstMatch.tap()
+            app.buttons["Close"].tap()
+            XCTAssertTrue(app.buttons["BackButton"].waitForExistence(timeout: 5))
+            XCTAssertEqual(app.tabBars.firstMatch.isHittable, value == "On")
+            capture("live-liquid-glass-\(value.lowercased())")
+        }
+        app.buttons["BackButton"].tap()
+        XCTAssertTrue(app.buttons["Download Settings"].waitForExistence(timeout: 5))
+    }
+
+    func testOpaqueNavigationKeepsOverflowDestinationsReachable() {
+        launchNavigation(settingsInMore: true, arguments: ["--opaque-navigation"])
+        let overflow = app.scrollViews["opaque-navigation-overflow"]
+        XCTAssertTrue(overflow.waitForExistence(timeout: 10))
+        XCTAssertLessThan(overflow.frame.height, 120, "Overflow must not consume the page's height.")
+        let settings = app.buttons.matching(NSPredicate(format: "label == %@", "Settings")).firstMatch
+        for _ in 0..<6 where !settings.isHittable { overflow.swipeLeft() }
+        XCTAssertTrue(settings.isHittable)
+        settings.tap()
+        XCTAssertTrue(app.buttons["Close"].waitForExistence(timeout: 5))
+        app.buttons["Close"].tap()
+        let downloads = app.buttons.matching(NSPredicate(format: "label == %@", "Downloads")).firstMatch
+        for _ in 0..<6 where !downloads.isHittable { overflow.swipeRight() }
+        XCTAssertTrue(downloads.isHittable)
+        downloads.tap()
+        XCTAssertTrue(app.buttons["Download Settings"].waitForExistence(timeout: 5))
+        capture("opaque-navigation-overflow")
+    }
+
     func testSettingsClosePreservesNestedNativeBackNavigation() {
         launchNavigation()
         let open = app.buttons.matching(NSPredicate(
@@ -578,8 +644,10 @@ final class SettingsInteractionTests: XCTestCase {
         verifyNavigationRetention(directPresentation: false, settingsFirst: true)
     }
 
-    private func verifyNavigationRetention(directPresentation: Bool, settingsFirst: Bool = false) {
-        launchNavigation(directPresentation: directPresentation, settingsFirst: settingsFirst)
+    private func verifyNavigationRetention(
+        directPresentation: Bool, settingsFirst: Bool = false, arguments: [String] = []
+    ) {
+        launchNavigation(directPresentation: directPresentation, settingsFirst: settingsFirst, arguments: arguments)
         let settings = directPresentation
             ? app.buttons["fixture-open-settings"]
             : app.buttons.matching(NSPredicate(format: "label == %@", "Settings")).firstMatch

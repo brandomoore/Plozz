@@ -78,6 +78,8 @@ struct PresentationHostApp: App {
             model.settings.theme.theme = .pureBlack
         }
         model.settings.theme.gradientEnabled = true
+        model.settings.transparency.preference =
+            ProcessInfo.processInfo.arguments.contains("--opaque-navigation") ? .off : .system
         model.settings.playback.settings = .default
         if ProcessInfo.processInfo.arguments.contains("--reset-read-ahead") {
             PlaybackReadAheadStore().save(.default)
@@ -652,6 +654,7 @@ private struct IPTVRemovalFixture: View {
 }
 
 private struct SettingsInteractionFixture: View {
+    @Environment(\.accessibilityReduceTransparency) private var systemReduceTransparency
     let appModel: PlozziOSAppModel
     @State private var language = AppLanguageSettingsModel()
     @State private var showingSettings = false
@@ -793,6 +796,9 @@ private struct SettingsInteractionFixture: View {
                 }
             }
         }
+        .plozzOpaqueNavigationChrome()
+        .environment(\.plozzReduceTransparency, appModel.settings.transparency.preference
+            .reducesTransparency(systemReduceTransparency: systemReduceTransparency))
         .environment(appModel)
         .environment(language)
         .environment(\.locale, Locale(identifier: "en_US"))

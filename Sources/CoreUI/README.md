@@ -820,8 +820,24 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   retains the original opaque base. The artwork's existing readability fade stays.
   On iOS 26+, `PlozziOSNavigationBackground` removes full-width scroll-edge
   backdrops when either system or app transparency is reduced. Native navigation
-  buttons and tabs retain their system-owned opaque accessibility treatment;
-  hero artwork and the page background continue behind them. Normal iPhone
+  buttons and tabs use Apple's opaque accessibility treatment when the OS
+  reduces transparency. App-only Liquid Glass Off uses
+  `plozzOpaqueNavigationChrome()` for opaque native Back and toolbar surfaces,
+  retaining the original actions, menus and navigation gestures. Shared tab
+  shells and dialog presenters install it; toolbar updates are observed through
+  a passive UIKit update link without requesting continuous frames or replacing
+  navigation delegates. Back uses a temporary native back item; restoration also
+  refreshes UIKit's cached Back rendering, with pixel coverage for the live
+  On/Off transition in both themes. Multi-item
+  UIKit groups are temporarily separated because UIKit otherwise ignores their
+  shared-background visibility. Turning glass back on restores their grouping
+  and surfaces without replacing the navigation stack.
+  `PlozzOpaqueTabBar` replaces the floating bottom controls in app-only Off mode,
+  retaining the configured destination order, labels, badges and Settings action.
+  Overflow scrolls horizontally; the underlying native TabView retains its
+  selection and navigation state. The tab bridge hides the native bar and
+  includes the replacement in music-dock clearance. Hero artwork and the page
+  background continue behind the controls. Normal iPhone
   scroll-edge effects, older iOS navigation, and Mac's clear top edge are preserved.
   Pushed detail scroll views apply this policy locally; the tab shell's edge
   preference alone does not cover subsequent navigation destinations. Home and
