@@ -37,7 +37,11 @@ public struct ProviderBrandMark: View {
     }
 
     private var badgeBackground: Color {
-        tint.opacity(0.18)
+        if provider == .silo {
+            Color(red: 0xD1 / 255.0, green: 0xD1 / 255.0, blue: 0xD6 / 255.0)
+        } else {
+            tint.opacity(0.18)
+        }
     }
 
     private var assetName: String {
