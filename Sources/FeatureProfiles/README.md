@@ -121,6 +121,13 @@ household multi-user UI on top of `CoreModels.ProfileStore`.
   button; only the uncommitted Just me choice offers Back. Transitions use a short
   lift/fade; Reduce Motion uses only a fade.
   Import preserves existing profiles and their customization. New profiles have
+  non-authorizing Plex Home import provenance (owner and Home-user identity).
+  It syncs with the profile so an explicit import on another device can reuse
+  that profile without matching names or transferring authentication. Existing
+  device-local bindings take precedence; changing the mapped Home user clears
+  the provenance. Older profiles without provenance and existing duplicate
+  profiles are not automatically merged.
+  New profiles have
   explicit membership in that login's selected
   Plex servers, their own Home-user bindings/photos, and the normal setup gate.
   Import is metadata-only: no other user's PIN or session is requested, and

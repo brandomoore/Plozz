@@ -33,11 +33,13 @@ public struct HomeSectionCatalog: Equatable, Sendable {
         let collectionChoices = visibility.collectionSections.map { section in
             HomeRowChoice(
                 collectionSection: section,
-                library: choices.compactMap(\.library).first { $0.key == section.source.libraryKey }
+                library: section.sources.count == 1
+                    ? choices.compactMap(\.library).first { $0.key == section.sources.first?.libraryKey } : nil
             )
         }
         return (choices + collectionChoices).filter { choice in
-            if let key = choice.collectionSection?.source.libraryKey, !visibility.isEnabled(key) { return false }
+            if let section = choice.collectionSection,
+               section.sources.allSatisfy({ $0.libraryKey.map(visibility.isEnabled) == false }) { return false }
             if let key = choice.library?.key, !visibility.isEnabled(key) { return false }
             if let source = choice.serverRow, let libraryID = source.section.libraryID,
                !visibility.isEnabled("\(source.accountID):\(libraryID)") { return false }

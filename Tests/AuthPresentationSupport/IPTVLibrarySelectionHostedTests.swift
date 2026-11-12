@@ -118,6 +118,148 @@ final class IPTVLibrarySelectionHostedTests: XCTestCase {
     }
 
     #if os(tvOS)
+    func testTVGuideProgressClearsSetupActionAndRemainsBesideThePlaylist() async throws {
+        let suite = "TVGuideSetup.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let libraryGate = LibrarySelectionGate()
+        let guideGate = GuideSelectionGate()
+        let provider = GuideSelectionProvider(libraryGate: libraryGate, guideGate: guideGate)
+        let registry = ProviderRegistry()
+        registry.register(.iptv) { _ in provider }
+        let profiles = ProfilesModel(store: ProfileStore(defaults: defaults))
+        profiles.markFirstRunProfileSetupComplete()
+        let state = AppState(
+            accountStore: AccountStore(secureStore: InMemorySecureStore()),
+            registry: registry, profilesModel: profiles,
+            appAdmissionStore: AppAdmissionStore(defaults: defaults)
+        )
+        state.bootstrap()
+        XCTAssertTrue(state.didAuthenticate(provider.session))
+        let accountID = try XCTUnwrap(state.pendingLibrarySelectionAccountIDs.first)
+        addTeardownBlock {
+            await libraryGate.release()
+            await guideGate.release()
+        }
+        defer { state.guidePreparation.cancel(accountID: accountID) }
+        let deadline = ContinuousClock.now + .seconds(5)
+        while !(await guideGate.requested), ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        let requested = await guideGate.requested
+        XCTAssertTrue(requested)
+        await guideGate.emit(.init(stage: .downloading, completed: 23_600_000, total: 206_700_000))
+
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
+        let host = UIHostingController(rootView: AnyView(
+            SelectLibrariesView(appState: state)
+                .environment(\.themePalette, .dark)
+                .environment(\.colorScheme, .dark)
+                .environment(\.locale, Locale(identifier: "en_US"))
+        ))
+        host.overrideUserInterfaceStyle = .dark
+        window.overrideUserInterfaceStyle = .dark
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+
+        func capture(_ name: String, isolateDownloadDetail: Bool = false) async throws -> [VNRecognizedTextObservation] {
+            try await Task.sleep(for: .milliseconds(350))
+            window.layoutIfNeeded()
+            let format = UIGraphicsImageRendererFormat()
+            format.scale = 1
+            format.preferredRange = .standard
+            let image = UIGraphicsImageRenderer(bounds: window.bounds, format: format).image { _ in
+                XCTAssertTrue(window.drawHierarchy(in: window.bounds, afterScreenUpdates: true))
+            }
+            let attachment = XCTAttachment(image: image)
+            attachment.name = name
+            attachment.lifetime = .keepAlways
+            add(attachment)
+            let request = VNRecognizeTextRequest()
+            request.recognitionLevel = .accurate
+            request.recognitionLanguages = ["en-US"]
+            try VNImageRequestHandler(cgImage: XCTUnwrap(image.cgImage)).perform([request])
+            var results = request.results ?? []
+            if isolateDownloadDetail,
+               let title = results.first(where: { $0.topCandidates(1).first?.string == "Downloading guide" }) {
+                // Exclude the spinning glyph, which Vision can merge into an oversized text region.
+                request.regionOfInterest = CGRect(
+                    x: title.boundingBox.minX, y: 0,
+                    width: 1 - title.boundingBox.minX, height: title.boundingBox.minY
+                )
+                try VNImageRequestHandler(cgImage: XCTUnwrap(image.cgImage)).perform([request])
+                results.removeAll { $0.topCandidates(1).first?.string.contains("MB") == true }
+                results += (request.results ?? []).filter { $0.topCandidates(1).first?.string.contains("MB") == true }
+            }
+            return results
+        }
+
+        for action in ["Choose later", "Continue"] {
+            if action == "Continue" { await libraryGate.release() }
+            let text = try await capture("tv-guide-setup-\(action)", isolateDownloadDetail: true)
+            let labels = text.compactMap { $0.topCandidates(1).first?.string }
+            let button = try XCTUnwrap(text.first { $0.topCandidates(1).first?.string == action }, "\(labels)")
+            let progress = try XCTUnwrap(text.first {
+                $0.topCandidates(1).first?.string.contains("MB") == true
+            }, "\(labels)")
+            let detail = try XCTUnwrap(progress.topCandidates(1).first)
+            let unitRange = try XCTUnwrap(detail.string.range(of: "MB", options: .backwards))
+            let detailBounds = try XCTUnwrap(detail.boundingBox(for: unitRange)).boundingBox
+            XCTAssertTrue(labels.contains("Downloading guide"), "\(labels)")
+            XCTAssertGreaterThan(
+                (detailBounds.minY - button.boundingBox.maxY) * window.bounds.height, 24,
+                "The download detail must remain above the setup action: \(labels); \(detailBounds); \(button.boundingBox)"
+            )
+            let focusedItem = try XCTUnwrap(UIFocusSystem.focusSystem(for: window)?.focusedItem)
+            let focusedFrame = try XCTUnwrap(NavigationRowFocusRequester.frame(of: focusedItem, relativeTo: window))
+            let buttonCenter = CGPoint(
+                x: button.boundingBox.midX * window.bounds.width,
+                y: (1 - button.boundingBox.midY) * window.bounds.height
+            )
+            XCTAssertTrue(focusedFrame.contains(buttonCenter), "The setup action must retain native focus.")
+        }
+        state.confirmLibrarySelection()
+        XCTAssertEqual(state.state, .ready)
+        XCTAssertEqual(state.guidePreparation.statuses[accountID]?.phase, .loading)
+
+        let store = LiveTVSourcesStore(secureStore: InMemorySecureStore(), namespace: suite)
+        try store.save(.init(servers: [.init(id: "playlist", name: "Live channels", accountID: accountID)]))
+        host.rootView = AnyView(
+            NavigationStack {
+                ScrollView {
+                    LiveTVSourcesView(store: store, presentation: .settingsPane)
+                        .padding(32)
+                }
+            }
+            .environment(profiles)
+            .environment(state.guidePreparation)
+            .environment(\.themePalette, .dark)
+            .environment(\.colorScheme, .dark)
+            .environment(\.locale, Locale(identifier: "en_US"))
+        )
+        let sources = try await capture("tv-guide-source-progress")
+        let sourceLabels = sources.compactMap { $0.topCandidates(1).first?.string }
+        XCTAssertTrue(sourceLabels.contains("Downloading guide"), "\(sourceLabels)")
+        XCTAssertTrue(sourceLabels.contains { $0.contains("Live channels") }, "\(sourceLabels)")
+        await guideGate.release()
+        let completionDeadline = ContinuousClock.now + .seconds(5)
+        while state.guidePreparation.statuses[accountID]?.phase == .loading,
+              ContinuousClock.now < completionDeadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertEqual(state.guidePreparation.statuses[accountID]?.phase, .loaded)
+        let finished = try await capture("tv-guide-source-completed")
+        XCTAssertTrue(finished.contains { $0.topCandidates(1).first?.string.contains("Guide ready") == true })
+    }
+
     func testAccountSetupKeepsTheSourcesNavigationMounted() async throws {
         let suite = "IPTVSetupNavigationHostedTests.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
@@ -497,3 +639,61 @@ private actor LibrarySelectionGate {
         continuations.removeAll()
     }
 }
+
+#if os(tvOS)
+private struct GuideSelectionProvider: MediaProvider, ServerLiveTVProviding {
+    let libraryGate: LibrarySelectionGate
+    let guideGate: GuideSelectionGate
+    private let base = LiveOnlySelectionProvider()
+    var kind: ProviderKind { base.kind }
+    var session: UserSession { base.session }
+
+    func libraries() async throws -> [MediaLibrary] {
+        await libraryGate.wait()
+        return []
+    }
+    func continueWatching(limit: Int) async throws -> [MediaItem] { [] }
+    func latest(limit: Int) async throws -> [MediaItem] { [] }
+    func item(id: String) async throws -> MediaItem { throw AppError.notFound }
+    func children(of itemID: String) async throws -> [MediaItem] { [] }
+    func items(in containerID: String, kind: MediaItemKind, page: PageRequest) async throws -> MediaPage {
+        .init(items: [], startIndex: 0, totalCount: 0)
+    }
+    func search(query: String, limit: Int) async throws -> [MediaItem] { [] }
+    func playbackInfo(for itemID: String) async throws -> PlaybackRequest { throw AppError.notFound }
+    func reportPlayback(_ progress: PlaybackProgress, event: PlaybackEvent) async throws {}
+    func imageURL(itemID: String, kind: ImageKind, maxWidth: Int?) -> URL? { nil }
+    func liveTVAvailability() async throws -> ServerLiveTVAvailability {
+        .init(status: .available, channelCount: 1, supportsGuide: true)
+    }
+    func liveTVChannels() async throws -> [ServerLiveTVChannel] { [.init(id: "one", name: "One")] }
+    func liveTVGuide(channelIDs: [String], from: Date, to: Date) async throws -> [ServerLiveTVProgramme] {
+        await guideGate.wait()
+        return [.init(id: "show", channelID: "one", title: "Show", startDate: from, endDate: to)]
+    }
+    func openLiveTVChannel(id: String) async throws -> any LiveTVStreamLease {
+        throw ServerLiveTVError.unsupportedAPI
+    }
+}
+
+private actor GuideSelectionGate {
+    private(set) var requested = false
+    private var released = false
+    private var pending: CheckedContinuation<Void, Never>?
+    private var report: ServerLiveTVGuideProgress.Handler?
+
+    func wait() async {
+        report = ServerLiveTVGuideProgress.report
+        requested = true
+        if !released { await withCheckedContinuation { pending = $0 } }
+    }
+
+    func emit(_ progress: ServerLiveTVGuideProgress) { report?(progress) }
+
+    func release() {
+        released = true
+        pending?.resume()
+        pending = nil
+    }
+}
+#endif

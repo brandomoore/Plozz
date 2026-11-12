@@ -1,5 +1,6 @@
 #if os(tvOS)
 import CoreModels
+import CoreUI
 import CoreSecureStore
 import AppRuntime
 import EnginePlozzigen
@@ -39,6 +40,11 @@ struct LiveTVShellDestination: View {
     let onExpandedChange: (Bool) -> Void
 
     @Environment(ProfilesModel.self) private var profiles
+    @Environment(LiveTVGuidePreparationModel.self) private var guidePreparation: LiveTVGuidePreparationModel?
+    @Environment(NavigationStyleSettingsModel.self) private var navigationStyle: NavigationStyleSettingsModel?
+    @Environment(GlassPerformanceModel.self) private var glassPerformance: GlassPerformanceModel?
+    @Environment(DisplayVeilModel.self) private var displayVeil: DisplayVeilModel?
+    @Environment(\.managedProviderSetupRouter) private var providerSetupRouter
     @State private var hidesNavigation = false
     @State private var liveOutputGroup = LiveChannelOutputGroup()
     private let preferencesStore: LiveTVPreferencesStore
@@ -86,8 +92,21 @@ struct LiveTVShellDestination: View {
         self.onOpenTitle = onOpenTitle
     }
 
-    @ViewBuilder
     var body: some View {
+        RetainedFullscreenWorkspace {
+            navigationContent
+                .environment(profiles)
+                .environment(guidePreparation)
+                .environment(navigationStyle)
+                .environment(glassPerformance)
+                .environment(displayVeil)
+                .environment(\.managedProviderSetupRouter, providerSetupRouter)
+        }
+        .ignoresSafeArea()
+    }
+
+    @ViewBuilder
+    private var navigationContent: some View {
         if usesNativeNavigation {
             LiveTVNavigationContainer {
                 liveTVContent

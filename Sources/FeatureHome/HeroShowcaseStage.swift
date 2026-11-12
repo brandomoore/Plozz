@@ -426,6 +426,7 @@ struct HeroShowcaseStage: UIViewControllerRepresentable {
         private weak var heroTarget: (any UIFocusItem)?
         private weak var rowTarget: (any UIFocusItem)?
         private var requestingFocus = false
+        private let boundaryInput = BoundaryInputObserver()
         private var peek: CGFloat = 0
         var usesNativeSidebar: Bool {
             didSet { if oldValue && !usesNativeSidebar { finishNativeRows() } }
@@ -486,6 +487,7 @@ struct HeroShowcaseStage: UIViewControllerRepresentable {
             state.motion.bind(rows.view, to: .rows)
             state.motion.bind(hero.view, to: .featuredBackdrop)
             state.motion.bind(showcase.view, to: .showcaseBackdrop)
+            view.addGestureRecognizer(boundaryInput)
             // A hidden destination produces no geometric focus update, and
             // SwiftUI can consume arrows before they reach pressesBegan.
             let press = BoundaryPressRecognizer()
@@ -493,10 +495,13 @@ struct HeroShowcaseStage: UIViewControllerRepresentable {
             press.onMove = { [weak self] heading in self?.beginBoundaryMove(heading) }
             view.addGestureRecognizer(press)
             for direction: UISwipeGestureRecognizer.Direction in [.up, .down] {
-                let swipe = UISwipeGestureRecognizer(target: self, action: #selector(swiped(_:)))
+                let swipe = BoundarySwipeRecognizer(target: self, action: #selector(swiped(_:)))
                 swipe.direction = direction
                 swipe.allowedPressTypes = []
                 swipe.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.indirect.rawValue)]
+                swipe.cancelsTouchesInView = false
+                swipe.delaysTouchesBegan = false
+                swipe.delaysTouchesEnded = false
                 swipe.delegate = self
                 view.addGestureRecognizer(swipe)
             }
@@ -523,6 +528,7 @@ struct HeroShowcaseStage: UIViewControllerRepresentable {
 
         override func viewDidDisappear(_ animated: Bool) {
             super.viewDidDisappear(animated)
+            boundaryInput.invalidate()
             finishNativeRows()
         }
 
@@ -558,6 +564,7 @@ struct HeroShowcaseStage: UIViewControllerRepresentable {
             // non-directional focus request may bypass geometric navigation.
             let fromHero = contains(previous, in: hero)
             let fromRows = contains(previous, in: rows)
+            if (fromHero || fromRows), boundaryInput.blocks(heading) { return false }
             if state.isExpanded, fromHero, heading.contains(.down),
                !contains(next, in: hero), canEnterRows() {
                 heroTarget = previous
@@ -580,10 +587,13 @@ struct HeroShowcaseStage: UIViewControllerRepresentable {
             } else if contains(context.nextFocusedItem, in: rows) {
                 rowTarget = context.nextFocusedItem
                 if state.isExpanded { present(expanded: false, focus: false) }
+            } else if context.nextFocusedItem != nil {
+                boundaryInput.invalidate()
             }
         }
 
         func boundaryDestination(for heading: UIFocusHeading, from focused: (any UIFocusItem)?) -> Bool? {
+            guard !boundaryInput.blocks(heading) else { return nil }
             if state.isExpanded, heading == .down, canEnterRows(), contains(focused, in: hero) { return false }
             if !state.isExpanded, heading == .up, canReturn(), contains(focused, in: rows) { return true }
             return nil
@@ -633,10 +643,15 @@ struct HeroShowcaseStage: UIViewControllerRepresentable {
             // or for the animation to finish before admitting the destination.
             guard !requestingFocus else { return }
             requestingFocus = true
+            boundaryInput.consumeBoundary(expanded ? .up : .down)
+            let cancellation = boundaryInput.cancellation
             recordBoundaryPhase("queued")
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
-                guard self.view.window != nil else { self.requestingFocus = false; return }
+                guard self.view.window != nil, self.boundaryInput.cancellation == cancellation else {
+                    self.requestingFocus = false
+                    return
+                }
                 let focused = UIFocusSystem.focusSystem(for: self.view)?.focusedItem
                 guard self.contains(focused, in: expanded ? self.rows : self.hero) else {
                     self.requestingFocus = false
@@ -711,6 +726,7 @@ struct HeroShowcaseStage: UIViewControllerRepresentable {
         }
 
         func resetToFeatured() {
+            boundaryInput.invalidate()
             rowTarget = nil
             present(expanded: true, focus: false)
         }
@@ -750,11 +766,73 @@ struct HeroShowcaseStage: UIViewControllerRepresentable {
         }
 
         func stopAnimations() {
+            boundaryInput.invalidate()
             finishNativeRows()
             state.motion.stopAnimations()
             hero.view.layer.removeAnimation(forKey: "plozz.hero-showcase.opacity")
             showcase.view.layer.removeAnimation(forKey: "plozz.hero-showcase.opacity")
         }
+    }
+
+    /// Observes input without recognizing it. A boundary swipe owns only its
+    /// vertical direction, including momentum after lift, until fresh input.
+    final class BoundaryInputObserver: UIGestureRecognizer {
+        private var isTouchInput = false
+        private var consumedHeading: UIFocusHeading?
+        private(set) var cancellation: UInt64 = 0
+
+        init() {
+            super.init(target: nil, action: nil)
+            allowedTouchTypes = [NSNumber(value: UITouch.TouchType.indirect.rawValue)]
+            allowedPressTypes = [
+                UIPress.PressType.upArrow, .downArrow, .leftArrow, .rightArrow, .select, .menu, .playPause
+            ].map { NSNumber(value: $0.rawValue) }
+            cancelsTouchesInView = false
+            delaysTouchesBegan = false
+            delaysTouchesEnded = false
+        }
+
+        func consumeBoundary(_ heading: UIFocusHeading) {
+            if isTouchInput { consumedHeading = heading }
+        }
+
+        func blocks(_ heading: UIFocusHeading) -> Bool {
+            consumedHeading.map { heading.contains($0) } ?? false
+        }
+
+        func invalidate() {
+            isTouchInput = false
+            consumedHeading = nil
+            cancellation &+= 1
+        }
+
+        override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) {
+            isTouchInput = true
+            consumedHeading = nil
+        }
+
+        override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent) {}
+        override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent) { state = .failed }
+        override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent) {
+            invalidate()
+            state = .failed
+        }
+
+        override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent) {
+            isTouchInput = false
+            consumedHeading = nil
+            state = .failed
+        }
+
+        override func canPrevent(_ preventedGestureRecognizer: UIGestureRecognizer) -> Bool { false }
+        override func canBePrevented(by preventingGestureRecognizer: UIGestureRecognizer) -> Bool { false }
+    }
+
+    // Native focus panning can begin before a swipe recognizes. Keep the
+    // boundary fallback alive without preventing the native gesture itself.
+    private final class BoundarySwipeRecognizer: UISwipeGestureRecognizer {
+        override func canPrevent(_ preventedGestureRecognizer: UIGestureRecognizer) -> Bool { false }
+        override func canBePrevented(by preventingGestureRecognizer: UIGestureRecognizer) -> Bool { false }
     }
 
     private final class BoundaryPressRecognizer: UIGestureRecognizer {

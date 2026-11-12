@@ -8,6 +8,7 @@ struct HomeEditorAutosavingNameInput: View {
     let title: LocalizedStringResource
     let prompt: Text
     let identifier: String
+    let axis: Axis
     let save: (String) throws -> Void
     @State private var name: String
     @State private var savedName: String
@@ -17,18 +18,19 @@ struct HomeEditorAutosavingNameInput: View {
 
     init(
         _ title: LocalizedStringResource, name: String, prompt: Text,
-        identifier: String, save: @escaping (String) throws -> Void
+        identifier: String, axis: Axis = .vertical, save: @escaping (String) throws -> Void
     ) {
         self.title = title
         self.prompt = prompt
         self.identifier = identifier
+        self.axis = axis
         self.save = save
         _name = State(initialValue: name)
         _savedName = State(initialValue: name.trimmingCharacters(in: .whitespacesAndNewlines))
     }
 
     var body: some View {
-        SettingsInputRow(title, status: status) {
+        SettingsInputRow(title, status: status, axis: axis) {
             TextField(text: $name, prompt: prompt) { Text(title) }
                 .focused($isFocused)
                 .submitLabel(.done)

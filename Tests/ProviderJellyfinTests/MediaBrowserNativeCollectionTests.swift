@@ -86,6 +86,34 @@ final class MediaBrowserNativeCollectionTests: XCTestCase {
         XCTAssertNil(libraries.last?.hasCollections)
     }
 
+    func testServerHiddenCollectionsDisappearOnRefreshWithoutResurrectingCachedChoices() async throws {
+        for kind: ProviderKind in [.jellyfin, .emby] {
+            let http = StubHTTPClient()
+            http.stub(pathSuffix: "/Users/user/Views", json: """
+            {"Items":[{"Id":"movies","CollectionType":"movies"}]}
+            """)
+            let populated = #"{"Items":[{"Id":"collection","Type":"BoxSet"}],"TotalRecordCount":1}"#
+            let empty = #"{"Items":[],"TotalRecordCount":0}"#
+            http.stubSequence(pathSuffix: "/Users/user/Items", jsons: [populated, populated, empty, empty])
+            let provider = provider(http, kind: kind)
+            let initialLibraries = try await provider.libraries()
+            let directory = try XCTUnwrap(initialLibraries.last)
+            XCTAssertEqual(directory.hasCollections, true)
+            let initialChoices = try await provider.collections(in: directory.id, page: .init())
+            XCTAssertEqual(initialChoices.items.map(\.id), ["collection"])
+
+            let refreshedChoices = try await provider.collections(in: directory.id, page: .init())
+            XCTAssertTrue(refreshedChoices.items.isEmpty)
+            let refreshedLibraries = try await provider.libraries()
+            let hidden = try XCTUnwrap(refreshedLibraries.last)
+            XCTAssertEqual(hidden.hasCollections, false)
+            XCTAssertFalse(HomeLibraryVisibility.default.isVisibleOnHome("account:\(hidden.id)", library: hidden))
+            XCTAssertTrue(http.sentPaths.allSatisfy {
+                $0 == "/Users/user/Views" || $0 == "/Users/user/Items"
+            }, "Do not bypass server discovery using administrative or direct-item lookups.")
+        }
+    }
+
     func testCollectionDirectoryIsNotAddedForEmptyOrMusicOnlyAccounts() async throws {
         for json in [
             #"{"Items":[]}"#,

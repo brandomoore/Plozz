@@ -827,6 +827,18 @@ public final class AppState {
     public private(set) lazy var cloudSync: CloudConfigSyncService? = Self.makeCloudSync(for: self)
 
     @ObservationIgnored
+    lazy var providerCredentialSync = ProviderCredentialSync(
+        accounts: accountsProviders.accountStore,
+        canRestore: { [weak self] in self?.profileFlow.managementRequiresParentalPIN == false },
+        didRestore: { [weak self] in
+            guard let self else { return }
+            accountsProviders.reloadAccounts()
+            apply(.accountsChanged(accountsProviders.accounts))
+            refreshPendingSyncedServers()
+        },
+        onProgress: { [weak self] in self?.initialSetupRestoration.recordProgress() })
+
+    @ObservationIgnored
     public private(set) lazy var liveTVPortableSync: LiveTVPortableSyncBridge? =
         Self.makeLiveTVPortableSync(profiles: profilesModel)
     @ObservationIgnored
@@ -851,6 +863,7 @@ public final class AppState {
 
     /// Observable CloudKit sync status for the iCloud Sync settings page.
     public let cloudSyncStatus = CloudSyncStatus()
+    public let initialSetupRestoration = InitialSetupRestoration()
 
     /// Observable facet for the CloudKit "needs sign-in" server UI, kept off
     /// `AppState` itself so its @Observable mutable-property budget stays flat.
@@ -1782,11 +1795,12 @@ public final class AppState {
            previousAccount.credentialRevision != persisted.credentialRevision {
             mediaShare.accountService.retireCredential(for: previousAccount)
         }
-        accountsProviders.reloadAccounts()
-        selectNewlyAddedUserIfNeeded(account)
         // A (re)added server clears any household-removal tombstone for it, so its
         // descriptor syncs again and peers stop treating it as removed.
         clearRemovalTombstone(for: account.id)
+        providerCredentialSync.didAuthenticateLocally(accountID: account.id)
+        accountsProviders.reloadAccounts()
+        selectNewlyAddedUserIfNeeded(account)
         // Flow finished — next add-account starts at the chooser.
         pendingOnboardingProvider = nil
         pendingIPTVPlaylist = nil
@@ -1844,6 +1858,8 @@ public final class AppState {
         do {
             for session in sessions {
                 let registration = try accountsProviders.accountStore.registerAuthenticatedSession(session)
+                clearRemovalTombstone(for: registration.account.id)
+                providerCredentialSync.didAuthenticateLocally(accountID: registration.account.id)
                 if let previousAccount = registration.previousAccount,
                    previousAccount.credentialRevision != registration.account.credentialRevision {
                     mediaShare.accountService.retireCredential(for: previousAccount)
@@ -1859,7 +1875,6 @@ public final class AppState {
             return
         }
         accountsProviders.reloadAccounts()
-        addedIDs.forEach(clearRemovalTombstone)   // (re)add clears removal tombstones
         pendingOnboardingProvider = nil
         guard !addedIDs.isEmpty else {
             apply(.authenticationFailed(.unknown("")))
@@ -2040,6 +2055,8 @@ public final class AppState {
         profileFlow.completeAppearanceSetup(for: profilesModel.activeProfileID)
         apply(.navigationSelected)
         plexHomeUsers.ensurePlexIdentityForActiveProfile()
+        initialSetupRestoration.completeManualSetup(for: profilesModel.activeProfileID)
+        continueManualICloudSetupIfReady()
     }
 
     /// Sets or clears (`nil`) a profile's PIN gate.
@@ -2081,7 +2098,13 @@ public final class AppState {
     }
 
     public func finishProfileSetupFlow() {
+        let completedID = profileFlow.pendingSetupProfile?.id
         profileFlow.finishSetupFlow()
+        if let completedID, completedID == profilesModel.activeProfileID,
+           profilesModel.profiles.contains(where: { $0.id == completedID }) {
+            initialSetupRestoration.completeManualSetup(for: completedID)
+            continueManualICloudSetupIfReady()
+        }
     }
 
     public func completeProfileAppearanceSetup(for id: String) {
@@ -2571,6 +2594,8 @@ public final class AppState {
             apply(.accountsChanged(accountsProviders.accounts))
             return
         }
+        var pending = PendingSyncedServersStore()
+        pending.ignore(id)
         if let removedAccount {
             mediaShare.accountService.retireCredential(for: removedAccount)
         }

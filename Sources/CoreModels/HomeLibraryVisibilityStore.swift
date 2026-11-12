@@ -270,8 +270,7 @@ public final class HomeLibraryVisibilityModel {
     }
 
     public func saveCollectionSection(_ section: CollectionSection, catalog: HomeSectionCatalog) throws {
-        guard !section.id.isEmpty, !section.source.collectionID.isEmpty,
-              !section.source.accountID.isEmpty, section.source.serverUserID?.isEmpty == false,
+        guard !section.id.isEmpty, !section.sources.isEmpty, section.sources.allSatisfy(\.isValid),
               !section.title.isEmpty else { throw AppError.invalidResponse }
         var updated = visibility
         if let index = updated.collectionSections.firstIndex(where: { $0.id == section.id }) {

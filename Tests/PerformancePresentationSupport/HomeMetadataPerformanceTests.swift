@@ -66,6 +66,31 @@ final class HomeMetadataPerformanceTests: XCTestCase {
         try await measureProductionRows(snapshots: snapshots, scenario: "home-row-metadata-updates")
     }
 
+    func testPerformanceMultiSourceRowPresentation() async throws {
+        try PerformanceProbe.requireEnabled()
+        let originals = try independentlyDecodedSnapshots(itemCount: 20, peoplePerItem: 32)[0]
+        let sources = (0..<8).map {
+            HomeContentSource(feed: .collection("collection"), accountID: "account-\($0)", serverUserID: "viewer", title: "Source")
+        }
+        let pager = HomeContentPager(sources: sources) { source, start, limit in
+            let items = originals.enumerated().map { index, original in
+                var item = original
+                item.id = "\(source.accountID ?? "")-\(index)"
+                item.sourceAccountID = source.accountID
+                item.providerIDs = ["Tmdb": "\(index + 1)"]
+                return item
+            }
+            return .prefix(items, startIndex: start, limit: limit)
+        }
+        let result = try await pager.loadNext(limit: 50)
+        XCTAssertFalse(result.hasMore)
+        XCTAssertEqual(result.items.count, 20)
+        XCTAssertTrue(result.items.allSatisfy { $0.sources.count == 8 })
+        let data = try JSONEncoder().encode(result.items)
+        let snapshots = try (0..<2).map { _ in try JSONDecoder().decode([MediaItem].self, from: data) }
+        try await measureProductionRows(snapshots: snapshots, scenario: "home-multi-source-presentation")
+    }
+
     func testPerformanceObservedHomeMetadataPublication() async throws {
         try PerformanceProbe.requireEnabled()
         try await measureObservedHomeMetadata(scenario: "home-observed-metadata-publication")

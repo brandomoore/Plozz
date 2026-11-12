@@ -8,17 +8,29 @@ public struct TVFocusActivityObserver: UIViewRepresentable {
     let observesPlaybackPresses: Bool
     let onFocusedFrame: ((CGRect) -> Void)?
     let onUp: (() -> Void)?
+    let onFocusOutsideContent: ((Bool) -> Void)?
+    let ignoresProgrammaticFocusChanges: Bool
+    let observesDirectionalPresses: Bool
+    let onFailedMove: ((MoveCommandDirection) -> Void)?
 
     public init(
         onActivity: @escaping () -> Void,
         observesPlaybackPresses: Bool = false,
         onFocusedFrame: ((CGRect) -> Void)? = nil,
-        onUp: (() -> Void)? = nil
+        onUp: (() -> Void)? = nil,
+        onFocusOutsideContent: ((Bool) -> Void)? = nil,
+        ignoresProgrammaticFocusChanges: Bool = false,
+        observesDirectionalPresses: Bool = true,
+        onFailedMove: ((MoveCommandDirection) -> Void)? = nil
     ) {
         self.onActivity = onActivity
         self.observesPlaybackPresses = observesPlaybackPresses
         self.onFocusedFrame = onFocusedFrame
         self.onUp = onUp
+        self.onFocusOutsideContent = onFocusOutsideContent
+        self.ignoresProgrammaticFocusChanges = ignoresProgrammaticFocusChanges
+        self.observesDirectionalPresses = observesDirectionalPresses
+        self.onFailedMove = onFailedMove
     }
 
     public func makeUIView(context: Context) -> ObserverView {
@@ -28,6 +40,10 @@ public struct TVFocusActivityObserver: UIViewRepresentable {
         view.onActivity = onActivity
         view.onFocusedFrame = onFocusedFrame
         view.onUp = onUp
+        view.onFocusOutsideContent = onFocusOutsideContent
+        view.ignoresProgrammaticFocusChanges = ignoresProgrammaticFocusChanges
+        view.observesDirectionalPresses = observesDirectionalPresses
+        view.onFailedMove = onFailedMove
         view.observesPlaybackPresses = observesPlaybackPresses
         return view
     }
@@ -36,6 +52,10 @@ public struct TVFocusActivityObserver: UIViewRepresentable {
         uiView.onActivity = onActivity
         uiView.onFocusedFrame = onFocusedFrame
         uiView.onUp = onUp
+        uiView.onFocusOutsideContent = onFocusOutsideContent
+        uiView.ignoresProgrammaticFocusChanges = ignoresProgrammaticFocusChanges
+        uiView.observesDirectionalPresses = observesDirectionalPresses
+        uiView.onFailedMove = onFailedMove
         uiView.observesPlaybackPresses = observesPlaybackPresses
     }
 
@@ -47,6 +67,10 @@ public struct TVFocusActivityObserver: UIViewRepresentable {
         var onActivity: (() -> Void)?
         var onFocusedFrame: ((CGRect) -> Void)?
         var onUp: (() -> Void)?
+        var onFocusOutsideContent: ((Bool) -> Void)?
+        var ignoresProgrammaticFocusChanges = false
+        var observesDirectionalPresses = true
+        var onFailedMove: ((MoveCommandDirection) -> Void)?
         var observesPlaybackPresses = false {
             didSet {
                 guard oldValue != observesPlaybackPresses else { return }
@@ -74,6 +98,9 @@ public struct TVFocusActivityObserver: UIViewRepresentable {
                 name: UIFocusSystem.didUpdateNotification,
                 object: nil
             )
+            NotificationCenter.default.addObserver(
+                self, selector: #selector(focusMovementFailed(_:)),
+                name: UIFocusSystem.movementDidFailNotification, object: nil)
             let presses = UITapGestureRecognizer()
             presses.allowedPressTypes = allowedPressTypes
             presses.allowedTouchTypes = []
@@ -100,6 +127,8 @@ public struct TVFocusActivityObserver: UIViewRepresentable {
             onActivity = nil
             onFocusedFrame = nil
             onUp = nil
+            onFocusOutsideContent = nil
+            onFailedMove = nil
         }
 
         private func detachObservers() {
@@ -114,7 +143,38 @@ public struct TVFocusActivityObserver: UIViewRepresentable {
         @objc private func focusDidUpdate(_ notification: Notification) {
             guard let context = notification.userInfo?[UIFocusSystem.focusUpdateContextUserInfoKey]
                     as? UIFocusUpdateContext else { return }
-            reportActivity(for: context.nextFocusedItem)
+            observeFocusUpdate(previous: context.previouslyFocusedItem,
+                               next: context.nextFocusedItem, heading: context.focusHeading)
+        }
+
+        func observeFocusUpdate(
+            previous: (any UIFocusItem)?, next: (any UIFocusItem)?, heading: UIFocusHeading
+        ) {
+            guard let window,
+                  focusedView(for: next ?? previous)?.window === window
+            else { return }
+            reportFocusOwnership(for: next)
+            if !ignoresProgrammaticFocusChanges || !heading.isEmpty {
+                reportActivity(for: next)
+            }
+        }
+
+        @objc private func focusMovementFailed(_ notification: Notification) {
+            guard let context = notification.userInfo?[UIFocusSystem.focusUpdateContextUserInfoKey]
+                    as? UIFocusUpdateContext else { return }
+            observeFailedMove(previous: context.previouslyFocusedItem, heading: context.focusHeading)
+        }
+
+        func observeFailedMove(previous: (any UIFocusItem)?, heading: UIFocusHeading) {
+            guard contains(previous) else { return }
+            if !observesDirectionalPresses { reportActivity(for: previous) }
+            switch heading {
+            case .left: onFailedMove?(.left)
+            case .right: onFailedMove?(.right)
+            case .up: onFailedMove?(.up)
+            case .down: onFailedMove?(.down)
+            default: break
+            }
         }
 
         public func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive press: UIPress) -> Bool {
@@ -127,7 +187,7 @@ public struct TVFocusActivityObserver: UIViewRepresentable {
             if type == .upArrow, contains(focusedItem) { onUp?() }
             switch type {
             case .leftArrow, .rightArrow, .upArrow, .downArrow:
-                reportActivity(for: focusedItem)
+                if observesDirectionalPresses { reportActivity(for: focusedItem) }
             case .select, .playPause:
                 if observesPlaybackPresses { reportActivity(for: focusedItem) }
             default: break
@@ -149,6 +209,24 @@ public struct TVFocusActivityObserver: UIViewRepresentable {
 
         @objc private func swipedUp(_ recognizer: UISwipeGestureRecognizer) {
             if recognizer.state == .ended { onUp?() }
+        }
+
+        private func reportFocusOwnership(for item: (any UIFocusItem)?) {
+            if let onFocusOutsideContent {
+                var responder: UIResponder? = self
+                while let current = responder, !(current is UIViewController) { responder = current.next }
+                if let content = (responder as? UIViewController)?.view {
+                    onFocusOutsideContent(focusedView(for: item)?.isDescendant(of: content) != true)
+                }
+            }
+        }
+
+        private func focusedView(for item: (any UIFocusItem)?) -> UIView? {
+            var environment: (any UIFocusEnvironment)? = item
+            while let current = environment, !(current is UIView) {
+                environment = current.parentFocusEnvironment
+            }
+            return environment as? UIView
         }
 
         func reportActivity(for item: (any UIFocusItem)?) {

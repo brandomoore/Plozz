@@ -76,6 +76,12 @@ language every other module speaks.
   uses immutable image identity and placement, never a pixel comparison.
 - Profiles persistence contract: `ProfilePersisting`, `ProfileStore`,
   `ProfilesModel`, plus the Plex Home-user mapping (`PlexHomeUser`).
+- Shared profile migration writes memberships before the roster and retires
+  legacy copies only after every write succeeds. Failed writes retain the legacy
+  roster as the local authority, including edits made before retry. A failed
+  shared read must not be interpreted as an absent household or seed a replacement
+  during bootstrap. The migration journal includes memberships delivered before
+  their profiles and pending clears; reset retires these alongside the roster.
 - Local PIN proof is in-memory and bound to the current verifier and selection.
   `ProfilesModel` clears it whenever the active profile changes, including
   deletion/sync fallbacks. Manual entry to another locked profile requires fresh
@@ -89,6 +95,15 @@ language every other module speaks.
 
 ## Invariants
 
+- New installations prepare `SyncSetupFeatureFlag` before profile bootstrap.
+  iCloud Sync stays off until the onboarding choice; Enable iCloud Sync is the primary
+  action, and Not now persists an opt-out. Pending choices survive restart.
+  Existing profile installations and explicit sync settings retain their behavior.
+  On installations shown the choice, declining also keeps non-Trakt tracker
+  sign-ins device-local instead of adopting or publishing iCloud Keychain items.
+  Existing installations retain their historical tracker sign-in policy.
+  An unreadable installation blocks app startup with Retry, rather than guessing
+  whether consent is needed. No preference is changed until classification succeeds.
 - **No SwiftUI / AVKit / UIKit imports.** This module compiles on Linux so
   pure-logic tests can run there. UI lives in `CoreUI` and feature modules.
 - **Never hold secrets.** Tokens are owned by `FeatureAuth` (Keychain). Types
@@ -122,6 +137,18 @@ language every other module speaks.
   `CollectionPreviewLoader` shares bounded membership paging with Hero, validates
   page progress and identity, and never treats a selected library as inferred
   membership for returned titles.
+  `HomeContentPager` completes explicit sort/filter inventories with rolling
+  200-item library/collection/playlist requests, with at most three source-page
+  requests running across the entire traversal. A fresh library starts with
+  one fully enriched item to learn continuation before parallel page loading.
+  Each source bounds pending plus buffered lookahead to six pages, consuming
+  responses in cursor order rather than waiting for a whole batch.
+  `HomeRowPage.totalCountHint` and observed terminal pages constrain speculation
+  but never override actual continuation, including after server page caps or
+  visibility filtering. Changed strides drain and discard noncontiguous
+  lookahead before resuming at the actual offset. Home feeds retain sequential
+  60-item requests and ordinary browsing retains its small adaptive pages. Failure or cancellation
+  never commits a partial sorted inventory.
 
 ## Public surface, at a glance
 

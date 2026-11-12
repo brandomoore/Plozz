@@ -58,6 +58,11 @@ private struct PlozzDialogContent<Content: View>: View {
     let content: Content
     let style: PlozzSheetStyle
     @Environment(\.dismiss) private var dismiss
+    #if os(iOS)
+    @State private var cardSurface = NativeGradientCardSurface()
+    @Environment(\.themePalette) private var palette
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    #endif
 
     var body: some View {
         #if os(tvOS)
@@ -78,10 +83,32 @@ private struct PlozzDialogContent<Content: View>: View {
         .onExitCommand { dismiss() }
         #else
         content
+            #if os(iOS)
+            .plozzOpaqueNavigationChrome()
+            .environment(\.settingsGradientCardSurface, style == .standard ? cardSurface : nil)
+            #endif
             .scrollContentBackground(.hidden)
             .environment(\.plozzDialogBackgroundOwned, style == .standard)
-            .presentationBackground(style == .standard
-                ? AnyShapeStyle(PlozzDialogBackgroundStyle()) : AnyShapeStyle(Color.clear))
+            .presentationBackground {
+                if style == .standard {
+                    PlozzDialogBackground()
+                        #if os(iOS)
+                        .background {
+                            NativeGradientViewport(
+                                surface: cardSurface,
+                                style: .init(
+                                    colors: AmbientGradientBackground.meshColors(tint: nil, palette: palette),
+                                    palette: palette, informationSurfaceOpacity: 0
+                                ),
+                                reduceMotion: reduceMotion
+                            )
+                            .ignoresSafeArea()
+                        }
+                        #endif
+                } else {
+                    Color.clear
+                }
+            }
         #endif
     }
 }
@@ -140,6 +167,9 @@ public extension View {
     ) -> some View {
         fullScreenCover(isPresented: isPresented, onDismiss: onDismiss) {
             content().environment(\.plozzDialogBackgroundOwned, false)
+                #if os(iOS)
+                .plozzOpaqueNavigationChrome()
+                #endif
                 #if os(tvOS)
                 .environment(\.settingsPageContext, nil)
                 #endif
@@ -152,6 +182,9 @@ public extension View {
     ) -> some View {
         fullScreenCover(item: item, onDismiss: onDismiss) { item in
             content(item).environment(\.plozzDialogBackgroundOwned, false)
+                #if os(iOS)
+                .plozzOpaqueNavigationChrome()
+                #endif
                 #if os(tvOS)
                 .environment(\.settingsPageContext, nil)
                 #endif

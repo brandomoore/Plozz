@@ -1734,30 +1734,125 @@ generated library channels, indexed program search, channel checks and four-chan
 Multiview. Multiview retains each player's decoder and prepared stream through
 side-by-side/corner layout changes, audio selection and returning to one player.
 Setup keeps the pictures inside a bounded canvas with room for controls.
+On Apple TV, setup reserves the measured bottom toolbar and 24-point native
+focus clearance, not a matching empty header band. Equal-picture and Main picture
+layouts pack the actual aspect-fitted pictures with 24-point gaps; they do not
+apply another inset to each picture. Main picture uses the same horizontal
+and vertical gaps, including mixed source aspect ratios. Its widened layout
+uses 8-point gaps. The focused picture still receives the system's native lift.
+Packed pictures keep transparent clearance outside their resting frames for
+native focus scale and shadow. Only the picture is clipped; the outer card remains
+unclipped so its native shadow feathers over neighboring pictures rather than
+ending at a hard boundary. Visible picture sizes and gaps do not shrink to make
+room for it.
 Focus outlines hug the actual video aspect, reported by the retained player,
 rather than its letterbox area or caption. Add and Replace return to the actual
 guide in selection mode: the same channel/programme rows, vertical catalog,
 Favorites, Recents, category sidebar and native Search, backed by the same
 profile model and loaded guide. There is no separate channel browser or
-horizontal all-channel shelf. The current audible picture remains in the guide
-preview, and browsing never retunes a Multiview player. Selecting a station or
+horizontal all-channel shelf. On Apple TV, an existing multi-picture composition
+stays behind the guide in its current layout; opening Add or Replace never
+promotes the audible picture to a full-screen preview or hides the other streams.
+The TV picker guide and its scrim disappear together without sliding or fading
+across the returning pictures; the retained videos still animate into their slots.
+The initial single-picture picker and mobile guide use the audible preview.
+Browsing never retunes a Multiview player. Selecting a station or
 programme adds/replaces its live channel, then returns to setup. Already-added
 channels are marked; selecting one returns to it without allocating another
 player. Cancel preserves every stream and the existing composition.
+Entering Multiview from a single channel opens this picker
+immediately to choose the second channel; restoring a saved composition does not.
+Cancelling that first selection or selecting the already playing channel returns
+to normal single-channel playback. Removing pictures down to one also returns
+automatically, retaining the remaining player and tuner lease. The normal
+player's Multiview action opens the picker again; no separate exit is required.
+On Apple TV, the picker hides app navigation while retaining the full guide,
+category sidebar and Search. The shell's retained full-screen workspace moves
+the existing guide/player host outside the native tab focus tree, without
+reconstructing players. Closing Multiview restores that host to the shell.
+This full-screen guide does not reserve the app sidebar or top-navigation insets.
+Guide and scrim visibility animate independently of the retained picture layout;
+adding a channel animates existing pictures to their new slots and introduces the
+new picture in its own slot rather than passing through a full-screen frame.
+New channels show a skeleton at their picture's exact size while preparing and
+waiting for their first frame. It shares the picture's rounded boundary and
+does not fill native focus clearance or cover neighboring pictures. The existing
+reduced-motion-aware shimmer is shared across preparation and player startup;
+errors, cancellation, and first-frame audio gating keep their existing behavior.
+Filtering scrolls the guide to its first row without taking focus from categories.
+Left from the guide reaches categories; Right
+returns to the filtered guide. These directions reverse in right-to-left layouts.
+Back cancels selection and returns to Multiview
+without stopping streams; Back from Search first returns to the picker.
 
-Watch switches to the full physical-screen canvas, including safe-area edges,
-with no video focus outlines. Two channels split horizontally in landscape and
-vertically in portrait; three or four use a two-row grid. Main and stack places
+On Apple TV, ten seconds without interaction automatically leaves setup for the
+full physical-screen canvas, including safe-area edges, and hides controls and
+focus treatment. There is no Watch button. Remote activity restores the
+interactive layout and controls. On iPhone/iPad, Watch remains an explicit action.
+The Apple TV bottom actions enter together with a half-second fade and a
+20-point upward movement, on both initial setup and return from idle or the
+guide. Reduce Motion shows them immediately without movement. Their measured
+layout and native focus styling remain unchanged.
+Two channels are labeled Side by side in landscape and Top and bottom in
+portrait; three or four use Grid. Main picture places
 one large picture on the left and up to three separate pictures stacked on the
 right, without overlap. Corner mode retains its overlaid inset column.
+Layout controls and menu options use count-aware SF Symbol previews: two,
+three or four pictures, with a large primary and the correct number of stacked
+pictures for Main picture. Corner previews include the selected position and
+inset size; position and size options preview their respective destinations.
+Native menu checkmarks remain separate from the preview icon. The mobile
+two-picture icon also follows portrait/landscape orientation. Favorite descriptions
+use the saved picture count and the presenting canvas orientation, not the sheet's
+dimensions. Layout names do not change persisted enum values.
 Each renderer fits its source without cropping. Edit layout returns to setup;
 ordinary viewing never reserves permanent space for controls.
+Widened Apple TV split/grid layouts pack the actual picture edges with equal
+8-point horizontal and vertical gaps, including three-picture and mixed-aspect
+grids. Viewing layouts keep a 12-point outer margin for TV pixel shifting and
+edge cropping. The centered group fills the remaining width or height without cropping;
+unused space stays outside the group rather than widening individual gaps.
+An expanded Multiview picture keeps that same outer margin; ordinary fullscreen
+playback is unchanged.
+
+Apple TV animates the retained video surfaces into Multiview and between layouts,
+including pane entry/removal, return to watching, promotion and expansion.
+Multiview layout and new-renderer fades share a half-second ease-in-out
+transition. New renderers no longer add a separate scale-in. Moving focus
+between pictures keeps the native animated lift and defocus. Only restoration
+of an already-focused idle surface suppresses an extra scale-in, without a
+competing setup-resize animation. Returning focus to the interactive canvas
+does not shrink below or grow beyond the focused size.
+Up from the Apple TV toolbar returns directly to the last-focused picture.
+A native focus guide spans the gap above the toolbar, avoiding a visible
+handoff through a different picture. Ordinary picture-to-picture navigation
+and focus animation remain native.
+Native full-screen playback first hands its existing renderer back to the full-size
+inline canvas, then shrinks it; no replacement player or screenshot stands in
+for the video. A temporary window host keeps that renderer visible during native
+cover dismissal, and resizing waits for the inline host's actual layout.
+Focus clearance around a shrunken corner picture is transparent rather than an
+opaque backing rectangle. On tvOS, 20-point rounded corners clip each fitted picture, not its letterbox slot,
+and disappear when a picture is expanded. Reduce Motion makes these changes
+immediate. Removing a pane still retires its stream immediately; visual removal
+never delays authorization or tuner cleanup.
+The renderer follows the container's size in the same animation frames when
+shrinking or growing. Placement and focus clearance share one interpolation,
+so all pictures shrink together instead of starting nested resize animations.
+The selected picture's lift remains the native tvOS focus effect.
+During idle/native label replacement, temporary live renderer hosts track the
+incoming labels' animated presentation geometry even before those labels reach
+full opacity. Motion coverage uses real decoders, native style replacement and
+display-link samples without forcing layout from the test.
+The close confirmation and playback errors share `playerPlatformAppearance`
+with transport controls, preserving native focused-label contrast without a
+dialog-specific button style.
 
 On Apple TV, native pane focus selects that channel's audio once its source is
-prepared. Moving into the controls keeps the last selected audio. Select opens
-the focused picture full-screen; Back restores all retained players without
-retuning. On touch devices, tapping a picture selects its audio and expands it;
-Show all restores the layout. Tapping again reveals hidden controls.
+prepared. Moving into the controls keeps the last selected audio. Select makes
+the focused picture primary without hiding the other streams or leaving the
+current layout. On touch devices, tapping a picture likewise selects its audio
+and makes it primary. Interaction reveals hidden controls.
 iPhone/iPad controls use the original container safe area even though the video
 canvas extends beneath system chrome. A compact Close control and separate Watch
 action stay at the top; a touch-sized bottom dock exposes Add, Layout, and Audio,
@@ -1766,20 +1861,73 @@ windows the dock scrolls rather than truncating labels. Setup's pictures reserve
 the measured header and dock heights so landscape and large-text controls cannot
 cover them. TV focus controls and the retained players' full-screen geometry are
 unchanged.
-Apple TV multiview's header and toolbar keep visible title-and-icon labels with
+Apple TV multiview has no top-left title. The toolbar is bottom-aligned with
+32 points below its visible buttons (24 points outside and 8 points inside the
+toolbar). Pictures use a 24-point top inset and reserve at least a 24-point
+gap before the toolbar, plus its internal padding. Focus lift does not reposition the group. The toolbar
+contains Add channel, Layout and More. More holds
+Favorite and, while expanded, Show all. Holding Select on a picture opens its
+native menu for Make main video, Replace channel and Remove; Remove is
+available only with multiple pictures. Loading pictures retain their menu, and
+failed pictures expose removal beside recovery actions. Channel actions always
+target their own picture rather than the last audible channel.
+Prepared video menus anchor to the picture without moving or snapshotting its
+renderer. Layout-changing actions wait for the native menu dismissal completion,
+so its returning preview cannot resize or reposition a picture during promotion.
+Holding Select does not also activate or promote the picture; cancellation leaves
+its position unchanged. A short Select or Make main video remains an explicit
+promotion action. The video with sound has a broad, soft, live-color glow that
+waits one second before appearing on a newly audible video, then fades in over
+three seconds and out over 1.5 seconds. Rapid focus moves cancel pending glows without delaying
+audio. The glow remains visible when focus moves to the toolbar.
+An unfocused audible picture also has a 44%-opacity border, two physical pixels
+plus one point wide, using a brighter tint of the live palette and the same activation fade. A fine dark edge
+separates it from bright or saturated footage without strengthening the broad glow.
+Native focus hides that border; idle playback
+shows it without adding focus chrome. Both indicators share the video's motion.
+It does not change picture geometry or replace the native focus treatment.
+Reduce Transparency hides the glow; Reduce Motion removes its fades.
+First focus after fullscreen or idle uses one whole-card transition to the
+native card's displayed size, keeping the focus sheen and live video together
+instead of shrinking the video and then separately adding the focus lift.
+The renderer's destination-local geometry is committed before returning it to
+the native card, avoiding a one-frame double scale. Ordinary focus moves still
+animate natively.
+The toolbar keeps visible title-and-icon labels with
 the same native button treatment as normal playback, including the Layout menu.
 Their height stays transport-sized while width follows the action's title.
 Focused labels stay dark against the bright fill in native-glass and
 reduced-transparency modes. These controls do not use the larger page/form action pills.
-Watching hides controls after four seconds of inactivity. Editing, native menus,
-channel selection, preparation failures and VoiceOver keep them available.
+Apple TV uses the same ten-second inactivity deadline for setup and viewing.
+Native menus, channel selection, initial preparation, failures and VoiceOver
+block that deadline. Mobile retains its four-second viewing timeout and keeps
+controls available while editing.
+On Apple TV, only the focused picture briefly shows a compact channel logo and
+name, using the native playback glass treatment and its reduced-effects fallback.
+The label fades after three seconds, independently of the controls, and returns
+on refocus. VoiceOver retains it while focused; the pane's accessible channel
+name and audio state remain available even when the visual label is hidden.
+During interaction, every fitted picture reserves space for the system's native
+card lift and specular highlight. The focused video itself grows within that
+space; no custom outline is painted on focused or unfocused pictures. The inset
+scales with picture width and reserves at least 28 points per side where the
+picture is large enough. After the ten-second idle deadline, focus effects
+disappear and the retained videos expand into the viewing layout. VoiceOver
+keeps the interactive presentation available. These changes do not reload or
+replace streams; Reduce Motion uses final layout sizes immediately.
+Idle/native focus-label replacements retain each live renderer in a temporary,
+picture-sized window host until the replacement is visible, avoiding blank
+frames without taking snapshots or covering neighboring pictures. Cancellation,
+authorization loss and playback teardown release that temporary host.
+Reduce Motion suppresses the fade, and loading/error indicators remain separate.
 Native menu focus notifications do not write back into the pinned controls'
 activity state, avoiding an update loop that can repeatedly rebuild the menu.
-Back from a guide row still focuses Search; Back from those controls or Cancel
-returns to setup. In Multiview, Back restores all pictures if expanded, then
-leaves setup or dismisses active controls. Any Back or Close Multiview action
-that would end the composition asks for confirmation. Keep watching dismisses
-the confirmation without closing streams.
+Back from a picker guide row, its category controls or Cancel returns to setup.
+In Multiview, Back restores all pictures if expanded, then
+leaves setup or dismisses active controls. Apple TV has no explicit Close
+Multiview button; Back asks for confirmation when it would leave the composition
+and return to the guide. The Close control on iPhone/iPad also asks for
+confirmation. Keep watching dismisses the confirmation without closing streams.
 
 Favorite saves channel IDs in display order, the main picture and the chosen
 layout. The guide's Multiviews control opens these saved compositions. Favorites

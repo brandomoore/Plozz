@@ -4,6 +4,42 @@ import XCTest
 @testable import ProviderJellyfin
 
 final class JellyfinLibraryQueryTests: XCTestCase {
+    func testHomeRowSourcesExplicitlyRequestReleaseAndSortMetadata() async throws {
+        for kind: ProviderKind in [.jellyfin, .emby] {
+            let http = StubHTTPClient()
+            for path in ["/Items", "/Resume", "/NextUp", "/Recordings"] {
+                http.stub(pathSuffix: path, json: #"{"Items":[],"TotalRecordCount":0}"#)
+            }
+            http.stub(pathSuffix: "/Latest", json: "[]")
+            http.stub(pathSuffix: "/Recommendations", json: "[]")
+            let client = JellyfinClient(
+                baseURL: URL(string: "https://jellyfin.test")!, deviceProfile: .init(deviceID: "device"),
+                providerKind: kind, token: "test", http: http
+            )
+            _ = try await client.items(userID: "user", parentID: "movies", includeItemTypes: ["Movie"],
+                                       recursive: true, startIndex: 0, limit: 20,
+                                       sort: .init(field: .name, direction: .ascending))
+            _ = try await client.items(userID: "user", parentID: "movies", includeItemTypes: ["Movie"],
+                                       recursive: true, startIndex: 0, limit: 20,
+                                       sort: .init(field: .name, direction: .ascending), fields: "MediaStreams")
+            _ = try await client.collectionMembers(userID: "user", collectionID: "collection", page: .init())
+            _ = try await client.playlistItems(userID: "user", playlistID: "playlist", start: 0, limit: 20)
+            _ = try await client.resumeItems(userID: "user", limit: 20)
+            _ = try await client.nextUpItems(userID: "user", limit: 20)
+            _ = try await client.latestItems(userID: "user", limit: 20)
+            _ = try await client.nativeHomeItems(userID: "user", sectionID: "recommendations", limit: 20, parentID: nil)
+            _ = try await client.activeHomeRecordings(userID: "user", limit: 20)
+            _ = try await client.movieRecommendations(userID: "user", parentID: "movies", limit: 20)
+            _ = try await client.libraryItems(userID: "user", ids: ["movie"])
+            XCTAssertEqual(http.sentQueryItems.count, 11)
+            for query in http.sentQueryItems {
+                let fields = Set(try XCTUnwrap(query.first { $0.name.lowercased() == "fields" }?.value)
+                    .split(separator: ",").map(String.init))
+                XCTAssertTrue(Set(["ProductionYear", "PremiereDate", "SortName", "DateCreated"]).isSubset(of: fields))
+            }
+        }
+    }
+
     func testBrowseLeavesCollectionPolicyToEachServerWithoutForcingItOn() async throws {
         for kind: ProviderKind in [.jellyfin, .emby] {
             for serverType in ["BoxSet", "Movie"] {

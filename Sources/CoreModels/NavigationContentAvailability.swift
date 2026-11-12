@@ -6,6 +6,7 @@ public struct NavigationContentAvailability: Equatable, Sendable {
     public let hasHomeContent: Bool
     public let hasSearchContent: Bool
     public let hasWatchlistItems: Bool
+    public let prefersLiveTV: Bool
     private let hasMusicOnlyAccount: Bool
 
     public init(
@@ -32,6 +33,9 @@ public struct NavigationContentAvailability: Equatable, Sendable {
         hasSearchContent = hasLibraries || hasUnresolvedMediaServer || hasDiscoverySearch
         hasHomeContent = hasSearchContent || accounts.contains { $0.server.provider == .plex }
         self.hasWatchlistItems = hasWatchlistItems
+        // Discovery can keep Home useful without making it the landing page for a live-only playlist.
+        prefersLiveTV = (!hasHomeContent && !hasMusicOnlyAccount)
+            || (!accounts.isEmpty && accounts.allSatisfy { $0.server.provider == .iptv } && !hasLibraries)
     }
 
     public var automaticallyHiddenKeys: Set<String> {
@@ -42,7 +46,6 @@ public struct NavigationContentAvailability: Equatable, Sendable {
         return hidden
     }
 
-    public var prefersLiveTV: Bool { !hasHomeContent && !hasMusicOnlyAccount }
     public var prefersMusic: Bool { !hasHomeContent && hasMusicOnlyAccount }
 
     /// Only a successful answer can remove an account's remembered libraries.

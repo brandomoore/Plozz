@@ -154,7 +154,7 @@ struct VideoSurfaceContainer: UIViewRepresentable {
     func makeUIView(context: Context) -> VideoPresentationView {
         let root = VideoPresentationView(frame: .zero)
         root.subtitleViewport = subtitleViewport
-        root.attach(engine)
+        root.attach(engine, deferringOffscreenAttachment: true)
         updateReflection(root)
         root.update(zoom: zoom, aspectRatio: aspectRatio, fitsInsideSafeArea: fitsInsideSafeArea,
                     needsPictureSubtitles: needsPictureSubtitles)
@@ -163,7 +163,7 @@ struct VideoSurfaceContainer: UIViewRepresentable {
 
     func updateUIView(_ uiView: VideoPresentationView, context: Context) {
         uiView.subtitleViewport = subtitleViewport
-        uiView.attach(engine)
+        uiView.attach(engine, deferringOffscreenAttachment: true)
         updateReflection(uiView)
         uiView.update(zoom: zoom, aspectRatio: aspectRatio, fitsInsideSafeArea: fitsInsideSafeArea,
                       needsPictureSubtitles: needsPictureSubtitles)

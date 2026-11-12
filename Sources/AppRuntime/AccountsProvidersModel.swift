@@ -85,15 +85,18 @@ public final class AccountsProvidersModel {
     /// fires at the end, after the new set is known) because an invalidation must
     /// happen even if the recompute below returns early.
     public var onAccountsInvalidated: @MainActor () -> Void = {}
+    @ObservationIgnored private let removedAccountIDs: () -> Set<String>
 
     public init(
         accountStore: AccountPersisting,
         registry: ProviderRegistry,
-        profilesModel: ProfilesModel
+        profilesModel: ProfilesModel,
+        removedAccountIDs: @escaping () -> Set<String> = { RemovedAccountsStore().removedIDs }
     ) {
         self.accountStore = accountStore
         self.registry = registry
         self.profilesModel = profilesModel
+        self.removedAccountIDs = removedAccountIDs
         let token = NotificationCenter.default.addObserver(
             forName: LiveTVSourceDiagnostics.snapshotRequested, object: nil, queue: .main
         ) { [weak self] _ in
@@ -503,7 +506,14 @@ public final class AccountsProvidersModel {
     public func reloadAccounts(updatingServerAddressesFor addressAccountID: String? = nil) {
         profilesModel.retryUnconfirmedAccountSelections()
         liveTVAuthorizationCache = [:]
-        let updated = accountStore.loadAccounts()
+        let removed = removedAccountIDs()
+        for account in accountStore.loadAccounts() where removed.contains(account.id) {
+            do { try accountStore.remove(id: account.id) }
+            catch { PlozzLog.auth.error("Household account removal is pending local credential storage recovery") }
+        }
+        // Receipt of a household revocation denies use even if Keychain deletion
+        // must be retried on a later reload.
+        let updated = accountStore.loadAccounts().filter { !removed.contains($0.id) }
         if let addressAccountID,
            let account = updated.first(where: { $0.id == addressAccountID }),
            accounts.map({ old in

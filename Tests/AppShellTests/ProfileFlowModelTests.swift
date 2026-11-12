@@ -329,6 +329,17 @@ final class ProfileFlowModelTests: XCTestCase {
         XCTAssertFalse(model.hasResumableSetup)
     }
 
+    func testManualICloudSetupEntersLibrariesWithoutResettingRestoredProfile() {
+        let (model, profiles) = makeModel()
+        let original = profiles.activeProfile
+        XCTAssertFalse(original.needsSetup)
+        model.resumeSetupIfNeeded(manualICloudSetup: true)
+        XCTAssertEqual(model.pendingSetupProfile?.id, original.id)
+        XCTAssertEqual(profiles.activeProfile, original)
+        model.finishSetupFlow()
+        XCTAssertFalse(profiles.activeProfile.needsSetup)
+    }
+
     func testPrepareLaunchPickerHiddenForSingleProfile() {
         let (model, _) = makeModel()
         // A brand-new household has one (default) profile → no launch picker,

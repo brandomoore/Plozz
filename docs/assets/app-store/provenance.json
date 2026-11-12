@@ -1,0 +1,39 @@
+{
+  "source": "https://apps.apple.com/us/app/plozz-player/id6782668147",
+  "retrievedAt": "2026-11-12",
+  "storefront": "us",
+  "appStoreVersion": "2026.11.4",
+  "method": "Apple-hosted JPEG derivatives of selected published App Store artwork, showing a different feature per platform; no local cropping, compositing or interface retouching",
+  "mediaCredits": "../screenshots/media-credits.json",
+  "publicMediaCredits": "https://plozz.app/media-credits/",
+  "scope": "App Store promotional compositions containing real app captures and licensed demonstration artwork. Publication on the App Store is not independent rights clearance. The earlier raw-capture provenance does not identify these newer app captures.",
+  "screenshots": [
+    {
+      "file": "apple-tv-c41faea853.jpg",
+      "platform": "tvOS",
+      "dimensions": [1600, 900],
+      "sha256": "c41faea85353f948207dfa57a8e1e05f759087cc9e0933029012f03851644093",
+      "sourceUrl": "https://is1-ssl.mzstatic.com/image/thumb/PurpleSource211/v4/76/cd/ba/76cdbad6-0395-7b8f-f054-f1ea489577bb/01-opening-tv-1920x1080.png/1600x900bb.jpg",
+      "catalogUrl": "https://itunes.apple.com/lookup?id=6782668147&country=us&entity=tvSoftware",
+      "review": "Sol Levante hero with Continue Watching artwork from the credited demonstration library."
+    },
+    {
+      "file": "iphone-downloads-72b644fffb.jpg",
+      "platform": "iOS",
+      "dimensions": [660, 1434],
+      "sha256": "72b644fffb42038e40734fb4ea0ba064ca8c9e3db0439ea75619e6d5345bfc98",
+      "sourceUrl": "https://is1-ssl.mzstatic.com/image/thumb/PurpleSource221/v4/65/18/64/65186427-110b-8047-356e-95439cf74a89/06-downloads-iphone-1206x2622.png/660x1434bb.jpg",
+      "catalogUrl": "https://itunes.apple.com/lookup?id=6782668147&country=us",
+      "review": "Downloads list with offline films and thumbnails from the credited demonstration library."
+    },
+    {
+      "file": "ipad-live-tv-bb4b2090d4.jpg",
+      "platform": "iPadOS",
+      "dimensions": [1080, 1440],
+      "sha256": "bb4b2090d4bb317eccadf8ae6c1f3a1311fa95c68e8b8087b35a19498fedce5e",
+      "sourceUrl": "https://is1-ssl.mzstatic.com/image/thumb/PurpleSource211/v4/ca/24/af/ca24af95-a3dc-697e-b7ce-f9415c2958d3/02-guide-ipad-2064x2752.png/1080x1440bb.jpg",
+      "catalogUrl": "https://itunes.apple.com/lookup?id=6782668147&country=us",
+      "review": "Wing It! playback above the demonstration Live TV channel guide, with artwork from the credited demonstration library."
+    }
+  ]
+}

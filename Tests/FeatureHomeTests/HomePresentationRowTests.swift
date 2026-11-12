@@ -124,8 +124,8 @@ final class HomePresentationRowTests: XCTestCase {
             XCTAssertEqual(rows.map(\.id), [unscoped.id])
             guard case let .library(row) = rows.first?.source else { return XCTFail("Missing retained row") }
             XCTAssertEqual(row.section.items.map(\.id), ["shown"])
-            XCTAssertFalse(row.isLoading, "Retained usable cards remain interactive during refresh.")
-            XCTAssertNil(row.failure)
+            XCTAssertFalse(row.isLoading, "Retained usable cards must remain interactive during refresh.")
+            XCTAssertNil(row.failure, "Refresh diagnostics must not replace retained usable cards.")
             XCTAssertEqual(content.serverRows[1].isLoading, failure == nil)
             XCTAssertEqual(content.serverRows[1].failure, failure)
         }

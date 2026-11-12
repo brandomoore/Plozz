@@ -10,10 +10,14 @@ public enum HomeRowFeed: Sendable {
 public struct HomeRowPage: Sendable {
     public let items: [MediaItem]
     public let nextOffset: Int?
+    /// Scheduling hint only: providers may estimate totals. Returned offsets
+    /// remain authoritative, including after filtering or server-side page caps.
+    public let totalCountHint: Int?
 
-    public init(items: [MediaItem], nextOffset: Int?) {
+    public init(items: [MediaItem], nextOffset: Int?, totalCountHint: Int? = nil) {
         self.items = items
         self.nextOffset = nextOffset
+        self.totalCountHint = totalCountHint
     }
 
     public init(_ page: MediaPage) throws {
@@ -23,6 +27,7 @@ public struct HomeRowPage: Sendable {
         }
         items = page.items
         nextOffset = page.endIndex < page.totalCount ? page.endIndex : nil
+        totalCountHint = page.totalCount
     }
 
     /// Limit-only feeds are extended on demand; a fixed server shelf ends when
@@ -53,7 +58,7 @@ public extension MediaProvider {
             items = try await homeNextUp(libraryID: library, limit: count)
         case let .recommendation(library, kind, browseID, anchors):
             let shelves = try await homeHubs(
-                libraryID: library, kind: kind, limit: count, includeUnpromoted: true
+                libraryID: library, kind: kind, limit: max(count, anchors.count), includeUnpromoted: true
             )
             guard let shelf = shelves.first(where: {
                 $0.browseID == browseID && Set(anchors).isSubset(of: Set($0.items.map(\.id)))

@@ -39,6 +39,9 @@ first-class backends; co-equal with `ProviderJellyfin`.
 - **Tokens never logged.** `X-Plex-Token` flows through `CoreNetworking`
   redaction; PIN values are never persisted (see `PlexPinFlow`).
 - **All errors become `AppError`.**
+- Lenient scalar decoders check key presence before trying alternate types.
+  Sparse stream records must not construct decoding errors for absent optional
+  fields; present values retain the existing conversion order and metadata.
 - **Co-equal with `ProviderJellyfin`.** Any new `MediaProvider` capability
   must ship for Plex whenever it ships for Jellyfin (and vice versa).
 - Home-user identity changes happen **in-memory only** — Plozz never

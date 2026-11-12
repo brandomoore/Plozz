@@ -18,7 +18,7 @@ public extension MetadataQuery {
             let value = Self.normalizedIdentity(raw, namespace: namespace) ?? raw
             ids.append("\(namespace.rawValue):\(value.utf8.count):\(value)")
         }
-        var parts = [contentType.rawValue, kind.rawValue]
+        var parts = [contentType.rawValue, kind.rawValue, "text-language-v1:\(metadataLanguage)"]
         if ids.isEmpty {
             parts.append("t:\(title.lowercased())|y:\(year.map(String.init) ?? "")")
         } else {
@@ -61,7 +61,9 @@ public extension MetadataQuery {
             animeIDs: animeIDs,
             providerIDs: merged,
             episodeHints: episodeHints,
-            titleAlternates: titleAlternates
+            titleAlternates: titleAlternates,
+            artworkLanguage: artworkLanguage,
+            metadataLanguage: metadataLanguage
         )
     }
 
@@ -172,7 +174,16 @@ public actor MetadataEnrichmentPipeline {
             // Thread already-resolved ids downstream so an exact-id lookup replaces a
             // fuzzy title search (no duplicate work).
             let threaded = query.mergingProviderIDs(result.externalIDs.mapValues(\.value))
-            let enrichment = await provider.enrich(threaded, missing: round.fields)
+            var enrichment = await provider.enrich(threaded, missing: round.fields)
+            if !Self.supportsTextLanguage(query, source: round.source) {
+                enrichment.title = nil
+                enrichment.overview = nil
+                enrichment.genres = nil
+                enrichment.tagline = nil
+            }
+            if !Self.supportsOverviewScope(query, source: round.source) {
+                enrichment.overview = nil
+            }
             guard !threaded.hasConflictingIdentity(with: enrichment.externalIDs.mapValues(\.value)) else {
                 PlozzLog.networking.error("Metadata enrichment rejected conflicting identity from \(round.source.rawValue); trying the next source.")
                 continue
@@ -204,6 +215,9 @@ public actor MetadataEnrichmentPipeline {
             for (rank, source) in chain.enumerated() {
                 guard let provider = providers[source],
                       provider.policy.eligibleTiers.contains(tier),
+                      provider.supports(field, at: tier),
+                      !Self.localizedTextFields.contains(field) || Self.supportsTextLanguage(query, source: source),
+                      field != .overview || Self.supportsOverviewScope(query, source: source),
                       !(tried[field]?.contains(source) ?? false)
                 else { continue }
                 fronts.append(Front(source: source, rank: rank, field: field))
@@ -218,5 +232,20 @@ public actor MetadataEnrichmentPipeline {
 
         let fields = Set(fronts.filter { $0.source == chosen.source }.map(\.field))
         return (chosen.source, fields)
+    }
+
+    private static let localizedTextFields: Set<MetadataField> = [.title, .overview, .genres, .taglines]
+
+    private static func supportsTextLanguage(_ query: MetadataQuery, source: MetadataSource) -> Bool {
+        // Other external adapters currently return English or original-language text,
+        // not a translation selected by the viewer. Native curation stays authoritative.
+        Locale.Language(identifier: query.metadataLanguage).languageCode?.identifier == "en"
+            || [.tmdb, .server, .localNFO].contains(source)
+    }
+
+    private static func supportsOverviewScope(_ query: MetadataQuery, source: MetadataSource) -> Bool {
+        guard query.kind == .episode || query.kind == .season else { return true }
+        return [.tmdb, .server, .localNFO].contains(source)
+            || (query.kind == .episode && source == .tvmaze)
     }
 }

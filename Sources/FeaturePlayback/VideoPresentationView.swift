@@ -1,12 +1,156 @@
 #if canImport(UIKit)
 import Observation
 import UIKit
+import CoreUI
+
+/// Keeps the live renderer above a dismissing controller until its next host is laid out.
+final class VideoPresentationHandoff: UIView {
+    private weak var output: UIView?
+    private weak var originalHost: UIView?
+    private var originalBounds: CGRect = .zero
+    private var originalCenter: CGPoint = .zero
+    private var originalTransform: CGAffineTransform = .identity
+    private var completion: (() -> Void)?
+    private weak var receiver: VideoPresentationView?
+    private var displayLink: CADisplayLink?
+    private let retainedPicture: CGRect?
+    private let retainedViewportSize: CGSize
+
+    private final class PresentationClock: NSObject {
+        weak var owner: VideoPresentationHandoff?
+        init(owner: VideoPresentationHandoff) { self.owner = owner }
+        @objc func tick(_ link: CADisplayLink) {
+            guard let owner else { link.invalidate(); return }
+            owner.receivePresentedOutput()
+        }
+    }
+
+    init?(engine: any VideoEngine, pictureCornerRadius: CGFloat? = nil,
+          completion: @escaping () -> Void) {
+        let output = engine.makeVideoOutputView()
+        guard let window = output.window, !output.bounds.isEmpty else { return nil }
+        let windowLayer = window.layer
+        let outputLayer = output.layer
+        let picture = outputLayer.convert(outputLayer.bounds, to: windowLayer)
+        let viewport = output.superview.map {
+            let layer = $0.layer
+            return layer.convert(layer.bounds, to: windowLayer)
+        } ?? picture
+        let center = CGPoint(x: picture.midX, y: picture.midY)
+        retainedPicture = pictureCornerRadius.map { _ in
+            picture.offsetBy(dx: -viewport.minX, dy: -viewport.minY)
+        }
+        retainedViewportSize = viewport.size
+        super.init(frame: pictureCornerRadius == nil ? window.bounds : viewport)
+        self.output = output
+        originalHost = output.superview
+        originalBounds = output.bounds
+        originalCenter = output.center
+        originalTransform = output.transform
+        self.completion = completion
+        backgroundColor = pictureCornerRadius == nil ? .black : .clear
+        layer.cornerRadius = pictureCornerRadius ?? 0
+        isUserInteractionEnabled = false
+        clipsToBounds = true
+        window.addSubview(self)
+        addSubview(output)
+        if pictureCornerRadius != nil {
+            output.transform = CGAffineTransform(
+                scaleX: picture.width / output.bounds.width, y: picture.height / output.bounds.height)
+            output.center = CGPoint(x: picture.midX - viewport.minX, y: picture.midY - viewport.minY)
+        } else {
+            output.center = center
+        }
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    func canReceiveOutput(in view: VideoPresentationView) -> Bool {
+        guard let window, view.window === window, !view.bounds.isEmpty,
+              view.layer.presentation() != nil else { return false }
+        var ancestor: UIView? = view
+        while let current = ancestor {
+            if current.isHidden || current.alpha < 1 || current.layer.presentation()?.opacity == 0 { return false }
+            ancestor = current.superview
+        }
+        return true
+    }
+
+    func waitForPresentation(of view: VideoPresentationView) {
+        receiver = view
+        guard displayLink == nil else { return }
+        let link = CADisplayLink(target: PresentationClock(owner: self), selector: #selector(PresentationClock.tick(_:)))
+        displayLink = link
+        link.add(to: .main, forMode: .common)
+    }
+
+    private func receivePresentedOutput() {
+        guard let receiver else { return }
+        if let retainedPicture, let output, output.superview === self,
+           let window, receiver.window === window,
+           let presented = receiver.layer.presentation(), !presented.bounds.isEmpty,
+           retainedViewportSize.width > 0, retainedViewportSize.height > 0 {
+            // Follow the receiving controller's geometry until it is fully visible.
+            let target = presented.convert(presented.bounds, to: window.layer.presentation() ?? window.layer)
+            let scaleX = target.width / retainedViewportSize.width
+            let scaleY = target.height / retainedViewportSize.height
+            UIView.performWithoutAnimation {
+                frame = target
+                output.transform = CGAffineTransform(
+                    scaleX: retainedPicture.width * scaleX / output.bounds.width,
+                    y: retainedPicture.height * scaleY / output.bounds.height)
+                output.center = CGPoint(x: retainedPicture.midX * scaleX, y: retainedPicture.midY * scaleY)
+            }
+        }
+        guard canReceiveOutput(in: receiver) else { return }
+        receiver.setNeedsLayout()
+        receiver.layoutIfNeeded()
+    }
+
+    func complete() {
+        displayLink?.invalidate()
+        displayLink = nil
+        receiver = nil
+        removeFromSuperview()
+        // The receiving UIView has laid out; leave SwiftUI's update before changing its state.
+        Task { @MainActor [weak self] in
+            let completion = self?.completion
+            self?.completion = nil
+            completion?()
+        }
+    }
+
+    func cancel(restoringOutput: Bool = false) {
+        displayLink?.invalidate()
+        displayLink = nil
+        receiver = nil
+        completion = nil
+        if let output, output.superview === self {
+            if restoringOutput, let originalHost, originalHost.window != nil {
+                UIView.performWithoutAnimation {
+                    output.transform = .identity
+                    output.bounds = originalBounds
+                    output.center = originalCenter
+                    output.transform = originalTransform
+                    originalHost.addSubview(output)
+                }
+            } else {
+                output.removeFromSuperview()
+            }
+        }
+        removeFromSuperview()
+    }
+}
 
 /// Crops only the engine's surface. AVKit's external/PiP presentation keeps
 /// owning its own sizing. Light preview colors use a separately bounded sampler.
 final class VideoPresentationView: UIView {
     private var engine: (any VideoEngine)?
     private var surface: UIView?
+    private var defersOffscreenAttachment = false
+    private var presentationHandoff: VideoPresentationHandoff?
+    private weak var pendingHandoffOutput: UIView?
     private var zoom = PlayerVideoZoom()
     private var aspectRatio: Double?
     private var fitsInsideSafeArea = false
@@ -109,20 +253,47 @@ final class VideoPresentationView: UIView {
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
-    func attach(_ engine: any VideoEngine) {
-        if self.engine !== engine { stopPictureSampling() }
+    func attach(_ engine: any VideoEngine, deferringOffscreenAttachment: Bool = false) {
+        defersOffscreenAttachment = deferringOffscreenAttachment
+        let changesEngine = self.engine !== engine
+        if changesEngine { stopPictureSampling() }
         let output = engine.makeVideoOutputView()
         self.engine = engine
         #if os(iOS)
         updateColorSampling()
         #endif
         guard output.superview !== surfaceHost else { return }
+        // Native card styles can prepare an offscreen label while the previous
+        // label is still presenting this same live output.
+        if deferringOffscreenAttachment, output.window != nil {
+            guard window != nil else { return }
+            // An outgoing label can still receive updates during its removal
+            // animation. It must not reclaim a renderer its replacement owns.
+            if !changesEngine, surface === output { return }
+        }
+        attachOutput(output)
+    }
+
+    private func attachOutput(_ output: UIView) {
+        guard output.superview !== surfaceHost else { return }
+        if let handoff = output.superview as? VideoPresentationHandoff, !handoff.canReceiveOutput(in: self) {
+            pendingHandoffOutput = output
+            handoff.waitForPresentation(of: self)
+            return
+        }
+        pendingHandoffOutput = nil
+        presentationHandoff = output.superview as? VideoPresentationHandoff
         if surface?.superview === surfaceHost { surface?.removeFromSuperview() }
         output.removeFromSuperview()
         output.autoresizingMask = []
         output.isUserInteractionEnabled = false
         surface = output
-        surfaceHost.addSubview(output)
+        UIView.performWithoutAnimation {
+            if presentationHandoff != nil {
+                prepareHandoffOutput(output)
+            }
+            surfaceHost.addSubview(output)
+        }
         setNeedsLayout()
     }
 
@@ -175,6 +346,11 @@ final class VideoPresentationView: UIView {
 
     override func didMoveToWindow() {
         super.didMoveToWindow()
+        // Another offscreen label may have claimed the output before this host
+        // entered the window, even if its initial attachment was not deferred.
+        if window != nil, defersOffscreenAttachment, let engine {
+            attachOutput(engine.makeVideoOutputView())
+        }
         updatePictureSampling()
         #if os(iOS)
         updateColorSampling()
@@ -300,6 +476,11 @@ final class VideoPresentationView: UIView {
 
     override func layoutSubviews() {
         super.layoutSubviews()
+        if let output = pendingHandoffOutput, output.superview is VideoPresentationHandoff {
+            attachOutput(output)
+        } else {
+            pendingHandoffOutput = nil
+        }
         aspectRatio = engine?.videoAspectRatio
         fitBounds = resolvedFitBounds
         #if os(iOS)
@@ -313,6 +494,15 @@ final class VideoPresentationView: UIView {
         reflection.layoutIfNeeded()
         #endif
         guard let surface, surface.superview === surfaceHost else { return }
+        layoutSurface(surface)
+        subtitleViewport?.scheduleUpdate()
+        if window != nil, !bounds.isEmpty, let handoff = presentationHandoff {
+            presentationHandoff = nil
+            handoff.complete()
+        }
+    }
+
+    private func layoutSurface(_ surface: UIView) {
         let contentBounds = CGRect(origin: .zero, size: bounds.size)
         let center = zoom.surfaceCenter(in: bounds, fitBounds: fitBounds, aspectRatio: aspectRatio, activePicture: activePicture)
         let scale = zoom.scaleFactors(in: bounds, aspectRatio: aspectRatio, fitBounds: fitBounds, activePicture: activePicture)
@@ -326,7 +516,12 @@ final class VideoPresentationView: UIView {
                 surface.layoutIfNeeded()
             }
         }
-        subtitleViewport?.scheduleUpdate()
+    }
+
+    fileprivate func prepareHandoffOutput(_ output: UIView) {
+        aspectRatio = engine?.videoAspectRatio
+        fitBounds = resolvedFitBounds
+        layoutSurface(output)
     }
 
     #if os(iOS)

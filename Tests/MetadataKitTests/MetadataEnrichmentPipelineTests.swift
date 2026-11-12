@@ -386,11 +386,11 @@ final class MetadataEnrichmentPipelineTests: XCTestCase {
                     id: .tvdb, capabilities: [.canonicalText],
                     output: MetadataEnrichment(
                         externalIDs: ["Imdb": sourced(imdb, .tvdb)],
-                        overview: sourced("Show overview", .tvdb)
+                        genres: .init(value: ["Drama"], source: .tvdb)
                     )
                 )
                 let pipeline = MetadataEnrichmentPipeline(providers: [provider], config: makeConfig(order: [.tvdb]))
-                let result = await pipeline.enrich(MetadataQuery(item), requesting: [.overview], tier: .foregroundFill)
+                let result = await pipeline.enrich(MetadataQuery(item), requesting: [.genres], tier: .foregroundFill)
                 XCTAssertEqual(!result.isEmpty, imdb == "tt1111111")
             }
         }

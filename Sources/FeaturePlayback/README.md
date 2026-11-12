@@ -306,6 +306,38 @@ Fullscreen, multiview, external playback, and Reduce Transparency disable the re
 Transparency retains inset-picture rounding; fullscreen restores the unmasked,
 black-backed video surface.
 
+Apple TV Multiview uses a separate soft audio indicator behind the
+audible picture: a 96-point color stroke with a 96-point blur at 36% opacity,
+not a focus border. The narrower bright band starts fading closer to the picture;
+the unchanged outer blur keeps a similarly broad, gradual tail into the surrounding
+black without changing picture size.
+It reuses the same 2 Hz, 24-by-14-pixel color sampler
+and native/software frame access. Neutral footage uses a faint neutral glow.
+The indicator waits for one second of continuous activation before fading in.
+Moving away cancels that pending activation and starts fading the old glow out
+immediately. Fade-in takes three seconds; fade-out and palette changes retain
+their 1.5-second duration, retargeting from their displayed state without resizing
+or replacing the renderer. Audio changes immediately; only the glow waits.
+Moving focus to the toolbar leaves it
+on the audible video.
+When the video is not visibly focused, a rim uses a brighter tint of
+the same sampled colors at 44% opacity, with a width of two physical pixels plus
+one point. A one-pixel-radius dark shadow separates
+the rim from bright imagery. This treatment does not change the broad glow,
+picture bounds, or decoder sampling; it hides during native focus.
+Muted, unavailable, hidden, fullscreen, external, unauthorized, and background pictures stop sampling;
+Reduce Transparency removes the indicator and Reduce Motion disables its fades.
+The existing Audio on/Muted accessibility value remains authoritative.
+
+Multiview retains one native card and renderer host across idle, editing and
+fullscreen layout changes. Focus never detaches the live output into a separate
+window bridge. The native sheen, caption, glow and picture share one motion
+container; TVUIKit's default focus sizing is applied there rather than through a
+second content transform. Entry starts from the displayed frame and takes half
+a second. Ordinary focus changes use the native focus animation coordinator,
+interrupting entry from its current presentation when necessary. Reduce Motion
+bypasses the surface animation.
+
 When loading a new mobile native source, disconnect the outgoing player from
 the retained `AVPlayerLayer` before teardown and replacement. Retuning must
 present real video frames on that same surface, including on iOS 27.1.
@@ -555,6 +587,29 @@ Live TV channel selection does not display an "Opening [channel]" toast in the
 guide or player. Existing in-player loading indicators, playback errors, retry
 actions, and cancellation on navigation remain unchanged.
 
+SwiftUI video containers defer attachment when their replacement host is
+offscreen and the engine's output is already windowed. The replacement claims
+that same output when it enters a window. This prevents controller preparation
+from stealing a visible renderer; initial
+unattached outputs can still mount before playback becomes ready. Once the new
+host owns the windowed output, updates to an outgoing label cannot steal it back
+during its removal animation.
+When native fullscreen playback enters Multiview, a temporary, noninteractive
+window host carries the same live renderer across cover dismissal. The inline
+host must be windowed, laid out at full size, and have a visible presentation
+layer before the resize begins; a task yield alone is not a presentation boundary.
+Subsequent native card focus/layout changes keep that host and renderer together.
+A rejected Multiview request restores the inline output; cancellation
+releases the handoff without starting Multiview. Focus spacing outside each Multiview picture
+is transparent, so an inset does not mask the main picture with a black border.
+Multiview startup uses an opaque, shimmering picture-sized skeleton, including
+engine initialization and the wait for the first frame. The skeleton lives
+inside the native video card's inset and clipping boundary, never across its
+transparent focus clearance. The renderer remains mounted underneath it so
+readiness does not depend on showing the output first. Interrupted and paused
+states retain their status UI without an animated loading skeleton; fullscreen
+and inline-preview startup treatment is unchanged.
+
 The retained channel engine keeps output muted until the current source has
 finished loading and its first-frame signal permits presentation. Scheduled
 programme boundaries and live-clock reconciliation close the same gate; decoder
@@ -573,10 +628,17 @@ The retained preview clears its local exit veil after collapse. Profile
 dynamic-range and frame-rate fade preferences apply; guide channel browsing,
 secondary multiview panes, and mobile playback do not acquire an HDMI veil.
 Ready SDR preview/fullscreen transitions still use the in-place engine path.
+Known SDR entry and exit use only the existing **Frame rate** fade preference,
+not the **HDR & Dolby Vision** preference, unless replacing HDR output. Both
+preferences retain their existing defaults; neither changes the Apple TV's
+system Match Content settings. Frame-rate entry has a two-second safety cap.
+Unknown incoming sources retain the conservative dynamic-range veil; an old
+channel's SDR range is not evidence about the new channel. Engine correction of
+an SDR hint to HDR can still protect the actual range switch.
 Live loads publish generation-fenced source range after probing and when native
 HLS discovers its video description later. The native mount's provisional SDR
-default is not evidence; confirmed source facts release the probe-aware veil
-without waiting for its safety timeout.
+default is not evidence; confirmed source facts and display-settle notifications
+resolve the probe-aware veil, with the bounded timeout as fallback.
 
 Mobile transport buttons, timelines, and tabs use native **clear** Liquid Glass,
 without tint or a colored backing. Like AVKit video chrome, their symbols and

@@ -26,7 +26,7 @@ public enum NativeFocusRegion {
         return region.bounds.contains(CGPoint(x: frame.midX, y: frame.midY))
     }
 
-    static func frame(of item: (any UIFocusItem)?, in region: UIView) -> CGRect? {
+    public static func frame(of item: (any UIFocusItem)?, in region: UIView) -> CGRect? {
         guard let window = region.window,
               let root = owningController(of: region)?.viewIfLoaded ?? region.superview,
               let item, item.canBecomeFocused, !region.bounds.isEmpty else { return nil }

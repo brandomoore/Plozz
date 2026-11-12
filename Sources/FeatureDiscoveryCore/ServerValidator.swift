@@ -88,7 +88,25 @@ public struct ServerValidator: Sendable {
                     PlozzLog.discovery.error("Manual server discovery stopped after TLS trust rejection")
                     throw AppError.serverUnreachable
                 }
-                guard let failure = error as? AppError else { throw error }
+                let failure: AppError
+                if let transport = error as? URLError {
+                    switch transport.code {
+                    case .cancelled:
+                        throw AppError.cancelled
+                    case .cannotConnectToHost, .cannotFindHost, .dnsLookupFailed,
+                         .timedOut, .networkConnectionLost, .notConnectedToInternet,
+                         .secureConnectionFailed:
+                        // An HTTPS probe of an HTTP-only port can fail negotiation
+                        // without rejecting a certificate. Only discovery may retry.
+                        failure = .serverUnreachable
+                    default:
+                        throw error
+                    }
+                } else if let appError = error as? AppError {
+                    failure = appError
+                } else {
+                    throw error
+                }
                 switch failure {
                 case .serverUnreachable, .notFound, .invalidResponse, .decoding:
                     firstFailure = firstFailure ?? failure

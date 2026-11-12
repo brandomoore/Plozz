@@ -120,8 +120,12 @@ public final class ProfileStore: ProfilePersisting, @unchecked Sendable {
     private let lock = NSLock()
     /// Guards the one-time `UserDefaults` → shared store migration.
     private var didMigrateShared = false
+    #if canImport(OSLog)
+    private static let logger = Logger(subsystem: "com.plozz.app", category: "profiles")
+    #endif
 
     private let profilesKey = "com.plozz.profiles.v1"
+    private let pendingSharedMembershipKeysKey = "com.plozz.profiles.pendingSharedMembershipKeys"
     private let activeProfileIDKey = "com.plozz.profiles.activeID"
     private let perProfileActiveAccountsPrefix = "com.plozz.profile.activeAccounts."
     /// Retired picker preference, retained only for the debug reset.
@@ -150,6 +154,13 @@ public final class ProfileStore: ProfilePersisting, @unchecked Sendable {
     }
 
     // MARK: Profiles
+
+    /// Read-only installation evidence, before bootstrap creates a default.
+    public func hasPersistedProfiles() throws -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        if defaults.data(forKey: profilesKey) != nil { return true }
+        return try secureStore?.readString(for: profilesKey) != nil
+    }
 
     public func loadProfiles() -> [Profile] {
         lock.lock(); defer { lock.unlock() }
@@ -211,7 +222,12 @@ public final class ProfileStore: ProfilePersisting, @unchecked Sendable {
         lock.lock(); defer { lock.unlock() }
         let data: Data?
         if let secureStore {
-            data = try secureStore.readString(for: accountsKey(profileID)).map { Data($0.utf8) }
+            if ensureSharedMigratedLocked() != nil {
+                data = defaults.data(forKey: accountsKey(profileID))
+            } else {
+                guard didMigrateShared else { throw CocoaError(.fileReadUnknown) }
+                data = try secureStore.readString(for: accountsKey(profileID)).map { Data($0.utf8) }
+            }
         } else {
             data = defaults.data(forKey: accountsKey(profileID))
         }
@@ -277,10 +293,11 @@ public final class ProfileStore: ProfilePersisting, @unchecked Sendable {
 
     public func resetForDebugging() {
         lock.lock(); defer { lock.unlock() }
-        for profile in loadProfilesLocked() {
-            removeShared(forKey: accountsKey(profile.id))
+        for key in sharedMigrationMembershipKeys(for: loadProfilesLocked()).union([profilesKey]) {
+            removeShared(forKey: key)
+            defaults.removeObject(forKey: key)
         }
-        removeShared(forKey: profilesKey)
+        defaults.removeObject(forKey: pendingSharedMembershipKeysKey)
         defaults.removeObject(forKey: activeProfileIDKey)
         defaults.removeObject(forKey: lastUsedKey)
         defaults.removeObject(forKey: rootNamespaceOwnerKey)
@@ -293,13 +310,13 @@ public final class ProfileStore: ProfilePersisting, @unchecked Sendable {
 
     public func resetForSyncErasure() throws {
         lock.lock(); defer { lock.unlock() }
-        let keys = loadProfilesLocked().map { accountsKey($0.id) }
-            + [profilesKey, legacyAskOnStartupKey, legacyProfilesEnabledKey, firstRunSetupKey, parentalPINKey]
-        for key in keys {
+        let keys = sharedMigrationMembershipKeys(for: loadProfilesLocked())
+            .union([profilesKey, legacyAskOnStartupKey, legacyProfilesEnabledKey, firstRunSetupKey, parentalPINKey])
+        for key in keys.sorted() {
             if let secureStore { try secureStore.removeValue(for: key) }
             defaults.removeObject(forKey: key)
         }
-        for key in [activeProfileIDKey, lastUsedKey, rootNamespaceOwnerKey] {
+        for key in [activeProfileIDKey, lastUsedKey, rootNamespaceOwnerKey, pendingSharedMembershipKeysKey] {
             defaults.removeObject(forKey: key)
         }
         didMigrateShared = false
@@ -345,8 +362,25 @@ public final class ProfileStore: ProfilePersisting, @unchecked Sendable {
     @discardableResult
     public func migrateLegacyIfNeeded(defaultName: String, defaultActiveAccountIDs: [String]) -> [Profile] {
         lock.lock(); defer { lock.unlock() }
-        let existing = loadProfilesLocked()
-        guard existing.isEmpty else { return existing }
+        let existing: [Profile]
+        if let secureStore {
+            let legacyData = ensureSharedMigratedLocked()
+            // An unavailable shared read is not an empty household. In particular,
+            // do not retry during save and replace a newly recovered roster.
+            guard didMigrateShared || legacyData != nil else { return [] }
+            do {
+                let data = try legacyData ?? secureStore.readString(for: profilesKey).map { Data($0.utf8) }
+                existing = try data.map { try JSONDecoder().decode([Profile].self, from: $0) } ?? []
+            } catch {
+                #if canImport(OSLog)
+                Self.logger.error("Profile bootstrap could not read the household; no replacement was saved")
+                #endif
+                return []
+            }
+        } else {
+            existing = loadProfilesLocked()
+        }
+        guard existing.isEmpty else { return existing.sorted { $0.createdAt < $1.createdAt } }
 
         let profile = Profile(
             id: Self.defaultProfileID,
@@ -375,7 +409,6 @@ public final class ProfileStore: ProfilePersisting, @unchecked Sendable {
     private func accountsKey(_ profileID: String) -> String { perProfileActiveAccountsPrefix + profileID }
 
     private func loadProfilesLocked() -> [Profile] {
-        ensureSharedMigratedLocked()
         guard let data = sharedData(forKey: profilesKey),
               let profiles = try? JSONDecoder().decode([Profile].self, from: data) else {
             return []
@@ -396,6 +429,9 @@ public final class ProfileStore: ProfilePersisting, @unchecked Sendable {
     /// (tests/previews, when no secure store is injected).
     private func sharedData(forKey key: String) -> Data? {
         if let secureStore {
+            if isMigratedProfileKey(key), ensureSharedMigratedLocked() != nil {
+                return defaults.data(forKey: key)
+            }
             return secureStore.string(for: key)?.data(using: .utf8)
         }
         return defaults.data(forKey: key)
@@ -403,6 +439,14 @@ public final class ProfileStore: ProfilePersisting, @unchecked Sendable {
 
     private func setSharedData(_ data: Data, forKey key: String) {
         if let secureStore {
+            if isMigratedProfileKey(key) {
+                if ensureSharedMigratedLocked() != nil {
+                    // Until the roster commits, the retained legacy copy remains authoritative.
+                    defaults.set(data, forKey: key)
+                    return
+                }
+                guard didMigrateShared else { return }
+            }
             if let json = String(data: data, encoding: .utf8) {
                 try? secureStore.setString(json, for: key)
             }
@@ -412,6 +456,13 @@ public final class ProfileStore: ProfilePersisting, @unchecked Sendable {
     }
 
     private func removeSharedData(forKey key: String) {
+        if secureStore != nil, isMigratedProfileKey(key) {
+            if ensureSharedMigratedLocked() != nil {
+                defaults.removeObject(forKey: key)
+                return
+            }
+            guard didMigrateShared else { return }
+        }
         if let secureStore { try? secureStore.removeValue(for: key) }
         else { defaults.removeObject(forKey: key) }
     }
@@ -421,25 +472,59 @@ public final class ProfileStore: ProfilePersisting, @unchecked Sendable {
     /// user sees the same household profiles once the `user-management`
     /// entitlement starts partitioning `UserDefaults`. The active *selection*
     /// stays per-user and is intentionally not migrated. Caller holds `lock`.
-    private func ensureSharedMigratedLocked() {
-        guard !didMigrateShared else { return }
-        didMigrateShared = true
-        guard let secureStore, secureStore.string(for: profilesKey) == nil,
-              let data = defaults.data(forKey: profilesKey),
-              let json = String(data: data, encoding: .utf8) else { return }
+    private func isMigratedProfileKey(_ key: String) -> Bool {
+        key == profilesKey || key.hasPrefix(perProfileActiveAccountsPrefix)
+    }
 
-        try? secureStore.setString(json, for: profilesKey)
-        if let profiles = try? JSONDecoder().decode([Profile].self, from: data) {
-            for profile in profiles {
-                let key = accountsKey(profile.id)
-                if let accData = defaults.data(forKey: key),
-                   let accJSON = String(data: accData, encoding: .utf8) {
-                    try? secureStore.setString(accJSON, for: key)
-                    defaults.removeObject(forKey: key)
+    private func sharedMigrationMembershipKeys(for profiles: [Profile]) -> Set<String> {
+        Set(profiles.map { accountsKey($0.id) })
+            .union(defaults.dictionaryRepresentation().keys.filter { $0.hasPrefix(perProfileActiveAccountsPrefix) })
+            .union((defaults.stringArray(forKey: pendingSharedMembershipKeysKey) ?? [])
+                .filter { $0.hasPrefix(perProfileActiveAccountsPrefix) })
+    }
+
+    /// Returns the authoritative legacy roster if shared writes are unavailable.
+    /// A failed shared read is not proof of absence and must never start migration.
+    private func ensureSharedMigratedLocked() -> Data? {
+        guard !didMigrateShared, let secureStore else { return nil }
+        var legacyData: Data?
+        do {
+            if try secureStore.readString(for: profilesKey) != nil {
+                didMigrateShared = true
+                return nil
+            }
+            guard let data = defaults.data(forKey: profilesKey) else {
+                didMigrateShared = true
+                return nil
+            }
+            let profiles = try JSONDecoder().decode([Profile].self, from: data)
+            legacyData = data
+            let membershipKeys = sharedMigrationMembershipKeys(for: profiles)
+            // Includes memberships delivered before their profile and pending clears
+            // of partial writes. Keep the key journal until the roster commits.
+            defaults.set(membershipKeys.sorted(), forKey: pendingSharedMembershipKeysKey)
+            for key in membershipKeys.sorted() {
+                if let accData = defaults.data(forKey: key) {
+                    _ = try JSONDecoder().decode([String].self, from: accData)
+                    try secureStore.setString(String(decoding: accData, as: UTF8.self), for: key)
+                } else {
+                    // A retry must also clear a partially copied selection removed locally.
+                    try secureStore.removeValue(for: key)
                 }
             }
+            // Commit the roster last: its presence means all memberships were copied.
+            try secureStore.setString(String(decoding: data, as: UTF8.self), for: profilesKey)
+            didMigrateShared = true
+            for key in membershipKeys { defaults.removeObject(forKey: key) }
+            defaults.removeObject(forKey: profilesKey)
+            defaults.removeObject(forKey: pendingSharedMembershipKeysKey)
+            return nil
+        } catch {
+            #if canImport(OSLog)
+            Self.logger.error("Shared profile migration failed; retained local data for retry")
+            #endif
+            return legacyData
         }
-        defaults.removeObject(forKey: profilesKey)
     }
 }
 
@@ -764,7 +849,8 @@ public final class ProfilesModel {
         /// every server and imports the household's watchlist on next launch —
         /// the exact leak the gate exists to stop. See `Profile.isAwaitingSetup`.
         isAwaitingSetup: Bool? = nil,
-        isKidsProfile: Bool? = nil
+        isKidsProfile: Bool? = nil,
+        plexHomeImportIdentity: PlexHomeImportIdentity? = nil
     ) -> Profile {
         var profile = Profile(
             name: name,
@@ -779,7 +865,8 @@ public final class ProfilesModel {
             plexHomeUserBindings: plexHomeUserBindings,
             avatarImageURL: avatarImageURL,
             avatarEmoji: avatarEmoji,
-            avatarEmojiColorIndex: avatarEmojiColorIndex
+            avatarEmojiColorIndex: avatarEmojiColorIndex,
+            plexHomeImportIdentity: plexHomeImportIdentity
         )
         profile.isAwaitingSetup = isAwaitingSetup
         // Through the revisioned setter, so a profile is never born with a Kids

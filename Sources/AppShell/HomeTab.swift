@@ -692,7 +692,6 @@ struct HomeTab: View {
                         stackDepth: detailStackDepth,
                         heroTrailerResolver: makeHeroTrailerResolver(),
                         preservesHeroTrailerOnDisappear: preservesHeroTrailerOnReturn,
-                        initialEpisode: route.episode,
                         seerConnected: seer.isConfigured,
                         requestAvailabilityRefresh: { await seer.requestAvailability(for: $0) },
                         onRequestSeasons: { item, seasons in
@@ -1218,6 +1217,7 @@ struct HomeTab: View {
         let identitySources = self.identitySources
         let seer = self.seer
         let runtime = self.runtime
+        let metadataLanguage = locale.identifier
         return DetailOpenEnvironment(
             resolveProvider: { try resolveProvider($0, in: accounts) },
             resolveOptionalProvider: { resolveOptionalProvider($0, in: accounts) },
@@ -1225,7 +1225,10 @@ struct HomeTab: View {
             crossServerSourceResolver: crossServerSourceResolver(in: accounts, identitySources: identitySources),
             continueWatchingSnapshot: { runtime.continueWatchingForDetail },
             ratingsProvider: ratingsProvider,
-            detailMetadataResolver: { await DetailMetadataResolver.household.resolve($0) },
+            metadataLanguage: metadataLanguage,
+            localizedDetailMetadataResolver: {
+                await DetailMetadataResolver.household.resolve($0, language: $1)
+            },
             onlineTrailerResolver: { await DetailMetadataResolver.household.trailers(for: $0) },
             trailerSettings: heroBackground,
             discoveryStatusRefresh: { await seer.requestAvailability(for: $0) },

@@ -4,6 +4,11 @@ Shared Jellyfin/Emby implementation of `CoreModels.MediaProvider`. Both use the
 MediaBrowser API lineage and intentionally share one implementation so every
 supported capability remains at parity.
 
+Home-row sources explicitly request `SortName`, `DateCreated`, `ProductionYear`,
+and `PremiereDate` for local saved sorting. Emby omits release metadata without
+those fields; assuming Jellyfin's default response silently turns release sorting
+into name sorting. This applies to library, collection, playlist, and Home feeds.
+
 ## Responsibility
 
 - `JellyfinProvider` (the `MediaProvider` conformer) — libraries, items,
@@ -50,6 +55,25 @@ supported capability remains at parity.
   surfaced through the shared provider abstraction.
 
 ## Invariants
+
+Known season/show watch actions carry their media kind through the shared watch
+capability. Jellyfin and Emby enumerate all episodes in validated, bounded pages,
+request the native container update, and independently read each episode's played
+flag and resume position. A list summary can reflect the parent's new flag while
+individual episode state is still unchanged; list data cannot confirm delivery.
+If the server acknowledges without cascading, only unfinished episodes receive
+individual writes, followed by another individual verification.
+Foreign descendants, incomplete pagination, unreadable flags and unchanged
+post-write state fail explicitly, keeping durable actions queued. Authorization
+and cancellation are rechecked between operations. Normal movie/episode writes
+do not acquire these container reads; other providers retain their existing
+timestamp-aware/native implementation. Verification is linear in episode count
+and uses sequential requests rather than flooding the server.
+
+The container remains one outbox destination, not a transaction or per-episode
+checkpoint. A partial failure retries the container action. Concurrent playback
+inside that season/show is not protected by a parent timestamp; do not extend
+the leaf-reset freshness guarantee to a bulk action.
 
 New reduced Emby offline downloads use `EmbyOfflineDownloadURLBuilder`: one
 progressive H.264 MP4 plus independent raw AAC requests for additional soundtracks.
@@ -239,6 +263,25 @@ identity is the recommendation type and its occurrence within that type, not
 the changing baseline movie title or category ID. This keeps a hidden
 "More like..." slot hidden when its subject changes. The library Recommended
 screen still uses the server's own category identities and full inventory.
+
+Jellyfin Home, row discovery, previews, and browsing can share completed
+`/Movies/Recommendations` responses through an explicit `HomeRecommendationScope`.
+Reuse is private to one authenticated client and keyed by Home owner/revision,
+server user, library, and **exact item limit**. Different limits can return
+different titles: this does not substitute larger cached prefixes, increase
+request limits, or prefetch categories. Emby and unscoped requests retain their
+existing fresh-request behavior; Plex keeps native paging.
+
+Successful category arrays are reusable for 60 seconds, with least-recently-used
+limits of 16 entries and 2,000 item records per client. Pruning is lazy, and the
+record limit is not a byte/peak-memory guarantee. Empty arrays, failures, and
+oversized responses are not retained; oversized responses are returned without
+truncation. Concurrent readers share work, individual cancellation preserves
+remaining readers, and the last departure cancels transport work. Home refresh,
+history changes, and owner retirement fence older generations. Explicit Retry
+bypasses reuse, including when a valid response lacks the selected shelf.
+See the [performance evidence](../../docs/performance-lab.md#jellyfin-home-recommendation-reuse)
+for measured benefits and the unchanged first-load limitation.
 
 Watched- and liked-movie similarity rows share the concise localized heading
 `More like [movie title]`. The server title remains unchanged apart from trimming
@@ -533,6 +576,13 @@ unless the profile explicitly enables it in Libraries. Discovery retains the
 entry for that control; a later refresh shows newly populated directories.
 Failures are logged and remain unknown, never converted into an empty result.
 This check does not load collection members or populate the full browse cache.
+
+Collection picker choices are not reconstructed from saved IDs or direct item
+reads. A disabled Jellyfin Collections library can disappear from user views and
+return an empty BoxSet list even while a known collection and its members remain
+directly readable. Fresh discovery must clear cached choices in that case.
+The user-facing API does not distinguish disabled from genuinely empty here, so
+Plozz does not invent a disabled status or request administrative library settings.
 
 The synthetic directory ID is navigation identity only. Browsing it uses the same
 cached BoxSet listing without `ParentId`; the in-library shortcut still forwards

@@ -74,9 +74,10 @@ public actor ExternalTitleMetadataResolver {
 
     public func resolve(
         item: MediaItem,
-        regionCode: String
+        regionCode: String,
+        language: String = "en"
     ) async -> ExternalTitleMetadata {
-        let query = MetadataQuery(item).seriesScoped
+        let query = MetadataQuery(item).seriesScoped.forMetadataLanguage(language)
         var requested: Set<MetadataField> = [
             .overview,
             .genres,

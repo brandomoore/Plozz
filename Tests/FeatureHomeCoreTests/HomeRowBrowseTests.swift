@@ -36,9 +36,9 @@ final class HomeRowBrowseTests: XCTestCase {
         XCTAssertNil(browser.error)
         let offsets = await provider.offsets
         XCTAssertEqual(offsets, [0, 60, 120])
-        browser.applyMutation(.init(itemIDs: ["60"], resumePosition: 2))
+        await browser.applyMutation(.init(itemIDs: ["60"], resumePosition: 2))
         XCTAssertEqual(browser.items.map(\.id), ["124"])
-        browser.applyMutation(.init(itemIDs: ["60"], resumePosition: 30))
+        await browser.applyMutation(.init(itemIDs: ["60"], resumePosition: 30))
         XCTAssertEqual(browser.items.map(\.id), ["60", "124"])
     }
 
@@ -273,13 +273,13 @@ final class HomeRowBrowseTests: XCTestCase {
             await model.load()
             XCTAssertNil(model.error, scope)
             XCTAssertEqual(model.items.map(\.id), scope == "nextUp" ? ["unwatched", "watched"] : ["unwatched"], scope)
-            model.applyMutation(.init(itemIDs: ["unwatched"], scopedItemIDs: ["account:unwatched"], played: true))
+            await model.applyMutation(.init(itemIDs: ["unwatched"], scopedItemIDs: ["account:unwatched"], played: true))
             XCTAssertEqual(model.items.count, scope == "nextUp" ? 2 : 0, scope)
             await model.load()
             XCTAssertEqual(model.items.count, scope == "nextUp" ? 2 : 0, scope)
-            model.applyMutation(.init(itemIDs: ["watched"], scopedItemIDs: ["other:watched"], played: false))
+            await model.applyMutation(.init(itemIDs: ["watched"], scopedItemIDs: ["other:watched"], played: false))
             XCTAssertEqual(model.items.count, scope == "nextUp" ? 2 : 0, scope)
-            model.applyMutation(.init(itemIDs: ["watched"], scopedItemIDs: ["account:watched"], played: false))
+            await model.applyMutation(.init(itemIDs: ["watched"], scopedItemIDs: ["account:watched"], played: false))
             XCTAssertEqual(model.items.map(\.id), scope == "nextUp" ? ["unwatched", "watched"] : ["watched"], scope)
         }
     }
@@ -338,7 +338,7 @@ final class HomeRowBrowseTests: XCTestCase {
         XCTAssertFalse(try XCTUnwrap(presentation(eligible)).canBrowse, "Hidden-library overflow must not add an action")
     }
 
-    func testCompleteHistoryAndUnresolvedRowsDoNotOfferBrowseButRetainedCardsDo() throws {
+    func testCompleteHistoryAndEmptyRowsDoNotOfferBrowseButCachedRowsRemainInteractive() throws {
         let shared = HomeRowChoice.shared
         let history = try XCTUnwrap(shared.first { $0.id == .global(.continueWatching) })
         let row = HomePresentationRow(choice: history, source: .home(.init(kind: .continueWatching, items: items(100))))
@@ -349,13 +349,11 @@ final class HomeRowBrowseTests: XCTestCase {
             let retained = HomePresentationRow(
                 choice: choice, source: .library(.init(section: section, isLoading: loading, failure: failure))
             )
-            XCTAssertTrue(retained.canBrowse)
-            var empty = section
-            empty.items = []
-            let unresolved = HomePresentationRow(
+            XCTAssertTrue(retained.canBrowse, "Cached cards remain usable while their source refreshes or fails.")
+            let empty = LibrarySection(id: "shelf", title: "Shelf", items: [], hasMore: true)
+            XCTAssertFalse(HomePresentationRow(
                 choice: choice, source: .library(.init(section: empty, isLoading: loading, failure: failure))
-            )
-            XCTAssertFalse(unresolved.canBrowse)
+            ).canBrowse)
         }
         XCTAssertTrue(HomePresentationRow(
             choice: choice, source: .library(.init(section: section, isLoading: false, failure: nil))
@@ -415,6 +413,47 @@ final class HomeRowBrowseTests: XCTestCase {
         XCTAssertNil(model.error)
         XCTAssertEqual(model.items.count, 143)
         XCTAssertEqual(model.items.first?.id, "142")
+    }
+
+    func testCustomRowFailedCompleteQueryKeepsPreviousProjectionUntilRetry() async throws {
+        let source = Pages(items(143), failureAt: 60)
+        let pager = HomeContentPager(sources: [.init(home: .watchlist), .init(home: .continueWatching)]) {
+            feed, start, limit in
+            if feed.home == .continueWatching { return .init(items: [], nextOffset: nil) }
+            return try await source.falliblePage(start, limit)
+        }
+        let model = HomeRowBrowseModel(title: "Custom row", contentPager: pager)
+        await model.load()
+        XCTAssertEqual(model.items.count, 60)
+        let original = model.items
+        model.query.sort = .init(field: .name, direction: .descending)
+        model.query.filters = .init(filter: .unwatched)
+        await model.load()
+        XCTAssertEqual(model.error, .serverUnreachable)
+        XCTAssertEqual(model.items.map(\.id), original.map(\.id))
+        XCTAssertNotEqual(model.query, model.appliedQuery)
+        await source.recover()
+        await model.load()
+        XCTAssertNil(model.error)
+        XCTAssertFalse(model.hasMore)
+        XCTAssertEqual(model.items.count, 71)
+        XCTAssertEqual(model.items.first?.id, "141")
+        XCTAssertEqual(model.query, model.appliedQuery)
+    }
+
+    func testCustomRowDefaultOrderStillPublishesHealthySourcesWithFailure() async {
+        let healthy = items(3)
+        let pager = HomeContentPager(sources: [.init(home: .watchlist), .init(home: .continueWatching)]) {
+            feed, start, limit in
+            if feed.home == .watchlist { throw AppError.serverUnreachable }
+            return .prefix(healthy, startIndex: start, limit: limit)
+        }
+        let model = HomeRowBrowseModel(title: "Custom row", contentPager: pager)
+        await model.load()
+        XCTAssertEqual(model.items.map(\.id), healthy.map(\.id))
+        XCTAssertEqual(model.error, .serverUnreachable)
+        XCTAssertTrue(model.hasMore)
+        XCTAssertTrue(model.appliedQuery.isDefault)
     }
 
     func testScopeChangeClearsItemsAndRejectsLatePage() async {
@@ -511,6 +550,33 @@ final class HomeRowBrowseTests: XCTestCase {
         XCTAssertEqual(model.items.map(\.id), ["second"])
     }
 
+    func testMutationProjectionCannotOverwriteANewerQueryOrProfile() async {
+        let items = (0..<5_000).map {
+            MediaItem(id: "\($0)", title: "Title \(5_000 - $0)", kind: $0.isMultiple(of: 2) ? .movie : .series)
+        }
+        var current = true
+        let model = HomeRowBrowseModel(title: "Mutation race", snapshot: items, isCurrent: { current })
+        for id in ["2", "4", "6"] {
+            let mutation = Task { await model.applyMutation(.init(itemIDs: [id], played: true)) }
+            await Task.yield()
+            model.query = .init(sort: .init(field: .name, direction: .descending), media: .shows)
+            await model.load()
+            await mutation.value
+            XCTAssertEqual(model.appliedQuery, model.query)
+            XCTAssertEqual(model.items.count, 2_500)
+            XCTAssertTrue(model.items.allSatisfy { $0.kind == .series })
+        }
+        model.query = .init(media: .movies, filters: .init(filter: .unwatched))
+        await model.load()
+        XCTAssertEqual(model.items.count, 2_497)
+        let mutation = Task { await model.applyMutation(.init(itemIDs: ["8"], played: true)) }
+        await Task.yield()
+        current = false
+        model.invalidate()
+        await mutation.value
+        XCTAssertTrue(model.items.isEmpty)
+    }
+
     func testScopedWatchMutationReevaluatesTheWholeLoadedFilter() async {
         let all = [
             MediaItem(id: "same", title: "A", kind: .movie, isPlayed: true).taggingSource("a"),
@@ -520,7 +586,7 @@ final class HomeRowBrowseTests: XCTestCase {
         model.query.filters = .init(filter: .unwatched)
         await model.load()
         XCTAssertTrue(model.items.isEmpty)
-        model.applyMutation(.init(itemIDs: ["same"], scopedItemIDs: ["a:same"], played: false))
+        await model.applyMutation(.init(itemIDs: ["same"], scopedItemIDs: ["a:same"], played: false))
         XCTAssertEqual(model.items.map(\.sourceAccountID), ["a"])
     }
 

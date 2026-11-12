@@ -7,6 +7,37 @@ import XCTest
 
 @MainActor
 final class PlexSyncAuthorizationTests: XCTestCase {
+    func testSyncedImportIdentityReusesProfileButStillRequiresPlexAuthorization() async throws {
+        try await withApp { app in
+            await authenticate(app)
+            let activeID = app.profiles.activeProfileID
+            let child = try XCTUnwrap(app.profiles.profiles.first { $0.id != activeID })
+            var incoming = ProfileSyncDTO(profile: child)
+            incoming.plexHomeImportIdentity = .init(ownerUserID: "owner", homeUserID: "child")
+            app.applySyncRecords(["profile:\(child.id)": try XCTUnwrap(CanonicalJSON.encode(incoming))])
+            XCTAssertNil(app.profiles.profiles.first { $0.id == child.id }?.homeUserBinding(forPlexAccount: "plex"))
+            XCTAssertEqual(app.accountsProviders.tokenResolver("plex"), "FIXTURE-SERVER")
+            let users = [
+                PlexHomeUser(id: "parent", name: "Parent", requiresPIN: true),
+                PlexHomeUser(id: "child", name: "Child", requiresPIN: true)
+            ]
+            app.plexHomeUsers.plexHomeUsersFetch = { _, _ in users }
+            app.plexHomeUsers.presentUserSelection(.init(
+                accountID: "plex", serverName: "Fixture", users: users,
+                isFirstRun: false, applyToAccountIDs: ["plex"]
+            ))
+            XCTAssertEqual(app.plexHomeUsers.importOnboardingProfiles(), .existing)
+            XCTAssertEqual(app.profiles.profiles.count, 2)
+            XCTAssertEqual(app.plexHomeUsers.importedOnboardingProfileID(for: users[1]), child.id)
+            XCTAssertEqual(app.profiles.activeProfileID, activeID)
+
+            app.selectProfile(child.id)
+            await app.plexHomeUsers.waitForPlexPINRequirementCheck()
+            XCTAssertEqual(app.plexHomeUsers.pendingPlexPINRequest?.homeUserID, "child")
+            XCTAssertNil(app.accountsProviders.tokenResolver("plex"))
+        }
+    }
+
     func testRepeatedPlexSignInReusesLegacyAccountWithoutReplacingTheHomeUser() async throws {
         try await withApp { app in
             await authenticate(app)

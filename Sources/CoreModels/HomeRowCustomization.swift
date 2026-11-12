@@ -97,7 +97,8 @@ public struct HomeRowChoice: Identifiable, Equatable, Sendable {
 
     public init(collectionSection: CollectionSection, library: AggregatedLibrary? = nil) {
         self.init(
-            id: collectionSection.rowID, title: collectionSection.title, library: library,
+            id: collectionSection.rowID, title: collectionSection.title,
+            localizedTitle: collectionSection.localizedTitle, library: library,
             isProviderDefault: false, isLegacyDefault: false, collectionSection: collectionSection
         )
     }

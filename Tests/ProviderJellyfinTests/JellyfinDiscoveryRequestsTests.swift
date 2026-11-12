@@ -5,6 +5,110 @@ import XCTest
 @testable import ProviderJellyfin
 
 final class JellyfinDiscoveryRequestsTests: XCTestCase {
+    func testRecommendationReadersShareWorkAndCancellationDoesNotCancelOtherReaders() async throws {
+        let cache = JellyfinRecommendationRequests()
+        let gate = DiscoveryGate()
+        let scope = HomeRecommendationScope()
+        let rows = try recommendationRows()
+        let first = Task {
+            try await cache.load(scope: scope, user: "viewer", library: "movies", limit: 20) {
+                _ = try await gate.wait()
+                return rows
+            }
+        }
+        try await waitUntil { await gate.started == 1 }
+        let second = Task {
+            try await cache.load(scope: scope, user: "viewer", library: "movies", limit: 20) {
+                XCTFail("An overlapping reader must share the original request")
+                return rows
+            }
+        }
+        try await waitUntil { await cache.waitingReaderCount == 2 }
+        first.cancel()
+        do { _ = try await first.value; XCTFail("Cancelled reader must stop promptly") }
+        catch { XCTAssertTrue(error is CancellationError) }
+        await gate.release(1, result: .success(1))
+        let result = try await second.value
+        XCTAssertEqual(result.first?.CategoryId, "category")
+        _ = try await cache.load(scope: scope, user: "viewer", library: "movies", limit: 20) {
+            XCTFail("Successful shared response should be reusable")
+            return rows
+        }
+    }
+
+    func testCancelledLastRecommendationReaderCannotPoisonLaterCache() async throws {
+        let cache = JellyfinRecommendationRequests()
+        let gate = DiscoveryGate()
+        let scope = HomeRecommendationScope()
+        let rows = try recommendationRows()
+        let first = Task {
+            try await cache.load(scope: scope, user: "viewer", library: "movies", limit: 20) {
+                _ = try await gate.wait()
+                return rows
+            }
+        }
+        try await waitUntil { await gate.started == 1 }
+        first.cancel()
+        do { _ = try await first.value; XCTFail("Cancelled reader must stop") }
+        catch { XCTAssertTrue(error is CancellationError) }
+        let fresh = try await cache.load(scope: scope, user: "viewer", library: "movies", limit: 20) { rows }
+        XCTAssertEqual(fresh.count, 1)
+        await gate.release(1, result: .success(1))
+        try await waitUntil { await gate.completedCancellation.count == 1 }
+        _ = try await cache.load(scope: scope, user: "viewer", library: "movies", limit: 20) {
+            XCTFail("Late cancelled completion must not remove the replacement cache")
+            return rows
+        }
+    }
+
+    func testRecommendationInvalidationRejectsNoncooperativeInFlightResults() async throws {
+        for retires in [false, true] {
+            let cache = JellyfinRecommendationRequests()
+            let gate = DiscoveryGate()
+            let scope = HomeRecommendationScope()
+            let rows = try recommendationRows()
+            let old = Task {
+                try await cache.load(scope: scope, user: "viewer", library: "movies", limit: 20) {
+                    _ = try await gate.wait()
+                    return rows
+                }
+            }
+            try await waitUntil { await gate.started == 1 }
+            if retires { scope.invalidate() } else { scope.refresh() }
+            await gate.release(1, result: .success(1))
+            do { _ = try await old.value; XCTFail("Obsolete response must not be published") }
+            catch { XCTAssertTrue(error is CancellationError) }
+            let current = retires ? HomeRecommendationScope() : scope
+            let fresh = try await cache.load(scope: current, user: "viewer", library: "movies", limit: 20) { rows }
+            XCTAssertEqual(fresh.count, 1)
+        }
+    }
+
+    func testForcedRecommendationRetryFencesAnOlderFlight() async throws {
+        let cache = JellyfinRecommendationRequests()
+        let gate = DiscoveryGate()
+        let scope = HomeRecommendationScope()
+        let rows = try recommendationRows()
+        let old = Task {
+            try await cache.load(scope: scope, user: "viewer", library: "movies", limit: 20) {
+                _ = try await gate.wait()
+                return rows
+            }
+        }
+        try await waitUntil { await gate.started == 1 }
+        let fresh = try await cache.load(scope: scope, user: "viewer", library: "movies", limit: 20, refresh: true) { rows }
+        XCTAssertEqual(fresh.count, 1)
+        await gate.release(1, result: .success(1))
+        do { _ = try await old.value; XCTFail("Superseded flight must not overwrite refreshed data") }
+        catch { XCTAssertTrue(error is CancellationError) }
+    }
+
+    private func recommendationRows() throws -> [MovieRecommendationDto] {
+        try JSONDecoder().decode([MovieRecommendationDto].self, from: Data(
+            #"[{"RecommendationType":"SimilarToRecentlyPlayed","CategoryId":"category","Items":[{"Id":"movie","Type":"Movie"}]}]"#.utf8
+        ))
+    }
+
     func testOverlappingReadsShareWorkButLaterReadsAreFresh() async throws {
         let requests = JellyfinDiscoveryRequests<Int>()
         let gate = DiscoveryGate()

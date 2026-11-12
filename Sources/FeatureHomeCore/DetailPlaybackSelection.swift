@@ -3,6 +3,64 @@ import CoreModels
 
 /// Platform-neutral detail-page server and media-version selection.
 public enum DetailPlaybackSelection {
+    /// One synchronous selection for picker presentation and Play. Recompute from
+    /// current model state at activation; this is neither cached state nor authorization.
+    public struct Resolution: Sendable {
+        public let serverChoices: [MediaSourceRef]
+        public let source: MediaSourceRef?
+        public let versions: [MediaVersion]
+        public let selectedVersionID: String?
+        fileprivate let item: MediaItem
+        fileprivate let sources: [MediaSourceRef]
+        fileprivate let explicitSource: Bool
+        fileprivate let explicitVersion: Bool
+
+        /// Routing is deferred so presenting picker options does not construct
+        /// a playback item or reconcile resume state.
+        public var playItem: MediaItem {
+            DetailPlaybackSelection.playItem(
+                for: item, sources: sources, activeAccountID: source?.accountID,
+                versionID: selectedVersionID, explicit: explicitSource,
+                explicitVersion: explicitVersion
+            )
+        }
+    }
+
+    public static func resolve(
+        for item: MediaItem,
+        sources: [MediaSourceRef],
+        sourceOverride: String?,
+        versionOverride: String?,
+        libraryOrigin: String?,
+        isLibraryOriginPinned: Bool,
+        preferences: any VersionPreferenceStoring,
+        capabilities: MediaCapabilities
+    ) -> Resolution {
+        let source = preferredSource(
+            sourceOverride: sourceOverride,
+            libraryOrigin: libraryOrigin,
+            itemSourceAccountID: item.sourceAccountID,
+            sources: sources,
+            capabilities: capabilities,
+            openingSource: item.editionOpeningSource
+        )
+        let versions = versions(for: item, sources: sources, activeAccountID: source?.accountID)
+        let versionID = preferredVersionID(
+            for: item, versions: versions, versionOverride: versionOverride,
+            preferences: preferences, capabilities: capabilities, sources: sources
+        )
+        return Resolution(
+            serverChoices: serverChoices(from: sources),
+            source: source,
+            versions: versions,
+            selectedVersionID: versionID,
+            item: item,
+            sources: sources,
+            explicitSource: isLibraryOriginPinned || sourceOverride != nil || versionOverride != nil,
+            explicitVersion: versionOverride != nil || item.explicitVersionSelection
+        )
+    }
+
     public static func showsPlayPlaceholder(
         for item: MediaItem,
         hasPlayTarget: Bool,

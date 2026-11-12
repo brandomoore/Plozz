@@ -9,9 +9,10 @@ import Observation
 /// different language from the device, which is exactly the case that matters:
 /// one TV, several people, not all of whom read the same language.
 ///
-/// Changes Plozz's own copy and the preferred language of external title logos. It
+/// Changes Plozz's own copy, external title logos, and missing-text enrichment
+/// on detail pages. It
 /// does not change:
-///   * media titles, overviews or genres — those come from Jellyfin/Plex in
+///   * existing media titles, overviews or genres — those come from Jellyfin/Plex in
 ///     whatever language that server was configured with (a separate setting,
 ///     and a separate capability question per provider);
 ///   * preferred audio/subtitle track languages — a German UI does not imply

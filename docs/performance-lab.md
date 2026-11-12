@@ -105,6 +105,53 @@ publish only sanitized aggregates.
 
 ## Baseline → attribution → candidate → regression
 
+### Custom Home rows with multiple sources
+
+Select `home-single-collection-row`, `home-multi-source-row`,
+`home-overlapping-source-browse`, and `home-multi-source-presentation` on either
+platform. The first preserves the original one-collection workload. The preview
+scenario uses 2, 8, and 32 sources, each advertising 100,000 items with 1 ms
+synthetic request latency. The overlap scenario drains eight 200-item sources
+into 200 titles and verifies all eight playback references on every title.
+The presentation scenario mounts the production row with 20 merged titles and
+640 metadata credits, then completes 24 hosting-graph updates. Follow-up
+assertions verify that actual metadata changes reach the cards.
+
+Measured with Xcode 27.2, optimized Debug, one warmup and five retained samples:
+
+| Workload | tvOS 27.0 median wall / CPU | iPhone simulator, iOS 26.2 median wall / CPU | Completed work |
+| --- | --- | --- | --- |
+| One collection | 1.629 / 1.857 ms | 2.107 / 1.529 ms | 20 cards, 11 requests |
+| 2/8/32-source previews combined | 32.752 / 3.627 ms | 31.157 / 2.789 ms | 63 cards, 78 fetched records, 42 requests, maximum concurrency 3 |
+| Eight overlapping sources, complete browse | 307.756 / 308.689 ms | 468.378 / 466.146 ms | 1,600 records, 200 titles, 104 requests |
+| Mounted merged-row updates | 3.591 / 3.945 ms | 15.666 / 32.392 ms | All 24 updates, 20 cards; unchanged TV card inputs reused |
+
+The original tvOS single-collection baseline was 1.014 ms wall / 1.214 ms CPU
+with the same 20 cards and 11 requests. The extra cursor/dispatch machinery
+therefore has a small measurable cost, not a single-source speedup. An early
+multi-source implementation took about 24.5 seconds and 629 requests for the
+overlap workload; batched merging and adaptive page sizes removed repeated
+accumulated-record work. The final overlap median resident-memory increase was
+about 6.1 MiB on TV and 5.8 MiB on iOS; these are per-sample RSS deltas, not
+peak memory or leak measurements.
+
+The pager limits source requests to three concurrently, stages cursor updates
+until cancellation checks pass, and bounds sparse scans per advance. A sparse
+page may intentionally contain fewer cards while remaining pageable. Tests
+cover scan-boundary retention, cancellation, concurrent advances, partial
+failure/retry, uneven pages, shared preview requests, viewer/library scope,
+legacy persistence, and native-provider routing contracts.
+
+These are synthetic provider-contract and mounted-row measurements, not real
+server latency, artwork downloads, scroll FPS, or physical-device results.
+The UI timing excludes initial mounting and the metadata-change assertions.
+Local evidence is retained under `.build/performance/runs/`: baseline
+`b5dd691affbf411bb78377e798705c7e`, TV
+`dd6442d8f49b44a9a9ec225c9594316e`, and iOS
+`93d79c88fdaa4f228d436e5a72d3cc9b`. Compare the unchanged baseline workload
+directly: additional fixture coverage changes the whole-suite fingerprint,
+and host load varied between runs.
+
 ### Authorized real music transitions
 
 `music-plex-live`, `music-jellyfin-live`, and `music-subsonic-live` are explicit-only
@@ -1250,6 +1297,512 @@ without pretending a sample count measures frame smoothness.
 
 ## Workloads and configuration interactions
 
+### Saved custom-row queries and preview parity
+
+`home-saved-row-queries` completes two 10,000-title sources through
+`HomeContentPager`, verifies the descending result, reuses that inventory for
+four ascending sort fields, and waits for a watched-state mutation to finish.
+Every sample verifies all 20,000 items, no warm refetch, and at most three
+concurrent source requests; all retained samples used 334 requests. This is synthetic
+provider work, not real-server latency.
+
+Isolated scenario runs, one warmup and five retained optimized samples per
+platform, produced these medians:
+
+| Metric | TV before | TV after | iPhone before | iPhone after |
+| --- | ---: | ---: | ---: | ---: |
+| Complete cold load | 1,006 ms | 586 ms | 1,099 ms | 624 ms |
+| Four warm queries, total | 1,855 ms | 844 ms | 1,909 ms | 797 ms |
+| Completed watch mutation | 450 ms | 226 ms | 473 ms | 209 ms |
+| Whole workload wall time | 4,134 ms | 2,032 ms | 4,324 ms | 1,980 ms |
+| Whole workload CPU time | 4,150 ms | 2,018 ms | 4,337 ms | 1,999 ms |
+| Resident snapshot | 324.94 MiB | 376.81 MiB | 465.50 MiB | 423.22 MiB |
+| Physical-footprint snapshot | 21.19 MiB | 21.16 MiB | 114.67 MiB | 115.80 MiB |
+
+Baseline run IDs are `4f373adfc67c4fa58ace057ddb1e0ce6` (TV) and
+`05651a29a9424ddab6df14960f9266ef` (iPhone). Isolated final candidates are
+`908a1fc892264ef8ab8d33d7fd08f9b7` and `f2a59cc309c040d2946e68df7b22e210`.
+Evidence lives under `.build/performance/runs/`. Comparisons are descriptive:
+the fixture fingerprint changed to await the now-asynchronous mutation and
+assert its result, alongside added regression cases. Both measurements include
+completed mutation work, not just task submission. The data, sample protocol,
+toolchain and per-platform simulator identity are unchanged. Resident snapshots
+include reusable allocator pages; neither memory column is a peak-memory or
+leak measurement. Complete source inventories still cost memory and network I/O.
+
+The implementation skips unused filter records, normalizes names once, sorts
+indices instead of large media values, and projects browse mutations off-main.
+`home-rapid-row-queries` separately replaces/cancels four queries over 20,000
+mixed movie/show and watched/resumable titles, verifies complete filtered results,
+applies a mutation, and samples main-actor wake-up gaps. Five samples on each
+platform had maximum gaps of 9.22 ms (TV) and 11.84 ms (iPhone), below the
+workload's 100-ms regression ceiling. Runs `cf6c208adc684bb089c6dd31792a25e4`
+and `58940988729c48b588c3c26b8216c586` retain that evidence. These gaps are
+simulator scheduling observations, not physical-device frame timing.
+
+Hosted `testCustomRowPreviewMatchesHomeGeometry` compares the actual Home row
+against the editor's shared presentation across poster/landscape/featured,
+framed/borderless, standard/compact density, and browse/no-browse headings.
+It checks row height and rendered heading/title bounds on both platforms.
+Editor loading, partial failure, query filtering and TV focus retain separate
+hosted checks. No physical deployment is needed for these workloads.
+
+#### Real-server saved-query acceptance
+
+The explicit `home-live-{jellyfin,emby,plex,silo,combined}-queries` scenarios
+use production providers against authorized live servers, not fixture data.
+Run `a8ae80e732054058ac25803a894ec92a` passed all five scenarios with no skips,
+one warmup and five retained optimized iPhone-simulator samples per scenario.
+Each sample fully loads movie/TV libraries and, for Plex/Jellyfin/Emby, two
+populated collections and two playlists. Combined uses all three providers.
+
+| Source | Unique items | Source pages | Fresh inventory, median | Eight warm sorts, total median |
+| --- | ---: | ---: | ---: | ---: |
+| Jellyfin | 1,523 | 31 | 5,916 ms | 35.23 ms |
+| Emby | 1,830 | 36 | 1,640 ms | 45.45 ms |
+| Plex | 1,815 | 35 | 15,760 ms | 44.40 ms |
+| Silo | 1,826 | 32 | 2,262 ms | 46.44 ms |
+| Combined | 1,918 | 102 | 15,893 ms | 53.70 ms |
+
+These are observed current-path timings, not a live-server before/after speedup.
+Fresh means a new client/provider/pager; server caches are not cleared.
+Discovery precedes the fresh-inventory timer. Warm sorts cover Name, Date Added,
+Release Date and Runtime in both directions and perform no additional source-page
+fetches. Media/watch filters, preview/grid agreement and cancelled-query
+replacement also pass. Real metadata must include differing dates, years and
+durations, so a missing-field fallback cannot masquerade as sorting coverage.
+This caught Emby's omitted release fields: explicitly requesting `ProductionYear`
+and `PremiereDate` restored release sorting instead of silently falling back to
+names. The provider regression also covers explicit field-list overrides.
+
+Warm projection is small at these library sizes, but complete first inventories
+still take seconds, especially Plex and combined rows. This does **not** establish
+an instant first sorted preview or physical-device UI smoothness. Median
+per-sample maximum main-actor wake-up gaps were 3.5–5.0 ms; those are simulator
+scheduling observations, not frame measurements. Results do not cover every server
+version, network condition, provider, or larger library.
+
+#### Bounded full-inventory fetching
+
+Full library/collection/playlist inventories now request 200 items per page and
+use bounded lookahead, with three source-page loads active across one pager.
+Ordinary scrolling and Home-feed limits are unchanged. Returned offsets, not
+the requested page size or total-count hint, determine traversal and completion.
+Short pages invalidate noncontiguous lookahead; errors and cancellation leave
+the inventory uncommitted. No stream, artwork, sort, or playback metadata is
+removed to achieve the speedup.
+
+The same five live scenarios compared sequential 60-item reads
+(`a8ae80e732054058ac25803a894ec92a`), sequential 200-item reads
+(`ea1ffde2901944029aabd0c59687e85e`), and the selected three-request traversal
+(`112e8dcd3d50423197888712b75a2dc1`). Every run used one warmup and five retained
+optimized iPhone-simulator samples per scenario:
+
+| Source | 60-item inventory median | Sequential 200-item median | Selected median | Reduction vs 60 | Source pages, before / after |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Jellyfin | 5,916 ms | 3,706 ms | 1,909 ms | 68% | 31 / 13 |
+| Emby | 1,640 ms | 913 ms | 530 ms | 68% | 36 / 14 |
+| Plex | 15,760 ms | 14,419 ms | 10,232 ms | 35% | 35 / 14 |
+| Silo | 2,262 ms | 1,671 ms | 1,000 ms | 56% | 32 / 10 |
+| Combined | 15,893 ms | 15,237 ms | 10,577 ms | 33% | 102 / 41 |
+
+Item and metadata counts are unchanged. The selected run also compares complete
+ordered `MediaItem` arrays against sequential 60-item requests during the
+unmeasured warmup, including presentation and playback metadata. All five
+scenarios pass with no skips. Eight warm sorts total 33-55 ms (median per
+scenario), without page refetches. The new warmup parity assertion and request
+diagnostics change the fixture fingerprint; these are descriptive comparisons
+of the same measured query operations, not a fingerprint-matched lab verdict.
+Server caches are not cleared, discovery remains outside the inventory timer,
+and measurements are not physical-device frame timing.
+
+The latency improvement has a CPU/memory tradeoff:
+
+| Source | Whole-workload CPU median, before / after | Physical-footprint snapshot median, before / after |
+| --- | ---: | ---: |
+| Jellyfin | 854 / 754 ms | 177 / 216 MiB |
+| Emby | 1,076 / 911 ms | 177 / 215 MiB |
+| Plex | 4,713 / 6,904 ms | 179 / 197 MiB |
+| Silo | 1,402 / 1,348 ms | 178 / 195 MiB |
+| Combined | 6,159 / 8,116 ms | 174 / 202 MiB |
+
+CPU includes discovery and assertions, not just inventory loading. Footprints
+are post-work snapshots, not peaks, isolated per-provider allocation costs, or
+leak evidence. Parallel responses can increase decoding contention and live
+buffers; complete inventories still require memory proportional to membership.
+Server CPU and physical-device energy use were not measured.
+
+A two-request cap (`23feeb41352943759d6a8d7b39de9704`) also passed all five
+scenarios. It reduced Plex/combined whole-workload CPU to 5,504/6,450 ms, but
+increased inventory medians to 11,788/11,903 ms; Jellyfin/Emby/Silo rose to
+2,667/750/1,136 ms. Three requests were retained for the best measured first-load
+latency across all five scenarios, with the CPU tradeoff above kept explicit.
+A 500-item sequential sweep (`bd389a706dde4b20a74b21e32e40f472`) failed an Emby
+response check, although a later instrumented Emby-only run passed; its cause
+was not established and the failed sweep is excluded from speedup claims.
+
+Regression coverage verifies preview-to-inventory continuation, server page
+caps and changing strides, absent/estimated totals, visibility filtering,
+the shared concurrency ceiling, duplicate playback sources, cancellation,
+failed-page retries, malformed responses, and static/session loader limits.
+
+#### Plex list/detail investigation: deferred enrichment not adopted
+
+The opt-in `home-live-{plex,combined}-{eager,deferred}-inventory` experiments
+compare full upfront metadata with lightweight Plex library lists followed by
+bounded detail batches. These are **test-only prototypes**; production loading
+still uses the full-metadata path above.
+
+Primary-source research identified list/detail separation in
+[Plezy's list requests](https://github.com/edde746/plezy/blob/847842c3d075b56d686409850e12fa1cca0b19d9/lib/services/plex_client.dart#L1132-L1156)
+and [detail requests](https://github.com/edde746/plezy/blob/847842c3d075b56d686409850e12fa1cca0b19d9/lib/services/plex_client.dart#L1262-L1317),
+[Plex for Kodi's explicit reload](https://github.com/plexinc/plex-for-kodi/blob/97191f248a20223bb93296789c010ff2204a9c76/lib/_included_packages/plexnet/plexobjects.py#L194-L247),
+and [Python PlexAPI's partial objects](https://github.com/pushingkarmaorg/python-plexapi/blob/aa5bf6742eb806bbbebd2b65dee9fc47a81d92e1/plexapi/base.py#L650-L706).
+These support investigating the approach, not adopting their UX or assuming
+equivalent metadata. No third-party implementation was copied.
+
+Bounded read-only HTTP probes against the internal Plex server returned the
+same 200 movie identities in about 1.80 seconds with `includeElements=Stream`
+versus 0.31 seconds without it. Decoded response sizes were 1,460,451 versus
+501,666 bytes. The enriched response contained 3,334 streams; the lean response
+contained none. `includeStreams=1`, including with `includeMedia=1`, did not
+restore streams on this list endpoint. XML with stream enrichment took 1.82
+seconds, so changing serialization was not a demonstrated shortcut.
+
+The metadata endpoint returned matching complete `Media` arrays for those 200
+records. A single batch took 1.88 seconds and 3,517,180 decoded bytes; four
+50-item batches took 2.05-2.11 seconds sequentially or 1.04 seconds with three
+workers. Those figures exclude the initial lean-list request and are transport
+observations, not end-to-end app speedups.
+
+The Swift experiment uses production providers, source paging, global merge,
+query comparators, and metadata mapping. Both strategies discover the same
+movie/TV libraries, two collections, and two playlists per provider. The
+deferred candidate changes only Plex library lists; collection and playlist
+representations remain unchanged. After sorting the complete membership, it
+hydrates only the selected 20-card window, excluding series/season containers
+that have no playable media in these library sources. Detail batches are capped
+at 50 native IDs and three concurrent requests. All hydration finishes inside
+the measured operation, rather than being submitted as unmeasured background
+work.
+
+Only the library records' technical metadata and versions are replaced.
+List-specific artwork, watch state, identity, and sort fields are retained,
+and shared merging reconstructs source/version references. The warmup compares
+complete displayed `MediaItem` values against fresh eager reads for the first
+20 cards, the next 180 cards, and all eight sorts. It also checks complete
+ordered identity parity for every sort. Cached replay is checked in each sample.
+This does not exercise rendered grids, watch mutations, profile switching,
+failure recovery, all possible filters, or complete-library scrolling.
+
+Run `21598e04db2e46d18dc2005bdbe6ea8a` passed all four cases, without skips:
+Plex eager/deferred and combined eager/deferred (Plex, Jellyfin, Emby).
+Each case used one warmup and five retained optimized iPhone-simulator samples.
+The 1,815-item Plex and 1,918-item combined inventories and displayed metadata
+passed the checks above. This is a within-run strategy comparison with the same
+source fingerprint, not a comparison of the earlier inventory-only workload:
+
+| Workload, median | Plex eager | Plex deferred | Combined eager | Combined deferred |
+| --- | ---: | ---: | ---: | ---: |
+| First 20 fully enriched cards | 11,114 ms | 2,192 ms | 11,092 ms | 4,749 ms |
+| Next 180 fully enriched cards | 51 ms | 2,763 ms | 83 ms | 7,100 ms |
+| Eight sort changes, fully enriched first windows | 38 ms | 2,009 ms | 46 ms | 5,226 ms |
+| Slowest sort within a sample | 6 ms | 417 ms | 9 ms | 867 ms |
+| Cached initial-window replay | 5 ms | 11 ms | 9 ms | 20 ms |
+| Whole workload, including discovery | 11,413 ms | 7,189 ms | 20,321 ms | 25,649 ms |
+| Whole-workload CPU | 6,776 ms | 2,805 ms | 7,850 ms | 11,932 ms |
+| Instrumented HTTP requests, including discovery | 21 | 36 | 95 | 110 |
+| Decoded HTTP response bytes, including discovery | 10,586,314 | 8,981,541 | 17,739,962 | 15,947,258 |
+| Physical-footprint snapshot | 207 MiB | 190 MiB | 205 MiB | 191 MiB |
+
+First-display timing excludes discovery, matching the earlier inventory timer;
+request/byte totals and whole-workload CPU include it. Footprints are snapshots
+in a shared test process, not isolated retained-memory or peak-allocation
+measurements. Server caches were not cleared. Detail fetching and remerging
+are both charged to the deferred path; their individual CPU costs were not
+profiled. Instrumented request counts cover provider transport, not broker,
+authentication, or separate address-verification traffic. The experiment's
+deferred projection remerges the inventory after new metadata arrives; this
+is part of this prototype's cost, not a lower bound for every deferred design.
+
+An earlier 60-card-lookahead candidate
+(`6a11f9ba3a4f491089f7b22aab5f7611`) completed the combined cases but its full
+sweep failed on Plex request timeouts, first on a metadata batch and then on
+library discovery. A subsequent bounded identity request succeeded; the timeout
+cause was not established. Its completed combined cases took 4,999 ms for first
+display, 7,177 ms for the next 180 cards, and 8,724 ms for eight sorts. Removing
+speculative windows and unnecessary container hydration improved the candidate,
+but did not eliminate its interaction regressions. Earlier rejected experiments
+also exposed a reference-fixture locality mismatch and changed collection/playlist
+metadata. None of those failed sweeps supplies the final table's results.
+
+**Decision:** do not adopt this deferred strategy. Faster initial display moves
+substantial work into scrolling and sorting. Plex-only total time and CPU improve,
+and both workloads transfer fewer bytes, but both make more requests, and combined
+total time and CPU regress. This does not meet the requirement for an improvement
+across normal use. The existing warm-query behavior is retained. Any future
+candidate must measure first display *and* subsequent interaction readiness with
+complete metadata; a smaller inventory payload or another client's design is
+not sufficient.
+
+### Plex full-metadata decoding: avoid errors for absent fields
+
+The production improvement keeps eager, complete metadata rather than adopting
+the deferred prototype above. Plex's lenient scalar helpers previously tried
+two or three throwing decodes even when the key was absent. Sparse audio,
+video, and subtitle records multiply those unsuccessful attempts across the
+library. Each helper now checks `contains` first; present fields follow exactly
+the same conversion order. Requests, concurrency, pagination, merging, and
+query publication are unchanged. The shared provider applies this on both
+tvOS and iOS, including Home rows, previews, grids, and detail reads.
+
+The same real-server `home-live-{plex,combined}-eager-inventory` workloads ran
+in baseline/candidate/restored-baseline order, each with one warmup and five
+retained optimized iPhone-simulator samples. All six case executions passed.
+Fresh providers and pagers were created for each sample; server caches were
+not cleared. Restoring the old decoder after the candidate reproduced its
+CPU cost and slower initial load, reducing the likelihood that server cache
+warming explains the improvement.
+
+| Median | Baseline | Presence fast path | Restored baseline |
+| --- | ---: | ---: | ---: |
+| Plex first 20 fully enriched cards | 11,602 ms | 7,266 ms | 11,935 ms |
+| Plex whole-workload CPU | 6,864 ms | 716 ms | 6,954 ms |
+| Plex whole-workload elapsed | 11,940 ms | 7,606 ms | 12,270 ms |
+| Combined first 20 fully enriched cards | 12,292 ms | 8,715 ms | 11,921 ms |
+| Combined whole-workload CPU | 8,639 ms | 2,245 ms | 8,140 ms |
+| Combined whole-workload elapsed | 21,058 ms | 17,327 ms | 21,051 ms |
+| Plex next 180 cards | 47 ms | 46 ms | 55 ms |
+| Combined next 180 cards | 96 ms | 80 ms | 90 ms |
+| Plex eight sorts | 36 ms | 34 ms | 39 ms |
+| Combined eight sorts | 53 ms | 42 ms | 52 ms |
+| Plex slowest sort within a sample | 5.6 ms | 5.4 ms | 6.1 ms |
+| Combined slowest sort within a sample | 10.8 ms | 8.7 ms | 9.6 ms |
+
+First-display time excludes discovery; whole-workload CPU and elapsed time
+include it. Both strategies retain all metadata before publication, so no
+network requests are deferred into sorting or later card access. Instrumented
+requests remained 21 for Plex and 95 for combined, with 1,815 and 1,918 unique
+items respectively. Baseline/candidate response-byte medians were unchanged
+at 10,586,327 and 17,739,975; the repeated Plex control differed by 154 bytes.
+No payload-reduction claim is made. Memory snapshots varied between runs and
+are not evidence of a retained-memory improvement.
+
+The existing warmup checks full displayed `MediaItem` parity for the first 20,
+next 180, and eight sorted first windows against fresh eager reads, plus complete
+ordered identity parity for each sort. Cached replay is checked every sample.
+The provider regression suite passed 456 tests without failures or skips,
+including new absent/null/unsupported-field, scalar-conversion, and sparse
+subtitle cases. This is real-server simulator evidence, not rendered-frame or
+physical-device timing, and does not establish a lower bound for further work.
+
+Evidence:
+
+- Baseline: `65950557ea9d4850807cfbcdf1dd9160`.
+- Candidate: `44982dad4b1649f99255453211219d33`.
+- Restored baseline: `d95862f99c9341ec8ba0227b8dc06ba2`.
+- The matched-fixture restored-control/candidate comparison
+  `88efaddc843b4e528787affe2b35c51b` passed the runner's regression budgets.
+- Provider tests: `.build/private-no-clean-tests/78f20b9938ce4c60ac0241b8c69c3b8a`.
+
+### Rolling full-inventory requests and small library bootstrap
+
+The next production change removes the three-page batch barrier without raising
+the three-request ceiling. Requests refill as responses arrive, with at most six
+pending-plus-buffered pages per source and three active sources. Responses are
+consumed only in actual cursor order. A fresh library first requests one fully
+enriched item to discover continuation/count earlier; remaining pages request
+200 items. Changed strides drain the bounded speculative window and restart at
+the actual offset. Observed terminal pages suppress unnecessary lookahead but
+cannot truncate an authoritative continuation. Ordinary incremental browsing
+and sequential 60-item Home feeds are unchanged.
+
+The selected candidate (`34214c346e904e0db9a4824a7563925f`) and a subsequent
+restored original-loader control (`67298fdc86c541ab93899ba11bcfd85b`) both retain
+the preceding decoder optimization. Each uses one warmup and five retained
+optimized iPhone-simulator samples against real servers:
+
+| Median | Original loader | Rolling loader |
+| --- | ---: | ---: |
+| Plex first 20 fully enriched cards | 6,858 ms | 5,922 ms |
+| Combined first 20 fully enriched cards | 8,331 ms | 7,624 ms |
+| Plex next 180 cards | 57.6 ms | 62.3 ms |
+| Combined next 180 cards | 91.8 ms | 83.9 ms |
+| Plex eight sorts | 45.6 ms | 50.6 ms |
+| Combined eight sorts | 51.7 ms | 46.8 ms |
+| Plex whole-workload CPU | 665 ms | 719 ms |
+| Combined whole-workload CPU | 1,978 ms | 1,929 ms |
+| Plex instrumented requests | 21 | 24 |
+| Combined instrumented requests | 95 | 101 |
+
+This is not an improvement in every metric. Plex warm projections and CPU rose
+slightly in this pair; no network work moved into those interactions. Plex
+response bytes rose by 946 and combined by 1,065. The extra initial request
+trades a small amount of HTTP work for earlier parallel loading. Buffer bounds
+increase from three to six pages per source; complete inventories still occupy
+memory proportional to library size. Snapshot memory is not a peak-memory or
+leak measurement. Comparison `c49e23e148864bfd8cf63da20425d3d8` passed the
+runner's wall/CPU regression budgets; first-display and query counters are
+reported separately, not enforced by those budgets.
+
+A separate five-provider saved-query sweep (`a0a73c2d88a34f9bbd4ba8b26752b4af`)
+and subsequent restored original-loader control
+(`8436fe196e2746559b70e46758761cdf`) passed all cases without skips:
+
+| Source | Complete items | Original fresh inventory | Rolling fresh inventory | Original / rolling eight warm queries |
+| --- | ---: | ---: | ---: | ---: |
+| Jellyfin | 1,523 | 2,052 ms | 1,749 ms | 34.7 / 42.3 ms |
+| Emby | 1,830 | 651 ms | 620 ms | 47.0 / 49.3 ms |
+| Plex | 1,815 | 6,838 ms | 5,513 ms | 49.4 / 51.7 ms |
+| Silo | 1,826 | 1,127 ms | 1,011 ms | 53.5 / 54.6 ms |
+| Combined | 1,918 | 8,113 ms | 7,685 ms | 65.2 / 59.5 ms |
+
+Every case verifies complete ordered `MediaItem` parity against sequential
+60-item reads, eight sorts, media/watch filters, preview/grid query agreement,
+cancelled-query replacement, and no warm page refetches. Source-page counts
+change from 13/14/14/10/41 to 14/16/16/12/46 respectively. Whole-workload CPU
+increases from 651/837/876/1,442/2,258 ms to 712/874/912/1,489/2,301 ms.
+Comparison `b6a1c783870e40428a72cecb231299ca` passed wall/CPU budgets.
+These are separate runs with fresh clients/pagers, not cleared server caches.
+Discovery is excluded from fresh-inventory timing and included in workload
+CPU/wall time. This is simulator/network evidence, not rendered-frame,
+physical-device, concurrent-playback, or arbitrary-library-size evidence.
+
+**Sub-three-second Plex loading was not achieved.** Six-request experiments
+reached about 5.1 seconds with 200-item pages and 4.9 seconds with 100-item pages,
+but increased server burst pressure and individual request durations; they are
+not adopted without interactive-contention evidence. Smaller pages alone did
+not improve three-worker transport throughput. Optional Stream flags retained
+movie metadata but did not demonstrate a speedup; series requests still failed
+and used the existing lean fallback. No production stream metadata was removed.
+The test-only HTTP wrapper now retains bounded, secret-safe timing attachments
+containing request category, page offset/limit, elapsed times, byte count, and
+success status, not URLs, account identities, titles, tokens, or payloads.
+
+Regression coverage includes rolling refill around delayed pages, capped and
+changing strides, tiny libraries, missing/inaccurate totals, global concurrency,
+full-item retention, cancellation, and retryable failures. CoreModelsTests and
+FeatureHomeCoreTests passed 3,758 tests with 11 skips
+(`fa04254110934e0a84646ad9274714a0`); the final bootstrap edge-case addition and
+Home tests passed separately (`cd8c62325c854f858243263abfbb8ace`).
+
+### Final live-inventory attribution
+
+The bounded follow-up retained the rolling loader unchanged. With authorized
+live-provider credentials, set `TEST_RUNNER_PLOZZ_LIVE_PAGE_ATTRIBUTION=1` when
+running the saved-query scenarios. The test reads
+`PLOZZ_LIVE_PAGE_ATTRIBUTION=1` and attaches three serial first-page observations
+per source during the discarded warmup only. Sources are indexed in discovery
+order: movie library, series library, two collections, and two playlists.
+Attachments contain counts, bytes, and timings, never source IDs or payloads.
+Repeated pages must preserve full ordered metadata.
+
+The helper reuses existing request/decode diagnostics, combining their disjoint
+fast and slow completion buffers and rejecting dropped or unfinished spans.
+Request sums describe serial page calls, not parallel inventory wall time.
+Residuals include mapping, pagination, scheduling, and instrumentation overhead;
+they are not pure mapping CPU measurements. Millisecond diagnostics quantize
+short operations. Plex uses its own decoder without the shared decode span, so
+its decode count is zero and decoding remains in the residual, not absent.
+
+Run `a5172fcd1a9e4deebd0de2f89c6d02db` used Xcode 27.1, the optimized iPhone
+simulator lane, and real servers. All three saved-query scenarios passed without
+skips, including complete metadata/order parity and warm-query checks. Median
+first-page attribution for 200 movies:
+
+| Provider | Page wall | HTTP request | Shared Swift decode | Remaining client work |
+| --- | ---: | ---: | ---: | ---: |
+| Jellyfin | 430 ms | 408 ms | 3 ms | 19 ms |
+| Emby | 74 ms | 52 ms | 2 ms | 20 ms |
+| Plex | 2,069 ms | 2,010 ms | Not separately instrumented | 52 ms, including decode |
+
+Each column is a median of its own observations, so columns need not sum
+exactly. These representative pages are not identical cross-provider
+catalogs. The series libraries especially differ: Jellyfin's selected library
+returned one series, whereas Emby and Plex returned 200. This is evidence about
+these configured servers, not an inherent provider performance ranking.
+
+A separate bounded, sequential transport probe used production-shaped movie
+queries with gzip and retained no authenticated payloads. Median request-start
+to response-header times were 483/91/1,875 ms for Jellyfin/Emby/Plex; body reads
+were 15/6/24 ms. Compressed payloads were approximately 117/43/211 KB.
+Header waiting includes connection/network overhead and server processing; it
+does not identify a server database or CPU bottleneck. Decompression was under
+one millisecond. Python JSON parsing in that probe is not Swift decode evidence.
+
+Two count/no-count/no-count/count sequences per Jellyfin/Emby library preserved
+the exact returned item arrays. Movie header medians with/without totals were
+483/453 ms for Jellyfin and 91/60 ms for Emby, with overlapping, noisy samples.
+This did not establish a worthwhile complete-inventory improvement. Removing
+totals also requires a deliberate continuation-contract change, not simply
+dropping a query parameter. Plex series pages confirmed the existing enriched
+HTTP 500 followed by a successful lean request; the typically 14-18 ms failed
+request was small relative to enriched movie response waiting.
+
+The five retained complete-inventory samples in the app run had medians of
+1.79 seconds for Jellyfin, 0.63 seconds for Emby, and 5.68 seconds for Plex.
+These are fresh client inventories, not cleared server caches or physical-device
+results, and the changed toolchain means this is not a before/after comparison
+against the preceding runs. No additional production optimization is claimed.
+This round stops here: request waiting dominates the remaining Plex cost, and
+neither increased concurrency, deferred metadata, nor speculative pagination
+changes are justified by this attribution. Sub-three-second complete Plex
+inventory remains unmet; existing full metadata and warm interaction behavior
+are preserved.
+
+### Jellyfin Home recommendation reuse
+
+`home-recommendation-navigation` runs production `JellyfinProvider.homeHubs`
+and `homeRowPage` decoding/mapping with three synthetic shelves and 5-ms HTTP
+latency. Each sample starts with a fresh client/scope. It requests limits
+20/8/20/20, then verifies two shelves' 40-item windows ending at 40, 70, and
+140. The 240-item counter means six checked windows, not complete traversal of
+280 distinct items. Exact ordered IDs and next offsets are asserted.
+
+One warmup and five measured samples on the same tvOS simulator, toolchain,
+optimized build settings, fixture, and measurement harness produced:
+
+| Metric | Uncached | Exact-request reuse |
+| --- | ---: | ---: |
+| HTTP requests | 10 | 5 |
+| Response bytes | 84,328 | 41,324 |
+| Verified window items | 240 | 240 |
+| Median wall time | 76.85 ms | 39.18 ms |
+| Median CPU time | 15.94 ms | 8.44 ms |
+| Median resident snapshot | 148.19 MiB | 144.78 MiB |
+
+Baseline evidence is `f89be5b623d9499dbd23f16f6870f159`; candidate evidence is
+`81d72504dd3e4e59b32d53be00d28c72` under `.build/performance/runs/`.
+These are descriptive same-workload measurements, not an automatic comparison
+verdict: `compare` rejects the broader fixture fingerprint because separate
+regression-test files were added or edited. The workload, `PerformanceProbe`,
+runner hashes, and complete environment identity were independently verified
+unchanged. Resident snapshots are not isolated cache cost or peak memory.
+
+Five read-only trials against one internal Jellyfin server through the actual
+provider and `HomeContentPageLoader.Session` measured a 4.21-second median cold
+discovery versus 43.21 ms total for three subsequent scoped consumers. All three
+consumers preserved the captured ordered titles without another HTTP request.
+Refreshing the scope made a fresh authenticated request in every trial. Separate
+live Plex, Emby, and combined-provider browsing checks preserve their behavior;
+these timings are not measurements of those servers, rendered frames, or devices.
+
+Earlier direct-transport experiments tested 75 trials/180 recommendation or
+similarity requests. Exact-limit reuse preserved results; speculative larger
+limits changed title membership and were rejected. Smaller payloads alone did
+not materially improve the cold request. A two-category progressive response
+was faster, but adds traffic and is not implemented. The first uncached full
+recommendation request remains server-limited.
+
+Upstream references informed the choice, not copied implementation:
+[Jellyfin Web's freshness](https://github.com/jellyfin/jellyfin-web/blob/b71bb29ed68c8ec46e47a4e5557e0cc81c91e32b/src/utils/query/queryClient.ts#L9-L13),
+[Android TV's per-seed composition](https://github.com/jellyfin/jellyfin-androidtv/blob/dae2c8c06911734e9e1d2abf5fc1e737067fcfb6/app/src/main/java/org/jellyfin/androidtv/ui/browsing/SuggestedMoviesFragment.kt#L25-L50),
+and [Swiftfin's generation fencing](https://github.com/jellyfin/Swiftfin/blob/0978922b923dac390a4b5a7a961a7fd06cef296b/Shared/Objects/PagingLibrary/PagingLibraryViewModel.swift#L314-L374).
+Their compositions and account/cache boundaries are not interchangeable with
+Plozz's exact server-authored shelves.
+
+### Scenario inventory
+
 | Suite | Production path and limits |
 | --- | --- |
 | `core` | Unchanged sync persistence (10,000 records, 1,000 checks), warm incremental Share scanning (1,000 films), fresh SQLite IPTV import (10,000 generated records). The sync/Share fixtures also verify an actual edit is not suppressed. |
@@ -1394,6 +1947,76 @@ destination, and direct-play routing in the action, so browsing should resolve
 zero sources. `source-menu-version-presentation` builds 1,024 production version
 rows per sample on either platform and compares every title and supplemental
 fact with the original output.
+
+`detail-selection-legacy` and `detail-selection-resolved` compare direct
+composition of existing selection primitives with the shared resolver in the
+same binary. Each sample completes 1,024 explicit account/version selections,
+8,192 version entries, and 1,024 exact provider account/item/file handoffs.
+The control is not a historical binary or whole-detail startup replay; automatic
+selection and decoding are outside this workload. Initial TV medians were
+91.991 / 92.023 ms wall and 91.993 / 92.023 ms CPU; mobile medians were
+93.012 / 94.819 ms wall and 93.014 / 94.820 ms CPU. Both had zero median resident
+delta. This supports a maintenance consolidation, not a selection speedup.
+Runs: TV `583c51a43b9c4d26a7fde1c315b51337`, mobile
+`952207f098be4b2093109509fd5874c6`.
+
+### Single-input mobile library rows
+
+The architecture pilot first exercised the existing reuse paths. TV metadata
+updates rebuilt zero card inputs; artwork updates performed zero row-content
+size/placement/fit calls or card-input builds. No TV sizing cache was added.
+Mobile metadata row samples had card-input counts `[20, 0, 0, 0, 0]`; they were
+not universally zero. Mobile publication completed eight refreshes, 24 synthetic
+provider requests, eight save/publication callbacks, and zero observed state
+notifications. Save callbacks are fixture counters, not measured disk writes.
+
+A separate bounded process sample of mobile startup found nested derived
+equality for `HomePresentationRow.Source`, `HomeLibrarySectionGroup.Row`, and
+`LibrarySection`. Source inspection confirmed that the mobile library view
+compared the row inside `presentation` and then compared `row` again.
+The view now stores a choice and one complete row; browsing reconstructs the
+presentation from those inputs. No metadata is omitted, no identity-only
+shortcut or cache is introduced, and settings remain observable.
+
+`mobile-home-library-row-comparison` measures 256 production-view comparisons
+of independently decoded equal snapshots containing 75 items and 2,400 credits.
+A positive control changes the final person's biography and requires inequality.
+The matched baseline already used the narrowed inputs and final fixtures but
+retained the original double comparison. The candidate changed only equality
+to compare the choice and complete row once.
+
+| iPhone 17 Pro / iOS 26.2, optimized simulator | Before median | After median |
+| --- | ---: | ---: |
+| 256 comparisons, wall | 47.330 ms | 23.844 ms |
+| 256 comparisons, CPU | 47.380 ms | 23.853 ms |
+| Twenty-provider startup scroll, wall | 10,726.093 ms | 10,758.859 ms |
+| Twenty-provider startup scroll, CPU | 4,850.425 ms | 4,895.829 ms |
+
+Baseline `f91582171a1d434cb13630abb590dc7e` and candidate
+`eebdd8334429488eb2646c13c589929e` used the same simulator, Xcode 27.2,
+SDK 27.2, fixtures and runner. Comparison
+`4e82be435d094def840f73f4c014936a` was within the existing budget.
+The isolated comparison cost fell about 50%; whole-startup speed did not
+improve. Both completed 40 rows, 800 items, 100 requests, and 25 scroll targets,
+24 while loading, with 38 rows completing while scrolling. Median per-sample
+maximum main-actor wake-up gap was 58.315 / 67.460 ms; ranges were
+52.166-70.284 / 56.497-75.086 ms. There is no demonstrated scheduling-gap,
+FPS, or physical-device improvement.
+
+Comparison samples had zero resident delta. Startup median resident snapshots
+were 876,101,632 / 776,077,312 bytes, while median window deltas were
+26,509,312 / 33,603,584 bytes. These variable process snapshots do not establish
+reduced peak memory, retained memory, or leaks. No network, persistence, or
+cancellation owner changed.
+
+Attribution-only runs were TV navigation `fcd0074d13fc42cda5618de160c3ca90`
+and mobile startup `483ada1d9b7f494a84748ba017567bb3`. The mobile 75-second,
+5-ms process sample retained symbolized frames but ended without a binary-image
+table after host exit. Inclusive stack observations include waiting, not CPU
+milliseconds or frame latency. Its instrumented timings are not comparison
+evidence. The raw sample and verified simulator/process identity are retained
+with local session evidence; all benchmark results remain under the run IDs
+above.
 
 The tvOS-only `native-poster-composition` converts twelve generated 2160x3240
 extended-range images into native poster surfaces. Each sample changes the

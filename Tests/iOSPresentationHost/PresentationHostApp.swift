@@ -78,6 +78,8 @@ struct PresentationHostApp: App {
             model.settings.theme.theme = .pureBlack
         }
         model.settings.theme.gradientEnabled = true
+        model.settings.transparency.preference =
+            ProcessInfo.processInfo.arguments.contains("--opaque-navigation") ? .off : .system
         model.settings.playback.settings = .default
         if ProcessInfo.processInfo.arguments.contains("--reset-read-ahead") {
             PlaybackReadAheadStore().save(.default)
@@ -224,7 +226,11 @@ struct PresentationHostApp: App {
 
     var body: some Scene {
         WindowGroup {
-            if ProcessInfo.processInfo.arguments.contains("--music-landing-fixture") {
+            if ProcessInfo.processInfo.arguments.contains("--detail-selection-fixture") {
+                DetailSelectionFixture()
+            } else if ProcessInfo.processInfo.arguments.contains("--content-refresh-return-fixture") {
+                ContentRefreshReturnFixture()
+            } else if ProcessInfo.processInfo.arguments.contains("--music-landing-fixture") {
                 MusicLandingFixture(
                     palette: ProcessInfo.processInfo.arguments.contains("--music-light") ? .light :
                         ProcessInfo.processInfo.arguments.contains("--music-oled") ? .pureBlack : .dark,
@@ -652,6 +658,7 @@ private struct IPTVRemovalFixture: View {
 }
 
 private struct SettingsInteractionFixture: View {
+    @Environment(\.accessibilityReduceTransparency) private var systemReduceTransparency
     let appModel: PlozziOSAppModel
     @State private var language = AppLanguageSettingsModel()
     @State private var showingSettings = false
@@ -793,6 +800,9 @@ private struct SettingsInteractionFixture: View {
                 }
             }
         }
+        .plozzOpaqueNavigationChrome()
+        .environment(\.plozzReduceTransparency, appModel.settings.transparency.preference
+            .reducesTransparency(systemReduceTransparency: systemReduceTransparency))
         .environment(appModel)
         .environment(language)
         .environment(\.locale, Locale(identifier: "en_US"))
