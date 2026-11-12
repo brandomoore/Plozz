@@ -1809,9 +1809,11 @@ Each renderer fits its source without cropping. Edit layout returns to setup;
 ordinary viewing never reserves permanent space for controls.
 Widened Apple TV split/grid layouts pack the actual picture edges with equal
 8-point horizontal and vertical gaps, including three-picture and mixed-aspect
-grids. The centered group fills the available width or height without cropping;
+grids. Viewing layouts keep a 16-point outer margin for TV pixel shifting and
+edge cropping. The centered group fills the remaining width or height without cropping;
 unused space stays outside the group rather than widening individual gaps.
-A single expanded picture still uses the full canvas.
+An expanded Multiview picture keeps that same outer margin; ordinary fullscreen
+playback is unchanged.
 
 Apple TV animates the retained video surfaces into Multiview and between layouts,
 including pane entry/removal, return to watching, promotion and expansion.
@@ -1878,8 +1880,10 @@ promotion action. The video with sound has a broad, soft, live-color glow that
 waits one second before appearing on a newly audible video, then fades in over
 three seconds and out over 1.5 seconds. Rapid focus moves cancel pending glows without delaying
 audio. The glow remains visible when focus moves to the toolbar.
-An unfocused audible picture also has a subtle two-pixel border using the same
-live palette and activation fade. Native focus hides that border; idle playback
+An unfocused audible picture also has a two-pixel, 55%-opacity border using a
+brighter tint of the live palette and the same activation fade. A fine dark edge
+separates it from bright or saturated footage without strengthening the broad glow.
+Native focus hides that border; idle playback
 shows it without adding focus chrome. Both indicators share the video's motion.
 It does not change picture geometry or replace the native focus treatment.
 Reduce Transparency hides the glow; Reduce Motion removes its fades.

@@ -82,7 +82,7 @@ final class LiveTVMultiviewRemoteTests: XCTestCase {
     }
 
     @MainActor
-    func testAudioGlowRemainsOnTheAudibleVideoWhenFocusMovesToTheToolbar() async throws {
+    func testAudioGlowAndOutlineFollowTheAudiblePictureWithoutFocus() async throws {
         continueAfterFailure = false
         let app = fixtureApplication()
         app.launchArguments = ["--live-root-fixture", "--visual-focus-fixture", "--audio-glow-fixture"]
@@ -94,20 +94,23 @@ final class LiveTVMultiviewRemoteTests: XCTestCase {
         select(pane("Sports 1", in: app), in: app, activate: false)
         select(app.buttons["live-multiview-layout"], in: app, activate: false)
         assertAudio("Sports 1", in: app)
-        let frames = [settledVideoFrame(1, in: app), settledVideoFrame(2, in: app)]
+        finishSetup(in: app)
         try await Task.sleep(for: .milliseconds(4200))
-        let first = capture("audio-glow-first-video-toolbar-focused", in: app)
+        let frames = [settledVideoFrame(1, in: app), settledVideoFrame(2, in: app)]
+        let first = capture("audio-glow-first-video-idle", in: app)
         select(pane("Sports 2", in: app), in: app, activate: false)
         select(app.buttons["live-multiview-layout"], in: app, activate: false)
         assertAudio("Sports 2", in: app)
+        finishSetup(in: app)
+        try await Task.sleep(for: .milliseconds(4200))
         XCTAssertEqual(settledVideoFrame(1, in: app), frames[0])
         XCTAssertEqual(settledVideoFrame(2, in: app), frames[1])
-        try await Task.sleep(for: .milliseconds(4200))
-        let second = capture("audio-glow-second-video-toolbar-focused", in: app)
+        let second = capture("audio-glow-second-video-idle", in: app)
         for frame in frames {
             let nearEdge = CGRect(x: frame.midX - 100, y: frame.maxY + 1, width: 200, height: 8)
             let outerGlow = nearEdge.offsetBy(dx: 0, dy: 71)
-            let farEdge = nearEdge.offsetBy(dx: 0, dy: 300)
+            let farEdge = nearEdge.offsetBy(dx: 0, dy: 250)
+            XCTAssertTrue(app.frame.contains(farEdge), "The distant glow sample must stay inside the screenshot.")
             let glow = pixelDifference(first, second, region: nearEdge, screen: app.frame)
             XCTAssertGreaterThan(glow.mean, 0.003, "Audio must change the soft glow outside the picture.")
             XCTAssertLessThan(glow.mean, 0.18, "The indicator should remain soft rather than become a bright border.")
@@ -120,7 +123,7 @@ final class LiveTVMultiviewRemoteTests: XCTestCase {
                 pixelDifference(first, second, region: adjacent, screen: app.frame).mean + 0.01,
                 "The audible, unfocused picture must carry a subtle two-pixel rim in its sampled glow colors.")
             XCTAssertLessThan(pixelDifference(first, second, region: farEdge, screen: app.frame).mean, 1.0 / 255,
-                              "At 300 points, the remaining glow must be less than one 8-bit intensity step.")
+                              "At 250 points, the remaining glow must be less than one 8-bit intensity step.")
         }
         assertMetrics("Engines 2 loads 2 stops 0 audible 1", in: app)
     }
@@ -1813,6 +1816,11 @@ final class LiveTVMultiviewRemoteTests: XCTestCase {
             finishSetup(in: app)
             _ = settledVideoFrame(1, in: app)
             let idle = (1...count).map { app.otherElements["multiview-fixture-video-\($0)"].frame }
+            let safeBounds = app.frame.insetBy(dx: 16, dy: 16)
+            for picture in idle {
+                XCTAssertTrue(safeBounds.insetBy(dx: -1, dy: -1).contains(picture),
+                              "Every idle picture must stay clear of TV pixel shifting and edge cropping.")
+            }
             XCTAssertEqual(idle[1].minX - idle[0].maxX, 8, accuracy: 1)
             if count > 2 {
                 XCTAssertEqual(idle[2].minY - idle[0].maxY, 8, accuracy: 1)
@@ -1846,7 +1854,8 @@ final class LiveTVMultiviewRemoteTests: XCTestCase {
         XCTAssertFalse(app.buttons["live-multiview-add"].exists)
         finishSetup(in: app)
         let gap: CGFloat = 8
-        let width = min((app.frame.width - gap) / 2, (app.frame.height - gap) / 2 * 16 / 9)
+        let canvas = app.frame.insetBy(dx: 16, dy: 16)
+        let width = min((canvas.width - gap) / 2, (canvas.height - gap) / 2 * 16 / 9)
         let height = width * 9 / 16
         let frames = (0..<4).map { index in
             CGRect(

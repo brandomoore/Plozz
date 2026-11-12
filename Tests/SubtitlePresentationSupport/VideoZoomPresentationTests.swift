@@ -16,17 +16,17 @@ final class VideoZoomPresentationTests: XCTestCase {
         let previous = scene.windows.first(where: \.isKeyWindow)
         let window = UIWindow(windowScene: scene)
         let state = VideoAudioGlowState()
-        let fixture = { (focused: Bool, active: Bool, scale: CGFloat) in
+        let fixture = { (focused: Bool, active: Bool, scale: CGFloat, background: Color) in
             VideoAudioGlow(state: state, isActive: active, cornerRadius: 20, isFocused: focused)
                 .frame(width: 640, height: 360)
-                .overlay { RoundedRectangle(cornerRadius: 20).fill(.black) }
+                .overlay { RoundedRectangle(cornerRadius: 20).fill(background) }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(.black)
+                .background(background)
                 .environment(\.displayScale, scale)
                 .environment(\._accessibilityReduceMotion, true)
                 .ignoresSafeArea()
         }
-        let host = UIHostingController(rootView: fixture(true, true, 1))
+        let host = UIHostingController(rootView: fixture(true, true, 1, .black))
         window.rootViewController = host
         window.makeKeyAndVisible()
         defer {
@@ -54,21 +54,46 @@ final class VideoZoomPresentationTests: XCTestCase {
         }
         try await Task.sleep(for: .milliseconds(1300))
         for scale: CGFloat in [1, 2] {
-            host.rootView = fixture(true, true, scale)
+            host.rootView = fixture(true, true, scale, .black)
             try await Task.sleep(for: .milliseconds(100))
             let focused = try (0..<5).map { try intensity(scale: scale, pixel: $0) }
-            host.rootView = fixture(false, true, scale)
+            host.rootView = fixture(false, true, scale, .black)
             try await Task.sleep(for: .milliseconds(100))
             let unfocused = try (0..<5).map { try intensity(scale: scale, pixel: $0) }
             let border = zip(unfocused, focused).map { $0 - $1 }
-            XCTAssertGreaterThan(border[0], 0.02)
-            XCTAssertGreaterThan(border[1], 0.02)
-            XCTAssertLessThan(border[0], 0.12, "Keep the audio border subtle.")
+            XCTAssertGreaterThan(border[0], 0.45)
+            XCTAssertGreaterThan(border[1], 0.45)
+            XCTAssertLessThan(border[0], 0.65, "Keep the audio border translucent.")
             for value in border.dropFirst(2) {
-                XCTAssertEqual(value, 0, accuracy: 0.004, "The border must end after two physical pixels.")
+                XCTAssertEqual(value, 0, accuracy: 0.015,
+                               "Only faint edge antialiasing may extend beyond the two-pixel colored stroke.")
             }
         }
-        host.rootView = fixture(false, false, 1)
+        for (background, sample) in [
+            (Color.white, SIMD4<Float>(0, 0, 0, 0)),
+            (.red, SIMD4<Float>(1, 0.52, 0.52, 0.9)),
+            (.cyan, SIMD4<Float>(0.52, 1, 1, 0.9)),
+            (.yellow, SIMD4<Float>(1, 1, 0.52, 0.9))
+        ] {
+            state.updatePalette(Array(repeating: sample, count: 3))
+            host.rootView = fixture(true, true, 1, background)
+            try await Task.sleep(for: .milliseconds(100))
+            let focused = try (0..<5).map { try intensity(scale: 1, pixel: $0) }
+            host.rootView = fixture(false, true, 1, background)
+            try await Task.sleep(for: .milliseconds(100))
+            let outlined = try (0..<5).map { try intensity(scale: 1, pixel: $0) }
+            let contrast = zip(outlined, focused).map { abs($0 - $1) }
+            XCTAssertGreaterThan(try XCTUnwrap(contrast.max()), 0.04,
+                                 "The tinted rim and fine dark edge must remain distinct on bright, saturated backgrounds.")
+            let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+                window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+            }
+            let attachment = XCTAttachment(image: image)
+            attachment.name = "Audio outline contrast \(background)"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+        }
+        host.rootView = fixture(false, false, 1, .black)
         try await Task.sleep(for: .milliseconds(100))
         XCTAssertEqual(try intensity(scale: 1, pixel: 0), 0, accuracy: 0.004)
     }

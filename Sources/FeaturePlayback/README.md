@@ -315,6 +315,10 @@ their 1.5-second duration, retargeting from their displayed state without resizi
 or replacing the renderer. Audio changes immediately; only the glow waits.
 Moving focus to the toolbar leaves it
 on the audible video.
+When the video is not visibly focused, a two-pixel rim uses a brighter tint of
+the same sampled colors at 55% opacity. A one-pixel-radius dark shadow separates
+the rim from bright imagery. This treatment does not change the broad glow,
+picture bounds, or decoder sampling; it hides during native focus.
 Muted, unavailable, hidden, fullscreen, external, unauthorized, and background pictures stop sampling;
 Reduce Transparency removes the indicator and Reduce Motion disables its fades.
 The existing Audio on/Muted accessibility value remains authoritative.

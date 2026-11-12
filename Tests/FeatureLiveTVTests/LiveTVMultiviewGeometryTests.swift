@@ -11,6 +11,14 @@ final class LiveTVMultiviewGeometryTests: XCTestCase {
         CGSize(width: 768, height: 1024), CGSize(width: 1440, height: 1080)
     ]
 
+    private func expectedViewingBounds(in size: CGSize) -> CGRect {
+        #if os(tvOS)
+        CGRect(origin: .zero, size: size).insetBy(dx: 16, dy: 16)
+        #else
+        CGRect(origin: .zero, size: size)
+        #endif
+    }
+
     func testFocusPresentationInsetsEveryPictureWithoutChangingAspectOrSlots() {
         let panes = [UUID(), UUID(), UUID(), UUID()]
         let ratios: [CGFloat] = [16 / 9, 4 / 3, 21 / 9]
@@ -59,9 +67,11 @@ final class LiveTVMultiviewGeometryTests: XCTestCase {
             XCTAssertTrue(pictures[0].intersection(pictures[1]).isEmpty)
             #if os(tvOS)
             let bounds = pictures[0].union(pictures[1])
+            let canvas = expectedViewingBounds(in: size)
             XCTAssertEqual(bounds.midX, size.width / 2, accuracy: 0.001)
             XCTAssertEqual(bounds.midY, size.height / 2, accuracy: 0.001)
-            XCTAssertTrue(abs(bounds.width - size.width) < 0.001 || abs(bounds.height - size.height) < 0.001)
+            XCTAssertTrue(abs(bounds.width - canvas.width) < 0.001 || abs(bounds.height - canvas.height) < 0.001)
+            XCTAssertTrue(canvas.insetBy(dx: -0.001, dy: -0.001).contains(bounds))
             XCTAssertEqual(size.width >= size.height
                 ? pictures[1].minX - pictures[0].maxX : pictures[1].minY - pictures[0].maxY,
                            gap, accuracy: 0.001)
@@ -206,7 +216,7 @@ final class LiveTVMultiviewGeometryTests: XCTestCase {
                            Array(mixed.prefix(count))] {
                 let aspects = Dictionary(uniqueKeysWithValues: zip(panes, ratios))
                 for size in sizes {
-                    let canvas = CGRect(origin: .zero, size: size)
+                    let canvas = expectedViewingBounds(in: size)
                     let pictures = panes.map {
                         LiveTVMultiviewGeometry.frame(
                             for: $0, panes: panes, primary: panes[0], layout: .sideBySide,
@@ -216,7 +226,8 @@ final class LiveTVMultiviewGeometryTests: XCTestCase {
                     let bounds = pictures.reduce(CGRect.null) { $0.union($1) }
                     XCTAssertEqual(bounds.midX, canvas.midX, accuracy: 0.001)
                     XCTAssertEqual(bounds.midY, canvas.midY, accuracy: 0.001)
-                    XCTAssertTrue(abs(bounds.width - size.width) < 0.001 || abs(bounds.height - size.height) < 0.001)
+                    XCTAssertTrue(abs(bounds.width - canvas.width) < 0.001 || abs(bounds.height - canvas.height) < 0.001)
+                    XCTAssertTrue(canvas.insetBy(dx: -0.001, dy: -0.001).contains(bounds))
                     for (picture, ratio) in zip(pictures, ratios) {
                         XCTAssertEqual(picture.width / picture.height, ratio, accuracy: 0.001)
                     }
@@ -236,10 +247,10 @@ final class LiveTVMultiviewGeometryTests: XCTestCase {
     }
     #endif
 
-    func testCornerPrimaryUsesFullCanvasWhileInsetKeepsPresentationAspect() {
+    func testCornerPrimaryUsesPaddedCanvasWhileInsetKeepsPresentationAspect() {
         let panes = [UUID(), UUID()]
         for size in sizes {
-            let canvas = CGRect(origin: .zero, size: size)
+            let canvas = expectedViewingBounds(in: size)
             for corner in LiveTVMultiviewCorner.allCases {
                 for insetSize in LiveTVMultiviewInsetSize.allCases {
                     let main = LiveTVMultiviewGeometry.frame(
@@ -252,7 +263,7 @@ final class LiveTVMultiviewGeometryTests: XCTestCase {
                     )
                     XCTAssertEqual(main, canvas)
                     XCTAssertTrue(main.contains(inset))
-                    let insetCanvasWidth = min(size.width, size.height * 16 / 9)
+                    let insetCanvasWidth = min(canvas.width, canvas.height * 16 / 9)
                     XCTAssertEqual(inset.width, insetCanvasWidth * CGFloat(insetSize.fraction), accuracy: 0.001)
                     XCTAssertEqual(inset.width / inset.height, 16 / 9, accuracy: 0.001)
                 }
@@ -271,7 +282,8 @@ final class LiveTVMultiviewGeometryTests: XCTestCase {
             corner: .bottomTrailing, insetSize: .medium, expanded: nil, size: layout.bounds.size
         ).offsetBy(dx: layout.bounds.minX, dy: layout.bounds.minY)
         XCTAssertEqual(layout.bounds, CGRect(x: -80, y: -60, width: 1920, height: 1080))
-        XCTAssertEqual(picture, layout.bounds)
+        XCTAssertEqual(picture, expectedViewingBounds(in: layout.bounds.size)
+            .offsetBy(dx: layout.bounds.minX, dy: layout.bounds.minY))
         XCTAssertEqual(
             LiveTVMultiviewGeometry.viewport(in: layout.bounds.size)
                 .offsetBy(dx: layout.bounds.minX, dy: layout.bounds.minY),
@@ -279,15 +291,15 @@ final class LiveTVMultiviewGeometryTests: XCTestCase {
         )
     }
 
-    func testOnlyVisibleChromeReservesFocusBandsNotVideoMargins() {
+    func testVisibleChromeReservesFocusBandsWithinViewingMargins() {
         for size in sizes {
-            let canvas = CGRect(origin: .zero, size: size)
+            let canvas = expectedViewingBounds(in: size)
             let focusArea = LiveTVMultiviewGeometry.focusViewport(in: size, chromeVisible: true)
             XCTAssertEqual(LiveTVMultiviewGeometry.viewport(in: size), canvas)
             XCTAssertEqual(LiveTVMultiviewGeometry.focusViewport(in: size, chromeVisible: false), canvas)
             XCTAssertTrue(canvas.contains(focusArea))
-            XCTAssertEqual(focusArea.minX, 0)
-            XCTAssertEqual(focusArea.maxX, size.width)
+            XCTAssertEqual(focusArea.minX, canvas.minX)
+            XCTAssertEqual(focusArea.maxX, canvas.maxX)
             XCTAssertGreaterThan(focusArea.minY, canvas.minY)
             XCTAssertLessThan(focusArea.maxY, canvas.maxY)
             #if os(tvOS)
@@ -349,10 +361,10 @@ final class LiveTVMultiviewGeometryTests: XCTestCase {
         }
     }
 
-    func testSingleAndExpandedPlayersReceiveFullCanvasAndHiddenChromeFocusRegion() {
+    func testSingleAndExpandedMultiviewPicturesReceivePaddedCanvasAndHiddenChromeFocusRegion() {
         let panes = [UUID(), UUID()]
         for size in sizes {
-            let canvas = CGRect(origin: .zero, size: size)
+            let canvas = expectedViewingBounds(in: size)
             for layout in LiveTVMultiviewLayout.allCases {
                 XCTAssertEqual(LiveTVMultiviewGeometry.frame(
                     for: panes[0], panes: [panes[0]], primary: panes[0], layout: layout,
@@ -364,11 +376,16 @@ final class LiveTVMultiviewGeometryTests: XCTestCase {
                         corner: .bottomTrailing, insetSize: .large, expanded: expanded, size: size
                     )
                     XCTAssertEqual(picture, canvas)
-                    XCTAssertEqual(LiveTVMultiviewGeometry.focusFrame(
+                    let focus = LiveTVMultiviewGeometry.focusFrame(
                         for: expanded, panes: panes, primary: panes[0], layout: layout,
                         corner: .bottomTrailing, insetSize: .large, expanded: expanded, size: size,
                         chromeVisible: false
-                    ), LiveTVMultiviewGeometry.contentFrame(in: picture, aspectRatio: nil))
+                    )
+                    let content = LiveTVMultiviewGeometry.contentFrame(in: picture, aspectRatio: nil)
+                    XCTAssertEqual(focus.minX, content.minX, accuracy: 0.001)
+                    XCTAssertEqual(focus.minY, content.minY, accuracy: 0.001)
+                    XCTAssertEqual(focus.width, content.width, accuracy: 0.001)
+                    XCTAssertEqual(focus.height, content.height, accuracy: 0.001)
                 }
             }
         }

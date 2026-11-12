@@ -43,7 +43,12 @@ enum LiveTVMultiviewGeometry {
     }
 
     static func viewport(in size: CGSize, isEditing: Bool = false, editingInsets: EdgeInsets? = nil) -> CGRect {
+        #if os(tvOS)
+        let viewingMargin = min(CGFloat(16), max(0, min(size.width, size.height) / 2))
+        let canvas = CGRect(origin: .zero, size: size).insetBy(dx: viewingMargin, dy: viewingMargin)
+        #else
         let canvas = CGRect(origin: .zero, size: size)
+        #endif
         guard isEditing else { return canvas }
         if let insets = editingInsets {
             return CGRect(
@@ -76,7 +81,8 @@ enum LiveTVMultiviewGeometry {
         let top = min(CGFloat(90), size.height / 4)
         let bottom = min(CGFloat(110), size.height / 4)
         #endif
-        return CGRect(x: 0, y: top, width: size.width, height: max(1, size.height - top - bottom))
+        let canvas = viewport(in: size)
+        return CGRect(x: canvas.minX, y: top, width: canvas.width, height: max(1, size.height - top - bottom))
     }
 
     static func frame(
