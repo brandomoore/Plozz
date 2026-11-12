@@ -302,13 +302,18 @@ Transparency retains inset-picture rounding; fullscreen restores the unmasked,
 black-backed video surface.
 
 Apple TV Multiview uses a separate soft audio indicator behind the
-audible picture: a 120-point color stroke with a 96-point blur at 45% opacity,
-not a focus border. Its broad feathered edge fades gradually into the surrounding
-black beyond the lifted picture without changing its size.
+audible picture: a 96-point color stroke with a 96-point blur at 36% opacity,
+not a focus border. The narrower bright band starts fading closer to the picture;
+the unchanged outer blur keeps a similarly broad, gradual tail into the surrounding
+black without changing picture size.
 It reuses the same 2 Hz, 24-by-14-pixel color sampler
 and native/software frame access. Neutral footage uses a faint neutral glow.
-The indicator and palette fade over 0.6 seconds without resizing or replacing
-the renderer. Moving focus to the toolbar leaves it on the audible video.
+The indicator waits for one second of continuous activation before fading in.
+Moving away cancels that pending activation and starts fading the old glow out
+immediately. Both directions and palette changes fade over 1.5 seconds, retargeting
+from their displayed state without resizing or replacing the renderer. Audio
+changes immediately; only the glow waits. Moving focus to the toolbar leaves it
+on the audible video.
 Muted, unavailable, hidden, fullscreen, external, unauthorized, and background pictures stop sampling;
 Reduce Transparency removes the indicator and Reduce Motion disables its fades.
 The existing Audio on/Muted accessibility value remains authoritative.

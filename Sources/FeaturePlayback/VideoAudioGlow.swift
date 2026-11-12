@@ -37,12 +37,18 @@ struct VideoAudioGlow: View {
 
     var body: some View {
         RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-            .stroke(LinearGradient(colors: state.colors, startPoint: .leading, endPoint: .trailing), lineWidth: 120)
+            .stroke(LinearGradient(colors: state.colors, startPoint: .leading, endPoint: .trailing), lineWidth: 96)
             .blur(radius: 96)
-            .opacity(isActive && isPresented ? 0.45 : 0)
-            .animation(reduceMotion ? nil : .easeInOut(duration: 0.6), value: isActive && isPresented)
-            .animation(reduceMotion ? nil : .easeInOut(duration: 0.6), value: state.colors)
-            .onAppear { isPresented = true }
+            .opacity(isPresented ? 0.36 : 0)
+            .animation(reduceMotion ? nil : .easeInOut(duration: 1.5), value: isPresented)
+            .animation(reduceMotion ? nil : .easeInOut(duration: 1.5), value: state.colors)
+            .task(id: isActive) {
+                if isActive {
+                    try? await Task.sleep(for: .seconds(1))
+                    guard !Task.isCancelled else { return }
+                }
+                isPresented = isActive
+            }
             .onDisappear { isPresented = false }
     }
 }

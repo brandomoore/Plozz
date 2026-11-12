@@ -1869,7 +1869,9 @@ so its returning preview cannot resize or reposition a picture during promotion.
 Holding Select does not also activate or promote the picture; cancellation leaves
 its position unchanged. A short Select or Make main video remains an explicit
 promotion action. The video with sound has a broad, soft, live-color glow that
-fades when audio changes and remains visible when focus moves to the toolbar.
+waits one second before appearing on a newly audible video, then fades in and
+out over 1.5 seconds. Rapid focus moves cancel pending glows without delaying
+audio. The glow remains visible when focus moves to the toolbar.
 It does not change picture geometry or replace the native focus treatment.
 Reduce Transparency hides the glow; Reduce Motion removes its fades.
 First focus after fullscreen or idle uses one whole-card transition to the

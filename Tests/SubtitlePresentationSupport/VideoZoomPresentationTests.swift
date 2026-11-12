@@ -12,6 +12,14 @@ import XCTest
 final class VideoZoomPresentationTests: XCTestCase {
     #if os(tvOS)
     func testAudioGlowFadesOutsideTheNativeFocusedPictureWithoutResizingIt() async throws {
+        try await assertAudioGlowTransitions(reduceMotion: false)
+    }
+
+    func testAudioGlowKeepsItsDwellDelayButSkipsFadesWithReducedMotion() async throws {
+        try await assertAudioGlowTransitions(reduceMotion: true)
+    }
+
+    private func assertAudioGlowTransitions(reduceMotion: Bool) async throws {
         struct Surface: UIViewRepresentable {
             let view: UIView
             func makeUIView(context: Context) -> UIView { view }
@@ -41,7 +49,11 @@ final class VideoZoomPresentationTests: XCTestCase {
         let surface = UIView()
         surface.backgroundColor = .blue
         let glow = VideoAudioGlowState()
-        let host = UIHostingController(rootView: Fixture(surface: surface, glow: glow, active: true))
+        let fixture = { (active: Bool) in
+            Fixture(surface: surface, glow: glow, active: active)
+                .environment(\._accessibilityReduceMotion, reduceMotion)
+        }
+        let host = UIHostingController(rootView: fixture(false))
         window.rootViewController = host
         window.makeKeyAndVisible()
         defer {
@@ -68,13 +80,27 @@ final class VideoZoomPresentationTests: XCTestCase {
                                format: .RGBAf, colorSpace: CGColorSpaceCreateDeviceRGB())
             return (pixel[0] + pixel[1] + pixel[2]) / 3
         }
+        let initial = try edgeIntensity()
+        host.rootView = fixture(true)
+        try await Task.sleep(for: .milliseconds(650))
+        XCTAssertEqual(try edgeIntensity(), initial, accuracy: 0.001,
+                       "A newly audible picture must wait before showing its glow.")
+        try await Task.sleep(for: .milliseconds(750))
+        let entering = try edgeIntensity()
+        try await Task.sleep(for: .milliseconds(1300))
         let active = try edgeIntensity()
+        if !reduceMotion {
+            XCTAssertGreaterThan(entering, initial)
+            XCTAssertGreaterThan(active, entering, "Fade-in must still be progressing after the dwell delay.")
+        } else {
+            XCTAssertEqual(entering, active, accuracy: 0.001)
+        }
         let distances: [CGFloat] = [32, 80, 140, 280]
         let activeFalloff = try distances.map { try edgeIntensity(distance: $0) }
-        host.rootView = Fixture(surface: surface, glow: glow, active: false)
-        try await Task.sleep(for: .milliseconds(300))
+        host.rootView = fixture(false)
+        try await Task.sleep(for: .milliseconds(700))
         let fading = try edgeIntensity()
-        try await Task.sleep(for: .milliseconds(600))
+        try await Task.sleep(for: .milliseconds(1000))
         let inactive = try edgeIntensity()
         let inactiveFalloff = try distances.map { try edgeIntensity(distance: $0) }
         let falloff = zip(activeFalloff, inactiveFalloff).map { $0 - $1 }
@@ -85,19 +111,32 @@ final class VideoZoomPresentationTests: XCTestCase {
         for (near, far) in zip(falloff, falloff.dropFirst()) {
             XCTAssertGreaterThan(near, far, "The glow must weaken smoothly with distance: \(falloff)")
         }
-        if !UIAccessibility.isReduceMotionEnabled {
+        if !reduceMotion {
             XCTAssertGreaterThan(active, fading)
-            XCTAssertGreaterThan(fading, inactive)
+            XCTAssertGreaterThan(fading, inactive, "Fade-out must remain visible beyond the old 0.6-second duration.")
+        } else {
+            XCTAssertEqual(fading, inactive, accuracy: 0.001)
         }
-        host.rootView = Fixture(surface: surface, glow: glow, active: true)
-        try await Task.sleep(for: .milliseconds(300))
+        host.rootView = fixture(true)
+        try await Task.sleep(for: .milliseconds(350))
+        host.rootView = fixture(false)
+        try await Task.sleep(for: .milliseconds(900))
+        XCTAssertEqual(try edgeIntensity(), inactive, accuracy: 0.001,
+                       "Passing briefly over a picture must cancel its pending glow.")
+        host.rootView = fixture(true)
+        try await Task.sleep(for: .milliseconds(650))
+        XCTAssertEqual(try edgeIntensity(), inactive, accuracy: 0.001,
+                       "Returning to the picture must start a fresh dwell delay.")
+        try await Task.sleep(for: .milliseconds(750))
         let appearing = try edgeIntensity()
-        try await Task.sleep(for: .milliseconds(600))
+        try await Task.sleep(for: .milliseconds(1300))
         let restored = try edgeIntensity()
         XCTAssertGreaterThan(restored - inactive, 0.005)
-        if !UIAccessibility.isReduceMotionEnabled {
+        if !reduceMotion {
             XCTAssertGreaterThan(appearing, inactive)
             XCTAssertGreaterThan(restored, appearing)
+        } else {
+            XCTAssertEqual(appearing, restored, accuracy: 0.001)
         }
         XCTAssertEqual(surface.convert(surface.bounds, to: window), frame)
     }

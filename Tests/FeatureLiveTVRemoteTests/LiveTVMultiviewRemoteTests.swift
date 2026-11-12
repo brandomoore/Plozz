@@ -82,7 +82,7 @@ final class LiveTVMultiviewRemoteTests: XCTestCase {
     }
 
     @MainActor
-    func testAudioGlowRemainsOnTheAudibleVideoWhenFocusMovesToTheToolbar() throws {
+    func testAudioGlowRemainsOnTheAudibleVideoWhenFocusMovesToTheToolbar() async throws {
         continueAfterFailure = false
         let app = fixtureApplication()
         app.launchArguments = ["--live-root-fixture", "--visual-focus-fixture", "--audio-glow-fixture"]
@@ -95,12 +95,14 @@ final class LiveTVMultiviewRemoteTests: XCTestCase {
         select(app.buttons["live-multiview-layout"], in: app, activate: false)
         assertAudio("Sports 1", in: app)
         let frames = [settledVideoFrame(1, in: app), settledVideoFrame(2, in: app)]
+        try await Task.sleep(for: .milliseconds(2700))
         let first = capture("audio-glow-first-video-toolbar-focused", in: app)
         select(pane("Sports 2", in: app), in: app, activate: false)
         select(app.buttons["live-multiview-layout"], in: app, activate: false)
         assertAudio("Sports 2", in: app)
         XCTAssertEqual(settledVideoFrame(1, in: app), frames[0])
         XCTAssertEqual(settledVideoFrame(2, in: app), frames[1])
+        try await Task.sleep(for: .milliseconds(2700))
         let second = capture("audio-glow-second-video-toolbar-focused", in: app)
         for frame in frames {
             let nearEdge = CGRect(x: frame.midX - 100, y: frame.maxY + 1, width: 200, height: 8)
