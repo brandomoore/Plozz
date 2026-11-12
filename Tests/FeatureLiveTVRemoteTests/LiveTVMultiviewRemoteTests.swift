@@ -1735,7 +1735,7 @@ final class LiveTVMultiviewRemoteTests: XCTestCase {
     }
 
     @MainActor
-    func testPicturesAndToolbarAreVerticallyCenteredAsOneGroup() {
+    func testToolbarKeepsThirtyTwoPointBottomClearanceAndStablePictures() {
         continueAfterFailure = false
         let app = fixtureApplication()
         app.launchArguments = ["--live-root-fixture", "--visual-focus-fixture"]
@@ -1755,10 +1755,11 @@ final class LiveTVMultiviewRemoteTests: XCTestCase {
                 let pictureBounds = pictures.reduce(CGRect.null) { $0.union($1) }
                 let buttons = app.buttons["live-multiview-layout"].frame.union(
                     app.buttons["live-multiview-more"].frame)
-                let topGap = pictureBounds.minY - app.frame.minY
                 let bottomGap = app.frame.maxY - buttons.maxY
-                XCTAssertEqual(topGap, bottomGap, accuracy: 24,
-                               "Center the complete composition, allowing only the native focus lift.")
+                XCTAssertEqual(bottomGap, 32, accuracy: 1)
+                if count > 2 && selected == 2 {
+                    XCTAssertEqual(buttons.minY - pictureBounds.maxY, 32, accuracy: 1)
+                }
                 XCTAssertGreaterThan(buttons.minY - pictureBounds.maxY, 8)
                 if let centers {
                     for (picture, center) in zip(pictures, centers) {
@@ -1767,7 +1768,7 @@ final class LiveTVMultiviewRemoteTests: XCTestCase {
                     }
                 }
                 centers = pictures.map { CGPoint(x: $0.midX, y: $0.midY) }
-                capture("centered-\(count)-pictures-focused-\(selected)", in: app)
+                capture("bottom-clearance-\(count)-pictures-focused-\(selected)", in: app)
             }
             finishSetup(in: app)
             _ = settledVideoFrame(1, in: app)

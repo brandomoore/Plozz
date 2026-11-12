@@ -773,8 +773,8 @@ private struct LiveTVMultiviewChrome: View {
             .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { toolbarHeight = $0 }
             .modifier(LiveTVMultiviewToolbarEntrance(reduceMotion: reduceMotion))
             .padding(.horizontal, 72)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-            .padding(.bottom, max(32, safeAreaInsets.bottom))
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+            .padding(.bottom, 24)
             .background {
                 LinearGradient(colors: [.clear, .black.opacity(0.72)], startPoint: .top, endPoint: .bottom)
                     .allowsHitTesting(false)
@@ -790,8 +790,8 @@ private struct LiveTVMultiviewChrome: View {
     }
 
     private var televisionEditingInsets: EdgeInsets {
-        let margin = max(32, max(safeAreaInsets.top, safeAreaInsets.bottom))
-        return EdgeInsets(top: margin, leading: 24, bottom: toolbarHeight + margin + 24, trailing: 24)
+        EdgeInsets(top: max(32, safeAreaInsets.top), leading: 24,
+                   bottom: toolbarHeight + 48, trailing: 24)
     }
 
     private func toolbarTop(in size: CGSize) -> CGFloat {

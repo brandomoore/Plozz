@@ -1857,9 +1857,10 @@ windows the dock scrolls rather than truncating labels. Setup's pictures reserve
 the measured header and dock heights so landscape and large-text controls cannot
 cover them. TV focus controls and the retained players' full-screen geometry are
 unchanged.
-Apple TV multiview has no top-left title. The pictures and toolbar are vertically
-centered as one group, with symmetric outer safe-area clearance and a 24-point
-gap before the toolbar. Focus lift does not reposition the group. The toolbar
+Apple TV multiview has no top-left title. The toolbar is bottom-aligned with
+32 points below its visible buttons (24 points outside and 8 points inside the
+toolbar). Pictures retain top safe-area clearance and reserve at least a 24-point
+gap before the toolbar, plus its internal padding. Focus lift does not reposition the group. The toolbar
 contains Add channel, Layout and More. More holds
 Favorite and, while expanded, Show all. Holding Select on a picture opens its
 native menu for Make main video, Replace channel and Remove; Remove is
