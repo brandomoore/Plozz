@@ -145,10 +145,6 @@ in Help &amp; Diagnostics. Reports can include app, device and filtered technica
 details; messages you submit are sent as written. No advertising or usage analytics.
 [Privacy and diagnostic controls](https://plozz.app/privacy/#diagnostics).
 
-[Explore features](https://plozz.app/features/) ·
-[Supported formats](https://plozz.app/formats/) ·
-[Setup guides](https://docs.plozz.app)
-
 ## Get started
 
 Install **[Plozz Player](https://apps.apple.com/app/plozz-player/id6782668147)**
@@ -160,6 +156,10 @@ subscription requirements still apply.
 This README describes the current source. App Store and TestFlight builds may
 lag behind; mobile music is currently enabled in development/TestFlight builds,
 not App Store builds.
+
+[Explore features](https://plozz.app/features/) ·
+[Supported formats](https://plozz.app/formats/) ·
+[Setup guides](https://docs.plozz.app)
 
 ## Help and contribute
 
