@@ -1,5 +1,13 @@
 # CoreUI
 
+`HomeRowPreviewView` renders the actual Home rail presentation, not a separately
+scaled card sample. TV uses `MediaRowView`; mobile Home and the preview share
+`PlozziOSHomeRailLayout`, `PlozziOSMediaSection` and `PlozziOSMediaRailScroll`.
+Featured Home rows and previews share `FeaturedMediaRowPresentation` and
+`FeaturedCardControl`, while HeroUI retains trailer ownership. Preview routing,
+playback and context actions are inert without disabling/dimming the cards;
+TV focus and horizontal scrolling remain available.
+
 Home row browsing uses `BrowseRowHeading` for a single accessible title/chevron
 touch target and `MediaRowBrowseCard` for a native TV rail action. Opt a rail in
 with `browsingRow`; existing collection-detail `onSeeAll` headers elsewhere keep

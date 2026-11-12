@@ -628,6 +628,12 @@ records on both platforms; error dialogs, playback routing and timeouts are unch
   full membership for queried rows. Durable Home snapshots keep only the
   already-projected preview, never a truncated inventory posing as complete.
   Grid changes remain temporary and do not overwrite the saved row query.
+  Browse watch-mutation projection, like ordinary sorting, runs off the main
+  actor and fences publication by scope, query generation and mutation revision.
+  Raw candidates stay unchanged so later filters can restore excluded titles.
+  Local query sorting normalizes names once and sorts indices rather than
+  repeatedly moving whole media records. Empty filters avoid building library
+  query records; filtering and ordinary sorting periodically check cancellation.
   A traversal pins snapshots to prevent offset shifts, while Home presentation
   reflects current shared-feed membership. All card styles open title details.
   Recommendations from the same account/library/kind share one bounded discovery

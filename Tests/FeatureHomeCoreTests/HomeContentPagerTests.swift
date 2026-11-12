@@ -211,6 +211,99 @@ final class HomeContentPagerTests: XCTestCase {
     }
 
     @MainActor
+    func testPerformanceRapidSavedRowQueries() async throws {
+        try await PerformanceProbe.measure(self, scenario: "home-rapid-row-queries") {
+            let items = (0..<20_000).map { index in
+                MediaItem(
+                    id: "\(index)", title: "Title \(20_000 - index)",
+                    kind: index.isMultiple(of: 2) ? .movie : .series,
+                    productionYear: 1980 + index % 40, runtime: Double(index % 100 + 1) * 60,
+                    resumePosition: index.isMultiple(of: 5) ? 20 : nil,
+                    isPlayed: index.isMultiple(of: 3)
+                )
+            }
+            let model = HomeRowBrowseModel(title: "Rapid queries", snapshot: items)
+            var ticks = 0
+            var maximumGap = 0
+            let heartbeat = Task { @MainActor in
+                var previous = ContinuousClock.now
+                while !Task.isCancelled {
+                    do { try await Task.sleep(for: .milliseconds(2)) } catch { break }
+                    let now = ContinuousClock.now
+                    maximumGap = max(maximumGap, previous.duration(to: now).nanosecondsForQueryTest)
+                    previous = now
+                    ticks += 1
+                }
+            }
+            defer { heartbeat.cancel() }
+            for field in HomeContentQuery.sortFields {
+                model.query = .init(sort: .init(field: field, direction: .descending))
+                let abandoned = Task { await model.load() }
+                try await Task.sleep(for: .milliseconds(5))
+                abandoned.cancel()
+                model.query = .init(
+                    sort: .init(field: field, direction: .ascending), media: .movies,
+                    filters: .init(filter: .unwatched)
+                )
+                await model.load()
+                await abandoned.value
+                XCTAssertNil(model.error)
+                XCTAssertEqual(model.appliedQuery, model.query)
+                XCTAssertEqual(model.items.count, items.filter { $0.kind == .movie && !$0.isPlayed }.count)
+                XCTAssertTrue(model.items.allSatisfy { $0.kind == .movie && !$0.isPlayed })
+            }
+            await model.applyMutation(.init(itemIDs: ["2"], played: true))
+            XCTAssertFalse(model.items.contains { $0.id == "2" })
+            model.query = .init(media: .shows, filters: .init(filter: .inProgress))
+            await model.load()
+            XCTAssertTrue(model.items.allSatisfy { $0.kind == .series && !$0.isPlayed && ($0.resumePosition ?? 0) > 0 })
+            XCTAssertEqual(model.items.count, items.filter {
+                $0.kind == .series && !$0.isPlayed && ($0.resumePosition ?? 0) > 0
+            }.count)
+            XCTAssertGreaterThan(ticks, 5, "Queries must leave the main actor available.")
+            XCTAssertLessThan(maximumGap, 100_000_000, "Simulator main-actor scheduling gap, not physical frame timing.")
+            return ["items": items.count, "heartbeatTicks": ticks, "maximumMainActorGapNanoseconds": maximumGap]
+        }
+    }
+
+    @MainActor
+    func testPerformanceSavedRowQueries() async throws {
+        try await PerformanceProbe.measure(self, scenario: "home-saved-row-queries") {
+            let fixture = ContentFixture(counts: [10_000, 10_000])
+            let pager = fixture.pager()
+            let query = HomeContentQuery(sort: .init(field: .name, direction: .descending))
+            let start = ContinuousClock.now
+            let snapshot = try await pager.load(limit: 20, query: query)
+            let cold = start.duration(to: .now).nanosecondsForQueryTest
+            XCTAssertEqual(snapshot.items.count, 20_000)
+            XCTAssertEqual(snapshot.items.first?.id, "1-9999")
+            let initial = await fixture.metrics()
+            let browser = HomeRowBrowseModel(title: "Query", contentPager: pager, query: query)
+            await browser.load()
+            XCTAssertEqual(browser.items, snapshot.items)
+            let warmStart = ContinuousClock.now
+            for field in HomeContentQuery.sortFields {
+                browser.query = .init(sort: .init(field: field, direction: .ascending), media: .movies)
+                await browser.load()
+                XCTAssertNil(browser.error)
+                XCTAssertEqual(browser.items.count, 20_000)
+            }
+            let warm = warmStart.duration(to: .now).nanosecondsForQueryTest
+            let mutationStart = ContinuousClock.now
+            await browser.applyMutation(.init(itemIDs: ["0-0"], played: true))
+            XCTAssertEqual(browser.items.first { $0.id == "0-0" }?.isPlayed, true)
+            let mutation = mutationStart.duration(to: .now).nanosecondsForQueryTest
+            let final = await fixture.metrics()
+            XCTAssertEqual(initial.requests, final.requests)
+            XCTAssertEqual(final.items, 20_000)
+            XCTAssertLessThanOrEqual(final.maximumConcurrent, 3)
+            return ["items": snapshot.items.count, "requests": final.requests,
+                    "fetched": final.items, "coldNanoseconds": cold,
+                    "warmFourQueriesNanoseconds": warm, "mutationNanoseconds": mutation]
+        }
+    }
+
+    @MainActor
     func testPerformanceMultipleSources() async throws {
         try await PerformanceProbe.measure(self, scenario: "home-multi-source-row") {
             var requests = 0
@@ -250,6 +343,13 @@ final class HomeContentPagerTests: XCTestCase {
             return ["items": result.items.count, "requests": metrics.requests, "fetched": metrics.items,
                     "maximumConcurrent": metrics.maximumConcurrent]
         }
+    }
+}
+
+private extension Duration {
+    var nanosecondsForQueryTest: Int {
+        let value = components
+        return Int(value.seconds) * 1_000_000_000 + Int(value.attoseconds / 1_000_000_000)
     }
 }
 

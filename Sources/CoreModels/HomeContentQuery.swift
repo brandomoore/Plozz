@@ -31,13 +31,26 @@ public struct HomeContentQuery: Codable, Hashable, Sendable {
     }
 
     public func applying(to items: [MediaItem], watchlistDates: Bool = false) -> [MediaItem] {
-        let filtered = items.filter {
-            (media == .all || (media == .movies ? $0.kind == .movie : [.series, .season, .episode].contains($0.kind)))
-                && LibraryQueryRecord($0, includeFormats: false).matches(filters)
+        applying(to: items, watchlistDates: watchlistDates, checkCancellation: {})
+    }
+
+    public func applying(
+        to items: [MediaItem], watchlistDates: Bool = false, checkCancellation: () throws -> Void
+    ) rethrows -> [MediaItem] {
+        try checkCancellation()
+        guard !isDefault else { return items }
+        var visited = 0
+        let filtered = try media == .all && filters.isEmpty ? items : items.filter {
+            visited += 1
+            if visited.isMultiple(of: 256) { try checkCancellation() }
+            return (media == .all || (media == .movies ? $0.kind == .movie : [.series, .season, .episode].contains($0.kind)))
+                && (filters.isEmpty || LibraryQueryRecord($0, includeFormats: false).matches(filters))
         }
         guard let sort else { return filtered }
-        if watchlistDates { return WatchlistBrowsePreferences(sort: sort).items(from: filtered) }
-        return filtered.sorted { MediaItemSortOrder.isOrderedBefore($0, $1, sort: sort) }
+        if watchlistDates && sort.field == .dateAdded {
+            return WatchlistBrowsePreferences(sort: sort).items(from: filtered)
+        }
+        return try MediaItemSortOrder.sorted(filtered, by: sort, checkCancellation: checkCancellation)
     }
 
     public func hash(into hasher: inout Hasher) {

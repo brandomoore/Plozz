@@ -75,11 +75,17 @@ public final class HomeRowBrowseModel: Identifiable, Hashable {
         return .init(items: Array(items.dropFirst(start).prefix(limit)), nextOffset: items.count > end || hasMore ? end : nil)
     }
 
-    public func applyMutation(_ mutation: MediaItemMutation) {
+    public func applyMutation(_ mutation: MediaItemMutation) async {
         guard isCurrent() else { invalidate(); return }
         mutations.append(mutation)
-        groups = groups.map { $0.map { mutation.applied(to: $0) } }
-        items = appliedQuery.applying(to: merge(groups), watchlistDates: watchlistDates)
+        do {
+            try await project(query: appliedQuery, generation: generation, isMutation: true)
+        } catch is CancellationError {
+            // A newer projection retains the mutation and owns publication.
+        } catch {
+            self.error = (error as? AppError) ?? .unknown("Home row could not be updated")
+            PlozzLog.app.error("Home row mutation projection failed")
+        }
     }
 
     /// Alternate ordering/filtering operates on the complete shelf, never just
@@ -100,25 +106,7 @@ public final class HomeRowBrowseModel: Identifiable, Hashable {
                 guard token == generation, isCurrent() else { throw CancellationError() }
             } while hasMore && error == nil && !requested.isDefault
             if !requested.isDefault, let error { throw error }
-            let merge = merge
-            let watchlistDates = watchlistDates
-            while true {
-                let groups = groups
-                let mutations = mutations
-                let projection = Task.detached {
-                    try Task.checkCancellation()
-                    let all = merge(groups.map { $0.map { item in mutations.reduce(item) { $1.applied(to: $0) } } })
-                    return requested.applying(to: all, watchlistDates: watchlistDates)
-                }
-                let result = try await withTaskCancellationHandler {
-                    try await projection.value
-                } onCancel: { projection.cancel() }
-                try Task.checkCancellation()
-                guard token == generation, isCurrent() else { throw CancellationError() }
-                guard mutations.count == self.mutations.count else { continue }
-                items = result
-                break
-            }
+            try await project(query: requested, generation: token)
             appliedQuery = requested
         } catch {
             guard token == generation else { return }
@@ -126,6 +114,39 @@ public final class HomeRowBrowseModel: Identifiable, Hashable {
             if error is CancellationError || (error as? AppError) == .cancelled { return }
             self.error = (error as? AppError) ?? .unknown("Home row could not be loaded")
             PlozzLog.app.error("Home row browse failed: \(HandoffDiagnostics.errorCode(self.error ?? .invalidResponse))")
+        }
+    }
+
+    private func project(query: HomeRowBrowseQuery, generation token: Int, isMutation: Bool = false) async throws {
+        let merge = merge
+        let watchlistDates = watchlistDates
+        while true {
+            let groups = groups
+            let mutations = mutations
+            let projection = Task.detached {
+                try Task.checkCancellation()
+                let updated = try mutations.isEmpty ? groups : groups.map { group in
+                    try group.enumerated().map { index, item in
+                        if index.isMultiple(of: 256) { try Task.checkCancellation() }
+                        return mutations.reduce(item) { $1.applied(to: $0) }
+                    }
+                }
+                let all = merge(updated)
+                try Task.checkCancellation()
+                return try query.applying(
+                    to: all, watchlistDates: watchlistDates, checkCancellation: Task.checkCancellation
+                )
+            }
+            let result = try await withTaskCancellationHandler {
+                try await projection.value
+            } onCancel: { projection.cancel() }
+            try Task.checkCancellation()
+            guard isCurrent() else { invalidate(); throw CancellationError() }
+            guard token == generation else { throw CancellationError() }
+            guard !isMutation || appliedQuery == query else { throw CancellationError() }
+            guard mutations.count == self.mutations.count else { continue }
+            items = result
+            return
         }
     }
 
@@ -169,7 +190,7 @@ public final class HomeRowBrowseModel: Identifiable, Hashable {
             nextGroups[index] += fresh
             nextOffsets[index] = page.nextOffset
         }
-        groups = nextGroups.map { $0.map { item in mutations.reduce(item) { $1.applied(to: $0) } } }
+        groups = nextGroups
         offsets = nextOffsets
         hasMore = nextOffsets.contains { $0 != nil }
     }

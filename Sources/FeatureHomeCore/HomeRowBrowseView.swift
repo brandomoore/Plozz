@@ -102,8 +102,10 @@ public struct HomeRowBrowseView<Card: View>: View {
             guard moreRequest > 0, !model.isLoading else { return }
             await model.load()
         }
-        .onReceive(NotificationCenter.default.publisher(for: .mediaItemDidMutate)) {
-            if let mutation = MediaItemMutation.from($0) { model.applyMutation(mutation) }
+        .task {
+            for await notification in NotificationCenter.default.notifications(named: .mediaItemDidMutate) {
+                if let mutation = MediaItemMutation.from(notification) { await model.applyMutation(mutation) }
+            }
         }
         .onChange(of: model.scopeIsCurrent) { _, current in if !current { model.invalidate() } }
         #if os(tvOS)

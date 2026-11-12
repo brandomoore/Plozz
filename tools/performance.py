@@ -279,6 +279,21 @@ SCENARIOS = {
         "description": "Complete an eight-source browse of 1,600 overlapping records into 200 playable titles.",
         "counters": ["items", "requests", "fetched", "maximumConcurrent"],
     },
+    "home-rapid-row-queries": {
+        "suite": "network", "target": "FeatureHomeCoreTests",
+        "test": "HomeContentPagerTests/testPerformanceRapidSavedRowQueries",
+        "file": "Tests/FeatureHomeCoreTests/HomeContentPagerTests.swift",
+        "description": "Cancel and replace four 20,000-title queries, filter mixed watch states, and measure main-actor scheduling.",
+        "counters": ["items", "heartbeatTicks", "maximumMainActorGapNanoseconds"],
+    },
+    "home-saved-row-queries": {
+        "suite": "network", "target": "FeatureHomeCoreTests",
+        "test": "HomeContentPagerTests/testPerformanceSavedRowQueries",
+        "file": "Tests/FeatureHomeCoreTests/HomeContentPagerTests.swift",
+        "description": "Complete 20,000 custom-row titles, reuse inventory for four sorts, and apply a watch mutation.",
+        "counters": ["items", "requests", "fetched", "coldNanoseconds",
+                     "warmFourQueriesNanoseconds", "mutationNanoseconds"],
+    },
     "collection-discovery": {
         "suite": "network", "target": "ProviderJellyfinTests",
         "test": "CollectionDiscoveryPerformanceTests/testPerformanceCollectionDiscovery",

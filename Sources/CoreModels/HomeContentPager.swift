@@ -65,7 +65,9 @@ public actor HomeContentPager {
         let result = try await loadAll()
         try Task.checkCancellation()
         return Snapshot(
-            items: query.applying(to: result.items, watchlistDates: watchlistDates),
+            items: try query.applying(
+                to: result.items, watchlistDates: watchlistDates, checkCancellation: Task.checkCancellation
+            ),
             hasMore: false, failures: result.failures,
             groups: result.groups, continuingSources: result.continuingSources
         )

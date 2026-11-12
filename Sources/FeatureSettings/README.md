@@ -777,7 +777,12 @@ watch history and planning-list behavior are documented in
   Choose Posters, Landscape or Featured presentation, with **Logo** below Layout
   for landscape rows. Once content is selected, a live real-title preview appears
   below the controls without another enclosing card. Empty drafts omit the preview.
-  The preview uses the existing artwork preferences and spoiler protection.
+  The preview uses Home's actual heading, rail spacing, viewport-fitted card
+  widths, captions, artwork preferences and spoiler protection through
+  CoreUI's `HomeRowPreviewView`. Featured sizing and focus also share Home's
+  presentation owner. The editor removes its surrounding horizontal gutter
+  only for the rail, avoiding a second inset. Preview cards cannot navigate,
+  play, or mutate titles; TV focus and scrolling remain usable.
   Sort defaults to Source order, preserving playlist sequence. The saved sort,
   direction and media/watch-status filters also apply to Home and the initial
   opened grid. Query changes cancel stale preview work and reuse complete

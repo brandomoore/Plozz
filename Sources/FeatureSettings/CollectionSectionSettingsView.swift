@@ -32,6 +32,7 @@ struct CollectionSectionSettingsView: View {
     @State private var draft: CollectionSection
     @State private var preview: LoadState<[MediaItem]> = .idle
     @State private var previewFailure: AppError?
+    @State private var previewHasMore = false
     @State private var loadedRequest: PreviewRequest?
     @State private var previewPager: HomeContentPager?
     @State private var pagerRequest: PreviewRequest?
@@ -41,7 +42,6 @@ struct CollectionSectionSettingsView: View {
     @State private var preferencesSaveFailed = false
     @FocusState private var isNameFocused: Bool
     @Environment(CardStyleSettingsModel.self) private var cards
-    @Environment(\.plozzMetrics) private var metrics
     @Environment(\.homeContentSnapshot) private var homeSnapshot
     @Environment(\.locale) private var locale
     @SettingsPageDismiss private var dismiss
@@ -149,10 +149,7 @@ struct CollectionSectionSettingsView: View {
                 }
             }
             if !draft.sources.isEmpty {
-                VStack(alignment: .leading, spacing: 16) {
-                    (draft.localizedTitle.map(Text.init) ?? Text(verbatim: draft.title)).font(.headline)
-                    previewContent
-                }
+                previewContent
                 .accessibilityIdentifier("collection-section-preview")
             }
             #if os(tvOS)
@@ -305,43 +302,17 @@ struct CollectionSectionSettingsView: View {
             InlineErrorMessage(Text(error.userMessage))
             Button("Retry") { retry += 1 }.plozzActionButton(role: .secondary)
         case let .loaded(items):
-            ScrollView(.horizontal) {
-                HStack(alignment: .top, spacing: 12) {
-                    ForEach(items, id: \.stablePresentationID) { item in
-                        if draft.cardStyle == .featured {
-                            FeaturedCardArtwork(
-                                item: item, size: featuredPreviewSize, spoilerSettings: spoilerSettings
-                            )
-                        } else {
-                            PosterCardView(
-                                item: item, style: draft.cardStyle == .poster ? .poster : .landscape,
-                                spoilerSettings: spoilerSettings,
-                                showsActionsMenu: false, action: {}
-                            )
-                            .frame(width: metrics.cardSlotWidth(
-                                for: draft.cardStyle == .poster ? .poster : .landscape,
-                                cardStyle: cards.style
-                            ))
-                            .disabled(true)
-                        }
-                    }
-                }
-                .padding(8)
-            }
-            .scrollIndicators(.hidden)
+            HomeRowPreviewView(
+                title: draft.localizedTitle.map(Text.init) ?? Text(verbatim: draft.title),
+                items: items, style: draft.cardStyle, spoilers: spoilerSettings, hasMore: previewHasMore
+            )
             #if os(tvOS)
-            .focusable()
+            .padding(.horizontal, -SettingsFormMetrics.pageInset)
+            #else
+            .padding(.horizontal, -24)
             #endif
             .accessibilityIdentifier("collection-section-preview-cards")
         }
-    }
-
-    private var featuredPreviewSize: CGSize {
-        #if os(tvOS)
-        CGSize(width: 300, height: 375)
-        #else
-        CGSize(width: 260, height: 292.5)
-        #endif
     }
 
     private func loadPreview() async {
@@ -403,6 +374,7 @@ struct CollectionSectionSettingsView: View {
             guard homeSnapshot?.recommendationScope?.isActive != false else { throw CancellationError() }
             guard request == requested else { return }
             let items = Array(page.items.prefix(20))
+            previewHasMore = page.hasMore || page.items.count > items.count
             previewFailure = sources.compactMap { page.failures[$0.id] }.first
             if previewFailure != nil { PlozzLog.app.error("Some custom row preview sources could not be loaded") }
             if items.isEmpty, let failure = previewFailure {

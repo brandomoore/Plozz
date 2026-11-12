@@ -36,9 +36,9 @@ final class HomeRowBrowseTests: XCTestCase {
         XCTAssertNil(browser.error)
         let offsets = await provider.offsets
         XCTAssertEqual(offsets, [0, 60, 120])
-        browser.applyMutation(.init(itemIDs: ["60"], resumePosition: 2))
+        await browser.applyMutation(.init(itemIDs: ["60"], resumePosition: 2))
         XCTAssertEqual(browser.items.map(\.id), ["124"])
-        browser.applyMutation(.init(itemIDs: ["60"], resumePosition: 30))
+        await browser.applyMutation(.init(itemIDs: ["60"], resumePosition: 30))
         XCTAssertEqual(browser.items.map(\.id), ["60", "124"])
     }
 
@@ -273,13 +273,13 @@ final class HomeRowBrowseTests: XCTestCase {
             await model.load()
             XCTAssertNil(model.error, scope)
             XCTAssertEqual(model.items.map(\.id), scope == "nextUp" ? ["unwatched", "watched"] : ["unwatched"], scope)
-            model.applyMutation(.init(itemIDs: ["unwatched"], scopedItemIDs: ["account:unwatched"], played: true))
+            await model.applyMutation(.init(itemIDs: ["unwatched"], scopedItemIDs: ["account:unwatched"], played: true))
             XCTAssertEqual(model.items.count, scope == "nextUp" ? 2 : 0, scope)
             await model.load()
             XCTAssertEqual(model.items.count, scope == "nextUp" ? 2 : 0, scope)
-            model.applyMutation(.init(itemIDs: ["watched"], scopedItemIDs: ["other:watched"], played: false))
+            await model.applyMutation(.init(itemIDs: ["watched"], scopedItemIDs: ["other:watched"], played: false))
             XCTAssertEqual(model.items.count, scope == "nextUp" ? 2 : 0, scope)
-            model.applyMutation(.init(itemIDs: ["watched"], scopedItemIDs: ["account:watched"], played: false))
+            await model.applyMutation(.init(itemIDs: ["watched"], scopedItemIDs: ["account:watched"], played: false))
             XCTAssertEqual(model.items.map(\.id), scope == "nextUp" ? ["unwatched", "watched"] : ["watched"], scope)
         }
     }
@@ -553,6 +553,33 @@ final class HomeRowBrowseTests: XCTestCase {
         XCTAssertEqual(model.items.map(\.id), ["second"])
     }
 
+    func testMutationProjectionCannotOverwriteANewerQueryOrProfile() async {
+        let items = (0..<5_000).map {
+            MediaItem(id: "\($0)", title: "Title \(5_000 - $0)", kind: $0.isMultiple(of: 2) ? .movie : .series)
+        }
+        var current = true
+        let model = HomeRowBrowseModel(title: "Mutation race", snapshot: items, isCurrent: { current })
+        for id in ["2", "4", "6"] {
+            let mutation = Task { await model.applyMutation(.init(itemIDs: [id], played: true)) }
+            await Task.yield()
+            model.query = .init(sort: .init(field: .name, direction: .descending), media: .shows)
+            await model.load()
+            await mutation.value
+            XCTAssertEqual(model.appliedQuery, model.query)
+            XCTAssertEqual(model.items.count, 2_500)
+            XCTAssertTrue(model.items.allSatisfy { $0.kind == .series })
+        }
+        model.query = .init(media: .movies, filters: .init(filter: .unwatched))
+        await model.load()
+        XCTAssertEqual(model.items.count, 2_497)
+        let mutation = Task { await model.applyMutation(.init(itemIDs: ["8"], played: true)) }
+        await Task.yield()
+        current = false
+        model.invalidate()
+        await mutation.value
+        XCTAssertTrue(model.items.isEmpty)
+    }
+
     func testScopedWatchMutationReevaluatesTheWholeLoadedFilter() async {
         let all = [
             MediaItem(id: "same", title: "A", kind: .movie, isPlayed: true).taggingSource("a"),
@@ -562,7 +589,7 @@ final class HomeRowBrowseTests: XCTestCase {
         model.query.filters = .init(filter: .unwatched)
         await model.load()
         XCTAssertTrue(model.items.isEmpty)
-        model.applyMutation(.init(itemIDs: ["same"], scopedItemIDs: ["a:same"], played: false))
+        await model.applyMutation(.init(itemIDs: ["same"], scopedItemIDs: ["a:same"], played: false))
         XCTAssertEqual(model.items.map(\.sourceAccountID), ["a"])
     }
 

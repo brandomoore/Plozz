@@ -166,7 +166,7 @@ enum PlozziOSPageLayout {
     static func horizontalInset(
         for sizeClass: UserInterfaceSizeClass?, usesDesktopSizing: Bool = false
     ) -> CGFloat {
-        usesDesktopSizing ? DesktopMediaRailLayout.pageInset : (sizeClass == .compact ? 22 : 36)
+        PlozziOSMediaRailLayout.pageInset(for: sizeClass, usesDesktopSizing: usesDesktopSizing)
     }
 
     static func horizontalInset(for style: HeroArtworkStyle) -> CGFloat {

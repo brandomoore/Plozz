@@ -1292,6 +1292,56 @@ without pretending a sample count measures frame smoothness.
 
 ## Workloads and configuration interactions
 
+### Saved custom-row queries and preview parity
+
+`home-saved-row-queries` completes two 10,000-title sources through
+`HomeContentPager`, verifies the descending result, reuses that inventory for
+four ascending sort fields, and waits for a watched-state mutation to finish.
+Every sample verifies all 20,000 items, no warm refetch, and at most three
+concurrent source requests; all retained samples used 334 requests. This is synthetic
+provider work, not real-server latency.
+
+Isolated scenario runs, one warmup and five retained optimized samples per
+platform, produced these medians:
+
+| Metric | TV before | TV after | iPhone before | iPhone after |
+| --- | ---: | ---: | ---: | ---: |
+| Complete cold load | 1,006 ms | 586 ms | 1,099 ms | 624 ms |
+| Four warm queries, total | 1,855 ms | 844 ms | 1,909 ms | 797 ms |
+| Completed watch mutation | 450 ms | 226 ms | 473 ms | 209 ms |
+| Whole workload wall time | 4,134 ms | 2,032 ms | 4,324 ms | 1,980 ms |
+| Whole workload CPU time | 4,150 ms | 2,018 ms | 4,337 ms | 1,999 ms |
+| Resident snapshot | 324.94 MiB | 376.81 MiB | 465.50 MiB | 423.22 MiB |
+| Physical-footprint snapshot | 21.19 MiB | 21.16 MiB | 114.67 MiB | 115.80 MiB |
+
+Baseline run IDs are `4f373adfc67c4fa58ace057ddb1e0ce6` (TV) and
+`05651a29a9424ddab6df14960f9266ef` (iPhone). Isolated final candidates are
+`908a1fc892264ef8ab8d33d7fd08f9b7` and `f2a59cc309c040d2946e68df7b22e210`.
+Evidence lives under `.build/performance/runs/`. Comparisons are descriptive:
+the fixture fingerprint changed to await the now-asynchronous mutation and
+assert its result, alongside added regression cases. Both measurements include
+completed mutation work, not just task submission. The data, sample protocol,
+toolchain and per-platform simulator identity are unchanged. Resident snapshots
+include reusable allocator pages; neither memory column is a peak-memory or
+leak measurement. Complete source inventories still cost memory and network I/O.
+
+The implementation skips unused filter records, normalizes names once, sorts
+indices instead of large media values, and projects browse mutations off-main.
+`home-rapid-row-queries` separately replaces/cancels four queries over 20,000
+mixed movie/show and watched/resumable titles, verifies complete filtered results,
+applies a mutation, and samples main-actor wake-up gaps. Five samples on each
+platform had maximum gaps of 9.22 ms (TV) and 11.84 ms (iPhone), below the
+workload's 100-ms regression ceiling. Runs `cf6c208adc684bb089c6dd31792a25e4`
+and `58940988729c48b588c3c26b8216c586` retain that evidence. These gaps are
+simulator scheduling observations, not physical-device frame timing.
+
+Hosted `testCustomRowPreviewMatchesHomeGeometry` compares the actual Home row
+against the editor's shared presentation across poster/landscape/featured,
+framed/borderless, standard/compact density, and browse/no-browse headings.
+It checks row height and rendered heading/title bounds on both platforms.
+Editor loading, partial failure, query filtering and TV focus retain separate
+hosted checks. No physical deployment is needed for these workloads.
+
 ### Jellyfin Home recommendation reuse
 
 `home-recommendation-navigation` runs production `JellyfinProvider.homeHubs`

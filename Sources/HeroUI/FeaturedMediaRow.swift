@@ -35,14 +35,8 @@ public struct FeaturedMediaRow: View {
     @State private var focusedID: String?
     @State private var priority: Int?
     @State private var isSettled = true
-    @State private var viewportWidth: CGFloat = 390
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.plozzNavigationContentInset) private var navigationContentInset
-    @Environment(\.plozzPinnedSidebarActive) private var pinnedSidebarActive
-    @Environment(\.plozzMetrics) private var metrics
-    @Environment(\.plozzRowTitleTightening) private var titleTightening
-    @Environment(\.themePalette) private var palette
     private var onBrowse: (() -> Void)?
     private var usesRowBrowsing = false
     private var isLoading = false
@@ -101,21 +95,6 @@ public struct FeaturedMediaRow: View {
         false
         #endif
     }
-    private var inset: CGFloat {
-        metrics.usesDesktopSizing ? DesktopMediaRailLayout.pageInset : (television ? PlozzTheme.Metrics.screenPadding : 20)
-    }
-    private var cardSpacing: CGFloat {
-        metrics.usesDesktopSizing ? metrics.cardSpacing : (television ? 32 : 16)
-    }
-    private var size: CGSize {
-        if metrics.usesDesktopSizing {
-            return DesktopMediaRailLayout.featuredSize(in: viewportWidth, metrics: metrics)
-        }
-        return FeaturedCardLayout.size(
-            viewportWidth: viewportWidth - (television ? navigationContentInset : 0),
-            television: television
-        )
-    }
     private var candidate: MediaItem? {
         guard !isLoading, isActive, scenePhase == .active, !reduceMotion,
               settings.homeTrailerPlaybackEnabled, !controller.isPlaybackSuppressed,
@@ -135,60 +114,24 @@ public struct FeaturedMediaRow: View {
     }
 
     public var body: some View {
-        VStack(alignment: .leading, spacing: television ? metrics.sectionTitleSpacing - titleTightening : 12) {
-            #if os(tvOS)
-            MediaRowHeader(
-                title: title,
-                onSeeAll: !usesRowBrowsing ? onSeeAll.map { action in {
-                    coordinator.stop()
-                    action()
-                } } : nil
-            )
-            #else
-            HStack {
-                BrowseRowHeading(title: title, action: onBrowse.map { action in {
-                    coordinator.stop()
-                    action()
-                } })
-                .font(metrics.usesDesktopSizing ? .title3.weight(.semibold) : .title2.bold())
-                Spacer()
-                if !usesRowBrowsing, let onSeeAll {
-                    Button("See all") {
-                        coordinator.stop()
-                        onSeeAll()
-                    }
-                }
-            }
-            .padding(.horizontal, inset)
-            #endif
-            if items.isEmpty && !isLoading {
-                Text("No titles in this collection.")
-                    .plozzForeground(.secondary)
-                    .padding(.leading, inset + (television ? navigationContentInset : 0))
-                    .padding(.trailing, inset)
-            }
-            if isLoading {
-                ScrollView(.horizontal) {
-                    HStack(spacing: cardSpacing) {
-                        ForEach(0..<(metrics.usesDesktopSizing
-                            ? max(3, Int(ceil(viewportWidth / (size.width + cardSpacing))) + 1) : 3), id: \.self) { _ in
-                            RoundedRectangle(cornerRadius: 24)
-                                .fill(palette.fill)
-                                .frame(width: size.width, height: size.height)
-                        }
-                    }
-                    .padding(.vertical, television ? metrics.railShadowClearance : 4)
-                }
-                .contentMargins(.horizontal, inset, for: .scrollContent)
-                .scrollDisabled(true)
-                .shimmering()
-                .accessibilityHidden(true)
-            } else if !items.isEmpty || onBrowse != nil {
-                rail
-                    .environment(\.homeRowEditAction, nil)
-            }
+        FeaturedMediaRowPresentation(
+            title: title, isEmpty: items.isEmpty, isLoading: isLoading, usesRowBrowsing: usesRowBrowsing,
+            onBrowse: onBrowse.map { action in { coordinator.stop(); action() } },
+            onSeeAll: onSeeAll.map { action in { coordinator.stop(); action() } },
+            selectedID: $selectedID, onSettled: { isSettled = $0 }
+        ) { size in
+            cards(size: size)
         }
-        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { viewportWidth = $0 }
+        #if os(iOS)
+        .environment(\.featuredArtworkSelection, { item, source in
+            coordinator.stop()
+            if let onSelectArtwork {
+                onSelectArtwork(item, source)
+            } else {
+                onSelect(item)
+            }
+        })
+        #endif
         .onGeometryChange(for: Int?.self) { geometry in
             let frame = geometry.frame(in: .scrollView(axis: .vertical))
             guard let bounds = geometry.bounds(of: .scrollView(axis: .vertical)),
@@ -210,82 +153,38 @@ public struct FeaturedMediaRow: View {
         .onDisappear { coordinator.withdraw(rowID: rowID) }
     }
 
-    @ViewBuilder
-    private var rail: some View {
-        #if os(tvOS)
-        PinnedSidebarLeadingFade(
-            isActive: pinnedSidebarActive, inset: navigationContentInset,
-            verticalOverhang: metrics.railShadowClearance, cardPitch: size.width + cardSpacing
-        ) {
-            scroll
-        }
-        #else
-        scroll
-        #endif
-    }
-
-    private var scroll: some View {
-        ScrollView(.horizontal) {
-            LazyHStack(spacing: cardSpacing) {
-                ForEach(items, id: \.stablePresentationID) { item in
-                    FeaturedMediaCard(
-                        item: item, size: size, spoilers: spoilers,
-                        controller: controller,
-                        showsVideo: coordinator.activeRowID == rowID
-                            && coordinator.activeItemID == item.stablePresentationID
-                            && controller.currentItemID == coordinator.playerItemID
-                            && controller.isPlaying,
-                        onFocus: { focused in
-                            if focused {
-                                focusedID = item.stablePresentationID
-                                onFocus?(item)
-                            } else if focusedID == item.stablePresentationID {
-                                focusedID = nil
-                            }
-                        },
-                        onSelect: {
-                            coordinator.stop()
-                            onSelect(item)
-                        }
-                    )
-                    .id(item.stablePresentationID)
+    @ViewBuilder private func cards(size: CGSize) -> some View {
+        ForEach(items, id: \.stablePresentationID) { item in
+            FeaturedMediaCard(
+                item: item, size: size, spoilers: spoilers,
+                controller: controller,
+                showsVideo: coordinator.activeRowID == rowID
+                    && coordinator.activeItemID == item.stablePresentationID
+                    && controller.currentItemID == coordinator.playerItemID
+                    && controller.isPlaying,
+                onFocus: { focused in
+                    if focused {
+                        focusedID = item.stablePresentationID
+                        onFocus?(item)
+                    } else if focusedID == item.stablePresentationID {
+                        focusedID = nil
+                    }
+                },
+                onSelect: {
+                    coordinator.stop()
+                    onSelect(item)
                 }
-                #if os(tvOS)
-                if let onBrowse {
-                    MediaRowBrowseCard(
-                        width: size.width, featuredSize: size,
-                        onFocus: { focusedID = nil; coordinator.stop() },
-                        action: { coordinator.stop(); onBrowse() }
-                    )
-                }
-                #endif
-            }
-            .scrollTargetLayout()
-            #if os(tvOS)
-            .padding(.horizontal, inset)
-            #endif
-            .padding(.vertical, television ? metrics.railShadowClearance : 4)
+            )
+            .id(item.stablePresentationID)
         }
-        #if os(iOS)
-        .environment(\.featuredArtworkSelection, { item, source in
-            coordinator.stop()
-            if let onSelectArtwork {
-                onSelectArtwork(item, source)
-            } else {
-                onSelect(item)
-            }
-        })
-        .contentMargins(.horizontal, inset, for: .scrollContent)
-        #endif
-        .scrollIndicators(.hidden)
-        .scrollClipDisabled()
         #if os(tvOS)
-        .padding(.vertical, metrics.railClearanceOffset(for: 24))
-        #endif
-        #if os(iOS)
-        .scrollTargetBehavior(.viewAligned)
-        .scrollPosition(id: $selectedID, anchor: .leading)
-        .onScrollPhaseChange { _, phase in isSettled = phase == .idle }
+        if let onBrowse {
+            MediaRowBrowseCard(
+                width: size.width, featuredSize: size,
+                onFocus: { focusedID = nil; coordinator.stop() },
+                action: { coordinator.stop(); onBrowse() }
+            )
+        }
         #endif
     }
 }
@@ -298,57 +197,27 @@ private struct FeaturedMediaCard: View {
     let showsVideo: Bool
     let onFocus: (Bool) -> Void
     let onSelect: () -> Void
-    @PlozzCardFocus private var focused: Bool
-    @Environment(\.plozzCardFocusStyle) private var focusStyle
     #if os(iOS)
     @Environment(\.featuredArtworkSelection) private var artworkNavigator
     #endif
 
-    private func artwork(usesNativeClipping: Bool = false) -> FeaturedCardArtwork<some View> {
-        FeaturedCardArtwork(
-            item: item, size: size, spoilerSettings: spoilers, usesNativeClipping: usesNativeClipping
+    var body: some View {
+        FeaturedCardControl(
+            item: item, size: size, spoilers: spoilers, onFocus: onFocus, onSelect: onSelect
         ) {
             if showsVideo {
                 HeroTrailerVideoLayer(controller: controller, role: .featured)
             }
         }
-    }
-
-    var body: some View {
-        #if os(tvOS)
-        televisionControl
-            .mediaItemContextMenu(for: item)
-            .onChange(of: focused) { _, value in onFocus(value) }
-        #else
-        MediaArtworkZoomButton(id: item.stablePresentationID) { source in
+        #if os(iOS)
+        .artworkNavigation { source in
             if let artworkNavigator {
                 artworkNavigator(item, source)
             } else {
                 onSelect()
             }
-        } label: {
-            artwork()
-                .contentShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-                .mediaArtworkZoomSource(cornerRadius: 20)
-                .mediaItemContextMenu(for: item)
         }
-            .buttonStyle(.plain)
         #endif
     }
-
-    #if os(tvOS)
-    @ViewBuilder
-    private var televisionControl: some View {
-        if focusStyle.usesSystemEffect {
-            artwork().nativeButton(focus: $focused, action: onSelect)
-        } else {
-            artwork()
-                .plozzFocusHalo(cornerRadius: 20, focusScale: 1.04, isFocused: focused)
-                .focusableCard(isFocused: $focused, cornerRadius: 20, action: onSelect)
-                .accessibilityLabel(Text(verbatim: item.title))
-                .plozzCardFocusTransition(isFocused: focused)
-        }
-    }
-    #endif
 }
 #endif

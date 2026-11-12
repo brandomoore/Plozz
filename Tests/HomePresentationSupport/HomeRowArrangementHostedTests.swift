@@ -1751,8 +1751,8 @@ final class HomeRowArrangementHostedTests: XCTestCase {
                     ), animated: false)
                 }
             }).map(\.0).joined(separator: " ")
-            XCTAssertTrue(text.contains("Resume film"), text)
-            XCTAssertTrue(text.contains("Saved film"), text)
+            XCTAssertTrue(text.contains("Resume"), text)
+            XCTAssertTrue(text.contains("Saved"), text)
             XCTAssertTrue(text.contains("Retry"), text)
             XCTAssertEqual(Set(snapshot.requests), Set([.continueWatching, .watchlist]))
         }
@@ -1765,7 +1765,7 @@ final class HomeRowArrangementHostedTests: XCTestCase {
         func contentSnapshot(for kind: HomeGlobalRow, visibility: HomeLibraryVisibility) throws -> [MediaItem] {
             requests.append(kind)
             return [.init(
-                id: kind.rawValue, title: kind == .continueWatching ? "Resume film" : "Saved film",
+                id: kind.rawValue, title: kind == .continueWatching ? "Resume" : "Saved",
                 kind: .movie, allowsTitleBasedMetadataMatching: false
             )]
         }
@@ -1824,6 +1824,90 @@ final class HomeRowArrangementHostedTests: XCTestCase {
                               "Preview must display the provider's title: \(previewLines.map(\.0))")
                 XCTAssertGreaterThan(try self.y("Weekend picks", in: previewLines), try self.y("Orbit", in: previewLines))
                 XCTAssertTrue(visibility.visibility.collectionSections.isEmpty, "Previewing does not save a section.")
+            }
+        }
+    }
+
+    func testCustomRowPreviewMatchesHomeGeometry() async throws {
+        let items: [MediaItem] = [
+            .init(id: "orbit", title: "Orbit", kind: .movie, productionYear: 2020, runtime: 7_200,
+                  resumePosition: 300, allowsTitleBasedMetadataMatching: false),
+            .init(id: "comet", title: "Comet", kind: .series, productionYear: 2024,
+                  allowsTitleBasedMetadataMatching: false)
+        ]
+        let controller = HeroTrailerController()
+        let coordinator = FeaturedTrailerCoordinator()
+        defer { coordinator.stop() }
+        #if os(iOS)
+        let suite = "RowPreviewParity.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let app = PlozziOSAppModel(
+            accountStore: AccountStore(secureStore: InMemorySecureStore()),
+            profileStore: ProfileStore(defaults: defaults)
+        )
+        #endif
+        for style in CollectionSection.CardStyle.allCases {
+            for cardStyle in [CardStyle.framed, .borderless] {
+                for density in [UIDensity.standard, .compact] {
+                    let browse: (() -> Void)? = density == .compact ? {} : nil
+                    var heights: [CGFloat] = []
+                    var labels: [[(String, CGRect)]] = []
+                    for preview in [false, true] {
+                        var height: CGFloat = 0
+                        try await withWindow {
+                            Group {
+                                if preview {
+                                    HomeRowPreviewView(title: Text("Weekend"), items: items, style: style, hasMore: browse != nil)
+                                } else if style == .featured {
+                                    FeaturedMediaRow(
+                                        title: Text("Weekend"), items: items, scope: ObjectIdentifier(controller),
+                                        coordinator: coordinator, controller: controller, settings: .default,
+                                        resolver: { _ in nil }, isActive: false, onSelect: { _ in }
+                                    ).browsingRow(browse)
+                                } else {
+                                    #if os(iOS)
+                                    PlozziOSHomeMediaRail(
+                                        title: Text("Weekend"), items: items,
+                                        style: style == .poster ? .poster : .landscape, appModel: app, onBrowse: browse
+                                    )
+                                    #else
+                                    MediaRowView(
+                                        title: Text("Weekend"), items: items,
+                                        style: style == .poster ? .poster : .landscape, onSelect: { _ in }
+                                    ).browsingRow(browse)
+                                    #endif
+                                }
+                            }
+                            #if os(iOS)
+                            .environment(app)
+                            .environment(\.plozzMetrics, .touch(density: density))
+                            .environment(\.plozzCardCaptionSettings, app.settings.cardStyle.captions)
+                            #else
+                            .environment(\.plozzMetrics, PlozzMetrics(density: density))
+                            #endif
+                            .environment(\.plozzCardStyle, cardStyle)
+                            .environment(\.plozzCardCaptionView, .home)
+                            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height = $0 }
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                        } inspect: { window in
+                            labels.append(try await self.capture(
+                                window, name: "Home parity \(style)-\(cardStyle)-\(density)-preview-\(preview)"
+                            ))
+                            heights.append(height)
+                        }
+                    }
+                    XCTAssertGreaterThan(heights[0], 0)
+                    XCTAssertEqual(heights[0], heights[1], accuracy: 1, "\(style)-\(cardStyle)-\(density)")
+                    for title in ["Weekend", "Orbit"] {
+                        let home = try XCTUnwrap(labels[0].first { $0.0.hasPrefix(title) }?.1, "\(labels[0])")
+                        let preview = try XCTUnwrap(labels[1].first { $0.0.hasPrefix(title) }?.1, "\(labels[1])")
+                        XCTAssertEqual(home.minX, preview.minX, accuracy: 0.005, title)
+                        XCTAssertEqual(home.minY, preview.minY, accuracy: 0.005, title)
+                        XCTAssertEqual(home.width, preview.width, accuracy: 0.005, title)
+                        XCTAssertEqual(home.height, preview.height, accuracy: 0.005, title)
+                    }
+                }
             }
         }
     }
