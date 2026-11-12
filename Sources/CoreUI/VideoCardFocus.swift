@@ -21,7 +21,7 @@ public enum MultiviewMotion {
 /// Focus belongs to the video surface, not the player or its transport controls.
 public struct VideoCardFocus {
     public let identifier: String
-    public let title: String
+    public let title: String // l10n:content - Provider-supplied channel label.
     public let audible: Bool
     public let presentsEffect: Bool
     public let cornerRadius: CGFloat
@@ -37,7 +37,7 @@ public struct VideoCardFocus {
     public let caption: AnyView
 
     public init(
-        identifier: String, title: String, audible: Bool, presentsEffect: Bool,
+        identifier: String, title: String, audible: Bool, presentsEffect: Bool, // l10n:content - Provider-supplied channel label.
         cornerRadius: CGFloat, horizontalInset: CGFloat, request: Int, prefersFocus: Bool,
         focused: @escaping (Bool) -> Void, activate: @escaping () -> Void,
         promote: @escaping () -> Void, replace: @escaping () -> Void,
@@ -171,7 +171,7 @@ private struct NativeVideoCard<Content: View>: UIViewRepresentable {
             target.accessibilityElementsHidden = !active
             target.accessibilityIdentifier = active ? configuration?.identifier : nil
             target.accessibilityLabel = active ? configuration?.title : nil
-            target.accessibilityValue = active ? String(localized: localizedValue) : nil
+            target.accessibilityValue = active ? String(localized: localizedValue) : nil // l10n:content - UIKit boundary refreshed with the environment locale.
             target.accessibilityTraits = active ? .button : []
         }
     }
@@ -563,7 +563,7 @@ private struct VideoCardContextMenu: UIViewRepresentable {
                 var localizedTitle = title
                 localizedTitle.locale = locale
                 return UIAction(
-                    title: String(localized: localizedTitle), image: UIImage(systemName: symbol),
+                    title: String(localized: localizedTitle), image: UIImage(systemName: symbol), // l10n:content - UIKit menu resolved with the current locale on opening.
                     attributes: destructive ? .destructive : []
                 ) { [weak self] _ in
                     guard let self, self.configuration?.identifier == configuration.identifier else { return }
