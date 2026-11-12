@@ -1441,6 +1441,105 @@ caps and changing strides, absent/estimated totals, visibility filtering,
 the shared concurrency ceiling, duplicate playback sources, cancellation,
 failed-page retries, malformed responses, and static/session loader limits.
 
+#### Plex list/detail investigation: deferred enrichment not adopted
+
+The opt-in `home-live-{plex,combined}-{eager,deferred}-inventory` experiments
+compare full upfront metadata with lightweight Plex library lists followed by
+bounded detail batches. These are **test-only prototypes**; production loading
+still uses the full-metadata path above.
+
+Primary-source research identified list/detail separation in
+[Plezy's list requests](https://github.com/edde746/plezy/blob/847842c3d075b56d686409850e12fa1cca0b19d9/lib/services/plex_client.dart#L1132-L1156)
+and [detail requests](https://github.com/edde746/plezy/blob/847842c3d075b56d686409850e12fa1cca0b19d9/lib/services/plex_client.dart#L1262-L1317),
+[Plex for Kodi's explicit reload](https://github.com/plexinc/plex-for-kodi/blob/97191f248a20223bb93296789c010ff2204a9c76/lib/_included_packages/plexnet/plexobjects.py#L194-L247),
+and [Python PlexAPI's partial objects](https://github.com/pushingkarmaorg/python-plexapi/blob/aa5bf6742eb806bbbebd2b65dee9fc47a81d92e1/plexapi/base.py#L650-L706).
+These support investigating the approach, not adopting their UX or assuming
+equivalent metadata. No third-party implementation was copied.
+
+Bounded read-only HTTP probes against the internal Plex server returned the
+same 200 movie identities in about 1.80 seconds with `includeElements=Stream`
+versus 0.31 seconds without it. Decoded response sizes were 1,460,451 versus
+501,666 bytes. The enriched response contained 3,334 streams; the lean response
+contained none. `includeStreams=1`, including with `includeMedia=1`, did not
+restore streams on this list endpoint. XML with stream enrichment took 1.82
+seconds, so changing serialization was not a demonstrated shortcut.
+
+The metadata endpoint returned matching complete `Media` arrays for those 200
+records. A single batch took 1.88 seconds and 3,517,180 decoded bytes; four
+50-item batches took 2.05-2.11 seconds sequentially or 1.04 seconds with three
+workers. Those figures exclude the initial lean-list request and are transport
+observations, not end-to-end app speedups.
+
+The Swift experiment uses production providers, source paging, global merge,
+query comparators, and metadata mapping. Both strategies discover the same
+movie/TV libraries, two collections, and two playlists per provider. The
+deferred candidate changes only Plex library lists; collection and playlist
+representations remain unchanged. After sorting the complete membership, it
+hydrates only the selected 20-card window, excluding series/season containers
+that have no playable media in these library sources. Detail batches are capped
+at 50 native IDs and three concurrent requests. All hydration finishes inside
+the measured operation, rather than being submitted as unmeasured background
+work.
+
+Only the library records' technical metadata and versions are replaced.
+List-specific artwork, watch state, identity, and sort fields are retained,
+and shared merging reconstructs source/version references. The warmup compares
+complete displayed `MediaItem` values against fresh eager reads for the first
+20 cards, the next 180 cards, and all eight sorts. It also checks complete
+ordered identity parity for every sort. Cached replay is checked in each sample.
+This does not exercise rendered grids, watch mutations, profile switching,
+failure recovery, all possible filters, or complete-library scrolling.
+
+Run `21598e04db2e46d18dc2005bdbe6ea8a` passed all four cases, without skips:
+Plex eager/deferred and combined eager/deferred (Plex, Jellyfin, Emby).
+Each case used one warmup and five retained optimized iPhone-simulator samples.
+The 1,815-item Plex and 1,918-item combined inventories and displayed metadata
+passed the checks above. This is a within-run strategy comparison with the same
+source fingerprint, not a comparison of the earlier inventory-only workload:
+
+| Workload, median | Plex eager | Plex deferred | Combined eager | Combined deferred |
+| --- | ---: | ---: | ---: | ---: |
+| First 20 fully enriched cards | 11,114 ms | 2,192 ms | 11,092 ms | 4,749 ms |
+| Next 180 fully enriched cards | 51 ms | 2,763 ms | 83 ms | 7,100 ms |
+| Eight sort changes, fully enriched first windows | 38 ms | 2,009 ms | 46 ms | 5,226 ms |
+| Slowest sort within a sample | 6 ms | 417 ms | 9 ms | 867 ms |
+| Cached initial-window replay | 5 ms | 11 ms | 9 ms | 20 ms |
+| Whole workload, including discovery | 11,413 ms | 7,189 ms | 20,321 ms | 25,649 ms |
+| Whole-workload CPU | 6,776 ms | 2,805 ms | 7,850 ms | 11,932 ms |
+| Instrumented HTTP requests, including discovery | 21 | 36 | 95 | 110 |
+| Decoded HTTP response bytes, including discovery | 10,586,314 | 8,981,541 | 17,739,962 | 15,947,258 |
+| Physical-footprint snapshot | 207 MiB | 190 MiB | 205 MiB | 191 MiB |
+
+First-display timing excludes discovery, matching the earlier inventory timer;
+request/byte totals and whole-workload CPU include it. Footprints are snapshots
+in a shared test process, not isolated retained-memory or peak-allocation
+measurements. Server caches were not cleared. Detail fetching and remerging
+are both charged to the deferred path; their individual CPU costs were not
+profiled. Instrumented request counts cover provider transport, not broker,
+authentication, or separate address-verification traffic. The experiment's
+deferred projection remerges the inventory after new metadata arrives; this
+is part of this prototype's cost, not a lower bound for every deferred design.
+
+An earlier 60-card-lookahead candidate
+(`6a11f9ba3a4f491089f7b22aab5f7611`) completed the combined cases but its full
+sweep failed on Plex request timeouts, first on a metadata batch and then on
+library discovery. A subsequent bounded identity request succeeded; the timeout
+cause was not established. Its completed combined cases took 4,999 ms for first
+display, 7,177 ms for the next 180 cards, and 8,724 ms for eight sorts. Removing
+speculative windows and unnecessary container hydration improved the candidate,
+but did not eliminate its interaction regressions. Earlier rejected experiments
+also exposed a reference-fixture locality mismatch and changed collection/playlist
+metadata. None of those failed sweeps supplies the final table's results.
+
+**Decision:** do not adopt this deferred strategy. Faster initial display moves
+substantial work into scrolling and sorting. Plex-only total time and CPU improve,
+and both workloads transfer fewer bytes, but both make more requests, and combined
+total time and CPU regress. This does not meet the requirement for an improvement
+across normal use. The existing warm-query behavior is retained. Any future
+candidate must measure first display *and* subsequent interaction readiness with
+complete metadata; a smaller inventory payload or another client's design is
+not sufficient.
+
 ### Jellyfin Home recommendation reuse
 
 `home-recommendation-navigation` runs production `JellyfinProvider.homeHubs`

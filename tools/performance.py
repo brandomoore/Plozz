@@ -297,6 +297,19 @@ SCENARIOS = {
         }
         for provider in ("jellyfin", "emby", "plex", "silo", "combined")
     },
+    **{
+        f"home-live-{provider}-{strategy}-inventory": {
+            "suite": "network", "target": "AppRuntimeTests", "explicitOnly": True,
+            "test": f"LiveHomeContentTests/testPerformance{provider.title()}{strategy.title()}Inventory",
+            "file": "Tests/AppRuntimeTests/LiveHomeContentTests.swift",
+            "description": "Real-server eager/deferred comparison including full card fidelity, scrolling and sort changes.",
+            "counters": ["items", "firstDisplayNanoseconds", "next180CardsNanoseconds", "eightSortsNanoseconds",
+                         "maximumSortNanoseconds", "cachedReplayNanoseconds", "firstDisplayRequests",
+                         "firstDisplayBytes", "totalRequests", "totalBytes"],
+        }
+        for provider in ("plex", "combined")
+        for strategy in ("eager", "deferred")
+    },
     "home-saved-row-queries": {
         "suite": "network", "target": "FeatureHomeCoreTests",
         "test": "HomeContentPagerTests/testPerformanceSavedRowQueries",

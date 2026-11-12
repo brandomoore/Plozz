@@ -38,8 +38,273 @@ private actor LiveRecommendationHTTP: HTTPClient {
     }
 }
 
+/// Experiment only: change Plex list transport, not production provider defaults.
+private actor LiveInventoryHTTP: HTTPClient {
+    let deferred: Bool
+    private let client = URLSessionHTTPClient()
+    private(set) var requests = 0
+    private(set) var bytes = 0
+
+    init(deferred: Bool) { self.deferred = deferred }
+
+    func send(_ endpoint: Endpoint, baseURL: URL) async throws -> (Data, HTTPURLResponse) {
+        var endpoint = endpoint
+        let isPlex = endpoint.headers["X-Plex-Token"] != nil
+        let isInventory = endpoint.path.hasPrefix("/library/sections/") && endpoint.path.hasSuffix("/all")
+        if deferred && isPlex && isInventory {
+            endpoint.queryItems.removeAll {
+                ["includeElements", "includeOptionalElements"].contains($0.name) && $0.value == "Stream"
+            }
+        }
+        requests += 1
+        guard requests <= 600 else { throw AppError.invalidResponse }
+        let result = try await client.send(endpoint, baseURL: baseURL)
+        bytes += result.0.count
+        return result
+    }
+}
+
+private actor LiveInventoryProjection {
+    private var inventory: [MediaItem]
+    private var groups: [HomeContentSource: [MediaItem]]
+    private let sources: [HomeContentSource]
+    private let serverInfo: [String: SourceServerInfo]
+    private let plex: (any LibraryItemBatchProviding)?
+    private let plexAccountID: String?
+    private let playableInventoryIDs: Set<String>
+    private var hydrated = Set<String>()
+
+    init(snapshot: HomeContentPager.Snapshot, sources: [HomeContentSource],
+         accounts: [ResolvedAccount], deferred: Bool) {
+        inventory = snapshot.items
+        groups = snapshot.groups
+        self.sources = sources
+        serverInfo = accounts.sourceServerInfo()
+        let account = deferred ? accounts.first { $0.provider.kind == .plex } : nil
+        plex = account?.provider as? any LibraryItemBatchProviding
+        plexAccountID = account?.account.id
+        playableInventoryIDs = Set(snapshot.groups.flatMap { source, items -> [String] in
+            guard case .library = source.feed, source.accountID == account?.account.id else { return [] }
+            return items.filter { $0.kind == .movie || $0.kind == .episode }.map(\.id)
+        })
+    }
+
+    func orderedIDs(_ query: HomeContentQuery) -> [String] {
+        query.applying(to: inventory).map(\.stablePresentationID)
+    }
+
+    func page(_ query: HomeContentQuery, start: Int = 0, limit: Int = 20) async throws -> [MediaItem] {
+        let ordered = query.applying(to: inventory)
+        guard let plex, let plexAccountID else {
+            return Array(ordered.dropFirst(start).prefix(limit))
+        }
+        let window = ordered.dropFirst(start).prefix(limit)
+        let ids = Set(window.flatMap { item in
+            item.sources.filter { $0.accountID == plexAccountID }.map(\.itemID)
+                + (item.sourceAccountID == plexAccountID ? [item.id] : [])
+        }).intersection(playableInventoryIDs).subtracting(hydrated).sorted()
+        if !ids.isEmpty {
+            let limiter = ConcurrencyLimiter(limit: 3)
+            let details = try await withThrowingTaskGroup(of: [MediaItem].self) { tasks in
+                for start in stride(from: 0, to: ids.count, by: 50) {
+                    let chunk = Array(ids.dropFirst(start).prefix(50))
+                    tasks.addTask {
+                        try await limiter.runUnlessCancelled { try await plex.libraryItems(ids: chunk) }
+                    }
+                }
+                var result: [MediaItem] = []
+                for try await batch in tasks { result += batch }
+                return result
+            }
+            guard Set(details.map(\.id)) == Set(ids), details.count == ids.count else {
+                throw AppError.invalidResponse
+            }
+            let byID = Dictionary(uniqueKeysWithValues: details.map { ($0.id, $0) })
+            for source in sources {
+                guard case .library = source.feed, source.accountID == plexAccountID else { continue }
+                groups[source] = (groups[source] ?? []).map { original in
+                    guard original.sourceAccountID == plexAccountID, let detail = byID[original.id] else {
+                        return original
+                    }
+                    var item = original
+                    item.mediaInfo = detail.mediaInfo
+                    item.versions = detail.versions
+                    return item
+                }
+            }
+            hydrated.formUnion(ids)
+            let interleaved = HomeContentPager.interleave(sources.map { groups[$0] ?? [] })
+            inventory = MediaItemMerger.merge(interleaved, serverInfo: { serverInfo[$0] })
+        }
+        try Task.checkCancellation()
+        return Array(query.applying(to: inventory).dropFirst(start).prefix(limit))
+    }
+}
+
 /// Read-only production-provider checks using a private, ephemeral credential broker.
 final class LiveHomeContentTests: XCTestCase {
+    @MainActor
+    func testPerformancePlexEagerInventory() async throws {
+        try await measureInventoryTradeoff([.plex], scenario: "home-live-plex-eager-inventory", deferred: false)
+    }
+
+    @MainActor
+    func testPerformancePlexDeferredInventory() async throws {
+        try await measureInventoryTradeoff([.plex], scenario: "home-live-plex-deferred-inventory", deferred: true)
+    }
+
+    @MainActor
+    func testPerformanceCombinedEagerInventory() async throws {
+        try await measureInventoryTradeoff(
+            [.plex, .jellyfin, .emby], scenario: "home-live-combined-eager-inventory", deferred: false
+        )
+    }
+
+    @MainActor
+    func testPerformanceCombinedDeferredInventory() async throws {
+        try await measureInventoryTradeoff(
+            [.plex, .jellyfin, .emby], scenario: "home-live-combined-deferred-inventory", deferred: true
+        )
+    }
+
+    @MainActor
+    private func measureInventoryTradeoff(
+        _ kinds: [ProviderKind], scenario: String, deferred: Bool
+    ) async throws {
+        var verifyParity = true
+        try await PerformanceProbe.measure(self, scenario: scenario) {
+            let http = LiveInventoryHTTP(deferred: deferred)
+            let (accounts, sources) = try await self.querySources(kinds, http: http)
+            func pager(_ accounts: [ResolvedAccount]) -> HomeContentPager {
+                let session = HomeContentPageLoader.Session(accounts: accounts, visibility: .default) { _ in
+                    XCTFail("Inventory experiment must use actual server sources")
+                    return []
+                }
+                return HomeContentPager(sources: sources, serverInfo: accounts.sourceServerInfo()) {
+                    try await session.load($0, start: $1, limit: $2)
+                }
+            }
+            let initial = HomeContentQuery(sort: .init(field: .name, direction: .descending))
+            let start = ContinuousClock.now
+            let snapshot = try await pager(accounts).loadAll()
+            let projection = LiveInventoryProjection(
+                snapshot: snapshot, sources: sources, accounts: accounts, deferred: deferred
+            )
+            let preview = try await projection.page(initial)
+            let cold = Self.nanoseconds(start.duration(to: .now))
+            XCTAssertEqual(preview.count, 20)
+            XCTAssertTrue(snapshot.failures.isEmpty)
+            XCTAssertFalse(snapshot.hasMore)
+            let firstRequests = await http.requests
+            let firstBytes = await http.bytes
+
+            var reference: [MediaItem]?
+            if verifyParity {
+                let (fullAccounts, fullSources) = try await self.querySources(kinds)
+                XCTAssertEqual(sources.map(\.id), fullSources.map(\.id))
+                reference = try await pager(fullAccounts).loadAll().items
+                try Self.requireParity(preview, Array(initial.applying(to: reference ?? []).prefix(20)),
+                                       stage: "First display")
+            }
+            let scrollStart = ContinuousClock.now
+            var pages: [[MediaItem]] = []
+            for offset in stride(from: 20, to: 200, by: 20) {
+                pages.append(try await projection.page(initial, start: offset))
+            }
+            let scrolling = Self.nanoseconds(scrollStart.duration(to: .now))
+            if let reference {
+                try Self.requireParity(
+                    pages.flatMap { $0 }, Array(initial.applying(to: reference).dropFirst(20).prefix(180)),
+                    stage: "Scrolling"
+                )
+            }
+            var sorts = 0
+            var maximumSort = 0
+            for field in HomeContentQuery.sortFields {
+                for direction in [SortDirection.ascending, .descending] {
+                    let query = HomeContentQuery(sort: .init(field: field, direction: direction))
+                    let began = ContinuousClock.now
+                    let page = try await projection.page(query)
+                    let elapsed = Self.nanoseconds(began.duration(to: .now))
+                    sorts += elapsed
+                    maximumSort = max(maximumSort, elapsed)
+                    if let reference {
+                        let expected = query.applying(to: reference)
+                        let ids = await projection.orderedIDs(query)
+                        XCTAssertTrue(ids == expected.map(\.stablePresentationID))
+                        try Self.requireParity(page, Array(expected.prefix(20)), stage: "Sorted cards")
+                    }
+                }
+            }
+            let replayStart = ContinuousClock.now
+            let replay = try await projection.page(initial)
+            let replayTime = Self.nanoseconds(replayStart.duration(to: .now))
+            XCTAssertTrue(preview == replay)
+            verifyParity = false
+            return [
+                "items": snapshot.items.count, "firstDisplayNanoseconds": cold,
+                "next180CardsNanoseconds": scrolling, "eightSortsNanoseconds": sorts,
+                "maximumSortNanoseconds": maximumSort, "cachedReplayNanoseconds": replayTime,
+                "firstDisplayRequests": firstRequests, "firstDisplayBytes": firstBytes,
+                "totalRequests": await http.requests, "totalBytes": await http.bytes,
+            ]
+        }
+    }
+
+    private static func requireParity(_ actual: [MediaItem], _ expected: [MediaItem], stage: String) throws {
+        guard actual != expected else { return }
+        var fields = Set<String>()
+        func differences(_ lhs: Any?, _ rhs: Any?, path: String) {
+            if let lhs = lhs as? [String: Any], let rhs = rhs as? [String: Any] {
+                for key in Set(lhs.keys).union(rhs.keys) {
+                    differences(lhs[key], rhs[key], path: path + "." + key)
+                }
+            } else if let lhs = lhs as? [Any], let rhs = rhs as? [Any], lhs.count == rhs.count {
+                for index in lhs.indices { differences(lhs[index], rhs[index], path: path + ".[]") }
+            } else if !NSDictionary(dictionary: ["value": lhs ?? NSNull()])
+                .isEqual(to: ["value": rhs ?? NSNull()]) {
+                fields.insert(path)
+            }
+        }
+        for (lhs, rhs) in zip(actual, expected) where lhs != rhs {
+            let left = try JSONSerialization.jsonObject(with: JSONEncoder().encode(lhs))
+            let right = try JSONSerialization.jsonObject(with: JSONEncoder().encode(rhs))
+            differences(left, right, path: "item")
+        }
+        XCTFail("\(stage) metadata mismatch; fields: \(fields.sorted().joined(separator: ", ")); counts equal: \(actual.count == expected.count)")
+        throw AppError.invalidResponse
+    }
+
+    private func querySources(
+        _ kinds: [ProviderKind], http: any HTTPClient = URLSessionHTTPClient()
+    ) async throws -> ([ResolvedAccount], [HomeContentSource]) {
+        var accounts: [ResolvedAccount] = []
+        var sources: [HomeContentSource] = []
+        for kind in kinds {
+            let provider = try await self.provider(kind, http: http)
+            let account = ResolvedAccount(account: .init(id: "live-\(kind.rawValue)", from: provider.session),
+                                          provider: provider)
+            accounts.append(account)
+            let libraries = try await provider.libraries()
+            let movies = try XCTUnwrap(libraries.first { $0.kind == .movie && !$0.isMusic })
+            let shows = try XCTUnwrap(libraries.first { $0.kind == .series && !$0.isMusic })
+            func source(_ feed: HomeContentSource.Feed, library: MediaLibrary) -> HomeContentSource {
+                .init(feed: feed, accountID: account.account.id, serverUserID: provider.session.userID,
+                      libraryID: library.id, title: "Internal query source")
+            }
+            sources += [source(.library(.movie), library: movies), source(.library(.series), library: shows)]
+            if kind != .silo {
+                let collections = try await provider.collections(in: movies.id, page: .init(limit: 2))
+                let playlists = try await provider.videoPlaylists(in: movies.id, page: .init(limit: 2))
+                XCTAssertEqual(collections.items.count, 2)
+                XCTAssertEqual(playlists.items.count, 2)
+                sources += collections.items.map { source(.collection($0.id), library: movies) }
+                sources += playlists.items.map { source(.playlist($0.id), library: movies) }
+            }
+        }
+        return (accounts, sources)
+    }
+
     @MainActor
     func testPerformanceJellyfinSavedQueries() async throws {
         try await measureSavedQueries([.jellyfin], scenario: "home-live-jellyfin-queries")
@@ -69,30 +334,7 @@ final class LiveHomeContentTests: XCTestCase {
     private func measureSavedQueries(_ kinds: [ProviderKind], scenario: String) async throws {
         var verifiedBatchParity = false
         try await PerformanceProbe.measure(self, scenario: scenario) {
-            var accounts: [ResolvedAccount] = []
-            var sources: [HomeContentSource] = []
-            for kind in kinds {
-                let provider = try await self.provider(kind)
-                let account = ResolvedAccount(account: .init(id: "live-\(kind.rawValue)", from: provider.session),
-                                              provider: provider)
-                accounts.append(account)
-                let libraries = try await provider.libraries()
-                let movies = try XCTUnwrap(libraries.first { $0.kind == .movie && !$0.isMusic })
-                let shows = try XCTUnwrap(libraries.first { $0.kind == .series && !$0.isMusic })
-                func source(_ feed: HomeContentSource.Feed, library: MediaLibrary) -> HomeContentSource {
-                    .init(feed: feed, accountID: account.account.id, serverUserID: provider.session.userID,
-                          libraryID: library.id, title: "Internal query source")
-                }
-                sources += [source(.library(.movie), library: movies), source(.library(.series), library: shows)]
-                if kind != .silo {
-                    let collections = try await provider.collections(in: movies.id, page: .init(limit: 2))
-                    let playlists = try await provider.videoPlaylists(in: movies.id, page: .init(limit: 2))
-                    XCTAssertEqual(collections.items.count, 2)
-                    XCTAssertEqual(playlists.items.count, 2)
-                    sources += collections.items.map { source(.collection($0.id), library: movies) }
-                    sources += playlists.items.map { source(.playlist($0.id), library: movies) }
-                }
-            }
+            let (accounts, sources) = try await self.querySources(kinds)
             let session = HomeContentPageLoader.Session(accounts: accounts, visibility: .default) { _ in
                 XCTFail("These live sources must not substitute synthetic Home snapshots")
                 return []
@@ -405,7 +647,7 @@ final class LiveHomeContentTests: XCTestCase {
         )
         if kind == .plex {
             try await PlexProvider.verifyAddress(config.baseURL, serverID: config.serverID)
-            return PlexProvider(session: session)
+            return PlexProvider(session: session, http: http)
         }
         return JellyfinProvider(session: session, http: http, playbackRequests: .init())
     }
