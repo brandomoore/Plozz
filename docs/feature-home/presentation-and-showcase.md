@@ -143,6 +143,9 @@ The peeking rows are not eligible for focus while the featured hero is active,
 so first entry cannot collapse it. Boundary-only press and indirect-swipe
 recognizers request the other host even when its hidden content provides no
 geometric focus candidate; deeper-row and horizontal navigation remain native.
+The swipe fallback cannot prevent or be prevented by native focus panning, and
+does not cancel or delay touches. Both touchpad swipes and arrow presses use the
+same boundary handoff; hidden rows must not require a physical Down click.
 While a boundary handoff waits for the current focus transaction to finish,
 further proposals in that direction remain blocked. They must not focus
 navigation before the deferred request can restore the hero or enter the rows.

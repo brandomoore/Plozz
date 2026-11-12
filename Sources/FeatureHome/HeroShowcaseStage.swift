@@ -493,10 +493,13 @@ struct HeroShowcaseStage: UIViewControllerRepresentable {
             press.onMove = { [weak self] heading in self?.beginBoundaryMove(heading) }
             view.addGestureRecognizer(press)
             for direction: UISwipeGestureRecognizer.Direction in [.up, .down] {
-                let swipe = UISwipeGestureRecognizer(target: self, action: #selector(swiped(_:)))
+                let swipe = BoundarySwipeRecognizer(target: self, action: #selector(swiped(_:)))
                 swipe.direction = direction
                 swipe.allowedPressTypes = []
                 swipe.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.indirect.rawValue)]
+                swipe.cancelsTouchesInView = false
+                swipe.delaysTouchesBegan = false
+                swipe.delaysTouchesEnded = false
                 swipe.delegate = self
                 view.addGestureRecognizer(swipe)
             }
@@ -755,6 +758,13 @@ struct HeroShowcaseStage: UIViewControllerRepresentable {
             hero.view.layer.removeAnimation(forKey: "plozz.hero-showcase.opacity")
             showcase.view.layer.removeAnimation(forKey: "plozz.hero-showcase.opacity")
         }
+    }
+
+    // Native focus panning can begin before a swipe recognizes. Keep the
+    // boundary fallback alive without preventing the native gesture itself.
+    private final class BoundarySwipeRecognizer: UISwipeGestureRecognizer {
+        override func canPrevent(_ preventedGestureRecognizer: UIGestureRecognizer) -> Bool { false }
+        override func canBePrevented(by preventingGestureRecognizer: UIGestureRecognizer) -> Bool { false }
     }
 
     private final class BoundaryPressRecognizer: UIGestureRecognizer {

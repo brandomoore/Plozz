@@ -11,6 +11,28 @@ import XCTest
 
 @MainActor
 final class HomeVerticalMotionHostedTests: XCTestCase {
+    func testBoundarySwipesDoNotCompeteWithNativeFocusPanning() throws {
+        let stage = HeroShowcaseStage.Controller(
+            state: HeroShowcaseState(), hero: AnyView(Color.clear),
+            showcase: AnyView(Color.clear), rows: AnyView(Color.clear)
+        )
+        stage.loadViewIfNeeded()
+        defer { stage.stopAnimations() }
+        let swipes = try XCTUnwrap(stage.view.gestureRecognizers).compactMap { $0 as? UISwipeGestureRecognizer }
+        XCTAssertEqual(swipes.count, 2)
+        let nativePan = UIPanGestureRecognizer()
+        for swipe in swipes {
+            XCTAssertFalse(swipe.canBePrevented(by: nativePan),
+                           "Native focus panning must not cancel the hidden-destination swipe fallback.")
+            XCTAssertFalse(swipe.canPrevent(nativePan), "Ordinary row and horizontal navigation stays native.")
+            XCTAssertFalse(swipe.cancelsTouchesInView)
+            XCTAssertFalse(swipe.delaysTouchesBegan)
+            XCTAssertFalse(swipe.delaysTouchesEnded)
+            XCTAssertTrue(swipe.allowedPressTypes.isEmpty)
+            XCTAssertEqual(swipe.allowedTouchTypes, [NSNumber(value: UITouch.TouchType.indirect.rawValue)])
+        }
+    }
+
     func testNativeOriginWaitsForMotionWithoutDelayingFocusAndCancelsOnReversal() async throws {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
             .first { $0.activationState == .foregroundActive })
@@ -204,6 +226,14 @@ final class HomeVerticalMotionHostedTests: XCTestCase {
     }
 
     func testHeroShowcaseRestoresActualNativeFocusBetweenItsHosts() async throws {
+        try await checkHeroShowcaseFocusHandoff(usingSwipes: false)
+    }
+
+    func testRecognizedBoundarySwipesRestoreActualNativeFocusBetweenHosts() async throws {
+        try await checkHeroShowcaseFocusHandoff(usingSwipes: true)
+    }
+
+    private func checkHeroShowcaseFocusHandoff(usingSwipes: Bool) async throws {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
             .first { $0.activationState == .foregroundActive })
         let previous = scene.windows.first(where: \.isKeyWindow)
@@ -227,7 +257,26 @@ final class HomeVerticalMotionHostedTests: XCTestCase {
         let system = try XCTUnwrap(UIFocusSystem.focusSystem(for: stage.view))
         XCTAssertTrue(stage.contains(system.focusedItem, in: stage.hero))
         for expanded in [false, true, false, true] {
-            stage.beginBoundaryMove(expanded ? .up : .down)
+            if usingSwipes {
+                let swipes = try XCTUnwrap(stage.view.gestureRecognizers)
+                    .compactMap { $0 as? UISwipeGestureRecognizer }
+                let swipe = try XCTUnwrap(swipes.first { $0.direction == (expanded ? .up : .down) })
+                let opposite = try XCTUnwrap(swipes.first { $0 !== swipe })
+                XCTAssertFalse(stage.gestureRecognizerShouldBegin(opposite))
+                if expanded {
+                    stage.canReturn = { false }
+                } else {
+                    stage.canEnterRows = { false }
+                }
+                XCTAssertFalse(stage.gestureRecognizerShouldBegin(swipe),
+                               "Unavailable rows and deeper-row Up must stay with native navigation.")
+                stage.canReturn = { true }
+                stage.canEnterRows = { true }
+                XCTAssertTrue(stage.gestureRecognizerShouldBegin(swipe))
+                swipe.state = .ended
+            } else {
+                stage.beginBoundaryMove(expanded ? .up : .down)
+            }
             let host = expanded ? stage.hero : stage.rows
             let focused = XCTNSPredicateExpectation(
                 predicate: NSPredicate { _, _ in
@@ -235,6 +284,7 @@ final class HomeVerticalMotionHostedTests: XCTestCase {
                 }, object: nil
             )
             await fulfillment(of: [focused], timeout: 2)
+            XCTAssertEqual(stage.state.isExpanded, expanded)
         }
     }
 
