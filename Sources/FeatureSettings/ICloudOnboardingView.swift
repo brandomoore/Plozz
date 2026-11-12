@@ -25,6 +25,7 @@ public struct ICloudSetupUnavailableView: View {
 
 public struct ICloudRestorationView: View {
     @Environment(\.themePalette) private var palette
+    @Environment(\.locale) private var locale
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @AccessibilityFocusState private var headingFocused: Bool
     private let phase: InitialSetupRestorationPhase
@@ -100,7 +101,11 @@ public struct ICloudRestorationView: View {
         }
         .onChange(of: visibleActivity) { previous, current in
             guard previous != nil, let current else { return }
-            AccessibilityNotification.Announcement(String(localized: current.restorationMessage)).post()
+            var message = current.restorationMessage
+            message.locale = locale
+            AccessibilityNotification.Announcement(
+                String(localized: message) // l10n:content - resolved for an immediate announcement in the current locale
+            ).post()
         }
     }
 
