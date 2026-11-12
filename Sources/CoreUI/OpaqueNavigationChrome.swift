@@ -2,6 +2,32 @@
 import SwiftUI
 import UIKit
 
+struct OpaqueNavigationSurface {
+    let fill: Color
+    let border: Color
+    let selection: Color
+    let selectionForeground: Color
+
+    init(palette: ThemePalette, gradientEnabled: Bool, bottom: Bool = false) {
+        let base = gradientEnabled
+            ? AmbientGradientBackground.meshColors(tint: nil, palette: palette)[bottom ? 7 : 1]
+            : palette.raised.fill
+        let resolved = base.resolve(in: EnvironmentValues())
+        let tint = palette.isLight ? 0.0 : 1.0
+        func composite(_ opacity: Double) -> Color {
+            Color(
+                red: Double(resolved.red) * (1 - opacity) + tint * opacity,
+                green: Double(resolved.green) * (1 - opacity) + tint * opacity,
+                blue: Double(resolved.blue) * (1 - opacity) + tint * opacity
+            )
+        }
+        fill = composite(ThemePalette.gradientSurfaceFillOpacity)
+        border = composite(0.12)
+        selection = composite(0.16)
+        selectionForeground = Color.accentColor.mix(with: palette.primaryText, by: 0.45)
+    }
+}
+
 public extension View {
     func plozzOpaqueNavigationChrome() -> some View {
         modifier(OpaqueNavigationChromeModifier())
@@ -12,13 +38,16 @@ private struct OpaqueNavigationChromeModifier: ViewModifier {
     @Environment(\.plozzReduceTransparency) private var reduced
     @Environment(\.accessibilityReduceTransparency) private var systemReduced
     @Environment(\.themePalette) private var palette
+    @Environment(\.gradientBackgroundsEnabled) private var gradientEnabled
 
     func body(content: Content) -> some View {
+        let surface = OpaqueNavigationSurface(palette: palette, gradientEnabled: gradientEnabled)
         content.background {
             if #available(iOS 26.0, *) {
                 OpaqueNavigationBridge(
                     enabled: reduced && !systemReduced,
-                    color: UIColor(palette.cardOpaqueSurface)
+                    color: UIColor(surface.fill),
+                    border: UIColor(surface.border)
                 )
                 .frame(width: 0, height: 0)
                 .allowsHitTesting(false)
@@ -33,12 +62,14 @@ private struct OpaqueNavigationBridge: UIViewControllerRepresentable {
     @MainActor private static let owners = NSMapTable<UINavigationController, NavigationOverride>.weakToWeakObjects()
     let enabled: Bool
     let color: UIColor
+    let border: UIColor
 
     func makeUIViewController(context: Context) -> Controller { Controller() }
 
     func updateUIViewController(_ controller: Controller, context: Context) {
         controller.enabled = enabled
         controller.color = color
+        controller.border = border
         controller.scheduleUpdate()
     }
 
@@ -49,6 +80,7 @@ private struct OpaqueNavigationBridge: UIViewControllerRepresentable {
     final class Controller: UIViewController {
         var enabled = false
         var color = UIColor.secondarySystemBackground
+        var border = UIColor.separator
         private var pendingUpdate = false
         private var overrides: [ObjectIdentifier: NavigationOverride] = [:]
 
@@ -87,7 +119,7 @@ private struct OpaqueNavigationBridge: UIViewControllerRepresentable {
                         let appearance = overrides[key] ?? NavigationOverride(navigation)
                         overrides[key] = appearance
                         OpaqueNavigationBridge.owners.setObject(appearance, forKey: navigation)
-                        appearance.apply(color: color)
+                        appearance.apply(color: color, border: border)
                     }
                     break
                 }
@@ -110,6 +142,7 @@ private struct OpaqueNavigationBridge: UIViewControllerRepresentable {
     @MainActor final class NavigationOverride: NSObject {
         weak var navigation: UINavigationController?
         private var color: UIColor?
+        private var border: UIColor?
         private var image: UIImage?
         private var backItems: [ObjectIdentifier: BackSnapshot] = [:]
         private var items: [ObjectIdentifier: ItemSnapshot] = [:]
@@ -122,15 +155,22 @@ private struct OpaqueNavigationBridge: UIViewControllerRepresentable {
             super.init()
         }
 
-        func apply(color: UIColor) {
+        func apply(color: UIColor, border: UIColor) {
             guard let navigation else { return }
-            if self.color != color {
+            if self.color != color || self.border != border {
                 self.color = color
+                self.border = border
                 image = UIGraphicsImageRenderer(size: CGSize(width: 45, height: 44)).image { _ in
                     color.withAlphaComponent(1).setFill()
                     UIBezierPath(
                         roundedRect: CGRect(x: 0, y: 0, width: 45, height: 44), cornerRadius: 22
                     ).fill()
+                    border.setStroke()
+                    let outline = UIBezierPath(
+                        roundedRect: CGRect(x: 0.5, y: 0.5, width: 44, height: 43), cornerRadius: 21.5
+                    )
+                    outline.lineWidth = 1
+                    outline.stroke()
                 }.resizableImage(withCapInsets: UIEdgeInsets(top: 22, left: 22, bottom: 21, right: 22))
             }
             if updateLink == nil {
@@ -146,7 +186,7 @@ private struct OpaqueNavigationBridge: UIViewControllerRepresentable {
         }
 
         private func update(_ controller: UIViewController?) {
-            guard !applying, let navigation, let image, let color else { return }
+            guard !applying, let navigation, let image, let color, let border else { return }
             applying = true
             defer { applying = false }
             for previous in navigation.viewControllers.dropLast() {
@@ -171,7 +211,7 @@ private struct OpaqueNavigationBridge: UIViewControllerRepresentable {
                     }
                     let snapshot = items[key] ?? ItemSnapshot(button)
                     items[key] = snapshot
-                    snapshot.apply(color: color, image: image)
+                    snapshot.apply(color: color, border: border, image: image)
                 }
             }
             items = items.filter { $0.value.item != nil }
@@ -314,6 +354,8 @@ private struct OpaqueNavigationBridge: UIViewControllerRepresentable {
         private let backgroundImage: UIImage?
         private let backgroundColor: UIColor?
         private let cornerRadius: CGFloat
+        private let borderColor: CGColor?
+        private let borderWidth: CGFloat
         private var constraints: [NSLayoutConstraint] = []
         var hasCurrentCustomView: Bool { item?.customView === customView }
 
@@ -324,9 +366,11 @@ private struct OpaqueNavigationBridge: UIViewControllerRepresentable {
             backgroundImage = item.backgroundImage(for: .normal, barMetrics: .default)
             backgroundColor = item.customView?.backgroundColor
             cornerRadius = item.customView?.layer.cornerRadius ?? 0
+            borderColor = item.customView?.layer.borderColor
+            borderWidth = item.customView?.layer.borderWidth ?? 0
         }
 
-        func apply(color: UIColor, image: UIImage) {
+        func apply(color: UIColor, border: UIColor, image: UIImage) {
             guard let item else { return }
             if !item.hidesSharedBackground { item.hidesSharedBackground = true }
             if item.backgroundImage(for: .normal, barMetrics: .default) !== image {
@@ -344,6 +388,8 @@ private struct OpaqueNavigationBridge: UIViewControllerRepresentable {
                 if customView.backgroundColor != opaque { customView.backgroundColor = opaque }
                 let radius = max(44, customView.bounds.height) / 2
                 if customView.layer.cornerRadius != radius { customView.layer.cornerRadius = radius }
+                if customView.layer.borderColor != border.cgColor { customView.layer.borderColor = border.cgColor }
+                if customView.layer.borderWidth != 1 { customView.layer.borderWidth = 1 }
             }
         }
 
@@ -352,6 +398,8 @@ private struct OpaqueNavigationBridge: UIViewControllerRepresentable {
             item?.setBackgroundImage(backgroundImage, for: .normal, barMetrics: .default)
             customView?.backgroundColor = backgroundColor
             customView?.layer.cornerRadius = cornerRadius
+            customView?.layer.borderColor = borderColor
+            customView?.layer.borderWidth = borderWidth
             NSLayoutConstraint.deactivate(constraints)
             constraints.removeAll()
         }
@@ -363,6 +411,11 @@ public struct PlozzOpaqueTabBar<Item: Hashable, ItemLabel: View>: View {
     @Binding private var selection: Item
     private let label: (Item) -> ItemLabel
     @Environment(\.themePalette) private var palette
+    @Environment(\.gradientBackgroundsEnabled) private var gradientEnabled
+
+    private var surface: OpaqueNavigationSurface {
+        OpaqueNavigationSurface(palette: palette, gradientEnabled: gradientEnabled, bottom: true)
+    }
 
     public init(
         items: [Item], selection: Binding<Item>, @ViewBuilder label: @escaping (Item) -> ItemLabel
@@ -381,7 +434,8 @@ public struct PlozzOpaqueTabBar<Item: Hashable, ItemLabel: View>: View {
                 .accessibilityIdentifier("opaque-navigation-overflow")
         }
         .padding(6)
-        .background(palette.cardOpaqueSurface, in: Capsule())
+        .background(surface.fill, in: Capsule())
+        .overlay { Capsule().strokeBorder(surface.border, lineWidth: 1) }
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
     }
@@ -392,12 +446,13 @@ public struct PlozzOpaqueTabBar<Item: Hashable, ItemLabel: View>: View {
                 Button { selection = item } label: {
                     label(item)
                         .labelStyle(OpaqueTabLabelStyle())
-                        .foregroundStyle(selection == item ? palette.backgroundBase : palette.primaryText)
+                        .foregroundStyle(selection == item ? surface.selectionForeground : palette.primaryText)
                         .frame(minWidth: 44, minHeight: 44)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 4)
+                        .background(selection == item ? surface.selection : surface.fill, in: Capsule())
                 }
-                .buttonStyle(.borderedProminent)
-                .buttonBorderShape(.capsule)
-                .tint(selection == item ? palette.primaryText : palette.cardOpaqueSurface)
+                .buttonStyle(.plain)
                 .accessibilityAddTraits(selection == item ? .isSelected : [])
             }
         }

@@ -1,6 +1,6 @@
 #if os(iOS)
 import CoreModels
-import CoreUI
+@testable import CoreUI
 import FeatureAuth
 import FeatureHomeCore
 import SwiftUI
@@ -602,6 +602,93 @@ final class HomeHeroFullWidthPresentationTests: XCTestCase {
 
     private final class NavigationDelegateFixture: NSObject, UINavigationControllerDelegate {}
 
+    func testOpaqueNavigationSelectedLabelContrast() {
+        for palette in [ThemePalette.dark, .light, .pureBlack] {
+            for gradient in [true, false] {
+                let surface = OpaqueNavigationSurface(palette: palette, gradientEnabled: gradient, bottom: true)
+                var environment = EnvironmentValues()
+                environment.colorScheme = palette.isLight ? .light : .dark
+                func luminance(_ color: Color) -> Double {
+                    let value = color.resolve(in: environment)
+                    let channels = [Double(value.red), Double(value.green), Double(value.blue)].map {
+                        $0 <= 0.04045 ? $0 / 12.92 : pow(($0 + 0.055) / 1.055, 2.4)
+                    }
+                    return channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722
+                }
+                let foreground = luminance(surface.selectionForeground)
+                let background = luminance(surface.selection)
+                XCTAssertGreaterThanOrEqual((max(foreground, background) + 0.05)
+                                            / (min(foreground, background) + 0.05), 4.5,
+                                           "Light: \(palette.isLight), gradient: \(gradient)")
+            }
+        }
+    }
+
+    func testOpaqueSettingsGroupsKeepPageGradientAndRejectUnderlyingContent() async throws {
+        let item = try await artworkItem()
+        try await withWindow(
+            item: item, size: CGSize(width: 402, height: 874), sizeClass: .compact,
+            insets: .zero, pull: PlozziOSHomeHeroPullModel()
+        ) { window, host in
+            var frames: [Int: CGRect] = [:]
+            for (name, palette, dialog) in [
+                ("dark", ThemePalette.dark, false), ("light", .light, false),
+                ("black", .pureBlack, false), ("sheet", .dark, true)
+            ] {
+                for gradient in [true, false] {
+                    var reference: [[UInt8]] = []
+                    var opaque: [[UInt8]] = []
+                    for (mode, reduced, underlay) in [
+                        ("on", false, Color.clear), ("off", true, .clear),
+                        ("red", true, .red), ("blue", true, .blue), ("restored", false, .clear)
+                    ] {
+                        host.rootView = AnyView(
+                            VStack(spacing: 100) {
+                                ForEach(0..<3) { index in
+                                    Color.clear.frame(height: 110)
+                                        .settingsGroupSurface(cornerRadius: 16)
+                                        .background(underlay)
+                                        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: {
+                                            frames[index] = $0
+                                        }
+                                }
+                            }
+                            .padding(24)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .settingsPageSurface(horizontalInset: 0)
+                            .environment(\.plozzDialogBackgroundOwned, dialog)
+                            .environment(\.themePalette, palette)
+                            .environment(\.colorScheme, palette.isLight ? .light : .dark)
+                            .environment(\.gradientBackgroundsEnabled, gradient)
+                            .environment(\.plozzReduceTransparency, reduced)
+                        )
+                        try await waitForHostedLayout(window)
+                        try await Task.sleep(for: .seconds(1))
+                        let image = snapshot(window, name: "settings-surfaces-\(name)-gradient-\(gradient)-\(mode)")
+                        var samples: [[UInt8]] = []
+                        for index in 0..<3 {
+                            let frame = try XCTUnwrap(frames[index])
+                            samples.append(try pixel(image, at: CGPoint(x: frame.midX, y: frame.midY)))
+                        }
+                        if mode == "on" {
+                            reference = samples
+                        } else if mode == "off" || mode == "restored" {
+                            for index in 0..<3 {
+                                for channel in 0..<3 {
+                                    XCTAssertEqual(Int(samples[index][channel]), Int(reference[index][channel]),
+                                                   accuracy: 3, "\(name), gradient \(gradient), \(mode), group \(index)")
+                                }
+                            }
+                            if mode == "off" { opaque = samples }
+                        } else {
+                            XCTAssertEqual(samples, opaque, "Opaque settings must not reveal content underneath.")
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     func testAppReducedTransparencyUsesOpaqueNavigationButtonsAndRestoresGlass() async throws {
         guard #available(iOS 26.0, *) else { throw XCTSkip("Native glass requires iOS 26.") }
         XCTAssertFalse(UIAccessibility.isReduceTransparencyEnabled, "This regression requires OS Reduce Transparency off.")
@@ -697,6 +784,8 @@ final class HomeHeroFullWidthPresentationTests: XCTestCase {
         let control = UIButton(type: .system, primaryAction: UIAction(title: "Action") { _ in
             activationCount += 1
         })
+        control.layer.borderColor = UIColor.red.cgColor
+        control.layer.borderWidth = 2
         let actionItem = UIBarButtonItem(customView: control)
         let menu = UIMenu(children: [UIAction(title: "Menu action") { _ in }])
         let menuItem = UIBarButtonItem(title: "Menu", menu: menu)
@@ -724,6 +813,8 @@ final class HomeHeroFullWidthPresentationTests: XCTestCase {
                 XCTAssertEqual(menuItem.hidesSharedBackground, reduced)
                 control.sendActions(for: .primaryActionTriggered)
                 if !reduced {
+                    XCTAssertEqual(control.layer.borderColor, UIColor.red.cgColor)
+                    XCTAssertEqual(control.layer.borderWidth, 2)
                     XCTAssertTrue(page.navigationItem.trailingItemGroups.first === originalGroup)
                     XCTAssertEqual(originalGroup.barButtonItems, [actionItem, menuItem])
                 }
