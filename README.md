@@ -6,7 +6,8 @@
 
 **Free and open source. No ads or paywalls.** Movies, TV, music and live
 channels in one native Apple app. Connect **Jellyfin, Plex, Emby and Silo**,
-browse network shares, and keep your setup in sync with **iCloud**.
+play directly from **SMB and WebDAV shares**, and keep your setup in sync
+with **iCloud**.
 
 <p align="center">
   <a href="https://apps.apple.com/app/plozz-player/id6782668147"><img src="docs/assets/app-store-badge.svg" alt="Download Plozz Player on the App Store" width="180" /></a>
