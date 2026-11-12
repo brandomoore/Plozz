@@ -6,6 +6,7 @@ import FeatureAuthCore
 import CryptoKit
 import FeatureLiveTVCore
 import CoreSecureStore
+import CoreUI
 
 /// The accounts + providers hub, extracted from `AppState`.
 ///
@@ -84,15 +85,18 @@ public final class AccountsProvidersModel {
     /// fires at the end, after the new set is known) because an invalidation must
     /// happen even if the recompute below returns early.
     public var onAccountsInvalidated: @MainActor () -> Void = {}
+    @ObservationIgnored private let removedAccountIDs: () -> Set<String>
 
     public init(
         accountStore: AccountPersisting,
         registry: ProviderRegistry,
-        profilesModel: ProfilesModel
+        profilesModel: ProfilesModel,
+        removedAccountIDs: @escaping () -> Set<String> = { RemovedAccountsStore().removedIDs }
     ) {
         self.accountStore = accountStore
         self.registry = registry
         self.profilesModel = profilesModel
+        self.removedAccountIDs = removedAccountIDs
         let token = NotificationCenter.default.addObserver(
             forName: LiveTVSourceDiagnostics.snapshotRequested, object: nil, queue: .main
         ) { [weak self] _ in
@@ -103,6 +107,28 @@ public final class AccountsProvidersModel {
 
     /// This device's stable client identifier.
     public var deviceID: String { accountStore.deviceID() }
+
+    public func configureAuthenticatedArtwork() {
+        ArtworkSession.authenticatedLoader = { [weak self] reference in
+            guard let self else { throw AppError.cancelled }
+            let profileID = self.profilesModel.activeProfileID
+            @MainActor func authorizedProvider() throws -> any AuthenticatedArtworkProviding {
+                guard self.localProviders == nil, !self.accountSelectionIsUnavailable,
+                      self.profilesModel.activeProfileID == profileID,
+                      self.homeAccounts.contains(where: {
+                          $0.account.id == reference.accountID
+                            && self.credentialRevision($0.account) == reference.credentialRevision
+                      }),
+                      let provider = self.provider(forAccountID: reference.accountID)
+                        as? any AuthenticatedArtworkProviding else { throw AppError.unauthorized }
+                return provider
+            }
+            let bytes = try await authorizedProvider().artworkData(for: reference)
+            try Task.checkCancellation()
+            _ = try authorizedProvider()
+            return bytes
+        }
+    }
 
     public func downloadUserID(for accountID: String, profileID: String) -> String? {
         guard profilesModel.activeProfileID == profileID, activeAccountIDs.contains(accountID),
@@ -264,7 +290,7 @@ public final class AccountsProvidersModel {
         case .jellyfin: .jellyfin
         case .emby: .emby
         case .iptv: .iptv
-        case .mediaShare, .silo: nil
+        case .mediaShare, .silo, .subsonic: nil
         }
     }
 
@@ -480,7 +506,14 @@ public final class AccountsProvidersModel {
     public func reloadAccounts(updatingServerAddressesFor addressAccountID: String? = nil) {
         profilesModel.retryUnconfirmedAccountSelections()
         liveTVAuthorizationCache = [:]
-        let updated = accountStore.loadAccounts()
+        let removed = removedAccountIDs()
+        for account in accountStore.loadAccounts() where removed.contains(account.id) {
+            do { try accountStore.remove(id: account.id) }
+            catch { PlozzLog.auth.error("Household account removal is pending local credential storage recovery") }
+        }
+        // Receipt of a household revocation denies use even if Keychain deletion
+        // must be retried on a later reload.
+        let updated = accountStore.loadAccounts().filter { !removed.contains($0.id) }
         if let addressAccountID,
            let account = updated.first(where: { $0.id == addressAccountID }),
            accounts.map({ old in

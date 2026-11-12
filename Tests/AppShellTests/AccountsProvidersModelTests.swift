@@ -1,6 +1,7 @@
 import XCTest
 import Synchronization
 import CoreModels
+import CoreUI
 import FeatureAuth
 import AppRuntime
 @testable import AppShell
@@ -77,6 +78,69 @@ final class AccountsProvidersModelTests: XCTestCase {
         // The resolved active set is a subset of the known accounts.
         XCTAssertTrue(model.activeAccountIDs.isSubset(of: ["a", "b"]))
     }
+
+        func testAuthenticatedArtworkRejectsHiddenAccountsAndChangedCredentials() async throws {
+            let (model, store, profiles) = try makeModel(accountIDs: [("a", "a.test")])
+            model.registry.register(.jellyfin) { LiveTVAccountsTestProvider(session: $0.session) }
+            model.tokenResolver = { _ in "fixture" }
+            store.setActiveAccountIDs(["a"])
+            profiles.setActiveAccountIDs(["a"], for: profiles.activeProfileID)
+            model.reloadAccounts()
+            let previousLoader = ArtworkSession.authenticatedLoader
+            defer { ArtworkSession.authenticatedLoader = previousLoader }
+            model.configureAuthenticatedArtwork()
+            let loader = try XCTUnwrap(ArtworkSession.authenticatedLoader)
+            let account = try XCTUnwrap(model.accounts.first)
+            let reference = AuthenticatedArtworkReference(
+                accountID: account.id, credentialRevision: model.credentialRevision(account),
+                resourceID: "cover", size: nil
+            )
+            let bytes = try await loader(reference)
+            XCTAssertEqual(bytes, Data([1]))
+            let stale = AuthenticatedArtworkReference(
+                accountID: account.id, credentialRevision: .init(), resourceID: "cover", size: nil
+            )
+            do {
+                _ = try await loader(stale)
+                XCTFail("Stale credentials must be rejected")
+            } catch { XCTAssertEqual(error as? AppError, .unauthorized) }
+            profiles.setActiveAccountIDs([], for: profiles.activeProfileID)
+            model.refreshActiveAccountSelection()
+            do {
+                _ = try await loader(reference)
+                XCTFail("Hidden accounts must be rejected")
+            } catch { XCTAssertEqual(error as? AppError, .unauthorized) }
+        }
+
+        func testAuthenticatedArtworkCannotPublishAfterAProfileSwitch() async throws {
+            let (model, store, profiles) = try makeModel(accountIDs: [("a", "a.test")])
+            let other = profiles.add(name: "Other", activeAccountIDs: ["a"])
+            model.registry.register(.jellyfin) { context in
+                LiveTVAccountsTestProvider(session: context.session, artwork: {
+                    await MainActor.run {
+                        profiles.select(other.id)
+                        model.reloadAccounts()
+                    }
+                    return Data([1])
+                })
+            }
+            model.tokenResolver = { _ in "fixture" }
+            store.setActiveAccountIDs(["a"])
+            profiles.setActiveAccountIDs(["a"], for: profiles.activeProfileID)
+            model.reloadAccounts()
+            let previousLoader = ArtworkSession.authenticatedLoader
+            defer { ArtworkSession.authenticatedLoader = previousLoader }
+            model.configureAuthenticatedArtwork()
+            let loader = try XCTUnwrap(ArtworkSession.authenticatedLoader)
+            let account = try XCTUnwrap(model.accounts.first)
+            do {
+                _ = try await loader(.init(
+                    accountID: account.id, credentialRevision: model.credentialRevision(account),
+                    resourceID: "cover", size: nil
+                ))
+                XCTFail("A late download must not cross profile activation")
+            } catch { XCTAssertEqual(error as? AppError, .unauthorized) }
+        }
 
     func testMembershipChangesRetainUnrelatedProvidersAcrossTwentyServers() throws {
         let (model, store, profiles) = try makeModel(accountIDs: [])
@@ -492,14 +556,20 @@ final class AccountsProvidersModelTests: XCTestCase {
     }
 }
 
-private final class LiveTVAccountsTestProvider: MediaProvider, ServerLiveTVProviding, ServerAddressUpdating, Sendable {
+private final class LiveTVAccountsTestProvider: MediaProvider, ServerLiveTVProviding, ServerAddressUpdating,
+    AuthenticatedArtworkProviding, Sendable {
     var kind: ProviderKind { session.server.provider }
     let session: UserSession
     private let routes = Mutex<[URL]>([])
     var alternatives: [URL] { routes.withLock { $0 } }
     func updateServerAddresses(_ alternatives: [URL]) { routes.withLock { $0 = alternatives } }
 
-    init(session: UserSession) { self.session = session }
+    private let artwork: @Sendable () async throws -> Data
+    init(session: UserSession, artwork: @escaping @Sendable () async throws -> Data = { Data([1]) }) {
+        self.session = session
+        self.artwork = artwork
+    }
+    func artworkData(for reference: AuthenticatedArtworkReference) async throws -> Data { try await artwork() }
     func libraries() async throws -> [MediaLibrary] { [] }
     func continueWatching(limit: Int) async throws -> [MediaItem] { [] }
     func latest(limit: Int) async throws -> [MediaItem] { [] }

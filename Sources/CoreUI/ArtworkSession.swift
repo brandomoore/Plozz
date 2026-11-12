@@ -17,6 +17,20 @@ import CoreNetworking
 /// external-metadata CDN URL) can't hold one of the ~6 per-host connections for a
 /// full minute and poison subsequent loads as the session ages.
 public enum ArtworkSession {
+    @MainActor public static var authenticatedLoader:
+        (@MainActor @Sendable (AuthenticatedArtworkReference) async throws -> Data)?
+
+    public static func data(from url: URL) async throws -> (Data, URLResponse) {
+        guard url.scheme == AuthenticatedArtworkReference.scheme else {
+            return try await shared.data(from: url)
+        }
+        guard let reference = AuthenticatedArtworkReference(url: url),
+              let loader = await authenticatedLoader else { throw AppError.unauthorized }
+        let data = try await loader(reference)
+        return (data, URLResponse(url: url, mimeType: nil, expectedContentLength: data.count,
+                                  textEncodingName: nil))
+    }
+
     public static let memoryCapacityBytes = 64 * 1024 * 1024
     public static let diskCapacityBytes = 384 * 1024 * 1024
     public static let requestTimeoutSeconds: TimeInterval = 15

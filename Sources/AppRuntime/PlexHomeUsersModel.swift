@@ -633,26 +633,37 @@ public final class PlexHomeUsersModel {
             guard selectOnboardingUser(first, addAllProfiles: false) else { return .failed }
             var profile = profilesModel.activeProfile
             profile.name = first.name
+            profile.plexHomeImportIdentity = .init(ownerUserID: owner.userID, homeUserID: first.id)
             profilesModel.update(profile)
         }
         var imported: [String: String] = [:]
         for user in selection.users {
-            if let existing = profilesModel.profiles.first(where: { profile in
-                matchesOnboardingHomeUser(profile, userID: user.id, owner: owner)
-            }) {
-                imported[user.id] = existing.id
-                continue
-            }
+            let origin = PlexHomeImportIdentity(ownerUserID: owner.userID, homeUserID: user.id)
             let binding = PlexHomeUserBinding(
                 homeUserID: user.id, name: user.name,
                 avatarURL: user.avatarURL?.absoluteString, requiresPIN: user.requiresPIN,
                 isManaged: user.isRestricted, pinRequirementVerified: user.pinRequirementVerified
             )
+            if let existing = profilesModel.profiles.first(where: { profile in
+                matchesOnboardingHomeUser(profile, userID: user.id, owner: owner, allowImportIdentity: true)
+            }) {
+                var linked = existing
+                if !matchesOnboardingHomeUser(existing, userID: user.id, owner: owner) {
+                    for id in targets {
+                        linked = linked.settingHomeUserBinding(binding, forPlexAccount: id)
+                    }
+                }
+                linked.plexHomeImportIdentity = origin
+                if linked != existing { profilesModel.update(linked) }
+                imported[user.id] = existing.id
+                continue
+            }
             let added = profilesModel.add(
                 name: user.name, colorIndex: profilesModel.profiles.count,
                 linkedAccountID: owner.id, activeAccountIDs: targets,
                 plexHomeUserBindings: Dictionary(uniqueKeysWithValues: targets.map { ($0, binding) }),
-                avatarImageURL: user.avatarURL?.absoluteString, isAwaitingSetup: true
+                avatarImageURL: user.avatarURL?.absoluteString, isAwaitingSetup: true,
+                plexHomeImportIdentity: origin
             )
             imported[user.id] = added.id
         }
@@ -671,11 +682,17 @@ public final class PlexHomeUsersModel {
         return id
     }
 
-    private func matchesOnboardingHomeUser(_ profile: Profile, userID: String, owner: Account) -> Bool {
+    private func matchesOnboardingHomeUser(
+        _ profile: Profile, userID: String, owner: Account, allowImportIdentity: Bool = false
+    ) -> Bool {
         let bindings = accountsProviders.accounts.filter {
             $0.server.provider == .plex && $0.userID == owner.userID
         }.compactMap { profile.homeUserBinding(forPlexAccount: $0.id) }
-        return !bindings.isEmpty && bindings.allSatisfy { $0.homeUserID == userID }
+        if bindings.isEmpty {
+            return allowImportIdentity
+                && profile.plexHomeImportIdentity == .init(ownerUserID: owner.userID, homeUserID: userID)
+        }
+        return bindings.allSatisfy { $0.homeUserID == userID }
     }
 
     /// Imports metadata only. Each profile still authenticates its own Home user

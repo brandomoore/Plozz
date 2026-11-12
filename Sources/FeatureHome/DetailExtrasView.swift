@@ -372,7 +372,7 @@ private struct StudioLogoChip: View {
     private func load() async {
         guard !resolved else { return }
         guard
-            let (data, response) = try? await ArtworkSession.shared.data(from: url),
+            let (data, response) = try? await ArtworkSession.data(from: url),
             (response as? HTTPURLResponse).map({ (200...299).contains($0.statusCode) }) ?? true,
             // Studio tiles are ~180×135pt; a 400px thumbnail is crisp yet a
             // fraction of a full-size company logo's bitmap. Falls back to a full

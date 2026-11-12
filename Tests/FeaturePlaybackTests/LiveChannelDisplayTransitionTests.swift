@@ -87,9 +87,12 @@ final class LiveChannelDisplayTransitionTests: XCTestCase {
         let transition = LiveChannelDisplayTransition()
         var disabled = PlaybackSettings.default
         disabled.fadeOnDynamicRangeChange = false
+        disabled.fadeOnFrameRateChange = false
+        var hdrOnly = PlaybackSettings.default
+        hdrOnly.fadeOnFrameRateChange = false
         for (fullscreen, changesSource, range, settings) in [
             (false, true, SourceDynamicRange.dolbyVision, PlaybackSettings.default),
-            (true, false, .sdr, .default),
+            (true, false, .sdr, hdrOnly),
             (true, true, .dolbyVision, disabled)
         ] {
             let token = transition.beginPlayback(
@@ -99,6 +102,48 @@ final class LiveChannelDisplayTransitionTests: XCTestCase {
             let prepared = await transition.preparePlayback(token)
             XCTAssertTrue(prepared)
         }
+        transition.reset()
+    }
+
+    func testReadySDREntryUsesOnlyFrameRatePreferenceAndWaitsForSettle() async {
+        for hdr in [false, true] {
+            for frameRate in [false, true] {
+                let sleeper = DisplayTransitionSleeper()
+                let transition = makeTransition(sleeper)
+                let settings = PlaybackSettings(
+                    fadeOnDynamicRangeChange: hdr, fadeOnFrameRateChange: frameRate)
+                let token = transition.beginPlayback(
+                    isFullscreen: true, changesSource: false, range: .sdr, settings: settings)
+                XCTAssertEqual(transition.veil.isVeiled, frameRate)
+                let task = Task { await transition.preparePlayback(token) }
+                if frameRate {
+                    await eventually { await sleeper.contains(0.1) }
+                    await sleeper.release(0.1)
+                }
+                let prepared = await task.value
+                XCTAssertTrue(prepared)
+                transition.update(range: .sdr, hasPresentedFrame: true, failed: false)
+                XCTAssertEqual(transition.veil.isVeiled, frameRate)
+                if frameRate {
+                    transition.displayDidSettle()
+                    await eventually { await sleeper.contains(0.35) }
+                    await sleeper.release(0.35)
+                    await eventually { !transition.veil.isVeiled }
+                }
+                XCTAssertEqual(
+                    LiveChannelDisplayTransition.exitKind(range: .sdr, settings: settings),
+                    frameRate ? .frameRate : nil)
+                transition.reset()
+            }
+        }
+    }
+
+    func testOldSDRChannelDoesNotMisclassifyTheIncomingSource() {
+        let transition = LiveChannelDisplayTransition()
+        _ = transition.beginPlayback(
+            isFullscreen: true, changesSource: true, range: .sdr,
+            settings: .init(fadeOnFrameRateChange: false))
+        XCTAssertTrue(transition.veil.isVeiled, "The new channel's range is still unknown.")
         transition.reset()
     }
 

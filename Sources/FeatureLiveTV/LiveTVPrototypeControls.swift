@@ -409,6 +409,7 @@ struct PrototypeSheetContent: View {
     let guideStart: Date
     let tune: (String) -> Void
     let openMultiview: (LiveTVMultiviewFavorite) -> Void
+    var isPortrait = false
     var channelActionTitle: LocalizedStringResource?
     var sourceManagement: ((PrototypeSheet) -> AnyView)? = nil
     var openLibraryItem: ((LibraryChannelItem) -> Void)?
@@ -419,7 +420,7 @@ struct PrototypeSheetContent: View {
     var body: some View {
         #if os(tvOS)
         if case .multiviewFavorites = destination {
-            LiveTVMultiviewFavoritesView(model: model, open: openMultiview)
+            LiveTVMultiviewFavoritesView(model: model, open: openMultiview, isPortrait: isPortrait)
         } else {
             navigationContent
         }
@@ -441,7 +442,7 @@ struct PrototypeSheetContent: View {
                 case .diagnostics(let report):
                     PlaybackDiagnosticDetailsView(report: report)
                 case .multiviewFavorites:
-                    LiveTVMultiviewFavoritesView(model: model, open: openMultiview)
+                    LiveTVMultiviewFavoritesView(model: model, open: openMultiview, isPortrait: isPortrait)
                 case .filters:
                     PrototypeFilterForm(model: model, imports: imports, canMutate: canMutate)
                         #if os(iOS)

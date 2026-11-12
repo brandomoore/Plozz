@@ -3,26 +3,7 @@ import CoreNetworking
 import Foundation
 import Observation
 
-public struct HomeRowBrowseQuery: Equatable, Sendable {
-    public var sort: CoreModels.SortDescriptor?
-    public var media: WatchlistMediaFilter = .all
-    public var filters: LibraryFilters = .all
-
-    public init() {}
-    public var isDefault: Bool { sort == nil && media == .all && filters.isEmpty }
-
-    public func applying(to items: [MediaItem], watchlistDates: Bool = false) -> [MediaItem] {
-        let filtered = items.filter {
-            (media == .all || (media == .movies ? $0.kind == .movie : [.series, .season, .episode].contains($0.kind)))
-                && LibraryQueryRecord($0, includeFormats: false).matches(filters)
-        }
-        guard let sort else { return filtered }
-        if watchlistDates {
-            return WatchlistBrowsePreferences(sort: sort).items(from: filtered)
-        }
-        return filtered.sorted { MediaItemSortOrder.isOrderedBefore($0, $1, sort: sort) }
-    }
-}
+public typealias HomeRowBrowseQuery = HomeContentQuery
 
 @MainActor
 @Observable
@@ -42,6 +23,7 @@ public final class HomeRowBrowseModel: Identifiable, Hashable {
     public var query = HomeRowBrowseQuery()
     public private(set) var appliedQuery = HomeRowBrowseQuery()
     @ObservationIgnored private let loaders: [PageLoader]
+    @ObservationIgnored private let contentPager: HomeContentPager?
     @ObservationIgnored private let isCurrent: @MainActor () -> Bool
     @ObservationIgnored private let merge: @Sendable ([[MediaItem]]) -> [MediaItem]
     @ObservationIgnored private let snapshotProvider: (@MainActor () -> [MediaItem]?)?
@@ -54,8 +36,9 @@ public final class HomeRowBrowseModel: Identifiable, Hashable {
     public init(
         title: String, localizedTitle: LocalizedStringResource? = nil, titleSuffix: String? = nil, // l10n:content — original Home row heading; app copy uses localizedTitle
         style: LibrarySection.Style = .poster,
-        snapshot: [MediaItem] = [], loaders: [PageLoader] = [],
+        snapshot: [MediaItem] = [], loaders: [PageLoader] = [], contentPager: HomeContentPager? = nil,
         snapshotProvider: (@MainActor () -> [MediaItem]?)? = nil, watchlistDates: Bool = false,
+        query: HomeRowBrowseQuery = .init(),
         isCurrent: @escaping @MainActor () -> Bool = { true },
         merge: @escaping @Sendable ([[MediaItem]]) -> [MediaItem] = { $0.flatMap { $0 } }
     ) {
@@ -64,24 +47,45 @@ public final class HomeRowBrowseModel: Identifiable, Hashable {
         self.titleSuffix = titleSuffix
         self.style = style
         self.loaders = loaders
+        self.contentPager = contentPager
         self.isCurrent = isCurrent
         self.merge = merge
         self.snapshotProvider = snapshotProvider
         self.watchlistDates = watchlistDates
-        groups = loaders.isEmpty ? [snapshot] : Array(repeating: [], count: loaders.count)
+        self.query = query
+        groups = contentPager != nil ? [[]] : loaders.isEmpty ? [snapshot] : Array(repeating: [], count: loaders.count)
         offsets = Array(repeating: 0, count: loaders.count)
-        hasMore = !loaders.isEmpty
-        items = loaders.isEmpty ? snapshot : []
+        hasMore = contentPager != nil || !loaders.isEmpty
+        items = contentPager == nil && loaders.isEmpty ? query.applying(to: snapshot, watchlistDates: watchlistDates) : []
     }
 
     public var liveSnapshot: [MediaItem]? { snapshotProvider?() }
     public var scopeIsCurrent: Bool { isCurrent() }
 
-    public func applyMutation(_ mutation: MediaItemMutation) {
+    func page(start: Int, limit: Int) async throws -> HomeRowPage {
+        guard start >= 0, limit > 0, start < Int.max - limit, isCurrent() else { throw AppError.notFound }
+        let end = start + limit
+        while items.count <= end && hasMore {
+            try Task.checkCancellation()
+            await load()
+            if let error { throw error }
+        }
+        try Task.checkCancellation()
+        guard isCurrent() else { throw AppError.notFound }
+        return .init(items: Array(items.dropFirst(start).prefix(limit)), nextOffset: items.count > end || hasMore ? end : nil)
+    }
+
+    public func applyMutation(_ mutation: MediaItemMutation) async {
         guard isCurrent() else { invalidate(); return }
         mutations.append(mutation)
-        groups = groups.map { $0.map { mutation.applied(to: $0) } }
-        items = appliedQuery.applying(to: merge(groups), watchlistDates: watchlistDates)
+        do {
+            try await project(query: appliedQuery, generation: generation, isMutation: true)
+        } catch is CancellationError {
+            // A newer projection retains the mutation and owns publication.
+        } catch {
+            self.error = (error as? AppError) ?? .unknown("Home row could not be updated")
+            PlozzLog.app.error("Home row mutation projection failed")
+        }
     }
 
     /// Alternate ordering/filtering operates on the complete shelf, never just
@@ -97,29 +101,12 @@ public final class HomeRowBrowseModel: Identifiable, Hashable {
         defer { if token == generation { isLoading = false } }
         do {
             repeat {
-                if hasMore { try await appendPage(generation: token) }
+                if hasMore { try await appendPage(generation: token, complete: !requested.isDefault) }
                 try Task.checkCancellation()
                 guard token == generation, isCurrent() else { throw CancellationError() }
-            } while hasMore && !requested.isDefault
-            let merge = merge
-            let watchlistDates = watchlistDates
-            while true {
-                let groups = groups
-                let mutations = mutations
-                let projection = Task.detached {
-                    try Task.checkCancellation()
-                    let all = merge(groups.map { $0.map { item in mutations.reduce(item) { $1.applied(to: $0) } } })
-                    return requested.applying(to: all, watchlistDates: watchlistDates)
-                }
-                let result = try await withTaskCancellationHandler {
-                    try await projection.value
-                } onCancel: { projection.cancel() }
-                try Task.checkCancellation()
-                guard token == generation, isCurrent() else { throw CancellationError() }
-                guard mutations.count == self.mutations.count else { continue }
-                items = result
-                break
-            }
+            } while hasMore && error == nil && !requested.isDefault
+            if !requested.isDefault, let error { throw error }
+            try await project(query: requested, generation: token)
             appliedQuery = requested
         } catch {
             guard token == generation else { return }
@@ -127,6 +114,39 @@ public final class HomeRowBrowseModel: Identifiable, Hashable {
             if error is CancellationError || (error as? AppError) == .cancelled { return }
             self.error = (error as? AppError) ?? .unknown("Home row could not be loaded")
             PlozzLog.app.error("Home row browse failed: \(HandoffDiagnostics.errorCode(self.error ?? .invalidResponse))")
+        }
+    }
+
+    private func project(query: HomeRowBrowseQuery, generation token: Int, isMutation: Bool = false) async throws {
+        let merge = merge
+        let watchlistDates = watchlistDates
+        while true {
+            let groups = groups
+            let mutations = mutations
+            let projection = Task.detached {
+                try Task.checkCancellation()
+                let updated = try mutations.isEmpty ? groups : groups.map { group in
+                    try group.enumerated().map { index, item in
+                        if index.isMultiple(of: 256) { try Task.checkCancellation() }
+                        return mutations.reduce(item) { $1.applied(to: $0) }
+                    }
+                }
+                let all = merge(updated)
+                try Task.checkCancellation()
+                return try query.applying(
+                    to: all, watchlistDates: watchlistDates, checkCancellation: Task.checkCancellation
+                )
+            }
+            let result = try await withTaskCancellationHandler {
+                try await projection.value
+            } onCancel: { projection.cancel() }
+            try Task.checkCancellation()
+            guard isCurrent() else { invalidate(); throw CancellationError() }
+            guard token == generation else { throw CancellationError() }
+            guard !isMutation || appliedQuery == query else { throw CancellationError() }
+            guard mutations.count == self.mutations.count else { continue }
+            items = result
+            return
         }
     }
 
@@ -140,7 +160,18 @@ public final class HomeRowBrowseModel: Identifiable, Hashable {
         error = .notFound
     }
 
-    private func appendPage(generation token: Int) async throws {
+    private func appendPage(generation token: Int, complete: Bool = false) async throws {
+        if let contentPager {
+            let result = complete ? try await contentPager.loadAll()
+                : try await contentPager.loadNext(limit: PageRequest.defaultLimit)
+            try Task.checkCancellation()
+            guard token == generation, isCurrent() else { throw CancellationError() }
+            groups = [result.items]
+            hasMore = result.hasMore
+            error = contentPager.sources.compactMap { result.failures[$0.id] }.first
+            if error != nil { PlozzLog.app.error("Some custom Home row sources could not be loaded") }
+            return
+        }
         var nextGroups = groups
         var nextOffsets = offsets
         for index in loaders.indices {
@@ -159,7 +190,7 @@ public final class HomeRowBrowseModel: Identifiable, Hashable {
             nextGroups[index] += fresh
             nextOffsets[index] = page.nextOffset
         }
-        groups = nextGroups.map { $0.map { item in mutations.reduce(item) { $1.applied(to: $0) } } }
+        groups = nextGroups
         offsets = nextOffsets
         hasMore = nextOffsets.contains { $0 != nil }
     }

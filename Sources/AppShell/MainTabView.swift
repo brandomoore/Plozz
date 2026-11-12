@@ -2028,6 +2028,14 @@ struct MainTabView: View {
         .environment(transparencyModel)
         .environment(heroSettingsModel)
         .environment(shareScanStatusModel)
+        .onChange(of: showsMusicDestination, initial: true) { _, available in
+            guard available, !hasChosenNavigationDestination, !settingsEntryRequested,
+                  navigationAvailability.prefersMusic else { return }
+            recordedProcessLaunch = Self.processLaunch
+            selectedTabRaw = NavigationRailDestination.music.storageValue
+            railSelectionRaw = NavigationRailDestination.music.storageValue
+            libraryNavigationEntryOverride = .music
+        }
         .task(id: accounts.map(\.account.id)) {
             onWarmIdentityIndex()
         }

@@ -189,14 +189,17 @@ extension HomeRowChoice {
     func homeEditorProvider(in accounts: [ResolvedAccount]) -> ProviderKind? {
         library?.providerKind ?? serverRow?.providerKind
             ?? collectionSection.flatMap { section in
-                accounts.first(where: section.source.matches)?.account.server.provider
+                section.sources.count == 1
+                    ? section.sources.first.flatMap { source in accounts.first(where: source.matches)?.account.server.provider }
+                    : nil
             }
     }
 
     func homeEditorSource(in accounts: [ResolvedAccount]) -> Text {
-        if library == nil, let collectionSection,
-           let account = accounts.first(where: collectionSection.source.matches) {
-            return Text(verbatim: "\(collectionSection.source.title) · \(account.account.server.name)")
+        if library == nil, let collectionSection, collectionSection.sources.count == 1,
+           let source = collectionSection.sources.first, let account = accounts.first(where: source.matches) {
+            return (source.localizedTitle.map(Text.init) ?? Text(verbatim: source.title))
+                + Text(verbatim: " · \(account.account.server.name)")
         }
         return homeEditorSource
     }
@@ -217,7 +220,9 @@ extension HomeRowChoice {
             return library.library.displayName + Text(verbatim: " · \(library.serverName)")
         }
         if let serverRow { return Text(verbatim: serverRow.serverName) }
-        if let collectionSection { return Text(verbatim: collectionSection.source.title) }
+        if let collectionSection {
+            return collectionSection.localizedContentTitle.map(Text.init) ?? Text(verbatim: collectionSection.contentTitle)
+        }
         return id == .liveTV ? Text("All live sources") : Text("All libraries")
     }
 }
@@ -327,6 +332,7 @@ struct HomeSectionSettingsView: View {
     let visibility: HomeLibraryVisibilityModel
     let libraries: [AggregatedLibrary]
     let accounts: [ResolvedAccount]
+    @Environment(\.homeContentSnapshot) private var homeSnapshot
     var showsRemoveAction = true
     @Environment(\.themePalette) private var palette
     @Environment(CardStyleSettingsModel.self) private var cards
@@ -405,7 +411,10 @@ struct HomeSectionSettingsView: View {
         .task(id: HomeSectionCatalogModel.loadID(
             libraries: libraries, accounts: accounts, visibility: visibility
         )) {
-            await inventory.load(libraries: libraries, accounts: accounts, visibility: visibility)
+            await inventory.load(
+                libraries: libraries, accounts: accounts, visibility: visibility,
+                recommendationScope: homeSnapshot?.recommendationScope
+            )
         }
     }
 
@@ -529,6 +538,7 @@ struct HomeAddSectionView: View {
     let visibility: HomeLibraryVisibilityModel
     let libraries: [AggregatedLibrary]
     let accounts: [ResolvedAccount]
+    @Environment(\.homeContentSnapshot) private var homeSnapshot
     var spoilerSettings: SpoilerSettings = .default
     @Environment(CardStyleSettingsModel.self) private var cards
     @SettingsPageDismiss private var dismiss
@@ -544,7 +554,7 @@ struct HomeAddSectionView: View {
                 )
                 .environment(cards)
             } label: {
-                HomeEditorRowLabel(title: Text("From a collection"))
+                HomeEditorRowLabel(title: Text("Custom row"))
             }
             .accessibilityIdentifier("home-add-collection")
             let catalog = inventory.currentCatalog(libraries: libraries, accounts: accounts, visibility: visibility)
@@ -585,7 +595,10 @@ struct HomeAddSectionView: View {
         .task(id: HomeSectionCatalogModel.loadID(
             libraries: libraries, accounts: accounts, visibility: visibility, revision: reloadRevision
         )) {
-            await inventory.load(libraries: libraries, accounts: accounts, visibility: visibility)
+            await inventory.load(
+                libraries: libraries, accounts: accounts, visibility: visibility,
+                recommendationScope: homeSnapshot?.recommendationScope, refreshRecommendations: reloadRevision > 0
+            )
         }
     }
 }

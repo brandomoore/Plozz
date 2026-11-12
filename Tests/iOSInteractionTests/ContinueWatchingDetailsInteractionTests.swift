@@ -28,11 +28,11 @@ final class ContinueWatchingDetailsInteractionTests: XCTestCase {
         super.tearDown()
     }
 
-    func testDefaultContinueWatchingOpensSeriesWithSelectedEpisodeForBothProvidersAndLayouts() {
+    func testDefaultContinueWatchingOpensSeriesWithCurrentResumeForBothProvidersAndLayouts() {
         for options in [[], ["--portrait"], ["--plex"], ["--plex", "--portrait"]] {
             launch(options)
             openCard("E2")
-            XCTAssertTrue(app.staticTexts["Episode-specific synopsis."].waitForExistence(timeout: 10), app.debugDescription)
+            XCTAssertTrue(app.staticTexts["Whole-show synopsis."].waitForExistence(timeout: 10), app.debugDescription)
             XCTAssertTrue(app.descendants(matching: .any)["series-season-tabs"].waitForExistence(timeout: 10), app.debugDescription)
             app.terminate()
         }
@@ -44,11 +44,37 @@ final class ContinueWatchingDetailsInteractionTests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Movie-specific synopsis."].waitForExistence(timeout: 10), app.debugDescription)
     }
 
-    func testOrdinaryEpisodeBrowsingStillOpensTheShowWithSelectedEpisode() {
+    func testOrdinaryEpisodeBrowsingUsesShowMetadataAndCurrentResume() {
         launch()
         openCard("E3")
-        XCTAssertTrue(app.staticTexts["Recent episode synopsis."].waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertTrue(app.staticTexts["Whole-show synopsis."].waitForExistence(timeout: 10), app.debugDescription)
         XCTAssertTrue(app.descendants(matching: .any)["series-season-tabs"].waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertTrue(app.buttons["detail-hero-play"].label.contains("E2"), app.debugDescription)
+    }
+
+    func testSearchAndStaleContinueWatchingShowTheSameFrenchSeriesAndResume() {
+        for options in [[], ["--plex"], ["--details-search"], ["--details-search", "--plex"]] {
+            app.launchArguments = ["--continue-watching-details-fixture", "--detail-route-parity"] + options
+            app.launch()
+            if options.contains("--details-search") {
+                let search = app.textFields.firstMatch
+                XCTAssertTrue(search.waitForExistence(timeout: 15), app.debugDescription)
+                search.tap()
+                search.typeText("Fixture")
+                let result = app.staticTexts["Fixture show"].firstMatch
+                XCTAssertTrue(result.waitForExistence(timeout: 10), app.debugDescription)
+                result.tap()
+            } else {
+                openCard("E3")
+            }
+            XCTAssertTrue(app.staticTexts["Description FR de la serie."].waitForExistence(timeout: 15), app.debugDescription)
+            let play = app.buttons["detail-hero-play"]
+            let resumed = XCTNSPredicateExpectation(
+                predicate: NSPredicate { _, _ in play.exists && play.label.contains("E2") }, object: nil
+            )
+            XCTAssertEqual(XCTWaiter.wait(for: [resumed], timeout: 15), .completed, app.debugDescription)
+            app.terminate()
+        }
     }
 
     func testMovieRowHeaderRemainsNavigableAcrossRepeatedPushes() {

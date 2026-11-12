@@ -15,12 +15,20 @@ public enum ArtworkKind: String, Sendable, Hashable, CaseIterable {
 }
 
 /// A provider-agnostic, `Sendable` snapshot of everything a metadata provider
-/// needs to resolve artwork for one item, normalized away from the backend shape.
+/// needs to resolve artwork and descriptive metadata, normalized away from the backend shape.
 ///
 /// Built once from a ``MediaItem`` so providers never re-derive the same fields
 /// (series-vs-episode title, season/episode numbers, the relevant external ids).
 public struct MetadataQuery: Sendable, Hashable {
     public private(set) var artworkLanguage: String
+    /// External text only; native server/NFO metadata is never translated.
+    public private(set) var metadataLanguage: String
+
+    public func forMetadataLanguage(_ identifier: String) -> Self {
+        var copy = self
+        copy.metadataLanguage = Locale.Language(identifier: identifier).minimalIdentifier
+        return copy
+    }
 
     public static func normalizedArtworkLanguage(_ identifier: String) -> String {
         Locale(identifier: identifier).language.languageCode?.identifier.lowercased() ?? "en"
@@ -65,9 +73,11 @@ public struct MetadataQuery: Sendable, Hashable {
         providerIDs: [String: String],
         episodeHints: [SeriesEpisodeHint] = [],
         titleAlternates: [String] = [],
-        artworkLanguage: String = Locale.current.identifier
+        artworkLanguage: String = Locale.current.identifier,
+        metadataLanguage: String = "en"
     ) {
         self.artworkLanguage = Self.normalizedArtworkLanguage(artworkLanguage)
+        self.metadataLanguage = Locale.Language(identifier: metadataLanguage).minimalIdentifier
         self.contentType = contentType
         self.kind = kind
         self.title = title
@@ -87,6 +97,7 @@ public struct MetadataQuery: Sendable, Hashable {
     /// gathering more hints must never split a cache entry or a dedupe key.
     public static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.artworkLanguage == rhs.artworkLanguage
+            && lhs.metadataLanguage == rhs.metadataLanguage
             && lhs.contentType == rhs.contentType && lhs.kind == rhs.kind && lhs.title == rhs.title
             && lhs.alternateTitle == rhs.alternateTitle && lhs.year == rhs.year
             && lhs.seasonNumber == rhs.seasonNumber && lhs.episodeNumber == rhs.episodeNumber
@@ -95,6 +106,7 @@ public struct MetadataQuery: Sendable, Hashable {
 
     public func hash(into hasher: inout Hasher) {
         hasher.combine(artworkLanguage)
+        hasher.combine(metadataLanguage)
         hasher.combine(contentType)
         hasher.combine(kind)
         hasher.combine(title)
@@ -137,7 +149,8 @@ public struct MetadataQuery: Sendable, Hashable {
             providerIDs: ids,
             episodeHints: episodeHints,
             titleAlternates: titleAlternates,
-            artworkLanguage: artworkLanguage
+            artworkLanguage: artworkLanguage,
+            metadataLanguage: metadataLanguage
         )
     }
 
@@ -165,7 +178,8 @@ public struct MetadataQuery: Sendable, Hashable {
             providerIDs: providerIDs,
             episodeHints: episodeHints,
             titleAlternates: titleAlternates,
-            artworkLanguage: artworkLanguage
+            artworkLanguage: artworkLanguage,
+            metadataLanguage: metadataLanguage
         )
     }
 

@@ -50,6 +50,104 @@ private struct ContinueWatchingChannelsProvider: MediaProvider {
     func imageURL(itemID: String, kind: ImageKind, maxWidth: Int?) -> URL? { nil }
 }
 
+@MainActor
+@Observable
+private final class ContentPickerSelectionFixture {
+    var sources: [HomeContentSource] = []
+    var path: [String] = ["content"]
+    var returns = 0
+}
+
+@MainActor
+extension HomeRowArrangementHostedTests {
+    func testMultiSourcePickerRetainsSelectionsAndNativeFocus() async throws {
+        let suite = "ContentPicker.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let visibility = HomeLibraryVisibilityModel(store: HomeLibraryVisibilityStore(defaults: defaults))
+        let provider = ContinueWatchingChannelsProvider()
+        let account = ResolvedAccount(account: provider.account, provider: provider)
+        let selected = ContentPickerSelectionFixture()
+        try await withWindow {
+            @Bindable var selected = selected
+            let picker = HomeContentPickerView(
+                selections: Binding(get: { selected.sources }, set: { selected.sources = $0 }),
+                inventory: HomeSectionCatalogModel(), visibility: visibility, libraries: [], accounts: [account]
+            )
+            #if os(iOS)
+            NavigationStack(path: $selected.path) {
+                Text("Row editor").navigationDestination(for: String.self) { _ in picker }
+            }
+            #else
+            picker
+                .environment(\.settingsPageContext, SettingsPageContext(
+                    isCurrent: true, depth: 1, requestsEntryFocus: false, returnSourceID: nil,
+                    returnGeneration: 0, pageIDs: [], push: { _, _, _ in }, remove: { _ in },
+                    pop: { selected.returns += 1 }
+                ))
+            #endif
+        } inspect: { window in
+            let initial = try await self.capture(window, name: "Multi-source picker")
+            XCTAssertTrue(initial.contains { $0.0.contains("Collections") })
+            XCTAssertTrue(initial.contains { $0.0.contains("Playlists") })
+            let watchlist = try XCTUnwrap(initial.first { $0.0.contains("Watchlist") })
+            #if os(tvOS)
+            let point = CGPoint(x: watchlist.1.midX * window.bounds.width, y: (1 - watchlist.1.midY) * window.bounds.height)
+            let target = try XCTUnwrap(self.focusableItem(at: point, in: window))
+            try await self.focus(target, in: window)
+            XCTAssertTrue(UIFocusSystem.focusSystem(for: window)?.focusedItem === target)
+            #else
+            XCTAssertGreaterThan(watchlist.1.height, 0.01)
+            #endif
+            selected.sources = [.init(home: .watchlist)]
+            selected.sources.append(.init(home: .continueWatching))
+            selected.sources.append(.init(
+                feed: .collection("weekend"), accountID: provider.account.id,
+                serverUserID: provider.session.userID, title: "Weekend picks"
+            ))
+            let changed = try await self.capture(window, name: "Multi-source selected feeds")
+            XCTAssertTrue(changed.contains { $0.0.localizedCaseInsensitiveContains("Selected") })
+            XCTAssertTrue(changed.contains { $0.0.contains("Weekend picks") })
+            XCTAssertTrue(changed.contains { $0.0.contains("Fixture") })
+            #if os(tvOS)
+            XCTAssertNotNil(UIFocusSystem.focusSystem(for: window)?.focusedItem)
+            XCTAssertTrue(changed.contains { $0.0 == "Done" })
+            #else
+            try self.activateEditorSave(in: window)
+            try await self.waitForEditor { selected.path.isEmpty }
+            #endif
+            XCTAssertEqual(selected.sources.map(\.home), [.watchlist, .continueWatching, nil],
+                           "Done returns without clearing or resaving the selected content.")
+        }
+    }
+
+    func testGroupedContentChoiceMatchesSettingsNavigationHeight() async throws {
+        var choiceHeight: CGFloat = 0
+        var navigationHeight: CGFloat = 0
+        try await withWindow {
+            VStack {
+                SettingsSectionGroup {
+                    SettingsCheckableRow(
+                        title: Text("Watchlist"), isChecked: true, flushLeading: false,
+                        size: .contained, usesGroupInsets: true, action: {}
+                    )
+                }
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { choiceHeight = $0 }
+                SettingsSectionGroup {
+                    Button {} label: { HomeEditorRowLabel(title: Text("Collections")) }
+                }
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { navigationHeight = $0 }
+            }
+        } inspect: { window in
+            _ = try await self.capture(window, name: "Standard grouped choice height")
+            XCTAssertGreaterThan(choiceHeight, 0)
+            XCTAssertEqual(choiceHeight, navigationHeight, accuracy: 1,
+                           "Checkable and navigation rows must have the same single-line content height.")
+        }
+    }
+
+}
+
 #if os(tvOS)
 @MainActor
 extension HomeRowArrangementHostedTests {
@@ -693,9 +791,9 @@ final class HomeRowArrangementHostedTests: XCTestCase {
             let headings = try await self.capture(window, name: "Full Home shelf", scale: 2)
             XCTAssertTrue(headings.contains { $0.0.contains("Library picks") })
             #if os(tvOS)
-            XCTAssertTrue(headings.contains { $0.0.contains("Default") })
+            XCTAssertTrue(headings.contains { $0.0.contains("Source order") })
             let title = try XCTUnwrap(headings.first { $0.0.contains("Library picks") }).1
-            let sort = try XCTUnwrap(headings.first { $0.0.contains("Default") }).1
+            let sort = try XCTUnwrap(headings.first { $0.0.contains("Source order") }).1
             let filter = try XCTUnwrap(headings.first { $0.0.hasSuffix("All") }, "\(headings.map(\.0))").1
             for control in [sort, filter] {
                 XCTAssertGreaterThan(control.minX, title.maxX)
@@ -1548,7 +1646,132 @@ final class HomeRowArrangementHostedTests: XCTestCase {
     }
     #endif
 
-    func testCollectionEditorPreviewsActualTitlesAboveSettingsMenus() async throws {
+    func testCollectionEditorStartsWithCompactSettingsAndNoPreview() async throws {
+        let suite = "EmptyCollectionEditor.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let visibility = HomeLibraryVisibilityModel(store: HomeLibraryVisibilityStore(defaults: defaults))
+        #if os(iOS)
+        let sizes: [DynamicTypeSize] = [.large, .accessibility3]
+        #else
+        let sizes: [DynamicTypeSize] = [.large]
+        #endif
+        for size in sizes {
+            try await withWindow {
+                let editor = CollectionSectionCreationView(
+                    inventory: HomeSectionCatalogModel(), visibility: visibility,
+                    libraries: [], accounts: []
+                )
+                #if os(tvOS)
+                editor.frame(width: SettingsFormMetrics.pageWidth)
+                #else
+                NavigationStack { editor }
+                .environment(\.dynamicTypeSize, size)
+                #endif
+            } inspect: { window in
+                let lines = try await self.capture(window, name: "Create row \(size)")
+                let text = lines.map(\.0).joined(separator: " ")
+                XCTAssertFalse(text.contains("Choose content for this row"), text)
+                XCTAssertFalse(text.contains("No titles in this row"), text)
+                XCTAssertGreaterThan(try self.y("Content", in: lines), try self.y("Name", in: lines))
+                XCTAssertGreaterThan(try self.y("Name", in: lines), try self.y("Layout", in: lines))
+                #if os(iOS)
+                XCTAssertFalse(try self.editorSaveItem(in: window).isEnabled)
+                let field = try XCTUnwrap(self.editorViews(in: window).compactMap { $0 as? UITextField }.first)
+                if !size.isAccessibilitySize {
+                    let name = try XCTUnwrap(lines.first { $0.0 == "Name" }).1
+                    let frame = field.convert(field.bounds, to: window)
+                    XCTAssertEqual(frame.midY, (1 - name.midY) * window.bounds.height, accuracy: 5,
+                                   "The name label and input must share one line.")
+                    let contentToName = try (self.y("Content", in: lines) - self.y("Name", in: lines))
+                        * window.bounds.height
+                    let nameToSort = try (self.y("Name", in: lines) - self.y("Sort", in: lines))
+                        * window.bounds.height
+                    XCTAssertEqual(contentToName, nameToSort, accuracy: 3,
+                                   "Content, Name, and Sort must have matching single-line row heights.")
+                }
+                #endif
+                XCTAssertTrue(visibility.visibility.collectionSections.isEmpty)
+            }
+        }
+    }
+
+    func testCollectionEditorKeepsGlobalSnapshotTitlesWhenRecommendationFails() async throws {
+        let provider = HomeSettingsLibraryProvider(name: "Preview server", kind: .plex)
+        let account = ResolvedAccount(account: .init(id: "preview-account", from: provider.session), provider: provider)
+        let recommendation = HomeContentSource(
+            feed: .recommendation(sectionID: "missing-shelf", kind: .movie),
+            accountID: account.account.id, serverUserID: provider.session.userID,
+            libraryID: "movies", title: "Recommendation"
+        )
+        let suite = "MixedPreview.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let visibility = HomeLibraryVisibilityModel(store: HomeLibraryVisibilityStore(defaults: defaults))
+        let inventory = HomeSectionCatalogModel()
+        let snapshot = EditorHomeSnapshot()
+        let section = CollectionSection(
+            name: "Mixed preview",
+            sources: [recommendation, .init(home: .continueWatching), .init(home: .watchlist)]
+        )
+        let libraries = [
+            AggregatedLibrary(
+                accountID: account.account.id, accountName: "Viewer", serverName: "Preview server",
+                providerKind: .plex, library: .init(id: "movies", title: "Movies", kind: .movie)
+            )
+        ]
+        try await withWindow {
+            CollectionSectionSettingsView(
+                section: section, isNew: true, inventory: inventory, visibility: visibility,
+                libraries: libraries, accounts: [account]
+            )
+            .environment(\.homeContentSnapshot, snapshot)
+            #if os(tvOS)
+            .frame(width: SettingsFormMetrics.pageWidth)
+            #elseif os(iOS)
+            .environment(\.plozzMetrics, .touch(density: .standard))
+            #endif
+        } inspect: { window in
+            func previewScroll(_ view: UIView) -> UIScrollView? {
+                if let scroll = view as? UIScrollView, scroll.contentSize.height > scroll.bounds.height + 1 {
+                    return scroll
+                }
+                return view.subviews.lazy.compactMap(previewScroll).first
+            }
+            let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+                Set(snapshot.requests) == Set([.continueWatching, .watchlist])
+            }, object: nil)
+            _ = try await self.capture(window, name: "Mixed-source preview controls")
+            await fulfillment(of: [ready], timeout: 5)
+            let text = try await capture(window, name: "mixed-source-preview-partial-failure", beforeCapture: {
+                if let scroll = previewScroll(window) {
+                    scroll.setContentOffset(CGPoint(
+                        x: scroll.contentOffset.x,
+                        y: scroll.contentSize.height - scroll.bounds.height + scroll.adjustedContentInset.bottom
+                    ), animated: false)
+                }
+            }).map(\.0).joined(separator: " ")
+            XCTAssertTrue(text.contains("Resume"), text)
+            XCTAssertTrue(text.contains("Saved"), text)
+            XCTAssertTrue(text.contains("Retry"), text)
+            XCTAssertEqual(Set(snapshot.requests), Set([.continueWatching, .watchlist]))
+        }
+    }
+
+    @MainActor
+    private final class EditorHomeSnapshot: HomeContentSnapshotProviding {
+        var requests: [HomeGlobalRow] = []
+
+        func contentSnapshot(for kind: HomeGlobalRow, visibility: HomeLibraryVisibility) throws -> [MediaItem] {
+            requests.append(kind)
+            return [.init(
+                id: kind.rawValue, title: kind == .continueWatching ? "Resume" : "Saved",
+                kind: .movie, allowsTitleBasedMetadataMatching: false
+            )]
+        }
+    }
+
+    func testCollectionEditorPreviewsActualTitlesBelowSettingsMenus() async throws {
         for style in CollectionSection.CardStyle.allCases {
             let requested = expectation(description: "Collection preview requested")
             let provider = HomeSettingsLibraryProvider(
@@ -1583,21 +1806,168 @@ final class HomeRowArrangementHostedTests: XCTestCase {
                 let lines = try await self.capture(window, name: "Collection preview \(style.rawValue)")
                 let text = lines.map(\.0).joined(separator: " ")
                 XCTAssertTrue(text.contains("Weekend picks"), text)
-                XCTAssertTrue(text.contains("Orbit"), "Preview must display the provider's title: \(text)")
                 XCTAssertTrue(text.contains(String(localized: style.title)), text)
                 let layoutY = try self.y("Layout", in: lines)
-                XCTAssertGreaterThan(try self.y("Orbit", in: lines), layoutY)
+                XCTAssertGreaterThan(try self.y("Content", in: lines), try self.y("Name", in: lines))
+                XCTAssertGreaterThan(try self.y("Name", in: lines), layoutY)
                 if style == .landscape {
-                    XCTAssertTrue(text.contains("Off"), text)
+                    XCTAssertTrue(text.localizedCaseInsensitiveContains("Off"), text)
                     XCTAssertFalse(text.contains("Automatic"), text)
                     let logoY = try self.y("Logo", in: lines)
                     XCTAssertGreaterThan(layoutY, logoY)
-                    XCTAssertGreaterThan(logoY, try self.y("Content", in: lines))
                 } else {
                     XCTAssertFalse(text.contains("Logo"), text)
                 }
+                let previewLines = try await self.capture(window, name: "Scrolled collection preview \(style.rawValue)",
+                                                         beforeCapture: { try self.scrollToBottom(window) })
+                XCTAssertTrue(previewLines.contains { $0.0.contains("Orbit") },
+                              "Preview must display the provider's title: \(previewLines.map(\.0))")
+                XCTAssertGreaterThan(try self.y("Weekend picks", in: previewLines), try self.y("Orbit", in: previewLines))
                 XCTAssertTrue(visibility.visibility.collectionSections.isEmpty, "Previewing does not save a section.")
             }
+        }
+    }
+
+    func testCustomRowPreviewMatchesHomeGeometry() async throws {
+        let items: [MediaItem] = [
+            .init(id: "orbit", title: "Orbit", kind: .movie, productionYear: 2020, runtime: 7_200,
+                  resumePosition: 300, allowsTitleBasedMetadataMatching: false),
+            .init(id: "comet", title: "Comet", kind: .series, productionYear: 2024,
+                  allowsTitleBasedMetadataMatching: false)
+        ]
+        let controller = HeroTrailerController()
+        let coordinator = FeaturedTrailerCoordinator()
+        defer { coordinator.stop() }
+        #if os(iOS)
+        let suite = "RowPreviewParity.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let app = PlozziOSAppModel(
+            accountStore: AccountStore(secureStore: InMemorySecureStore()),
+            profileStore: ProfileStore(defaults: defaults)
+        )
+        #endif
+        for style in CollectionSection.CardStyle.allCases {
+            for cardStyle in [CardStyle.framed, .borderless] {
+                for density in [UIDensity.standard, .compact] {
+                    let browse: (() -> Void)? = density == .compact ? {} : nil
+                    var heights: [CGFloat] = []
+                    var labels: [[(String, CGRect)]] = []
+                    for preview in [false, true] {
+                        var height: CGFloat = 0
+                        try await withWindow {
+                            Group {
+                                if preview {
+                                    HomeRowPreviewView(title: Text("Weekend"), items: items, style: style, hasMore: browse != nil)
+                                } else if style == .featured {
+                                    FeaturedMediaRow(
+                                        title: Text("Weekend"), items: items, scope: ObjectIdentifier(controller),
+                                        coordinator: coordinator, controller: controller, settings: .default,
+                                        resolver: { _ in nil }, isActive: false, onSelect: { _ in }
+                                    ).browsingRow(browse)
+                                } else {
+                                    #if os(iOS)
+                                    PlozziOSHomeMediaRail(
+                                        title: Text("Weekend"), items: items,
+                                        style: style == .poster ? .poster : .landscape, appModel: app, onBrowse: browse
+                                    )
+                                    #else
+                                    MediaRowView(
+                                        title: Text("Weekend"), items: items,
+                                        style: style == .poster ? .poster : .landscape, onSelect: { _ in }
+                                    ).browsingRow(browse)
+                                    #endif
+                                }
+                            }
+                            #if os(iOS)
+                            .environment(app)
+                            .environment(\.plozzMetrics, .touch(density: density))
+                            .environment(\.plozzCardCaptionSettings, app.settings.cardStyle.captions)
+                            #else
+                            .environment(\.plozzMetrics, PlozzMetrics(density: density))
+                            #endif
+                            .environment(\.plozzCardStyle, cardStyle)
+                            .environment(\.plozzCardCaptionView, .home)
+                            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height = $0 }
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                        } inspect: { window in
+                            labels.append(try await self.capture(
+                                window, name: "Home parity \(style)-\(cardStyle)-\(density)-preview-\(preview)"
+                            ))
+                            heights.append(height)
+                        }
+                    }
+                    XCTAssertGreaterThan(heights[0], 0)
+                    XCTAssertEqual(heights[0], heights[1], accuracy: 1, "\(style)-\(cardStyle)-\(density)")
+                    for title in ["Weekend", "Orbit"] {
+                        let home = try XCTUnwrap(labels[0].first { $0.0.hasPrefix(title) }?.1, "\(labels[0])")
+                        let preview = try XCTUnwrap(labels[1].first { $0.0.hasPrefix(title) }?.1, "\(labels[1])")
+                        XCTAssertEqual(home.minX, preview.minX, accuracy: 0.005, title)
+                        XCTAssertEqual(home.minY, preview.minY, accuracy: 0.005, title)
+                        XCTAssertEqual(home.width, preview.width, accuracy: 0.005, title)
+                        XCTAssertEqual(home.height, preview.height, accuracy: 0.005, title)
+                    }
+                }
+            }
+        }
+    }
+
+    func testCollectionEditorRendersSavedQueryAndFiltersItsPreview() async throws {
+        let provider = HomeSettingsLibraryProvider(
+            name: "Query server", collectionItems: [
+                .init(id: "movie", title: "Hidden film", kind: .movie),
+                .init(id: "series", title: "Orbit", kind: .series)
+            ]
+        )
+        let account = ResolvedAccount(account: Account(from: provider.session), provider: provider)
+        let section = CollectionSection(
+            source: .init(accountID: account.account.id, collectionID: "weekend", title: "Weekend",
+                          serverUserID: provider.session.userID),
+            cardStyle: .landscape, query: .init(sort: .default, media: .shows)
+        )
+        let suite = "QueryPreview.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let visibility = HomeLibraryVisibilityModel(store: HomeLibraryVisibilityStore(defaults: defaults))
+        try await withWindow {
+            CollectionSectionSettingsView(
+                section: section, isNew: true, inventory: HomeSectionCatalogModel(),
+                visibility: visibility, libraries: [], accounts: [account]
+            )
+            #if os(tvOS)
+            .frame(width: SettingsFormMetrics.pageWidth)
+            #elseif os(iOS)
+            .environment(\.plozzMetrics, .touch(density: .standard))
+            #endif
+        } inspect: { window in
+            let lines = try await self.capture(window, name: "Saved row sort and filter preview")
+            let text = lines.map(\.0).joined(separator: " ")
+            XCTAssertTrue(text.contains("Sort"), text)
+            XCTAssertTrue(text.contains("Filter"), text)
+            XCTAssertTrue(text.contains("Ascending"), text)
+            XCTAssertTrue(text.contains("TV Shows"), text)
+            #if os(tvOS)
+            let frame = try XCTUnwrap(lines.first { $0.0 == "Sort" }).1
+            let point = CGPoint(x: frame.midX * window.bounds.width, y: (1 - frame.midY) * window.bounds.height)
+            let target = try XCTUnwrap(self.focusableItem(at: point, in: window))
+            try await self.focus(target, in: window)
+            XCTAssertTrue(UIFocusSystem.focusSystem(for: window)?.focusedItem === target)
+            _ = try await self.snapshot(window, name: "Native saved row Sort focus")
+            #endif
+            let preview = try await self.capture(window, name: "Scrolled saved row query preview",
+                                                 beforeCapture: { try self.scrollToBottom(window) })
+            XCTAssertTrue(preview.contains { $0.0.contains("Orbit") }, "\(preview.map(\.0))")
+            XCTAssertFalse(preview.contains { $0.0.contains("Hidden film") })
+            #if os(tvOS)
+            let caption = try XCTUnwrap(preview.first { $0.0.contains("Orbit") }).1
+            let previewPoint = CGPoint(
+                x: caption.midX * window.bounds.width, y: (1 - caption.midY) * window.bounds.height - 100
+            )
+            let previewTarget = try XCTUnwrap(self.focusableItem(at: previewPoint, in: window))
+            try await self.focus(previewTarget, in: window)
+            XCTAssertTrue(UIFocusSystem.focusSystem(for: window)?.focusedItem === previewTarget)
+            _ = try await self.snapshot(window, name: "Focusable saved row preview")
+            #endif
         }
     }
 
@@ -1897,16 +2267,23 @@ final class HomeRowArrangementHostedTests: XCTestCase {
     private func focusTarget(at point: CGPoint, in window: UIWindow) -> (item: any UIFocusItem, frame: CGRect)? {
         var containers: [any UIFocusItemContainer] = [window]
         var seen = Set<ObjectIdentifier>()
+        var candidates: [String] = []
         while let container = containers.popLast() {
             guard seen.insert(ObjectIdentifier(container)).inserted else { continue }
             let bounds = container.coordinateSpace.convert(window.bounds, from: window)
             for item in container.focusItems(in: bounds) {
                 if let child = item.focusItemContainer { containers.append(child) }
                 if let view = item as? UIView { containers.append(view) }
-                let frame = container.coordinateSpace.convert(item.frame, to: window)
+                let frame = (item as? UIView).map { $0.convert($0.bounds, to: window) }
+                    ?? container.coordinateSpace.convert(item.frame, to: window)
+                candidates.append("\(type(of: item)) focusable=\(item.canBecomeFocused) frame=\(frame)")
                 if !(item is UIScrollView), item.canBecomeFocused, frame.contains(point) { return (item, frame) }
             }
         }
+        let attachment = XCTAttachment(string: "Point: \(point)\n" + candidates.joined(separator: "\n"))
+        attachment.name = "Unresolved native focus target"
+        attachment.lifetime = .keepAlways
+        add(attachment)
         return nil
     }
     #endif
@@ -2604,6 +2981,7 @@ final class HomeRowArrangementHostedTests: XCTestCase {
                 field.insertText(isNew ? "Movie night" : "Weekend queue")
                 try await self.waitForEditor { self.findEditorSaveItem(in: window)?.isEnabled == true }
                 field.resignFirstResponder()
+                _ = try await self.snapshot(window, name: "Collection toolbar ready to save")
                 try self.activateEditorSave(in: window)
                 try await self.waitForEditor { route.path.isEmpty }
                 XCTAssertEqual(visibility.visibility.collectionSections.count, 1)
@@ -3644,9 +4022,12 @@ final class HomeRowArrangementHostedTests: XCTestCase {
         scroll.setContentOffset(CGPoint(x: scroll.contentOffset.x, y: bottom), animated: false)
     }
 
-    private func snapshot(_ window: UIWindow, name: String, scale: CGFloat = 1) async throws -> UIImage {
+    private func snapshot(
+        _ window: UIWindow, name: String, scale: CGFloat = 1, beforeCapture: (() throws -> Void)? = nil
+    ) async throws -> UIImage {
         try await Task.sleep(for: .milliseconds(400))
         window.layoutIfNeeded()
+        try beforeCapture?()
         let format = UIGraphicsImageRendererFormat()
         format.scale = scale
         let image = UIGraphicsImageRenderer(bounds: window.bounds, format: format).image { _ in
@@ -3659,8 +4040,10 @@ final class HomeRowArrangementHostedTests: XCTestCase {
         return image
     }
 
-    private func capture(_ window: UIWindow, name: String, scale: CGFloat = 1) async throws -> [(String, CGRect)] {
-        let image = try await snapshot(window, name: name, scale: scale)
+    private func capture(
+        _ window: UIWindow, name: String, scale: CGFloat = 1, beforeCapture: (() throws -> Void)? = nil
+    ) async throws -> [(String, CGRect)] {
+        let image = try await snapshot(window, name: name, scale: scale, beforeCapture: beforeCapture)
         let request = VNRecognizeTextRequest()
         request.recognitionLevel = .accurate
         request.recognitionLanguages = ["en-US"]

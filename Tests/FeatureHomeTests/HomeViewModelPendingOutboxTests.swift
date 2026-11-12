@@ -151,23 +151,35 @@ final class HomeViewModelPendingOutboxTests: XCTestCase {
         )
     }
 
+    func testSupersededServerTargetNeverReplaysTheOldResetAfterRestoration() throws {
+        let item = cwItem(id: "a", account: "plex", lastPlayedAt: t0, resume: 600)
+        var reset = mutation(account: "plex", itemID: "a", capturedAt: t2, played: false, clearResume: true)
+        reset.supersededTargetIDs = ["plex:a"]
+        let restored = try JSONDecoder().decode(WatchMutation.self, from: JSONEncoder().encode(reset))
+        XCTAssertEqual(HomeViewModel.reconcileContinueWatching([item], pending: [restored]), [item])
+        XCTAssertNil(MediaItemMutation(watchMutation: restored))
+        XCTAssertEqual(restored.optimisticTargets.map(\.id), ["plex:a"])
+    }
+
     func testResetRecognizesAlreadyObservedServerPlaybackAheadOfTheClientClock() throws {
         let observed = t1.addingTimeInterval(0.75)
-        var reset = mutation(account: "plex", itemID: "a", capturedAt: t1, played: false, clearResume: true)
-        reset.observedLastPlayedAt = ["plex:a": observed]
-        let restored = try JSONDecoder().decode(WatchMutation.self, from: JSONEncoder().encode(reset))
-        XCTAssertEqual(restored.observedLastPlayedAt, reset.observedLastPlayedAt)
-        for withSources in [false, true] {
-            var stale = cwItem(id: "a", account: "plex", lastPlayedAt: observed, resume: 600)
-            if !withSources { stale.sources = [] }
-            XCTAssertTrue(HomeViewModel.reconcileContinueWatching([stale], pending: [restored]).isEmpty)
-            var newer = cwItem(id: "a", account: "plex", lastPlayedAt: observed.addingTimeInterval(1), resume: 900)
-            if !withSources { newer.sources = [] }
-            XCTAssertEqual(HomeViewModel.reconcileContinueWatching([newer], pending: [restored]), [newer])
-            var unrelated = stale
-            unrelated.sourceAccountID = "other"
-            unrelated.sources = []
-            XCTAssertEqual(HomeViewModel.reconcileContinueWatching([unrelated], pending: [restored]), [unrelated])
+        for played in [nil, false, true] as [Bool?] {
+            var reset = mutation(account: "plex", itemID: "a", capturedAt: t1, played: played, clearResume: true)
+            reset.observedLastPlayedAt = ["plex:a": observed]
+            let restored = try JSONDecoder().decode(WatchMutation.self, from: JSONEncoder().encode(reset))
+            XCTAssertEqual(restored.observedLastPlayedAt, reset.observedLastPlayedAt)
+            for withSources in [false, true] {
+                var stale = cwItem(id: "a", account: "plex", lastPlayedAt: observed, resume: 600)
+                if !withSources { stale.sources = [] }
+                XCTAssertTrue(HomeViewModel.reconcileContinueWatching([stale], pending: [restored]).isEmpty)
+                var newer = cwItem(id: "a", account: "plex", lastPlayedAt: observed.addingTimeInterval(1), resume: 900)
+                if !withSources { newer.sources = [] }
+                XCTAssertEqual(HomeViewModel.reconcileContinueWatching([newer], pending: [restored]), [newer])
+                var unrelated = stale
+                unrelated.sourceAccountID = "other"
+                unrelated.sources = []
+                XCTAssertEqual(HomeViewModel.reconcileContinueWatching([unrelated], pending: [restored]), [unrelated])
+            }
         }
     }
 

@@ -5,6 +5,81 @@ import CoreNetworking
 
 // MARK: - Pure logic
 
+final class PlexScalarDecodingTests: XCTestCase {
+    private struct Scalars: Decodable {
+        let bool: Bool?
+        let int: Int?
+        let double: Double?
+        let string: String?
+
+        private enum CodingKeys: String, CodingKey { case value }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            bool = container.flexibleBool(.value)
+            int = container.flexibleInt(.value)
+            double = container.flexibleDouble(.value)
+            string = container.flexibleString(.value)
+        }
+    }
+
+    func testMissingNullAndUnsupportedValuesRemainAbsent() throws {
+        for json in ["{}", #"{"value":null}"#, #"{"value":[]}"#, #"{"value":{}}"#] {
+            let value = try JSONDecoder.plozz.decode(Scalars.self, from: Data(json.utf8))
+            XCTAssertNil(value.bool, json)
+            XCTAssertNil(value.int, json)
+            XCTAssertNil(value.double, json)
+            XCTAssertNil(value.string, json)
+        }
+    }
+
+    func testNativeAndStringRepresentationsKeepExistingConversions() throws {
+        let cases: [(String, Bool?, Int?, Double?, String?)] = [
+            ("true", true, nil, nil, nil),
+            ("false", false, nil, nil, nil),
+            ("0", false, 0, 0, "0"),
+            ("8", true, 8, 8, "8"),
+            ("8.75", nil, 8, 8.75, "8.75"),
+            (#""8""#, nil, 8, 8, "8"),
+            (#""8.75""#, nil, nil, 8.75, "8.75"),
+            (#""1""#, true, 1, 1, "1"),
+            (#""0""#, false, 0, 0, "0"),
+            (#""TRUE""#, true, nil, nil, "TRUE"),
+            (#""false""#, false, nil, nil, "false"),
+            (#""yes""#, true, nil, nil, "yes"),
+            (#""NO""#, false, nil, nil, "NO"),
+            (#""unknown""#, nil, nil, nil, "unknown"),
+            (#""""#, nil, nil, nil, "")
+        ]
+        for (json, bool, int, double, string) in cases {
+            let value = try JSONDecoder.plozz.decode(
+                Scalars.self, from: Data("{\"value\":\(json)}".utf8)
+            )
+            XCTAssertEqual(value.bool, bool, json)
+            XCTAssertEqual(value.int, int, json)
+            XCTAssertEqual(value.double, double, json)
+            XCTAssertEqual(value.string, string, json)
+        }
+    }
+
+    func testSparseSubtitleDoesNotLoseAvailableFacts() throws {
+        let stream = try JSONDecoder.plozz.decode(PlexStream.self, from: Data(
+            #"{"id":"42","streamType":3,"codec":"srt","languageCode":"eng","forced":0,"hearingImpaired":"1","key":"/library/streams/42"}"#.utf8
+        ))
+        XCTAssertEqual(stream.id, 42)
+        XCTAssertEqual(stream.streamType, 3)
+        XCTAssertEqual(stream.codec, "srt")
+        XCTAssertEqual(stream.languageCode, "eng")
+        XCTAssertEqual(stream.forced, false)
+        XCTAssertEqual(stream.hearingImpaired, true)
+        XCTAssertEqual(stream.key, "/library/streams/42")
+        XCTAssertNil(stream.width)
+        XCTAssertNil(stream.frameRate)
+        XCTAssertNil(stream.channels)
+        XCTAssertNil(stream.DOVIPresent)
+    }
+}
+
 final class PlexPinFlowTests: XCTestCase {
     func testPendingWhenAuthTokenNil() {
         let pin = decodePin(#"{"id":1,"code":"abcd","authToken":null}"#)

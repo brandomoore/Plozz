@@ -49,6 +49,51 @@ registry.
 
 ## Invariants
 
+- **First-run iCloud opt-in shows restoration, not an empty setup page.**
+  Both shells use `InitialSetupRestoration` and `ICloudRestorationView` until
+  the initial configuration, provider credentials, Live TV sources and queued
+  provider sign-in attempts finish. Watchlist/media state, tracker checks,
+  publication and inventory reconciliation follow in the background. A scoped
+  initial fetch never confirms the unfetched channels or permits publication.
+  Progress appears after 250 ms, without a minimum display time. Healthy
+  restoration has no action button. Only after 60 seconds without observable
+  progress does it explain the delay and offer Set up manually as a secondary
+  recovery action. Cloud fetch batches/stages and provider sign-in attempts
+  reset that inactivity window, even when the displayed activity is unchanged.
+  Resumed progress hides the recovery action again. This is a conservative
+  inactivity fallback, not proof of a hang; CloudKit exposes no byte-level
+  transfer progress here. Failures offer primary Retry and secondary manual setup.
+  One short detail names the actual iCloud fetch/apply work or active server
+  sign-in. Concurrent zone fetches keep the current detail until that work
+  finishes; there is no timed checklist, percentage, or estimated completion.
+  Live TV restoration transfers source settings and imported playlist files,
+  not channel indexing or programme-guide downloads. Those remain owned by
+  the presented Live TV runtime rather than the onboarding gate.
+  Manual setup persists a temporary automatic-sync pause without changing
+  consent, drains restoration before revealing setup, and resumes only after
+  explicit manual completion for the authorized profile (including after a
+  relaunch). Partially restored profiles review Libraries in the existing setup
+  flow without resetting their saved preferences; already-restored readiness
+  alone cannot resume sync.
+  An interrupted first restore resumes after relaunch. Other ordinary launches
+  and Settings toggles do not show this interstitial.
+  A finished attempt does not assert every server signed in or another device
+  received changes; existing per-server manual setup remains available.
+
+- **Each root owns content-refresh coordination.** `RootView` and
+  `PlozziOSRootView` inject `ContentRefreshCoordinator`, reset it on profile
+  changes, and mount
+  `ContentRefreshLifecycleReader`; app shells do not decide refresh timing.
+  Home/detail views register their visible surface and perform the typed action.
+  Follow [state management](../../docs/state-management.md).
+
+- **TV guide progress stays with setup and its source.** Playlist setup reserves
+  inline space above Continue; leaving setup never cancels guide preparation.
+  Settings shows progress and the resulting status beside the playlist and in
+  its details, without a persistent TV overlay. iPhone/iPad retain their toast.
+  Live-only IPTV profiles default to Live TV, including when discovery is
+  configured; actual movie/show libraries retain the normal Home default.
+
 - **Discover is optional and adult-profile-only.** Every navigation style uses
   the shared navigation policy: Seerr configuration enables Discover by default,
   while explicit Show/Hide choices survive connection changes. Child profiles
@@ -100,6 +145,12 @@ registry.
   data-loading regions wait for their existing readiness notification.
   `EmptyPinnedNavigationTests` covers entry, return, cold startup, and retained
   Live TV while switching back to Settings and empty Home.
+
+- **Live TV owns the guide-to-categories directional handoff.** The native guide
+  declares horizontal-input ownership while it has a category exit, so pinned
+  navigation cannot interpret a held Left or swipe as an unused page-edge move.
+  Categories remain outside that ownership: a subsequent Left can open navigation,
+  and Back retains its existing navigation behavior.
 
 - **Native Sidebar owns its screen insets.** Its startup focus host fills the
   window so the native sidebar, scrim, controls and scrolling page viewport do
@@ -227,6 +278,20 @@ registry.
   receiver QR. Nearby-device labels inherit native button foregrounds so their
   codes remain readable when focus inverts the surface. The QR, nearby devices,
   and manual code entry stay on one page in distinct sections.
+
+- **Automatic server sign-ins.** TV and mobile use AppRuntime's
+  `ProviderCredentialSync`, separately from non-secret server descriptors.
+  Private CloudKit encrypted fields carry managed-server tokens, portable
+  share credentials and Silo bootstrap authority; local copies stay in
+  Keychain and encrypted ledgers. Endpoint authority comes from the encrypted
+  record, never from an advisory descriptor. Restoration checks server/user
+  identity, consent, household removal, local dismissal and parental authority,
+  including after asynchronous enrollment. Generated SSH keys remain local;
+  Silo requires bound independent-device enrollment and never transfers PIN
+  proofs. Failed automatic sign-ins retain manual setup. Apple-account changes
+  invalidate cached authority and suppress old local credentials until fresh
+  authentication rather than uploading them to a different account. Encryption
+  does not imply Apple lacks key access without Advanced Data Protection.
 
 - **Bounded setup summaries.** Both sending and receiving use CoreUI's shared
   scrolling summary on TV and mobile. Group accounts by physical server, retain

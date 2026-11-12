@@ -37,7 +37,10 @@ public struct ProviderBrandMark: View {
     }
 
     private var badgeBackground: Color {
-        tint.opacity(0.18)
+        let backgroundTint = provider == .silo
+            ? Color(red: 0xCD / 255.0, green: 0xB7 / 255.0, blue: 0x95 / 255.0)
+            : tint
+        return backgroundTint.opacity(0.18)
     }
 
     private var assetName: String {
@@ -46,19 +49,21 @@ public struct ProviderBrandMark: View {
         case .plex: "PlexLogo"
         case .emby: "EmbyLogo"
         case .silo: "SiloLogo"
+        case .subsonic: "NavidromeLogo"
         case .mediaShare, .iptv: ""
         }
     }
 
-    /// Interior padding for the bundled logo asset. The Plex mark reads visibly
-    /// smaller than the Jellyfin mark at the same frame, so Plex gets less padding
-    /// — rendering ~8pt larger at the settings icon sizes — while the `size` frame
-    /// is unchanged, so surrounding layout never shifts. Proportional, so small
-    /// marks stay comfortably in-bounds.
+    /// Optical sizing for narrow marks changes only the artwork, not the badge
+    /// or surrounding layout. Silo's original proportions and colors are retained.
     private var assetPadding: CGFloat {
         let base = size * (showsBackground ? 0.24 : 0.12)
-        let plexBoost: CGFloat = provider == .plex ? size * 0.07 : 0
-        return max(0, base - plexBoost)
+        let boost: CGFloat = switch provider {
+        case .plex: size * 0.07
+        case .silo: (size - 2 * base) * 0.075
+        default: 0
+        }
+        return max(0, base - boost)
     }
 
     /// A media share has no bundled brand logo (it isn't a product), so it draws
@@ -67,7 +72,7 @@ public struct ProviderBrandMark: View {
         switch provider {
         case .mediaShare: "externaldrive.connected.to.line.below.fill"
         case .iptv: "antenna.radiowaves.left.and.right"
-        case .jellyfin, .plex, .emby, .silo: nil
+        case .jellyfin, .plex, .emby, .silo, .subsonic: nil
         }
     }
 
@@ -143,6 +148,8 @@ public struct ProviderBrandMark: View {
             return Color(red: 0xE5 / 255, green: 0xA0 / 255, blue: 0x0D / 255)
         case .silo:
             return Color(red: 0, green: 0x34 / 255, blue: 0xFB / 255)
+        case .subsonic:
+            return Color(red: 0.18, green: 0.53, blue: 0.84)
         case .mediaShare:
             // Neutral teal — reads as "storage/network", clearly not a Plex/
             // Jellyfin brand color, matching its second-class standing.
@@ -165,6 +172,8 @@ public struct ProviderBrandMark: View {
                 return Color(red: 0.60, green: 0.39, blue: 0.00)
             case .silo:
                 return brandTint(.silo)
+            case .subsonic:
+                return Color(red: 0.10, green: 0.35, blue: 0.65)
             case .mediaShare:
                 return Color(red: 0.08, green: 0.46, blue: 0.43)
             case .iptv:
@@ -183,6 +192,8 @@ public struct ProviderBrandMark: View {
             return Color(red: 0.96, green: 0.73, blue: 0.18)
         case .silo:
             return Color(red: 0.4, green: 0.6, blue: 1)
+        case .subsonic:
+            return Color(red: 0.4, green: 0.7, blue: 1)
         case .mediaShare:
             return Color(red: 0.36, green: 0.82, blue: 0.77)
         case .iptv:

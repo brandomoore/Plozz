@@ -11,6 +11,21 @@ final class ProfileStoreTests: XCTestCase {
 
     // MARK: Migration
 
+    func testInstallationProbeDoesNotCreateOrMigrateProfiles() throws {
+        let defaults = makeDefaults()
+        let secure = InMemorySecureStoringDouble()
+        let store = ProfileStore(defaults: defaults, secureStore: secure)
+        XCTAssertFalse(try store.hasPersistedProfiles())
+        XCTAssertNil(secure.string(for: "com.plozz.profiles.v1"))
+        let legacy = ProfileStore(defaults: defaults)
+        _ = legacy.migrateLegacyIfNeeded(defaultName: "Original", defaultActiveAccountIDs: [])
+        XCTAssertTrue(try store.hasPersistedProfiles())
+        XCTAssertNil(secure.string(for: "com.plozz.profiles.v1"))
+        XCTAssertNotNil(defaults.data(forKey: "com.plozz.profiles.v1"))
+        _ = store.loadProfiles()
+        XCTAssertTrue(try ProfileStore(defaults: makeDefaults(), secureStore: secure).hasPersistedProfiles())
+    }
+
     func testMigrationCreatesSingleDefaultProfile() {
         let store = ProfileStore(defaults: makeDefaults())
         let profiles = store.migrateLegacyIfNeeded(defaultName: "Me", defaultActiveAccountIDs: ["a1"])
@@ -117,6 +132,128 @@ final class ProfileStoreTests: XCTestCase {
         XCTAssertNil(defaults.data(forKey: "com.plozz.profiles.v1"))
         XCTAssertNotNil(secure.string(for: "com.plozz.profiles.v1"))
     }
+
+    func testFailedSharedMigrationRetainsProfilesAndMembershipForRetry() throws {
+        let defaults = makeDefaults()
+        let legacy = ProfileStore(defaults: defaults)
+        let profile = legacy.migrateLegacyIfNeeded(
+            defaultName: "Original", defaultActiveAccountIDs: ["account"]
+        )[0]
+        let secure = InMemorySecureStoringDouble()
+        secure.failWrites = true
+        let migrated = ProfileStore(defaults: defaults, secureStore: secure)
+        XCTAssertEqual(migrated.loadProfiles(), [profile])
+        XCTAssertEqual(try migrated.readActiveAccountIDs(forProfile: profile.id), ["account"])
+        XCTAssertEqual(migrated.migrateLegacyIfNeeded(defaultName: "Replacement", defaultActiveAccountIDs: []), [profile])
+
+        XCTAssertNotNil(defaults.data(forKey: "com.plozz.profiles.v1"))
+        XCTAssertNotNil(defaults.data(forKey: "com.plozz.profile.activeAccounts.\(profile.id)"))
+        secure.failWrites = false
+        XCTAssertEqual(migrated.loadProfiles(), [profile])
+        XCTAssertEqual(migrated.activeAccountIDs(forProfile: profile.id), ["account"])
+    }
+
+    func testInterruptedSharedMigrationKeepsLocalEditsAndRetriesAfterRestart() throws {
+        let defaults = makeDefaults()
+        let legacy = ProfileStore(defaults: defaults)
+        var profile = legacy.migrateLegacyIfNeeded(defaultName: "Original", defaultActiveAccountIDs: ["account"])[0]
+        let secure = InMemorySecureStoringDouble()
+        secure.failedWriteKeys = ["com.plozz.profiles.v1"]
+        let migrated = ProfileStore(defaults: defaults, secureStore: secure)
+        XCTAssertEqual(migrated.loadProfiles(), [profile])
+        XCTAssertNotNil(secure.string(for: "com.plozz.profile.activeAccounts.\(profile.id)"))
+        XCTAssertNil(secure.string(for: "com.plozz.profiles.v1"), "A partial membership copy must not commit the roster.")
+
+        profile.name = "Renamed"
+        migrated.saveProfiles([profile])
+        migrated.clearActiveAccountIDs(forProfile: profile.id)
+        XCTAssertEqual(migrated.loadProfiles(), [profile])
+        XCTAssertNil(try migrated.readActiveAccountIDs(forProfile: profile.id))
+
+        secure.failedWriteKeys = []
+        let restarted = ProfileStore(defaults: defaults, secureStore: secure)
+        XCTAssertEqual(restarted.loadProfiles(), [profile])
+        XCTAssertNil(try restarted.readActiveAccountIDs(forProfile: profile.id),
+                     "A partially migrated membership must not reappear after it was removed.")
+        XCTAssertNil(defaults.data(forKey: "com.plozz.profiles.v1"))
+    }
+
+    func testSharedReadFailureDoesNotOverwriteExistingRosterWithLegacyProfiles() throws {
+        let defaults = makeDefaults()
+        let legacy = ProfileStore(defaults: defaults)
+        let original = legacy.migrateLegacyIfNeeded(defaultName: "Legacy", defaultActiveAccountIDs: ["old"])[0]
+        let shared = Profile(name: "Shared")
+        let secure = InMemorySecureStoringDouble()
+        try secure.setString(String(decoding: JSONEncoder().encode([shared]), as: UTF8.self),
+                             for: "com.plozz.profiles.v1")
+        secure.unreadableRoster = true
+        let store = ProfileStore(defaults: defaults, secureStore: secure)
+        store.saveProfiles([original])
+        XCTAssertNotNil(defaults.data(forKey: "com.plozz.profiles.v1"))
+        secure.unreadableRoster = false
+        XCTAssertEqual(store.loadProfiles(), [shared])
+    }
+
+    func testTransientMigrationReadFailureDoesNotSeedOverRecoveredProfiles() {
+        let defaults = makeDefaults()
+        let legacy = ProfileStore(defaults: defaults)
+        let original = [
+            Profile(id: ProfileStore.defaultProfileID, name: "Original"),
+            Profile(name: "Another person")
+        ].sorted { $0.createdAt < $1.createdAt }
+        legacy.saveProfiles(original)
+        let secure = InMemorySecureStoringDouble()
+        secure.rosterReadsToFail = 1
+        let store = ProfileStore(defaults: defaults, secureStore: secure)
+        XCTAssertTrue(store.migrateLegacyIfNeeded(defaultName: "Replacement", defaultActiveAccountIDs: []).isEmpty)
+        XCTAssertNotNil(defaults.data(forKey: "com.plozz.profiles.v1"))
+        XCTAssertEqual(store.migrateLegacyIfNeeded(defaultName: "Replacement", defaultActiveAccountIDs: []), original)
+        XCTAssertEqual(store.loadProfiles(), original)
+    }
+
+    func testPendingMembershipArrivingBeforeProfileSurvivesMigrationRecovery() throws {
+        let defaults = makeDefaults()
+        let legacy = ProfileStore(defaults: defaults)
+        _ = legacy.migrateLegacyIfNeeded(defaultName: "Original", defaultActiveAccountIDs: ["account"])
+        let secure = InMemorySecureStoringDouble()
+        secure.failedWriteKeys = ["com.plozz.profiles.v1"]
+        let store = ProfileStore(defaults: defaults, secureStore: secure)
+        store.setActiveAccountIDs([], forProfile: "pending-empty")
+        store.setActiveAccountIDs(["chosen"], forProfile: "pending-subset")
+        store.setActiveAccountIDs(["old"], forProfile: "pending-clear")
+        _ = store.loadProfiles()
+        XCTAssertNotNil(secure.string(for: "com.plozz.profile.activeAccounts.pending-clear"))
+        store.clearActiveAccountIDs(forProfile: "pending-clear")
+
+        secure.failedWriteKeys = []
+        let restarted = ProfileStore(defaults: defaults, secureStore: secure)
+        _ = restarted.loadProfiles()
+        XCTAssertEqual(try restarted.readActiveAccountIDs(forProfile: "pending-empty"), [])
+        XCTAssertEqual(try restarted.readActiveAccountIDs(forProfile: "pending-subset"), ["chosen"])
+        XCTAssertNil(try restarted.readActiveAccountIDs(forProfile: "pending-clear"))
+        XCTAssertNil(defaults.data(forKey: "com.plozz.profile.activeAccounts.pending-empty"))
+        XCTAssertNil(defaults.object(forKey: "com.plozz.profiles.pendingSharedMembershipKeys"))
+    }
+
+    func testResetRetiresPendingMigrationWithoutRestoringProfilesOrMemberships() throws {
+        for syncErasure in [false, true] {
+            let defaults = makeDefaults()
+            let legacy = ProfileStore(defaults: defaults)
+            _ = legacy.migrateLegacyIfNeeded(defaultName: "Original", defaultActiveAccountIDs: ["account"])
+            let secure = InMemorySecureStoringDouble()
+            secure.failedWriteKeys = ["com.plozz.profiles.v1"]
+            let store = ProfileStore(defaults: defaults, secureStore: secure)
+            store.setActiveAccountIDs([], forProfile: "pending")
+            _ = store.loadProfiles()
+            if syncErasure { try store.resetForSyncErasure() }
+            else { store.resetForDebugging() }
+            secure.failedWriteKeys = []
+            let restarted = ProfileStore(defaults: defaults, secureStore: secure)
+            XCTAssertTrue(restarted.loadProfiles().isEmpty)
+            XCTAssertNil(try restarted.readActiveAccountIDs(forProfile: "pending"))
+            XCTAssertNil(defaults.object(forKey: "com.plozz.profiles.pendingSharedMembershipKeys"))
+        }
+    }
 }
 
 /// In-memory `SecureStoring` double for exercising the shared-store path.
@@ -124,11 +261,14 @@ private final class InMemorySecureStoringDouble: SecureStoring, @unchecked Senda
     private var storage: [String: String] = [:]
     private(set) var reads = 0
     var failWrites = false
+    var failedWriteKeys: Set<String> = []
+    var unreadableRoster = false
+    var rosterReadsToFail = 0
     var failRemovals = false
     var unreadableMembershipIDs: Set<String> = []
     var membershipReadsToFail = 0
     func setString(_ value: String, for key: String) throws {
-        if failWrites { throw CocoaError(.fileWriteUnknown) }
+        if failWrites || failedWriteKeys.contains(key) { throw CocoaError(.fileWriteUnknown) }
         storage[key] = value
     }
     func string(for key: String) -> String? {
@@ -136,6 +276,11 @@ private final class InMemorySecureStoringDouble: SecureStoring, @unchecked Senda
         return storage[key]
     }
     func readString(for key: String) throws -> String? {
+        if key == "com.plozz.profiles.v1", rosterReadsToFail > 0 {
+            rosterReadsToFail -= 1
+            throw CocoaError(.fileReadUnknown)
+        }
+        if unreadableRoster, key == "com.plozz.profiles.v1" { throw CocoaError(.fileReadUnknown) }
         let value = string(for: key)
         let prefix = "com.plozz.profile.activeAccounts."
         if key.hasPrefix(prefix) {

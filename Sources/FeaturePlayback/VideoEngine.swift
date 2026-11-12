@@ -94,7 +94,7 @@ public protocol VideoEngine: AnyObject {
     /// app-level center and still receive transport through this protocol.
     var nowPlayingPlayer: AVPlayer? { get }
 
-    #if os(iOS)
+    #if os(iOS) || os(tvOS)
     /// Borrowed software output for infrequent preview-color analysis, not a second decoder.
     func previewVideoFrame() -> CVPixelBuffer?
     var previewFrameGeneration: UInt64? { get }
@@ -411,7 +411,7 @@ public extension VideoEngine {
     var needsBackgroundReload: Bool { true }
     var maximumPlaybackSpeed: Double { 4 }
     var nowPlayingPlayer: AVPlayer? { nil }
-    #if os(iOS)
+    #if os(iOS) || os(tvOS)
     func previewVideoFrame() -> CVPixelBuffer? { nil }
     var previewFrameGeneration: UInt64? { nil }
     #endif

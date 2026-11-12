@@ -4,9 +4,11 @@ import CoreModels
 import CoreUI
 import CryptoKit
 import FeatureMusic
+import ImageIO
 import MediaPlayer
 import ProviderJellyfin
 import ProviderPlex
+import ProviderSubsonic
 import XCTest
 
 @MainActor
@@ -17,6 +19,16 @@ final class MusicPlaybackPerformanceTests: XCTestCase {
 
     func testPerformanceJellyfinMusic() async throws {
         try await measure(provider: .jellyfin)
+    }
+
+    func testPerformanceSubsonicMusic() async throws {
+        try PerformanceProbe.requireEnabled()
+        do {
+            try await measure(provider: .subsonic)
+        } catch {
+            // Network errors may carry a credentialed URL; never attach them.
+            XCTFail("Live Subsonic validation failed: \(type(of: error)), code \((error as NSError).code)")
+        }
     }
 
     private func measure(provider kind: ProviderKind) async throws {
@@ -33,23 +45,38 @@ final class MusicPlaybackPerformanceTests: XCTestCase {
         guard (response as? HTTPURLResponse)?.statusCode == 200 else { throw ProbeError.configuration }
         let configurations = try JSONDecoder().decode([Configuration].self, from: data)
         let configuration = try XCTUnwrap(configurations.first { $0.provider == kind.rawValue })
-        let session = UserSession(
-            server: .init(id: configuration.serverID, name: "Internal music measurement",
-                          baseURL: configuration.baseURL, provider: kind),
-            userID: configuration.userID, userName: configuration.username,
-            deviceID: "plozz-music-performance", accessToken: configuration.token
-        )
+        let session: UserSession
+        if kind == .subsonic {
+            guard let password = configuration.password else { throw ProbeError.configuration }
+            session = try await SubsonicProvider.signIn(
+                address: configuration.baseURL.absoluteString, username: configuration.username,
+                password: password, usesAPIKey: false, deviceID: "plozz-music-performance"
+            )
+        } else {
+            guard let token = configuration.token else { throw ProbeError.configuration }
+            session = UserSession(
+                server: .init(id: configuration.serverID, name: "Internal music measurement",
+                              baseURL: configuration.baseURL, provider: kind),
+                userID: configuration.userID, userName: configuration.username,
+                deviceID: "plozz-music-performance", accessToken: token
+            )
+        }
         let revision = CredentialRevision()
         let provider: any MusicProvider
         if kind == .plex {
             provider = PlexProvider(session: session, accountID: "music-performance", credentialRevision: revision)
+        } else if kind == .subsonic {
+            provider = try SubsonicProvider(context: .init(
+                session: session, accountID: "music-performance", credentialRevision: revision
+            ))
         } else {
             provider = JellyfinProvider(session: session, accountID: "music-performance", credentialRevision: revision)
         }
         let resolver = ManagedAuthenticatedHTTPResolver()
         resolver.configure { _ in
             .init(provider: kind, accountID: "music-performance", credentialRevision: revision,
-                  baseURL: configuration.baseURL, token: configuration.token,
+                  baseURL: configuration.baseURL, token: session.accessToken,
+                  resourceResolver: provider as? any ProviderHTTPResourceResolving,
                   originProvider: provider as? any AuthenticatedHTTPOriginProviding)
         }
         let libraries = try await provider.musicLibraries()
@@ -60,6 +87,9 @@ final class MusicPlaybackPerformanceTests: XCTestCase {
         let tracks = Array(page.tracks.prefix(6))
         XCTAssertEqual(tracks.count, 6)
         guard tracks.count == 6 else { throw ProbeError.configuration }
+        if let subsonic = provider as? SubsonicProvider {
+            try await verifySubsonicLibrary(subsonic, track: tracks[0])
+        }
         let fingerprint = SHA256.hash(data: Data(tracks.map(\.id).joined(separator: "|").utf8))
             .map { String(format: "%02x", $0) }.joined()
         print("MUSIC_DATASET provider=\(kind.rawValue) tracks=\(tracks.count) sha256=\(fingerprint)")
@@ -151,6 +181,36 @@ final class MusicPlaybackPerformanceTests: XCTestCase {
         }
     }
 
+    private func verifySubsonicLibrary(_ provider: SubsonicProvider, track: CoreModels.MusicTrack) async throws {
+        let artists = try await provider.musicItems(in: "", kind: .artist, page: .init(limit: 2))
+        let artist = try XCTUnwrap(artists.artists.first)
+        let albums = try await provider.musicItems(in: artist.id, kind: .album, page: .init(limit: 2))
+        let album = try XCTUnwrap(albums.albums.first)
+        let albumTracks = try await provider.tracks(in: album.id)
+        XCTAssertFalse(albumTracks.isEmpty)
+        _ = try await provider.musicItems(in: "", kind: .genre, page: .init(limit: 2))
+        _ = try await provider.musicItems(in: "", kind: .playlist, page: .init(limit: 2))
+        let artworkURL = try XCTUnwrap(track.artworkURL)
+        let reference = try XCTUnwrap(AuthenticatedArtworkReference(url: artworkURL))
+        let data = try await provider.artworkData(for: reference)
+        let imageSource = try XCTUnwrap(CGImageSourceCreateWithData(data as CFData, nil))
+        XCTAssertNotNil(CGImageSourceCreateImageAtIndex(imageSource, 0, nil))
+
+        let original = try await provider.musicFeedback(for: track.id)
+        guard case let .favorite(value) = original else { throw ProbeError.configuration }
+        do {
+            try await provider.setMusicFeedback(.favorite(!value), for: track.id)
+            let changed = try await provider.musicFeedback(for: track.id)
+            XCTAssertEqual(changed, .favorite(!value))
+        } catch {
+            try await provider.setMusicFeedback(original, for: track.id)
+            throw error
+        }
+        try await provider.setMusicFeedback(original, for: track.id)
+        let restored = try await provider.musicFeedback(for: track.id)
+        XCTAssertEqual(restored, original)
+    }
+
     private static func milliseconds(since start: ContinuousClock.Instant) -> Int {
         let value = start.duration(to: .now).components
         return Int(value.seconds * 1_000 + value.attoseconds / 1_000_000_000_000_000)
@@ -162,7 +222,8 @@ final class MusicPlaybackPerformanceTests: XCTestCase {
         let serverID: String
         let userID: String
         let username: String
-        let token: String
+        let token: String?
+        let password: String?
     }
 
     private enum ProbeError: Error { case configuration, timeout }

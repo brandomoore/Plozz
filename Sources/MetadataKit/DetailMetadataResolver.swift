@@ -16,7 +16,9 @@ public actor DetailMetadataResolver {
         self.settingsStore = settingsStore
     }
 
-    public func resolve(_ item: MediaItem) async -> MetadataEnrichment {
+    public func resolve(
+        _ item: MediaItem, language: String = Locale.current.identifier
+    ) async -> MetadataEnrichment {
         let missing = Self.missingFields(in: item)
         guard !missing.isEmpty, !Task.isCancelled else { return MetadataEnrichment() }
         let capabilities = Set(missing.compactMap(MetadataCapability.covering))
@@ -29,7 +31,10 @@ public actor DetailMetadataResolver {
             providers: providers,
             config: MetadataEnrichmentConfig.resolved().merged(withUserOverrides: settingsStore.load())
         )
-        return await pipeline.enrich(Self.metadataQuery(for: item), requesting: missing, tier: .foregroundFill)
+        return await pipeline.enrich(
+            Self.metadataQuery(for: item).forMetadataLanguage(language),
+            requesting: missing, tier: .foregroundFill
+        )
     }
 
     public func trailers(for item: MediaItem, limit: Int = 6) async -> [MediaItem] {
@@ -71,6 +76,9 @@ public actor DetailMetadataResolver {
         default: return []
         }
         var missing = Set<MetadataField>()
+        if item.overview?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false {
+            missing.insert(.overview)
+        }
         if item.cast.isEmpty { missing.insert(.cast) }
         let roles = Set(item.people.compactMap { MediaCrewRole(kind: $0.kind) })
         if !roles.contains(.director) { missing.insert(.directors) }
@@ -94,6 +102,11 @@ public actor DetailMetadataResolver {
     public static func applying(_ enrichment: MetadataEnrichment, to item: MediaItem) -> MediaItem {
         var copy = item
         let missing = missingFields(in: item)
+        if missing.contains(.overview), let overview = enrichment.overview,
+           !overview.value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            copy.overview = overview.value
+            copy.metadataProvenance.set(overview, for: .overview)
+        }
         for (field, people) in [
             (MetadataField.cast, enrichment.cast),
             (.directors, enrichment.directors),

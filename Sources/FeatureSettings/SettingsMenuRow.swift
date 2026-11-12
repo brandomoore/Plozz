@@ -9,6 +9,7 @@ struct SettingsMenuRow<Options: View>: View {
     let value: Text
     var subtitle: LocalizedStringResource? = nil
     var icon: String? = nil
+    var minimumContentHeight: CGFloat? = nil
     @ViewBuilder var options: () -> Options
 
     var body: some View {
@@ -46,6 +47,7 @@ struct SettingsMenuRow<Options: View>: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
+            .frame(minHeight: minimumContentHeight)
         }
         .settingsActionRow()
         .accessibilityLabel(Text(title))

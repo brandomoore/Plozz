@@ -24,6 +24,7 @@ import LastFmService
 /// player presentation, mirroring `HomeTab`'s wiring. Search is aggregated
 /// across every active account; results route to their owning provider.
 struct SearchTab: View {
+    @Environment(\.locale) private var locale
     @State private var trailerOpening = YouTubeTrailerOpening()
     @Environment(HeroBackgroundSettingsModel.self) private var heroBackground
     @State private var externalOpening = ExternalMediaOpening()
@@ -304,7 +305,6 @@ struct SearchTab: View {
                         },
                         stackDepth: detailStackDepth,
                         heroTrailerResolver: makeHeroTrailerResolver(),
-                        initialEpisode: route.episode,
                         seerConnected: seer.isConfigured,
                         requestAvailabilityRefresh: { await seer.requestAvailability(for: $0) },
                         onRequestSeasons: { item, seasons in
@@ -392,6 +392,7 @@ struct SearchTab: View {
         let accounts = self.accounts
         let identitySources = self.identitySources
         let seer = self.seer
+        let metadataLanguage = locale.identifier
         return DetailOpenEnvironment(
             resolveProvider: { try resolveProvider($0, in: accounts) },
             resolveOptionalProvider: { resolveOptionalProvider($0, in: accounts) },
@@ -399,7 +400,10 @@ struct SearchTab: View {
             crossServerSourceResolver: crossServerSourceResolver(in: accounts, identitySources: identitySources),
             continueWatchingSnapshot: continueWatchingSnapshot,
             ratingsProvider: ratingsProvider,
-            detailMetadataResolver: { await DetailMetadataResolver.household.resolve($0) },
+            metadataLanguage: metadataLanguage,
+            localizedDetailMetadataResolver: {
+                await DetailMetadataResolver.household.resolve($0, language: $1)
+            },
             onlineTrailerResolver: { await DetailMetadataResolver.household.trailers(for: $0) },
             trailerSettings: heroBackground,
             discoveryStatusRefresh: { await seer.requestAvailability(for: $0) },

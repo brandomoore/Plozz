@@ -263,7 +263,7 @@ public struct URLSessionHTTPClient: HTTPClient {
             }
             if endpoint.reportsServerTrustFailures {
                 switch urlError.code {
-                case .secureConnectionFailed, .serverCertificateHasBadDate, .serverCertificateUntrusted,
+                case .serverCertificateHasBadDate, .serverCertificateUntrusted,
                      .serverCertificateHasUnknownRoot, .serverCertificateNotYetValid,
                      .clientCertificateRejected, .clientCertificateRequired:
                     throw HTTPServerTrustFailure()

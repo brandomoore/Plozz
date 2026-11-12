@@ -1,5 +1,13 @@
 # CoreUI
 
+`HomeRowPreviewView` renders the actual Home rail presentation, not a separately
+scaled card sample. TV uses `MediaRowView`; mobile Home and the preview share
+`PlozziOSHomeRailLayout`, `PlozziOSMediaSection` and `PlozziOSMediaRailScroll`.
+Featured Home rows and previews share `FeaturedMediaRowPresentation` and
+`FeaturedCardControl`, while HeroUI retains trailer ownership. Preview routing,
+playback and context actions are inert without disabling/dimming the cards;
+TV focus and horizontal scrolling remain available.
+
 Home row browsing uses `BrowseRowHeading` for a single accessible title/chevron
 touch target and `MediaRowBrowseCard` for a native TV rail action. Opt a rail in
 with `browsingRow`; existing collection-detail `onSeeAll` headers elsewhere keep
@@ -23,6 +31,75 @@ cache that every feature module reuses on tvOS and iOS/iPadOS — guarded behind
 `#if canImport(SwiftUI)` so the package still compiles on Linux for tests.
 
 ## Responsibility
+
+`RetainedFullscreenWorkspace` presents the same tvOS hosting controller outside
+app navigation, then returns it to its original container. Place the feature's
+state and focus owners inside it, and inject required app models into its content.
+It forwards public presentation values, not the presenting host's private focus
+environment. Its scoped transfer flag distinguishes reparenting from removal;
+playback may ignore disappearance during that transfer only while still active
+and authorized. Deactivation, authorization loss and teardown must still retire
+playback. Live TV uses it for the entire Multiview workspace, including its guide.
+Full-bleed callers must ignore the outer container safe area so the retained
+host receives the physical canvas; content still owns its control-safe insets.
+The transparent full-screen container must already be presented before moving
+the host into it. Return the host inline before dismissing that empty container,
+so no displayed frame loses the live tree during a UIKit presentation.
+Native player presentation waits until the workspace's observable
+`isHostingFullscreen` flag clears after dismissal, not merely until its desired
+`isPresented` state changes; otherwise dismissal can consume the new player cover.
+
+`videoCardFocusSurface()` gives tvOS live video and its subtitles native card
+focus without wrapping player state or transport controls. Its environment
+configuration supplies channel actions, focus requests and interactive spacing.
+Idle presentation retains a focusable surface without a visual lift; other
+platforms leave the content unchanged. A persistent `TVCardView` hosts the video,
+subtitles, loading state and caption in its `contentView`. Idle uses a full-picture
+focus control without replacing the card or detaching its renderer. The native
+focus background can therefore never appear as an empty replacement card.
+The caller interpolates focus clearance together with the picture's placement.
+The focus surface consumes that inset directly, without another animation
+clock. The video reads the container's current animated size rather than
+starting a second resize for every layout frame.
+TVUIKit supplies the focus styling and sizing. Its default `focusSizeIncrease`
+is applied to the complete surface's single transform, rather than also scaling
+the card's contents independently. Ordinary focus movement uses the native focus
+animation coordinator. Entry/restoration moves that same surface from its displayed
+frame over half a second; interrupted entry yields to native focus from the current
+presentation. The caller suppresses competing setup resizing when focus returns;
+ordinary layout changes retain their own animation. Reduce Motion skips these
+surface animations.
+Only the picture is rounded and clipped. Callers must not clip the outer card
+or its clearance, because the native shadow needs to feather beyond it.
+An opaque black backing extends 40 points beyond the video inside the native
+floating clip, matching Home's scrim-outset treatment. This covers differences
+between the video mask and native corners without adding an outer black border
+or clipping the audio glow.
+Multiview scopes `VideoCardFocusMemory` to its workspace. The toolbar's
+`VideoCardFocusReturnGuide` bridges the empty space above the controls to the
+last actual native picture owner, before another picture can receive focus.
+The guide stays inside its own visible UIKit region and is enabled only while
+the toolbar owns focus. Its remembered owner is weak; missing or removed
+pictures fall back to ordinary native navigation.
+The optional video background sits behind the card but inside the same motion
+container, outside TVUIKit's internal clipping. An audio indicator must not change
+card sizing or styling.
+Native menu presentation synchronously suppresses the button's activation so
+holding Select cannot also trigger the short-press action. Dismissal restores
+normal activation, whether the menu was cancelled or an action was selected.
+
+`MultiviewLayoutSymbol` supplies real SF Symbol images for native labels and
+menus. Standard two/four-picture grids use Apple's symbols; original custom
+symbol assets cover the three-picture grid, Main picture, and Corner
+count/position/size combinations. Each custom asset has compatible ultralight,
+regular and black masters for native weight/scale interpolation. Their outlines
+are calibrated against rendered native symbols at matching point sizes, weights
+and scales; matching bounding boxes alone does not establish matching weight.
+Corner insets retain clearance from the outline at every master weight. Regenerate
+with `python3 tools/generate-multiview-symbols.py`; `--check` verifies the
+committed assets. Keep menu selection checkmarks separate from layout previews.
+Preserve the native button's animation transaction: clearing it snaps the live
+video on focus gain/loss even though the system focus decoration still animates.
 
 `homeResponsivenessDiagnostics` passively observes visible mobile Home in
 opted-in diagnostic builds. Its cancellable 100 ms main-actor wake-up sampler
@@ -81,9 +158,13 @@ Ordinary Settings fields use `SettingsInputRow` inside their existing group or
 panel. It supplies a persistent, wrapping label and forwards that name to the
 native input for accessibility without speaking a second static label. Callers
 retain bindings, keyboard/content types, secure entry, focus and submit behavior.
-An optional trailing status shares the label's baseline and secondary type size
-without hiding its accessibility text. Autosaving editors own that status and its
-announcement; the input row does not imply persistence or add a focus target.
+Short form values can opt into `axis: .horizontal` for an inline label and input;
+accessibility text sizes fall back to the stacked layout. Other fields retain
+their existing stacked presentation.
+An optional secondary-sized status shares the label's baseline in the stacked
+layout or sits below the trailing input in the inline layout, without hiding its
+accessibility text. Autosaving editors own that status and its announcement; the
+input row does not imply persistence or add a focus target.
 The row owns no background or outer insets; do not nest settings surfaces around
 it. Search, code-entry, and message-composition controls are intentional exceptions.
 Composite rows use `settingsControlTarget()` inside each control label for separate,
@@ -591,6 +672,8 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   progress over a subdued track even in the light-theme fallback.
   `playerPlatformAppearance` scopes tvOS playback chrome to dark regular glass,
   as in build 57, without changing the surrounding browsing or window appearance.
+  Apply it outside playback alerts and confirmation dialogs too, so their native
+  focused buttons do not inherit a white browsing tint and lose their labels.
   It is a no-op on iOS.
 - **Settings steppers** — TV makes the whole labeled row one focus target using
   the existing `SettingsFormButtonStyle`, including its helper, persistent minus/plus cues and
@@ -859,6 +942,12 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
 - **Provider marks** — IPTV uses coral-red while Media Share keeps teal.
   `ProviderBrandMark` owns their shared icon and badge tints, including deeper
   colors on white focus cards and brighter colors on black focus cards.
+  Silo retains its multicolor logo over a warm-stone (`#CDB795`) tint at the
+  same 18% badge opacity as the other providers. Its narrow artwork is 15%
+  larger within the unchanged badge bounds.
+  Navidrome (Subsonic) uses the vector record logo from
+  [Mozz's Navidrome asset](https://github.com/brandomoore/Mozz/blob/main/Sources/MozzApp/Resources/Brands.xcassets/NavidromeLogo.imageset/navidrome-logo.svg),
+  with the same template rendering and focus-aware tint on both platforms.
 - **Media-row focus** — a dedicated modifier owns the row's `FocusState`
   and supplies its binding to tracked cards. Focus callbacks and prefetch
   bookkeeping must not invalidate the row that constructs all card inputs.
