@@ -32,6 +32,7 @@ struct CollectionSectionCreationView: View {
 
 struct CollectionSectionSettingsView: View {
     let isNew: Bool
+    let original: CollectionSection
     let inventory: HomeSectionCatalogModel
     let visibility: HomeLibraryVisibilityModel
     let libraries: [AggregatedLibrary]
@@ -43,6 +44,8 @@ struct CollectionSectionSettingsView: View {
     @State private var retry = 0
     @State private var choosingSource = false
     @State private var saveFailed = false
+    @State private var preferencesSaveFailed = false
+    @FocusState private var isNameFocused: Bool
     @Environment(CardStyleSettingsModel.self) private var cards
     @Environment(\.plozzMetrics) private var metrics
     @SettingsPageDismiss private var dismiss
@@ -54,6 +57,7 @@ struct CollectionSectionSettingsView: View {
         spoilerSettings: SpoilerSettings = .default
     ) {
         _draft = State(initialValue: section)
+        self.original = section
         self.isNew = isNew
         self.inventory = inventory
         self.visibility = visibility
@@ -120,26 +124,34 @@ struct CollectionSectionSettingsView: View {
             }
             .buttonStyle(SettingsFormButtonStyle())
             .accessibilityIdentifier("collection-section-source")
-            TextField("Row name", text: $draft.name, prompt: Text(verbatim: draft.source.title))
-                .accessibilityIdentifier("collection-section-name")
-            Button {
-                do {
-                    guard accounts.contains(where: draft.source.matches) else { throw AppError.notFound }
-                    try visibility.saveCollectionSection(draft, catalog: currentCatalog)
-                    dismiss()
-                } catch {
-                    saveFailed = true
-                    PlozzLog.app.error("Could not save collection section")
+            SettingsSectionGroup {
+                #if os(tvOS)
+                if !isNew {
+                    HomeEditorAutosavingNameInput(
+                        "Row name", name: draft.name, prompt: Text(verbatim: draft.source.title),
+                        identifier: "collection-section-name"
+                    ) { value in
+                        guard var saved = visibility.visibility.collectionSections.first(where: { $0.id == draft.id })
+                        else { throw AppError.notFound }
+                        saved.name = value
+                        guard accounts.contains(where: saved.source.matches) else { throw AppError.notFound }
+                        try visibility.saveCollectionSection(saved, catalog: currentCatalog)
+                        draft.name = value
+                    }
+                } else {
+                    nameInput
                 }
-            } label: {
-                if isNew { Text("Add to Home") }
-                else { Text("Save changes") }
+                #else
+                nameInput
+                #endif
             }
-            .plozzActionButton(role: .primary)
-            .disabled(!accounts.contains(where: draft.source.matches))
-            .accessibilityIdentifier("collection-section-save")
+            #if os(tvOS)
+            if isNew { explicitSaveAction }
+            #elseif !os(iOS)
+            explicitSaveAction
+            #endif
             if !isNew {
-                Button("Remove from Home", role: .destructive) {
+                HomeRowRemoveAction {
                     do {
                         try visibility.setHomeSectionVisible(false, id: draft.rowID, catalog: currentCatalog)
                         dismiss()
@@ -148,10 +160,28 @@ struct CollectionSectionSettingsView: View {
                         PlozzLog.app.error("Could not remove collection section")
                     }
                 }
-                .plozzActionButton(role: .secondary)
             }
-            if saveFailed { InlineErrorMessage(Text("Couldn't update this row. Try again.")) }
+            if saveFailed || preferencesSaveFailed {
+                InlineErrorMessage(Text("Couldn't update this row. Try again."))
+            }
+            #if os(tvOS)
+            if !isNew && preferencesSaveFailed {
+                Button("Retry", action: saveExistingPreferences)
+                    .plozzActionButton(role: .secondary)
+            }
+            #endif
         }
+        #if os(iOS)
+        .modifier(HomeEditorSaveAction(
+            title: isNew ? Text("Add to Home") : Text("Save changes"),
+            isEnabled: canSave,
+            identifier: "collection-section-save", action: save
+        ))
+        #elseif os(tvOS)
+        .onChange(of: draft.cardStyle) { _, _ in saveExistingPreferences() }
+        .onChange(of: draft.titleLogo) { _, _ in saveExistingPreferences() }
+        .onChange(of: draft.source) { _, _ in saveExistingPreferences() }
+        #endif
         .settingsPageDestination(isPresented: $choosingSource) {
             HeroCollectionPickerView(
                 selections: .constant([draft.source]),
@@ -170,6 +200,70 @@ struct CollectionSectionSettingsView: View {
 
     private var currentCatalog: HomeSectionCatalog {
         inventory.currentCatalog(libraries: libraries, accounts: accounts, visibility: visibility)
+    }
+
+    private var nameInput: some View {
+        SettingsInputRow("Row name") {
+            TextField("Row name", text: $draft.name, prompt: Text(verbatim: draft.source.title))
+                .focused($isNameFocused)
+                .submitLabel(.done)
+                .onSubmit { isNameFocused = false }
+                .accessibilityIdentifier("collection-section-name")
+        }
+    }
+
+    private var explicitSaveAction: some View {
+        Button {
+            do {
+                try save()
+                dismiss()
+            } catch {
+                saveFailed = true
+                PlozzLog.app.error("Could not save collection section")
+            }
+        } label: {
+            Group {
+                if isNew { Text("Add to Home") }
+                else { Text("Save changes") }
+            }
+            .plozzPageActionLabel()
+        }
+        .plozzPageActionButton()
+        .disabled(!accounts.contains(where: draft.source.matches))
+        .accessibilityIdentifier("collection-section-save")
+    }
+
+    #if os(tvOS)
+    private func saveExistingPreferences() {
+        guard !isNew else { return }
+        do {
+            guard var saved = visibility.visibility.collectionSections.first(where: { $0.id == draft.id })
+            else { throw AppError.notFound }
+            saved.cardStyle = draft.cardStyle
+            saved.titleLogo = draft.titleLogo
+            saved.source = draft.source
+            guard accounts.contains(where: saved.source.matches) else { throw AppError.notFound }
+            try visibility.saveCollectionSection(saved, catalog: currentCatalog)
+            preferencesSaveFailed = false
+        } catch {
+            preferencesSaveFailed = true
+            PlozzLog.app.error("Could not autosave collection preferences")
+        }
+    }
+    #endif
+
+    private var canSave: Bool {
+        var normalizedDraft = draft
+        normalizedDraft.name = draft.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        var saved = visibility.visibility.collectionSections.first { $0.id == draft.id } ?? original
+        saved.name = saved.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        return accounts.contains(where: draft.source.matches) && (isNew || normalizedDraft != saved)
+    }
+
+    private func save() throws {
+        guard accounts.contains(where: draft.source.matches) else { throw AppError.notFound }
+        try visibility.saveCollectionSection(draft, catalog: currentCatalog)
+        isNameFocused = false
     }
 
     @ViewBuilder

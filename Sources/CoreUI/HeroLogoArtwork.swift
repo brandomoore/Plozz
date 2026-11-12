@@ -1110,7 +1110,7 @@ actor HeroLogoPipeline {
     private static func fetchAndPrepare(_ reference: ArtworkReference, background: Bool) async -> PreparedLogo? {
         switch reference {
         case .remote(let url):
-            guard let (data, response) = try? await ArtworkSession.shared.data(from: url) else {
+            guard let (data, response) = try? await ArtworkSession.data(from: url) else {
                 return nil
             }
             if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {

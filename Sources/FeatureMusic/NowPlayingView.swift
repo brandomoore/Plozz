@@ -1,4 +1,4 @@
-#if canImport(SwiftUI) && canImport(AVFoundation)
+#if os(tvOS) && canImport(SwiftUI) && canImport(AVFoundation)
 import SwiftUI
 import CoreModels
 import CoreUI
@@ -15,7 +15,7 @@ public struct NowPlayingView: View {
     @Environment(\.transientStatusPresenter) private var statusPresenter
     @Bindable var controller: AudioPlaybackController
     /// The app's currently selected theme, passed in from the host so the
-    /// player's "Match Theme" appearance can distinguish Pure Black from plain Dark
+    /// player's Match App Theme appearance can distinguish Black from plain Dark
     /// (the system color scheme alone can't tell them apart).
     var appTheme: AppTheme = .system
     /// Per-profile player preferences (appearance + "show extra info"), injected
@@ -153,6 +153,7 @@ public struct NowPlayingView: View {
     /// The app's current light/dark resolution, read from the environment the
     /// player is presented in — used only when `playerAppearance` is `.matchTheme`.
     @Environment(\.colorScheme) private var systemColorScheme
+    @Environment(\.gradientBackgroundsEnabled) private var gradientEnabled
 
     /// The latched decision of whether to reserve the lyrics panel. It is held
     /// steady across the brief `.loading` window after a track change so the
@@ -384,31 +385,16 @@ public struct NowPlayingView: View {
         // The player paints its own background, so it never blindly inherits the
         // app theme. It resolves its own look (see `playerStyle`) and forces the
         // subtree's color scheme to match so text and glass read correctly —
-        // light-on-dark for Vibrant Dark / Pure Black, dark-on-light for Frosted Light.
+        // light-on-dark for Artwork / Dark / Black, dark-on-light for Light.
         .environment(\.colorScheme, isLightPlayer ? .light : .dark)
     }
 
-    /// The resolved background treatment, collapsing `.matchTheme` against the
-    /// app's selected theme (so Pure Black → true black, Light → frosted, etc.).
-    private var playerStyle: LiquidArtworkBackground.Style {
-        switch playerAppearance {
-        case .matchTheme: return matchedThemeStyle
-        case .dark: return .dark
-        case .light: return .light
-        case .pureBlack: return .pureBlack
-        }
-    }
-
-    /// Maps the app's `AppTheme` onto a player look for the "Match Theme" option.
-    /// `.system` has no explicit light/dark, so it follows the resolved system
-    /// color scheme.
-    private var matchedThemeStyle: LiquidArtworkBackground.Style {
-        switch appTheme {
-        case .light: return .light
-        case .dark: return .dark
-        case .pureBlack: return .pureBlack
-        case .system: return systemColorScheme == .light ? .light : .dark
-        }
+    /// Match App Theme follows both the resolved app theme and Gradient Backgrounds.
+    private var playerStyle: MusicPlayerAppearance {
+        playerAppearance.resolved(
+            palette: ThemePalette.palette(for: appTheme, systemColorScheme: systemColorScheme),
+            gradientEnabled: gradientEnabled
+        )
     }
 
     /// Whether the resolved player look is the light one (drives text color).
@@ -681,7 +667,7 @@ public struct NowPlayingView: View {
 
     /// The full-width transport bar across the bottom, over a soft scrim so it
     /// stays legible against the artwork colors. The scrim flips to white for the
-    /// frosted-light look so it lightens rather than darkens the controls area.
+    /// light look so it lightens rather than darkens the controls area.
     private var bottomControls: some View {
         let slide = bottomBarHeight + 60
         let reveal = Animation.spring(response: 0.5, dampingFraction: 0.86)
@@ -733,7 +719,11 @@ public struct NowPlayingView: View {
 
     @ViewBuilder
     private var background: some View {
-        LiquidArtworkBackground(palette: artworkPalette, animate: !reduceMotion, style: playerStyle)
+        if playerStyle == .artwork {
+            LiquidArtworkBackground(palette: artworkPalette, animate: !reduceMotion, style: .dark)
+        } else {
+            playerStyle.neutralBackground.ignoresSafeArea()
+        }
     }
 
     /// Loads the current track's artwork (reusing the shared decoded-image cache)

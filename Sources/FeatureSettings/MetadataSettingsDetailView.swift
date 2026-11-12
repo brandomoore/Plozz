@@ -355,9 +355,11 @@ public struct MetadataSettingsDetailView: View {
                         .plozzForeground(.secondary)
                 }
 
-                SecureField("TMDB v4 API Read Access Token", text: draftKeyBinding)
-                    .textContentType(.password)
-                    .disableAutocorrection(true)
+                SettingsInputRow("TMDB v4 API Read Access Token") {
+                    SecureField("TMDB v4 API Read Access Token", text: draftKeyBinding, prompt: Text(verbatim: ""))
+                        .textContentType(.password)
+                        .autocorrectionDisabled()
+                }
 
                 verifyStatusView
 

@@ -14,6 +14,45 @@ import XCTest
 final class LibraryPresentationTests: XCTestCase {
     private var capturedImage: CGImage?
 
+    func testWatchlistPageUpdatesWhenEitherNameEditorSaves() async throws {
+        let suite = "WatchlistPageName.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let home = HomeLibraryVisibilityModel(store: HomeLibraryVisibilityStore(defaults: defaults))
+        let navigation = NavigationStyleSettingsModel(
+            store: NavigationStyleSettingsStore(defaults: defaults),
+            layoutStore: NavigationLibraryLayoutStore(defaults: defaults)
+        )
+        let appModel = PlozziOSAppModel()
+        let provider = LibraryPresentationProvider(
+            artwork: nil, watchlistItems: [MediaItem(id: "saved", title: "Saved title", kind: .movie)]
+        )
+        let model = HomeViewModel(
+            accounts: [ResolvedAccount(account: Account(id: "fixture", from: provider.session), provider: provider)],
+            profileNamespace: suite, layoutStore: InMemoryHomeLayoutStore()
+        )
+        await model.load()
+        home.setHomeRowName("Movie night", for: .global(.watchlist))
+        try await withPresentation(
+            PlozziOSWatchlistLandingView(appModel: appModel, viewModel: model, onShowSettings: {})
+                .environment(home)
+                .environment(navigation),
+            appModel: appModel, size: CGSize(width: 390, height: 844), sizeClass: .compact
+        ) { window in
+            for name in ["Movie night", "Weekend queue", "Watchlist"] {
+                if name == "Weekend queue" {
+                    navigation.renameDestination(NavigationLibraryLayout.watchlistKey, to: name, homeVisibility: home)
+                } else if name == "Watchlist" {
+                    home.setHomeRowName("", for: .global(.watchlist))
+                }
+                try await self.settle(window)
+                let lines = try self.capture(window, name: "shared-watchlist-\(name)")
+                XCTAssertTrue(lines.contains { $0.topCandidates(1).first?.string == name })
+                XCTAssertEqual(model.state.value?.watchlist.map(\.id), ["saved"])
+            }
+        }
+    }
+
     func testLibraryQueryMenusStayInTrailingToolbarWhileScrollingAndChangingModes() async throws {
         let appModel = PlozziOSAppModel()
         for (width, textSize) in [(390.0, DynamicTypeSize.large), (320.0, .accessibility3), (1024.0, .large)] {

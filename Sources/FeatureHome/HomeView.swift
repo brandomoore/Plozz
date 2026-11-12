@@ -692,7 +692,7 @@ public struct HomeView: View {
                                                 )
                                         case let .liveTV(channels):
                                             MediaRowView(
-                                                title: Text("Live TV"), items: [], style: .landscape,
+                                                title: liveTVTitle, items: [], style: .landscape,
                                                 liveChannels: channels, onSelect: { _ in }
                                             )
                                         }
@@ -1393,7 +1393,7 @@ public struct HomeView: View {
     ) -> some View {
         if let failure = row.failure, row.items.isEmpty, row.libraries.isEmpty {
             rowFailureView(
-                title: Text(row.title), error: failure,
+                title: row.displayName, error: failure,
                 report: row.kind == .continueWatching
                     ? viewModel.continueWatchingDiagnostic.map(PlaybackDiagnosticReport.library) : nil
             )
@@ -1415,7 +1415,7 @@ public struct HomeView: View {
         switch row.kind {
         case .continueWatching:
             MediaRowView(
-                title: Text(row.title), items: row.items, style: visibility.continueWatchingLayout.cardStyle,
+                title: row.displayName, items: row.items, style: visibility.continueWatchingLayout.cardStyle,
                 spoilerSettings: spoilerSettings, showsSeriesArtwork: visibility.continueWatchingUsesSeriesArtwork,
                 loadingPlaceholderCount: row.loadingPlaceholderCount,
                 reservesLoadingFocus: reservesLoadingFocus,
@@ -1429,7 +1429,7 @@ public struct HomeView: View {
             .environment(\.plozzArtworkArea, .continueWatching)
         case .watchlist:
             MediaRowView(
-                title: Text(row.title),
+                title: row.displayName,
                 items: row.items,
                 style: posterStyle(row.style),
                 spoilerSettings: spoilerSettings,
@@ -1445,7 +1445,7 @@ public struct HomeView: View {
             .browsingRow(row.items.isEmpty ? nil : onBrowse)
         case .recentlyAdded:
             MediaRowView(
-                title: Text(row.title), items: row.items, style: posterStyle(row.style),
+                title: row.displayName, items: row.items, style: posterStyle(row.style),
                 spoilerSettings: spoilerSettings, loadingPlaceholderCount: row.loadingPlaceholderCount,
                 reservesLoadingFocus: reservesLoadingFocus,
                 onSelect: onSelectItem
@@ -1731,7 +1731,7 @@ public struct HomeView: View {
         switch source {
         case .liveTV(let channels):
             MediaRowView(
-                title: Text("Live TV"), items: [], style: .landscape,
+                title: liveTVTitle, items: [], style: .landscape,
                 onFocusEntered: reporter.entered,
                 liveChannels: channels, onLiveChannelFocused: reporter.focusedLiveChannel,
                 onSelect: { _ in }
@@ -1740,7 +1740,7 @@ public struct HomeView: View {
             let onBrowse = presentation.flatMap { browseAction(for: $0) }
             if let failure = row.failure, row.items.isEmpty, row.libraries.isEmpty {
                 rowFailureView(
-                    title: Text(row.title), error: failure,
+                    title: row.displayName, error: failure,
                     report: row.kind == .continueWatching
                         ? viewModel.continueWatchingDiagnostic.map(PlaybackDiagnosticReport.library) : nil,
                     onFocusEntered: reporter.entered
@@ -1749,7 +1749,7 @@ public struct HomeView: View {
                 switch row.kind {
                 case .continueWatching:
                     MediaRowView(
-                        title: Text(row.title),
+                        title: row.displayName,
                         items: row.items,
                         style: visibility.continueWatchingLayout.cardStyle,
                         spoilerSettings: spoilerSettings,
@@ -1769,7 +1769,7 @@ public struct HomeView: View {
                     .environment(\.plozzArtworkArea, .continueWatching)
                 case .watchlist:
                     MediaRowView(
-                        title: Text(row.title),
+                        title: row.displayName,
                         items: row.items,
                         style: posterStyle(row.style),
                         spoilerSettings: spoilerSettings,
@@ -1788,7 +1788,7 @@ public struct HomeView: View {
                     .browsingRow(row.items.isEmpty ? nil : onBrowse)
                 case .recentlyAdded:
                     MediaRowView(
-                        title: Text(row.title),
+                        title: row.displayName,
                         items: row.items,
                         style: posterStyle(row.style),
                         spoilerSettings: spoilerSettings,
@@ -1954,13 +1954,18 @@ public struct HomeView: View {
         .disabled(viewModel.isRefreshing)
     }
 
+    private var liveTVTitle: Text {
+        visibility.visibility.homeRowName(for: .liveTV).map { Text(verbatim: $0) } ?? Text("Live TV")
+    }
+
     private func librariesRow(
         _ libraries: [AggregatedLibrary],
         onFocused: ((AggregatedLibrary) -> Void)? = nil
     ) -> some View {
         HomeLibrariesRow(
             libraries: libraries, onSelectLibrary: onSelectLibrary, onFocused: onFocused,
-            artworkSource: viewModel.libraryArtworkSource
+            artworkSource: viewModel.libraryArtworkSource,
+            title: visibility.visibility.homeRowName(for: .libraries).map { Text(verbatim: $0) } ?? Text("Libraries")
         )
     }
 
@@ -2399,6 +2404,7 @@ struct HomeLibrariesRow: View {
     let onSelectLibrary: (MediaLibrary) -> Void
     var onFocused: ((AggregatedLibrary) -> Void)?
     var artworkSource: ((AggregatedLibrary) -> LibraryArtworkSource?)? = nil
+    var title: Text = Text("Libraries")
 
     @Environment(\.plozzMetrics) private var metrics
     @Environment(\.plozzCardStyle) private var cardStyle
@@ -2408,7 +2414,7 @@ struct HomeLibrariesRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: metrics.sectionTitleSpacing - titleTightening) {
-            Text("Libraries")
+            title
                 .accessibilityIdentifier("media-row-title")
                 .font(.system(size: metrics.sectionHeaderFontSize, weight: .bold))
                 .padding(.leading, PlozzTheme.Metrics.screenPadding + navigationContentInset)

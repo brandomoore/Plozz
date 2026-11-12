@@ -41,6 +41,7 @@ public struct SettingsPageScroll<Content: View>: View {
 
 public struct SettingsPageSurface: ViewModifier {
     @Environment(\.themePalette) private var palette
+    @Environment(\.plozzDialogBackgroundOwned) private var dialogBackgroundOwned
     private let titleDisplayMode: ToolbarTitleDisplayMode
     private let horizontalInset: CGFloat
 
@@ -58,7 +59,15 @@ public struct SettingsPageSurface: ViewModifier {
             .contentMargins(.vertical, 24, for: .scrollContent)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .safeAreaPadding(.horizontal, horizontalInset)
-            .background { SettingsPageBackground() }
+            .background {
+                // Pushed native navigation hosts are opaque; they cannot inherit
+                // the sheet's surface by leaving their own background clear.
+                if dialogBackgroundOwned {
+                    PlozzDialogBackground()
+                } else {
+                    SettingsPageBackground()
+                }
+            }
             .toolbarBackground(.hidden, for: .navigationBar)
             .toolbarTitleDisplayMode(titleDisplayMode)
     }

@@ -76,6 +76,21 @@ final class NavigationContentAvailabilityTests: XCTestCase {
             XCTAssertTrue(facts.hasHomeContent)
             XCTAssertTrue(facts.hasSearchContent)
         }
+
+        func testMusicOnlyStartupNeverPrefersLiveTV() {
+            for discovery in [false, true] {
+                let facts = availability(
+                    accounts: [account("music", provider: .subsonic)], discovery: discovery
+                )
+                XCTAssertFalse(facts.prefersLiveTV)
+                XCTAssertEqual(facts.prefersMusic, !discovery)
+            }
+            let mixed = availability(accounts: [
+                account("music", provider: .subsonic), account("iptv", provider: .iptv)
+            ])
+            XCTAssertTrue(mixed.prefersLiveTV)
+            XCTAssertFalse(mixed.prefersMusic)
+        }
     }
 
     func testKnownEmptyDisabledAndOtherProfileLibrariesDoNotEnableSearch() {

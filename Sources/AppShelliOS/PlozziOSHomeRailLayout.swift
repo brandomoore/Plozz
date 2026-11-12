@@ -33,9 +33,9 @@ struct PlozziOSHomeRowSlot<Content: View>: View {
 
     private var title: Text {
         switch presentation.source {
-        case let .home(row): Text(row.title)
+        case let .home(row): row.displayName
         case let .library(row): row.section.displayName
-        case .liveTV: Text("Live TV")
+        case .liveTV: presentation.choice.localizedTitle.map(Text.init) ?? Text(verbatim: presentation.choice.title)
         }
     }
 

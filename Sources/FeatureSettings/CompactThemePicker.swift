@@ -10,11 +10,20 @@ import CoreUI
 ///
 /// The swatches are theme-independent graphics, so this needs no device colour
 /// scheme — it simply binds the selection.
-struct CompactThemePicker: View {
+public struct CompactThemePicker: View {
     @Binding var selection: AppTheme
     @Environment(\.themePalette) private var palette
 
-    var body: some View {
+    public init(selection: Binding<AppTheme>) {
+        self._selection = selection
+    }
+
+    public var body: some View {
+        #if os(iOS)
+        AppearancePreviewLayout(options: AppTheme.pickerOrder) { theme, _ in
+            option(theme)
+        }
+        #else
         HStack(alignment: .top, spacing: 16) {
             ForEach(AppTheme.pickerOrder) { theme in
                 ThemeOptionCard(
@@ -27,6 +36,59 @@ struct CompactThemePicker: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        #endif
+    }
+
+    #if os(iOS)
+    private func option(_ theme: AppTheme) -> some View {
+        PreviewCard(
+            title: theme.displayName, isSelected: selection == theme,
+            accent: palette.accent, compact: true, swatchAspectRatio: 1.6,
+            titleLineLimit: nil, action: { selection = theme }
+        ) {
+            ThemeSwatch(theme: theme, cornerRadius: PlozzTheme.Metrics.Radius.content)
+        }
+        .accessibilityLabel(Text(theme.displayName))
+        .accessibilityAddTraits(selection == theme ? .isSelected : [])
+        .accessibilityIdentifier("theme-option-\(theme.rawValue)")
+    }
+    #endif
+}
+
+#if os(iOS)
+struct AppearancePreviewLayout<Option: Identifiable, Content: View>: View {
+    let options: [Option]
+    @ViewBuilder let content: (Option, [Option]) -> Content
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    var body: some View {
+        if dynamicTypeSize.isAccessibilitySize {
+            VStack(spacing: 12) {
+                ForEach(options) { content($0, [$0]) }
+            }
+        } else {
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 12) {
+                    ForEach(options) { content($0, options).frame(width: 144) }
+                }
+                Grid(horizontalSpacing: 12, verticalSpacing: 12) {
+                    ForEach(Array(stride(from: 0, to: options.count, by: 2)), id: \.self) { index in
+                        let row = Array(options[index..<min(index + 2, options.count)])
+                        GridRow {
+                            content(options[index], row)
+                            if index + 1 < options.count {
+                                content(options[index + 1], row)
+                            } else {
+                                Color.clear.gridCellUnsizedAxes([.horizontal, .vertical])
+                            }
+                        }
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .fixedSize(horizontal: false, vertical: true)
+        }
     }
 }
+#endif
 #endif

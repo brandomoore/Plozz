@@ -8,6 +8,9 @@ struct PlozziOSAllLibrariesDestinationView: View {
     let appModel: PlozziOSAppModel
 
     private var title: String { // l10n:content - locale-scoped resource for the shared grid's String API
+        if let name = appModel.settings.navigation.libraryLayout.customNames[NavigationLibraryLayout.allLibrariesKey] {
+            return name
+        }
         var resource = AllLibrariesBrowse.title
         resource.locale = locale
         return String(localized: resource) // l10n:content - recomputed from the observed locale, never cached

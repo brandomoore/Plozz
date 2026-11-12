@@ -7,6 +7,35 @@ system green appearance instead of inheriting the page's monochrome navigation t
 
 The Settings screen and its detail pages. Profile-aware and integration-aware.
 
+On mobile, Appearance starts with the shared visual theme cards, Gradient
+Backgrounds and Liquid Glass. Cards, Artwork and Circadian Mode form a separate
+group below. Theme search results open Appearance directly.
+Theme previews on mobile and TV update immediately with Gradient Backgrounds,
+using the app's shared ambient mesh or the theme's flat background. System
+continues to preview both light and dark.
+
+On mobile beta builds, Appearance → Music player sits beneath the theme controls
+in the same group and exposes the per-profile choices Match App Theme (default),
+Artwork, Black, Dark, and Light. Its visual cards reuse the app-theme picker
+layout and shared preview-card styling, with each platform's actual player
+background. Match App Theme previews the current app theme and Gradient Backgrounds;
+explicit choices stay independent. The picker updates the active player's
+settings model directly, without changing the app theme or music browsing pages.
+Preview-card title heights match only within each visible row; wrapped labels
+do not add empty space to other rows or single-column accessibility layouts.
+Settings search reaches the same
+control; production mobile builds hide the page and its search entry. The TV-only track
+details toggle is not offered on mobile.
+
+Ordinary Settings text inputs use CoreUI's `SettingsInputRow` for a persistent
+label above the native field. Existing settings groups/panels own backgrounds and
+insets; the row does not add another surface or replace native editing, secure
+entry, keyboard traits, focus, validation, or save behavior. Home row names, Seerr
+connection fields, TMDB tokens, custom player URLs, and mobile subtitle-language
+codes share this treatment. Search, authorization-code entry, diagnostic-message
+composition, sign-in, server setup, and profile forms keep their intentional
+task-specific presentation.
+
 Version selection offers Ask every time, Choose automatically, and Use first from server
 on both platforms and at first use. Use first from server uses the selected server's first
 version and ignores remembered choices; a manual file selection still wins.
@@ -661,6 +690,11 @@ watch history and planning-list behavior are documented in
   its Hidden divider, native focus/drag behavior, and scoped reset actions.
   Navigation library rows use the shared content-kind glyph, with the provider
   mark and server name below the library name rather than beside the drag handle.
+  Hold any navigation item and choose Rename to change its profile-specific
+  navigation label and destination heading. Empty names restore localized defaults;
+  names survive arrangement resets and offline libraries without changing route,
+  provider, or library identity. Watchlist shares its name with the Home row,
+  so either editor updates the row, navigation label, and page together.
   `LibraryPresentationLoading` connects the settings UI to the existing browse
   and discovery pipeline through AppRuntime, without a feature-to-feature
   dependency. Identity changes cancel pending discovery and replace row editors.
@@ -670,7 +704,43 @@ watch history and planning-list behavior are documented in
   and Hero source selection uses the enabled library inventory. Discovering
   libraries for those controls must not restore a separate management list.
 - **Home rows** is one shared arrangement editor on TV, iPhone and iPad.
-  Normal rows open their own settings. Source-specific rows and their settings
+  Normal rows open their own settings with a **Row name** field.
+  Saving applies a profile-specific heading,
+  and clearing it restores the original heading. Names survive hiding, reordering,
+  preset changes, and temporary source unavailability without renaming server content.
+  Home and its row-browse pages use these headings. Watchlist also uses its shared
+  name on its navigation item and dedicated page; other row names remain separate
+  from navigation naming.
+  Collection rows retain their existing name editor.
+  On iPhone and iPad, long-press a Home row's combined title/chevron target and
+  choose **Edit** to open that same row editor directly. Ordinary taps still browse;
+  rows without a browse action also expose Edit. The shortcut is scoped to the
+  active profile and is available through VoiceOver actions.
+  On iPhone and iPad, ordinary row names, collection-row drafts, and navigation
+  names share a native confirmation-toolbar checkmark instead of an in-content
+  Save changes button. It enables for valid changes (or a new collection row),
+  shows progress while saving, and returns to the previous page after success.
+  Keyboard Done uses the same save path. Failures retain the draft and show an
+  alert; leaving cancels pending work. Immediate appearance/behavior preferences
+  remain immediate.
+  On TV, ordinary row names, existing collection names, and navigation names save
+  when native text editing ends, whether through Done or keyboard Back. Back
+  closes the keyboard without also leaving the editor. There is no second Save
+  action. A secondary checkmark and **Saved** appear beside the field label only
+  after a changed name saves; the status remains until editing starts again.
+  It adds no remote focus stop and announces success to VoiceOver.
+  A failed name save retains the draft and shows **Couldn't save** with Retry.
+  The shared name input observes its own native text-field editing lifecycle:
+  remote focus can stay on the input after the keyboard closes, and Back does
+  not submit the field. The observer never reacts to another input's editing.
+  Existing collection layout, logo, and content choices apply on selection and
+  preserve the saved name independently; failures expose Retry. New collection
+  rows remain drafts until the explicit **Add to Home** action on both platforms.
+  Remove from Home is a separate, full-width destructive action group below the
+  row's editing controls, shared by ordinary and collection rows.
+  Onboarding keeps the shared large native page actions; editor toolbar actions
+  and destructive form rows retain their native sizing.
+  Source-specific rows and their settings
   use the shared provider brand mark, including the transport badge for shares.
   In the editor, Add row, and reorder rows, the mark sits beside the
   library/server name on the second line rather than before the section title;
@@ -831,12 +901,12 @@ watch history and planning-list behavior are documented in
   Appearance, Screens & Navigation, Trackers, Language. Compact mobile windows
   use native push navigation; regular-width windows use a sidebar and detail stack.
   Both mobile layouts share their category section and destinations. Appearance
-  groups Theme, Cards, Artwork, and Circadian Mode; Display
+  starts with inline theme previews and controls, followed by Music player on beta
+  builds. Cards, Artwork, and Circadian Mode form the next group; Display
   Size is last inside Cards. Screens & Navigation groups App navigation,
-  All screens, Home, Libraries, and Movie & show details; Music player remains TV-only because mobile does
-  not implement those presentation choices. Mobile navigation editing includes
-  every enabled video library from the shared discovery inventory; Music remains
-  TV-only. Refreshing Libraries updates the available shortcuts
+  All screens, Home, Libraries, and Movie & show details. Mobile navigation editing includes
+  every enabled video library from the shared discovery inventory and Music on beta
+  builds when a music library is available. Refreshing Libraries updates the available shortcuts
   without resetting saved hide/order choices.
   Home, Downloads, and Search are the iPhone/iPad defaults, even before content
   discovery. Watchlist, Live TV, Settings, All Libraries, and individual libraries

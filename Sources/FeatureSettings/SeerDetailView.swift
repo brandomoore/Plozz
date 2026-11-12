@@ -87,22 +87,26 @@ struct SeerDetailView: View {
             VStack(alignment: .leading, spacing: 16) {
                 discoveredSection
 
-                TextField("Server address (e.g. https://requests.example.com)", text: $urlText)
-                    .textContentType(.URL)
-                    .settingsWorkspaceEntry()
-                    .settingsSearchAnchor("seerr-profile-user")
-                    #if os(tvOS) || os(iOS)
-                    .keyboardType(.URL)
-                    .autocorrectionDisabled(true)
-                    .textInputAutocapitalization(.never)
-                    #endif
+                SettingsInputRow("Server address") {
+                    TextField("Server address", text: $urlText, prompt: Text(verbatim: "https://requests.example.com"))
+                        .textContentType(.URL)
+                        .settingsWorkspaceEntry()
+                        #if os(tvOS) || os(iOS)
+                        .keyboardType(.URL)
+                        .autocorrectionDisabled(true)
+                        .textInputAutocapitalization(.never)
+                        #endif
+                }
+                .settingsSearchAnchor("seerr-profile-user")
 
-                SecureField("Admin API key", text: $apiKeyText)
-                    .textContentType(.password)
-                    #if os(tvOS) || os(iOS)
-                    .autocorrectionDisabled(true)
-                    .textInputAutocapitalization(.never)
-                    #endif
+                SettingsInputRow("Admin API key") {
+                    SecureField("Admin API key", text: $apiKeyText, prompt: Text(verbatim: ""))
+                        .textContentType(.password)
+                        #if os(tvOS) || os(iOS)
+                        .autocorrectionDisabled(true)
+                        .textInputAutocapitalization(.never)
+                        #endif
+                }
 
                 if case .connecting = seer.phase {
                     HStack(spacing: 12) {

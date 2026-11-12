@@ -105,6 +105,66 @@ publish only sanitized aggregates.
 
 ## Baseline → attribution → candidate → regression
 
+### Authorized real music transitions
+
+`music-plex-live`, `music-jellyfin-live`, and `music-subsonic-live` are explicit-only
+hosted workloads; neither `ui` nor `all` selects them. Use a dedicated, non-admin internal identity
+with playback authorization. `PLOZZ_MUSIC_BROKER` must be a short-lived, owned
+loopback HTTP endpoint with an unguessable path. It returns an array of
+`provider`, `baseURL`, `serverID`, `userID`, `username`, and `token` configurations.
+Subsonic configurations supply `password` instead of `token`, exercising Plozz's
+real salted-token sign-in. That workload also checks artists, albums, songs,
+genres, playlists, decodable authenticated artwork, and a favorite toggle/restore
+before the same playback transitions. Use an identity authorized for test-history
+writes.
+Read credentials into memory, never arguments or files; stop the broker and
+revoke its owned authentication sessions in `finally`.
+
+The workload selects six tracks from a bounded twelve-track query in the first
+visible music library. It uses production provider resolution, authenticated
+resource resolution and `AudioPlaybackController`, with muted native output.
+One warmup and five samples each cover cold start, next, previous, arbitrary
+selection, a new queue, and rapid superseding selections. Every transition
+requires the intended ready item, an advancing playback clock, and another
+half-second of sustained playback. Counters separate outgoing-player stop,
+progress reset, readiness, resolution and confirmed playback. Dataset hashes
+permit comparison without publishing media identities. Cold means fresh client
+playback state, not cold server caches. These are simulator transport results,
+not acoustic output, physical-device, AirPlay or long-duration listening proof.
+
+The local-mobile handoff change removed an eight-second next-item prebuffer wait
+that was intended to protect the HomePod route. With identical tracks and
+optimized Debug settings, the direct native XCTest runs measured these medians
+(milliseconds, five retained samples after one warmup):
+
+| Provider / simulator | Cold start | Next | Previous | Arbitrary selection | New queue | Rapid selection |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Jellyfin / phone before | 587 | 710 | 8,853 | 8,539 | 8,833 | 8,626 |
+| Jellyfin / phone after | 549 | 360 | 590 | 535 | 545 | 663 |
+| Plex / phone before | 390 | 726 | 8,817 | 8,451 | 8,506 | 8,503 |
+| Plex / phone after | 396 | 368 | 640 | 539 | 567 | 591 |
+| Jellyfin / tablet after | 523 | 350 | 573 | 567 | 528 | 638 |
+| Plex / tablet after | 429 | 375 | 642 | 588 | 558 | 591 |
+
+Both final simulator runs completed all 72 transitions including warmups. The
+slowest retained transition was 762 ms; confirmation includes at least 200 ms of
+advancing playback. Arbitrary selections previously left the outgoing audio and
+progress active for approximately eight seconds. Deterministic delayed-resolver
+tests now require both to retire synchronously, including failure and cancellation.
+An earlier candidate run had a 3,254-ms Plex outlier, of which 2,796 ms was stream
+resolution: removing the client wait does not remove server/network variability.
+The first simulator/process warmup is excluded from the table, not a guarantee
+of subsecond first-ever launch.
+
+The standard Xcode test driver stalled before launch on this host; the results
+above came from bounded direct XCTest execution of the same optimized host,
+not a completed performance-runner xcresult comparison. Local evidence retains
+source hashes, dataset hashes, completed-test counts and every timing sample.
+The implementation adds no URL cache or extra provider requests. It keeps the
+current/next queue pipeline, uses the native buffer policy for local mobile
+output, and exits cancelled waits promptly rather than spinning. tvOS and
+explicit mobile AirPlay retain their route-preserving buffering policy.
+
 ### Related loading while scrolling
 
 `related-cached-scroll` and `related-cold-scroll` mount the production Related row

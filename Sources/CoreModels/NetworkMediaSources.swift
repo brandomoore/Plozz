@@ -758,6 +758,7 @@ enum MediaPathPolicy {
 
 public enum SensitiveQueryPolicy {
     private static let exactNames: Set<String> = [
+        "u", "t", "s", "p",
         "access_token",
         "apikey",
         "api_key",

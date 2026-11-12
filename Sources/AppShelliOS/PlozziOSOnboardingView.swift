@@ -20,7 +20,7 @@ struct PlozziOSOnboardingView: View {
             GeometryReader { geo in
                 ScrollView {
                     VStack(spacing: 32) {
-                        Spacer(minLength: geo.size.height * 0.08)
+                        Spacer(minLength: geo.size.height * (AppReleaseChannel.current.isBeta ? 0.02 : 0.08))
                         header
                         providerList
                         receiveButton

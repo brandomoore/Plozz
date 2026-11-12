@@ -6,6 +6,7 @@ import SwiftUI
 import UIKit
 
 struct PlozziOSDownloadsView: View {
+    private var navigationTitles = NavigationTitles()
     @Environment(\.plozziOSIsOverflowDestination) private var isOverflowDestination
     @Environment(\.plozziOSOverflowNavigation) private var overflowNavigation
     @Bindable var model: PlozziOSDownloadsModel
@@ -40,7 +41,7 @@ struct PlozziOSDownloadsView: View {
                 libraryList(library)
             }
         }
-        .navigationTitle("Downloads")
+        .navigationTitle(navigationTitles(NavigationLibraryLayout.downloadsKey, default: Text("Downloads")))
         .task { await model.refreshArtwork() }
         .task(id: notificationPresentationID) {
             let navigation = PlozziOSDownloadNotificationNavigation.shared

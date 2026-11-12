@@ -7,6 +7,7 @@ public struct NavigationContentAvailability: Equatable, Sendable {
     public let hasSearchContent: Bool
     public let hasWatchlistItems: Bool
     public let prefersLiveTV: Bool
+    private let hasMusicOnlyAccount: Bool
 
     public init(
         accounts: [Account],
@@ -17,6 +18,7 @@ public struct NavigationContentAvailability: Equatable, Sendable {
         hasWatchlistItems: Bool
     ) {
         let accountIDs = Set(accounts.map(\.id))
+        hasMusicOnlyAccount = !accounts.isEmpty && accounts.allSatisfy { $0.server.provider == .subsonic }
         let hasLibraries = libraries.contains {
             accountIDs.contains($0.accountID)
                 && !disabledLibraryKeys.contains($0.key)
@@ -25,13 +27,14 @@ public struct NavigationContentAvailability: Equatable, Sendable {
         // Keep established media navigation while an uncached server is loading
         // or unreachable. Live-only IPTV must not invent a video library.
         let hasUnresolvedMediaServer = accounts.contains {
-            $0.server.provider != .iptv && !discoveredAccountIDs.contains($0.id)
+            $0.server.provider != .iptv && $0.server.provider != .subsonic
+                && !discoveredAccountIDs.contains($0.id)
         }
         hasSearchContent = hasLibraries || hasUnresolvedMediaServer || hasDiscoverySearch
         hasHomeContent = hasSearchContent || accounts.contains { $0.server.provider == .plex }
         self.hasWatchlistItems = hasWatchlistItems
         // Discovery can keep Home useful without making it the landing page for a live-only playlist.
-        prefersLiveTV = !hasHomeContent
+        prefersLiveTV = (!hasHomeContent && !hasMusicOnlyAccount)
             || (!accounts.isEmpty && accounts.allSatisfy { $0.server.provider == .iptv } && !hasLibraries)
     }
 
@@ -42,6 +45,8 @@ public struct NavigationContentAvailability: Equatable, Sendable {
         if !hasWatchlistItems { hidden.insert(NavigationLibraryLayout.watchlistKey) }
         return hidden
     }
+
+    public var prefersMusic: Bool { !hasHomeContent && hasMusicOnlyAccount }
 
     /// Only a successful answer can remove an account's remembered libraries.
     public static func reconcileLibraries(

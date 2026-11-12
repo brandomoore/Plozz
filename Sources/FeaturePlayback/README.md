@@ -272,6 +272,11 @@ Mobile fullscreen video fits the full player bounds, independently of the safe
 area used by controls and subtitles. Showing or hiding controls does not resize
 the picture. The status bar and persistent system overlays hide with the
 fullscreen controls and return when controls are revealed or fullscreen ends.
+The mobile fullscreen playback cover opts out of iOS 27.1's vertical system bar,
+so iPhone Duo does not reserve a side strip beside the video and custom controls.
+This is a stable presentation policy, not a controls-visibility toggle; physical
+safe-area protection, aspect-ratio fitting, and the browsing/embedded Live TV
+page's native bars are unchanged.
 The engine, video surface, and its native parent remain mounted across expansion, return,
 and rotation. Dark inline previews mirror that same compositor surface above, below,
 and into available side gutters with native blur and gradual transparency fades.

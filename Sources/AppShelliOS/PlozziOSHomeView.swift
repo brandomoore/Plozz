@@ -4,6 +4,7 @@ import CoreModels
 import CoreNetworking
 import CoreUI
 import FeatureHomeCore
+import FeatureSettings
 import HeroUI
 import MediaDownloads
 import MetadataKit
@@ -215,6 +216,7 @@ struct PlozziOSHomeView: View {
     @State private var homeHasAppeared = false
     @State private var rowBrowser: HomeRowBrowseModel?
     @State private var showingHomeCustomization = false
+    @State private var editingHomeRow: PlozziOSHomeRowSettingsRoute?
     @State private var heroFreshnessRefresh = HeroFreshnessRefreshDriver()
     private let appModel: PlozziOSAppModel
     private let onAddServer: () -> Void
@@ -331,6 +333,9 @@ struct PlozziOSHomeView: View {
         .onAppear { homeHasAppeared = true }
         .environment(\.plozzCardCaptionView, .home)
         .onDisappear { homeHasAppeared = false }
+        .navigationDestination(item: $editingHomeRow) { [appModel] route in
+            PlozziOSHomeRowSettingsDestination(route: route, appModel: appModel)
+        }
         .navigationDestination(isPresented: $showingHomeCustomization) {
             PlozziOSHomeSettingsView(
                 hero: appModel.settings.hero, heroBackground: appModel.settings.heroBackground,
@@ -708,7 +713,8 @@ struct PlozziOSHomeView: View {
                         )
                     case let .liveTV(channels):
                         PlozziOSHomeMediaRail(
-                            title: Text("Live TV"), items: [], style: .landscape,
+                            title: presentation.choice.localizedTitle.map(Text.init) ?? Text(verbatim: presentation.choice.title),
+                            items: [], style: .landscape,
                             appModel: appModel, liveChannels: channels,
                             onNavigationInteraction: viewModel.noteHomeNavigationInteraction
                         )
@@ -725,6 +731,16 @@ struct PlozziOSHomeView: View {
                     }
                 }
                 .environment(\.plozzLandscapeTitleLogo, presentation.choice.collectionSection?.titleLogo ?? .off)
+                .environment(\.homeRowEditAction, {
+                    viewModel.noteHomeNavigationInteraction()
+                    editingHomeRow = PlozziOSHomeRowSettingsRoute(
+                        rowID: presentation.id, profile: ObjectIdentifier(visibility),
+                        choice: PlozziOSHomeRowSettingsDestination.choice(
+                            for: presentation.id, content: content, visibility: visibility.visibility
+                        ),
+                        libraries: content.libraries
+                    )
+                })
             }
         }
         return scroll
@@ -2644,6 +2660,60 @@ private struct PlozziOSFeaturedRow: View {
     }
 }
 
+struct PlozziOSHomeRowSettingsRoute: Hashable {
+    let rowID: HomeRowID
+    let profile: ObjectIdentifier
+    let choice: HomeRowChoice?
+    let libraries: [AggregatedLibrary]
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.rowID == rhs.rowID && lhs.profile == rhs.profile
+    }
+
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(rowID)
+        hasher.combine(profile)
+    }
+}
+
+struct PlozziOSHomeRowSettingsDestination: View {
+    let route: PlozziOSHomeRowSettingsRoute
+    let appModel: PlozziOSAppModel
+
+    static func choice(
+        for id: HomeRowID, content: HomeViewModel.Content, visibility: HomeLibraryVisibility
+    ) -> HomeRowChoice? {
+        let catalog = HomeSectionCatalog(
+            libraries: content.libraries,
+            serverRows: content.serverRows.map(\.definition),
+            recommendations: Dictionary(
+                content.librarySections.map { ($0.library.key, $0.sections) },
+                uniquingKeysWith: { first, _ in first }
+            )
+        )
+        return catalog.availableChoices(in: visibility).first { $0.id == id }
+            ?? content.sectionIssues.first { $0.id == id }?.choice
+    }
+
+    var body: some View {
+        if route.profile == ObjectIdentifier(appModel.settings.homeVisibility),
+           let choice = route.choice {
+            HomeRowSettingsView(
+                choice: choice, libraries: route.libraries,
+                accounts: appModel.accountsProviders.resolvedActiveAccounts,
+                visibility: appModel.settings.homeVisibility, spoilerSettings: appModel.settings.spoilers.settings
+            )
+            .environment(appModel.settings.cardStyle)
+            .environment(appModel.settings.hero)
+            .environment(appModel.settings.heroBackground)
+            .environment(appModel.settings.libraryPresentation)
+            .environment(\.homeRowEditAction, nil)
+        } else {
+            ContentUnavailableView("Setting unavailable", systemImage: "magnifyingglass")
+        }
+    }
+}
+
 private struct PlozziOSHomeSectionStatusRow: View {
     let issue: HomeSectionIssue
     let browseItem: MediaItem?
@@ -2785,12 +2855,12 @@ struct PlozziOSHomeRowView: View {
         Group {
             if let failure = row.failure, row.items.isEmpty, row.libraries.isEmpty {
                 PlozziOSHomeRowFailure(
-                    title: Text(row.title), error: failure, viewModel: viewModel,
+                    title: row.displayName, error: failure, viewModel: viewModel,
                     report: row.kind == .continueWatching
                         ? viewModel.continueWatchingDiagnostic.map(PlaybackDiagnosticReport.library) : nil
                 )
             } else if row.kind == .libraries, row.loadingPlaceholderCount == 0 {
-                PlozziOSMediaSection(title: Text(row.title)) {
+                PlozziOSMediaSection(title: row.displayName) {
                     libraryRow
                 }
             } else if row.items.isEmpty {
@@ -2799,7 +2869,7 @@ struct PlozziOSHomeRowView: View {
                 // geometry as the real rail, so the cards swap in without the
                 // page shifting.
                 PlozziOSHomeSkeletonRail(
-                    title: Text(row.title),
+                    title: row.displayName,
                     style: cardStyle,
                     cardCount: row.loadingPlaceholderCount > 0 ? row.loadingPlaceholderCount : 8,
                     showsCaption: row.kind == .libraries
@@ -2816,7 +2886,7 @@ struct PlozziOSHomeRowView: View {
                 )
             } else {
                 PlozziOSHomeMediaRail(
-                    title: Text(row.title),
+                    title: row.displayName,
                     items: row.items,
                     style: cardStyle,
                     appModel: appModel,

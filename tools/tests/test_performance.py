@@ -62,6 +62,20 @@ Binary Images:
 
 
 class EvidenceTests(unittest.TestCase):
+    def test_live_music_requires_explicit_selection_and_loopback_broker(self):
+        names = ["music-plex-live", "music-jellyfin-live", "music-subsonic-live"]
+        self.assertEqual(performance.select(None, names, "iOS"), sorted(names))
+        for suite in ("ui", "network", "all"):
+            for name in names:
+                self.assertNotIn(name, performance.select(suite, None))
+        with patch.dict("os.environ", {"PLOZZ_MUSIC_BROKER": "http://127.0.0.1:8123/private-path"}, clear=True):
+            tree = performance.configure_scheme(ET.ElementTree(ET.fromstring("<Scheme><TestAction/></Scheme>")))
+            values = tree.find("TestAction/EnvironmentVariables").findall("EnvironmentVariable")
+            self.assertTrue(any(value.get("key") == "PLOZZ_MUSIC_BROKER" for value in values))
+        with patch.dict("os.environ", {"PLOZZ_MUSIC_BROKER": "https://example.com/token"}, clear=True):
+            with self.assertRaises(performance.Failure):
+                performance.configure_scheme(ET.ElementTree(ET.fromstring("<Scheme><TestAction/></Scheme>")))
+
     def test_profile_library_shell_measures_covered_home_requests(self):
         name = "mobile-profile-library-shell"
         self.assertEqual(performance.select(None, [name], "iOS"), [name])

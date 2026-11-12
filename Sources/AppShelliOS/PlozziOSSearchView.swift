@@ -5,6 +5,7 @@ import SwiftUI
 import CoreUI
 
 struct PlozziOSSearchView: View {
+    private var navigationTitles = NavigationTitles()
     @Environment(\.plozzMetrics) private var metrics
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.plozziOSUsesVerticalToolbar) private var usesVerticalToolbar
@@ -67,7 +68,8 @@ struct PlozziOSSearchView: View {
                 PlozziOSSettingsToolbarItem(action: onShowSettings)
             }
         }
-        .navigationTitle(horizontalSizeClass == .compact && !isOverflowDestination ? Text(verbatim: "") : Text("Search"))
+        .navigationTitle(horizontalSizeClass == .compact && !isOverflowDestination
+            ? Text(verbatim: "") : navigationTitles(NavigationLibraryLayout.searchKey, default: Text("Search")))
         .toolbarTitleDisplayMode(isOverflowDestination ? .inline : .large)
         .environment(\.plozzCardCaptionView, .search)
         .task(id: viewModel.query) {
