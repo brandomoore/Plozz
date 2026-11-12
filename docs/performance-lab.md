@@ -1600,6 +1600,87 @@ Evidence:
   `88efaddc843b4e528787affe2b35c51b` passed the runner's regression budgets.
 - Provider tests: `.build/private-no-clean-tests/78f20b9938ce4c60ac0241b8c69c3b8a`.
 
+### Rolling full-inventory requests and small library bootstrap
+
+The next production change removes the three-page batch barrier without raising
+the three-request ceiling. Requests refill as responses arrive, with at most six
+pending-plus-buffered pages per source and three active sources. Responses are
+consumed only in actual cursor order. A fresh library first requests one fully
+enriched item to discover continuation/count earlier; remaining pages request
+200 items. Changed strides drain the bounded speculative window and restart at
+the actual offset. Observed terminal pages suppress unnecessary lookahead but
+cannot truncate an authoritative continuation. Ordinary incremental browsing
+and sequential 60-item Home feeds are unchanged.
+
+The selected candidate (`34214c346e904e0db9a4824a7563925f`) and a subsequent
+restored original-loader control (`67298fdc86c541ab93899ba11bcfd85b`) both retain
+the preceding decoder optimization. Each uses one warmup and five retained
+optimized iPhone-simulator samples against real servers:
+
+| Median | Original loader | Rolling loader |
+| --- | ---: | ---: |
+| Plex first 20 fully enriched cards | 6,858 ms | 5,922 ms |
+| Combined first 20 fully enriched cards | 8,331 ms | 7,624 ms |
+| Plex next 180 cards | 57.6 ms | 62.3 ms |
+| Combined next 180 cards | 91.8 ms | 83.9 ms |
+| Plex eight sorts | 45.6 ms | 50.6 ms |
+| Combined eight sorts | 51.7 ms | 46.8 ms |
+| Plex whole-workload CPU | 665 ms | 719 ms |
+| Combined whole-workload CPU | 1,978 ms | 1,929 ms |
+| Plex instrumented requests | 21 | 24 |
+| Combined instrumented requests | 95 | 101 |
+
+This is not an improvement in every metric. Plex warm projections and CPU rose
+slightly in this pair; no network work moved into those interactions. Plex
+response bytes rose by 946 and combined by 1,065. The extra initial request
+trades a small amount of HTTP work for earlier parallel loading. Buffer bounds
+increase from three to six pages per source; complete inventories still occupy
+memory proportional to library size. Snapshot memory is not a peak-memory or
+leak measurement. Comparison `c49e23e148864bfd8cf63da20425d3d8` passed the
+runner's wall/CPU regression budgets; first-display and query counters are
+reported separately, not enforced by those budgets.
+
+A separate five-provider saved-query sweep (`a0a73c2d88a34f9bbd4ba8b26752b4af`)
+and subsequent restored original-loader control
+(`8436fe196e2746559b70e46758761cdf`) passed all cases without skips:
+
+| Source | Complete items | Original fresh inventory | Rolling fresh inventory | Original / rolling eight warm queries |
+| --- | ---: | ---: | ---: | ---: |
+| Jellyfin | 1,523 | 2,052 ms | 1,749 ms | 34.7 / 42.3 ms |
+| Emby | 1,830 | 651 ms | 620 ms | 47.0 / 49.3 ms |
+| Plex | 1,815 | 6,838 ms | 5,513 ms | 49.4 / 51.7 ms |
+| Silo | 1,826 | 1,127 ms | 1,011 ms | 53.5 / 54.6 ms |
+| Combined | 1,918 | 8,113 ms | 7,685 ms | 65.2 / 59.5 ms |
+
+Every case verifies complete ordered `MediaItem` parity against sequential
+60-item reads, eight sorts, media/watch filters, preview/grid query agreement,
+cancelled-query replacement, and no warm page refetches. Source-page counts
+change from 13/14/14/10/41 to 14/16/16/12/46 respectively. Whole-workload CPU
+increases from 651/837/876/1,442/2,258 ms to 712/874/912/1,489/2,301 ms.
+Comparison `b6a1c783870e40428a72cecb231299ca` passed wall/CPU budgets.
+These are separate runs with fresh clients/pagers, not cleared server caches.
+Discovery is excluded from fresh-inventory timing and included in workload
+CPU/wall time. This is simulator/network evidence, not rendered-frame,
+physical-device, concurrent-playback, or arbitrary-library-size evidence.
+
+**Sub-three-second Plex loading was not achieved.** Six-request experiments
+reached about 5.1 seconds with 200-item pages and 4.9 seconds with 100-item pages,
+but increased server burst pressure and individual request durations; they are
+not adopted without interactive-contention evidence. Smaller pages alone did
+not improve three-worker transport throughput. Optional Stream flags retained
+movie metadata but did not demonstrate a speedup; series requests still failed
+and used the existing lean fallback. No production stream metadata was removed.
+The test-only HTTP wrapper now retains bounded, secret-safe timing attachments
+containing request category, page offset/limit, elapsed times, byte count, and
+success status, not URLs, account identities, titles, tokens, or payloads.
+
+Regression coverage includes rolling refill around delayed pages, capped and
+changing strides, tiny libraries, missing/inaccurate totals, global concurrency,
+full-item retention, cancellation, and retryable failures. CoreModelsTests and
+FeatureHomeCoreTests passed 3,758 tests with 11 skips
+(`fa04254110934e0a84646ad9274714a0`); the final bootstrap edge-case addition and
+Home tests passed separately (`cd8c62325c854f858243263abfbb8ace`).
+
 ### Jellyfin Home recommendation reuse
 
 `home-recommendation-navigation` runs production `JellyfinProvider.homeHubs`

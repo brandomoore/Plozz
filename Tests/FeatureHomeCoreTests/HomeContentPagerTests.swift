@@ -4,6 +4,65 @@ import XCTest
 @testable import TestSupportPerformance
 
 final class HomeContentPagerTests: XCTestCase {
+    func testInventoryRefillsWindowBeforeItsSlowTailCompletes() async throws {
+        for slowOffset in [200, 600] {
+            let fixture = ContentFixture(counts: [1_400], reportsTotals: true, delay: .milliseconds(1))
+            let probe = RollingCompletionProbe(slowOffset: slowOffset)
+            let pager = HomeContentPager(sources: fixture.sources) { source, start, limit in
+                await probe.started(start)
+                if start == slowOffset { try await Task.sleep(for: .milliseconds(150)) }
+                let page = try await fixture.page(source, start: start, limit: limit)
+                await probe.finished(start)
+                return page
+            }
+            let result = try await pager.loadAll()
+            let refilled = await probe.refilledBeforeSlowTail
+            XCTAssertTrue(refilled, "The next page must not wait for the preceding batch's slow tail")
+            XCTAssertEqual(result.items.map(\.id), (0..<1_400).map { "0-\($0)" })
+            let metrics = await fixture.metrics()
+            XCTAssertLessThanOrEqual(metrics.maximumConcurrent, 3)
+        }
+    }
+
+    func testLibraryBootstrapRetainsFullMetadataAndRecoversFromServerCaps() async throws {
+        for cap in [200, 75, 7] {
+            let fixture = ContentFixture(counts: [735], pageSizes: [cap], reportsTotals: true)
+            let source = HomeContentSource(feed: .library(.movie), accountID: "0", title: "Library")
+            let pager = HomeContentPager(sources: [source]) { _, start, limit in
+                try await fixture.page(fixture.sources[0], start: start, limit: limit)
+            }
+            let result = try await pager.loadAll()
+            let expected = (0..<735).map {
+                MediaItem(id: "0-\($0)", title: "Title 0-\($0)", kind: .movie, sourceAccountID: "0")
+            }
+            XCTAssertEqual(result.items, expected)
+            let requests = await fixture.requests
+            XCTAssertEqual(requests.first?.limit, 1)
+            XCTAssertTrue(requests.dropFirst().allSatisfy { $0.limit == 200 })
+            let metrics = await fixture.metrics()
+            XCTAssertLessThanOrEqual(metrics.maximumConcurrent, 3)
+        }
+    }
+
+    func testLibraryBootstrapCompletesTinyInventoriesWithoutTrustingTotals() async throws {
+        for count in [0, 1, 2, 201] {
+            for hint in [nil, 1, 10_000] as [Int?] {
+                let fixture = ContentFixture(counts: [count], reportsTotals: hint != nil, totalHint: hint)
+                let source = HomeContentSource(feed: .library(.movie), accountID: "0", title: "Library")
+                let pager = HomeContentPager(sources: [source]) { _, start, limit in
+                    try await fixture.page(fixture.sources[0], start: start, limit: limit)
+                }
+                let result = try await pager.loadAll()
+                XCTAssertEqual(result.items.map(\.id), (0..<count).map { "0-\($0)" })
+                XCTAssertFalse(result.hasMore)
+                let requests = await fixture.requests
+                XCTAssertEqual(requests.first?.limit, 1)
+                if count <= 1 { XCTAssertEqual(requests.count, 1) }
+                XCTAssertLessThanOrEqual(requests.count, 4)
+            }
+        }
+    }
+
     func testInventoryBatchesRetainPreviewPrefixAndFollowServerPageCaps() async throws {
         let fixture = ContentFixture(counts: [735], pageSizes: [75], reportsTotals: true, delay: .milliseconds(1))
         let pager = fixture.pager()
@@ -65,7 +124,7 @@ final class HomeContentPagerTests: XCTestCase {
             XCTAssertFalse(result.hasMore)
             let requests = await fixture.requests
             XCTAssertTrue(requests.contains { $0.start == 400 })
-            XCTAssertLessThanOrEqual(requests.count, 4)
+            XCTAssertLessThanOrEqual(requests.count, 5, "At most two speculative pages may pass the real end")
         }
     }
 
@@ -460,6 +519,23 @@ private extension Duration {
 private actor PageCounter {
     var count = 0
     func increment() { count += 1 }
+}
+
+private actor RollingCompletionProbe {
+    let slowOffset: Int
+    private var slowTailActive = false
+    private(set) var refilledBeforeSlowTail = false
+
+    init(slowOffset: Int) { self.slowOffset = slowOffset }
+
+    func started(_ offset: Int) {
+        if offset == slowOffset { slowTailActive = true }
+        if offset == 800 && slowTailActive { refilledBeforeSlowTail = true }
+    }
+
+    func finished(_ offset: Int) {
+        if offset == slowOffset { slowTailActive = false }
+    }
 }
 
 private actor ContentFixture {

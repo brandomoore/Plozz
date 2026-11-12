@@ -40,12 +40,26 @@ private actor LiveRecommendationHTTP: HTTPClient {
 
 /// Experiment only: change Plex list transport, not production provider defaults.
 private actor LiveInventoryHTTP: HTTPClient {
+    private struct RequestTiming: Encodable {
+        let category: String
+        let start: Int?
+        let limit: Int?
+        let began: Double
+        let duration: Double
+        let bytes: Int
+        let succeeded: Bool
+    }
+
     let deferred: Bool
     private let client = URLSessionHTTPClient()
     private(set) var requests = 0
     private(set) var bytes = 0
+    private let origin = ProcessInfo.processInfo.systemUptime
+    private var timings: [RequestTiming] = []
 
     init(deferred: Bool) { self.deferred = deferred }
+
+    func timingData() throws -> Data { try JSONEncoder().encode(timings) }
 
     func send(_ endpoint: Endpoint, baseURL: URL) async throws -> (Data, HTTPURLResponse) {
         var endpoint = endpoint
@@ -58,9 +72,26 @@ private actor LiveInventoryHTTP: HTTPClient {
         }
         requests += 1
         guard requests <= 600 else { throw AppError.invalidResponse }
-        let result = try await client.send(endpoint, baseURL: baseURL)
-        bytes += result.0.count
-        return result
+        let category = !isPlex ? "other-provider" : isInventory
+            ? "plex-library-\(endpoint.queryItems.first { $0.name == "type" }?.value ?? "unspecified")"
+            : endpoint.path.hasPrefix("/library/collections/") ? "plex-collection"
+            : endpoint.path.hasPrefix("/playlists/") ? "plex-playlist" : "plex-other"
+        let start = endpoint.queryItems.first { $0.name == "X-Plex-Container-Start" }?.value.flatMap(Int.init)
+        let limit = endpoint.queryItems.first { $0.name == "X-Plex-Container-Size" }?.value.flatMap(Int.init)
+        let began = ProcessInfo.processInfo.systemUptime
+        do {
+            let result = try await client.send(endpoint, baseURL: baseURL)
+            bytes += result.0.count
+            timings.append(.init(category: category, start: start, limit: limit,
+                                 began: began - origin, duration: ProcessInfo.processInfo.systemUptime - began,
+                                 bytes: result.0.count, succeeded: true))
+            return result
+        } catch {
+            timings.append(.init(category: category, start: start, limit: limit,
+                                 began: began - origin, duration: ProcessInfo.processInfo.systemUptime - began,
+                                 bytes: 0, succeeded: false))
+            throw error
+        }
     }
 }
 
@@ -197,6 +228,12 @@ final class LiveHomeContentTests: XCTestCase {
             XCTAssertFalse(snapshot.hasMore)
             let firstRequests = await http.requests
             let firstBytes = await http.bytes
+            if verifyParity {
+                let timing = XCTAttachment(data: try await http.timingData(), uniformTypeIdentifier: "public.json")
+                timing.name = "\(scenario)-request-timing"
+                timing.lifetime = .keepAlways
+                self.add(timing)
+            }
 
             var reference: [MediaItem]?
             if verifyParity {
