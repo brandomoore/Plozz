@@ -22,6 +22,8 @@ SECRET = "test-only-key-never-log-this"
 
 FASTFILE_HARNESS = r"""
 require "json"
+require "fileutils"
+require "tmpdir"
 module UI
   def self.method_missing(name, *args)
     raise args.first if name == :user_error!
@@ -47,6 +49,17 @@ harness = LaneHarness.new
 harness.instance_eval(File.read("fastlane/Fastfile"), File.expand_path("fastlane/Fastfile"))
 module AppleBuildLease
   def self.with_shared(*); yield; end
+end
+# Archive discovery must never inspect or modify real release outputs.
+harness.singleton_class.send(:remove_const, :REPO_ROOT)
+harness.singleton_class.const_set(:REPO_ROOT, Dir.mktmpdir("lane-fixture-", ENV.fetch("SCRATCH")))
+def harness.sh(command)
+  if command.include?("tools/validate-disc-runtime.py --app")
+    app = Shellwords.split(command).last
+    @events << "validate disc #{File.basename(app, '.app')}"
+    raise "disc validation failed" if ENV["SCENARIO"] == "disc_validation_failure"
+  end
+  ""
 end
 def harness.asc_api_key; { key: "fixture" }; end
 def harness.select_release_xcode; end
@@ -76,6 +89,10 @@ def harness.build_app(**options)
   @events << options.fetch(:scheme)
   @build_options << options
   raise "archive failed" if ENV["SCENARIO"] == "archive_failure" && options[:scheme] == "PlozziOS"
+  return if ENV["SCENARIO"] == "missing_archive"
+  applications = File.join(singleton_class.const_get(:REPO_ROOT), options.fetch(:archive_path), "Products", "Applications")
+  FileUtils.mkdir_p(File.join(applications, "#{options.fetch(:scheme)}.app"))
+  FileUtils.mkdir_p(File.join(applications, "Unexpected.app")) if ENV["SCENARIO"] == "ambiguous_archive"
 end
 def harness.tag_github_release(*arguments); @events << "tag"; @tag_arguments = arguments; end
 PlozzTestflightPipeline.define_singleton_method(:validate_jobs!) do |jobs|
@@ -325,8 +342,9 @@ class FastlanePipelineTests(unittest.TestCase):
     def ruby(self, source: str, **env: str) -> dict:
         result = subprocess.run(
             [RUBY, "-e", source], cwd=ROOT, env=dict(self.env, **env),
-            capture_output=True, text=True, timeout=30, check=True,
+            capture_output=True, text=True, timeout=30, check=False,
         )
+        self.assertEqual(result.returncode, 0, result.stderr)
         return json.loads(result.stdout.splitlines()[-1])
 
     def jobs(self, scenarios: tuple[str, str] = ("success", "success")) -> list[dict]:
@@ -352,8 +370,10 @@ class FastlanePipelineTests(unittest.TestCase):
 
     def test_lanes_keep_archive_gate_and_platform_notes(self) -> None:
         result = self.ruby(FASTFILE_HARNESS)
+        self.assertIsNone(result["error"], result)
         self.assertEqual(
-            result["events"], ["symbol preflight", "number", "gate", "Plozz", "PlozziOS",
+            result["events"], ["symbol preflight", "number", "gate", "Plozz", "validate disc Plozz",
+                               "PlozziOS", "validate disc PlozziOS",
                                "validate IPAs", "symbols both", "upload both", "tag"]
         )
         tv, ios = [job["options"] for job in result["jobs"]]
@@ -504,13 +524,31 @@ puts JSON.generate(commands: harness.instance_variable_get(:@commands).map { |c|
         self.assertIn("--prerelease", command)
 
     def test_failure_never_tags_or_blindly_retries(self) -> None:
-        for scenario in ("gate_failure", "archive_failure", "symbol_failure", "upload_failure"):
+        for scenario, last_event in (
+            ("gate_failure", "gate"), ("archive_failure", "PlozziOS"),
+            ("symbol_failure", "symbols both"), ("upload_failure", "upload both"),
+        ):
             with self.subTest(scenario=scenario):
                 result = self.ruby(FASTFILE_HARNESS, SCENARIO=scenario)
+                self.assertIsNotNone(result["error"])
+                self.assertEqual(result["events"][-1], last_event, result)
                 self.assertNotIn("tag", result["events"])
                 self.assertEqual(result["events"].count("number"), 1)
                 expected_uploads = 1 if scenario == "upload_failure" else 0
                 self.assertEqual(result["events"].count("upload both"), expected_uploads)
+
+    def test_archive_layout_and_disc_validation_fail_before_publication(self) -> None:
+        for scenario, message, last_event in (
+            ("missing_archive", "Expected one archived app for tvOS", "Plozz"),
+            ("ambiguous_archive", "Expected one archived app for tvOS", "Plozz"),
+            ("disc_validation_failure", "disc validation failed", "validate disc Plozz"),
+        ):
+            with self.subTest(scenario=scenario):
+                result = self.ruby(FASTFILE_HARNESS, SCENARIO=scenario)
+                self.assertEqual(result["error"], message)
+                self.assertEqual(result["events"][-1], last_event)
+                for event in ("PlozziOS", "symbols both", "upload both", "tag"):
+                    self.assertNotIn(event, result["events"])
 
     def test_symbol_preflight_stops_before_archiving(self) -> None:
         result = self.ruby(FASTFILE_HARNESS, SCENARIO="symbol_preflight_failure")
@@ -547,12 +585,16 @@ puts JSON.generate(commands: harness.instance_variable_get(:@commands), error: e
         source = FASTFILE_HARNESS.replace("begin\n  harness.beta", """
 def harness.sync_app_store_versions(*); @events << "Apple version"; end
 def harness.upload_to_app_store(**); @events << "App Store upload"; end
+def harness.apply_queued_store_screenshots; @events << "screenshots"; end
 begin
   harness.release""")
         result = self.ruby(source)
+        self.assertIsNone(result["error"], result)
         self.assertLess(result["events"].index("symbols both"), result["events"].index("Apple version"))
         self.assertEqual(result["events"].count("App Store upload"), 2)
+        self.assertEqual(result["events"][-2:], ["screenshots", "tag"])
         failed = self.ruby(source, SCENARIO="symbol_failure")
+        self.assertEqual(failed["error"], "symbols failed")
         self.assertNotIn("Apple version", failed["events"])
         self.assertNotIn("App Store upload", failed["events"])
 
