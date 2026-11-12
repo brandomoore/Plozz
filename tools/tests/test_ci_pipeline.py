@@ -249,6 +249,11 @@ class WorkflowTests(unittest.TestCase):
         self.assertNotIn("cache-hit ==", PREPARE)
         self.assertNotIn("xcodegen generate", PREPARE)
 
+    def test_normal_ci_does_not_build_or_enable_the_experimental_java_runtime(self):
+        source = WORKFLOW + PREPARE + SAVE
+        self.assertNotIn("build-disc-runtime.py", source)
+        self.assertNotIn("PLOZZ_EXPERIMENTAL_BDJ", source)
+
     def test_cache_saves_are_successful_main_only_and_have_one_package_writer(self):
         self.assertEqual(WORKFLOW.count("if: ${{ " + TRUST + " }}"), 3)
         self.assertEqual(SAVE.count("if: ${{ " + TRUST), 3)
