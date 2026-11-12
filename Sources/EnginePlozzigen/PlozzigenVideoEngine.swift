@@ -1774,7 +1774,7 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
     }
 
     public var nowPlayingPlayer: AVPlayer? { engine.currentAVPlayer }
-    #if os(iOS)
+    #if os(iOS) || os(tvOS)
     public func previewVideoFrame() -> CVPixelBuffer? { engine.latestSoftwareVideoFrame() }
     public var previewFrameGeneration: UInt64? { engine.softwareVideoFrameGeneration }
     #endif

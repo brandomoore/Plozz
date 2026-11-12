@@ -199,7 +199,9 @@ struct PrototypeBrowser: View {
                     .verticalEdgeFadeMask(
                         fadeHeight: PrototypeLayout.verticalFade,
                         topStrength: verticalFade.leading, bottomStrength: 0)
-                    .onChange(of: topRequest) { _, _ in goToTop(scrollTo: nativeScroll.scrollTo) }
+                    .onChange(of: topRequest) { _, _ in
+                        goToTop(scrollTo: nativeScroll.scrollTo, movesFocus: !railActive)
+                    }
                     .task(id: isPresented && isRestoringFocus ? restoreFocusRequest : -1) {
                         await restoreFocus(scrollTo: nativeScroll.scrollTo, width: geometry.size.width)
                     }
@@ -742,15 +744,17 @@ struct PrototypeBrowser: View {
         }
     }
 
-    private func goToTop(scrollTo: (LiveTVGuideRowID, UnitPoint) -> Void) {
+    private func goToTop(scrollTo: (LiveTVGuideRowID, UnitPoint) -> Void, movesFocus: Bool = true) {
         guard let first = model.guideChannels.first else { return }
-        railActive = false
         selectedID = first.channel.id
         selectedRowID = first.id
         focusedProgram = nil
-        pendingFocus = .defaultContent(in: model, row: first.id, from: guideStart, hours: guideHours)
         scrollTo(first.id, .top)
-        focused = pendingFocus
+        if movesFocus {
+            railActive = false
+            pendingFocus = .defaultContent(in: model, row: first.id, from: guideStart, hours: guideHours)
+            focused = pendingFocus
+        }
     }
 }
 

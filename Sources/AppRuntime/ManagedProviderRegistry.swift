@@ -6,6 +6,7 @@ import CoreNetworking
 import ProviderJellyfin
 import ProviderPlex
 import ProviderSilo
+import ProviderSubsonic
 import ProviderIPTV
 import FeatureLiveTVCore
 import Foundation
@@ -40,6 +41,9 @@ public enum ManagedProviderRegistry {
     ) -> ProviderRegistry {
         let registry = ProviderRegistry()
         registerIPTV(into: registry, durableStore: durableStore)
+        registry.register(.subsonic) { context in
+            try SubsonicProvider(context: context)
+        }
         registry.register(.silo) { context in
             guard let siloCredentials else { throw AppError.unauthorized }
             return try SiloProvider(context: context, credentials: siloCredentials)

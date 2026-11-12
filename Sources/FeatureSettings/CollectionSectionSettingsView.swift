@@ -150,6 +150,7 @@ struct CollectionSectionSettingsView: View {
             }
             if !draft.sources.isEmpty {
                 previewContent
+                .padding(.top, 8)
                 .accessibilityIdentifier("collection-section-preview")
             }
             #if os(tvOS)

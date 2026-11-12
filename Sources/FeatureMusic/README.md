@@ -7,6 +7,12 @@ The Music tab is integrated into the tvOS shell and, in development/TestFlight
 builds only, the iOS/iPadOS shell. App Store builds do not create the mobile
 music runtime or probe music libraries.
 
+Development/TestFlight source selection also offers **Navidrome (Subsonic)**.
+It joins the same music browser and player without adding video destinations.
+Plex/Jellyfin/Emby music remains available through their normal account sign-in;
+the additional entry is not required to enable it. See
+[ProviderSubsonic](../ProviderSubsonic/README.md) for protocol support and limits.
+
 ## Responsibility
 
 - **Browse UI** — `MusicTabView`, `MusicScreens`, `MusicViewModels`,

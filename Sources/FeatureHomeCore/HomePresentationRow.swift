@@ -12,6 +12,11 @@ public struct HomePresentationRow: Identifiable, Equatable, Sendable {
     public let source: Source
     public var id: HomeRowID { choice.id }
 
+    public init(choice: HomeRowChoice, source: Source) {
+        self.choice = choice
+        self.source = source
+    }
+
     public var canBrowse: Bool {
         supportsBrowsing()
     }

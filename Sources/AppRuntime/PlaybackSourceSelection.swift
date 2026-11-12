@@ -11,7 +11,9 @@ public enum PlaybackSourceSelection {
         accounts: [ResolvedAccount],
         identitySources: (MediaItem) -> [MediaSourceRef]
     ) -> MediaItem {
-        if item.kind == .folder || item.kind == .collection
+        // Child IDs and their parent IDs belong to one provider. Resolve the
+        // parent before choosing another server's series, not through playback.
+        if item.kind == .folder || item.kind == .collection || item.kind == .episode || item.kind == .season
             || DetailOpenEnvironment.openingSource(for: item) != nil {
             return item
         }

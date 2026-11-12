@@ -776,7 +776,8 @@ watch history and planning-list behavior are documented in
   content height before group insets, without changing unrelated Settings menus.
   Choose Posters, Landscape or Featured presentation, with **Logo** below Layout
   for landscape rows. Once content is selected, a live real-title preview appears
-  below the controls without another enclosing card. Empty drafts omit the preview.
+  below the controls without another enclosing card, with eight additional points
+  separating it from the controls. Empty drafts omit the preview.
   The preview uses Home's actual heading, rail spacing, viewport-fitted card
   widths, captions, artwork preferences and spoiler protection through
   CoreUI's `HomeRowPreviewView`. Featured sizing and focus also share Home's

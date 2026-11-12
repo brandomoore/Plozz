@@ -7,9 +7,27 @@ import FeaturePlayback
 
 @main
 struct FocusHostApp: App {
+    init() {
+        if ProcessInfo.processInfo.arguments.contains("--live-root-fixture") {
+            URLProtocol.registerClass(SourceSmokeNetworkBlocker.self)
+        }
+    }
+
     var body: some Scene {
         WindowGroup {
-            if ProcessInfo.processInfo.arguments.contains("--disc-review-fixture") {
+            if ProcessInfo.processInfo.arguments.contains("--live-webdav-watchlist-fixture") {
+                LiveWebDAVWatchlistFixture()
+            } else if ProcessInfo.processInfo.arguments.contains("--detail-selection-fixture") {
+                DetailSelectionFixture()
+            } else if ProcessInfo.processInfo.arguments.contains("--live-content-refresh-fixture") {
+                LiveContentRefreshFixture()
+            } else if ProcessInfo.processInfo.arguments.contains("--content-refresh-return-fixture") {
+                ContentRefreshReturnFixture()
+            } else if ProcessInfo.processInfo.arguments.contains("--live-root-fixture") {
+                LiveTVRootFixture()
+            } else if ProcessInfo.processInfo.arguments.contains("--multiview-fixture") {
+                MultiviewFixture()
+            } else if ProcessInfo.processInfo.arguments.contains("--disc-review-fixture") {
                 DiscReviewFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--detail-information-fixture") {
                 DetailInformationFixture()
@@ -102,7 +120,13 @@ struct FocusHostApp: App {
             } else if ProcessInfo.processInfo.arguments.contains("--library-channel-actions") {
                 LibraryChannelActionsFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--navigation-fixture") {
-                NavigationRailFixture { Color.clear }
+                NavigationRailFixture {
+                    if ProcessInfo.processInfo.arguments.contains("--navigation-guide") {
+                        LiveTVCategorySearchFixture()
+                    } else {
+                        Color.clear
+                    }
+                }
             } else if ProcessInfo.processInfo.arguments.contains("--live-jellyfin-home") {
                 LiveJellyfinHomeFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--production-home-fixture") {

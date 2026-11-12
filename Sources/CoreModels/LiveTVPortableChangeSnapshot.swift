@@ -29,6 +29,6 @@ public struct LiveTVPortableChangeSnapshot: Equatable {
         self.preferences = preferences
         self.consent = consent
         epoch = LiveTVPortableSyncPreferenceStore.storageEpoch(defaults: defaults)
-        cloudEnabled = SyncSetupFeatureFlag(defaults: defaults).isEnabled
+        cloudEnabled = SyncSetupFeatureFlag(defaults: defaults).allowsAutomaticSync
     }
 }

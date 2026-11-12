@@ -135,7 +135,9 @@ public struct PlayerView: View {
         }
         .onChange(of: viewModel.dynamicRangeTransitionToken) { _, _ in
             if viewModel.effectiveDynamicRange.isAwaitingEngineProbe {
-                hdrTransition.restartProbeTransition()
+                hdrTransition.restartProbeTransition(hint: viewModel.effectiveDynamicRange.bestAvailable)
+            } else {
+                hdrTransition.beginFrameRateTransition()
             }
         }
         .modifier(DisplaySettleObserver { hdrTransition.displayDidSettle() })
@@ -171,6 +173,7 @@ public struct PlayerView: View {
         playerStack
         .onAppear {
             hdrTransition.isDynamicRangeFadeEnabled = viewModel.fadesOnDynamicRangeChange
+            hdrTransition.isFrameRateFadeEnabled = viewModel.fadesOnFrameRateChange
             hdrTransition.synchronize(
                 with: viewModel.effectiveDynamicRange,
                 inheritedPreservedRange: viewModel.inheritedPreservedDynamicRange

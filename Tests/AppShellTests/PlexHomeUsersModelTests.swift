@@ -41,6 +41,7 @@ final class PlexHomeUsersModelTests: XCTestCase {
     private func makeModel(
         accountIDs: [String] = [],
         samePlexLogin: Bool = false,
+        profileStore: ProfileStore? = nil,
         cache: PlexHomeUserTokenCache = PlexHomeUserTokenCache(store: InMemorySecureStore()),
         switchProfile: @escaping @MainActor (String) -> Void = { _ in }
     ) throws -> (PlexHomeUsersModel, AccountsProvidersModel, ProfilesModel) {
@@ -50,7 +51,7 @@ final class PlexHomeUsersModelTests: XCTestCase {
             if samePlexLogin { account.userID = "shared-owner" }
             try store.add(account, token: "admin-\(id)")
         }
-        let profiles = ProfilesModel(store: ProfileStore(defaults: makeDefaults()))
+        let profiles = ProfilesModel(store: profileStore ?? ProfileStore(defaults: makeDefaults()))
         let hub = AccountsProvidersModel(
             accountStore: store,
             registry: ProviderRegistry(),
@@ -390,6 +391,86 @@ final class PlexHomeUsersModelTests: XCTestCase {
         // Should not crash and should leave token resolution intact for others.
         model.forgetAccount("missing")
         XCTAssertEqual(model.resolvedToken(for: "a"), "admin-a")
+    }
+
+    func testPlexImportAfterCloudRosterDoesNotDuplicateImportedPeople() throws {
+        let (sender, _, source) = try makeModel(accountIDs: ["a", "b"], samePlexLogin: true)
+        let users = [
+            PlexHomeUser(id: "parent", name: "Parent", requiresPIN: true, isAdmin: true),
+            PlexHomeUser(id: "child", name: "Child", requiresPIN: false)
+        ]
+        sender.presentUserSelection(.init(
+            accountID: "a", serverName: "Plex", users: users,
+            isFirstRun: true, applyToAccountIDs: ["a", "b"]
+        ))
+        XCTAssertEqual(sender.importOnboardingProfiles(), .added)
+        var customized = try XCTUnwrap(source.profiles.first { $0.name == "Child" })
+        customized.name = "Personal name"
+        customized.replaceLock(with: ProfileLock.make(pin: "1234", iterations: 1))
+        customized.replaceKidsProfile(with: true)
+        source.update(customized)
+        let originalIDs = Set(source.profiles.map(\.id))
+        let destinationStore = ProfileStore(defaults: makeDefaults())
+        let (_, _, destination) = try makeModel(
+            accountIDs: ["receiver-a", "receiver-b"], samePlexLogin: true, profileStore: destinationStore
+        )
+        let wire = try JSONEncoder().encode(source.profiles.map { ProfileSyncDTO(profile: $0) })
+        let received = try JSONDecoder().decode([ProfileSyncDTO].self, from: wire)
+        destination.applySyncedProfileDTOs(
+            Dictionary(uniqueKeysWithValues: received.map { ($0.id, $0) }),
+            deletions: []
+        )
+        XCTAssertEqual(Set(destination.profiles.map(\.id)), originalIDs)
+        let (receiver, _, restarted) = try makeModel(
+            accountIDs: ["receiver-a", "receiver-b"], samePlexLogin: true, profileStore: destinationStore
+        )
+        XCTAssertTrue(restarted.profiles.allSatisfy { $0.plexHomeUserBindings == nil })
+        receiver.presentUserSelection(.init(
+            accountID: "receiver-a", serverName: "Plex", users: users,
+            isFirstRun: true, applyToAccountIDs: ["receiver-a", "receiver-b"]
+        ))
+        XCTAssertEqual(receiver.importOnboardingProfiles(), .existing)
+        XCTAssertEqual(Set(restarted.profiles.map(\.id)), originalIDs)
+        XCTAssertEqual(receiver.importedOnboardingProfileID(for: users[1]), customized.id)
+        let child = try XCTUnwrap(restarted.profiles.first { $0.id == customized.id })
+        XCTAssertEqual(child.name, customized.name)
+        XCTAssertEqual(child.lock, customized.lock)
+        XCTAssertTrue(child.isKids)
+        XCTAssertTrue(child.needsSetup)
+        XCTAssertFalse(restarted.isProfileUnlocked(child.id))
+        for id in ["receiver-a", "receiver-b"] {
+            XCTAssertEqual(child.homeUserBinding(forPlexAccount: id)?.homeUserID, "child")
+            XCTAssertNil(receiver.resolvedToken(for: id), "Import must not authenticate the protected active parent.")
+        }
+        XCTAssertEqual(receiver.importOnboardingProfiles(), .existing)
+        XCTAssertEqual(Set(destinationStore.loadProfiles().map(\.id)), originalIDs)
+    }
+
+    func testPlexImportDoesNotMergeNamesDifferentOwnersOrConflictingLocalBindings() throws {
+        let cases: [(PlexHomeImportIdentity?, String?)] = [
+            (nil, nil),
+            (.init(ownerUserID: "another-owner", homeUserID: "child"), nil),
+            (.init(ownerUserID: "shared-owner", homeUserID: "different-child"), nil),
+            (.init(ownerUserID: "shared-owner", homeUserID: "child"), "different-child")
+        ]
+        for (origin, localUserID) in cases {
+            let (model, _, profiles) = try makeModel(accountIDs: ["a"], samePlexLogin: true)
+            let existing = profiles.add(
+                name: "Child",
+                plexHomeUserBindings: localUserID.map { [
+                    "a": PlexHomeUserBinding(homeUserID: $0, name: "Child", requiresPIN: true)
+                ] },
+                plexHomeImportIdentity: origin
+            )
+            let user = PlexHomeUser(id: "child", name: "Child", requiresPIN: false)
+            model.presentUserSelection(.init(
+                accountID: "a", serverName: "Plex", users: [user], isFirstRun: false, applyToAccountIDs: ["a"]
+            ))
+            XCTAssertEqual(model.importOnboardingProfiles(), .added)
+            XCTAssertEqual(profiles.profiles.count, 3)
+            XCTAssertEqual(profiles.profiles.first { $0.id == existing.id }, existing)
+            XCTAssertNotEqual(model.importedOnboardingProfileID(for: user), existing.id)
+        }
     }
 
     func testDisabledPlexBindingsDoNotRequestAuthorization() async throws {

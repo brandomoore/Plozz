@@ -213,13 +213,13 @@ enum HeroForegroundModelBuilder {
                     )
                 )
             }
-            let base = input.isResume ? "Resume" : "Play"
-            let plain = input.seasonEpisodeText.map { base + " " + $0 } ?? base
+            let title: LocalizedStringResource = input.isResume ? "Resume" : "Play"
             return HeroForegroundModel.Pill(
                 kind: .play,
-                text: plain,
+                text: input.seasonEpisodeText.map { " " + $0 },
                 systemImage: "play.fill",
-                progress: nil
+                progress: nil,
+                localizedTitle: title
             )
         case .request:
             return HeroForegroundModel.Pill(

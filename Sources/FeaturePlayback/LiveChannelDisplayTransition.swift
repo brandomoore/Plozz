@@ -25,10 +25,13 @@ final class LiveChannelDisplayTransition {
     ) -> UUID {
         reset()
         veil.isDynamicRangeFadeEnabled = settings.fadeOnDynamicRangeChange
-        if isFullscreen, settings.fadeOnDynamicRangeChange,
-           changesSource || range == nil || range?.isHDR == true {
-            pendingRange = .awaitingEngineProbe(hint: range)
-            veil.beginProbeTransition(replacing: changesSource ? range.map(HDRDisplayMode.init) : .sdr)
+        veil.isFrameRateFadeEnabled = settings.fadeOnFrameRateChange
+        if isFullscreen {
+            // A replaced player's range describes the old source, not the incoming channel.
+            let hint = changesSource ? nil : range
+            pendingRange = .awaitingEngineProbe(hint: hint)
+            veil.beginProbeTransition(
+                replacing: changesSource ? range.map(HDRDisplayMode.init) : .sdr, hint: hint)
         }
         return generation
     }

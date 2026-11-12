@@ -1,4 +1,5 @@
 import AVFoundation
+import CoreImage
 import CoreModels
 @testable import EnginePlozzigen
 import SwiftUI
@@ -9,6 +10,292 @@ import XCTest
 
 @MainActor
 final class VideoZoomPresentationTests: XCTestCase {
+    #if os(tvOS)
+    func testAudioBorderAddsOnePointToTwoPixelsAndOnlyAppearsWithoutFocus() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        let state = VideoAudioGlowState()
+        let fixture = { (focused: Bool, active: Bool, scale: CGFloat, background: Color) in
+            VideoAudioGlow(state: state, isActive: active, cornerRadius: 20, isFocused: focused)
+                .frame(width: 640, height: 360)
+                .overlay { RoundedRectangle(cornerRadius: 20).fill(background) }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(background)
+                .environment(\.displayScale, scale)
+                .environment(\._accessibilityReduceMotion, true)
+                .ignoresSafeArea()
+        }
+        let host = UIHostingController(rootView: fixture(true, true, 1, .black))
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        func intensity(scale: CGFloat, pixel: Int) throws -> Float {
+            let format = UIGraphicsImageRendererFormat()
+            format.scale = scale
+            let image = UIGraphicsImageRenderer(bounds: window.bounds, format: format).image { _ in
+                window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+            }
+            let region = CGRect(x: (window.bounds.midX - 100) * scale,
+                                y: (window.bounds.midY + 180) * scale + CGFloat(pixel),
+                                width: 200 * scale, height: 1)
+            let crop = try XCTUnwrap(image.cgImage?.cropping(to: region))
+            let ci = CIImage(cgImage: crop)
+            let average = ci.applyingFilter("CIAreaAverage", parameters: [kCIInputExtentKey: CIVector(cgRect: ci.extent)])
+            var value = [Float](repeating: 0, count: 4)
+            CIContext().render(average, toBitmap: &value, rowBytes: 16,
+                               bounds: CGRect(x: 0, y: 0, width: 1, height: 1),
+                               format: .RGBAf, colorSpace: CGColorSpaceCreateDeviceRGB())
+            return (value[0] + value[1] + value[2]) / 3
+        }
+        try await Task.sleep(for: .milliseconds(1300))
+        for scale: CGFloat in [1, 2] {
+            let borderPixels = 2 + Int(scale)
+            let samplePixels = 0..<(borderPixels + 3)
+            host.rootView = fixture(true, true, scale, .black)
+            try await Task.sleep(for: .milliseconds(100))
+            let focused = try samplePixels.map { try intensity(scale: scale, pixel: $0) }
+            host.rootView = fixture(false, true, scale, .black)
+            try await Task.sleep(for: .milliseconds(100))
+            let unfocused = try samplePixels.map { try intensity(scale: scale, pixel: $0) }
+            let border = zip(unfocused, focused).map { $0 - $1 }
+            let peak = try XCTUnwrap(border.max())
+            XCTAssertEqual(peak, 0.44, accuracy: 0.04,
+                           "The outline must be 20% dimmer than its previous 55% opacity.")
+            XCTAssertGreaterThan(peak, 0)
+            // Snapshot scaling can distribute an edge pixel across two samples.
+            XCTAssertEqual(border.reduce(0, +) / peak, Float(borderPixels), accuracy: 0.25,
+                           "Integrated stroke coverage must equal two physical pixels plus one point.")
+            XCTAssertLessThan(abs(border[borderPixels]), 0.08)
+            for value in border.dropFirst(borderPixels + 1) {
+                XCTAssertEqual(value, 0, accuracy: 0.015,
+                               "Only faint edge antialiasing may extend beyond two pixels plus one point.")
+            }
+        }
+        for (background, sample) in [
+            (Color.white, SIMD4<Float>(0, 0, 0, 0)),
+            (.red, SIMD4<Float>(1, 0.52, 0.52, 0.9)),
+            (.cyan, SIMD4<Float>(0.52, 1, 1, 0.9)),
+            (.yellow, SIMD4<Float>(1, 1, 0.52, 0.9))
+        ] {
+            state.updatePalette(Array(repeating: sample, count: 3))
+            host.rootView = fixture(true, true, 1, background)
+            try await Task.sleep(for: .milliseconds(100))
+            let focused = try (0..<5).map { try intensity(scale: 1, pixel: $0) }
+            host.rootView = fixture(false, true, 1, background)
+            try await Task.sleep(for: .milliseconds(100))
+            let outlined = try (0..<5).map { try intensity(scale: 1, pixel: $0) }
+            let contrast = zip(outlined, focused).map { abs($0 - $1) }
+            XCTAssertGreaterThan(try XCTUnwrap(contrast.max()), 0.04,
+                                 "The tinted rim and fine dark edge must remain distinct on bright, saturated backgrounds.")
+            let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+                window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+            }
+            let attachment = XCTAttachment(image: image)
+            attachment.name = "Audio outline contrast \(background)"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+        }
+        host.rootView = fixture(false, false, 1, .black)
+        try await Task.sleep(for: .milliseconds(100))
+        XCTAssertEqual(try intensity(scale: 1, pixel: 0), 0, accuracy: 0.004)
+    }
+
+    func testAudioGlowFadesOutsideTheNativeFocusedPictureWithoutResizingIt() async throws {
+        try await assertAudioGlowTransitions(reduceMotion: false)
+    }
+
+    func testAudioGlowKeepsItsDwellDelayButSkipsFadesWithReducedMotion() async throws {
+        try await assertAudioGlowTransitions(reduceMotion: true)
+    }
+
+    private func assertAudioGlowTransitions(reduceMotion: Bool) async throws {
+        struct Surface: UIViewRepresentable {
+            let view: UIView
+            func makeUIView(context: Context) -> UIView { view }
+            func updateUIView(_ uiView: UIView, context: Context) {}
+        }
+        struct Fixture: View {
+            let surface: UIView
+            let glow: VideoAudioGlowState
+            let active: Bool
+            var body: some View {
+                Surface(view: surface)
+                    .videoCardFocusSurface { focused in
+                        VideoAudioGlow(state: glow, isActive: active, cornerRadius: 20, isFocused: focused)
+                    }
+                    .environment(\.videoCardFocus, VideoCardFocus(
+                        identifier: "audio-glow-test", title: "Video", audible: active, presentsEffect: true,
+                        cornerRadius: 20, horizontalInset: 0, request: 1, prefersFocus: true,
+                        focused: { _ in }, activate: {}, promote: {}, replace: {}))
+                    .frame(width: 640, height: 360)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(Color.black)
+            }
+        }
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        let surface = UIView()
+        surface.backgroundColor = .blue
+        let glow = VideoAudioGlowState()
+        let fixture = { (active: Bool) in
+            Fixture(surface: surface, glow: glow, active: active)
+                .environment(\._accessibilityReduceMotion, reduceMotion)
+        }
+        let host = UIHostingController(rootView: fixture(false))
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        try await waitUntil { surface.window != nil && surface.convert(surface.bounds, to: window).width > 650 }
+        try await Task.sleep(for: .milliseconds(700))
+        let frame = surface.convert(surface.bounds, to: window)
+        func edgeIntensity(distance: CGFloat = 80) throws -> Float {
+            let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+                window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+            }
+            let ci = try XCTUnwrap(CIImage(image: image))
+            let scale = image.scale
+            let region = CGRect(x: (frame.midX - 100) * scale,
+                                y: (window.bounds.height - frame.maxY - distance) * scale,
+                                width: 200 * scale, height: 7 * scale)
+            let average = ci.applyingFilter("CIAreaAverage", parameters: [kCIInputExtentKey: CIVector(cgRect: region)])
+            var pixel = [Float](repeating: 0, count: 4)
+            CIContext().render(average, toBitmap: &pixel, rowBytes: 16,
+                               bounds: CGRect(x: 0, y: 0, width: 1, height: 1),
+                               format: .RGBAf, colorSpace: CGColorSpaceCreateDeviceRGB())
+            return (pixel[0] + pixel[1] + pixel[2]) / 3
+        }
+        let initial = try edgeIntensity()
+        host.rootView = fixture(true)
+        try await Task.sleep(for: .milliseconds(650))
+        XCTAssertEqual(try edgeIntensity(), initial, accuracy: 0.001,
+                       "A newly audible picture must wait before showing its glow.")
+        try await Task.sleep(for: .milliseconds(1250))
+        let entering = try edgeIntensity()
+        try await Task.sleep(for: .milliseconds(800))
+        let midway = try edgeIntensity()
+        try await Task.sleep(for: .milliseconds(1700))
+        let active = try edgeIntensity()
+        if !reduceMotion {
+            XCTAssertGreaterThan(entering, initial)
+            XCTAssertGreaterThan(midway, entering)
+            XCTAssertGreaterThan(active, midway, "The three-second fade-in must continue beyond its old 1.5-second duration.")
+        } else {
+            XCTAssertEqual(entering, active, accuracy: 0.001)
+        }
+        let distances: [CGFloat] = [32, 80, 140, 280]
+        let activeFalloff = try distances.map { try edgeIntensity(distance: $0) }
+        host.rootView = fixture(false)
+        try await Task.sleep(for: .milliseconds(700))
+        let fading = try edgeIntensity()
+        try await Task.sleep(for: .milliseconds(1000))
+        let inactive = try edgeIntensity()
+        let inactiveFalloff = try distances.map { try edgeIntensity(distance: $0) }
+        let falloff = zip(activeFalloff, inactiveFalloff).map { $0 - $1 }
+        XCTAssertGreaterThan(active - inactive, 0.005, "The glow must remain visible 73-80 points beyond the lifted picture.")
+        XCTAssertGreaterThan(falloff[1], falloff[0] * 0.25, "The outer glow must fade gradually, not end at a narrow rim.")
+        XCTAssertGreaterThan(falloff[2], 0.0006, "A soft tail must remain visible 133-140 points beyond the picture.")
+        XCTAssertLessThan(falloff[3], 0.002, "The glow must eventually fade into the surrounding black.")
+        for (near, far) in zip(falloff, falloff.dropFirst()) {
+            XCTAssertGreaterThan(near, far, "The glow must weaken smoothly with distance: \(falloff)")
+        }
+        if !reduceMotion {
+            XCTAssertGreaterThan(active, fading)
+            XCTAssertGreaterThan(fading, inactive, "Fade-out must remain visible beyond the old 0.6-second duration.")
+        } else {
+            XCTAssertEqual(fading, inactive, accuracy: 0.001)
+        }
+        host.rootView = fixture(true)
+        try await Task.sleep(for: .milliseconds(350))
+        host.rootView = fixture(false)
+        try await Task.sleep(for: .milliseconds(900))
+        XCTAssertEqual(try edgeIntensity(), inactive, accuracy: 0.001,
+                       "Passing briefly over a picture must cancel its pending glow.")
+        host.rootView = fixture(true)
+        try await Task.sleep(for: .milliseconds(650))
+        XCTAssertEqual(try edgeIntensity(), inactive, accuracy: 0.001,
+                       "Returning to the picture must start a fresh dwell delay.")
+        try await Task.sleep(for: .milliseconds(1250))
+        let appearing = try edgeIntensity()
+        try await Task.sleep(for: .milliseconds(2500))
+        let restored = try edgeIntensity()
+        XCTAssertGreaterThan(restored - inactive, 0.005)
+        if !reduceMotion {
+            XCTAssertGreaterThan(appearing, inactive)
+            XCTAssertGreaterThan(restored, appearing)
+        } else {
+            XCTAssertEqual(appearing, restored, accuracy: 0.001)
+        }
+        XCTAssertEqual(surface.convert(surface.bounds, to: window), frame)
+    }
+
+    func testAudioGlowBorrowsBothDecodersAndStopsWhenInactive() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        let host = UIViewController()
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        let folder = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "Fixtures", withExtension: nil))
+        let engines: [(any VideoEngine, String)] = [
+            (NativeVideoEngine(startsMuted: true), "glow-hd.mp4"),
+            (try PlozzigenVideoEngine(), "glow-software.mkv"),
+            (LibraryLiveChannelEngine(engine: try PlozzigenVideoEngine()), "glow-software.mkv")
+        ]
+        for (engine, filename) in engines {
+            let video = VideoPresentationView(frame: CGRect(x: 0, y: 0, width: 640, height: 360))
+            host.view.addSubview(video)
+            video.attach(engine)
+            let glow = VideoAudioGlowState()
+            defer { glow.stop(); video.removeFromSuperview(); engine.stop() }
+            await engine.load(request: PlaybackRequest(
+                item: MediaItem(id: filename, title: "Synthetic video", kind: .movie),
+                streamURL: folder.appendingPathComponent(filename)), startPosition: 0)
+            try await waitUntil(timeout: 20) { engine.hasPresentedVideoFrame }
+            let item = engine.nowPlayingPlayer?.currentItem
+            let outputs = item?.outputs.count
+            let neutral = glow.colors
+            glow.update(engine: engine, enabled: true)
+            try await waitUntil(timeout: 5) { glow.sampleCount > 0 }
+            XCTAssertNotEqual(glow.colors, neutral, "The indicator must use decoded picture colors.")
+            if filename.hasSuffix("mkv") {
+                XCTAssertNil(item)
+                XCTAssertNotNil(engine.previewVideoFrame())
+                XCTAssertNotNil(engine.previewFrameGeneration)
+            } else {
+                XCTAssertNotNil(item)
+                XCTAssertEqual(item?.outputs.count, try XCTUnwrap(outputs) + 1)
+            }
+            engine.pause()
+            try await Task.sleep(for: .milliseconds(700))
+            let pausedCount = glow.sampleCount
+            try await Task.sleep(for: .milliseconds(600))
+            XCTAssertEqual(glow.sampleCount, pausedCount)
+            let retainedColors = glow.colors
+            glow.update(engine: engine, enabled: false)
+            XCTAssertFalse(glow.isSampling)
+            XCTAssertEqual(glow.colors, retainedColors, "Keep the last palette available during the fade-out.")
+            XCTAssertEqual(item?.outputs.count, outputs)
+            try await Task.sleep(for: .milliseconds(600))
+            XCTAssertEqual(glow.sampleCount, pausedCount)
+        }
+    }
+    #endif
+
     func testPerformancePictureEnabled() async throws {
         try await measurePicture(players: 1, enabled: true)
     }

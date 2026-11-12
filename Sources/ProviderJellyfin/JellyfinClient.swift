@@ -276,7 +276,7 @@ public struct JellyfinClient: Sendable {
         userID: String, sectionID: String, limit: Int, parentID: String?
     ) async throws -> [BaseItemDto] {
         if limit == Int.max {
-            return try await exhaustiveContinueWatchingItems { startIndex, pageSize in
+            return try await exhaustiveItems { startIndex, pageSize in
                 try await nativeHomeItemsPage(
                     userID: userID, sectionID: sectionID, startIndex: startIndex,
                     limit: pageSize, parentID: parentID
@@ -341,7 +341,7 @@ public struct JellyfinClient: Sendable {
 
     func resumeItems(userID: String, limit: Int, parentID: String? = nil) async throws -> [BaseItemDto] {
         if limit == Int.max {
-            return try await exhaustiveContinueWatchingItems { startIndex, pageSize in
+            return try await exhaustiveItems { startIndex, pageSize in
                 return try await resumeItemsPage(
                     userID: userID,
                     startIndex: startIndex,
@@ -403,7 +403,7 @@ public struct JellyfinClient: Sendable {
         userID: String, limit: Int, parentID: String? = nil, seriesID: String? = nil
     ) async throws -> [BaseItemDto] {
         if limit == Int.max {
-            return try await exhaustiveContinueWatchingItems { startIndex, pageSize in
+            return try await exhaustiveItems { startIndex, pageSize in
                 return try await nextUpItemsPage(
                     userID: userID,
                     startIndex: startIndex,
@@ -462,7 +462,7 @@ public struct JellyfinClient: Sendable {
     /// actual row count and a missing total is completed only by an empty page.
     /// Duplicate/non-advancing pages fail closed instead of hanging or presenting
     /// a silently truncated "unlimited" row.
-    private func exhaustiveContinueWatchingItems(
+    private func exhaustiveItems(
         page: (Int, Int) async throws -> ItemsResponse
     ) async throws -> [BaseItemDto] {
         let pageSize = 100
@@ -1487,6 +1487,7 @@ public struct JellyfinClient: Sendable {
                 played = nil
             }
             try Task.checkCancellation()
+            try await WatchMutationDeliveryAuthorization.check()
             var endpoint = Endpoint(
                 method: .post,
                 path: isEmby ? "/Users/\(userID)/Items/\(itemID)/UserData" : "/UserItems/\(itemID)/UserData",
@@ -1504,6 +1505,38 @@ public struct JellyfinClient: Sendable {
             HandoffDiagnostics.emit("session RESUME_WRITE_FAILED \(context) error=\(HandoffDiagnostics.errorCode((error as? AppError) ?? .unknown("")))")
             throw error
         }
+    }
+
+    func watchStateEpisodes(userID: String, parentID: String, kind: MediaItemKind) async throws -> [BaseItemDto] {
+        guard kind == .season || kind == .series else { throw AppError.invalidResponse }
+        let episodes = try await exhaustiveItems { startIndex, limit in
+            try await WatchMutationDeliveryAuthorization.check()
+            return try await items(
+                userID: userID, parentID: parentID, includeItemTypes: ["Episode"],
+                recursive: true, startIndex: startIndex, limit: limit,
+                sort: .default, fields: "UserData,ParentId"
+            )
+        }
+        guard episodes.allSatisfy({
+            $0.Type == "Episode"
+                && (kind == .season ? $0.SeasonId : $0.SeriesId) == parentID
+                && $0.UserData?.Played != nil
+        }) else { throw AppError.invalidResponse }
+        return episodes
+    }
+
+    func episodeWatchState(userID: String, itemID: String, parentID: String, kind: MediaItemKind) async throws -> UserItemDataDto {
+        try Task.checkCancellation()
+        try await WatchMutationDeliveryAuthorization.check()
+        let item = try await http.decode(
+            BaseItemDto.self,
+            from: Endpoint(path: "/Users/\(userID)/Items/\(itemID)", headers: authHeaders),
+            baseURL: baseURL
+        )
+        guard item.Id == itemID, item.Type == "Episode",
+              (kind == .season ? item.SeasonId : item.SeriesId) == parentID,
+              let state = item.UserData, state.Played != nil else { throw AppError.invalidResponse }
+        return state
     }
 
     /// `POST`/`DELETE /Users/{userId}/PlayedItems/{itemId}` — marks an item

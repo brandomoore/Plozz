@@ -56,11 +56,16 @@ extension PlozziOSAppModel {
             },
             applyRecords: { [weak model] changes in
                 await model?.applyMediaStateSyncRecords(changes)
+            },
+            applySnapshot: { [weak model] snapshot in
+                await model?.applyMediaStateSyncRecords(
+                    snapshot.changes, localCaptureDigests: snapshot.localCaptureDigests
+                )
             }
         )
 
         // Tracker sign-ins. Same shared bridge on both shells; the payload is
-        // encrypted end-to-end, and the Keychain stays the local store of record.
+        // stored in encrypted CloudKit fields; Keychain remains the local store.
         let trackerTokenChannel = CloudConfigSyncService.ChannelConfiguration(
             schema: .trackerTokensV1,
             stateFileURL: syncDir.appendingPathComponent(
@@ -86,11 +91,7 @@ extension PlozziOSAppModel {
         ) { [weak model] _ in
             Task { @MainActor in
                 guard let model else { return }
-                await model.traktService.refreshStatus()
-                await model.simklService.refreshStatus()
-                await model.wetrakrService.refreshStatus()
-                await model.anilistService.refreshStatus()
-                await model.malService.refreshStatus()
+                await model.refreshSyncedTrackerSignIns()
             }
         }
 
@@ -102,6 +103,8 @@ extension PlozziOSAppModel {
         Task { await TraktSharedRefreshBootstrap.synchronizeKnownAccounts() }
 
         var channels = [mediaChannel, trackerTokenChannel]
+        channels.append(model.providerCredentialSync.channel(
+            stateFileURL: syncDir.appendingPathComponent("cloud-provider-credentials-v1.sealed")))
         channels.append(Self.makeLiveTVSyncChannel(
             bridge: model.liveTVPortableSync,
             stateFileURL: syncDir.appendingPathComponent("cloud-live-tv-state-v1.json")
@@ -114,7 +117,7 @@ extension PlozziOSAppModel {
         return CloudConfigSyncService(.init(
             containerIdentifier: cloudContainerIdentifier,
             stateFileURL: configStateURL,
-            isEnabled: { SyncSetupFeatureFlag().isEnabled && !OfflineMode.shared.isEnabled },
+            isEnabled: { SyncSetupFeatureFlag().allowsAutomaticSync && !OfflineMode.shared.isEnabled },
             captureRecords: { [weak model] fallback in
                 guard let model else { return [:] }
                 return await model.captureSyncRecords(fallback: fallback)
@@ -404,7 +407,8 @@ extension PlozziOSAppModel {
     /// one-time "set it up here?" prompt for any newly-detected media server. Mirrors
     /// tvOS `AppState.refreshPendingSyncedServers()`.
     func refreshPendingSyncedServers() {
-        var store = PendingSyncedServersStore()
+        providerCredentialSync.reconcile()
+        let store = PendingSyncedServersStore()
         let localIDs = Set(accountsProviders.accounts.map(\.id))
         // Household-removed (tombstoned) servers are hidden and never prompted here.
         let removedIDs = RemovedAccountsStore().removedIDs
@@ -416,22 +420,7 @@ extension PlozziOSAppModel {
         }
         pendingSyncedServers = store.pending(excludingLocal: localIDs)
             .filter { !removedIDs.contains($0.id) }
-        guard SyncSetupFeatureFlag().isEnabled, pendingSyncedServerPrompt == nil else { return }
-        let newly = store.newlyPending(excludingLocal: localIDs)
-            .filter { !removedIDs.contains($0.id) }
-        // Only nudge for media servers we can sign into here (Jellyfin/Emby/Plex), AND
-        // only when there's no synced login already waiting — if this device already has
-        // the iCloud-Keychain credential (e.g. published by the user's iPhone),
-        // `autoConnectFromSyncedCredentials()` signs in silently, so a manual "add this
-        // server?" prompt would be redundant. Media shares are set up differently.
-        if let first = newly.first(where: { $0.provider != .mediaShare && !hasPortableCredential($0.id) }) {
-            pendingSyncedServerPrompt = first
-        }
-        // Mark every newly-pending id prompted (including skipped media shares and
-        // auto-connectable ones) so the one-time nudge never re-fires for them.
-        if !newly.isEmpty {
-            store.markPrompted(newly.map(\.id))
-        }
+        // Do not prompt before the separately delivered credentials arrive.
     }
 
     /// Stop surfacing a synced server the user doesn't want here.
@@ -464,19 +453,16 @@ extension PlozziOSAppModel {
     /// would falsely announce "we found X" for a server that's already present. So it
     /// starts from `pendingSyncedServers` (already excludes the local roster and
     /// removed tombstones) and additionally drops anything that will silently
-    /// auto-connect from an iCloud-Keychain credential (`hasPortableCredential` — the
-    /// iOS→iOS case, which needs no screen at all). What remains is servers whose only
-    /// login lives on a device that can't hand it over automatically — in practice the
-    /// Apple TV. Media shares (NFS/SMB/WebDAV/…) are INCLUDED: they're never published
-    /// to the synced credential store (so never auto-connect) but the pairing transfer
-    /// this page runs DOES bring them over, so listing them keeps the "we found" summary
-    /// honest — otherwise a share would appear only after setup, which is confusing.
+    /// auto-connect through the shared encrypted credential channel. Remaining
+    /// entries need manual attention, such as a protected Silo profile or a
+    /// device-local SSH key.
     var pendingServersNeedingSetup: [SyncedAccountDescriptor] {
         pendingSyncedServers.filter { !hasPortableCredential($0.id) }
     }
 
     var pendingSetupOffers: [SyncedAccountDescriptor] {
-        PendingSyncedServersStore().setupOffers(
+        guard providerCredentialSync.isReadyForManualSetup else { return [] }
+        return PendingSyncedServersStore().setupOffers(
             from: pendingServersNeedingSetup.filter(\.provider.permitsCredentialTransfer)
         )
     }
@@ -493,7 +479,7 @@ extension PlozziOSAppModel {
     /// Record this device in the household presence registry (so peers know it exists).
     func heartbeatHouseholdPresence() {
         guard !isOfflineMode else { return }
-        guard SyncSetupFeatureFlag().isEnabled else { return }
+        guard SyncSetupFeatureFlag().allowsAutomaticSync else { return }
         HouseholdDevicesStore().heartbeat(
             deviceID: deviceID,
             deviceName: DeviceDisplayName.current(fallback: UIDevice.current.name))
@@ -532,9 +518,13 @@ extension PlozziOSAppModel {
     // MARK: Lifecycle + change observation
 
     func startCloudSyncIfEnabled() {
+        if initialSetupRestoration.needsRestoration, !Self.isRunningUnitTests {
+            restoreInitialICloudSetup()
+            return
+        }
         guard !isOfflineMode else { return }
         TraktSharedRefreshBootstrap.install(containerIdentifier: Self.cloudContainerIdentifier)
-        guard SyncSetupFeatureFlag().isEnabled else { return }
+        guard SyncSetupFeatureFlag().allowsAutomaticSync else { return }
         guard !Self.isRunningUnitTests else { return }
         let config = cloudSync
         guard let config else { return }
@@ -553,7 +543,7 @@ extension PlozziOSAppModel {
         guard cloudSync != nil else { return }
         withObservationTracking {
             _ = profiles.profiles
-            _ = accountsProviders.accounts.count
+            _ = accountsProviders.accounts
         } onChange: { [weak self] in
             Task { @MainActor in
                 self?.scheduleCloudPublish()
@@ -564,7 +554,7 @@ extension PlozziOSAppModel {
 
     func scheduleCloudPublish() {
         guard !isOfflineMode else { return }
-        guard SyncSetupFeatureFlag().isEnabled,
+        guard SyncSetupFeatureFlag().allowsAutomaticSync,
               cloudSync != nil else {
             return
         }
@@ -581,6 +571,69 @@ extension PlozziOSAppModel {
         }
     }
 
+    func completeICloudOnboarding(_ enabled: Bool) {
+        guard syncSetup.needsOnboardingChoice else { return }
+        if enabled {
+            setSyncSetupEnabled(true)
+        } else {
+            syncSetup.setEnabled(false)
+        }
+    }
+
+    private func refreshSyncedTrackerSignIns() async {
+        await traktService.refreshStatus()
+        await simklService.refreshStatus()
+        await wetrakrService.refreshStatus()
+        await anilistService.refreshStatus()
+        await malService.refreshStatus()
+    }
+
+    func restoreInitialICloudSetup() {
+        initialSetupRestoration.start(operation: { [weak self] in
+            guard let self, SyncSetupFeatureFlag().allowsAutomaticSync, !self.isOfflineMode,
+                  let config = self.cloudSync else { return false }
+            let report = self.initialSetupRestoration.activityReporter()
+            let fetched = await config.activate(initialSetupOnly: true, onInitialSetupActivity: { activity in
+                await report(activity)
+            })
+            guard !Task.isCancelled, SyncSetupFeatureFlag().allowsAutomaticSync else { return false }
+            report(nil)
+            self.providerCredentialSync.reconcile()
+            await self.providerCredentialSync.finishPendingRestoration()
+            return fetched && !Task.isCancelled && SyncSetupFeatureFlag().allowsAutomaticSync && !self.isOfflineMode
+                && self.providerCredentialSync.isReadyForManualSetup
+        }, onRestored: { [weak self] in
+            self?.finishInitialICloudSetup()
+        })
+    }
+
+    func setUpManuallyAfterICloudRestore() {
+        initialSetupRestoration.setUpManually(pause: { [weak self] in
+            guard let self else { return }
+            providerCredentialSync.cancel()
+            cloudPublishTask?.cancel()
+            portableCredentialPublisher.cancelPendingPublication()
+            pendingSyncSetupOffer = nil
+            await cloudSync?.deactivateAndCancel()
+        }, onReady: { [weak self] in self?.continueManualICloudSetupIfReady() })
+    }
+
+    func continueManualICloudSetupIfReady() {
+        guard !isOfflineMode, isActiveProfileAuthorized, !profiles.activeProfile.needsSetup,
+              initialSetupRestoration.isManualSetupPending,
+              initialSetupRestoration.phase == .hidden else { return }
+        guard initialSetupRestoration.resumeAfterManualSetup(for: profiles.activeProfileID) else {
+            resumeProfileOnboardingIfNeeded(manualICloudSetup: true)
+            return
+        }
+        finishInitialICloudSetup()
+    }
+
+    private func finishInitialICloudSetup() {
+        startCloudSyncIfEnabled()
+        Task { await refreshSyncedTrackerSignIns() }
+    }
+
     /// Turn cross-device Sync & Setup on/off. Enabling activates CloudKit sync;
     /// disabling stops publishing but never deletes the shared cloud config.
     func setSyncSetupEnabled(_ on: Bool) {
@@ -588,18 +641,33 @@ extension PlozziOSAppModel {
             PlozzLog.sync.info("iCloud Sync cannot be enabled during recovery")
             return
         }
+        if !on, syncSetup.isEnabled {
+            do {
+                try TrackerTokenSyncBridge.preserveLocalSignInsBeforeDisablingSync()
+            } catch {
+                PlozzLog.sync.error("Could not preserve local tracker sign-ins; iCloud Sync remains enabled")
+                return
+            }
+        }
+        let isInitialSetup = on && syncSetup.needsOnboardingChoice
         syncSetup.setEnabled(on)
+        if isInitialSetup { restoreInitialICloudSetup() }
+        if !on { initialSetupRestoration.cancel() }
         guard !isOfflineMode else { return }
         if !on {
+            providerCredentialSync.cancel()
             cloudPublishTask?.cancel()
             portableCredentialPublisher.cancelPendingPublication()
         }
         let config = cloudSync
         guard let config else { return }
         if on {
-            Task {
-                guard !isOfflineMode else { return }
-                await config.activate()
+            if !isInitialSetup {
+                Task {
+                    guard !isOfflineMode else { return }
+                    await config.activate()
+                    await refreshSyncedTrackerSignIns()
+                }
             }
             armCloudConfigObservation()
             scheduleCloudPublish()
@@ -615,10 +683,12 @@ extension PlozziOSAppModel {
     /// Lightweight foreground pull (iOS). Same effect as tapping Sync Now's fetch.
     func syncCloudOnForeground() {
         guard !isOfflineMode else { return }
-        guard SyncSetupFeatureFlag().isEnabled else { return }
+        guard SyncSetupFeatureFlag().allowsAutomaticSync else { return }
+        accountsProviders.reloadAccounts()
         let config = cloudSync
         Task {
             await config?.fetchNow()
+            providerCredentialSync.reconcile()
         }
         heartbeatHouseholdPresence()
         checkForSyncSetupOffer()
@@ -635,7 +705,7 @@ extension PlozziOSAppModel {
     /// shared/stale Apple ID can't silently harvest tokens (matches Apple's "set up new
     /// device" pattern, which also confirms on the source).
     func checkForSyncSetupOffer() {
-        guard SyncSetupFeatureFlag().isEnabled, pendingSyncSetupOffer == nil else { return }
+        guard SyncSetupFeatureFlag().allowsAutomaticSync, pendingSyncSetupOffer == nil else { return }
         let localIDs = Set(accountsProviders.accounts.map(\.id))
         guard !localIDs.isEmpty else { return }         // nothing to give
         // Pairing hands another device this household's servers, profiles and
@@ -815,7 +885,9 @@ extension PlozziOSAppModel {
         }
     }
 
-    func applyMediaStateSyncRecords(_ changes: SyncLocalChanges) async {
+    func applyMediaStateSyncRecords(
+        _ changes: SyncLocalChanges, localCaptureDigests: [SyncRecordID: Data]? = nil
+    ) async {
         var parsed: [MediaAliasRemoteChange] = []
         var watchlistChanges:
             [String: [WatchlistMediaStateRecordKey: Data]] = [:]
@@ -850,15 +922,18 @@ extension PlozziOSAppModel {
         var appliedWatchlistCount = 0
         var rejectedWatchlistCount = 0
         var ignoredDeletedProfileCount = 0
+        var preservedLocalCount = 0
         for profileID in watchlistChanges.keys.sorted() {
             guard let records = watchlistChanges[profileID] else { continue }
             do {
                 let report = try universalWatchlist.applyRemoteSyncRecords(
                     profileID: profileID,
-                    changes: records
+                    changes: records,
+                    localCaptureDigests: localCaptureDigests
                 )
                 appliedWatchlistCount += report.appliedCount
                 rejectedWatchlistCount += report.rejectedCount
+                preservedLocalCount += report.preservedLocalCount
                 ignoredDeletedProfileCount +=
                     report.ignoredDeletedProfileRecordNames.count
                 if report.appliedCount > 0 {
@@ -883,6 +958,10 @@ extension PlozziOSAppModel {
             // it: a remote removal that leaves the active count where it was is
             // otherwise invisible to that memo's revision key.
             announceUniversalWatchlistDidChange()
+        }
+        if preservedLocalCount > 0 {
+            PlozzLog.sync.info("Watchlist sync preserved \(preservedLocalCount) newer uncaptured local action(s)")
+            scheduleCloudPublish()
         }
     }
 
@@ -912,6 +991,7 @@ extension PlozziOSAppModel {
         guard result == .completed else { return result }
         guard await authorized() else { return .interrupted }
         do {
+            try providerCredentialSync.eraseLocalState()
             try TrackerTokenSyncBridge.eraseLocalTokens()
             try await removeAllPortableCredentials()
             guard await authorized() else { return .interrupted }

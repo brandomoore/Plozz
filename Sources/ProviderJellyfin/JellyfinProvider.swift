@@ -3014,10 +3014,42 @@ extension JellyfinProvider: SupplementalStreamFactsProviding {
 // MARK: - Watched state
 
 extension JellyfinProvider: WatchStateProviding {
-    /// Toggles an item's played/watched state on the server. For a season or
-    /// series id Jellyfin cascades the change to the contained episodes.
     public func setPlayed(_ played: Bool, itemID: String) async throws {
         try await client.setItemPlayed(played, userID: session.userID, itemID: itemID)
+    }
+
+    public func setPlayed(_ played: Bool, itemID: String, kind: MediaItemKind?, capturedAt: Date) async throws {
+        guard let kind, kind == .season || kind == .series else {
+            try await setPlayed(played, itemID: itemID)
+            return
+        }
+        let before = try await client.watchStateEpisodes(userID: session.userID, parentID: itemID, kind: kind)
+        try Task.checkCancellation()
+        try await WatchMutationDeliveryAuthorization.check()
+        try await setPlayed(played, itemID: itemID)
+
+        // A container/list summary can reflect the parent's new flag while the
+        // individual episode is unchanged. Confirm each leaf independently.
+        for episode in before {
+            let state = try await client.episodeWatchState(
+                userID: session.userID, itemID: episode.Id, parentID: itemID, kind: kind
+            )
+            if state.Played == played, (state.PlaybackPositionTicks ?? 0) <= 0 { continue }
+            try Task.checkCancellation()
+            try await WatchMutationDeliveryAuthorization.check()
+            if state.Played != played {
+                try await setPlayed(played, itemID: episode.Id)
+            }
+            try Task.checkCancellation()
+            try await WatchMutationDeliveryAuthorization.check()
+            try await setResumePosition(0, itemID: episode.Id, capturedAt: capturedAt)
+            let verified = try await client.episodeWatchState(
+                userID: session.userID, itemID: episode.Id, parentID: itemID, kind: kind
+            )
+            guard verified.Played == played, (verified.PlaybackPositionTicks ?? 0) <= 0 else {
+                throw AppError.invalidResponse
+            }
+        }
     }
 }
 

@@ -8,9 +8,8 @@ final class SyncSetupTests: XCTestCase {
     // MARK: Feature flag
 
     func testFeatureFlagDefaultsOnAndPreservesExplicitOptOut() {
-        // Default ON: an unset flag (fresh install) participates in the household so
-        // "open a new device and your stuff is already there" works without hunting
-        // for a toggle.
+        // Existing installations keep the historical default. Fresh launches
+        // prepare the onboarding choice before creating any sync services.
         let d = UserDefaults(suiteName: "syncsetup.test.\(UUID().uuidString)")!
         let flag = SyncSetupFeatureFlag(defaults: d)
         XCTAssertTrue(flag.isEnabled, "unset flag should default ON")
@@ -22,7 +21,69 @@ final class SyncSetupTests: XCTestCase {
         XCTAssertTrue(SyncSetupFeatureFlag(defaults: d).isEnabled)
     }
 
+    func testFreshInstallationWaitsForChoiceAcrossRestartAndSubsequentProfileCreation() throws {
+        let suite = "SyncOnboarding.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let flag = SyncSetupFeatureFlag(defaults: defaults)
+        flag.prepareForLaunch(hasExistingInstallation: false)
+        XCTAssertTrue(flag.needsOnboardingChoice)
+        XCTAssertFalse(flag.isEnabled)
+        XCTAssertFalse(flag.allowsAutomaticSignInSync)
+        let restarted = SyncSetupFeatureFlag(defaults: defaults)
+        restarted.prepareForLaunch(hasExistingInstallation: true)
+        XCTAssertTrue(restarted.needsOnboardingChoice)
+        XCTAssertFalse(restarted.isEnabled)
+        restarted.isEnabled = false
+        XCTAssertFalse(flag.needsOnboardingChoice)
+        XCTAssertFalse(flag.isEnabled)
+        flag.prepareForLaunch(hasExistingInstallation: false)
+        XCTAssertFalse(flag.needsOnboardingChoice)
+        XCTAssertFalse(flag.isEnabled)
+        XCTAssertFalse(flag.allowsAutomaticSignInSync)
+        flag.isEnabled = true
+        XCTAssertTrue(flag.isEnabled)
+        XCTAssertTrue(flag.allowsAutomaticSignInSync)
+    }
+
+    func testOnboardingPreservesExistingDefaultAndExplicitSettings() throws {
+        for existingChoice in [nil, false, true] as [Bool?] {
+            let suite = "SyncOnboardingUpgrade.\(UUID())"
+            let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+            defer { defaults.removePersistentDomain(forName: suite) }
+            if let existingChoice {
+                defaults.set(existingChoice, forKey: SyncSetupFeatureFlag.storageKey)
+            }
+            let flag = SyncSetupFeatureFlag(defaults: defaults)
+            flag.prepareForLaunch(hasExistingInstallation: true)
+            XCTAssertFalse(flag.needsOnboardingChoice)
+            XCTAssertEqual(flag.isEnabled, existingChoice ?? true)
+            XCTAssertTrue(flag.allowsAutomaticSignInSync)
+        }
+    }
+
     // MARK: Descriptor is token-free and derived correctly
+
+    func testManualSetupPauseDoesNotChangeConsentAndOptOutClearsIt() throws {
+        let suite = "SyncSetupManual.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let flag = SyncSetupFeatureFlag(defaults: defaults)
+        flag.isEnabled = true
+        flag.isManualSetupPending = true
+        XCTAssertTrue(flag.isEnabled)
+        XCTAssertFalse(flag.allowsAutomaticSync)
+        XCTAssertFalse(flag.allowsAutomaticSignInSync)
+        let restarted = SyncSetupFeatureFlag(defaults: defaults)
+        XCTAssertTrue(restarted.isManualSetupPending)
+        restarted.completedManualSetupProfileID = "profile"
+        restarted.isEnabled = false
+        XCTAssertFalse(flag.isManualSetupPending)
+        XCTAssertNil(flag.completedManualSetupProfileID)
+        XCTAssertFalse(flag.allowsAutomaticSync)
+        restarted.isEnabled = true
+        XCTAssertTrue(flag.allowsAutomaticSync)
+    }
 
     func testDescriptorFromAccountCarriesNoSecretAndKeepsIdentity() {
         let server = MediaServer(

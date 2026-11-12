@@ -1042,7 +1042,7 @@ public final class ArtworkImageCache: NSObject, @unchecked Sendable {
     }
 
     private static func downloadData(_ url: URL) async -> Data? {
-        guard let (data, response) = try? await ArtworkSession.shared.data(from: url) else {
+        guard let (data, response) = try? await ArtworkSession.data(from: url) else {
             return nil
         }
         if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) { return nil }

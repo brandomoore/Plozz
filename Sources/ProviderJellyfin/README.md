@@ -56,6 +56,25 @@ into name sorting. This applies to library, collection, playlist, and Home feeds
 
 ## Invariants
 
+Known season/show watch actions carry their media kind through the shared watch
+capability. Jellyfin and Emby enumerate all episodes in validated, bounded pages,
+request the native container update, and independently read each episode's played
+flag and resume position. A list summary can reflect the parent's new flag while
+individual episode state is still unchanged; list data cannot confirm delivery.
+If the server acknowledges without cascading, only unfinished episodes receive
+individual writes, followed by another individual verification.
+Foreign descendants, incomplete pagination, unreadable flags and unchanged
+post-write state fail explicitly, keeping durable actions queued. Authorization
+and cancellation are rechecked between operations. Normal movie/episode writes
+do not acquire these container reads; other providers retain their existing
+timestamp-aware/native implementation. Verification is linear in episode count
+and uses sequential requests rather than flooding the server.
+
+The container remains one outbox destination, not a transaction or per-episode
+checkpoint. A partial failure retries the container action. Concurrent playback
+inside that season/show is not protected by a parent timestamp; do not extend
+the leaf-reset freshness guarantee to a bulk action.
+
 New reduced Emby offline downloads use `EmbyOfflineDownloadURLBuilder`: one
 progressive H.264 MP4 plus independent raw AAC requests for additional soundtracks.
 Each request names the exact media source and audio index, preserves the approved

@@ -45,12 +45,52 @@ final class NavigationContentAvailabilityTests: XCTestCase {
         }
     }
 
+    func testLiveOnlyIPTVStartsInLiveTVEvenWithDiscoveryConfigured() {
+        for discovery in [false, true] {
+            let facts = availability(accounts: [account("iptv", provider: .iptv)], discovery: discovery)
+            XCTAssertTrue(facts.prefersLiveTV)
+            XCTAssertEqual(facts.hasHomeContent, discovery)
+            XCTAssertEqual(AppAdmissionNavigation.initialSelection(
+                current: "home", visible: ["home", "liveTV", "settings"],
+                liveTV: "liveTV", fallback: "settings",
+                admission: AppAdmissionContext(hasMediaAccounts: true),
+                hasPendingLiveTVEntry: false, prefersLiveTV: facts.prefersLiveTV
+            ), "liveTV")
+        }
+        for kind in [MediaItemKind.movie, .series] {
+            XCTAssertFalse(availability(
+                accounts: [account("iptv", provider: .iptv)],
+                libraries: [library("iptv", kind: kind)], discovery: true
+            ).prefersLiveTV)
+        }
+        XCTAssertFalse(availability(
+            accounts: [account("iptv", provider: .iptv), account("media", provider: .jellyfin)],
+            discovery: true
+        ).prefersLiveTV)
+        XCTAssertFalse(availability(discovery: true).prefersLiveTV)
+    }
+
     func testUnresolvedMediaServerKeepsNavigationDuringLoadingAndOfflineStartup() {
         for provider in [ProviderKind.jellyfin, .plex, .emby] {
             let facts = availability(accounts: [account("server", provider: provider)])
             XCTAssertTrue(facts.hasHomeContent)
             XCTAssertTrue(facts.hasSearchContent)
         }
+    }
+
+    func testMusicOnlyStartupNeverPrefersLiveTV() {
+        for discovery in [false, true] {
+            let facts = availability(
+                accounts: [account("music", provider: .subsonic)], discovery: discovery
+            )
+            XCTAssertFalse(facts.prefersLiveTV)
+            XCTAssertEqual(facts.prefersMusic, !discovery)
+        }
+        let mixed = availability(accounts: [
+            account("music", provider: .subsonic), account("iptv", provider: .iptv)
+        ])
+        XCTAssertTrue(mixed.prefersLiveTV)
+        XCTAssertFalse(mixed.prefersMusic)
     }
 
     func testKnownEmptyDisabledAndOtherProfileLibrariesDoNotEnableSearch() {

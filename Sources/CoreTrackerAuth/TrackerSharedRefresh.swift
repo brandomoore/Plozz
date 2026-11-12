@@ -74,15 +74,18 @@ public struct TrackerSharedRefreshConfiguration: Sendable {
     public let transport: any TrackerSharedRefreshTransport
     public let journal: any TrackerSharedRefreshJournal
     public let isLocallySignedOut: @Sendable (String) -> Bool
+    public let allowsDiscovery: @Sendable () -> Bool
 
     public init(
         transport: any TrackerSharedRefreshTransport,
         journal: any TrackerSharedRefreshJournal,
-        isLocallySignedOut: @escaping @Sendable (String) -> Bool = { _ in false }
+        isLocallySignedOut: @escaping @Sendable (String) -> Bool = { _ in false },
+        allowsDiscovery: @escaping @Sendable () -> Bool = { true }
     ) {
         self.transport = transport
         self.journal = journal
         self.isLocallySignedOut = isLocallySignedOut
+        self.allowsDiscovery = allowsDiscovery
     }
 }
 
@@ -175,4 +178,5 @@ struct TrackerSharedJournalState: Codable, Sendable {
     var accountID: String
     var accepted: TrackerSharedGrant?
     var pending: Pending?
+    var localAuthentication: Bool?
 }

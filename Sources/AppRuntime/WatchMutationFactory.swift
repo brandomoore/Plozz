@@ -161,16 +161,6 @@ public enum WatchMutationFactory {
         // opt-out, so the origin-only write must carry no expansion intent.
         let episode = crossServerSync ? episodeExpansion(for: item, primaryAccountID: primaryAccountID) : (origin: nil, pending: false)
         let identity = crossServerSync ? identityExpansion(for: item) : (identities: [], pending: false, anchorTitle: nil, anchorYear: nil)
-        let observedLastPlayedAt: [String: Date] = played ? [:] : Dictionary(uniqueKeysWithValues: targets.compactMap { target in
-            let source = (item.sources + additionalSources).first {
-                $0.accountID == target.accountID && $0.itemID == target.itemID
-            }
-            let isOrigin = target.accountID == (item.sourceAccountID ?? primaryAccountID) && target.itemID == item.id
-            guard let date = source?.lastPlayedAt ?? (source == nil && isOrigin ? item.lastPlayedAt : nil) else {
-                return nil
-            }
-            return (target.id, date)
-        })
         return WatchMutation(
             capturedAt: capturedAt,
             canonicalMediaID: canonicalID(for: item, primaryAccountID: primaryAccountID),
@@ -187,7 +177,9 @@ public enum WatchMutationFactory {
             anchorTitle: identity.anchorTitle,
             anchorYear: identity.anchorYear,
             rejectedSourceIDs: item.rejectedSourceIDs.subtracting(targets.map(\.id)),
-            observedLastPlayedAt: observedLastPlayedAt
+            observedLastPlayedAt: observedPlayback(item, primaryAccountID: primaryAccountID,
+                                                 additionalSources: additionalSources, targets: targets),
+            isExplicitReset: true
         )
     }
 
@@ -266,8 +258,27 @@ public enum WatchMutationFactory {
             kind: item.kind,
             anchorTitle: identity.anchorTitle,
             anchorYear: identity.anchorYear,
-            rejectedSourceIDs: item.rejectedSourceIDs.subtracting(targets.map(\.id))
+            rejectedSourceIDs: item.rejectedSourceIDs.subtracting(targets.map(\.id)),
+            observedLastPlayedAt: observedPlayback(item, primaryAccountID: primaryAccountID,
+                                                 additionalSources: additionalSources, targets: targets),
+            isExplicitReset: true
         )
+    }
+
+    private static func observedPlayback(
+        _ item: MediaItem, primaryAccountID: String?,
+        additionalSources: [MediaSourceRef], targets: [WatchMutationTarget]
+    ) -> [String: Date] {
+        Dictionary(uniqueKeysWithValues: targets.compactMap { target in
+            let source = (item.sources + additionalSources).first {
+                $0.accountID == target.accountID && $0.itemID == target.itemID
+            }
+            let isOrigin = target.accountID == (item.sourceAccountID ?? primaryAccountID) && target.itemID == item.id
+            guard let date = source?.lastPlayedAt ?? (source == nil && isOrigin ? item.lastPlayedAt : nil) else {
+                return nil
+            }
+            return (target.id, date)
+        })
     }
 
     /// External players cannot send Plozz's realtime scrobbles. Their return

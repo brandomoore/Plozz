@@ -15,6 +15,7 @@ struct AddAccountView: View {
     let onMediaBrowserServerSelected: (MediaServer) -> Void
     let onPlexAuthenticated: (UserSession) -> Void
     let onIPTVAuthenticated: (UserSession) throws -> Void
+    let onSubsonicAuthenticated: (UserSession) throws -> Void
     let onPlexAuthenticatedMany: ([UserSession]) -> Void
     let onShareConfigured: (ShareDraft) -> Void
     let onWebDAVShareConfigured: (WebDAVShareConfiguration) -> Void
@@ -42,6 +43,7 @@ struct AddAccountView: View {
         onMediaBrowserServerSelected: @escaping (MediaServer) -> Void,
         onPlexAuthenticated: @escaping (UserSession) -> Void,
         onIPTVAuthenticated: ((UserSession) throws -> Void)? = nil,
+        onSubsonicAuthenticated: ((UserSession) throws -> Void)? = nil,
         onPlexAuthenticatedMany: @escaping ([UserSession]) -> Void = { _ in },
         onShareConfigured: @escaping (ShareDraft) -> Void = { _ in },
         onWebDAVShareConfigured: @escaping (WebDAVShareConfiguration) -> Void = { _ in },
@@ -57,6 +59,7 @@ struct AddAccountView: View {
         self.onMediaBrowserServerSelected = onMediaBrowserServerSelected
         self.onPlexAuthenticated = onPlexAuthenticated
         self.onIPTVAuthenticated = onIPTVAuthenticated ?? onPlexAuthenticated
+        self.onSubsonicAuthenticated = onSubsonicAuthenticated ?? onPlexAuthenticated
         self.onPlexAuthenticatedMany = onPlexAuthenticatedMany
         self.onShareConfigured = onShareConfigured
         self.onWebDAVShareConfigured = onWebDAVShareConfigured
@@ -133,6 +136,11 @@ struct AddAccountView: View {
                 reconnecting: reconnectingIPTV,
                 onAuthenticated: onIPTVAuthenticated, onCancel: navigateBackToChooser
             )
+        case .subsonic:
+            SubsonicSignInView(
+                deviceID: deviceID, onAuthenticated: onSubsonicAuthenticated,
+                onCancel: navigateBackToChooser
+            )
         case .mediaShare:
             AddMediaShareView(
                 isPageReady: pageIsReady,
@@ -169,6 +177,7 @@ struct AddAccountView: View {
         case .emby: "emby"
         case .plex: "plex"
         case .silo: "silo"
+        case .subsonic: "subsonic"
         case .iptv: "iptv"
         case .mediaShare: "mediaShare"
         }
@@ -232,6 +241,7 @@ private enum ProviderChooserFocus: Hashable {
     case emby
     case plex
     case silo
+    case subsonic
     case iptv
     case mediaShare
     case setUpFromAnotherDevice
@@ -242,6 +252,7 @@ private enum ProviderChooserFocus: Hashable {
         case .emby: self = .emby
         case .plex: self = .plex
         case .silo: self = .silo
+        case .subsonic: self = .subsonic
         case .iptv: self = .iptv
         case .mediaShare: self = .mediaShare
         }
@@ -316,6 +327,7 @@ private struct ProviderChooserView: View {
              (.some(.emby), .left),
              (.some(.plex), .left),
              (.some(.silo), .left),
+             (.some(.subsonic), .left),
              (.some(.iptv), .left),
              (.some(.mediaShare), .left):
             focusedControl = .back
@@ -363,7 +375,7 @@ private struct ProviderChoiceGroup: View {
         VStack(spacing: 0) {
             ProviderChoiceRow(
                 provider: .jellyfin,
-                height: 108,
+                height: AppReleaseChannel.current.isBeta ? 88 : 108,
                 focusedControl: focusedControl
             ) {
                 onSelect(.jellyfin)
@@ -373,7 +385,7 @@ private struct ProviderChoiceGroup: View {
 
             ProviderChoiceRow(
                 provider: .plex,
-                height: 108,
+                height: AppReleaseChannel.current.isBeta ? 88 : 108,
                 isLoading: isPreparingPlex,
                 focusedControl: focusedControl
             ) {
@@ -384,7 +396,7 @@ private struct ProviderChoiceGroup: View {
 
             ProviderChoiceRow(
                 provider: .emby,
-                height: 108,
+                height: AppReleaseChannel.current.isBeta ? 88 : 108,
                 focusedControl: focusedControl
             ) {
                 onSelect(.emby)
@@ -404,7 +416,7 @@ private struct ProviderChoiceGroup: View {
 
             ProviderChoiceRow(
                 provider: .mediaShare,
-                height: 108,
+                height: AppReleaseChannel.current.isBeta ? 88 : 108,
                 focusedControl: focusedControl
             ) {
                 onSelect(.mediaShare)
@@ -413,6 +425,12 @@ private struct ProviderChoiceGroup: View {
             Divider().padding(.horizontal, 1)
             ProviderChoiceRow(provider: .iptv, height: 88, focusedControl: focusedControl) {
                 onSelect(.iptv)
+            }
+            if AppReleaseChannel.current.isBeta {
+                Divider().padding(.horizontal, 1)
+                ProviderChoiceRow(provider: .subsonic, height: 88, focusedControl: focusedControl) {
+                    onSelect(.subsonic)
+                }
             }
         }
         .frame(width: 720)

@@ -429,6 +429,21 @@ struct PlozziOSHomeView: View {
                 for: appModel.settings.homeVisibility.visibility
             )
         }
+        .contentRefreshSurface(
+            id: ContentRefreshSurfaceID(kind: .home),
+            isVisible: homeIsFrontmost && homeHasAppeared && appModel.allowsHomeContentLoading
+                && playbackRequest == nil && pendingResumeRequest == nil
+        ) { request in
+            switch request.action {
+            case .reloadHome:
+                await viewModel.loadIfNeeded(
+                    for: appModel.settings.homeVisibility.visibility,
+                    trigger: request.reason.diagnosticTrigger
+                )
+            case .reloadSeriesContext, .refreshWatchStateOnly:
+                break
+            }
+        }
         .task(id: featuredStatusKey) {
             guard featuredStatusKey.isActive else { return }
             await refreshFeaturedStatusLoop()
@@ -720,7 +735,7 @@ struct PlozziOSHomeView: View {
                         )
                     case let .library(row):
                         PlozziOSHomeLibraryPresentationRow(
-                            presentation: presentation, row: row,
+                            choice: presentation.choice, row: row,
                             appModel: appModel, viewModel: viewModel,
                             coordinator: featuredTrailers, controller: trailerController,
                             isActive: row.collectionCardStyle == .featured
@@ -2774,7 +2789,7 @@ private struct PlozziOSHomeRowFailure: View {
 
 struct PlozziOSHomeLibraryPresentationRow: View, Equatable {
     @Environment(\.plozziOSIsRunningOnMac) private var isRunningOnMac
-    let presentation: HomePresentationRow
+    let choice: HomeRowChoice
     let row: HomeLibrarySectionGroup.Row
     let appModel: PlozziOSAppModel
     let viewModel: HomeViewModel
@@ -2784,10 +2799,14 @@ struct PlozziOSHomeLibraryPresentationRow: View, Equatable {
     @Binding var rowBrowser: HomeRowBrowseModel?
     @Binding var showingHomeCustomization: Bool
 
+    private var presentation: HomePresentationRow {
+        HomePresentationRow(choice: choice, source: .library(row))
+    }
+
     nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
         // Bindings address the same owning Home state for this model/row identity.
         // Settings read inside body still invalidate through Observation/environment.
-        lhs.presentation == rhs.presentation && lhs.row == rhs.row
+        lhs.choice == rhs.choice && lhs.row == rhs.row
             && lhs.appModel === rhs.appModel && lhs.viewModel === rhs.viewModel
             && lhs.coordinator === rhs.coordinator && lhs.controller === rhs.controller
             && lhs.isActive == rhs.isActive

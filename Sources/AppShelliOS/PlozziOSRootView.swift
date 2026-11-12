@@ -27,6 +27,7 @@ public struct PlozziOSRootView: View {
     private var systemReduceTransparency
     @State private var appModel: PlozziOSAppModel
     @State private var homeViewModelBox = LazyViewState<HomeViewModel>()
+    @State private var contentRefreshCoordinator = ContentRefreshCoordinator(profile: .iOS)
     @State private var heroTrailerController = HeroTrailerController()
     @State private var themeMusicController = ThemeMusicController()
     @State private var isLiveTVSelected = false
@@ -92,10 +93,31 @@ public struct PlozziOSRootView: View {
                 }
                 .environment(\.themePalette, resolvedPalette)
                 .environment(\.colorScheme, resolvedPalette.isLight ? .light : .dark)
+            } else if appModel.syncSetup.needsOnboardingChoice {
+                ICloudOnboardingView(onChoice: appModel.completeICloudOnboarding)
+                    .environment(\.themePalette, resolvedPalette)
+                    .environment(\.colorScheme, resolvedPalette.isLight ? .light : .dark)
+            } else if appModel.initialSetupRestoration.phase != .hidden {
+                ICloudRestorationView(
+                    phase: appModel.initialSetupRestoration.phase,
+                    activity: appModel.initialSetupRestoration.activity
+                        ?? (appModel.providerCredentialSync.isRestoringSignIn ? .signingInToServers : nil),
+                    onRetry: appModel.restoreInitialICloudSetup,
+                    onSetUpManually: appModel.setUpManuallyAfterICloudRestore
+                )
+                .environment(\.themePalette, resolvedPalette)
+                .environment(\.colorScheme, resolvedPalette.isLight ? .light : .dark)
             } else {
                 appContent
                     .task { consumeDeferredPairingURL() }
             }
+        }
+        .onChange(
+            of: appModel.isActiveProfileAuthorized && !appModel.profiles.activeProfile.needsSetup
+                && !appModel.isOfflineMode && appModel.initialSetupRestoration.phase == .hidden,
+            initial: true
+        ) { _, ready in
+            if ready { appModel.continueManualICloudSetupIfReady() }
         }
         .onOpenURL { url in
             if ExternalPlaybackRuntime.shared.receive(url) { return }
@@ -174,6 +196,7 @@ public struct PlozziOSRootView: View {
         }
         .onChange(of: appModel.profiles.activeProfileID) { _, _ in
             providerSetupRouter.reauthenticationAccount = nil
+            contentRefreshCoordinator.reset()
         }
         .onChange(of: providerSetupRouter.request?.id) { _, _ in
             guard let request = providerSetupRouter.request else { return }
@@ -202,6 +225,7 @@ public struct PlozziOSRootView: View {
             set: { if !$0 { appModel.cancelProfileOnboarding() } }
         )) {
             PlozziOSProfileOnboardingCover(appModel: appModel)
+                .interactiveDismissDisabled(appModel.initialSetupRestoration.isManualSetupPending)
         }
         .task { appModel.resumeProfileOnboardingIfNeeded() }
         .liveChannelSystemOverlays()
@@ -320,6 +344,8 @@ public struct PlozziOSRootView: View {
 
     private var appContent: some View {
         setupPresentationContent
+        .environment(contentRefreshCoordinator)
+        .background(ContentRefreshLifecycleReader(coordinator: contentRefreshCoordinator))
         .environment(\.familyGuidanceProvider, appModel.familyGuidance)
         .detailPlaybackPreparationEnvironment(
             appModel.detailPlaybackPreparation,
@@ -687,7 +713,8 @@ public struct PlozziOSRootView: View {
     /// with `pendingPairingInvite` left set so it is never re-requested, which
     /// means the link simply does nothing until relaunch.
     private func receivePairingURL(_ url: URL) {
-        guard !needsDiagnosticConsent else {
+        guard !needsDiagnosticConsent, !appModel.syncSetup.needsOnboardingChoice,
+              appModel.initialSetupRestoration.phase == .hidden else {
             deferredPairingURL = url
             return
         }
@@ -1560,7 +1587,13 @@ struct PlozziOSTabShell: View {
             consumeStandaloneEntryIfNeeded()
         }
         .onChange(of: tabDestinationKey, initial: true) { _, _ in
-            selectDestination(selectedDestination)
+            if !hasChosenNavigationDestination,
+               Self.navigationAvailability(appModel: appModel).prefersMusic,
+               tabDestinations.contains(.music) {
+                selectDestination(.music)
+            } else {
+                selectDestination(selectedDestination)
+            }
         }
         .onChange(of: isShowingMorePage) { _, showingMore in
             if showingMore { heroTrailerController.stop() }

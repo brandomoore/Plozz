@@ -153,16 +153,23 @@ These Home and device-login contracts were checked at upstream revision
 - Access tokens, rotating refresh tokens and profile-verification proofs live in
   the account Keychain entry. The raw PIN is never persisted. Refresh is
   single-flight and compare-and-set against the original login revision.
-  An uncertain refresh requires sign-in rather than replaying a possibly spent
-  token. A refresh proven by transport metrics not to have been transmitted
+  The client conservatively requires sign-in after an uncertain refresh. The
+  checked native server implementation does not consume the previous refresh
+  JWT; this client recovery policy is not a claim that Silo refresh is single-use.
+  A refresh proven by transport metrics not to have been transmitted
   restores the original credential for a later retry after an outage; missing
   evidence is never treated as proof. Library errors retain their real cause,
   so expired authentication offers sign-in rather than an endless offline retry.
-  Silo logins are not cloned through device-to-device credential transfer
-  or iCloud Keychain; another device pairs independently. Device setup still
-  imports the server descriptor and shows it as needing sign-in rather than
-  omitting it from the summary. Settings > iCloud Sync keeps that entry
-  available and opens Silo's native sign-in flow.
+  Silo logins are not cloned through device-to-device transfer or iCloud Keychain.
+  With iCloud Sync enabled, the shared encrypted provider channel can use an
+  existing login to approve an independent permanent device session. This
+  requires protocol 2 with explicit `session_binding` capability. The receiver
+  verifies the challenge binding, server, account, profile and non-temporary
+  purpose, and never copies a profile PIN proof. Protected profiles, older
+  servers and expired/revoked bootstrap credentials retain native manual sign-in
+  in Settings > iCloud Sync. Cancellation revokes only the new unused session.
+  The bound enrollment contract was checked against server revision
+  `0b579aa6192d49d7e8e0921dde5e955ac29ce302`.
 - Catalog requests use native cursor pagination and explicit `seek` windows.
   Lightweight cards inherit missing external identities from Silo's frozen
   provider-anchored content-ID scheme, so the identity index can match owned
