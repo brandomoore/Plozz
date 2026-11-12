@@ -75,6 +75,7 @@ final class NavigationDestinationLayoutTests: XCTestCase {
         let keys = NavigationDestinationDefaults.compact(hasMusic: true)
         var expected = [
             NavigationLibraryLayout.homeKey,
+            NavigationLibraryLayout.discoverKey,
             NavigationLibraryLayout.watchlistKey,
         ]
         expected.append(NavigationLibraryLayout.liveTVKey)

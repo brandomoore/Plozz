@@ -77,10 +77,6 @@ final class AutomaticSignInTests: XCTestCase {
         return Launch(profiles: profiles, hub: hub, plex: plex, flow: flow, switchCache: cache)
     }
 
-    private func drain() async {
-        for _ in 0..<200 { await Task.yield() }
-    }
-
     private func authenticatePlex(_ env: Launch, user: String = "parent") async {
         env.plex.setPlexHomeUserForActiveProfile(
             accountID: "account",
@@ -88,7 +84,7 @@ final class AutomaticSignInTests: XCTestCase {
         )
         XCTAssertNotNil(env.plex.pendingPlexPINRequest)
         env.plex.submitPlexPIN("2468")
-        await drain()
+        await env.plex.waitForPlexPINRequirementCheck()
         XCTAssertNil(env.plex.pendingPlexPINRequest)
         XCTAssertEqual(env.plex.resolvedToken(for: "account"), "server-discover-\(user)")
     }
@@ -272,12 +268,12 @@ final class AutomaticSignInTests: XCTestCase {
         XCTAssertNotNil(next.plex.pendingPlexPINRequest)
         XCTAssertFalse(next.plex.restoreAutomaticSignInAtLaunch())
         next.plex.submitPlexPIN("0000")
-        await drain()
+        await next.plex.waitForPlexPINRequirementCheck()
         XCTAssertNotNil(next.plex.plexPINError)
         XCTAssertNotNil(next.plex.pendingPlexPINRequest)
         XCTAssertNil(try house.startup.load())
         next.plex.submitPlexPIN("2468")
-        await drain()
+        await next.plex.waitForPlexPINRequirementCheck()
         XCTAssertNil(next.plex.pendingPlexPINRequest)
     }
 
@@ -299,7 +295,7 @@ final class AutomaticSignInTests: XCTestCase {
             }
             env.flow.switchProfile(to: other.id)
             env.flow.switchProfile(to: parent)
-            await drain()
+            await env.plex.waitForPlexPINRequirementCheck()
             XCTAssertNil(env.plex.pendingPlexPINRequest)
             XCTAssertEqual(env.profiles.activeProfile.homeUserBinding(forPlexAccount: "account")?.requiresPIN, false)
             XCTAssertEqual(env.plex.discoverToken(for: "account"), "UNPROTECTED-CLOUD")
@@ -320,7 +316,7 @@ final class AutomaticSignInTests: XCTestCase {
             XCTAssertEqual(env.plex.plexPINEntryAvailability, .checking)
             XCTAssertNil(env.plex.resolvedToken(for: "account"))
             XCTAssertNil(env.plex.discoverToken(for: "account"))
-            await drain()
+            await env.plex.waitForPlexPINRequirementCheck()
             XCTAssertEqual(env.plex.plexPINEntryAvailability, .available)
             XCTAssertEqual(env.profiles.activeProfile.homeUserBinding(forPlexAccount: "account")?.requiresPIN, true)
             XCTAssertNil(try house.startup.load())
@@ -332,11 +328,11 @@ final class AutomaticSignInTests: XCTestCase {
                 XCTAssertEqual(error, .unauthorized)
             }
             env.plex.submitPlexPIN("2468")
-            await drain()
+            await env.plex.waitForPlexPINRequirementCheck()
             XCTAssertNotNil(env.plex.pendingPlexPINRequest)
             XCTAssertNil(try house.startup.load())
             env.plex.submitPlexPIN("1357")
-            await drain()
+            await env.plex.waitForPlexPINRequirementCheck()
             XCTAssertNil(env.plex.pendingPlexPINRequest)
             XCTAssertEqual(env.plex.discoverToken(for: "account"), "REPROTECTED-CLOUD")
 
@@ -564,7 +560,7 @@ final class AutomaticSignInTests: XCTestCase {
         env.plex.ensurePlexIdentityForActiveProfile()
         env.plex.submitPlexPIN("2468")
         env.flow.switchProfile(to: env.profiles.activeProfileID)
-        await drain()
+        await env.plex.waitForPlexPINRequirementCheck()
         XCTAssertNotNil(env.plex.pendingPlexPINRequest)
         XCTAssertNil(env.plex.discoverToken(for: "account"))
     }
@@ -604,7 +600,7 @@ final class AutomaticSignInTests: XCTestCase {
             user: PlexHomeUser(id: "other-parent", name: "Other Parent", requiresPIN: true)
         )
         env.plex.submitPlexPIN("2468")
-        await drain()
+        await env.plex.waitForPlexPINRequirementCheck()
         env.flow.setAutomaticallySignIn(true)
         XCTAssertTrue(env.plex.automaticallySignIn)
         let next = launch(house)
@@ -708,7 +704,7 @@ final class AutomaticSignInTests: XCTestCase {
         ))
         env.plex.ensurePlexIdentityForActiveProfile()
         env.plex.submitPlexPIN("2468")
-        await drain()
+        await env.plex.waitForPlexPINRequirementCheck()
         XCTAssertNotNil(env.plex.pendingPlexPINRequest)
         XCTAssertNil(env.plex.discoverToken(for: "account"))
         XCTAssertNil(try house.startup.load())

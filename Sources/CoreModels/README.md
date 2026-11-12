@@ -76,6 +76,12 @@ language every other module speaks.
   uses immutable image identity and placement, never a pixel comparison.
 - Profiles persistence contract: `ProfilePersisting`, `ProfileStore`,
   `ProfilesModel`, plus the Plex Home-user mapping (`PlexHomeUser`).
+- Shared profile migration writes memberships before the roster and retires
+  legacy copies only after every write succeeds. Failed writes retain the legacy
+  roster as the local authority, including edits made before retry. A failed
+  shared read must not be interpreted as an absent household or seed a replacement
+  during bootstrap. The migration journal includes memberships delivered before
+  their profiles and pending clears; reset retires these alongside the roster.
 - Local PIN proof is in-memory and bound to the current verifier and selection.
   `ProfilesModel` clears it whenever the active profile changes, including
   deletion/sync fallbacks. Manual entry to another locked profile requires fresh
