@@ -640,6 +640,8 @@ final class DetailTransitionVisualRegressionTests: XCTestCase {
         let role: HeroTrailerSurfaceRole = fromDetail ? .detail : .home
         let original = try XCTUnwrap(model.trailer.player.currentItem)
         let ambientHostLayer = try XCTUnwrap(ambientLayer.superlayer)
+        weak var ambientHost = ambientHostLayer.delegate as? UIView
+        XCTAssertTrue(ambientHost?.window === window)
         let originalPosition = model.trailer.player.currentTime().seconds
         model.fullscreenRequest = try XCTUnwrap(TrailerFullscreenRequest(
             controller: model.trailer, itemID: model.provider.show.id, role: role,
@@ -686,6 +688,7 @@ final class DetailTransitionVisualRegressionTests: XCTestCase {
         try await waitUntil { player.isBeingDismissed }
         XCTAssertTrue(ambientLayer.superlayer === ambientHostLayer,
                       "Restore the live background before the full-screen cover starts revealing the hero.")
+        XCTAssertTrue(ambientHost?.window === window)
         XCTAssertTrue(ambientLayer.isReadyForDisplay)
         XCTAssertTrue(model.trailer.isFullScreen,
                       "Keep carousel and focus callbacks suspended until the return transition finishes.")
@@ -699,6 +702,7 @@ final class DetailTransitionVisualRegressionTests: XCTestCase {
         }
         XCTAssertTrue(model.trailer.player.currentItem === original)
         XCTAssertTrue(ambientLayer.superlayer === ambientHostLayer)
+        XCTAssertTrue(ambientHost?.window === window)
         XCTAssertNil(returnCover.superview, "Release the transition frame after revealing live video.")
         XCTAssertTrue(model.trailer.isClaimed(by: role, itemID: model.provider.show.id))
         XCTAssertTrue(model.trailer.isMuted, "Restore the ambient mute choice.")
@@ -1643,6 +1647,9 @@ final class DetailTransitionVisualRegressionTests: XCTestCase {
                         XCTAssertLessThanOrEqual(last.time - first.time, 0.6,
                                                  "\(style): returning up must not linger longer than a row transition.")
                     }
+                    let arrival = try XCTUnwrap(motion.first { abs($0.y - top) <= 1 })
+                    XCTAssertLessThanOrEqual(arrival.time, SeriesHeroRevealTransition.pageScrollDuration + 0.1,
+                                             "\(style): the page return must not wait for an outgoing focus effect.")
                 }
                 let screenshot = XCTAttachment(image: renderedKeylineSnapshot(in: window))
                 screenshot.name = "related-episode-return-\(scenario)-\(roundTrip)"

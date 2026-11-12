@@ -230,6 +230,16 @@ class WorkflowTests(unittest.TestCase):
         ):
             self.assertNotIn(unsafe, WORKFLOW + PREPARE)
 
+    def test_hosted_individual_hangs_retain_a_bounded_failure_verdict(self):
+        runner = (ROOT / "tools/run-focus-tests.sh").read_text()
+        execution = runner.split("xcodebuild test-without-building", 1)[1]
+        self.assertIn("-test-timeouts-enabled YES", execution)
+        self.assertIn("-default-test-execution-time-allowance 600", execution)
+        self.assertIn("-maximum-test-execution-time-allowance 600", execution)
+        self.assertIn("-collect-test-diagnostics on-failure", execution)
+        self.assertNotIn("-collect-test-diagnostics never", execution)
+        self.assertIn('xcresult-summary.py verdict "$RUN_DIR/summary.json"', execution)
+
     def test_all_macos_lanes_use_the_engine_supported_toolchain(self):
         for lane in ("guards", *CACHE.LANES):
             with self.subTest(lane=lane):

@@ -152,15 +152,20 @@ final class NativeInformationCardHostedTests: XCTestCase {
                 }
             }
             if count == 4 && hasGuidance {
+                let image = informationImage(window)
+                let evidence = XCTAttachment(image: image)
+                evidence.name = "rating-gap-measurement"
+                evidence.lifetime = .keepAlways
+                add(evidence)
                 let request = VNRecognizeTextRequest()
                 request.recognitionLevel = .accurate
-                try VNImageRequestHandler(cgImage: XCTUnwrap(DetailTransitionSnapshot.image(of: window).cgImage))
+                try VNImageRequestHandler(cgImage: XCTUnwrap(image.cgImage))
                     .perform([request])
                 let values = try XCTUnwrap(request.results).filter {
                     ["98%", "88%", "8.3", "8.1"].contains($0.topCandidates(1).first?.string ?? "")
                 }.sorted { $0.boundingBox.minX < $1.boundingBox.minX }
                 XCTAssertEqual(values.count, 4)
-                let pixels = try informationPixels(window)
+                let pixels = try informationPixels(image)
                 let paintedValues = values.map { value in
                     paintedTextBounds(pixels, in: CGRect(
                         x: value.boundingBox.minX * 1920,
@@ -178,9 +183,7 @@ final class NativeInformationCardHostedTests: XCTestCase {
                     for y in Int(scores.minY + 24)..<Int(scores.maxY - 24) {
                         for x in Int(value.minX - 100)..<Int(value.minX) {
                             let offset = (y * 1920 + x) * 4
-                            let channels = pixels[offset..<(offset + 3)]
-                            if let high = channels.max(), let low = channels.min(),
-                               high > 160, high - low > 45 {
+                            if isVisibleRatingMark(pixels, at: offset) {
                                 iconLeft = min(iconLeft ?? x, x)
                                 iconRight = max(iconRight ?? x, x)
                             }
@@ -433,6 +436,23 @@ final class NativeInformationCardHostedTests: XCTestCase {
         }
         XCTAssertEqual(headingYs[0], headingYs[1], accuracy: 3)
         XCTAssertEqual(headingYs[0], headingYs[2], accuracy: 5)
+    }
+
+    func testRatingMarkMeasurementUsesUnpremultipliedColorAndVisibleCoverage() {
+        XCTAssertTrue(isVisibleRatingMark([152, 122, 17, 202], at: 0))
+        XCTAssertTrue(isVisibleRatingMark([192, 154, 21, 255], at: 0))
+        XCTAssertFalse(isVisibleRatingMark([75, 60, 8, 100], at: 0))
+        XCTAssertFalse(isVisibleRatingMark([80, 80, 82, 255], at: 0))
+        XCTAssertFalse(isVisibleRatingMark([100, 90, 20, 255], at: 0))
+    }
+
+    private func isVisibleRatingMark(_ pixels: [UInt8], at offset: Int) -> Bool {
+        let alpha = Int(pixels[offset + 3])
+        guard alpha >= 128 else { return false }
+        let channels = pixels[offset..<(offset + 3)]
+        guard let high = channels.max(), let low = channels.min() else { return false }
+        // UIKit supplies premultiplied BGRA, not the straight RGB in PNG attachments.
+        return Int(high) * 255 / alpha > 160 && Int(high - low) * 255 / alpha > 45
     }
 
     private func paintedTextBounds(_ pixels: [UInt8], in region: CGRect) -> CGRect {

@@ -109,14 +109,24 @@ final class ArtworkSettingsHostedTests: XCTestCase {
                 .frame(width: SettingsFormMetrics.pageWidth)
             ) { window in
                 let system = try XCTUnwrap(UIFocusSystem.focusSystem(for: window))
+                let cards = try self.focusItems(in: window).map {
+                    try self.nativeFrame($0, in: window)
+                }.filter { $0.height > 150 && $0.width < SettingsFormMetrics.pageWidth / 2 }
+                    .sorted { $0.minX < $1.minX }
+                XCTAssertEqual(cards.count, MusicPlayerAppearance.pickerOrder.count)
                 var previous: CGRect?
-                for option in MusicPlayerAppearance.pickerOrder {
+                for (option, card) in zip(MusicPlayerAppearance.pickerOrder, cards) {
+                    XCTAssertTrue(window.bounds.contains(card), "Every player choice must fit")
                     let parts = option == .matchTheme ? ["Match App", "Theme"] : [String(localized: option.displayName)]
                     var frame = CGRect.null
                     for part in parts {
-                        frame = frame.union(try XCTUnwrap(self.collectionLabelFrames(
-                            in: window, matchingText: part, scale: 2
-                        ).first).frame)
+                        let labels = try self.collectionLabelFrames(
+                            in: window, attachmentName: "music-search-\(target)-\(option.rawValue)-\(part)",
+                            matchingText: part, scale: 2, region: card
+                        )
+                        frame = frame.union(try XCTUnwrap(
+                            labels.first, "\(target): missing \(part) in \(option)"
+                        ).frame)
                     }
                     XCTAssertTrue(window.bounds.contains(frame), "Every player choice must fit")
                     if let previous { XCTAssertLessThan(previous.maxX, frame.minX) }
@@ -124,8 +134,15 @@ final class ArtworkSettingsHostedTests: XCTestCase {
                 }
                 let title = target == "music-style" ? "Dark" : "Show album, quality & lyrics source"
                 let label = try XCTUnwrap(self.collectionLabelFrames(in: window, matchingText: title).first)
+                let center = CGPoint(x: label.frame.midX, y: label.frame.midY)
+                let deadline = ContinuousClock.now + .seconds(3)
+                while ContinuousClock.now < deadline {
+                    if let focused = system.focusedItem,
+                       try self.nativeFrame(focused, in: window).contains(center) { break }
+                    try await Task.sleep(for: .milliseconds(20))
+                }
                 let focused = try self.nativeFocusedFrame(system, in: window)
-                XCTAssertTrue(focused.contains(CGPoint(x: label.frame.midX, y: label.frame.midY)), target)
+                XCTAssertTrue(focused.contains(center), "\(target): focused \(focused), label \(label)")
                 XCTAssertEqual(appearance, .dark)
                 XCTAssertFalse(showsDetails)
             }
@@ -1493,7 +1510,7 @@ final class ArtworkSettingsHostedTests: XCTestCase {
 
     private func collectionLabelFrames(
         in window: UIWindow, attachmentName: String? = nil, matchingText: String? = nil,
-        scale: CGFloat = 1
+        scale: CGFloat = 1, region: CGRect? = nil
     ) throws -> [(text: String, frame: CGRect)] {
         window.layoutIfNeeded()
         let image = renderWindow(window, scale: scale)
@@ -1506,7 +1523,20 @@ final class ArtworkSettingsHostedTests: XCTestCase {
         let request = VNRecognizeTextRequest()
         request.recognitionLevel = .accurate
         request.recognitionLanguages = ["en-US"]
+        if let region {
+            request.regionOfInterest = CGRect(
+                x: region.minX / window.bounds.width, y: 1 - region.maxY / window.bounds.height,
+                width: region.width / window.bounds.width, height: region.height / window.bounds.height
+            )
+        }
         try VNImageRequestHandler(cgImage: XCTUnwrap(image.cgImage)).perform([request])
+        if let attachmentName {
+            let recognized = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }
+            let attachment = XCTAttachment(string: recognized.joined(separator: "\n"))
+            attachment.name = "\(attachmentName)-recognized-text"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+        }
         return try (request.results ?? []).compactMap { result in
             guard let candidate = result.topCandidates(1).first else { return nil }
             let text = candidate.string
@@ -1518,9 +1548,11 @@ final class ArtworkSettingsHostedTests: XCTestCase {
             } else {
                 bounds = result.boundingBox
             }
+            let coordinateBounds = region ?? window.bounds
             return (text, CGRect(
-                x: bounds.minX * window.bounds.width, y: (1 - bounds.maxY) * window.bounds.height,
-                width: bounds.width * window.bounds.width, height: bounds.height * window.bounds.height
+                x: coordinateBounds.minX + bounds.minX * coordinateBounds.width,
+                y: coordinateBounds.minY + (1 - bounds.maxY) * coordinateBounds.height,
+                width: bounds.width * coordinateBounds.width, height: bounds.height * coordinateBounds.height
             ))
         }
     }

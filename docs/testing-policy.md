@@ -1540,6 +1540,11 @@ the cold-build budget, not test assertions, performance thresholds, or the
 execution deadline. Local build and execution defaults remain 40 minutes unless
 `PLOZZ_FOCUS_BUILD_TIMEOUT` or `PLOZZ_FOCUS_TEST_TIMEOUT` is set;
 test failures, timeouts, and unreadable `xcresult` summaries still fail closed.
+Individual hosted tests also have a ten-minute XCTest execution allowance,
+with failure diagnostics enabled. This exceeds the 330-second rolling-playback
+scenario while preventing one blocked AVFoundation call from consuming the
+entire suite deadline without a test verdict. It does not replace the outer
+build/execution deadlines or turn a timed-out test into a pass.
 Each lane uploads
 uniquely named diagnostics on success or failure, retained for seven days.
 The simulator app build also retains its raw log without replacing a build

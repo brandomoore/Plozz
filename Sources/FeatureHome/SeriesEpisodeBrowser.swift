@@ -401,6 +401,8 @@ struct SeriesBrowserRevealScrollGuard: UIViewRepresentable {
         private weak var scrollView: UIScrollView?
         private var wasScrollEnabled: Bool?
         private var focusLeftBrowser = false
+        private var pageReturnInFlight = false
+        private var pageReturnGeneration: UInt = 0
 
         override func didMoveToWindow() {
             super.didMoveToWindow()
@@ -420,7 +422,7 @@ struct SeriesBrowserRevealScrollGuard: UIViewRepresentable {
         }
 
         func apply() {
-            guard window != nil, isActive, !focusLeftBrowser else {
+            guard window != nil, isActive || pageReturnInFlight, !focusLeftBrowser else {
                 restore()
                 return
             }
@@ -449,6 +451,10 @@ struct SeriesBrowserRevealScrollGuard: UIViewRepresentable {
             let isInside = NativeFocusRegion.contains(context.nextFocusedItem, in: self)
             if context.nextFocusedItem != nil {
                 focusLeftBrowser = !isInside
+                if !isInside {
+                    pageReturnGeneration &+= 1
+                    pageReturnInFlight = false
+                }
             }
             // Release synchronously, before UIKit schedules the next row's scroll.
             // SwiftUI's previous reveal state can survive several rapid moves.
@@ -457,30 +463,35 @@ struct SeriesBrowserRevealScrollGuard: UIViewRepresentable {
                   let coordinator = notification.userInfo?[UIFocusSystem.animationCoordinatorUserInfoKey]
                     as? UIFocusAnimationCoordinator,
                   let scroll = enclosingScrollView else { return }
-            // Native cards schedule their reveal after the focus-entry callback.
-            // Set the browser's full stage inside that same UIKit animation.
-            coordinator.addCoordinatedAnimations { [weak self, weak scroll] in
+            let reveal = { [weak self, weak scroll] in
                 guard let self, window != nil, let scroll,
                       NativeFocusRegion.contains(
                         UIFocusSystem.focusSystem(for: self)?.focusedItem, in: self
                       ) else { return }
-                let reveal = {
-                    scroll.setContentOffset(
-                        CGPoint(x: scroll.contentOffset.x, y: -scroll.adjustedContentInset.top),
-                        animated: false
-                    )
-                }
-                if reduceMotion {
-                    UIView.performWithoutAnimation(reveal)
-                } else {
-                    // Focus-effect timing is too short for a full-page return.
-                    UIView.animate(
-                        withDuration: SeriesHeroRevealTransition.pageScrollDuration,
-                        delay: 0,
-                        options: [.beginFromCurrentState, .allowUserInteraction,
-                                  .overrideInheritedDuration, .overrideInheritedCurve, .curveEaseInOut],
-                        animations: reveal
-                    )
+                scroll.setContentOffset(
+                    CGPoint(x: scroll.contentOffset.x, y: -scroll.adjustedContentInset.top),
+                    animated: false
+                )
+            }
+            if reduceMotion {
+                coordinator.addCoordinatedAnimations { UIView.performWithoutAnimation(reveal) }
+            } else {
+                // Native focus can defer its animation block until the outgoing
+                // effect ends. Start the page clock now and prevent a competing reveal.
+                pageReturnGeneration &+= 1
+                let generation = pageReturnGeneration
+                pageReturnInFlight = true
+                apply()
+                UIView.animate(
+                    withDuration: SeriesHeroRevealTransition.pageScrollDuration,
+                    delay: 0,
+                    options: [.beginFromCurrentState, .allowUserInteraction,
+                              .overrideInheritedDuration, .overrideInheritedCurve, .curveEaseInOut],
+                    animations: reveal
+                ) { [weak self] _ in
+                    guard let self, pageReturnGeneration == generation else { return }
+                    pageReturnInFlight = false
+                    apply()
                 }
             }
         }
@@ -493,6 +504,8 @@ struct SeriesBrowserRevealScrollGuard: UIViewRepresentable {
 
         func stop() {
             NotificationCenter.default.removeObserver(self)
+            pageReturnGeneration &+= 1
+            pageReturnInFlight = false
             restore()
         }
     }

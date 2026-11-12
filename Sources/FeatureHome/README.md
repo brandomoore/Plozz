@@ -953,12 +953,14 @@ records on both platforms; error dialogs, playback routing and timeouts are unch
   the leading edge when focus moves to Seasons, the hero, or lower details.
   Ratings and Details count as leaving the browser, so returning restores its
   full vertical stage without replacing the browsed card with a loading slot.
-  Direct returns from Related to an episode restore that stage inside UIKit's
-  coordinated focus animation. A SwiftUI focus-entry scroll alone can be
+  Direct returns from Related to an episode restore that stage during UIKit's
+  focus handoff. A SwiftUI focus-entry scroll alone can be
   overwritten by the native card's reveal, leaving actual focus offscreen.
-  The page return overrides the short native focus-effect timing with a
-  0.6-second ease-in/ease-out animation, paced against the native downward
-  reveal. It remains interruptible and applies its destination immediately
+  The page return starts its own 0.6-second ease-in/ease-out animation immediately,
+  rather than waiting for the outgoing focus effect before starting another
+  clock. The scroll guard prevents a competing native reveal; a generation check
+  prevents an older completion from releasing a newer return. It remains
+  interruptible and applies its destination immediately
   with Reduce Motion. Leaving the browser releases its scroll guard during the
   native focus handoff, before UIKit reveals the next row; stale SwiftUI reveal
   state cannot relock the page during rapid Up/Down reversals.
@@ -1234,6 +1236,10 @@ records on both platforms; error dialogs, playback routing and timeouts are unch
   layer returns to the hero before the dissolve begins. Carousel and focus
   callbacks remain suspended until dismissal completes; the hero is never
   revealed while its video surface is still in the full-screen player.
+  The session weakly remembers the actual entry host so transient SwiftUI
+  registrations cannot displace a still-mounted return destination. If that
+  host leaves the window or changes owner/role, the current registered host
+  remains the fallback; ending or stopping the session clears the reference.
   A pending or failed Home trailer keeps the normal artwork dwell, not the
   advertised trailer duration. Preparation is bounded to eight seconds and
   abandoned when its item is replaced. Only ready playback extends the timeline;
