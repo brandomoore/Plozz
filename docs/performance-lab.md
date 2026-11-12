@@ -1540,6 +1540,66 @@ candidate must measure first display *and* subsequent interaction readiness with
 complete metadata; a smaller inventory payload or another client's design is
 not sufficient.
 
+### Plex full-metadata decoding: avoid errors for absent fields
+
+The production improvement keeps eager, complete metadata rather than adopting
+the deferred prototype above. Plex's lenient scalar helpers previously tried
+two or three throwing decodes even when the key was absent. Sparse audio,
+video, and subtitle records multiply those unsuccessful attempts across the
+library. Each helper now checks `contains` first; present fields follow exactly
+the same conversion order. Requests, concurrency, pagination, merging, and
+query publication are unchanged. The shared provider applies this on both
+tvOS and iOS, including Home rows, previews, grids, and detail reads.
+
+The same real-server `home-live-{plex,combined}-eager-inventory` workloads ran
+in baseline/candidate/restored-baseline order, each with one warmup and five
+retained optimized iPhone-simulator samples. All six case executions passed.
+Fresh providers and pagers were created for each sample; server caches were
+not cleared. Restoring the old decoder after the candidate reproduced its
+CPU cost and slower initial load, reducing the likelihood that server cache
+warming explains the improvement.
+
+| Median | Baseline | Presence fast path | Restored baseline |
+| --- | ---: | ---: | ---: |
+| Plex first 20 fully enriched cards | 11,602 ms | 7,266 ms | 11,935 ms |
+| Plex whole-workload CPU | 6,864 ms | 716 ms | 6,954 ms |
+| Plex whole-workload elapsed | 11,940 ms | 7,606 ms | 12,270 ms |
+| Combined first 20 fully enriched cards | 12,292 ms | 8,715 ms | 11,921 ms |
+| Combined whole-workload CPU | 8,639 ms | 2,245 ms | 8,140 ms |
+| Combined whole-workload elapsed | 21,058 ms | 17,327 ms | 21,051 ms |
+| Plex next 180 cards | 47 ms | 46 ms | 55 ms |
+| Combined next 180 cards | 96 ms | 80 ms | 90 ms |
+| Plex eight sorts | 36 ms | 34 ms | 39 ms |
+| Combined eight sorts | 53 ms | 42 ms | 52 ms |
+| Plex slowest sort within a sample | 5.6 ms | 5.4 ms | 6.1 ms |
+| Combined slowest sort within a sample | 10.8 ms | 8.7 ms | 9.6 ms |
+
+First-display time excludes discovery; whole-workload CPU and elapsed time
+include it. Both strategies retain all metadata before publication, so no
+network requests are deferred into sorting or later card access. Instrumented
+requests remained 21 for Plex and 95 for combined, with 1,815 and 1,918 unique
+items respectively. Baseline/candidate response-byte medians were unchanged
+at 10,586,327 and 17,739,975; the repeated Plex control differed by 154 bytes.
+No payload-reduction claim is made. Memory snapshots varied between runs and
+are not evidence of a retained-memory improvement.
+
+The existing warmup checks full displayed `MediaItem` parity for the first 20,
+next 180, and eight sorted first windows against fresh eager reads, plus complete
+ordered identity parity for each sort. Cached replay is checked every sample.
+The provider regression suite passed 456 tests without failures or skips,
+including new absent/null/unsupported-field, scalar-conversion, and sparse
+subtitle cases. This is real-server simulator evidence, not rendered-frame or
+physical-device timing, and does not establish a lower bound for further work.
+
+Evidence:
+
+- Baseline: `65950557ea9d4850807cfbcdf1dd9160`.
+- Candidate: `44982dad4b1649f99255453211219d33`.
+- Restored baseline: `d95862f99c9341ec8ba0227b8dc06ba2`.
+- The matched-fixture restored-control/candidate comparison
+  `88efaddc843b4e528787affe2b35c51b` passed the runner's regression budgets.
+- Provider tests: `.build/private-no-clean-tests/78f20b9938ce4c60ac0241b8c69c3b8a`.
+
 ### Jellyfin Home recommendation reuse
 
 `home-recommendation-navigation` runs production `JellyfinProvider.homeHubs`
