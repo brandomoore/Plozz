@@ -51,7 +51,7 @@ public struct ICloudRestorationView: View {
                     }
                     OnboardingHeader(hasFailed
                         ? Text("Couldn't restore your setup")
-                        : Text("Restoring your setup…"))
+                        : Text("Restoring setup from iCloud…"))
                         .accessibilityAddTraits(.isHeader)
                         .accessibilityFocused($headingFocused)
                     Group {

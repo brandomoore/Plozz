@@ -88,7 +88,7 @@ final class ICloudOnboardingHostedTests: XCTestCase {
         if let restorationFailure {
             labels = restorationFailure
                 ? ["Couldn't restore your setup", "Retry", "Continue"]
-                : ["Restoring your setup", "Continue"]
+                : ["Restoring setup from iCloud", "Continue"]
         } else {
             labels = ["iCloud Sync", "Enable iCloud Sync", "Not now", "Settings"]
         }
