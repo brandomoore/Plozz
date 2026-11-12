@@ -805,6 +805,69 @@ final class LiveTVMultiviewMotionHostedTests: XCTestCase {
         }
     }
 
+    func testFocusHandoffRetargetsAndCanBeReplacedWithoutAReattachmentJump() async throws {
+        for replacesHandoff in [false, true] {
+            let fixture = try await makeFixture()
+            defer { fixture.close() }
+            let engine = fixture.model.engine
+            let output = engine.output
+            var completions = 0
+            var handoff = try XCTUnwrap(VideoPresentationHandoff(
+                engine: engine, pictureCornerRadius: 20, animatesFocusTransition: true
+            ) { completions += 1 })
+            defer { handoff.cancel() }
+            fixture.model.visible = false
+            let destination = VideoPresentationView(frame: CGRect(x: 100, y: 200, width: 800, height: 450))
+            destination.transform = CGAffineTransform(scaleX: 1.05, y: 1.05)
+            destination.attach(engine, deferringOffscreenAttachment: true)
+            fixture.window.addSubview(destination)
+            destination.layoutIfNeeded()
+
+            func presentedFrame() -> CGRect {
+                let layer = output.layer.presentation() ?? output.layer
+                return layer.convert(layer.bounds, to: fixture.window.layer.presentation() ?? fixture.window.layer)
+            }
+            var widths: [CGFloat] = []
+            let start = ContinuousClock.now
+            while presentedFrame().width > 1750, ContinuousClock.now - start < .seconds(2) {
+                try await Task.sleep(for: .milliseconds(16))
+                widths.append(presentedFrame().width)
+            }
+            XCTAssertLessThan(presentedFrame().width, 1750, "The retained renderer must animate before interruption.")
+            if replacesHandoff {
+                let previous = handoff
+                let before = presentedFrame()
+                handoff = try XCTUnwrap(VideoPresentationHandoff(
+                    engine: engine, pictureCornerRadius: 20, animatesFocusTransition: true
+                ) { completions += 1 })
+                previous.cancel()
+                XCTAssertEqual(output.convert(output.bounds, to: fixture.window).width, before.width, accuracy: 1)
+                destination.attach(engine, deferringOffscreenAttachment: true)
+            }
+            destination.transform = .identity
+            destination.frame = CGRect(x: 150, y: 150, width: 1100, height: 618.75)
+            destination.transform = CGAffineTransform(scaleX: 1.04, y: 1.04)
+            destination.layoutIfNeeded()
+            let deadline = ContinuousClock.now + .seconds(3)
+            while completions == 0, ContinuousClock.now < deadline {
+                try await Task.sleep(for: .milliseconds(16))
+                widths.append(presentedFrame().width)
+                XCTAssertTrue(output.window === fixture.window)
+            }
+            try await Task.sleep(for: .milliseconds(80))
+            widths.append(presentedFrame().width)
+            XCTAssertEqual(completions, 1)
+            XCTAssertTrue(output.superview === destination)
+            XCTAssertNil(handoff.superview)
+            XCTAssertEqual(presentedFrame().width, 1144, accuracy: 1)
+            XCTAssertGreaterThan(widths.filter { $0 > 1150 && $0 < 1900 }.count, 4)
+            for (before, after) in zip(widths, widths.dropFirst()) {
+                XCTAssertLessThan(abs(after - before), 200, "Retargeting and reattachment must not jump to old local bounds.")
+            }
+            XCTAssertEqual(engine.stops, 0)
+        }
+    }
+
     func testCancellingPictureHandoffRestoresItsOriginalTransform() async throws {
         let fixture = try await makeFixture()
         defer { fixture.close() }

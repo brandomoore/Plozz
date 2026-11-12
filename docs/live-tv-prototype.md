@@ -1868,10 +1868,15 @@ renderer. Layout-changing actions wait for the native menu dismissal completion,
 so its returning preview cannot resize or reposition a picture during promotion.
 Holding Select does not also activate or promote the picture; cancellation leaves
 its position unchanged. A short Select or Make main video remains an explicit
-promotion action. The video with sound has a small, soft, live-color glow that
+promotion action. The video with sound has a broad, soft, live-color glow that
 fades when audio changes and remains visible when focus moves to the toolbar.
 It does not change picture geometry or replace the native focus treatment.
 Reduce Transparency hides the glow; Reduce Motion removes its fades.
+First focus after fullscreen or idle uses one live-renderer transition to the
+native card's displayed size, not a shrink followed by a separate focus lift.
+The renderer's destination-local geometry is committed before returning it to
+the native card, avoiding a one-frame double scale. Ordinary focus moves still
+animate natively.
 The toolbar keeps visible title-and-icon labels with
 the same native button treatment as normal playback, including the Layout menu.
 Their height stays transport-sized while width follows the action's title.

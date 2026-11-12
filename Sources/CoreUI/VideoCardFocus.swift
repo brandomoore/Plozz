@@ -5,13 +5,15 @@ import UIKit
 
 /// Shared picture-layout and renderer-entry motion, separate from native focus timing.
 public enum MultiviewMotion {
-    public static var animation: Animation {
+    public static var duration: TimeInterval {
         #if os(tvOS)
-        .easeInOut(duration: 0.5)
+        0.5
         #else
-        .easeInOut(duration: 0.32)
+        0.32
         #endif
     }
+
+    public static var animation: Animation { .easeInOut(duration: duration) }
 }
 
 /// Focus belongs to the video surface, not the player or its transport controls.
@@ -113,7 +115,7 @@ private struct VideoCardSurface<Content: View>: View {
         button
             .buttonStyle(VideoCardButtonStyle(
                 presentsEffect: configuration.presentsEffect,
-                restoringEffect: restoringEffect || handledEffect == false && configuration.presentsEffect))
+                restoringEffect: restoringEffect || handledEffect != true && configuration.presentsEffect))
             .background { background.allowsHitTesting(false).accessibilityHidden(true) }
             .modifier(VideoCardInset(horizontalInset: configuration.horizontalInset))
         .focusSection()
@@ -123,7 +125,7 @@ private struct VideoCardSurface<Content: View>: View {
         }
         .task(id: FocusRequest(revision: configuration.request, effect: configuration.presentsEffect)) {
             let explicitRequest = handledRequest != configuration.request
-            let restoresEffect = handledEffect == false && configuration.presentsEffect
+            let restoresEffect = handledEffect != true && configuration.presentsEffect
             handledRequest = configuration.request
             handledEffect = configuration.presentsEffect
             guard explicitRequest ? configuration.prefersFocus : configuration.audible else { return }
@@ -439,7 +441,7 @@ private struct VideoCardButtonStyle: PrimitiveButtonStyle {
         if presentsEffect {
             Button(configuration).buttonStyle(.card)
                 .transaction {
-                    // Replacing an already-focused idle surface must not add another scale-in.
+                    // The live renderer handoff owns entry motion; later focus moves remain native.
                     if restoringEffect {
                         $0.animation = nil
                         $0.disablesAnimations = true

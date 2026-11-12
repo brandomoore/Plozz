@@ -1,11 +1,13 @@
 #if canImport(UIKit)
 import Observation
 import UIKit
+import CoreUI
 
 /// Keeps the live renderer above a dismissing controller until its next host is laid out.
 final class VideoPresentationHandoff: UIView {
     private weak var output: UIView?
     private weak var originalHost: UIView?
+    private var originalBounds: CGRect = .zero
     private var originalCenter: CGPoint = .zero
     private var originalTransform: CGAffineTransform = .identity
     private var completion: (() -> Void)?
@@ -13,6 +15,13 @@ final class VideoPresentationHandoff: UIView {
     private var displayLink: CADisplayLink?
     private let retainedPicture: CGRect?
     private let retainedViewportSize: CGSize
+    private let pictureCornerRadius: CGFloat
+    private let animatesFocusTransition: Bool
+    private var transitionAnimator: UIViewPropertyAnimator?
+    private var transitionFinished = false
+    private var isReturningOutput = false
+    private var stableTarget: CGRect?
+    private var stableTargetFrames = 0
 
     private final class PresentationClock: NSObject {
         weak var owner: VideoPresentationHandoff?
@@ -23,12 +32,23 @@ final class VideoPresentationHandoff: UIView {
         }
     }
 
-    init?(engine: any VideoEngine, pictureCornerRadius: CGFloat? = nil, completion: @escaping () -> Void) {
+    init?(engine: any VideoEngine, pictureCornerRadius: CGFloat? = nil,
+          animatesFocusTransition: Bool = false,
+          completion: @escaping () -> Void) {
         let output = engine.makeVideoOutputView()
         guard let window = output.window, !output.bounds.isEmpty else { return nil }
-        let picture = output.convert(output.bounds, to: window)
-        let viewport = output.superview.map { $0.convert($0.bounds, to: window) } ?? picture
-        let center = output.convert(CGPoint(x: output.bounds.midX, y: output.bounds.midY), to: window)
+        let usesPresentation = animatesFocusTransition
+            || (output.superview as? VideoPresentationHandoff)?.animatesFocusTransition == true
+        let windowLayer = usesPresentation ? window.layer.presentation() ?? window.layer : window.layer
+        let outputLayer = usesPresentation ? output.layer.presentation() ?? output.layer : output.layer
+        let picture = outputLayer.convert(outputLayer.bounds, to: windowLayer)
+        let viewport = output.superview.map {
+            let layer = usesPresentation ? $0.layer.presentation() ?? $0.layer : $0.layer
+            return layer.convert(layer.bounds, to: windowLayer)
+        } ?? picture
+        let center = CGPoint(x: picture.midX, y: picture.midY)
+        self.animatesFocusTransition = animatesFocusTransition
+        self.pictureCornerRadius = pictureCornerRadius ?? 0
         retainedPicture = pictureCornerRadius.map { _ in
             picture.offsetBy(dx: -viewport.minX, dy: -viewport.minY)
         }
@@ -36,6 +56,7 @@ final class VideoPresentationHandoff: UIView {
         super.init(frame: pictureCornerRadius == nil ? window.bounds : viewport)
         self.output = output
         originalHost = output.superview
+        originalBounds = output.bounds
         originalCenter = output.center
         originalTransform = output.transform
         self.completion = completion
@@ -65,6 +86,7 @@ final class VideoPresentationHandoff: UIView {
             if current.isHidden || current.alpha < 1 || current.layer.presentation()?.opacity == 0 { return false }
             ancestor = current.superview
         }
+        if animatesFocusTransition, !transitionFinished { return false }
         return true
     }
 
@@ -78,7 +100,18 @@ final class VideoPresentationHandoff: UIView {
 
     private func receivePresentedOutput() {
         guard let receiver else { return }
-        if let retainedPicture, let output, output.superview === self,
+        if isReturningOutput, let output, let presented = output.layer.presentation() {
+            guard presented.bounds == output.layer.bounds,
+                  presented.position == output.layer.position,
+                  CATransform3DEqualToTransform(presented.transform, output.layer.transform) else { return }
+            isReturningOutput = false
+            transitionFinished = true
+        }
+        if animatesFocusTransition, !transitionFinished {
+            prepareFocusTransition(to: receiver)
+            return
+        }
+        if !animatesFocusTransition, let retainedPicture, let output, output.superview === self,
            let window, receiver.window === window,
            let presented = receiver.layer.presentation(), !presented.bounds.isEmpty,
            retainedViewportSize.width > 0, retainedViewportSize.height > 0 {
@@ -100,7 +133,67 @@ final class VideoPresentationHandoff: UIView {
         receiver.layoutIfNeeded()
     }
 
+    private func prepareFocusTransition(to view: VideoPresentationView) {
+        guard transitionAnimator == nil, let window, view.window === window,
+              let presented = view.layer.presentation(), !presented.bounds.isEmpty else { return }
+        var ancestor: UIView? = view
+        while let current = ancestor {
+            guard !current.isHidden, current.alpha >= 1,
+                  (current.layer.presentation()?.opacity ?? 0) >= 0.999 else { return }
+            ancestor = current.superview
+        }
+        let target = presented.convert(presented.bounds, to: window.layer.presentation() ?? window.layer)
+        guard stableTarget == target else {
+            stableTarget = target
+            stableTargetFrames = 0
+            return
+        }
+        stableTargetFrames += 1
+        guard stableTargetFrames >= 2, retainedPicture != nil, output != nil,
+              retainedViewportSize.width > 0, retainedViewportSize.height > 0 else { return }
+        let scaleX = target.width / retainedViewportSize.width
+        let scaleY = target.height / retainedViewportSize.height
+        let targetRadius = pictureCornerRadius / max(scaleX, scaleY)
+        let animator = UIViewPropertyAnimator(duration: MultiviewMotion.duration, curve: .easeInOut) { [weak self] in
+            guard let self else { return }
+            // Animate the owned bridge, never the renderer: its transform must
+            // not survive reparenting and compound the destination's native lift.
+            self.transform = CGAffineTransform(scaleX: scaleX, y: scaleY)
+            self.center = CGPoint(x: target.midX, y: target.midY)
+            self.layer.cornerRadius = targetRadius
+        }
+        transitionAnimator = animator
+        animator.addCompletion { [weak self] position in
+            guard let self, let view = self.receiver, let window = self.window,
+                  let presented = view.layer.presentation(), !view.bounds.isEmpty,
+                  let output = self.output, position == .end else { return }
+            let currentTarget = presented.convert(presented.bounds, to: window.layer.presentation() ?? window.layer)
+            guard currentTarget == target else {
+                self.transitionAnimator = nil
+                self.stableTarget = nil
+                return
+            }
+            // Commit the receiver's local geometry while the bridge still owns
+            // the renderer. Reparenting with old presentation bounds produces
+            // one frame of the old size multiplied by the new native focus lift.
+            UIView.performWithoutAnimation {
+                let visibleRadius = self.layer.cornerRadius * max(abs(self.transform.a), abs(self.transform.d))
+                self.layer.removeAllAnimations()
+                self.transform = .identity
+                self.bounds = view.bounds
+                self.center = CGPoint(x: target.midX, y: target.midY)
+                self.transform = CGAffineTransform(
+                    scaleX: target.width / view.bounds.width, y: target.height / view.bounds.height)
+                self.layer.cornerRadius = visibleRadius / max(abs(self.transform.a), abs(self.transform.d))
+                view.prepareHandoffOutput(output)
+            }
+            self.isReturningOutput = true
+        }
+        animator.startAnimation()
+    }
+
     func complete() {
+        transitionAnimator = nil
         displayLink?.invalidate()
         displayLink = nil
         receiver = nil
@@ -114,15 +207,21 @@ final class VideoPresentationHandoff: UIView {
     }
 
     func cancel(restoringOutput: Bool = false) {
+        transitionAnimator?.stopAnimation(true)
+        transitionAnimator = nil
         displayLink?.invalidate()
         displayLink = nil
         receiver = nil
         completion = nil
         if let output, output.superview === self {
             if restoringOutput, let originalHost, originalHost.window != nil {
-                originalHost.addSubview(output)
-                output.center = originalCenter
-                output.transform = originalTransform
+                UIView.performWithoutAnimation {
+                    output.transform = .identity
+                    output.bounds = originalBounds
+                    output.center = originalCenter
+                    output.transform = originalTransform
+                    originalHost.addSubview(output)
+                }
             } else {
                 output.removeFromSuperview()
             }
@@ -276,7 +375,12 @@ final class VideoPresentationView: UIView {
         output.autoresizingMask = []
         output.isUserInteractionEnabled = false
         surface = output
-        surfaceHost.addSubview(output)
+        UIView.performWithoutAnimation {
+            if presentationHandoff != nil {
+                prepareHandoffOutput(output)
+            }
+            surfaceHost.addSubview(output)
+        }
         setNeedsLayout()
     }
 
@@ -477,6 +581,15 @@ final class VideoPresentationView: UIView {
         reflection.layoutIfNeeded()
         #endif
         guard let surface, surface.superview === surfaceHost else { return }
+        layoutSurface(surface)
+        subtitleViewport?.scheduleUpdate()
+        if window != nil, !bounds.isEmpty, let handoff = presentationHandoff {
+            presentationHandoff = nil
+            handoff.complete()
+        }
+    }
+
+    private func layoutSurface(_ surface: UIView) {
         let contentBounds = CGRect(origin: .zero, size: bounds.size)
         let center = zoom.surfaceCenter(in: bounds, fitBounds: fitBounds, aspectRatio: aspectRatio, activePicture: activePicture)
         let scale = zoom.scaleFactors(in: bounds, aspectRatio: aspectRatio, fitBounds: fitBounds, activePicture: activePicture)
@@ -490,11 +603,12 @@ final class VideoPresentationView: UIView {
                 surface.layoutIfNeeded()
             }
         }
-        subtitleViewport?.scheduleUpdate()
-        if window != nil, !bounds.isEmpty, let handoff = presentationHandoff {
-            presentationHandoff = nil
-            handoff.complete()
-        }
+    }
+
+    fileprivate func prepareHandoffOutput(_ output: UIView) {
+        aspectRatio = engine?.videoAspectRatio
+        fitBounds = resolvedFitBounds
+        layoutSurface(output)
     }
 
     #if os(iOS)

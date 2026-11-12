@@ -301,15 +301,25 @@ Fullscreen, multiview, external playback, and Reduce Transparency disable the re
 Transparency retains inset-picture rounding; fullscreen restores the unmasked,
 black-backed video surface.
 
-Apple TV Multiview uses a separate, much smaller audio indicator behind the
-audible picture: a low-opacity, blurred 12-point color stroke with an 8-point
-blur, not a focus border. It reuses the same 2 Hz, 24-by-14-pixel color sampler
+Apple TV Multiview uses a separate soft audio indicator behind the
+audible picture: a 48-point color stroke with a 32-point blur at 45% opacity,
+not a focus border. Its broad feathered edge remains visible beyond the lifted
+picture without changing its size. It reuses the same 2 Hz, 24-by-14-pixel color sampler
 and native/software frame access. Neutral footage uses a faint neutral glow.
 The indicator and palette fade over 0.6 seconds without resizing or replacing
 the renderer. Moving focus to the toolbar leaves it on the audible video.
 Muted, unavailable, hidden, fullscreen, external, unauthorized, and background pictures stop sampling;
 Reduce Transparency removes the indicator and Reduce Motion disables its fades.
 The existing Audio on/Muted accessibility value remains authoritative.
+
+When Multiview first presents its native focus cards, the existing live renderer
+bridge owns a single half-second transition to the receiver's settled presentation
+frame, including native focus lift. Model bounds alone omit that lift. The bridge,
+not the renderer, owns the animation transform. Before reattachment it commits the
+receiver's local renderer geometry while preserving its on-screen frame; otherwise
+one frame can combine the old bounds with the new focus transform. Interrupted
+handoffs start from the displayed frame, and ordinary focus movement remains native.
+Reduce Motion bypasses the entry animation.
 
 When loading a new mobile native source, disconnect the outgoing player from
 the retained `AVPlayerLayer` before teardown and replacement. Retuning must

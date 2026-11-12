@@ -4,6 +4,84 @@ import Vision
 
 final class LiveTVMultiviewRemoteTests: XCTestCase {
     @MainActor
+    func testFullscreenEntryAndFirstFocusDoNotReverseVideoSizing() throws {
+        continueAfterFailure = false
+        let app = fixtureApplication()
+        app.launchArguments = ["--live-root-fixture", "--visual-focus-fixture", "--motion-fixture"]
+        app.launch()
+        defer { app.terminate() }
+        startProductionChannel(in: app)
+        select(app.buttons["live-channel-timeline"], in: app)
+        openMultiviewPicker(in: app)
+        _ = settledVideoFrame(1, in: app)
+        let before = pictureMotion(in: app)
+        chooseGuideChannel(2, in: app)
+        _ = settledVideoFrame(1, in: app)
+        assertSizingDoesNotReverse(pictureMotion(in: app)[0].dropFirst(max(0, before[0].count - 1)),
+                                  name: "Fullscreen entry")
+    }
+
+    @MainActor
+    func testFirstFocusAfterIdleDoesNotReverseVideoSizing() throws {
+        continueAfterFailure = false
+        let app = fixtureApplication()
+        app.launchArguments = ["--live-root-fixture", "--visual-focus-fixture", "--motion-fixture"]
+        app.launch()
+        defer { app.terminate() }
+        startProductionChannel(in: app)
+        openMultiviewPicker(in: app)
+        chooseGuideChannel(2, in: app)
+        for layout in ["Side by side", "Main picture", "Corner"] {
+            select(app.buttons["live-multiview-layout"], in: app)
+            selectMenuItem(layout, in: app)
+            select(pane("Sports 1", in: app), in: app, activate: false)
+            XCUIRemote.shared.press(.menu)
+            assertChromeHidden(in: app)
+            _ = settledVideoFrame(1, in: app)
+            _ = settledVideoFrame(2, in: app)
+            let idle = pictureMotion(in: app)
+            XCUIRemote.shared.press(.up)
+            XCTAssertTrue(app.buttons["live-multiview-layout"].waitForExistence(timeout: 5))
+            _ = settledVideoFrame(1, in: app)
+            _ = settledVideoFrame(2, in: app)
+            let focused = pictureMotion(in: app)
+            for index in 0..<2 {
+                assertSizingDoesNotReverse(focused[index].dropFirst(max(0, idle[index].count - 1)),
+                                          name: "\(layout) video \(index + 1) first focus")
+            }
+        }
+    }
+
+    private func assertSizingDoesNotReverse(
+        _ samples: ArraySlice<[Double]>, name: String,
+        file: StaticString = #filePath, line: UInt = #line
+    ) {
+        let visible = samples.filter { $0[4] > 0.99 }
+        let evidence = XCTAttachment(string: visible.map { "\($0)" }.joined(separator: "\n"))
+        evidence.name = name
+        evidence.lifetime = .keepAlways
+        add(evidence)
+        XCTAssertGreaterThan(visible.count, 1, file: file, line: line)
+        for axis in [2, 3] {
+            guard let start = visible.first?[axis], let end = visible.last?[axis] else { continue }
+            if abs(end - start) > 2 {
+                XCTAssertGreaterThan(visible.filter {
+                    $0[axis] > min(start, end) + 0.25 && $0[axis] < max(start, end) - 0.25
+                }.count, 2, "\(name) must animate rather than snap.", file: file, line: line)
+            }
+            let shrinking = end < start
+            var extreme = start
+            var reversal = 0.0
+            for sample in visible {
+                reversal = max(reversal, shrinking ? sample[axis] - extreme : extreme - sample[axis])
+                extreme = shrinking ? min(extreme, sample[axis]) : max(extreme, sample[axis])
+            }
+            XCTAssertLessThanOrEqual(reversal, 1.5,
+                                    "\(name) must not reverse size during its transition.", file: file, line: line)
+        }
+    }
+
+    @MainActor
     func testAudioGlowRemainsOnTheAudibleVideoWhenFocusMovesToTheToolbar() throws {
         continueAfterFailure = false
         let app = fixtureApplication()
@@ -26,10 +104,13 @@ final class LiveTVMultiviewRemoteTests: XCTestCase {
         let second = capture("audio-glow-second-video-toolbar-focused", in: app)
         for frame in frames {
             let nearEdge = CGRect(x: frame.midX - 100, y: frame.maxY + 1, width: 200, height: 8)
-            let farEdge = nearEdge.offsetBy(dx: 0, dy: 35)
+            let outerGlow = nearEdge.offsetBy(dx: 0, dy: 27)
+            let farEdge = nearEdge.offsetBy(dx: 0, dy: 110)
             let glow = pixelDifference(first, second, region: nearEdge, screen: app.frame)
             XCTAssertGreaterThan(glow.mean, 0.003, "Audio must change the soft glow outside the picture.")
-            XCTAssertLessThan(glow.mean, 0.12, "The indicator should remain subtle.")
+            XCTAssertLessThan(glow.mean, 0.18, "The indicator should remain soft rather than become a bright border.")
+            XCTAssertGreaterThan(pixelDifference(first, second, region: outerGlow, screen: app.frame).mean, 0.008,
+                                 "The wider glow must remain visible 28-36 points beyond the video.")
             XCTAssertLessThan(pixelDifference(first, second, region: farEdge, screen: app.frame).mean, 0.002,
                               "The glow must not spread far into the surrounding content.")
         }
@@ -1422,7 +1503,10 @@ final class LiveTVMultiviewRemoteTests: XCTestCase {
         assertSideBySideFillsScreen(in: app)
         for cycle in 1...2 {
             let original = [1, 2].map { app.otherElements["multiview-fixture-video-\($0)"].frame }
+            XCUIRemote.shared.press(.up)
+            XCTAssertTrue(app.buttons["live-multiview-layout"].waitForExistence(timeout: 5))
             focusAudio("Sports 1", in: app)
+            let shownFrames = [settledVideoFrame(1, in: app), settledVideoFrame(2, in: app)]
             let activations = [1, 2].map { audioActivations($0, in: app) }
             let shown = capture("multiview-chrome-shown-\(cycle)", in: app)
             assertChromeHidden(in: app)
@@ -1440,7 +1524,7 @@ final class LiveTVMultiviewRemoteTests: XCTestCase {
                     "Hiding chrome must not change video contents"
                 )
             }
-            XCUIRemote.shared.press(.right)
+            XCUIRemote.shared.press(original[0].midX < original[1].midX ? .right : .left)
             assertNativeFocus(pane("Sports 2", in: app), in: app)
             assertAudio("Sports 2", in: app)
             XCTAssertEqual(audioActivations(1, in: app), activations[0])
@@ -1448,7 +1532,11 @@ final class LiveTVMultiviewRemoteTests: XCTestCase {
             XCTAssertTrue(app.buttons["live-multiview-layout"].waitForExistence(timeout: 2))
             capture("multiview-chrome-revealed-\(cycle)", in: app)
             for (index, frame) in original.enumerated() {
-                XCTAssertLessThan(app.otherElements["multiview-fixture-video-\(index + 1)"].frame.width, frame.width)
+                let revealed = settledVideoFrame(index + 1, in: app)
+                let expected = shownFrames[1 - index]
+                XCTAssertEqual(revealed.width, expected.width, accuracy: 2)
+                XCTAssertEqual(revealed.height, expected.height, accuracy: 2)
+                if index == 0 { XCTAssertLessThan(revealed.width, frame.width) }
             }
             select(app.buttons["live-multiview-layout"], in: app, activate: false)
             assertAudio("Sports 2", in: app)

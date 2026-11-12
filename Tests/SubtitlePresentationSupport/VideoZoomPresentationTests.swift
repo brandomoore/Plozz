@@ -59,7 +59,7 @@ final class VideoZoomPresentationTests: XCTestCase {
             let ci = try XCTUnwrap(CIImage(image: image))
             let scale = image.scale
             let region = CGRect(x: (frame.midX - 100) * scale,
-                                y: (window.bounds.height - frame.maxY - 8) * scale,
+                                y: (window.bounds.height - frame.maxY - 32) * scale,
                                 width: 200 * scale, height: 7 * scale)
             let average = ci.applyingFilter("CIAreaAverage", parameters: [kCIInputExtentKey: CIVector(cgRect: region)])
             var pixel = [Float](repeating: 0, count: 4)
@@ -74,7 +74,7 @@ final class VideoZoomPresentationTests: XCTestCase {
         let fading = try edgeIntensity()
         try await Task.sleep(for: .milliseconds(600))
         let inactive = try edgeIntensity()
-        XCTAssertGreaterThan(active - inactive, 0.001, "The glow must extend past the lifted native picture.")
+        XCTAssertGreaterThan(active - inactive, 0.005, "The glow must remain visible 25-32 points beyond the lifted picture.")
         if !UIAccessibility.isReduceMotionEnabled {
             XCTAssertGreaterThan(active, fading)
             XCTAssertGreaterThan(fading, inactive)
@@ -84,7 +84,7 @@ final class VideoZoomPresentationTests: XCTestCase {
         let appearing = try edgeIntensity()
         try await Task.sleep(for: .milliseconds(600))
         let restored = try edgeIntensity()
-        XCTAssertGreaterThan(restored - inactive, 0.001)
+        XCTAssertGreaterThan(restored - inactive, 0.005)
         if !UIAccessibility.isReduceMotionEnabled {
             XCTAssertGreaterThan(appearing, inactive)
             XCTAssertGreaterThan(restored, appearing)

@@ -440,14 +440,19 @@ public struct LiveChannelPlayerView: View {
                 #endif
                 #if os(tvOS)
                 .onChange(of: videoCardFocus?.presentsEffect) { old, new in
-                    focusHandoff?.cancel(restoringOutput: true)
-                    focusHandoff = nil
-                    guard let old, let new, old != new, isMultiview, isActive, isAuthorized else { return }
+                    guard let old, let new, old != new, isMultiview, isActive, isAuthorized else {
+                        focusHandoff?.cancel(restoringOutput: true)
+                        focusHandoff = nil
+                        return
+                    }
+                    let previous = focusHandoff
                     focusHandoff = VideoPresentationHandoff(
-                        engine: model.engine, pictureCornerRadius: videoCardFocus?.cornerRadius ?? 0
+                        engine: model.engine, pictureCornerRadius: videoCardFocus?.cornerRadius ?? 0,
+                        animatesFocusTransition: new && !reduceMotion
                     ) {
                         focusHandoff = nil
                     }
+                    previous?.cancel()
                 }
                 #endif
                 .ignoresSafeArea(.all, edges: hasInlineControls || isMultiview ? [] : .all)
