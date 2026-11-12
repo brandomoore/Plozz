@@ -3,7 +3,29 @@ import UIKit
 import CoreUI
 import CoreModels
 import FeaturePlayback
+@testable import AppShell
+import AppRuntime
+import CoreSecureStore
+import FeatureAuth
 @testable import FeatureSettings
+
+private struct LiveJellyfinOnboardingFixture: View {
+    @State private var app: AppState
+
+    init() {
+        let suite = "LiveJellyfinOnboardingFixture"
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+        _app = State(initialValue: AppState(
+            accountStore: AccountStore(secureStore: InMemorySecureStore()),
+            profilesModel: ProfilesModel(store: ProfileStore(defaults: defaults))
+        ))
+    }
+
+    var body: some View {
+        RootView(appState: app)
+    }
+}
 
 @main
 struct FocusHostApp: App {
@@ -15,7 +37,9 @@ struct FocusHostApp: App {
 
     var body: some Scene {
         WindowGroup {
-            if ProcessInfo.processInfo.arguments.contains("--live-webdav-watchlist-fixture") {
+            if ProcessInfo.processInfo.arguments.contains("--live-jellyfin-onboarding") {
+                LiveJellyfinOnboardingFixture()
+            } else if ProcessInfo.processInfo.arguments.contains("--live-webdav-watchlist-fixture") {
                 LiveWebDAVWatchlistFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--detail-selection-fixture") {
                 DetailSelectionFixture()

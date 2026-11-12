@@ -41,6 +41,10 @@ and every provider/feature that talks to a remote server.
   Manual media-server discovery uses its separate candidate builder; legacy
   normalization of persisted/service URLs is unchanged. Discovery opts into
   typed TLS trust failures so an invalid certificate cannot select HTTP instead.
+  Generic TLS negotiation failures remain transport errors: probing an HTTP-only
+  port with HTTPS does not imply a rejected certificate. Manual Jellyfin/Emby
+  discovery handles those and ordinary connectivity errors before trying its
+  remaining credential-free candidates; explicit HTTPS never tries HTTP.
 - `ProviderIconLoader`: best-effort, origin-only `/favicon.ico` requests for
   provider marks. It strips user information, paths, query strings and fragments,
   uses no credential/cookie storage, rejects redirects and authentication,
