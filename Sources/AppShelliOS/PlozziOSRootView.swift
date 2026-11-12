@@ -952,15 +952,20 @@ private struct PlozziOSScreenshotTabRouter: View {
     }
 }
 
-struct PlozziOSMacNavigationBackground: ViewModifier {
+struct PlozziOSNavigationBackground: ViewModifier {
     @Environment(\.plozziOSIsRunningOnMac) private var isRunningOnMac
+    @Environment(\.accessibilityReduceTransparency) private var systemReduceTransparency
+    @Environment(\.plozzReduceTransparency) private var reduceTransparency
 
     @ViewBuilder
     func body(content: Content) -> some View {
         if #available(iOS 26.0, *) {
+            let opaqueChrome = systemReduceTransparency || reduceTransparency
             content
-                .toolbarBackground(isRunningOnMac ? .hidden : .automatic, for: .tabBar)
-                .scrollEdgeEffectHidden(isRunningOnMac, for: .top)
+                .toolbarBackground(isRunningOnMac || opaqueChrome ? .hidden : .automatic, for: .tabBar)
+                // Hide only the full-width edge backdrop; native controls keep their opaque treatment.
+                .scrollEdgeEffectHidden(isRunningOnMac || opaqueChrome, for: .top)
+                .scrollEdgeEffectHidden(opaqueChrome, for: .bottom)
         } else {
             content
                 .toolbarBackground(isRunningOnMac ? .hidden : .automatic, for: .tabBar)
@@ -1440,7 +1445,7 @@ struct PlozziOSTabShell: View {
         }
 
         .tabViewStyle(.sidebarAdaptable)
-        .modifier(PlozziOSMacNavigationBackground())
+        .modifier(PlozziOSNavigationBackground())
         .background {
             PlozziOSSettingsTabAction(
                 tabIndex: tabDestinations.firstIndex(of: .settings),

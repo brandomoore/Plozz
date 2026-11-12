@@ -815,8 +815,14 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   heights. Standalone PIN prompts and tvOS keep their existing presentation.
   The detail information band retains its darker 40%-opaque surface.
   Compact mobile detail metadata and actions reveal the page gradient instead
-  of covering it with a solid rectangle; Gradient Off and Reduce Transparency
-  retain the original opaque base. The artwork's existing readability fade stays.
+  of covering it with a solid rectangle, including with Reduce Transparency:
+  the page gradient itself is opaque, not a glass/material surface. Gradient Off
+  retains the original opaque base. The artwork's existing readability fade stays.
+  On iOS 26+, `PlozziOSNavigationBackground` removes full-width scroll-edge
+  backdrops when either system or app transparency is reduced. Native navigation
+  buttons and tabs retain their system-owned opaque accessibility treatment;
+  hero artwork and the page background continue behind them. Normal iPhone
+  scroll-edge effects, older iOS navigation, and Mac's clear top edge are preserved.
   Native tvOS cards display their local portion of a shared page-mesh texture,
   with the information band precomposed because TVUIKit replaces fill alpha.
   A background-only tint layer applies each card's wash without fading text or

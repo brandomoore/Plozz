@@ -512,8 +512,8 @@ final class HomeHeroFullWidthPresentationTests: XCTestCase {
                     let navigation = try XCTUnwrap(findController(UINavigationController.self, in: tabs))
                     let scroll = try XCTUnwrap(descendants(navigation.view).compactMap { $0 as? UIScrollView }
                         .first { $0.contentSize.height > $0.bounds.height })
-                    XCTAssertEqual(scroll.topEdgeEffect.isHidden, isRunningOnMac)
-                    XCTAssertFalse(scroll.bottomEdgeEffect.isHidden)
+                    XCTAssertEqual(scroll.topEdgeEffect.isHidden, isRunningOnMac || UIAccessibility.isReduceTransparencyEnabled)
+                    XCTAssertEqual(scroll.bottomEdgeEffect.isHidden, UIAccessibility.isReduceTransparencyEnabled)
                     XCTAssertFalse(navigation.isNavigationBarHidden)
                     XCTAssertEqual(tabs.sidebar.isHidden, sidebarHidden)
                     let image = snapshot(window, name: "navigation-background-mac-\(isRunningOnMac)-sidebar-\(!sidebarHidden)")
@@ -523,12 +523,12 @@ final class HomeHeroFullWidthPresentationTests: XCTestCase {
                             CGAffineTransform(scaleX: image.scale, y: image.scale)
                         ))), scale: image.scale, orientation: .up
                     )
-                    let controls = try HeroTextInk.frames(in: controlImage, terms: ["PROFILE"], darkTerms: ["PROFILE"])
+                    let controls = try HeroTextInk.frames(in: controlImage, terms: ["PROFILE"])
                     let profile = try XCTUnwrap(controls["PROFILE"])
                     XCTAssertTrue(window.bounds.contains(profile.offsetBy(dx: trailing.minX, dy: 0)))
-                    if isRunningOnMac {
+                    if isRunningOnMac || UIAccessibility.isReduceTransparencyEnabled {
                         let bar = navigation.navigationBar.convert(navigation.navigationBar.bounds, to: window)
-                        let x = bar.minX + bar.width * 0.7
+                        let x = bar.minX + 4
                         let top = try pixel(image, at: CGPoint(x: x, y: bar.midY))
                         let content = try pixel(image, at: CGPoint(x: x, y: bar.maxY + 120))
                         for channel in 0..<3 {
@@ -538,6 +538,119 @@ final class HomeHeroFullWidthPresentationTests: XCTestCase {
                             )
                         }
                     }
+                }
+            }
+        }
+    }
+
+    func testReducedTransparencyKeepsPhoneNavigationEdgesClearWithoutHidingControls() async throws {
+        guard #available(iOS 26.0, *) else { throw XCTSkip("Scroll-edge effects require iOS 26.") }
+        if let expected = ProcessInfo.processInfo.environment["PLOZZ_EXPECT_REDUCED_TRANSPARENCY"] {
+            XCTAssertEqual(UIAccessibility.isReduceTransparencyEnabled, expected == "1")
+        }
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let item = try await artworkItem()
+        try await withWindow(
+            item: item, size: scene.coordinateSpace.bounds.size, sizeClass: nil,
+            insets: .zero, pull: PlozziOSHomeHeroPullModel()
+        ) { window, host in
+            for reduced in [false, true, false] {
+                host.rootView = AnyView(
+                    MacNavigationBackgroundFixture()
+                        .environment(\.plozziOSIsRunningOnMac, false)
+                        .environment(\.plozzReduceTransparency, reduced)
+                        .environment(\.colorScheme, .dark)
+                )
+                try await waitForHostedLayout(window)
+                let tabs = try XCTUnwrap(findController(UITabBarController.self, in: host))
+                let navigation = try XCTUnwrap(findController(UINavigationController.self, in: tabs))
+                let scroll = try XCTUnwrap(descendants(navigation.view).compactMap { $0 as? UIScrollView }
+                    .first { $0.contentSize.height > $0.bounds.height })
+                let hidesEdgeEffects = reduced || UIAccessibility.isReduceTransparencyEnabled
+                XCTAssertEqual(scroll.topEdgeEffect.isHidden, hidesEdgeEffects)
+                XCTAssertEqual(scroll.bottomEdgeEffect.isHidden, hidesEdgeEffects)
+                XCTAssertFalse(navigation.isNavigationBarHidden)
+                XCTAssertFalse(tabs.tabBar.isHidden)
+                for offset: CGFloat in [0, 400] {
+                    scroll.setContentOffset(CGPoint(x: 0, y: offset), animated: false)
+                    try await waitForHostedLayout(window)
+                    let image = snapshot(
+                        window,
+                        name: "phone-navigation-system-\(UIAccessibility.isReduceTransparencyEnabled)-app-\(reduced)-scroll-\(offset)"
+                    )
+                    if hidesEdgeEffects {
+                        let reference = try pixel(image, at: CGPoint(x: 4, y: window.bounds.midY))
+                        let bar = navigation.navigationBar.convert(navigation.navigationBar.bounds, to: window)
+                        for y in [bar.midY, window.bounds.height - 8] {
+                            let actual = try pixel(image, at: CGPoint(x: 4, y: y))
+                            for channel in 0..<3 {
+                                XCTAssertLessThan(abs(Int(actual[channel]) - Int(reference[channel])), 10,
+                                                  "Native controls must not add full-width opaque edge bands.")
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    func testSeriesDetailArtworkReachesTheTopWithReducedTransparency() async throws {
+        guard #available(iOS 26.0, *) else { throw XCTSkip("Scroll-edge effects require iOS 26.") }
+        let item = try await artworkItem()
+        let provider = SeriesHeaderMobileProvider(artworkURL: item.posterURL)
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: "DetailTransparency-\(UUID().uuidString)"))
+        let app = PlozziOSAppModel(
+            accountStore: AccountStore(secureStore: InMemorySecureStore()),
+            profileStore: ProfileStore(defaults: defaults)
+        )
+        app.settings.heroBackground.settings.detailMode = .off
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        try await withWindow(
+            item: item, size: scene.coordinateSpace.bounds.size, sizeClass: nil,
+            insets: .zero, pull: PlozziOSHomeHeroPullModel()
+        ) { window, host in
+            for scheme in [ColorScheme.dark, .light] {
+                for reduced in [false, true] {
+                    host.overrideUserInterfaceStyle = scheme == .dark ? .dark : .light
+                    host.rootView = AnyView(
+                        TabView {
+                            Tab("Home", systemImage: "house") {
+                                NavigationStack {
+                                    PlozziOSItemDetailView(appModel: app, provider: provider, item: provider.show)
+                                        .toolbarBackground(.hidden, for: .navigationBar)
+                                }
+                            }
+                            Tab("Search", systemImage: "magnifyingglass", role: .search) { Text("Search") }
+                        }
+                        .modifier(PlozziOSNavigationBackground())
+                        .environment(app)
+                        .environment(HeroTrailerController())
+                        .environment(PlozziOSSidebarGeometryModel())
+                        .environment(\.horizontalSizeClass, .compact)
+                        .environment(\.plozziOSHeroContainerHeight, window.bounds.height)
+                        .environment(\.themePalette, scheme == .dark ? .dark : .light)
+                        .environment(\.colorScheme, scheme)
+                        .environment(\.gradientBackgroundsEnabled, true)
+                        .environment(\.plozzReduceTransparency, reduced)
+                    )
+                    let deadline = ContinuousClock.now.advanced(by: .seconds(8))
+                    var image: UIImage
+                    repeat {
+                        try await waitForHostedLayout(window)
+                        image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+                            window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+                        }
+                        let top = try pixel(image, at: CGPoint(x: 8, y: 8))
+                        if Int(top[2]) - Int(top[0]) > 50 { break }
+                    } while ContinuousClock.now < deadline
+                    image = snapshot(window, name: "series-detail-\(scheme)-reduced-\(reduced)")
+                    for y: CGFloat in [8, 70, 120] {
+                        let top = try pixel(image, at: CGPoint(x: 8, y: y))
+                        XCTAssertGreaterThan(Int(top[2]) - Int(top[0]), 50,
+                                             "The actual detail artwork must extend behind the native navigation.")
+                    }
+                    let tabs = try XCTUnwrap(findController(UITabBarController.self, in: host))
+                    XCTAssertFalse(tabs.tabBar.isHidden)
                 }
             }
         }
@@ -883,7 +996,7 @@ private struct MacNavigationBackgroundFixture: View {
                     .toolbar {
                         ToolbarItem(placement: .topBarTrailing) {
                             Button(action: {}) {
-                                Text(verbatim: "PROFILE").font(.title2).foregroundStyle(.black)
+                                Text(verbatim: "PROFILE").font(.title2).foregroundStyle(.primary)
                             }
                         }
                     }
@@ -893,7 +1006,7 @@ private struct MacNavigationBackgroundFixture: View {
         }
         .tabViewStyle(.sidebarAdaptable)
         .scrollEdgeEffectStyle(.hard, for: .top)
-        .modifier(PlozziOSMacNavigationBackground())
+        .modifier(PlozziOSNavigationBackground())
     }
 }
 
