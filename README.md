@@ -94,7 +94,11 @@ Live TV is experimental; Plozz supplies no channels or IPTV subscription.
 | **Video files** | MKV, MP4/M4V, MOV, WebM, AVI, MPEG-TS (TS, M2TS, MTS, M2T), MPEG-PS (MPG, VOB), 3GP/3G2, OGG/OGV, ASF/WMV, FLV, RealMedia (RM/RMVB). Decrypted DVD/Blu-ray ISO images and Blu-ray folders. |
 | **Video codecs** | H.264/AVC, H.265/HEVC, AV1, VP9, VP8, MPEG-2, MPEG-4 Part 2 (Xvid/DivX), VC-1, WMV 1–3, MS-MPEG4 v1–3, QuickTime RLE, FLV1 (Sorenson Spark), VP6, RealVideo 1–4, H.263, Theora. |
 | **Audio codecs** | AAC, HE-AAC/v2, AC-3 (Dolby Digital), E-AC-3 (Dolby Digital Plus, including JOC), TrueHD, MLP, DTS, DTS-HD MA, FLAC, ALAC, MP3, MP2, PCM/LPCM (including G.711), Opus, Vorbis, WMA (Standard, Pro, Lossless, Voice), Nellymoser, ADPCM-SWF, Speex, RealAudio (Cook, ATRAC3, Sipro, Lossless, 14.4/28.8), AMR-NB/WB. |
-| **HDR** | HDR10, HDR10+, HLG and supported Dolby Vision profiles. Dolby Vision Profile 7 plays as HDR10. |
+| **HDR** | HDR10, HDR10+ and HLG. |
+| **Dolby Vision** | Profiles 5, 8.1, 8.4 and AV1 10.1 on compatible devices and displays. AV1 profiles 10.0 and 10.4 need hardware AV1 decoding and the native player for Dolby Vision. |
+
+Profile 7 (MEL/FEL) plays as HDR10; profiles 8.2 and AV1 10.2 play as SDR.
+Without hardware AV1 decoding, AV1 10.4 plays as HLG and 10.0 isn't supported.
 
 Your file, device, display and speakers all affect playback. TrueHD and DTS-HD MA
 play as regular surround audio, not height channels or bitstream passthrough.
