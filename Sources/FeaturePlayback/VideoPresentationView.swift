@@ -22,6 +22,11 @@ final class VideoPresentationHandoff: UIView {
     private var isReturningOutput = false
     private var stableTarget: CGRect?
     private var stableTargetFrames = 0
+    #if os(tvOS)
+    private var focusEntry: VideoCardEntryTransition?
+    private var stagedFocusFrame: CGRect?
+    private var unstagedFocusFrame: CGRect?
+    #endif
 
     private final class PresentationClock: NSObject {
         weak var owner: VideoPresentationHandoff?
@@ -37,7 +42,13 @@ final class VideoPresentationHandoff: UIView {
           completion: @escaping () -> Void) {
         let output = engine.makeVideoOutputView()
         guard let window = output.window, !output.bounds.isEmpty else { return nil }
-        let usesPresentation = animatesFocusTransition
+        #if os(tvOS)
+        let previousEntry = (output.superview as? VideoPresentationView)?.focusEntryTransition
+        let continuesEntry = previousEntry?.isActive == true
+        #else
+        let continuesEntry = false
+        #endif
+        let usesPresentation = animatesFocusTransition || continuesEntry
             || (output.superview as? VideoPresentationHandoff)?.animatesFocusTransition == true
         let windowLayer = usesPresentation ? window.layer.presentation() ?? window.layer : window.layer
         let outputLayer = usesPresentation ? output.layer.presentation() ?? output.layer : output.layer
@@ -73,6 +84,9 @@ final class VideoPresentationHandoff: UIView {
         } else {
             output.center = center
         }
+        #if os(tvOS)
+        previousEntry?.cancel()
+        #endif
     }
 
     @available(*, unavailable)
@@ -149,8 +163,44 @@ final class VideoPresentationHandoff: UIView {
             return
         }
         stableTargetFrames += 1
-        guard stableTargetFrames >= 2, retainedPicture != nil, output != nil,
+        guard stableTargetFrames >= 2 else { return }
+        #if os(tvOS)
+        if let stagedFocusFrame, let focusEntry {
+            guard let output else { return }
+            if abs(target.minX - stagedFocusFrame.minX) >= 1
+                || abs(target.minY - stagedFocusFrame.minY) >= 1
+                || abs(target.width - stagedFocusFrame.width) >= 1
+                || abs(target.height - stagedFocusFrame.height) >= 1 {
+                guard target != unstagedFocusFrame else { return }
+                // Native focus can settle after the initial card layout, or move
+                // to another card while this replacement is being prepared.
+                let size = CGSize(width: target.width / focusEntry.scale.width,
+                                  height: target.height / focusEntry.scale.height)
+                let destination = CGRect(
+                    x: target.midX - focusEntry.offset.width - size.width / 2,
+                    y: target.midY - focusEntry.offset.height - size.height / 2,
+                    width: size.width, height: size.height)
+                unstagedFocusFrame = destination
+                focusEntry.prepare(from: stagedFocusFrame, to: destination)
+                stableTarget = nil
+                return
+            }
+            normalizeOutput(output, for: view, visibleFrame: stagedFocusFrame)
+            isReturningOutput = true
+            return
+        }
+        #endif
+        guard retainedPicture != nil, output != nil,
               retainedViewportSize.width > 0, retainedViewportSize.height > 0 else { return }
+        #if os(tvOS)
+        if let entry = view.focusEntryTransition {
+            focusEntry = entry
+            stagedFocusFrame = frame
+            unstagedFocusFrame = target
+            entry.prepare(from: frame, to: target)
+            return
+        }
+        #endif
         let scaleX = target.width / retainedViewportSize.width
         let scaleY = target.height / retainedViewportSize.height
         let targetRadius = pictureCornerRadius / max(scaleX, scaleY)
@@ -176,20 +226,24 @@ final class VideoPresentationHandoff: UIView {
             // Commit the receiver's local geometry while the bridge still owns
             // the renderer. Reparenting with old presentation bounds produces
             // one frame of the old size multiplied by the new native focus lift.
-            UIView.performWithoutAnimation {
-                let visibleRadius = self.layer.cornerRadius * max(abs(self.transform.a), abs(self.transform.d))
-                self.layer.removeAllAnimations()
-                self.transform = .identity
-                self.bounds = view.bounds
-                self.center = CGPoint(x: target.midX, y: target.midY)
-                self.transform = CGAffineTransform(
-                    scaleX: target.width / view.bounds.width, y: target.height / view.bounds.height)
-                self.layer.cornerRadius = visibleRadius / max(abs(self.transform.a), abs(self.transform.d))
-                view.prepareHandoffOutput(output)
-            }
+            self.normalizeOutput(output, for: view, visibleFrame: target)
             self.isReturningOutput = true
         }
         animator.startAnimation()
+    }
+
+    private func normalizeOutput(_ output: UIView, for view: VideoPresentationView, visibleFrame: CGRect) {
+        UIView.performWithoutAnimation {
+            let visibleRadius = layer.cornerRadius * max(abs(transform.a), abs(transform.d))
+            layer.removeAllAnimations()
+            transform = .identity
+            bounds = view.bounds
+            center = CGPoint(x: visibleFrame.midX, y: visibleFrame.midY)
+            transform = CGAffineTransform(
+                scaleX: visibleFrame.width / view.bounds.width, y: visibleFrame.height / view.bounds.height)
+            layer.cornerRadius = visibleRadius / max(abs(transform.a), abs(transform.d))
+            view.prepareHandoffOutput(output)
+        }
     }
 
     func complete() {
@@ -200,6 +254,10 @@ final class VideoPresentationHandoff: UIView {
         removeFromSuperview()
         // The receiving UIView has laid out; leave SwiftUI's update before changing its state.
         Task { @MainActor [weak self] in
+            #if os(tvOS)
+            self?.focusEntry?.animate()
+            self?.focusEntry = nil
+            #endif
             let completion = self?.completion
             self?.completion = nil
             completion?()
@@ -207,6 +265,10 @@ final class VideoPresentationHandoff: UIView {
     }
 
     func cancel(restoringOutput: Bool = false) {
+        #if os(tvOS)
+        focusEntry?.cancel()
+        focusEntry = nil
+        #endif
         transitionAnimator?.stopAnimation(true)
         transitionAnimator = nil
         displayLink?.invalidate()
@@ -233,6 +295,9 @@ final class VideoPresentationHandoff: UIView {
 /// Crops only the engine's surface. AVKit's external/PiP presentation keeps
 /// owning its own sizing. Light preview colors use a separately bounded sampler.
 final class VideoPresentationView: UIView {
+    #if os(tvOS)
+    weak var focusEntryTransition: VideoCardEntryTransition?
+    #endif
     private var engine: (any VideoEngine)?
     private var surface: UIView?
     private var defersOffscreenAttachment = false

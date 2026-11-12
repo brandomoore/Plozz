@@ -52,14 +52,14 @@ final class VideoZoomPresentationTests: XCTestCase {
         try await waitUntil { surface.window != nil && surface.convert(surface.bounds, to: window).width > 650 }
         try await Task.sleep(for: .milliseconds(700))
         let frame = surface.convert(surface.bounds, to: window)
-        func edgeIntensity() throws -> Float {
+        func edgeIntensity(distance: CGFloat = 80) throws -> Float {
             let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
                 window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
             }
             let ci = try XCTUnwrap(CIImage(image: image))
             let scale = image.scale
             let region = CGRect(x: (frame.midX - 100) * scale,
-                                y: (window.bounds.height - frame.maxY - 32) * scale,
+                                y: (window.bounds.height - frame.maxY - distance) * scale,
                                 width: 200 * scale, height: 7 * scale)
             let average = ci.applyingFilter("CIAreaAverage", parameters: [kCIInputExtentKey: CIVector(cgRect: region)])
             var pixel = [Float](repeating: 0, count: 4)
@@ -69,12 +69,22 @@ final class VideoZoomPresentationTests: XCTestCase {
             return (pixel[0] + pixel[1] + pixel[2]) / 3
         }
         let active = try edgeIntensity()
+        let distances: [CGFloat] = [32, 80, 140, 280]
+        let activeFalloff = try distances.map { try edgeIntensity(distance: $0) }
         host.rootView = Fixture(surface: surface, glow: glow, active: false)
         try await Task.sleep(for: .milliseconds(300))
         let fading = try edgeIntensity()
         try await Task.sleep(for: .milliseconds(600))
         let inactive = try edgeIntensity()
-        XCTAssertGreaterThan(active - inactive, 0.005, "The glow must remain visible 25-32 points beyond the lifted picture.")
+        let inactiveFalloff = try distances.map { try edgeIntensity(distance: $0) }
+        let falloff = zip(activeFalloff, inactiveFalloff).map { $0 - $1 }
+        XCTAssertGreaterThan(active - inactive, 0.005, "The glow must remain visible 73-80 points beyond the lifted picture.")
+        XCTAssertGreaterThan(falloff[1], falloff[0] * 0.25, "The outer glow must fade gradually, not end at a narrow rim.")
+        XCTAssertGreaterThan(falloff[2], 0.0006, "A soft tail must remain visible 133-140 points beyond the picture.")
+        XCTAssertLessThan(falloff[3], 0.002, "The glow must eventually fade into the surrounding black.")
+        for (near, far) in zip(falloff, falloff.dropFirst()) {
+            XCTAssertGreaterThan(near, far, "The glow must weaken smoothly with distance: \(falloff)")
+        }
         if !UIAccessibility.isReduceMotionEnabled {
             XCTAssertGreaterThan(active, fading)
             XCTAssertGreaterThan(fading, inactive)

@@ -1030,6 +1030,117 @@ final class LiveTVMultiviewMotionHostedTests: XCTestCase {
         var enabled = true
     }
 
+    func testNativeFocusChromeStaysAttachedToTheVideoDuringEntry() async throws {
+        try await assertNativeFocusChromeEntry(from: CGRect(x: 0, y: 0, width: 1920, height: 1080))
+        try await assertNativeFocusChromeEntry(from: CGRect(x: 2, y: 271, width: 956, height: 537.75))
+    }
+
+    func testNativeFocusChromeEntryCanBeInterruptedAndRestarted() async throws {
+        try await assertNativeFocusChromeEntry(
+            from: CGRect(x: 0, y: 0, width: 1920, height: 1080), interruptsEntry: true)
+    }
+
+    private func assertNativeFocusChromeEntry(from initialFrame: CGRect, interruptsEntry: Bool = false) async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let model = FocusEntryModel(initialFrame: initialFrame)
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
+        window.rootViewController = UIHostingController(rootView: FocusEntryPage(model: model))
+        window.makeKeyAndVisible()
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        try await Task.sleep(for: .milliseconds(700))
+        model.editing = true
+        let deadline = ContinuousClock.now + .seconds(2)
+        var maximumSeparation: CGFloat = 0
+        var evidence: [String] = []
+        var previousFrame = model.engine.output.convert(model.engine.output.bounds, to: window)
+        var movingSamples = 0
+        var interruptedAt: ContinuousClock.Instant?
+        var restarted = false
+        while ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(16))
+            guard model.chrome.window === window, model.engine.output.window === window else { continue }
+            let layers = [model.engine.output, model.chrome].map { $0.layer.presentation() ?? $0.layer }
+            let frames = layers.map { $0.convert($0.bounds, to: window.layer.presentation() ?? window.layer) }
+            let separation = max(abs(frames[0].minX - frames[1].minX),
+                                 abs(frames[0].minY - frames[1].minY),
+                                 abs(frames[0].maxX - frames[1].maxX),
+                                 abs(frames[0].maxY - frames[1].maxY))
+            if model.editing, frames[0] != previousFrame {
+                maximumSeparation = max(maximumSeparation, separation)
+                movingSamples += 1
+            }
+            previousFrame = frames[0]
+            evidence.append("video=\(frames[0]) native label=\(frames[1])")
+            if interruptsEntry, interruptedAt == nil, frames[0].width < 1800 {
+                interruptedAt = ContinuousClock.now
+                model.editing = false
+            } else if let interruptedAt, !restarted, ContinuousClock.now - interruptedAt > .milliseconds(100) {
+                restarted = true
+                model.editing = true
+            }
+        }
+        let attachment = XCTAttachment(string: evidence.joined(separator: "\n"))
+        attachment.name = "Native focus chrome and live video entry"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+        XCTAssertGreaterThan(evidence.count, 10)
+        XCTAssertGreaterThan(movingSamples, 3, "The complete native card must animate, not snap.")
+        XCTAssertLessThanOrEqual(maximumSeparation, 2, "Native sheen and video must share the same presented geometry.")
+        XCTAssertTrue(model.engine.output.superview is VideoPresentationView, "The renderer must finish its handoff.")
+        XCTAssertEqual(model.engine.output.convert(model.engine.output.bounds, to: window).width, 964, accuracy: 1)
+        if interruptsEntry { XCTAssertTrue(restarted) }
+        XCTAssertEqual(model.engine.stops, 0)
+    }
+
+    @Observable
+    final class FocusEntryModel {
+        let engine = MotionEngine()
+        let chrome = UIView()
+        let initialFrame: CGRect
+        var editing = false
+
+        init(initialFrame: CGRect) { self.initialFrame = initialFrame }
+    }
+
+    private struct FocusEntryPage: View {
+        let model: FocusEntryModel
+        @State private var handoff: VideoPresentationHandoff?
+
+        var body: some View {
+            ZStack(alignment: .topLeading) {
+                Color.black
+                VideoSurfaceContainer(engine: model.engine)
+                    .background { ViewportProbe(view: model.chrome) }
+                    .videoCardFocusSurface()
+                    .onChange(of: model.editing) { _, editing in
+                        let previous = handoff
+                        handoff = VideoPresentationHandoff(
+                            engine: model.engine, pictureCornerRadius: 20, animatesFocusTransition: editing
+                        ) { handoff = nil }
+                        previous?.cancel()
+                    }
+                    .onDisappear { handoff?.cancel() }
+                    .modifier(PrototypeVideoPlacement(
+                        frame: model.editing ? CGRect(x: 12, y: 214, width: 948, height: 533.25)
+                            : model.initialFrame,
+                        focus: VideoCardFocus(
+                            identifier: "focus-entry", title: "Video", audible: true,
+                            presentsEffect: model.editing, cornerRadius: 20,
+                            horizontalInset: model.editing ? 12 : 0, request: 0, prefersFocus: true,
+                            focused: { _ in }, activate: {}, promote: {}, replace: {})))
+                    .animation(nil, value: model.editing)
+            }
+            .ignoresSafeArea()
+        }
+    }
+
     private struct NativeCardPage: View {
         let model: NativeCardModel
         var body: some View {

@@ -60,8 +60,9 @@ clock. The video reads the container's current animated size rather than
 starting a second resize for every layout frame.
 The native card owns focus styling, lifted size, and the animation when focus
 moves between pictures. Initial native-card entry and restoration of an idle
-surface suppress the separate scale-in while the live renderer handoff animates
-to the native card's displayed endpoint. The caller suppresses competing setup
+surface suppress the separate scale-in. The live renderer is returned to the
+native card before the whole card animates to its displayed endpoint, so its
+sheen, caption, and video share one transform. The caller suppresses competing setup
 resizing when focus returns; ordinary layout changes retain their own animation.
 Only the picture is rounded and clipped. Callers must not clip the outer card
 or its clearance, because the native shadow needs to feather beyond it.

@@ -125,6 +125,9 @@ struct CustomPlayerContainer: UIViewControllerRepresentable {
 /// loading so engines that require an attached/windowed render target
 /// can initialize before playback reaches `.ready`.
 struct VideoSurfaceContainer: UIViewRepresentable {
+    #if os(tvOS)
+    @Environment(\.videoCardEntryTransition) private var entryTransition
+    #endif
     @Environment(\.layoutDirection) private var layoutDirection
     @Environment(\.playbackReflectionColorScheme) private var reflectionColorScheme
     let engine: any VideoEngine
@@ -153,6 +156,9 @@ struct VideoSurfaceContainer: UIViewRepresentable {
 
     func makeUIView(context: Context) -> VideoPresentationView {
         let root = VideoPresentationView(frame: .zero)
+        #if os(tvOS)
+        root.focusEntryTransition = entryTransition
+        #endif
         root.subtitleViewport = subtitleViewport
         root.attach(engine, deferringOffscreenAttachment: true)
         updateReflection(root)
@@ -162,6 +168,9 @@ struct VideoSurfaceContainer: UIViewRepresentable {
     }
 
     func updateUIView(_ uiView: VideoPresentationView, context: Context) {
+        #if os(tvOS)
+        uiView.focusEntryTransition = entryTransition
+        #endif
         uiView.subtitleViewport = subtitleViewport
         uiView.attach(engine, deferringOffscreenAttachment: true)
         updateReflection(uiView)

@@ -302,9 +302,10 @@ Transparency retains inset-picture rounding; fullscreen restores the unmasked,
 black-backed video surface.
 
 Apple TV Multiview uses a separate soft audio indicator behind the
-audible picture: a 48-point color stroke with a 32-point blur at 45% opacity,
-not a focus border. Its broad feathered edge remains visible beyond the lifted
-picture without changing its size. It reuses the same 2 Hz, 24-by-14-pixel color sampler
+audible picture: a 120-point color stroke with a 96-point blur at 45% opacity,
+not a focus border. Its broad feathered edge fades gradually into the surrounding
+black beyond the lifted picture without changing its size.
+It reuses the same 2 Hz, 24-by-14-pixel color sampler
 and native/software frame access. Neutral footage uses a faint neutral glow.
 The indicator and palette fade over 0.6 seconds without resizing or replacing
 the renderer. Moving focus to the toolbar leaves it on the audible video.
@@ -313,12 +314,15 @@ Reduce Transparency removes the indicator and Reduce Motion disables its fades.
 The existing Audio on/Muted accessibility value remains authoritative.
 
 When Multiview first presents its native focus cards, the existing live renderer
-bridge owns a single half-second transition to the receiver's settled presentation
-frame, including native focus lift. Model bounds alone omit that lift. The bridge,
-not the renderer, owns the animation transform. Before reattachment it commits the
-receiver's local renderer geometry while preserving its on-screen frame; otherwise
-one frame can combine the old bounds with the new focus transform. Interrupted
-handoffs start from the displayed frame, and ordinary focus movement remains native.
+bridge retains the picture while the receiver settles, including native focus lift.
+Model bounds alone omit that lift. The whole native card is positioned at the
+retained picture's displayed frame before the renderer is returned to it. Its
+sheen, caption, glow, and live video then share one half-second transition to the
+final size, rather than animating the video independently above its native chrome.
+Before reattachment, the bridge commits the receiver's local renderer geometry
+while preserving its on-screen frame; otherwise one frame can combine old bounds
+with the new focus transform. Interrupted handoffs start from the displayed frame,
+and ordinary focus movement remains native.
 Reduce Motion bypasses the entry animation.
 
 When loading a new mobile native source, disconnect the outgoing player from

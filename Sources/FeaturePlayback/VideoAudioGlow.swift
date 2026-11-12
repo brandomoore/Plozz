@@ -37,8 +37,8 @@ struct VideoAudioGlow: View {
 
     var body: some View {
         RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-            .stroke(LinearGradient(colors: state.colors, startPoint: .leading, endPoint: .trailing), lineWidth: 48)
-            .blur(radius: 32)
+            .stroke(LinearGradient(colors: state.colors, startPoint: .leading, endPoint: .trailing), lineWidth: 120)
+            .blur(radius: 96)
             .opacity(isActive && isPresented ? 0.45 : 0)
             .animation(reduceMotion ? nil : .easeInOut(duration: 0.6), value: isActive && isPresented)
             .animation(reduceMotion ? nil : .easeInOut(duration: 0.6), value: state.colors)

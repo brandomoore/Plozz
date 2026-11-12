@@ -104,15 +104,15 @@ final class LiveTVMultiviewRemoteTests: XCTestCase {
         let second = capture("audio-glow-second-video-toolbar-focused", in: app)
         for frame in frames {
             let nearEdge = CGRect(x: frame.midX - 100, y: frame.maxY + 1, width: 200, height: 8)
-            let outerGlow = nearEdge.offsetBy(dx: 0, dy: 27)
-            let farEdge = nearEdge.offsetBy(dx: 0, dy: 110)
+            let outerGlow = nearEdge.offsetBy(dx: 0, dy: 71)
+            let farEdge = nearEdge.offsetBy(dx: 0, dy: 300)
             let glow = pixelDifference(first, second, region: nearEdge, screen: app.frame)
             XCTAssertGreaterThan(glow.mean, 0.003, "Audio must change the soft glow outside the picture.")
             XCTAssertLessThan(glow.mean, 0.18, "The indicator should remain soft rather than become a bright border.")
             XCTAssertGreaterThan(pixelDifference(first, second, region: outerGlow, screen: app.frame).mean, 0.008,
-                                 "The wider glow must remain visible 28-36 points beyond the video.")
-            XCTAssertLessThan(pixelDifference(first, second, region: farEdge, screen: app.frame).mean, 0.002,
-                              "The glow must not spread far into the surrounding content.")
+                                 "The wider glow must remain visible 72-80 points beyond the video.")
+            XCTAssertLessThan(pixelDifference(first, second, region: farEdge, screen: app.frame).mean, 1.0 / 255,
+                              "At 300 points, the remaining glow must be less than one 8-bit intensity step.")
         }
         assertMetrics("Engines 2 loads 2 stops 0 audible 1", in: app)
     }

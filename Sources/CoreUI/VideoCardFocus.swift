@@ -101,6 +101,52 @@ private struct VideoCardFocusModifier: ViewModifier {
 }
 
 #if os(tvOS)
+@MainActor @Observable
+public final class VideoCardEntryTransition {
+    public private(set) var scale = CGSize(width: 1, height: 1)
+    public private(set) var offset = CGSize.zero
+    public private(set) var isActive = false
+    private var revision = 0
+
+    public init() {}
+
+    public func prepare(from source: CGRect, to destination: CGRect) {
+        revision += 1
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            isActive = true
+            scale = CGSize(width: source.width / destination.width, height: source.height / destination.height)
+            offset = CGSize(width: source.midX - destination.midX, height: source.midY - destination.midY)
+        }
+    }
+
+    public func animate() {
+        let revision = revision
+        withAnimation(MultiviewMotion.animation) {
+            scale = CGSize(width: 1, height: 1)
+            offset = .zero
+        } completion: {
+            if self.revision == revision { self.isActive = false }
+        }
+    }
+
+    public func cancel() {
+        revision += 1
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            scale = CGSize(width: 1, height: 1)
+            offset = .zero
+            isActive = false
+        }
+    }
+}
+
+public extension EnvironmentValues {
+    @Entry var videoCardEntryTransition: VideoCardEntryTransition?
+}
+
 private struct VideoCardSurface<Content: View>: View {
     let configuration: VideoCardFocus
     let content: Content
@@ -110,14 +156,19 @@ private struct VideoCardSurface<Content: View>: View {
     @State private var handledEffect: Bool?
     @State private var restoringEffect = false
     @State private var interactionState = VideoCardInteractionState()
+    @State private var entryTransition = VideoCardEntryTransition()
 
     var body: some View {
         button
             .buttonStyle(VideoCardButtonStyle(
                 presentsEffect: configuration.presentsEffect,
                 restoringEffect: restoringEffect || handledEffect != true && configuration.presentsEffect))
+            .geometryGroup()
             .background { background.allowsHitTesting(false).accessibilityHidden(true) }
+            .scaleEffect(entryTransition.scale)
+            .offset(entryTransition.offset)
             .modifier(VideoCardInset(horizontalInset: configuration.horizontalInset))
+            .environment(\.videoCardEntryTransition, entryTransition)
         .focusSection()
         .onChange(of: focused) { _, value in
             configuration.focused(value)
@@ -441,7 +492,7 @@ private struct VideoCardButtonStyle: PrimitiveButtonStyle {
         if presentsEffect {
             Button(configuration).buttonStyle(.card)
                 .transaction {
-                    // The live renderer handoff owns entry motion; later focus moves remain native.
+                    // The whole card owns entry motion; later focus moves remain native.
                     if restoringEffect {
                         $0.animation = nil
                         $0.disablesAnimations = true
