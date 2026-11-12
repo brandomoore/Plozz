@@ -3,6 +3,7 @@ import CoreModels
 import EnginePlozzigen
 import Observation
 import SwiftUI
+import TVUIKit
 import UIKit
 import XCTest
 @testable import FeatureLiveTV
@@ -397,6 +398,10 @@ final class LiveTVMultiviewMotionHostedTests: XCTestCase {
                 samples.append(presentedWidths())
             }
             let after = presentedWidths()
+            let attachment = XCTAttachment(string: "before=\(before) after=\(after)\n" + samples.map(String.init(describing:)).joined(separator: "\n"))
+            attachment.name = "Native focus movement to \(selected)"
+            attachment.lifetime = .keepAlways
+            add(attachment)
             XCTAssertGreaterThan(after[selected], after[1 - selected] + 10)
             for index in 0...1 {
                 let low = min(before[index], after[index])
@@ -415,6 +420,48 @@ final class LiveTVMultiviewMotionHostedTests: XCTestCase {
         let engines = [MotionEngine(), MotionEngine()]
         var selected = 0
         var presentsEffect = true
+    }
+
+    func testNativeFocusMovementInterruptsEntryAtItsPresentedFrame() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let model = FocusMotionModel()
+        model.presentsEffect = false
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
+        window.rootViewController = UIHostingController(rootView: FocusMotionPage(model: model))
+        window.makeKeyAndVisible()
+        let probe = RenderedMotionProbe(views: model.engines.map(\.output), window: window)
+        defer {
+            probe.stop()
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        try await Task.sleep(for: .milliseconds(700))
+        let hosts = model.engines.map { $0.output.superview }
+        probe.start()
+        model.presentsEffect = true
+        try await Task.sleep(for: .milliseconds(150))
+        model.selected = 1
+        try await Task.sleep(for: .milliseconds(700))
+        probe.stop()
+        let attachment = XCTAttachment(string: probe.frames.map(String.init(describing:)).joined(separator: "\n"))
+        attachment.name = "Focus interrupts native card entry"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+        for index in 0...1 {
+            let widths = probe.frames.map { $0[index] }
+            XCTAssertGreaterThan(widths.count, 10)
+            XCTAssertTrue(widths.allSatisfy { $0 >= 663 && $0 <= 705 })
+            for (before, after) in zip(widths, widths.dropFirst()) {
+                XCTAssertLessThan(abs(after - before), 20, "New focus must not jump through half its full lift in one frame.")
+            }
+            XCTAssertGreaterThan(widths.filter { $0 > 665 && $0 < 703 }.count, 2)
+            XCTAssertEqual(try XCTUnwrap(widths.last), index == 1 ? 704 : 664, accuracy: 1)
+            XCTAssertTrue(model.engines[index].output.superview === hosts[index])
+        }
     }
 
     private struct FocusMotionPage: View {
@@ -600,18 +647,10 @@ final class LiveTVMultiviewMotionHostedTests: XCTestCase {
     private struct GroupMotionSurface: View {
         let engine: MotionEngine
         let presentsEffect: Bool
-        @State private var handoff: VideoPresentationHandoff?
 
         var body: some View {
             VideoSurfaceContainer(engine: engine)
                 .videoCardFocusSurface()
-                .onChange(of: presentsEffect) { _, _ in
-                    handoff?.cancel(restoringOutput: true)
-                    handoff = VideoPresentationHandoff(engine: engine, pictureCornerRadius: 20) {
-                        handoff = nil
-                    }
-                }
-                .onDisappear { handoff?.cancel() }
         }
     }
 
@@ -805,69 +844,6 @@ final class LiveTVMultiviewMotionHostedTests: XCTestCase {
         }
     }
 
-    func testFocusHandoffRetargetsAndCanBeReplacedWithoutAReattachmentJump() async throws {
-        for replacesHandoff in [false, true] {
-            let fixture = try await makeFixture()
-            defer { fixture.close() }
-            let engine = fixture.model.engine
-            let output = engine.output
-            var completions = 0
-            var handoff = try XCTUnwrap(VideoPresentationHandoff(
-                engine: engine, pictureCornerRadius: 20, animatesFocusTransition: true
-            ) { completions += 1 })
-            defer { handoff.cancel() }
-            fixture.model.visible = false
-            let destination = VideoPresentationView(frame: CGRect(x: 100, y: 200, width: 800, height: 450))
-            destination.transform = CGAffineTransform(scaleX: 1.05, y: 1.05)
-            destination.attach(engine, deferringOffscreenAttachment: true)
-            fixture.window.addSubview(destination)
-            destination.layoutIfNeeded()
-
-            func presentedFrame() -> CGRect {
-                let layer = output.layer.presentation() ?? output.layer
-                return layer.convert(layer.bounds, to: fixture.window.layer.presentation() ?? fixture.window.layer)
-            }
-            var widths: [CGFloat] = []
-            let start = ContinuousClock.now
-            while presentedFrame().width > 1750, ContinuousClock.now - start < .seconds(2) {
-                try await Task.sleep(for: .milliseconds(16))
-                widths.append(presentedFrame().width)
-            }
-            XCTAssertLessThan(presentedFrame().width, 1750, "The retained renderer must animate before interruption.")
-            if replacesHandoff {
-                let previous = handoff
-                let before = presentedFrame()
-                handoff = try XCTUnwrap(VideoPresentationHandoff(
-                    engine: engine, pictureCornerRadius: 20, animatesFocusTransition: true
-                ) { completions += 1 })
-                previous.cancel()
-                XCTAssertEqual(output.convert(output.bounds, to: fixture.window).width, before.width, accuracy: 1)
-                destination.attach(engine, deferringOffscreenAttachment: true)
-            }
-            destination.transform = .identity
-            destination.frame = CGRect(x: 150, y: 150, width: 1100, height: 618.75)
-            destination.transform = CGAffineTransform(scaleX: 1.04, y: 1.04)
-            destination.layoutIfNeeded()
-            let deadline = ContinuousClock.now + .seconds(3)
-            while completions == 0, ContinuousClock.now < deadline {
-                try await Task.sleep(for: .milliseconds(16))
-                widths.append(presentedFrame().width)
-                XCTAssertTrue(output.window === fixture.window)
-            }
-            try await Task.sleep(for: .milliseconds(80))
-            widths.append(presentedFrame().width)
-            XCTAssertEqual(completions, 1)
-            XCTAssertTrue(output.superview === destination)
-            XCTAssertNil(handoff.superview)
-            XCTAssertEqual(presentedFrame().width, 1144, accuracy: 1)
-            XCTAssertGreaterThan(widths.filter { $0 > 1150 && $0 < 1900 }.count, 4)
-            for (before, after) in zip(widths, widths.dropFirst()) {
-                XCTAssertLessThan(abs(after - before), 200, "Retargeting and reattachment must not jump to old local bounds.")
-            }
-            XCTAssertEqual(engine.stops, 0)
-        }
-    }
-
     func testCancellingPictureHandoffRestoresItsOriginalTransform() async throws {
         let fixture = try await makeFixture()
         defer { fixture.close() }
@@ -1055,6 +1031,10 @@ final class LiveTVMultiviewMotionHostedTests: XCTestCase {
             previous?.makeKeyAndVisible()
         }
         try await Task.sleep(for: .milliseconds(700))
+        let originalHost = model.engine.output.superview
+        var ancestor = originalHost
+        while ancestor != nil, !(ancestor is TVCardView) { ancestor = ancestor?.superview }
+        let nativeCard = try XCTUnwrap(ancestor as? TVCardView)
         model.editing = true
         let deadline = ContinuousClock.now + .seconds(2)
         var maximumSeparation: CGFloat = 0
@@ -1063,21 +1043,42 @@ final class LiveTVMultiviewMotionHostedTests: XCTestCase {
         var movingSamples = 0
         var interruptedAt: ContinuousClock.Instant?
         var restarted = false
+        var capturedSeparation = false
+        var nextCapture = ContinuousClock.now
+        var captures = 0
         while ContinuousClock.now < deadline {
             try await Task.sleep(for: .milliseconds(16))
             guard model.chrome.window === window, model.engine.output.window === window else { continue }
+            XCTAssertTrue(model.engine.output.superview === originalHost,
+                          "Focus changes must never detach the renderer from its original host.")
+            XCTAssertTrue(model.engine.output.isDescendant(of: nativeCard))
             let layers = [model.engine.output, model.chrome].map { $0.layer.presentation() ?? $0.layer }
             let frames = layers.map { $0.convert($0.bounds, to: window.layer.presentation() ?? window.layer) }
             let separation = max(abs(frames[0].minX - frames[1].minX),
                                  abs(frames[0].minY - frames[1].minY),
                                  abs(frames[0].maxX - frames[1].maxX),
                                  abs(frames[0].maxY - frames[1].maxY))
-            if model.editing, frames[0] != previousFrame {
+            if model.editing {
                 maximumSeparation = max(maximumSeparation, separation)
-                movingSamples += 1
+                if frames[0] != previousFrame { movingSamples += 1 }
+                if separation > 2, !capturedSeparation {
+                    capturedSeparation = true
+                    let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+                        window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+                    }
+                    let attachment = XCTAttachment(image: image)
+                    attachment.name = "Separated native focus surface"
+                    attachment.lifetime = .keepAlways
+                    add(attachment)
+                }
             }
             previousFrame = frames[0]
             evidence.append("video=\(frames[0]) native label=\(frames[1])")
+            if captures < 6, ContinuousClock.now >= nextCapture {
+                try assertNoDetachedFocusPlate(in: window, sample: captures)
+                captures += 1
+                nextCapture = ContinuousClock.now + .milliseconds(80)
+            }
             if interruptsEntry, interruptedAt == nil, frames[0].width < 1800 {
                 interruptedAt = ContinuousClock.now
                 model.editing = false
@@ -1099,6 +1100,47 @@ final class LiveTVMultiviewMotionHostedTests: XCTestCase {
         XCTAssertEqual(model.engine.stops, 0)
     }
 
+    private func assertNoDetachedFocusPlate(in window: UIWindow, sample: Int) throws {
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 0.25
+        let image = UIGraphicsImageRenderer(bounds: window.bounds, format: format).image { _ in
+            window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+        }
+        let attachment = XCTAttachment(image: image)
+        attachment.name = "Unified video and native focus surface \(sample)"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+        let bitmap = try XCTUnwrap(image.cgImage)
+        let width = bitmap.width, height = bitmap.height
+        var pixels = [UInt8](repeating: 0, count: width * height * 4)
+        try pixels.withUnsafeMutableBytes { bytes in
+            let context = try XCTUnwrap(CGContext(
+                data: bytes.baseAddress, width: width, height: height, bitsPerComponent: 8,
+                bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+            context.draw(bitmap, in: CGRect(x: 0, y: 0, width: width, height: height))
+        }
+        var picture = CGRect.null
+        for y in 0..<height {
+            for x in 0..<width {
+                let offset = (y * width + x) * 4
+                if pixels[offset + 2] > 180, pixels[offset] < 60, pixels[offset + 1] < 60 {
+                    picture = picture.union(CGRect(x: x, y: y, width: 1, height: 1))
+                }
+            }
+        }
+        XCTAssertFalse(picture.isNull, "The live video must remain rendered throughout entry.")
+        let shadowBounds = picture.insetBy(dx: -8, dy: -8)
+        var detachedDarkPixels = 0
+        for y in 0..<height {
+            for x in 0..<width where !shadowBounds.contains(CGPoint(x: x, y: y)) {
+                if pixels[(y * width + x) * 4 + 1] < 64 { detachedDarkPixels += 1 }
+            }
+        }
+        XCTAssertLessThan(detachedDarkPixels, 16,
+                          "An empty native focus plate must never appear outside the live picture and its shadow.")
+    }
+
     @Observable
     final class FocusEntryModel {
         let engine = MotionEngine()
@@ -1111,22 +1153,13 @@ final class LiveTVMultiviewMotionHostedTests: XCTestCase {
 
     private struct FocusEntryPage: View {
         let model: FocusEntryModel
-        @State private var handoff: VideoPresentationHandoff?
 
         var body: some View {
             ZStack(alignment: .topLeading) {
-                Color.black
+                Color(red: 0.15, green: 0.5, blue: 0.15)
                 VideoSurfaceContainer(engine: model.engine)
                     .background { ViewportProbe(view: model.chrome) }
                     .videoCardFocusSurface()
-                    .onChange(of: model.editing) { _, editing in
-                        let previous = handoff
-                        handoff = VideoPresentationHandoff(
-                            engine: model.engine, pictureCornerRadius: 20, animatesFocusTransition: editing
-                        ) { handoff = nil }
-                        previous?.cancel()
-                    }
-                    .onDisappear { handoff?.cancel() }
                     .modifier(PrototypeVideoPlacement(
                         frame: model.editing ? CGRect(x: 12, y: 214, width: 948, height: 533.25)
                             : model.initialFrame,

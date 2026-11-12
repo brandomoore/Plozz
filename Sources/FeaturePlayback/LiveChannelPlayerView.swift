@@ -129,7 +129,6 @@ public struct LiveChannelPlayerView: View {
     @State private var returnsToGuideAfterFullscreen = false
     @State private var opensMultiviewAfterFullscreen = false
     @State private var videoHandoff: VideoPresentationHandoff?
-    @State private var focusHandoff: VideoPresentationHandoff?
     #if os(tvOS)
     @State private var audioGlow = VideoAudioGlowState()
     #endif
@@ -437,23 +436,6 @@ public struct LiveChannelPlayerView: View {
                 #else
                 .transition(isMultiview && !reduceMotion
                     ? .scale(scale: 0.94).combined(with: .opacity) : .identity)
-                #endif
-                #if os(tvOS)
-                .onChange(of: videoCardFocus?.presentsEffect) { old, new in
-                    guard let old, let new, old != new, isMultiview, isActive, isAuthorized else {
-                        focusHandoff?.cancel(restoringOutput: true)
-                        focusHandoff = nil
-                        return
-                    }
-                    let previous = focusHandoff
-                    focusHandoff = VideoPresentationHandoff(
-                        engine: model.engine, pictureCornerRadius: videoCardFocus?.cornerRadius ?? 0,
-                        animatesFocusTransition: new && !reduceMotion
-                    ) {
-                        focusHandoff = nil
-                    }
-                    previous?.cancel()
-                }
                 #endif
                 .ignoresSafeArea(.all, edges: hasInlineControls || isMultiview ? [] : .all)
 
@@ -1061,8 +1043,6 @@ public struct LiveChannelPlayerView: View {
         opensMultiviewAfterFullscreen = false
         videoHandoff?.cancel()
         videoHandoff = nil
-        focusHandoff?.cancel()
-        focusHandoff = nil
         exitTask?.cancel()
         exitTask = nil
         displayTask?.cancel()

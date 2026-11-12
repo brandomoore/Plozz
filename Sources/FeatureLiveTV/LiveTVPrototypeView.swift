@@ -474,6 +474,7 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
                             ? CGRect(x: geometry.size.width - videoFrame.maxX, y: videoFrame.minY,
                                      width: videoFrame.width, height: videoFrame.height)
                             : containerFrame, focus: focus))
+                    .animation(nil, value: usesMultiviewLayout)
                     .animation(nil, value: multiviewFocusPresented)
                     .animation(multiview.isEditingLayout ? nil : playerTransition, value: multiview.isEditingLayout)
                     #else
@@ -670,7 +671,8 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
         #if os(tvOS)
         guard usesMultiviewLayout,
               multiview.expandedPaneID == nil || multiview.expandedPaneID == pane.id else { return nil }
-        let presentsEffect = showingMultiview && multiviewFocusPresented && multiview.expandedPaneID == nil
+        let presentsEffect = showingMultiview && (multiview.isEditingLayout || multiviewFocusPresented)
+            && multiview.expandedPaneID == nil
         return VideoCardFocus(
             identifier: "live-multiview-pane-\(pane.id.uuidString)",
             title: pane.channel?.name ?? "", audible: pane.id == multiview.audiblePaneID,
@@ -696,7 +698,7 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
             },
             caption: AnyView(LiveTVMultiviewFocusCaption(
                 channel: pane.channel,
-                isFocused: showingMultiview && multiviewFocusPresented && multiviewNativeFocusedPaneID == pane.id)))
+                isFocused: presentsEffect && multiviewNativeFocusedPaneID == pane.id)))
         #else
         nil
         #endif

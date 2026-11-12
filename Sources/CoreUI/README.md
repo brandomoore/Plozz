@@ -45,25 +45,22 @@ Native player presentation waits until the workspace's observable
 focus without wrapping player state or transport controls. Its environment
 configuration supplies channel actions, focus requests and interactive spacing.
 Idle presentation retains a focusable surface without a visual lift; other
-platforms leave the content unchanged. Renderer hosts must preserve a single
-windowed output when SwiftUI prepares replacement labels offscreen.
-Label and style replacements use identity transitions: cross-fading two hosts
-cannot cross-fade the single live renderer they share. Geometry still animates.
-Live playback temporarily retains each renderer in a picture-sized window host
-while an idle/native label is replaced, until its new host is visibly laid out.
-While a native label is fading in, the temporary host follows its presentation
-geometry on every display tick; retaining a stationary picture until full
-opacity would make unfocused videos jump at the end of the resize.
+platforms leave the content unchanged. A persistent `TVCardView` hosts the video,
+subtitles, loading state and caption in its `contentView`. Idle uses a full-picture
+focus control without replacing the card or detaching its renderer. The native
+focus background can therefore never appear as an empty replacement card.
 The caller interpolates focus clearance together with the picture's placement.
 The focus surface consumes that inset directly, without another animation
 clock. The video reads the container's current animated size rather than
 starting a second resize for every layout frame.
-The native card owns focus styling, lifted size, and the animation when focus
-moves between pictures. Initial native-card entry and restoration of an idle
-surface suppress the separate scale-in. The live renderer is returned to the
-native card before the whole card animates to its displayed endpoint, so its
-sheen, caption, and video share one transform. The caller suppresses competing setup
-resizing when focus returns; ordinary layout changes retain their own animation.
+TVUIKit supplies the focus styling and sizing. Its default `focusSizeIncrease`
+is applied to the complete surface's single transform, rather than also scaling
+the card's contents independently. Ordinary focus movement uses the native focus
+animation coordinator. Entry/restoration moves that same surface from its displayed
+frame over half a second; interrupted entry yields to native focus from the current
+presentation. The caller suppresses competing setup resizing when focus returns;
+ordinary layout changes retain their own animation. Reduce Motion skips these
+surface animations.
 Only the picture is rounded and clipped. Callers must not clip the outer card
 or its clearance, because the native shadow needs to feather beyond it.
 Multiview scopes `VideoCardFocusMemory` to its workspace. The toolbar's
@@ -72,8 +69,9 @@ last actual native picture owner, before another picture can receive focus.
 The guide stays inside its own visible UIKit region and is enabled only while
 the toolbar owns focus. Its remembered owner is weak; missing or removed
 pictures fall back to ordinary native navigation.
-The optional video background sits behind the clipped picture but inside its
-native focus transform; an audio indicator must not change card sizing or styling.
+The optional video background sits behind the card but inside the same motion
+container, outside TVUIKit's internal clipping. An audio indicator must not change
+card sizing or styling.
 Native menu presentation synchronously suppresses the button's activation so
 holding Select cannot also trigger the short-press action. Dismissal restores
 normal activation, whether the menu was cancelled or an action was selected.

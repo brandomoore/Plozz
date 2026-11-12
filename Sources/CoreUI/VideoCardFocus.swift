@@ -1,5 +1,7 @@
 import SwiftUI
 #if os(tvOS)
+import CoreNetworking
+import TVUIKit
 import UIKit
 #endif
 
@@ -87,13 +89,8 @@ private struct VideoCardFocusModifier: ViewModifier {
 
     func body(content: Content) -> some View {
         #if os(tvOS)
-        if let configuration {
-            VideoCardSurface(configuration: configuration, content: content, background: background)
-                .transition(.identity)
-        } else {
-            content
-                .transition(.identity)
-        }
+        VideoCardSurface(configuration: configuration, content: content, background: background)
+            .transition(.identity)
         #else
         content
         #endif
@@ -101,120 +98,333 @@ private struct VideoCardFocusModifier: ViewModifier {
 }
 
 #if os(tvOS)
-@MainActor @Observable
-public final class VideoCardEntryTransition {
-    public private(set) var scale = CGSize(width: 1, height: 1)
-    public private(set) var offset = CGSize.zero
-    public private(set) var isActive = false
-    private var revision = 0
-
-    public init() {}
-
-    public func prepare(from source: CGRect, to destination: CGRect) {
-        revision += 1
-        var transaction = Transaction()
-        transaction.disablesAnimations = true
-        withTransaction(transaction) {
-            isActive = true
-            scale = CGSize(width: source.width / destination.width, height: source.height / destination.height)
-            offset = CGSize(width: source.midX - destination.midX, height: source.midY - destination.midY)
-        }
-    }
-
-    public func animate() {
-        let revision = revision
-        withAnimation(MultiviewMotion.animation) {
-            scale = CGSize(width: 1, height: 1)
-            offset = .zero
-        } completion: {
-            if self.revision == revision { self.isActive = false }
-        }
-    }
-
-    public func cancel() {
-        revision += 1
-        var transaction = Transaction()
-        transaction.disablesAnimations = true
-        withTransaction(transaction) {
-            scale = CGSize(width: 1, height: 1)
-            offset = .zero
-            isActive = false
-        }
-    }
-}
-
-public extension EnvironmentValues {
-    @Entry var videoCardEntryTransition: VideoCardEntryTransition?
-}
-
 private struct VideoCardSurface<Content: View>: View {
-    let configuration: VideoCardFocus
+    let configuration: VideoCardFocus?
     let content: Content
     let background: AnyView
     @FocusState private var focused: Bool
-    @State private var handledRequest: Int?
-    @State private var handledEffect: Bool?
-    @State private var restoringEffect = false
     @State private var interactionState = VideoCardInteractionState()
-    @State private var entryTransition = VideoCardEntryTransition()
 
     var body: some View {
-        button
-            .buttonStyle(VideoCardButtonStyle(
-                presentsEffect: configuration.presentsEffect,
-                restoringEffect: restoringEffect || handledEffect != true && configuration.presentsEffect))
-            .geometryGroup()
-            .background { background.allowsHitTesting(false).accessibilityHidden(true) }
-            .scaleEffect(entryTransition.scale)
-            .offset(entryTransition.offset)
-            .modifier(VideoCardInset(horizontalInset: configuration.horizontalInset))
-            .environment(\.videoCardEntryTransition, entryTransition)
-        .focusSection()
-        .onChange(of: focused) { _, value in
-            configuration.focused(value)
-            if !value { restoringEffect = false }
-        }
-        .task(id: FocusRequest(revision: configuration.request, effect: configuration.presentsEffect)) {
-            let explicitRequest = handledRequest != configuration.request
-            let restoresEffect = handledEffect != true && configuration.presentsEffect
-            handledRequest = configuration.request
-            handledEffect = configuration.presentsEffect
-            guard explicitRequest ? configuration.prefersFocus : configuration.audible else { return }
-            // A style replacement has a new native focus owner even when this binding was already true.
-            focused = false
-            await Task.yield()
-            guard !Task.isCancelled else { return }
-            restoringEffect = restoresEffect
-            focused = true
-        }
-        .onExitCommand(perform: configuration.back)
-    }
-
-    private struct FocusRequest: Equatable {
-        let revision: Int
-        let effect: Bool
-    }
-
-    private var button: some View {
-        Button {
-            if !interactionState.isPresentingMenu { configuration.activate() }
-        } label: {
+        NativeVideoCard(configuration: configuration, focus: $focused, interactionState: interactionState,
+                        background: background, content:
             content
-                .clipShape(RoundedRectangle(cornerRadius: configuration.cornerRadius, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: configuration?.cornerRadius ?? 0, style: .continuous))
                 .overlay(alignment: .bottomLeading) {
-                    configuration.caption
+                    configuration?.caption
                         .padding(16)
                         .allowsHitTesting(false)
                         .accessibilityHidden(true)
                 }
-                .contentShape(RoundedRectangle(cornerRadius: configuration.cornerRadius, style: .continuous))
-                .background(VideoCardContextMenu(configuration: configuration, interactionState: interactionState))
+                .background(VideoCardContextMenu(configuration: configuration, interactionState: interactionState)))
+            .focused($focused)
+            .modifier(VideoCardInset(horizontalInset: configuration?.horizontalInset ?? 0))
+            .focusSection()
+            .onExitCommand { configuration?.back() }
+    }
+}
+
+/// One native content owner survives idle, editing and full-screen layout changes.
+private struct NativeVideoCard<Content: View>: UIViewRepresentable {
+    let configuration: VideoCardFocus?
+    let focus: FocusState<Bool>.Binding
+    let interactionState: VideoCardInteractionState
+    let background: AnyView
+    let content: Content
+
+    func makeUIView(context: Context) -> Container {
+        let container = Container(background: backgroundConfiguration(context).makeContentView())
+        let host = hostingConfiguration(context).makeContentView()
+        container.host = host
+        container.card.contentView.addSubview(host)
+        host.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            host.leadingAnchor.constraint(equalTo: container.card.contentView.leadingAnchor),
+            host.trailingAnchor.constraint(equalTo: container.card.contentView.trailingAnchor),
+            host.topAnchor.constraint(equalTo: container.card.contentView.topAnchor),
+            host.bottomAnchor.constraint(equalTo: container.card.contentView.bottomAnchor)
+        ])
+        return container
+    }
+
+    func updateUIView(_ view: Container, context: Context) {
+        view.focus = focus
+        view.update(configuration, enabled: context.environment.isEnabled,
+                    reduceMotion: context.environment.accessibilityReduceMotion)
+        view.interactionState = interactionState
+        view.host?.configuration = hostingConfiguration(context)
+        view.backgroundHost.configuration = backgroundConfiguration(context)
+        let value: LocalizedStringResource = configuration?.audible == true ? "Audio on" : "Muted"
+        var localizedValue = value
+        localizedValue.locale = context.environment.locale
+        let presentsEffect = configuration?.presentsEffect == true
+        for (target, active) in [(view.idle as UIView, configuration != nil && !presentsEffect),
+                                 (view.card as UIView, presentsEffect)] {
+            target.isAccessibilityElement = active
+            target.accessibilityElementsHidden = !active
+            target.accessibilityIdentifier = active ? configuration?.identifier : nil
+            target.accessibilityLabel = active ? configuration?.title : nil
+            target.accessibilityValue = active ? String(localized: localizedValue) : nil
+            target.accessibilityTraits = active ? .button : []
         }
-        .buttonBorderShape(.roundedRectangle(radius: configuration.cornerRadius))
-        .focused($focused)
-        .accessibilityLabel(Text(verbatim: configuration.title))
-        .accessibilityValue(configuration.audible ? Text("Audio on") : Text("Muted"))
-        .accessibilityIdentifier(configuration.identifier)
+    }
+
+    private func hostingConfiguration(_ context: Context) -> any UIContentConfiguration {
+        UIHostingConfiguration {
+            content
+                .environment(\.self, context.environment)
+                .ignoresSafeArea()
+        }
+            .margins(.all, 0)
+    }
+
+    private func backgroundConfiguration(_ context: Context) -> any UIContentConfiguration {
+        UIHostingConfiguration {
+            background
+                .environment(\.self, context.environment)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+                .ignoresSafeArea()
+        }
+        .margins(.all, 0)
+    }
+
+    final class Container: UIView {
+        let card = Card()
+        let idle = IdleControl()
+        private let motion = UIView()
+        let backgroundHost: UIView & UIContentView
+        var host: (UIView & UIContentView)?
+        var interactionState: VideoCardInteractionState?
+        var focus: FocusState<Bool>.Binding?
+        private var configuration: VideoCardFocus?
+        private var reduceMotion = false
+        private var origin: CGRect?
+        private var animator: UIViewPropertyAnimator?
+        private var requestsFocus = false
+        private var explicitFocusRequest: Bool?
+        private var requestScheduled = false
+        private var changingMode = false
+        private var reportedFocus = false
+        private var nativeFocusInsets = NSDirectionalEdgeInsets.zero
+
+        init(background: UIView & UIContentView) {
+            backgroundHost = background
+            super.init(frame: .zero)
+            nativeFocusInsets = card.focusSizeIncrease
+            // Apply TVUIKit's sizing to the complete surface, not a second
+            // independently animated transform inside the card.
+            card.focusSizeIncrease = .zero
+            addSubview(motion)
+            addSubview(idle)
+            motion.addSubview(background)
+            motion.addSubview(card)
+            background.isUserInteractionEnabled = false
+            card.contentView.clipsToBounds = false
+            card.onFocus = { [weak self] coordinator in self?.nativeFocusChanged(coordinator) }
+            idle.onFocus = { [weak self] in self?.reportFocus() }
+            let action = UIAction { [weak self] _ in
+                guard let self, self.interactionState?.isPresentingMenu != true else { return }
+                self.configuration?.activate()
+            }
+            idle.addAction(action, for: .primaryActionTriggered)
+            card.addAction(action, for: .primaryActionTriggered)
+        }
+
+        required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+        override var preferredFocusEnvironments: [any UIFocusEnvironment] {
+            card.eligible ? [card] : [idle]
+        }
+
+        func update(_ next: VideoCardFocus?, enabled: Bool, reduceMotion: Bool) {
+            let modeChanged = configuration?.presentsEffect != next?.presentsEffect
+            if modeChanged, window != nil, !card.contentView.bounds.isEmpty {
+                let layer = card.contentView.layer.presentation() ?? card.contentView.layer
+                origin = layer.convert(layer.bounds, to: window?.layer.presentation() ?? window?.layer)
+                animator?.stopAnimation(true)
+                animator = nil
+                changingMode = true
+            }
+            let explicitRequest = configuration?.request != next?.request
+            // A destination chosen while waking supersedes the old control's
+            // focus until the pending native handoff finishes.
+            if explicitRequest { explicitFocusRequest = next?.prefersFocus == true }
+            requestsFocus = explicitFocusRequest
+                ?? (requestsFocus || (modeChanged && (idle.isFocused || card.isFocused || next?.audible == true)))
+            configuration = next
+            self.reduceMotion = reduceMotion
+            card.eligible = enabled && next?.presentsEffect == true
+            idle.eligible = enabled && next != nil && next?.presentsEffect != true
+            idle.isUserInteractionEnabled = idle.eligible
+            idle.isHidden = !idle.eligible
+            setNeedsLayout()
+        }
+
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            if window == nil {
+                animator?.stopAnimation(true)
+                animator = nil
+                origin = nil
+            }
+            setNeedsLayout()
+        }
+
+        override func layoutSubviews() {
+            super.layoutSubviews()
+            guard !bounds.isEmpty else { return }
+            let resized = motion.bounds.size != bounds.size
+            idle.frame = bounds
+            motion.bounds = bounds
+            motion.center = CGPoint(x: bounds.midX, y: bounds.midY)
+            backgroundHost.frame = bounds
+            card.contentSize = bounds.size
+            let intrinsic = card.intrinsicContentSize
+            card.frame = bounds.insetBy(dx: -max(0, intrinsic.width - bounds.width) / 2,
+                                       dy: -max(0, intrinsic.height - bounds.height) / 2)
+            card.layoutIfNeeded()
+            if changingMode { preserveOrigin() }
+            else if resized, animator?.isRunning != true {
+                UIView.performWithoutAnimation { motion.transform = focusTransform }
+            }
+            scheduleFocusUpdate()
+        }
+
+        private var focusTransform: CGAffineTransform {
+            guard card.isFocused, card.eligible, !bounds.isEmpty else { return .identity }
+            let width = bounds.width - nativeFocusInsets.leading - nativeFocusInsets.trailing
+            let height = bounds.height - nativeFocusInsets.top - nativeFocusInsets.bottom
+            let scale = min(width / bounds.width, height / bounds.height)
+            return CGAffineTransform(scaleX: scale, y: scale)
+        }
+
+        private func nativeFocusChanged(_ coordinator: UIFocusAnimationCoordinator) {
+            reportFocus()
+            guard !changingMode else { return }
+            if let animator, animator.isRunning {
+                animator.stopAnimation(false)
+                animator.finishAnimation(at: .current)
+                self.animator = nil
+            }
+            if reduceMotion {
+                UIView.performWithoutAnimation { motion.transform = focusTransform }
+                return
+            }
+            coordinator.addCoordinatedAnimations { [weak self] in
+                guard let self else { return }
+                self.motion.transform = self.focusTransform
+            }
+        }
+
+        private func scheduleFocusUpdate() {
+            guard window != nil, !requestScheduled,
+                  requestsFocus || changingMode || explicitFocusRequest != nil else { return }
+            requestScheduled = true
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                defer {
+                    self.requestScheduled = false
+                    self.explicitFocusRequest = nil
+                }
+                guard let window = self.window else { return }
+                window.layoutIfNeeded()
+                if self.requestsFocus {
+                    self.requestsFocus = false
+                    let target: UIView = self.card.eligible ? self.card : self.idle
+                    if target.canBecomeFocused, let system = UIFocusSystem.focusSystem(for: target) {
+                        let update = {
+                            self.focus?.wrappedValue = true
+                            window.layoutIfNeeded()
+                            system.requestFocusUpdate(to: target)
+                            system.updateFocusIfNeeded()
+                            self.card.layoutIfNeeded()
+                        }
+                        if self.changingMode || self.reduceMotion {
+                            UIView.performWithoutAnimation {
+                                var transaction = Transaction(animation: nil)
+                                transaction.disablesAnimations = true
+                                withTransaction(transaction, update)
+                            }
+                        }
+                        else { update() }
+                        if !target.isFocused {
+                            PlozzLog.app.debug("Video card focus request was not accepted by the current focus scope")
+                        }
+                    }
+                }
+                self.finishModeChange()
+            }
+        }
+
+        private func preserveOrigin() {
+            guard let origin, let window else { return }
+            UIView.performWithoutAnimation {
+                motion.transform = .identity
+                let target = card.contentView.convert(card.contentView.bounds, to: window)
+                guard !target.isEmpty else { return }
+                motion.transform = CGAffineTransform(
+                    translationX: origin.midX - target.midX, y: origin.midY - target.midY)
+                    .scaledBy(x: origin.width / target.width, y: origin.height / target.height)
+            }
+        }
+
+        private func finishModeChange() {
+            guard changingMode else { return }
+            preserveOrigin()
+            changingMode = false
+            guard origin != nil else { return }
+            self.origin = nil
+            if reduceMotion {
+                motion.transform = focusTransform
+            } else {
+                let animator = UIViewPropertyAnimator(duration: MultiviewMotion.duration, curve: .easeInOut) { [weak self] in
+                    guard let self else { return }
+                    self.motion.transform = self.focusTransform
+                }
+                self.animator = animator
+                animator.startAnimation()
+            }
+        }
+
+        private func reportFocus() {
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                let focused = self.idle.isFocused || self.card.isFocused
+                guard focused != self.reportedFocus else { return }
+                self.reportedFocus = focused
+                self.configuration?.focused(focused)
+            }
+        }
+    }
+
+    final class Card: TVCardView {
+        var eligible = false
+        var onFocus: ((UIFocusAnimationCoordinator) -> Void)?
+        override var canBecomeFocused: Bool { eligible && super.canBecomeFocused }
+        override func didUpdateFocus(in context: UIFocusUpdateContext, with coordinator: UIFocusAnimationCoordinator) {
+            super.didUpdateFocus(in: context, with: coordinator)
+            onFocus?(coordinator)
+        }
+
+    }
+
+    final class IdleControl: UIControl {
+        var eligible = false
+        var onFocus: (() -> Void)?
+        override var canBecomeFocused: Bool { eligible }
+        override func didUpdateFocus(in context: UIFocusUpdateContext, with coordinator: UIFocusAnimationCoordinator) {
+            super.didUpdateFocus(in: context, with: coordinator)
+            onFocus?()
+        }
+
+        override func pressesEnded(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+            if isFocused, presses.contains(where: { $0.type == .select }) {
+                sendActions(for: .primaryActionTriggered)
+            } else {
+                super.pressesEnded(presses, with: event)
+            }
+        }
     }
 }
 
@@ -224,7 +434,7 @@ private final class VideoCardInteractionState {
 }
 
 private struct VideoCardContextMenu: UIViewRepresentable {
-    let configuration: VideoCardFocus
+    let configuration: VideoCardFocus?
     let interactionState: VideoCardInteractionState
     @Environment(\.videoCardFocusMemory) private var focusMemory
     @Environment(\.locale) private var locale
@@ -285,6 +495,7 @@ private struct VideoCardContextMenu: UIViewRepresentable {
         }
 
         private func containsPicture(_ item: any UIFocusItem) -> Bool {
+            if let view = item as? UIView, isDescendant(of: view) { return true }
             guard let frame = NativeFocusRegion.frame(of: item, in: self) else { return false }
             return bounds.contains(CGPoint(x: frame.midX, y: frame.midY))
                 && abs(frame.width - bounds.width) <= max(32, bounds.width * 0.05)
@@ -479,32 +690,6 @@ public struct VideoCardFocusReturnGuide: UIViewRepresentable {
             NSLayoutConstraint.deactivate(guideConstraints)
             guideConstraints = []
             guide.owningView?.removeLayoutGuide(guide)
-        }
-    }
-}
-
-private struct VideoCardButtonStyle: PrimitiveButtonStyle {
-    let presentsEffect: Bool
-    let restoringEffect: Bool
-
-    @ViewBuilder
-    func makeBody(configuration: Configuration) -> some View {
-        if presentsEffect {
-            Button(configuration).buttonStyle(.card)
-                .transaction {
-                    // The whole card owns entry motion; later focus moves remain native.
-                    if restoringEffect {
-                        $0.animation = nil
-                        $0.disablesAnimations = true
-                    }
-                }
-                .transition(.identity)
-        } else {
-            configuration.label
-                .focusable()
-                .focusEffectDisabled()
-                .onTapGesture(perform: configuration.trigger)
-                .transition(.identity)
         }
     }
 }

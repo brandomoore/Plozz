@@ -905,8 +905,6 @@ final class LiveTVMultiviewRemoteTests: XCTestCase {
         chooseGuideChannel(2, in: app)
         finishSetup(in: app)
         focusAudio("Sports 1", in: app)
-        let frame = pane("Sports 2", in: app).frame
-        let firstFrame = pane("Sports 1", in: app).frame
         let screenWidth = app.frame.width
         func captionText(_ screenshot: UIImage, in frame: CGRect) throws -> String {
             let image = try XCTUnwrap(screenshot.cgImage)
@@ -921,11 +919,13 @@ final class LiveTVMultiviewRemoteTests: XCTestCase {
         }
         let style = reduceGlass ? "reduced-glass" : "native-glass"
         XCUIRemote.shared.press(.right)
+        let frame = settledVideoFrame(2, in: app)
+        let firstFrame = app.otherElements["multiview-fixture-video-1"].frame
         let visible = capture("channel-caption-\(style)-focused", in: app)
         XCTAssertTrue(try captionText(visible, in: frame).contains("Sports 2"))
         XCTAssertFalse(try captionText(visible, in: firstFrame).contains("Sports 1"))
         assertNativeFocus(pane("Sports 2", in: app), in: app)
-        let videoFrame = settledVideoFrame(2, in: app)
+        let videoFrame = frame
         // A boundary press renews the controls deadline without refocusing or renewing the caption.
         XCUIRemote.shared.press(.right)
         try await Task.sleep(for: .seconds(4))

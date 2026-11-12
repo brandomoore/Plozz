@@ -318,17 +318,14 @@ Muted, unavailable, hidden, fullscreen, external, unauthorized, and background p
 Reduce Transparency removes the indicator and Reduce Motion disables its fades.
 The existing Audio on/Muted accessibility value remains authoritative.
 
-When Multiview first presents its native focus cards, the existing live renderer
-bridge retains the picture while the receiver settles, including native focus lift.
-Model bounds alone omit that lift. The whole native card is positioned at the
-retained picture's displayed frame before the renderer is returned to it. Its
-sheen, caption, glow, and live video then share one half-second transition to the
-final size, rather than animating the video independently above its native chrome.
-Before reattachment, the bridge commits the receiver's local renderer geometry
-while preserving its on-screen frame; otherwise one frame can combine old bounds
-with the new focus transform. Interrupted handoffs start from the displayed frame,
-and ordinary focus movement remains native.
-Reduce Motion bypasses the entry animation.
+Multiview retains one native card and renderer host across idle, editing and
+fullscreen layout changes. Focus never detaches the live output into a separate
+window bridge. The native sheen, caption, glow and picture share one motion
+container; TVUIKit's default focus sizing is applied there rather than through a
+second content transform. Entry starts from the displayed frame and takes half
+a second. Ordinary focus changes use the native focus animation coordinator,
+interrupting entry from its current presentation when necessary. Reduce Motion
+bypasses the surface animation.
 
 When loading a new mobile native source, disconnect the outgoing player from
 the retained `AVPlayerLayer` before teardown and replacement. Retuning must
@@ -581,8 +578,8 @@ actions, and cancellation on navigation remain unchanged.
 
 SwiftUI video containers defer attachment when their replacement host is
 offscreen and the engine's output is already windowed. The replacement claims
-that same output when it enters a window. This prevents native card preparation
-and interactive/idle style changes from stealing a visible renderer; initial
+that same output when it enters a window. This prevents controller preparation
+from stealing a visible renderer; initial
 unattached outputs can still mount before playback becomes ready. Once the new
 host owns the windowed output, updates to an outgoing label cannot steal it back
 during its removal animation.
@@ -590,9 +587,8 @@ When native fullscreen playback enters Multiview, a temporary, noninteractive
 window host carries the same live renderer across cover dismissal. The inline
 host must be windowed, laid out at full size, and have a visible presentation
 layer before the resize begins; a task yield alone is not a presentation boundary.
-The native card's subsequent
-label replacement carries the renderer the same way, without cross-fading its
-owners. A rejected Multiview request restores the inline output; cancellation
+Subsequent native card focus/layout changes keep that host and renderer together.
+A rejected Multiview request restores the inline output; cancellation
 releases the handoff without starting Multiview. Focus spacing outside each Multiview picture
 is transparent, so an inset does not mask the main picture with a black border.
 Multiview startup uses an opaque, shimmering picture-sized skeleton, including

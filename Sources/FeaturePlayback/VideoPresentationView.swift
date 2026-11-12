@@ -15,18 +15,6 @@ final class VideoPresentationHandoff: UIView {
     private var displayLink: CADisplayLink?
     private let retainedPicture: CGRect?
     private let retainedViewportSize: CGSize
-    private let pictureCornerRadius: CGFloat
-    private let animatesFocusTransition: Bool
-    private var transitionAnimator: UIViewPropertyAnimator?
-    private var transitionFinished = false
-    private var isReturningOutput = false
-    private var stableTarget: CGRect?
-    private var stableTargetFrames = 0
-    #if os(tvOS)
-    private var focusEntry: VideoCardEntryTransition?
-    private var stagedFocusFrame: CGRect?
-    private var unstagedFocusFrame: CGRect?
-    #endif
 
     private final class PresentationClock: NSObject {
         weak var owner: VideoPresentationHandoff?
@@ -38,28 +26,17 @@ final class VideoPresentationHandoff: UIView {
     }
 
     init?(engine: any VideoEngine, pictureCornerRadius: CGFloat? = nil,
-          animatesFocusTransition: Bool = false,
           completion: @escaping () -> Void) {
         let output = engine.makeVideoOutputView()
         guard let window = output.window, !output.bounds.isEmpty else { return nil }
-        #if os(tvOS)
-        let previousEntry = (output.superview as? VideoPresentationView)?.focusEntryTransition
-        let continuesEntry = previousEntry?.isActive == true
-        #else
-        let continuesEntry = false
-        #endif
-        let usesPresentation = animatesFocusTransition || continuesEntry
-            || (output.superview as? VideoPresentationHandoff)?.animatesFocusTransition == true
-        let windowLayer = usesPresentation ? window.layer.presentation() ?? window.layer : window.layer
-        let outputLayer = usesPresentation ? output.layer.presentation() ?? output.layer : output.layer
+        let windowLayer = window.layer
+        let outputLayer = output.layer
         let picture = outputLayer.convert(outputLayer.bounds, to: windowLayer)
         let viewport = output.superview.map {
-            let layer = usesPresentation ? $0.layer.presentation() ?? $0.layer : $0.layer
+            let layer = $0.layer
             return layer.convert(layer.bounds, to: windowLayer)
         } ?? picture
         let center = CGPoint(x: picture.midX, y: picture.midY)
-        self.animatesFocusTransition = animatesFocusTransition
-        self.pictureCornerRadius = pictureCornerRadius ?? 0
         retainedPicture = pictureCornerRadius.map { _ in
             picture.offsetBy(dx: -viewport.minX, dy: -viewport.minY)
         }
@@ -84,9 +61,6 @@ final class VideoPresentationHandoff: UIView {
         } else {
             output.center = center
         }
-        #if os(tvOS)
-        previousEntry?.cancel()
-        #endif
     }
 
     @available(*, unavailable)
@@ -100,7 +74,6 @@ final class VideoPresentationHandoff: UIView {
             if current.isHidden || current.alpha < 1 || current.layer.presentation()?.opacity == 0 { return false }
             ancestor = current.superview
         }
-        if animatesFocusTransition, !transitionFinished { return false }
         return true
     }
 
@@ -114,23 +87,11 @@ final class VideoPresentationHandoff: UIView {
 
     private func receivePresentedOutput() {
         guard let receiver else { return }
-        if isReturningOutput, let output, let presented = output.layer.presentation() {
-            guard presented.bounds == output.layer.bounds,
-                  presented.position == output.layer.position,
-                  CATransform3DEqualToTransform(presented.transform, output.layer.transform) else { return }
-            isReturningOutput = false
-            transitionFinished = true
-        }
-        if animatesFocusTransition, !transitionFinished {
-            prepareFocusTransition(to: receiver)
-            return
-        }
-        if !animatesFocusTransition, let retainedPicture, let output, output.superview === self,
+        if let retainedPicture, let output, output.superview === self,
            let window, receiver.window === window,
            let presented = receiver.layer.presentation(), !presented.bounds.isEmpty,
            retainedViewportSize.width > 0, retainedViewportSize.height > 0 {
-            // Unfocused native card labels can fade in after their geometry starts moving.
-            // Keep the live bridge on that same geometry until the label is fully visible.
+            // Follow the receiving controller's geometry until it is fully visible.
             let target = presented.convert(presented.bounds, to: window.layer.presentation() ?? window.layer)
             let scaleX = target.width / retainedViewportSize.width
             let scaleY = target.height / retainedViewportSize.height
@@ -147,117 +108,13 @@ final class VideoPresentationHandoff: UIView {
         receiver.layoutIfNeeded()
     }
 
-    private func prepareFocusTransition(to view: VideoPresentationView) {
-        guard transitionAnimator == nil, let window, view.window === window,
-              let presented = view.layer.presentation(), !presented.bounds.isEmpty else { return }
-        var ancestor: UIView? = view
-        while let current = ancestor {
-            guard !current.isHidden, current.alpha >= 1,
-                  (current.layer.presentation()?.opacity ?? 0) >= 0.999 else { return }
-            ancestor = current.superview
-        }
-        let target = presented.convert(presented.bounds, to: window.layer.presentation() ?? window.layer)
-        guard stableTarget == target else {
-            stableTarget = target
-            stableTargetFrames = 0
-            return
-        }
-        stableTargetFrames += 1
-        guard stableTargetFrames >= 2 else { return }
-        #if os(tvOS)
-        if let stagedFocusFrame, let focusEntry {
-            guard let output else { return }
-            if abs(target.minX - stagedFocusFrame.minX) >= 1
-                || abs(target.minY - stagedFocusFrame.minY) >= 1
-                || abs(target.width - stagedFocusFrame.width) >= 1
-                || abs(target.height - stagedFocusFrame.height) >= 1 {
-                guard target != unstagedFocusFrame else { return }
-                // Native focus can settle after the initial card layout, or move
-                // to another card while this replacement is being prepared.
-                let size = CGSize(width: target.width / focusEntry.scale.width,
-                                  height: target.height / focusEntry.scale.height)
-                let destination = CGRect(
-                    x: target.midX - focusEntry.offset.width - size.width / 2,
-                    y: target.midY - focusEntry.offset.height - size.height / 2,
-                    width: size.width, height: size.height)
-                unstagedFocusFrame = destination
-                focusEntry.prepare(from: stagedFocusFrame, to: destination)
-                stableTarget = nil
-                return
-            }
-            normalizeOutput(output, for: view, visibleFrame: stagedFocusFrame)
-            isReturningOutput = true
-            return
-        }
-        #endif
-        guard retainedPicture != nil, output != nil,
-              retainedViewportSize.width > 0, retainedViewportSize.height > 0 else { return }
-        #if os(tvOS)
-        if let entry = view.focusEntryTransition {
-            focusEntry = entry
-            stagedFocusFrame = frame
-            unstagedFocusFrame = target
-            entry.prepare(from: frame, to: target)
-            return
-        }
-        #endif
-        let scaleX = target.width / retainedViewportSize.width
-        let scaleY = target.height / retainedViewportSize.height
-        let targetRadius = pictureCornerRadius / max(scaleX, scaleY)
-        let animator = UIViewPropertyAnimator(duration: MultiviewMotion.duration, curve: .easeInOut) { [weak self] in
-            guard let self else { return }
-            // Animate the owned bridge, never the renderer: its transform must
-            // not survive reparenting and compound the destination's native lift.
-            self.transform = CGAffineTransform(scaleX: scaleX, y: scaleY)
-            self.center = CGPoint(x: target.midX, y: target.midY)
-            self.layer.cornerRadius = targetRadius
-        }
-        transitionAnimator = animator
-        animator.addCompletion { [weak self] position in
-            guard let self, let view = self.receiver, let window = self.window,
-                  let presented = view.layer.presentation(), !view.bounds.isEmpty,
-                  let output = self.output, position == .end else { return }
-            let currentTarget = presented.convert(presented.bounds, to: window.layer.presentation() ?? window.layer)
-            guard currentTarget == target else {
-                self.transitionAnimator = nil
-                self.stableTarget = nil
-                return
-            }
-            // Commit the receiver's local geometry while the bridge still owns
-            // the renderer. Reparenting with old presentation bounds produces
-            // one frame of the old size multiplied by the new native focus lift.
-            self.normalizeOutput(output, for: view, visibleFrame: target)
-            self.isReturningOutput = true
-        }
-        animator.startAnimation()
-    }
-
-    private func normalizeOutput(_ output: UIView, for view: VideoPresentationView, visibleFrame: CGRect) {
-        UIView.performWithoutAnimation {
-            let visibleRadius = layer.cornerRadius * max(abs(transform.a), abs(transform.d))
-            layer.removeAllAnimations()
-            transform = .identity
-            bounds = view.bounds
-            center = CGPoint(x: visibleFrame.midX, y: visibleFrame.midY)
-            transform = CGAffineTransform(
-                scaleX: visibleFrame.width / view.bounds.width, y: visibleFrame.height / view.bounds.height)
-            layer.cornerRadius = visibleRadius / max(abs(transform.a), abs(transform.d))
-            view.prepareHandoffOutput(output)
-        }
-    }
-
     func complete() {
-        transitionAnimator = nil
         displayLink?.invalidate()
         displayLink = nil
         receiver = nil
         removeFromSuperview()
         // The receiving UIView has laid out; leave SwiftUI's update before changing its state.
         Task { @MainActor [weak self] in
-            #if os(tvOS)
-            self?.focusEntry?.animate()
-            self?.focusEntry = nil
-            #endif
             let completion = self?.completion
             self?.completion = nil
             completion?()
@@ -265,12 +122,6 @@ final class VideoPresentationHandoff: UIView {
     }
 
     func cancel(restoringOutput: Bool = false) {
-        #if os(tvOS)
-        focusEntry?.cancel()
-        focusEntry = nil
-        #endif
-        transitionAnimator?.stopAnimation(true)
-        transitionAnimator = nil
         displayLink?.invalidate()
         displayLink = nil
         receiver = nil
@@ -295,9 +146,6 @@ final class VideoPresentationHandoff: UIView {
 /// Crops only the engine's surface. AVKit's external/PiP presentation keeps
 /// owning its own sizing. Light preview colors use a separately bounded sampler.
 final class VideoPresentationView: UIView {
-    #if os(tvOS)
-    weak var focusEntryTransition: VideoCardEntryTransition?
-    #endif
     private var engine: (any VideoEngine)?
     private var surface: UIView?
     private var defersOffscreenAttachment = false

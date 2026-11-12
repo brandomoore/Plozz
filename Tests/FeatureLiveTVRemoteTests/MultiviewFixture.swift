@@ -678,6 +678,49 @@ private struct LiveTVRootFixtureLoader: LiveTVSourceLoading {
 
 @MainActor
 private final class MultiviewMotionOutput: UIView {
+    private let accessibilityProbe = AccessibilityProbe()
+    private let labelProbe = LabelProbe()
+    var probeIdentifier: String? {
+        get { accessibilityProbe.accessibilityIdentifier }
+        set { accessibilityProbe.accessibilityIdentifier = newValue }
+    }
+
+    private final class AccessibilityProbe: UIView {
+        weak var output: UIView?
+        override var accessibilityFrame: CGRect {
+            get {
+                guard let output, output.window != nil else { return .zero }
+                return UIAccessibility.convertToScreenCoordinates(output.bounds, in: output)
+            }
+
+            set {}
+        }
+    }
+
+    func exposeLabel(_ label: UILabel, identifier: String) {
+        labelProbe.source = label
+        labelProbe.accessibilityIdentifier = identifier
+    }
+
+    private final class LabelProbe: UILabel {
+        weak var source: UILabel?
+        override var accessibilityValue: String? {
+            get { source?.accessibilityValue }
+            set {}
+        }
+        override var accessibilityLabel: String? {
+            get { source?.text }
+            set {}
+        }
+        override var accessibilityFrame: CGRect {
+            get {
+                guard let source, source.window != nil else { return .zero }
+                return UIAccessibility.convertToScreenCoordinates(source.bounds, in: source)
+            }
+            set {}
+        }
+    }
+
     private var widths: [CGFloat] = []
     private var frames: [[CGFloat]] = []
     private var displayLink: CADisplayLink?
@@ -697,6 +740,21 @@ private final class MultiviewMotionOutput: UIView {
 
     override func didMoveToWindow() {
         super.didMoveToWindow()
+        accessibilityProbe.removeFromSuperview()
+        labelProbe.removeFromSuperview()
+        if let window {
+            // Read the real renderer through a separate test-only accessibility probe;
+            // a native video button intentionally hides its implementation descendants.
+            accessibilityProbe.output = self
+            accessibilityProbe.frame = window.bounds
+            accessibilityProbe.isAccessibilityElement = true
+            accessibilityProbe.isUserInteractionEnabled = false
+            window.addSubview(accessibilityProbe)
+            labelProbe.frame = window.bounds
+            labelProbe.isAccessibilityElement = true
+            labelProbe.isUserInteractionEnabled = false
+            window.addSubview(labelProbe)
+        }
         displayLink?.invalidate()
         displayLink = nil
         guard window != nil, ProcessInfo.processInfo.arguments.contains("--motion-fixture") else { return }
@@ -810,10 +868,10 @@ private final class MultiviewFixtureEngine: LiveChannelEngine {
             subtitleTracks = [MediaTrack(id: 3, kind: .subtitle, displayTitle: "English", language: "eng")]
         }
         output.backgroundColor = number == 1 ? .systemBlue : .systemTeal
-        output.accessibilityIdentifier = "multiview-fixture-video-\(number)"
+        output.probeIdentifier = "multiview-fixture-video-\(number)"
         label.textColor = .white
         label.font = .preferredFont(forTextStyle: .headline)
-        label.accessibilityIdentifier = "multiview-fixture-player-\(number)"
+        output.exposeLabel(label, identifier: "multiview-fixture-player-\(number)")
         label.translatesAutoresizingMaskIntoConstraints = false
         output.addSubview(label)
         NSLayoutConstraint.activate([
