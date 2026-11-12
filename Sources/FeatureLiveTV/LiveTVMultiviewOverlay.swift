@@ -94,7 +94,7 @@ enum LiveTVMultiviewGeometry {
         }
         let index = ordered.firstIndex(of: id) ?? 0
         #if os(tvOS)
-        if layout == .mainAndStack || (isEditing && layout == .sideBySide) {
+        if layout == .mainAndStack || layout == .sideBySide {
             let ratios = ordered.map { validAspectRatio(aspectRatios[$0] ?? aspectRatio) }
             return packedFrame(index: index, ratios: ratios, area: area, layout: layout, gap: isEditing ? 24 : 8)
         }
@@ -773,13 +773,13 @@ private struct LiveTVMultiviewChrome: View {
             .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { toolbarHeight = $0 }
             .modifier(LiveTVMultiviewToolbarEntrance(reduceMotion: reduceMotion))
             .padding(.horizontal, 72)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .padding(.bottom, max(32, safeAreaInsets.bottom))
             .background {
                 LinearGradient(colors: [.clear, .black.opacity(0.72)], startPoint: .top, endPoint: .bottom)
                     .allowsHitTesting(false)
             }
-            .padding(.top, toolbarTop(in: geometry.size))
+            .padding(.top, toolbarTop(in: geometry.size) + 24)
         }
         .focusScope(focusScope)
         .onChange(of: televisionEditingInsets, initial: true) { _, insets in
@@ -790,7 +790,8 @@ private struct LiveTVMultiviewChrome: View {
     }
 
     private var televisionEditingInsets: EdgeInsets {
-        EdgeInsets(top: 24, leading: 24, bottom: toolbarHeight + max(32, safeAreaInsets.bottom) + 24, trailing: 24)
+        let margin = max(32, max(safeAreaInsets.top, safeAreaInsets.bottom))
+        return EdgeInsets(top: margin, leading: 24, bottom: toolbarHeight + margin + 24, trailing: 24)
     }
 
     private func toolbarTop(in size: CGSize) -> CGFloat {
@@ -1206,7 +1207,7 @@ private struct LiveTVMultiviewToolbar: View {
         .fixedSize(horizontal: false, vertical: true)
         .environment(\.colorScheme, .dark)
         #if os(tvOS)
-        .background { VideoCardFocusReturnGuide().padding(.top, -44) }
+        .background { VideoCardFocusReturnGuide().padding(.top, -24) }
         .focusSection()
         #endif
     }

@@ -42,7 +42,7 @@ final class LiveTVMultiviewGeometryTests: XCTestCase {
         }
     }
 
-    func testSideBySideAndPortraitSlotsConsumeTheEntireCanvas() {
+    func testSideBySideAndPortraitPicturesUseTheAvailableCanvas() {
         let panes = [UUID(), UUID()]
         #if os(tvOS)
         let gap: CGFloat = 8
@@ -57,6 +57,18 @@ final class LiveTVMultiviewGeometryTests: XCTestCase {
                 )
             }
             XCTAssertTrue(pictures[0].intersection(pictures[1]).isEmpty)
+            #if os(tvOS)
+            let bounds = pictures[0].union(pictures[1])
+            XCTAssertEqual(bounds.midX, size.width / 2, accuracy: 0.001)
+            XCTAssertEqual(bounds.midY, size.height / 2, accuracy: 0.001)
+            XCTAssertTrue(abs(bounds.width - size.width) < 0.001 || abs(bounds.height - size.height) < 0.001)
+            XCTAssertEqual(size.width >= size.height
+                ? pictures[1].minX - pictures[0].maxX : pictures[1].minY - pictures[0].maxY,
+                           gap, accuracy: 0.001)
+            for picture in pictures {
+                XCTAssertEqual(picture.width / picture.height, 16 / 9, accuracy: 0.001)
+            }
+            #else
             XCTAssertEqual(pictures[0].union(pictures[1]), CGRect(origin: .zero, size: size))
             for (id, picture) in zip(panes, pictures) {
                 XCTAssertTrue(CGRect(origin: .zero, size: size).contains(picture))
@@ -81,6 +93,7 @@ final class LiveTVMultiviewGeometryTests: XCTestCase {
                 XCTAssertEqual(pictures[0].minX, 0)
                 XCTAssertEqual(pictures[1].maxX, size.width)
             }
+            #endif
         }
     }
 
@@ -185,26 +198,38 @@ final class LiveTVMultiviewGeometryTests: XCTestCase {
         }
     }
 
-    func testWidenedGridHasEightPointInternalGapsAndNoOuterInsets() {
+    func testWidenedGridHasEqualEightPointPictureGapsAtEverySizeAndAspect() {
         for count in [3, 4] {
             let panes = (0..<count).map { _ in UUID() }
-            for size in sizes {
-                let canvas = CGRect(origin: .zero, size: size)
-                let slots = panes.map {
-                    LiveTVMultiviewGeometry.frame(
-                        for: $0, panes: panes, primary: panes[0], layout: .sideBySide,
-                        corner: .bottomTrailing, insetSize: .medium, expanded: nil, size: size)
-                }
-                XCTAssertEqual(slots.reduce(CGRect.null) { $0.union($1) }, canvas)
-                XCTAssertEqual(slots[1].minX - slots[0].maxX, 8, accuracy: 0.001)
-                XCTAssertEqual(slots[2].minY - slots[0].maxY, 8, accuracy: 0.001)
-                if count == 4 {
-                    XCTAssertEqual(slots[3].minX - slots[2].maxX, 8, accuracy: 0.001)
-                }
-                for id in panes {
-                    XCTAssertEqual(LiveTVMultiviewGeometry.frame(
-                        for: id, panes: panes, primary: panes[0], layout: .sideBySide,
-                        corner: .bottomTrailing, insetSize: .medium, expanded: id, size: size), canvas)
+            let mixed: [CGFloat] = [16 / 9, 4 / 3, 21 / 9, 16 / 9]
+            for ratios in [Array(repeating: CGFloat(16) / 9, count: count),
+                           Array(mixed.prefix(count))] {
+                let aspects = Dictionary(uniqueKeysWithValues: zip(panes, ratios))
+                for size in sizes {
+                    let canvas = CGRect(origin: .zero, size: size)
+                    let pictures = panes.map {
+                        LiveTVMultiviewGeometry.frame(
+                            for: $0, panes: panes, primary: panes[0], layout: .sideBySide,
+                            corner: .bottomTrailing, insetSize: .medium, expanded: nil, size: size,
+                            aspectRatio: aspects[$0], aspectRatios: aspects)
+                    }
+                    let bounds = pictures.reduce(CGRect.null) { $0.union($1) }
+                    XCTAssertEqual(bounds.midX, canvas.midX, accuracy: 0.001)
+                    XCTAssertEqual(bounds.midY, canvas.midY, accuracy: 0.001)
+                    XCTAssertTrue(abs(bounds.width - size.width) < 0.001 || abs(bounds.height - size.height) < 0.001)
+                    for (picture, ratio) in zip(pictures, ratios) {
+                        XCTAssertEqual(picture.width / picture.height, ratio, accuracy: 0.001)
+                    }
+                    XCTAssertEqual(pictures[1].minX - pictures[0].maxX, 8, accuracy: 0.001)
+                    XCTAssertEqual(pictures[2].minY - pictures[0].maxY, 8, accuracy: 0.001)
+                    if count == 4 {
+                        XCTAssertEqual(pictures[3].minX - pictures[2].maxX, 8, accuracy: 0.001)
+                    }
+                    for id in panes {
+                        XCTAssertEqual(LiveTVMultiviewGeometry.frame(
+                            for: id, panes: panes, primary: panes[0], layout: .sideBySide,
+                            corner: .bottomTrailing, insetSize: .medium, expanded: id, size: size), canvas)
+                    }
                 }
             }
         }
@@ -402,7 +427,7 @@ final class LiveTVMultiviewGeometryTests: XCTestCase {
         XCTAssertTrue(chrome.canAutoHide(blocked: false))
     }
 
-    func testThreeAndFourChannelGridsCoverCanvasWithoutOverlap() {
+    func testThreeAndFourChannelGridsFitCanvasWithoutOverlap() {
         for count in 3...4 {
             let panes = (0..<count).map { _ in UUID() }
             for size in sizes {
@@ -411,7 +436,13 @@ final class LiveTVMultiviewGeometryTests: XCTestCase {
                         for: $0, panes: panes, primary: panes[0], layout: .sideBySide,
                         corner: .bottomTrailing, insetSize: .medium, expanded: nil, size: size)
                 }
-                XCTAssertEqual(frames.reduce(CGRect.null) { $0.union($1) }, CGRect(origin: .zero, size: size))
+                let canvas = CGRect(origin: .zero, size: size)
+                let bounds = frames.reduce(CGRect.null) { $0.union($1) }
+                #if os(tvOS)
+                XCTAssertTrue(canvas.insetBy(dx: -0.001, dy: -0.001).contains(bounds))
+                #else
+                XCTAssertEqual(bounds, canvas)
+                #endif
                 for index in frames.indices {
                     XCTAssertGreaterThan(frames[index].width, 0)
                     for other in frames.indices where other > index {

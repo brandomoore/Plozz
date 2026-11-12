@@ -1805,9 +1805,11 @@ use the saved picture count and the presenting canvas orientation, not the sheet
 dimensions. Layout names do not change persisted enum values.
 Each renderer fits its source without cropping. Edit layout returns to setup;
 ordinary viewing never reserves permanent space for controls.
-Widened Apple TV split/grid slots have an 8-point internal gap, without an
-outer gutter. Aspect fitting can leave additional letterboxing; a single
-expanded picture still uses the full canvas.
+Widened Apple TV split/grid layouts pack the actual picture edges with equal
+8-point horizontal and vertical gaps, including three-picture and mixed-aspect
+grids. The centered group fills the available width or height without cropping;
+unused space stays outside the group rather than widening individual gaps.
+A single expanded picture still uses the full canvas.
 
 Apple TV animates the retained video surfaces into Multiview and between layouts,
 including pane entry/removal, return to watching, promotion and expansion.
@@ -1855,9 +1857,10 @@ windows the dock scrolls rather than truncating labels. Setup's pictures reserve
 the measured header and dock heights so landscape and large-text controls cannot
 cover them. TV focus controls and the retained players' full-screen geometry are
 unchanged.
-Apple TV multiview has no top-left title. Its toolbar is centered beneath the
-pictures, midway through the available lower space, and contains Add channel,
-Layout and More. More holds
+Apple TV multiview has no top-left title. The pictures and toolbar are vertically
+centered as one group, with symmetric outer safe-area clearance and a 24-point
+gap before the toolbar. Focus lift does not reposition the group. The toolbar
+contains Add channel, Layout and More. More holds
 Favorite and, while expanded, Show all. Holding Select on a picture opens its
 native menu for Make main video, Replace channel and Remove; Remove is
 available only with multiple pictures. Loading pictures retain their menu, and
@@ -1869,8 +1872,8 @@ so its returning preview cannot resize or reposition a picture during promotion.
 Holding Select does not also activate or promote the picture; cancellation leaves
 its position unchanged. A short Select or Make main video remains an explicit
 promotion action. The video with sound has a broad, soft, live-color glow that
-waits one second before appearing on a newly audible video, then fades in and
-out over 1.5 seconds. Rapid focus moves cancel pending glows without delaying
+waits one second before appearing on a newly audible video, then fades in over
+three seconds and out over 1.5 seconds. Rapid focus moves cancel pending glows without delaying
 audio. The glow remains visible when focus moves to the toolbar.
 It does not change picture geometry or replace the native focus treatment.
 Reduce Transparency hides the glow; Reduce Motion removes its fades.

@@ -1735,6 +1735,54 @@ final class LiveTVMultiviewRemoteTests: XCTestCase {
     }
 
     @MainActor
+    func testPicturesAndToolbarAreVerticallyCenteredAsOneGroup() {
+        continueAfterFailure = false
+        let app = fixtureApplication()
+        app.launchArguments = ["--live-root-fixture", "--visual-focus-fixture"]
+        app.launch()
+        defer { app.terminate() }
+        startProductionChannel(in: app)
+        openMultiviewPicker(in: app)
+        for count in 2...4 {
+            if count > 2 { select(app.buttons["live-multiview-add"], in: app) }
+            chooseGuideChannel(count, in: app)
+            var centers: [CGPoint]?
+            for selected in count == 3 ? [2, 3] : [2] {
+                select(pane("Sports \(selected)", in: app), in: app, activate: false)
+                assertNativeFocus(pane("Sports \(selected)", in: app), in: app)
+                _ = settledVideoFrame(selected, in: app)
+                let pictures = (1...count).map { app.otherElements["multiview-fixture-video-\($0)"].frame }
+                let pictureBounds = pictures.reduce(CGRect.null) { $0.union($1) }
+                let buttons = app.buttons["live-multiview-layout"].frame.union(
+                    app.buttons["live-multiview-more"].frame)
+                let topGap = pictureBounds.minY - app.frame.minY
+                let bottomGap = app.frame.maxY - buttons.maxY
+                XCTAssertEqual(topGap, bottomGap, accuracy: 24,
+                               "Center the complete composition, allowing only the native focus lift.")
+                XCTAssertGreaterThan(buttons.minY - pictureBounds.maxY, 8)
+                if let centers {
+                    for (picture, center) in zip(pictures, centers) {
+                        XCTAssertEqual(picture.midX, center.x, accuracy: 1)
+                        XCTAssertEqual(picture.midY, center.y, accuracy: 1)
+                    }
+                }
+                centers = pictures.map { CGPoint(x: $0.midX, y: $0.midY) }
+                capture("centered-\(count)-pictures-focused-\(selected)", in: app)
+            }
+            finishSetup(in: app)
+            _ = settledVideoFrame(1, in: app)
+            let idle = (1...count).map { app.otherElements["multiview-fixture-video-\($0)"].frame }
+            XCTAssertEqual(idle[1].minX - idle[0].maxX, 8, accuracy: 1)
+            if count > 2 {
+                XCTAssertEqual(idle[2].minY - idle[0].maxY, 8, accuracy: 1)
+            }
+            capture("even-\(count)-picture-idle-gaps", in: app)
+            if count < 4 { revealChrome(in: app) }
+        }
+        assertMetrics("Engines 4 loads 4 stops 0 audible 1", in: app)
+    }
+
+    @MainActor
     func testFourChannelSetupUsesGuideAndIdleRestoresFullPictures() {
         continueAfterFailure = false
         let app = launchVisualFixture()
@@ -1756,11 +1804,14 @@ final class LiveTVMultiviewRemoteTests: XCTestCase {
         }
         XCTAssertFalse(app.buttons["live-multiview-add"].exists)
         finishSetup(in: app)
+        let gap: CGFloat = 8
+        let width = min((app.frame.width - gap) / 2, (app.frame.height - gap) / 2 * 16 / 9)
+        let height = width * 9 / 16
         let frames = (0..<4).map { index in
             CGRect(
-                x: app.frame.minX + CGFloat(index % 2) * app.frame.width / 2,
-                y: app.frame.minY + CGFloat(index / 2) * app.frame.height / 2,
-                width: app.frame.width / 2, height: app.frame.height / 2)
+                x: app.frame.midX - (width * 2 + gap) / 2 + CGFloat(index % 2) * (width + gap),
+                y: app.frame.midY - (height * 2 + gap) / 2 + CGFloat(index / 2) * (height + gap),
+                width: width, height: height)
         }
         for (index, frame) in frames.enumerated() { assertVideoFrame(index + 1, equals: frame, in: app) }
         select(pane("Sports 2", in: app), in: app, activate: false)
@@ -1776,9 +1827,8 @@ final class LiveTVMultiviewRemoteTests: XCTestCase {
         finishSetup(in: app)
         for (index, frame) in frames.enumerated() { assertVideoFrame(index + 1, equals: frame, in: app) }
         XCUIRemote.shared.press(.select)
-        assertVideoFrame(4, equals: app.frame, in: app)
-        XCUIRemote.shared.press(.menu)
-        for (index, frame) in frames.enumerated() { assertVideoFrame(index + 1, equals: frame, in: app) }
+        finishSetup(in: app)
+        for (engine, frame) in zip([4, 1, 2, 3], frames) { assertVideoFrame(engine, equals: frame, in: app) }
         assertAudio("Sports 4", in: app)
         assertMetrics("Engines 4 loads 4 stops 0 audible 1", in: app)
     }
