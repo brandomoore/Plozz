@@ -212,7 +212,10 @@ public struct SettingsPageStack<Route: Hashable, Root: View, Destination: View>:
                 }
             }
             .onGeometryChange(for: HomeRowPreviewViewport.self) {
-                HomeRowPreviewViewport(width: $0.size.width, trailingSafeAreaInset: $0.safeAreaInsets.trailing)
+                HomeRowPreviewViewport(
+                    width: $0.size.width, trailingSafeAreaInset: $0.safeAreaInsets.trailing,
+                    leadingSafeAreaInset: $0.safeAreaInsets.leading
+                )
             } action: { contentViewport = $0 }
         }
         .plozzFullScreenCover(isPresented: Binding(
@@ -232,7 +235,7 @@ public struct SettingsPageStack<Route: Hashable, Root: View, Destination: View>:
                     .environment(\.settingsInWorkspace, false)
             }
         }
-        .mask { Rectangle().ignoresSafeArea(.container, edges: .vertical) }
+        .mask { Rectangle().ignoresSafeArea(.container) }
         .onChange(of: reduceMotion, initial: true) { _, value in
             navigation.animationsEnabled = !value
         }

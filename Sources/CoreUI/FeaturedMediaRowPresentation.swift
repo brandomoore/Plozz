@@ -138,6 +138,7 @@ public struct FeaturedMediaRowPresentation<Cards: View>: View {
         .scrollIndicators(.hidden)
         .scrollClipDisabled()
         #if os(tvOS)
+        .modifier(HomeRowPreviewScrollViewport())
         .padding(.vertical, metrics.railClearanceOffset(for: 24))
         #endif
         #if os(iOS)

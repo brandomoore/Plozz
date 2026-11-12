@@ -786,7 +786,9 @@ watch history and planning-list behavior are documented in
   CoreUI's `HomeRowPreviewView`. Featured sizing and focus also share Home's
   presentation owner. On TV, the preview aligns with the settings group and
   sizes cards against the containing page stack's full content viewport, not
-  the narrower editor column. Its scroll viewport remains within that column.
+  the narrower editor column. The horizontal scroll viewport extends to both
+  screen edges; its initial content margin keeps the first card aligned with
+  the settings group while scrolled cards remain visible outside that column.
   Sizing preserves Home's navigation gutter and poster trailing-safe-area
   behavior without carrying the navigation gutter or fade into the preview.
   Mobile removes the surrounding gutter only for the rail, avoiding a second inset.

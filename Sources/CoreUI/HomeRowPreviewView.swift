@@ -6,11 +6,29 @@ import SwiftUI
 struct HomeRowPreviewViewport: Equatable {
     let width: CGFloat
     let trailingSafeAreaInset: CGFloat
+    var leadingSafeAreaInset: CGFloat = 0
+
+    var fullWidth: CGFloat { width + leadingSafeAreaInset + trailingSafeAreaInset }
 }
 
 extension EnvironmentValues {
     @Entry var homeRowPreviewViewport: HomeRowPreviewViewport? = nil
     @Entry var mediaRowSizingViewportWidth: CGFloat? = nil
+    @Entry var homeRowPreviewOutset: CGFloat = 0
+}
+
+struct HomeRowPreviewScrollViewport: ViewModifier {
+    @Environment(\.homeRowPreviewOutset) private var outset
+
+    func body(content: Content) -> some View {
+        if outset > 0 {
+            content
+                .contentMargins(.leading, outset, for: .scrollContent)
+                .padding(.horizontal, -outset)
+        } else {
+            content
+        }
+    }
 }
 #endif
 
@@ -28,6 +46,7 @@ public struct HomeRowPreviewView: View {
     @Environment(\.plozzNavigationRootContentInset) private var rootNavigationInset
     @Environment(\.plozzPinnedSidebarActive) private var pinnedSidebarActive
     @Environment(\.plozzNavigationStyle) private var navigationStyle
+    @State private var columnWidth: CGFloat = 0
     #endif
 
     public init(
@@ -51,6 +70,10 @@ public struct HomeRowPreviewView: View {
             .environment(\.mediaRowSizingViewportWidth, sizingViewportWidth)
             .environment(\.plozzNavigationContentInset, 0)
             .environment(\.plozzPinnedSidebarActive, false)
+            .environment(\.homeRowPreviewOutset, viewport.map {
+                columnWidth > 0 ? max(0, ($0.fullWidth - columnWidth) / 2) : 0
+            } ?? 0)
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { columnWidth = $0 }
             #endif
     }
 

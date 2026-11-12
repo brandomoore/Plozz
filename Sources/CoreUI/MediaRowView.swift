@@ -671,6 +671,9 @@ public struct MediaRowView: View {
                         portraitViewportWidth = width
                     }
                     #endif
+                    #if os(tvOS)
+                    .modifier(HomeRowPreviewScrollViewport())
+                    #endif
                     .padding(.top, layoutMetrics.railTopClearanceOffset)
                     .padding(.bottom, layoutMetrics.railBottomClearanceOffset)
                     .coordinateSpace(name: episodeEntrySpace)

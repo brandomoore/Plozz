@@ -1907,6 +1907,61 @@ final class HomeRowArrangementHostedTests: XCTestCase {
     }
 
     #if os(tvOS)
+    func testCustomRowPreviewKeepsScrolledCardsVisibleOutsideEditorColumn() async throws {
+        let items: [MediaItem] = (1...12).map {
+            .init(id: "orbit-\($0)", title: "Orbit \($0)", kind: .movie,
+                  productionYear: 2020, allowsTitleBasedMetadataMatching: false)
+        }
+        for style in CollectionSection.CardStyle.allCases {
+            let navigation = SettingsPageNavigation<String>()
+            var column = CGRect.zero
+            try await withWindow {
+                SettingsPageStack(
+                    navigation: navigation, pageWidth: SettingsFormMetrics.pageWidth, onRootBack: {}
+                ) {
+                    HomeRowPreviewView(title: Text("Weekend"), items: items, style: style)
+                        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { column = $0 }
+                } destination: { _ in EmptyView() }
+                .environment(\.plozzCardStyle, .borderless)
+                .environment(\.plozzMetrics, .standard)
+            } inspect: { window in
+                _ = try await self.capture(window, name: "Full-width preview initial \(style)")
+                func scrollViews(_ view: UIView) -> [UIScrollView] {
+                    (view as? UIScrollView).map { [$0] } ?? view.subviews.flatMap(scrollViews)
+                }
+                let scroll = try XCTUnwrap(scrollViews(window).first {
+                    $0.contentSize.width > $0.bounds.width
+                })
+                let initial = scroll.contentOffset
+                for distance: CGFloat in [900, 1_500, 900] {
+                    scroll.setContentOffset(CGPoint(x: initial.x + distance, y: initial.y), animated: false)
+                    let image = try await self.snapshot(window, name: "Full-width preview \(style) offset \(distance)")
+                    let bitmap = try XCTUnwrap(image.cgImage)
+                    let pixels = try self.rgba(bitmap)
+                    let centerY = scroll.convert(scroll.bounds, to: window).midY
+                    for range in [80..<Int(column.minX - 40), Int(column.maxX + 40)..<(bitmap.width - 80)] {
+                        var visible = 0
+                        var sampled = 0
+                        for y in Int(centerY - 40)..<Int(centerY + 40) {
+                            for x in range {
+                                let index = (y * bitmap.width + x) * 4
+                                if pixels[index] > 15 || pixels[index + 1] > 15 || pixels[index + 2] > 15 {
+                                    visible += 1
+                                }
+                                sampled += 1
+                            }
+                        }
+                        XCTAssertGreaterThan(Double(visible) / Double(sampled), 0.1,
+                                             "Card artwork must stay rendered beyond both editor edges, not disappear with its cropped caption.")
+                    }
+                }
+                scroll.setContentOffset(initial, animated: false)
+                let restored = try await self.capture(window, name: "Full-width preview restored \(style)")
+                XCTAssertTrue(restored.contains { $0.0 == "Orbit 1" }, "Returning left must restore the first card.")
+            }
+        }
+    }
+
     func testCustomRowPreviewMatchesPinnedHomeGeometry() async throws {
         try await verifyCustomRowPreviewMatchesHomeGeometry(navigationInset: 240)
     }
@@ -2053,6 +2108,14 @@ final class HomeRowArrangementHostedTests: XCTestCase {
                             }
                             textSizes.append(sizes)
                             if preview {
+                                var ancestor = view.superview
+                                while ancestor != nil && !(ancestor is UIScrollView) {
+                                    ancestor = ancestor?.superview
+                                }
+                                let scroll = try XCTUnwrap(ancestor as? UIScrollView)
+                                let viewport = scroll.convert(scroll.bounds, to: window)
+                                XCTAssertEqual(viewport.minX, 0, accuracy: 1, "Preview scrolling reaches the physical leading edge.")
+                                XCTAssertEqual(viewport.maxX, window.bounds.maxX, accuracy: 1, "Preview scrolling reaches the physical trailing edge.")
                                 let heading = try XCTUnwrap(labels.last?.first { $0.0 == "Weekend" }?.1)
                                 let leading = heading.minX * window.bounds.width - previewFrame.minX
                                 let cardLeading = view.convert(.zero, to: window).x - previewFrame.minX
