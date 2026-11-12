@@ -92,7 +92,7 @@ public enum HomeLiveTVRuntime {
         append(profileID)
         for account in accounts.sorted(by: { $0.id < $1.id }) {
             switch account.server.provider {
-            case .mediaShare, .silo: continue
+            case .mediaShare, .silo, .subsonic: continue
             case .plex, .jellyfin, .emby, .iptv: break
             }
             guard hasCredential(account.id) else { return nil }

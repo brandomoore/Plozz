@@ -1308,6 +1308,7 @@ public final class AppState {
             )
         }
 
+        accountsProviders.configureAuthenticatedArtwork()
         defaultAuthenticatedHTTPResolver?.configure { [weak self] locator in
             guard let self,
                   let account = self.accountsProviders.accountStore.loadAccounts().first(where: {
@@ -1718,7 +1719,7 @@ public final class AppState {
             profileID: profilesModel.activeProfileID
         )
         addAccount(provider: server.provider)
-        if server.provider.usesMediaBrowserAPI || server.provider == .silo {
+        if server.provider.usesMediaBrowserAPI || server.provider == .silo || server.provider == .subsonic {
             apply(.serverSelected(server))
         }
     }

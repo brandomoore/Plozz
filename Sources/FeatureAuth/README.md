@@ -15,6 +15,13 @@ session persistence.
   - `PasswordSignInService` + `PasswordSignInViewModel` +
     `PasswordSignInView` — username/password sign-in for Emby and the
     fallback for Jellyfin servers without Quick Connect.
+  - `SubsonicAuthViewModel` + `SubsonicSignInView` — direct
+    **Navidrome (Subsonic)** address/username/password-or-API-key sign-in.
+    Offered separately below the primary mobile choices in development/TestFlight,
+    without a generic "music servers" submenu. Shared account reauthentication
+    retains profile, server/user identity and credential-revision checks.
+    Cancelled work cannot persist a late session; persistence failure remains
+    visible instead of dismissing the form.
 - **Session state machine** — `SessionStateMachine`. A pure `reduce`
   function over `(state, event) → state` (`launching → selectingServer →
   authenticating → authenticated → failed`). Unit-tested independently of

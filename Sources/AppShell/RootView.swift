@@ -1346,6 +1346,10 @@ private struct OnboardingPageContent: View {
                         throw IPTVAuthViewModel.CompletionError.persistence
                     }
                 },
+                onSubsonicAuthenticated: { [profileID = appState.profilesModel.activeProfileID] session in
+                    guard appState.profilesModel.activeProfileID == profileID else { throw AppError.cancelled }
+                    guard appState.didAuthenticate(session) else { throw AppError.invalidResponse }
+                },
                 onPlexAuthenticatedMany: { sessions in appState.didAuthenticatePlexMany(sessions) },
                 onShareConfigured: { draft in
                     appState.didConfigureShare(
@@ -1406,7 +1410,17 @@ private struct OnboardingPageContent: View {
             )
 
         case let .authenticating(server):
-            if server.provider == .plex {
+            if server.provider == .subsonic {
+                SubsonicSignInView(
+                    deviceID: appState.accountsProviders.deviceID,
+                    address: server.baseURL.absoluteString,
+                    onAuthenticated: { [profileID = appState.profilesModel.activeProfileID] session in
+                        guard appState.profilesModel.activeProfileID == profileID else { throw AppError.cancelled }
+                        guard appState.didAuthenticate(session) else { throw AppError.invalidResponse }
+                    },
+                    onCancel: { appState.cancelAuthentication() }
+                )
+            } else if server.provider == .plex {
                 ProgressView("Finishing Plex sign-in…")
                     .font(.title2)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)

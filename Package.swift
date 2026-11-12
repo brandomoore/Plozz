@@ -42,6 +42,7 @@ let package = Package(
         .library(name: "FeatureDiscovery", targets: ["FeatureDiscovery"]),
         .library(name: "ProviderJellyfin", targets: ["ProviderJellyfin"]),
         .library(name: "ProviderSilo", targets: ["ProviderSilo"]),
+        .library(name: "ProviderSubsonic", targets: ["ProviderSubsonic"]),
         .library(name: "ProviderIPTV", targets: ["ProviderIPTV"]),
         .library(name: "ProviderPlex", targets: ["ProviderPlex"]),
         .library(name: "ProviderShare", targets: ["ProviderShare"]),
@@ -366,6 +367,10 @@ let package = Package(
             dependencies: ["CoreModels", "CoreNetworking"]
         ),
         .target(
+            name: "ProviderSubsonic",
+            dependencies: ["CoreModels", "CoreNetworking"]
+        ),
+        .target(
             name: "ProviderIPTV",
             dependencies: ["CoreModels", "CoreNetworking"],
             linkerSettings: [.linkedLibrary("sqlite3")]
@@ -442,11 +447,11 @@ let package = Package(
         ),
         .target(
             name: "FeatureAuthCore",
-            dependencies: ["CoreModels", "CoreNetworking", "CoreSecureStore", "ProviderJellyfin", "ProviderPlex", "ProviderSilo", "ProviderIPTV"]
+            dependencies: ["CoreModels", "CoreNetworking", "CoreSecureStore", "ProviderJellyfin", "ProviderPlex", "ProviderSilo", "ProviderIPTV", "ProviderSubsonic"]
         ),
         .target(
             name: "FeatureAuth",
-            dependencies: ["CoreModels", "CoreUI", "FeatureAuthCore", "ProviderPlex", "ProviderSilo"]
+            dependencies: ["CoreModels", "CoreUI", "FeatureAuthCore", "ProviderPlex", "ProviderSilo", "ProviderSubsonic"]
         ),
         .target(
             name: "FeatureHomeCore",
@@ -853,6 +858,7 @@ let package = Package(
                 "MediaTransportWebDAV",
                 "ProviderJellyfin",
                 "ProviderSilo",
+                "ProviderSubsonic",
                 "ProviderPlex",
                 "ProviderIPTV",
                 "ProviderShare",
@@ -1057,6 +1063,10 @@ let package = Package(
         .testTarget(
             name: "ProviderSiloTests",
             dependencies: ["ProviderSilo", "CoreModels", "CoreNetworking", "TestSupportPerformance"]
+        ),
+        .testTarget(
+            name: "ProviderSubsonicTests",
+            dependencies: ["ProviderSubsonic", "CoreModels", "CoreNetworking"]
         ),
         .testTarget(
             name: "ProviderIPTVTests",

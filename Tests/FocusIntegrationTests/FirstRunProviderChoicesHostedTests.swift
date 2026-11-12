@@ -51,6 +51,12 @@ final class FirstRunProviderChoicesHostedTests: XCTestCase {
             XCTAssertFalse(labels.contains { $0.contains("Live TV") }, "\(labels)")
             XCTAssertTrue(labels.contains("Jellyfin"), "\(labels)")
             XCTAssertTrue(labels.contains("Media Share"), "\(labels)")
+            XCTAssertTrue(labels.contains { $0.contains("Navidrome") }, "\(labels)")
+            let music = try XCTUnwrap(request.results?.first {
+                $0.topCandidates(1).first?.string.contains("Navidrome") == true
+            })
+            XCTAssertGreaterThan(music.boundingBox.minY * window.bounds.height, 140,
+                                 "Music sign-in must leave space for the bottom transfer control")
             XCTAssertEqual(labels.contains("Add Source"), canReturnToApp, "\(labels)")
             if canReturnToApp {
                 let heading = try XCTUnwrap(request.results?.first { $0.topCandidates(1).first?.string == "Add Source" })

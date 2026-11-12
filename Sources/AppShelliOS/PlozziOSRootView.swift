@@ -1554,7 +1554,13 @@ struct PlozziOSTabShell: View {
             consumeStandaloneEntryIfNeeded()
         }
         .onChange(of: tabDestinationKey, initial: true) { _, _ in
-            selectDestination(selectedDestination)
+            if !hasChosenNavigationDestination,
+               Self.navigationAvailability(appModel: appModel).prefersMusic,
+               tabDestinations.contains(.music) {
+                selectDestination(.music)
+            } else {
+                selectDestination(selectedDestination)
+            }
         }
         .onChange(of: isShowingMorePage) { _, showingMore in
             if showingMore { heroTrailerController.stop() }
