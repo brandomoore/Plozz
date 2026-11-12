@@ -594,7 +594,7 @@ final class HomeHeroFullWidthPresentationTests: XCTestCase {
         }
     }
 
-    func testSeriesDetailArtworkReachesTheTopWithReducedTransparency() async throws {
+    func testPushedSeriesDetailArtworkReachesTheTopWithReducedTransparency() async throws {
         guard #available(iOS 26.0, *) else { throw XCTSkip("Scroll-edge effects require iOS 26.") }
         let item = try await artworkItem()
         let provider = SeriesHeaderMobileProvider(artworkURL: item.posterURL)
@@ -615,10 +615,7 @@ final class HomeHeroFullWidthPresentationTests: XCTestCase {
                     host.rootView = AnyView(
                         TabView {
                             Tab("Home", systemImage: "house") {
-                                NavigationStack {
-                                    PlozziOSItemDetailView(appModel: app, provider: provider, item: provider.show)
-                                        .toolbarBackground(.hidden, for: .navigationBar)
-                                }
+                                PushedDetailTransparencyFixture(app: app, provider: provider)
                             }
                             Tab("Search", systemImage: "magnifyingglass", role: .search) { Text("Search") }
                         }
@@ -651,6 +648,61 @@ final class HomeHeroFullWidthPresentationTests: XCTestCase {
                     }
                     let tabs = try XCTUnwrap(findController(UITabBarController.self, in: host))
                     XCTAssertFalse(tabs.tabBar.isHidden)
+                    let navigation = try XCTUnwrap(findController(UINavigationController.self, in: tabs))
+                    XCTAssertEqual(navigation.viewControllers.count, 2, "Exercise a pushed page, not the tab's root.")
+                }
+            }
+        }
+    }
+
+    func testReducedTransparencyScrollFadeProtectsStatusTextOnlyAfterScrolling() async throws {
+        guard #available(iOS 26.0, *) else { throw XCTSkip("Scroll-edge effects require iOS 26.") }
+        let item = try await artworkItem()
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        try await withWindow(
+            item: item, size: scene.coordinateSpace.bounds.size, sizeClass: .compact,
+            insets: .zero, pull: PlozziOSHomeHeroPullModel()
+        ) { window, host in
+            for scheme in [ColorScheme.dark, .light] {
+                for reduced in [false, true] {
+                    host.rootView = AnyView(
+                        NavigationStack {
+                            ScrollView {
+                                Color.blue.frame(height: 2400)
+                            }
+                            .ignoresSafeArea()
+                            .modifier(PlozziOSReducedTransparencyScrollFade())
+                            .scrollEdgeEffectHidden(true, for: .top)
+                            .navigationBarTitleDisplayMode(.inline)
+                            .toolbarBackground(.hidden, for: .navigationBar)
+                            .toolbar {
+                                ToolbarItem(placement: .topBarTrailing) {
+                                    Button("Profile", action: {})
+                                }
+                            }
+                        }
+                        .modifier(PlozziOSNavigationBackground())
+                        .environment(\.themePalette, scheme == .dark ? .dark : .light)
+                        .environment(\.colorScheme, scheme)
+                        .environment(\.plozzReduceTransparency, reduced)
+                    )
+                    try await waitForHostedLayout(window)
+                    let scroll = try XCTUnwrap(descendants(host.view).compactMap { $0 as? UIScrollView }.first)
+                    for offset: CGFloat in [0, 300, 0] {
+                        scroll.setContentOffset(CGPoint(x: 0, y: offset), animated: false)
+                        try await waitForHostedLayout(window)
+                        let image = snapshot(window, name: "status-fade-\(scheme)-\(reduced)-\(offset)")
+                        let top = try pixel(image, at: CGPoint(x: 8, y: 8))
+                        if offset > 0 && (reduced || UIAccessibility.isReduceTransparencyEnabled) {
+                            XCTAssertLessThan(abs(Int(top[2]) - Int(top[0])), 20,
+                                              "Scrolled artwork must not compete with status text.")
+                        } else {
+                            XCTAssertGreaterThan(Int(top[2]) - Int(top[0]), 100,
+                                                 "Do not cover artwork at rest or override normal system chrome.")
+                        }
+                        let body = try pixel(image, at: CGPoint(x: 8, y: 200))
+                        XCTAssertGreaterThan(Int(body[2]) - Int(body[0]), 100)
+                    }
                 }
             }
         }
@@ -977,6 +1029,27 @@ private final class HeroHoverGestureFixture: UIHoverGestureRecognizer {
     override var state: UIGestureRecognizer.State {
         get { phase }
         set { phase = newValue }
+    }
+}
+
+@available(iOS 26.0, *)
+private struct PushedDetailTransparencyFixture: View {
+    let app: PlozziOSAppModel
+    let provider: SeriesHeaderMobileProvider
+    @State private var showsDetail = false
+
+    var body: some View {
+        NavigationStack {
+            Color.clear
+                .navigationDestination(isPresented: $showsDetail) {
+                    PlozziOSItemDetailView(appModel: app, provider: provider, item: provider.show)
+                        .toolbarBackground(.hidden, for: .navigationBar)
+                }
+                .task {
+                    await Task.yield()
+                    withAnimation { showsDetail = true }
+                }
+        }
     }
 }
 

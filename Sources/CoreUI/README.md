@@ -823,6 +823,11 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   buttons and tabs retain their system-owned opaque accessibility treatment;
   hero artwork and the page background continue behind them. Normal iPhone
   scroll-edge effects, older iOS navigation, and Mac's clear top edge are preserved.
+  Pushed detail scroll views apply this policy locally; the tab shell's edge
+  preference alone does not cover subsequent navigation destinations. Home and
+  detail pages add a noninteractive, page-colored status-area fade only as they
+  scroll under reduced transparency, preserving status-text readability without
+  covering the hero at rest or restoring a full-width opaque footer.
   Native tvOS cards display their local portion of a shared page-mesh texture,
   with the information band precomposed because TVUIKit replaces fill alpha.
   A background-only tint layer applies each card's wash without fading text or
