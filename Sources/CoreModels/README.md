@@ -122,6 +122,14 @@ language every other module speaks.
   `CollectionPreviewLoader` shares bounded membership paging with Hero, validates
   page progress and identity, and never treats a selected library as inferred
   membership for returned titles.
+  `HomeContentPager` completes explicit sort/filter inventories in 200-item
+  library/collection/playlist batches, with at most three source-page requests
+  running across the entire traversal. `HomeRowPage.totalCountHint` can schedule
+  lookahead but never determine completion: returned offsets remain authoritative,
+  even after visibility filtering or server page caps. Changed strides discard
+  noncontiguous lookahead. Home feeds retain sequential 60-item requests and
+  ordinary browsing retains its small adaptive pages. Failure or cancellation
+  never commits a partial sorted inventory.
 
 ## Public surface, at a glance
 

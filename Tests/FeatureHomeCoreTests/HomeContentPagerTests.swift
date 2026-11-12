@@ -4,6 +4,110 @@ import XCTest
 @testable import TestSupportPerformance
 
 final class HomeContentPagerTests: XCTestCase {
+    func testInventoryBatchesRetainPreviewPrefixAndFollowServerPageCaps() async throws {
+        let fixture = ContentFixture(counts: [735], pageSizes: [75], reportsTotals: true, delay: .milliseconds(1))
+        let pager = fixture.pager()
+        let preview = try await pager.loadNext(limit: 20)
+        let result = try await pager.loadAll()
+        XCTAssertEqual(result.items.map(\.id), (0..<735).map { "0-\($0)" })
+        XCTAssertEqual(Array(result.items.prefix(20)), preview.items)
+        let requests = await fixture.requests
+        XCTAssertEqual(requests.first?.limit, 20)
+        XCTAssertTrue(requests.dropFirst().allSatisfy { $0.limit == 200 })
+        XCTAssertEqual(requests.dropFirst().map(\.start).sorted(), Array(stride(from: 20, to: 735, by: 75)))
+        let metrics = await fixture.metrics()
+        XCTAssertEqual(metrics.maximumConcurrent, 3)
+        XCTAssertEqual(metrics.items, 735)
+    }
+
+    func testInventoryPrefetchKeepsOneGlobalThreeRequestCeiling() async throws {
+        let fixture = ContentFixture(counts: Array(repeating: 830, count: 8), overlapping: true,
+                                     reportsTotals: true, delay: .milliseconds(1))
+        let result = try await fixture.pager().loadAll()
+        XCTAssertEqual(result.items.count, 830)
+        XCTAssertTrue(result.items.allSatisfy { $0.sources.count == 8 })
+        let metrics = await fixture.metrics()
+        XCTAssertEqual(metrics.maximumConcurrent, 3)
+        XCTAssertEqual(metrics.items, 6_640)
+    }
+
+    func testHomeFeedsKeepSequentialSixtyItemRequestsEvenWithATotalHint() async throws {
+        let fixture = ContentFixture(counts: [230], reportsTotals: true, delay: .milliseconds(1))
+        let pager = HomeContentPager(sources: [.init(home: .watchlist)]) { _, start, limit in
+            try await fixture.page(fixture.sources[0], start: start, limit: limit)
+        }
+        let result = try await pager.loadAll()
+        XCTAssertEqual(result.items.count, 230)
+        let requests = await fixture.requests
+        XCTAssertEqual(requests.map(\.start), [0, 60, 120, 180])
+        XCTAssertTrue(requests.allSatisfy { $0.limit == 60 })
+        let metrics = await fixture.metrics()
+        XCTAssertEqual(metrics.maximumConcurrent, 1)
+    }
+
+    func testInventoryUsesActualOffsetsWhenAResponseChangesPageSize() async throws {
+        let fixture = ContentFixture(counts: [1_200], reportsTotals: true)
+        let pager = HomeContentPager(sources: fixture.sources) {
+            try await fixture.page($0, start: $1, limit: $1 == 200 ? 50 : $2)
+        }
+        let result = try await pager.loadAll()
+        XCTAssertEqual(result.items.map(\.id), (0..<1_200).map { "0-\($0)" })
+        let requests = await fixture.requests
+        XCTAssertTrue(requests.contains { $0.start == 250 }, "A short page must not skip to a prefetched offset")
+        XCTAssertTrue(requests.contains { $0.start == 400 }, "Exercise the discarded speculative page")
+    }
+
+    func testInventoryCompletionDoesNotTrustMissingLowOrHighTotals() async throws {
+        for hint in [nil, 1, 201, 10_000] as [Int?] {
+            let fixture = ContentFixture(counts: [450], reportsTotals: hint != nil, totalHint: hint)
+            let result = try await fixture.pager().loadAll()
+            XCTAssertEqual(result.items.map(\.id), (0..<450).map { "0-\($0)" })
+            XCTAssertFalse(result.hasMore)
+            let requests = await fixture.requests
+            XCTAssertTrue(requests.contains { $0.start == 400 })
+            XCTAssertLessThanOrEqual(requests.count, 4)
+        }
+    }
+
+    func testInventoryPrefetchCancellationDrainsRequestsAndRetriesUncommittedPages() async throws {
+        let fixture = ContentFixture(counts: [1_200], reportsTotals: true, delay: .milliseconds(20))
+        let pager = fixture.pager()
+        let task = Task { try await pager.loadAll() }
+        await fixture.waitForRequest(count: 4)
+        task.cancel()
+        do { _ = try await task.value; XCTFail("Cancelled inventory cannot publish") }
+        catch { XCTAssertTrue(error is CancellationError) }
+        let cancelled = await fixture.metrics()
+        XCTAssertEqual(cancelled.active, 0)
+        let result = try await pager.loadAll()
+        XCTAssertEqual(result.items.count, 1_200)
+        let requests = await fixture.requests
+        XCTAssertEqual(requests.filter { $0.start == 0 }.count, 2)
+    }
+
+    func testInventoryPrefetchFailureCannotPublishAndRemainsRetryable() async throws {
+        let fixture = ContentFixture(counts: [850], reportsTotals: true, failureStarts: [200])
+        let pager = fixture.pager()
+        do { _ = try await pager.loadAll(); XCTFail("A failed prefetched page cannot be omitted") }
+        catch { XCTAssertEqual(error as? AppError, .serverUnreachable) }
+        await fixture.recover()
+        let result = try await pager.loadAll()
+        XCTAssertEqual(result.items.map(\.id), (0..<850).map { "0-\($0)" })
+        let requests = await fixture.requests
+        XCTAssertEqual(requests.filter { $0.start == 0 }.count, 2)
+    }
+
+    func testCompleteInventoryRejectsOversizedAndNonadvancingPages() async throws {
+        for oversized in [false, true] {
+            let pager = HomeContentPager(sources: ContentFixture(counts: [1]).sources) { _, start, limit in
+                .init(items: oversized ? (0...limit).map { .init(id: "\($0)", title: "Title", kind: .movie) } : [],
+                      nextOffset: oversized ? nil : start)
+            }
+            do { _ = try await pager.loadAll(); XCTFail("Invalid inventory page must fail") }
+            catch { XCTAssertEqual(error as? AppError, .invalidResponse) }
+        }
+    }
+
     func testSavedSortReadsWholeSourcesAndReusesInventoryForFurtherQueries() async throws {
         let fixture = ContentFixture(counts: [241, 130], pageSizes: [13, 7])
         let pager = fixture.pager()
@@ -359,26 +463,33 @@ private actor PageCounter {
 }
 
 private actor ContentFixture {
-    struct Request { let source: Int; let start: Int }
+    struct Request { let source: Int; let start: Int; let limit: Int }
     struct Metrics { let requests: Int; let items: Int; let active: Int; let maximumConcurrent: Int }
     nonisolated let sources: [HomeContentSource]
     let counts: [Int]
     let pageSizes: [Int]
     let overlapping: Bool
+    let reportsTotals: Bool
+    let totalHint: Int?
     let delay: Duration
     var failing: Set<Int>
+    var failureStarts: Set<Int>
     var requests: [Request] = []
     var active = 0
     var maximumConcurrent = 0
     var fetched = 0
-    var requestWaiters: [CheckedContinuation<Void, Never>] = []
+    var requestWaiters: [(Int, CheckedContinuation<Void, Never>)] = []
 
     init(counts: [Int], pageSizes: [Int] = [], overlapping: Bool = false,
-         failing: Set<Int> = [], delay: Duration = .zero) {
+         failing: Set<Int> = [], reportsTotals: Bool = false, totalHint: Int? = nil,
+         failureStarts: Set<Int> = [], delay: Duration = .zero) {
         self.counts = counts
         self.pageSizes = pageSizes
         self.overlapping = overlapping
         self.failing = failing
+        self.reportsTotals = reportsTotals
+        self.totalHint = totalHint
+        self.failureStarts = failureStarts
         self.delay = delay
         sources = counts.indices.map {
             .init(feed: .collection("collection-\($0)"), accountID: "\($0)", serverUserID: "viewer", title: "Source \($0)")
@@ -389,26 +500,29 @@ private actor ContentFixture {
         HomeContentPager(sources: sources) { try await self.page($0, start: $1, limit: $2) }
     }
 
-    func recover() { failing = [] }
+    func recover() { failing = []; failureStarts = [] }
     func metrics() -> Metrics {
         .init(requests: requests.count, items: fetched, active: active, maximumConcurrent: maximumConcurrent)
     }
-    func waitForRequest() async {
-        if !requests.isEmpty { return }
-        await withCheckedContinuation { requestWaiters.append($0) }
+    func waitForRequest(count: Int = 1) async {
+        if requests.count >= count { return }
+        await withCheckedContinuation { requestWaiters.append((count, $0)) }
     }
 
     func page(_ source: HomeContentSource, start: Int, limit: Int) async throws -> HomeRowPage {
         let index = try XCTUnwrap(sources.firstIndex(where: { $0.id == source.id }))
-        requests.append(.init(source: index, start: start))
+        requests.append(.init(source: index, start: start, limit: limit))
         active += 1
         maximumConcurrent = max(maximumConcurrent, active)
         defer { active -= 1 }
-        requestWaiters.forEach { $0.resume() }
-        requestWaiters = []
+        requestWaiters.removeAll {
+            guard requests.count >= $0.0 else { return false }
+            $0.1.resume()
+            return true
+        }
         if delay > .zero { try await Task.sleep(for: delay) }
-        if failing.contains(index) { throw AppError.serverUnreachable }
-        let end = min(counts[index], start + min(limit, pageSizes.indices.contains(index) ? pageSizes[index] : limit))
+        if failing.contains(index) || failureStarts.contains(start) { throw AppError.serverUnreachable }
+        let end = max(start, min(counts[index], start + min(limit, pageSizes.indices.contains(index) ? pageSizes[index] : limit)))
         let items = (start..<end).map { number in
             MediaItem(
                 id: "\(index)-\(number)", title: overlapping ? "Title \(number)" : "Title \(index)-\(number)", kind: .movie,
@@ -416,6 +530,7 @@ private actor ContentFixture {
             )
         }
         fetched += items.count
-        return .init(items: items, nextOffset: end < counts[index] ? end : nil)
+        return .init(items: items, nextOffset: end < counts[index] ? end : nil,
+                     totalCountHint: reportsTotals ? (totalHint ?? counts[index]) : nil)
     }
 }

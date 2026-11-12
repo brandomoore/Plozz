@@ -1377,6 +1377,70 @@ per-sample maximum main-actor wake-up gaps were 3.5–5.0 ms; those are simulato
 scheduling observations, not frame measurements. Results do not cover every server
 version, network condition, provider, or larger library.
 
+#### Bounded full-inventory fetching
+
+Full library/collection/playlist inventories now request 200 items per page and
+use bounded lookahead, with three source-page loads active across one pager.
+Ordinary scrolling and Home-feed limits are unchanged. Returned offsets, not
+the requested page size or total-count hint, determine traversal and completion.
+Short pages invalidate noncontiguous lookahead; errors and cancellation leave
+the inventory uncommitted. No stream, artwork, sort, or playback metadata is
+removed to achieve the speedup.
+
+The same five live scenarios compared sequential 60-item reads
+(`a8ae80e732054058ac25803a894ec92a`), sequential 200-item reads
+(`ea1ffde2901944029aabd0c59687e85e`), and the selected three-request traversal
+(`112e8dcd3d50423197888712b75a2dc1`). Every run used one warmup and five retained
+optimized iPhone-simulator samples per scenario:
+
+| Source | 60-item inventory median | Sequential 200-item median | Selected median | Reduction vs 60 | Source pages, before / after |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Jellyfin | 5,916 ms | 3,706 ms | 1,909 ms | 68% | 31 / 13 |
+| Emby | 1,640 ms | 913 ms | 530 ms | 68% | 36 / 14 |
+| Plex | 15,760 ms | 14,419 ms | 10,232 ms | 35% | 35 / 14 |
+| Silo | 2,262 ms | 1,671 ms | 1,000 ms | 56% | 32 / 10 |
+| Combined | 15,893 ms | 15,237 ms | 10,577 ms | 33% | 102 / 41 |
+
+Item and metadata counts are unchanged. The selected run also compares complete
+ordered `MediaItem` arrays against sequential 60-item requests during the
+unmeasured warmup, including presentation and playback metadata. All five
+scenarios pass with no skips. Eight warm sorts total 33-55 ms (median per
+scenario), without page refetches. The new warmup parity assertion and request
+diagnostics change the fixture fingerprint; these are descriptive comparisons
+of the same measured query operations, not a fingerprint-matched lab verdict.
+Server caches are not cleared, discovery remains outside the inventory timer,
+and measurements are not physical-device frame timing.
+
+The latency improvement has a CPU/memory tradeoff:
+
+| Source | Whole-workload CPU median, before / after | Physical-footprint snapshot median, before / after |
+| --- | ---: | ---: |
+| Jellyfin | 854 / 754 ms | 177 / 216 MiB |
+| Emby | 1,076 / 911 ms | 177 / 215 MiB |
+| Plex | 4,713 / 6,904 ms | 179 / 197 MiB |
+| Silo | 1,402 / 1,348 ms | 178 / 195 MiB |
+| Combined | 6,159 / 8,116 ms | 174 / 202 MiB |
+
+CPU includes discovery and assertions, not just inventory loading. Footprints
+are post-work snapshots, not peaks, isolated per-provider allocation costs, or
+leak evidence. Parallel responses can increase decoding contention and live
+buffers; complete inventories still require memory proportional to membership.
+Server CPU and physical-device energy use were not measured.
+
+A two-request cap (`23feeb41352943759d6a8d7b39de9704`) also passed all five
+scenarios. It reduced Plex/combined whole-workload CPU to 5,504/6,450 ms, but
+increased inventory medians to 11,788/11,903 ms; Jellyfin/Emby/Silo rose to
+2,667/750/1,136 ms. Three requests were retained for the best measured first-load
+latency across all five scenarios, with the CPU tradeoff above kept explicit.
+A 500-item sequential sweep (`bd389a706dde4b20a74b21e32e40f472`) failed an Emby
+response check, although a later instrumented Emby-only run passed; its cause
+was not established and the failed sweep is excluded from speedup claims.
+
+Regression coverage verifies preview-to-inventory continuation, server page
+caps and changing strides, absent/estimated totals, visibility filtering,
+the shared concurrency ceiling, duplicate playback sources, cancellation,
+failed-page retries, malformed responses, and static/session loader limits.
+
 ### Jellyfin Home recommendation reuse
 
 `home-recommendation-navigation` runs production `JellyfinProvider.homeHubs`

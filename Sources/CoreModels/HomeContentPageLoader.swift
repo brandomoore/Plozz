@@ -69,7 +69,7 @@ public enum HomeContentPageLoader {
         }
 
         private func loadScoped(_ source: HomeContentSource, start: Int, limit: Int) async throws -> HomeRowPage {
-            guard start >= 0, limit > 0, limit <= PageRequest.defaultLimit, start < Int.max - limit else {
+            guard start >= 0, limit > 0, limit <= source.inventoryPageLimit, start < Int.max - limit else {
                 throw AppError.invalidResponse
             }
             guard source.isAvailable(accounts: accounts, visibility: visibility) else { throw AppError.notFound }
@@ -183,7 +183,7 @@ public enum HomeContentPageLoader {
         recommendation: LibrarySection? = nil, homeSnapshot: HomeSnapshot
     ) async throws -> HomeRowPage {
         try Task.checkCancellation()
-        guard start >= 0, limit > 0, limit <= PageRequest.defaultLimit, start < Int.max - limit else {
+        guard start >= 0, limit > 0, limit <= source.inventoryPageLimit, start < Int.max - limit else {
             throw AppError.invalidResponse
         }
         guard source.isAvailable(accounts: accounts, visibility: visibility) else { throw AppError.notFound }
@@ -269,6 +269,6 @@ public enum HomeContentPageLoader {
                 && (isHistory || $0.isVisibleOnHome(isLibraryVisible: visibility.isEnabled))
                 && (!isRecentlyAdded || !visibility.hideWatchedRecentlyAdded || !HomeRecentlyAddedPolicy.isWatched($0))
         }
-        return .init(items: items, nextOffset: page.nextOffset)
+        return .init(items: items, nextOffset: page.nextOffset, totalCountHint: page.totalCountHint)
     }
 }

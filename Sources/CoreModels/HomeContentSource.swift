@@ -25,6 +25,14 @@ public struct HomeContentSource: Codable, Hashable, Sendable, Identifiable {
     public let libraryID: String?
     public let title: String // l10n:content — source title supplied by the server
 
+    /// Full inventories can amortize round trips; Home feeds retain their endpoint limits.
+    var inventoryPageLimit: Int {
+        switch feed {
+        case .library, .collection, .playlist: return 200
+        case .recommendation, .server, .home: return PageRequest.defaultLimit
+        }
+    }
+
     public init(
         feed: Feed, accountID: String? = nil, serverUserID: String? = nil,
         libraryID: String? = nil, title: String

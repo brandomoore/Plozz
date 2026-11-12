@@ -4,6 +4,65 @@ import XCTest
 
 @MainActor
 final class MultiSourceRowTests: XCTestCase {
+    func testVisibilityFilteringPreservesRawContinuationAndInventoryHint() async throws {
+        let provider = MultiSourceProvider(memberCount: 250)
+        let account = ResolvedAccount(account: .init(id: "account", from: provider.session), provider: provider)
+        let source = HomeContentSource(
+            feed: .collection("collection"), accountID: "account", serverUserID: "viewer", title: "Collection"
+        )
+        let visibility = HomeLibraryVisibility(disabledKeys: ["account:movies"])
+        let session = HomeContentPageLoader.Session(accounts: [account], visibility: visibility) { _ in [] }
+        let first = try await session.load(source, start: 0, limit: 200)
+        XCTAssertTrue(first.items.isEmpty)
+        XCTAssertEqual(first.nextOffset, 200)
+        XCTAssertEqual(first.totalCountHint, 250)
+        let pager = HomeContentPager(sources: [source]) { try await session.load($0, start: $1, limit: $2) }
+        let result = try await pager.loadAll()
+        XCTAssertTrue(result.items.isEmpty)
+        XCTAssertFalse(result.hasMore)
+    }
+
+    func testInventoryLoaderLimitsAndTotalHintsMatchAcrossStaticAndSessionPaths() async throws {
+        let provider = MultiSourceProvider(memberCount: 250)
+        let account = ResolvedAccount(account: .init(id: "account", from: provider.session), provider: provider)
+        let feeds: [HomeContentSource.Feed] = [.collection("collection"), .playlist("playlist"), .library(.movie)]
+        let sources = feeds.map {
+            HomeContentSource(feed: $0, accountID: "account", serverUserID: "viewer",
+                              libraryID: "movies", title: "Inventory")
+        }
+        let homeSources: [HomeContentSource] = [
+            .init(home: .watchlist),
+            .init(feed: .recommendation(sectionID: "shelf", kind: .movie), accountID: "account",
+                  serverUserID: "viewer", libraryID: "movies", title: "Recommended"),
+            .init(feed: .server(.init(id: "recent", kind: .recentlyAdded, libraryID: "movies")), accountID: "account",
+                  serverUserID: "viewer", libraryID: "movies", title: "Recent")
+        ]
+        let session = HomeContentPageLoader.Session(accounts: [account], visibility: .default) { _ in [] }
+        for useSession in [false, true] {
+            func load(_ source: HomeContentSource, start: Int = 0, limit: Int) async throws -> HomeRowPage {
+                if useSession { return try await session.load(source, start: start, limit: limit) }
+                return try await HomeContentPageLoader.load(
+                    source, start: start, limit: limit, accounts: [account], visibility: .default
+                ) { _ in [] }
+            }
+            for source in sources {
+                let page = try await load(source, limit: 200)
+                XCTAssertEqual(page.items.count, 200)
+                XCTAssertEqual(page.nextOffset, 200)
+                XCTAssertEqual(page.totalCountHint, 250)
+                for (start, limit) in [(0, 201), (-1, 200), (0, 0), (Int.max, 200)] {
+                    do { _ = try await load(source, start: start, limit: limit); XCTFail("Invalid request must fail") }
+                    catch { XCTAssertEqual(error as? AppError, .invalidResponse) }
+                }
+            }
+            for source in homeSources {
+                _ = try await load(source, limit: 60)
+                do { _ = try await load(source, limit: 61); XCTFail("Home endpoint limits must remain unchanged") }
+                catch { XCTAssertEqual(error as? AppError, .invalidResponse) }
+            }
+        }
+    }
+
     func testSavedQueriesAgreeAcrossPreviewHomeAndBrowseForNativeFeeds() async throws {
         for kind in [ProviderKind.plex, .jellyfin, .emby] {
             let provider = MultiSourceProvider(kind: kind, memberCount: 137)

@@ -89,23 +89,56 @@ public actor HomeContentPager {
         let sources = sources
         let loader = loader
         let current = cursors
+        let requests = ConcurrencyLimiter(limit: 3)
         let completed = try await withThrowingTaskGroup(of: (Int, Cursor).self) { group in
             let fetch: @Sendable (Int) async throws -> (Int, Cursor) = { index in
                 var cursor = current[index]
                 cursor.emitted += cursor.buffer.dropFirst(cursor.position)
                 cursor.buffer = []
                 cursor.position = 0
+                let pageLimit = sources[index].inventoryPageLimit
+                var stride: Int?
+                var totalCountHint: Int?
                 while let start = cursor.offset {
                     try Task.checkCancellation()
-                    let page = try await loader(sources[index], start, PageRequest.defaultLimit)
-                    guard page.nextOffset.map({ $0 > start }) ?? true,
-                          page.items.count <= PageRequest.defaultLimit else { throw AppError.invalidResponse }
-                    let fresh = page.items.filter { cursor.seen.insert($0.stablePresentationID).inserted }
-                    guard page.items.isEmpty || !fresh.isEmpty || page.nextOffset == nil else {
-                        throw AppError.invalidResponse
+                    var offsets = [start]
+                    if pageLimit > PageRequest.defaultLimit, let stride, let totalCountHint {
+                        var offset = start
+                        for _ in 1..<3 {
+                            guard offset <= Int.max - stride else { break }
+                            offset += stride
+                            guard offset < totalCountHint else { break }
+                            offsets.append(offset)
+                        }
                     }
-                    cursor.emitted += fresh
-                    cursor.offset = page.nextOffset
+                    let pages = try await withThrowingTaskGroup(of: (Int, HomeRowPage).self) { pages in
+                        for offset in offsets {
+                            pages.addTask {
+                                let page = try await requests.runUnlessCancelled {
+                                    try await loader(sources[index], offset, pageLimit)
+                                }
+                                return (offset, page)
+                            }
+                        }
+                        var result: [(Int, HomeRowPage)] = []
+                        for try await page in pages { result.append(page) }
+                        return result.sorted { $0.0 < $1.0 }
+                    }
+                    for (offset, page) in pages {
+                        // A short/capped page can invalidate speculative offsets.
+                        // Follow its actual continuation, never skip the gap.
+                        guard cursor.offset == offset else { break }
+                        guard page.nextOffset.map({ $0 > offset }) ?? true,
+                              page.items.count <= pageLimit else { throw AppError.invalidResponse }
+                        let fresh = page.items.filter { cursor.seen.insert($0.stablePresentationID).inserted }
+                        guard page.items.isEmpty || !fresh.isEmpty || page.nextOffset == nil else {
+                            throw AppError.invalidResponse
+                        }
+                        cursor.emitted += fresh
+                        cursor.offset = page.nextOffset
+                        stride = page.nextOffset.map { $0 - offset }
+                        totalCountHint = page.totalCountHint
+                    }
                 }
                 try Task.checkCancellation()
                 return (index, cursor)

@@ -12,13 +12,19 @@ private actor LiveQueryPages {
     private(set) var requests = 0
     private(set) var populated = Set<HomeContentSource.ID>()
 
-    func begin() throws {
+    func load(
+        _ session: HomeContentPageLoader.Session, source: HomeContentSource, start: Int, limit: Int
+    ) async throws -> HomeRowPage {
         requests += 1
         guard requests <= 600 else { throw AppError.invalidResponse }
-    }
-
-    func record(_ source: HomeContentSource, page: HomeRowPage) {
-        if !page.items.isEmpty { populated.insert(source.id) }
+        do {
+            let page = try await session.load(source, start: start, limit: limit)
+            if !page.items.isEmpty { populated.insert(source.id) }
+            return page
+        } catch {
+            XCTFail("Live page request failed at offset \(start), limit \(limit): \(type(of: error))")
+            throw error
+        }
     }
 }
 
@@ -61,6 +67,7 @@ final class LiveHomeContentTests: XCTestCase {
 
     @MainActor
     private func measureSavedQueries(_ kinds: [ProviderKind], scenario: String) async throws {
+        var verifiedBatchParity = false
         try await PerformanceProbe.measure(self, scenario: scenario) {
             var accounts: [ResolvedAccount] = []
             var sources: [HomeContentSource] = []
@@ -92,10 +99,7 @@ final class LiveHomeContentTests: XCTestCase {
             }
             let pages = LiveQueryPages()
             let pager = HomeContentPager(sources: sources, serverInfo: accounts.sourceServerInfo()) {
-                try await pages.begin()
-                let page = try await session.load($0, start: $1, limit: $2)
-                await pages.record($0, page: page)
-                return page
+                try await pages.load(session, source: $0, start: $1, limit: $2)
             }
             let initialQuery = HomeContentQuery(sort: .init(field: .name, direction: .descending))
             let started = ContinuousClock.now
@@ -105,6 +109,24 @@ final class LiveHomeContentTests: XCTestCase {
             XCTAssertFalse(preview.hasMore, "Explicit sorting must complete membership")
             XCTAssertGreaterThan(preview.items.count, 20)
             let inventory = try await pager.loadAll().items
+            if !verifiedBatchParity {
+                let referencePages = LiveQueryPages()
+                let reference = HomeContentPager(sources: sources, serverInfo: accounts.sourceServerInfo()) {
+                    let page = try await referencePages.load(
+                        session, source: $0, start: $1, limit: min($2, PageRequest.defaultLimit)
+                    )
+                    return .init(items: page.items, nextOffset: page.nextOffset)
+                }
+                let original: HomeContentPager.Snapshot
+                do { original = try await reference.loadAll() }
+                catch {
+                    XCTFail("The 60-item reference inventory failed: \(type(of: error))")
+                    throw error
+                }
+                XCTAssertTrue(inventory == original.items,
+                              "Bulk requests must preserve every item and its complete presentation/playback metadata")
+                verifiedBatchParity = true
+            }
             let dated = inventory.compactMap { $0.librarySortValues?.dateAdded }
             let released = inventory.compactMap(\.productionYear)
             let runtimes = inventory.compactMap(\.runtime)
