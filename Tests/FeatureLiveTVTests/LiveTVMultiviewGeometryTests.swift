@@ -13,7 +13,7 @@ final class LiveTVMultiviewGeometryTests: XCTestCase {
 
     private func expectedViewingBounds(in size: CGSize) -> CGRect {
         #if os(tvOS)
-        CGRect(origin: .zero, size: size).insetBy(dx: 16, dy: 16)
+        CGRect(origin: .zero, size: size).insetBy(dx: 12, dy: 12)
         #else
         CGRect(origin: .zero, size: size)
         #endif

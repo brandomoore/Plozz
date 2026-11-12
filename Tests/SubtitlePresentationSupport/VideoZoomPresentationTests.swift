@@ -11,7 +11,7 @@ import XCTest
 @MainActor
 final class VideoZoomPresentationTests: XCTestCase {
     #if os(tvOS)
-    func testAudioBorderIsTwoPixelsAndOnlyVisibleWithoutFocus() async throws {
+    func testAudioBorderAddsOnePointToTwoPixelsAndOnlyAppearsWithoutFocus() async throws {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
         let previous = scene.windows.first(where: \.isKeyWindow)
         let window = UIWindow(windowScene: scene)
@@ -54,19 +54,26 @@ final class VideoZoomPresentationTests: XCTestCase {
         }
         try await Task.sleep(for: .milliseconds(1300))
         for scale: CGFloat in [1, 2] {
+            let borderPixels = 2 + Int(scale)
+            let samplePixels = 0..<(borderPixels + 3)
             host.rootView = fixture(true, true, scale, .black)
             try await Task.sleep(for: .milliseconds(100))
-            let focused = try (0..<5).map { try intensity(scale: scale, pixel: $0) }
+            let focused = try samplePixels.map { try intensity(scale: scale, pixel: $0) }
             host.rootView = fixture(false, true, scale, .black)
             try await Task.sleep(for: .milliseconds(100))
-            let unfocused = try (0..<5).map { try intensity(scale: scale, pixel: $0) }
+            let unfocused = try samplePixels.map { try intensity(scale: scale, pixel: $0) }
             let border = zip(unfocused, focused).map { $0 - $1 }
-            XCTAssertGreaterThan(border[0], 0.45)
-            XCTAssertGreaterThan(border[1], 0.45)
-            XCTAssertLessThan(border[0], 0.65, "Keep the audio border translucent.")
-            for value in border.dropFirst(2) {
+            let peak = try XCTUnwrap(border.max())
+            XCTAssertEqual(peak, 0.44, accuracy: 0.04,
+                           "The outline must be 20% dimmer than its previous 55% opacity.")
+            XCTAssertGreaterThan(peak, 0)
+            // Snapshot scaling can distribute an edge pixel across two samples.
+            XCTAssertEqual(border.reduce(0, +) / peak, Float(borderPixels), accuracy: 0.25,
+                           "Integrated stroke coverage must equal two physical pixels plus one point.")
+            XCTAssertLessThan(abs(border[borderPixels]), 0.08)
+            for value in border.dropFirst(borderPixels + 1) {
                 XCTAssertEqual(value, 0, accuracy: 0.015,
-                               "Only faint edge antialiasing may extend beyond the two-pixel colored stroke.")
+                               "Only faint edge antialiasing may extend beyond two pixels plus one point.")
             }
         }
         for (background, sample) in [

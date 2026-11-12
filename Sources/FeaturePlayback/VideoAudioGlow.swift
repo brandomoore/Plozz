@@ -50,18 +50,18 @@ struct VideoAudioGlow: View {
 
     var body: some View {
         let gradient = LinearGradient(colors: state.colors, startPoint: .leading, endPoint: .trailing)
-        let borderWidth = 2 / displayScale
+        let borderWidth = 2 / displayScale + 1
         ZStack {
             RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                 .stroke(gradient, lineWidth: 96)
                 .blur(radius: 96)
                 .opacity(0.36)
-            RoundedRectangle(cornerRadius: cornerRadius + borderWidth / 2, style: .continuous)
-                .stroke(LinearGradient(colors: state.borderColors, startPoint: .leading, endPoint: .trailing),
-                        lineWidth: borderWidth)
-                .padding(-borderWidth / 2)
+            RoundedRectangle(cornerRadius: cornerRadius + borderWidth, style: .continuous)
+                .strokeBorder(LinearGradient(colors: state.borderColors, startPoint: .leading, endPoint: .trailing),
+                              lineWidth: borderWidth)
+                .padding(-borderWidth)
                 .shadow(color: .black.opacity(0.85), radius: 1 / displayScale)
-                .opacity(isFocused ? 0 : 0.55)
+                .opacity(isFocused ? 0 : 0.44)
         }
         .opacity(isPresented ? 1 : 0)
         .animation(reduceMotion ? nil : .easeInOut(duration: isPresented ? 3 : 1.5), value: isPresented)

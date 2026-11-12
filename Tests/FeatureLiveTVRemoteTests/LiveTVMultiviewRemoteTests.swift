@@ -107,21 +107,22 @@ final class LiveTVMultiviewRemoteTests: XCTestCase {
         XCTAssertEqual(settledVideoFrame(2, in: app), frames[1])
         let second = capture("audio-glow-second-video-idle", in: app)
         for frame in frames {
-            let nearEdge = CGRect(x: frame.midX - 100, y: frame.maxY + 1, width: 200, height: 8)
-            let outerGlow = nearEdge.offsetBy(dx: 0, dy: 71)
-            let farEdge = nearEdge.offsetBy(dx: 0, dy: 250)
+            let borderWidth = 2 / first.scale + 1
+            let nearEdge = CGRect(x: frame.midX - 100, y: frame.maxY + borderWidth + 1, width: 200, height: 8)
+            let outerGlow = CGRect(x: nearEdge.minX, y: frame.maxY + 72, width: 200, height: 8)
+            let farEdge = CGRect(x: nearEdge.minX, y: frame.maxY + 250, width: 200, height: 8)
             XCTAssertTrue(app.frame.contains(farEdge), "The distant glow sample must stay inside the screenshot.")
             let glow = pixelDifference(first, second, region: nearEdge, screen: app.frame)
             XCTAssertGreaterThan(glow.mean, 0.003, "Audio must change the soft glow outside the picture.")
             XCTAssertLessThan(glow.mean, 0.18, "The indicator should remain soft rather than become a bright border.")
             XCTAssertGreaterThan(pixelDifference(first, second, region: outerGlow, screen: app.frame).mean, 0.008,
                                  "The wider glow must remain visible 72-80 points beyond the video.")
-            let border = CGRect(x: frame.midX - 100, y: frame.maxY, width: 200, height: 2 / first.scale)
-            let adjacent = border.offsetBy(dx: 0, dy: 3 / first.scale)
+            let border = CGRect(x: frame.midX - 100, y: frame.maxY, width: 200, height: borderWidth)
+            let adjacent = border.offsetBy(dx: 0, dy: borderWidth + 1 / first.scale)
             XCTAssertGreaterThan(
                 pixelDifference(first, second, region: border, screen: app.frame).mean,
                 pixelDifference(first, second, region: adjacent, screen: app.frame).mean + 0.01,
-                "The audible, unfocused picture must carry a subtle two-pixel rim in its sampled glow colors.")
+                "The audible, unfocused picture must carry a subtle rim in its sampled glow colors.")
             XCTAssertLessThan(pixelDifference(first, second, region: farEdge, screen: app.frame).mean, 1.0 / 255,
                               "At 250 points, the remaining glow must be less than one 8-bit intensity step.")
         }
@@ -1816,7 +1817,7 @@ final class LiveTVMultiviewRemoteTests: XCTestCase {
             finishSetup(in: app)
             _ = settledVideoFrame(1, in: app)
             let idle = (1...count).map { app.otherElements["multiview-fixture-video-\($0)"].frame }
-            let safeBounds = app.frame.insetBy(dx: 16, dy: 16)
+            let safeBounds = app.frame.insetBy(dx: 12, dy: 12)
             for picture in idle {
                 XCTAssertTrue(safeBounds.insetBy(dx: -1, dy: -1).contains(picture),
                               "Every idle picture must stay clear of TV pixel shifting and edge cropping.")
@@ -1854,7 +1855,7 @@ final class LiveTVMultiviewRemoteTests: XCTestCase {
         XCTAssertFalse(app.buttons["live-multiview-add"].exists)
         finishSetup(in: app)
         let gap: CGFloat = 8
-        let canvas = app.frame.insetBy(dx: 16, dy: 16)
+        let canvas = app.frame.insetBy(dx: 12, dy: 12)
         let width = min((canvas.width - gap) / 2, (canvas.height - gap) / 2 * 16 / 9)
         let height = width * 9 / 16
         let frames = (0..<4).map { index in
