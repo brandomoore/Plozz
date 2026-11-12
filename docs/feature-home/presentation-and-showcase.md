@@ -146,6 +146,13 @@ geometric focus candidate; deeper-row and horizontal navigation remain native.
 The swipe fallback cannot prevent or be prevented by native focus panning, and
 does not cancel or delay touches. Both touchpad swipes and arrow presses use the
 same boundary handoff; hidden rows must not require a physical Down click.
+When touch input crosses that boundary, further focus proposals in the same
+vertical direction are rejected for that input sequence, including momentum
+after lift. A passive observer releases this guard on the next contact or button
+press, without a timed cooldown. Cancellation, leaving the stage, and explicit
+return-to-top clear it. Ordinary row swipes, horizontal movement, and physical
+arrow repeats remain native; both geometric and fallback boundary crossings
+share this guard.
 While a boundary handoff waits for the current focus transaction to finish,
 further proposals in that direction remain blocked. They must not focus
 navigation before the deferred request can restore the hero or enter the rows.
