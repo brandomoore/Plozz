@@ -291,6 +291,13 @@ static uint32_t discTestFirstPixel(UIImage *image) {
                                options:NSDataWritingAtomic error:&error], @"%@", error);
     NSData *clip = [NSData dataWithContentsOfURL:
         [fixtures URLByAppendingPathComponent:@"bdj-navigation/BDMV/CLIPINF/00001.clpi"]];
+    XCTAssertNotNil(clip);
+    if (!clip) return NULL;
+    if (![manager createDirectoryAtURL:[root URLByAppendingPathComponent:@"BDMV/CLIPINF"]
+          withIntermediateDirectories:YES attributes:nil error:&error]) {
+        XCTFail(@"Could not prepare clip fixture: %@", error);
+        return NULL;
+    }
     XCTAssertTrue([clip writeToURL:[root URLByAppendingPathComponent:@"BDMV/CLIPINF/00001.clpi"]
                            options:NSDataWritingAtomic error:&error], @"%@", error);
     BLURAY *disc = bd_open(root.fileSystemRepresentation, NULL);

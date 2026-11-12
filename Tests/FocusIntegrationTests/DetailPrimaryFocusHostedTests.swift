@@ -633,6 +633,12 @@ private struct PrimaryFocusProvider: MediaProvider {
     func item(id: String) async throws -> MediaItem {
         if !holdsResume { await gate.wait() }
         try Task.checkCancellation()
+        if id == "primary-episode",
+           let episode = try await children(
+               of: holdsResume ? "primary-season" : seed.id
+           ).first(where: { $0.id == id }) {
+            return episode
+        }
         return seed
     }
     func children(of itemID: String) async throws -> [MediaItem] {

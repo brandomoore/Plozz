@@ -807,7 +807,7 @@ struct NativeTVPoster<Overlay: View>: UIViewRepresentable {
 
     static func dismantleUIView(_ container: Container, coordinator: Coordinator) {
         coordinator.cancelPresentation()
-        coordinator.menu.update(nil, locale: .current, button: container.poster, interactionView: container)
+        coordinator.menu.dismantle()
         container.poster.prepareArtwork = nil
         container.poster.prepareOverlay = nil
         container.poster.onAvailable = nil

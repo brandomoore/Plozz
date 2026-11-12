@@ -717,9 +717,12 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   retaining its hue and brightness without desaturating the hero image. Showcase,
   detail pages, and untinted stock gradients retain their existing treatment.
   Tint saturation is page-scoped and shared with native card fills/textures.
-  Settings panels use a 5% wash; detail information cards use a stronger 12%
+  Settings panels use a 5% wash; custom detail information surfaces use a stronger 12%
   wash so grouped content remains distinct from the artwork gradient. Both use
   white in Dark/Black and black in Light without replacing the gradient's colour.
+  System-style tvOS information cards retain the native material instead of
+  matching that custom wash. Gradient Off and Reduce Transparency keep the
+  underlying information band opaque, so changes behind it cannot tint the cards.
   SwiftUI surfaces keep their
   shadow and a matching hairline edge. Gradient Off or Reduce Transparency restores the original solid
   surface and border; unrelated raised cards remain unchanged.
@@ -746,7 +749,7 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   Compact mobile detail metadata and actions reveal the page gradient instead
   of covering it with a solid rectangle; Gradient Off and Reduce Transparency
   retain the original opaque base. The artwork's existing readability fade stays.
-  Native tvOS cards display their local portion of a shared page-mesh texture,
+  TVUIKit-backed tvOS cards display their local portion of a shared page-mesh texture,
   with the information band precomposed because TVUIKit replaces fill alpha.
   A background-only tint layer applies each card's wash without fading text or
   rerendering the shared texture. The texture is created only when a card needs it, its longest edge is
@@ -804,6 +807,9 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   sibling identities, handler/router identity, or locale. Obsolete actions are
   invalidated when that context changes or the poster is dismantled. A changed
   action scope dismisses an already presented menu.
+  Dismantling clears presentation callbacks before dismissing the interaction:
+  removed SwiftUI content must not receive state writes during graph teardown.
+  Live scope changes still notify the mounted content normally.
   Custom-focus episode cards and other SwiftUI-owned controls retain their
   existing menu path; mobile menus and their artwork routing are unchanged.
   Episode-card captions collapse paragraph breaks and whitespace into one
@@ -1229,7 +1235,10 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
 - **Detail information focus** — About, ratings and family guidance use the
   standard tvOS card button style in System mode. The system owns the lift,
   highlight and enlargement; shared grid gutters must keep the painted surfaces
-  separate throughout focus transitions. Text retains the selected theme on
+  separate throughout focus transitions. System-style rating columns use the
+  same two-sided focus clearance as facts: both neighboring cards can be enlarged
+  during a handoff. Custom-focus, vertical, and mobile spacing remain unchanged.
+  Text retains the selected theme on
   Liquid Glass systems and uses dark text on the older opaque focus plate.
   Focused read-only cards and card buttons draw above their peers.
   Ordinary media cards, custom focus styles and touch layouts are unchanged.

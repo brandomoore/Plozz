@@ -484,6 +484,11 @@ final class PlayerEpisodeArtworkHostedTests: XCTestCase {
         XCTAssertLessThan(blurred[0], 230)
         XCTAssertEqual(cell.accessibilityLabel, "Episode 4")
         item.resumePosition = 30
+        XCTAssertFalse(item.hasVisiblePlaybackProgress)
+        XCTAssertTrue(hidden.shouldHideThumbnail(for: item))
+        item.resumePosition = 60
+        XCTAssertTrue(item.hasVisiblePlaybackProgress)
+        XCTAssertFalse(hidden.shouldHideThumbnail(for: item))
         let visible = try artworkPixel(configuredArtwork(cell, item: item, spoilers: hidden), x: 0.47)
         XCTAssertGreaterThan(visible[0], 240)
         XCTAssertLessThan(visible[2], 10)
