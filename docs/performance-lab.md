@@ -107,11 +107,16 @@ publish only sanitized aggregates.
 
 ### Authorized real music transitions
 
-`music-plex-live` and `music-jellyfin-live` are explicit-only hosted workloads;
-neither `ui` nor `all` selects them. Use a dedicated, non-admin internal identity
+`music-plex-live`, `music-jellyfin-live`, and `music-subsonic-live` are explicit-only
+hosted workloads; neither `ui` nor `all` selects them. Use a dedicated, non-admin internal identity
 with playback authorization. `PLOZZ_MUSIC_BROKER` must be a short-lived, owned
 loopback HTTP endpoint with an unguessable path. It returns an array of
 `provider`, `baseURL`, `serverID`, `userID`, `username`, and `token` configurations.
+Subsonic configurations supply `password` instead of `token`, exercising Plozz's
+real salted-token sign-in. That workload also checks artists, albums, songs,
+genres, playlists, decodable authenticated artwork, and a favorite toggle/restore
+before the same playback transitions. Use an identity authorized for test-history
+writes.
 Read credentials into memory, never arguments or files; stop the broker and
 revoke its owned authentication sessions in `finally`.
 

@@ -40,3 +40,12 @@ availability depends on the server.
 Protocol behavior was compared with the user-owned GPL Mozz implementation and
 the published Subsonic API. Primuse was consulted for compatibility considerations;
 no AGPL implementation was copied.
+
+## Live validation
+
+The explicit-only `music-subsonic-live` workload exercises real sign-in, music
+browsing, authenticated artwork decoding, favorite write/restore, and silent
+native player transitions against an authorized internal server. See the
+[performance lab](../../docs/performance-lab.md#authorized-real-music-transitions)
+for the bounded loopback credential broker contract. Credentials and private
+server addresses never belong in the repository.

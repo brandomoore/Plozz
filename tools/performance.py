@@ -152,7 +152,7 @@ SCENARIOS = {
                 for metric in ("Playback", "Ready", "OldStop", "Reset")
             ],
         }
-        for provider in ("plex", "jellyfin")
+        for provider in ("plex", "jellyfin", "subsonic")
     },
     "home-jellyfin-live": {
         "suite": "network", "target": "FeatureHomeCoreTests", "explicitOnly": True,

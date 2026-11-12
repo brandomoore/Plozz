@@ -63,7 +63,7 @@ Binary Images:
 
 class EvidenceTests(unittest.TestCase):
     def test_live_music_requires_explicit_selection_and_loopback_broker(self):
-        names = ["music-plex-live", "music-jellyfin-live"]
+        names = ["music-plex-live", "music-jellyfin-live", "music-subsonic-live"]
         self.assertEqual(performance.select(None, names, "iOS"), sorted(names))
         for suite in ("ui", "network", "all"):
             for name in names:

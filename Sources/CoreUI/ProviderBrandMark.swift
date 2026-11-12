@@ -38,7 +38,7 @@ public struct ProviderBrandMark: View {
 
     private var badgeBackground: Color {
         let backgroundTint = provider == .silo
-            ? Color(red: 0xD1 / 255.0, green: 0xD1 / 255.0, blue: 0xD6 / 255.0)
+            ? Color(red: 0xCD / 255.0, green: 0xB7 / 255.0, blue: 0x95 / 255.0)
             : tint
         return backgroundTint.opacity(0.18)
     }
@@ -54,15 +54,16 @@ public struct ProviderBrandMark: View {
         }
     }
 
-    /// Interior padding for the bundled logo asset. The Plex mark reads visibly
-    /// smaller than the Jellyfin mark at the same frame, so Plex gets less padding
-    /// — rendering ~8pt larger at the settings icon sizes — while the `size` frame
-    /// is unchanged, so surrounding layout never shifts. Proportional, so small
-    /// marks stay comfortably in-bounds.
+    /// Optical sizing for narrow marks changes only the artwork, not the badge
+    /// or surrounding layout. Silo's original proportions and colors are retained.
     private var assetPadding: CGFloat {
         let base = size * (showsBackground ? 0.24 : 0.12)
-        let plexBoost: CGFloat = provider == .plex ? size * 0.07 : 0
-        return max(0, base - plexBoost)
+        let boost: CGFloat = switch provider {
+        case .plex: size * 0.07
+        case .silo: (size - 2 * base) * 0.075
+        default: 0
+        }
+        return max(0, base - boost)
     }
 
     /// A media share has no bundled brand logo (it isn't a product), so it draws
