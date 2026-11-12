@@ -859,8 +859,8 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
 - **Provider marks** — IPTV uses coral-red while Media Share keeps teal.
   `ProviderBrandMark` owns their shared icon and badge tints, including deeper
   colors on white focus cards and brighter colors on black focus cards.
-  Silo retains its multicolor logo on a pearl-gray (`#D1D1D6`) badge so its
-  blue upper section remains distinct from the background.
+  Silo retains its multicolor logo over a neutral pearl-gray (`#D1D1D6`) tint
+  at the same 18% badge opacity as the other providers, not an opaque fill.
   Navidrome (Subsonic) uses the vector record logo from
   [Mozz's Navidrome asset](https://github.com/brandomoore/Mozz/blob/main/Sources/MozzApp/Resources/Brands.xcassets/NavidromeLogo.imageset/navidrome-logo.svg),
   with the same template rendering and focus-aware tint on both platforms.
