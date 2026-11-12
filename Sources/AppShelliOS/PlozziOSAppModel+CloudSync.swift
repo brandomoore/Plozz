@@ -584,6 +584,19 @@ extension PlozziOSAppModel {
         await malService.refreshStatus()
     }
 
+    func restoreInitialICloudSetup() {
+        initialSetupRestoration.start { [weak self] in
+            guard let self, self.syncSetup.isEnabled, !self.isOfflineMode,
+                  let config = self.cloudSync else { return false }
+            let fetched = await config.activate()
+            self.providerCredentialSync.reconcile()
+            await self.providerCredentialSync.finishPendingRestoration()
+            await self.refreshSyncedTrackerSignIns()
+            return fetched && self.syncSetup.isEnabled && !self.isOfflineMode
+                && self.providerCredentialSync.isReadyForManualSetup
+        }
+    }
+
     /// Turn cross-device Sync & Setup on/off. Enabling activates CloudKit sync;
     /// disabling stops publishing but never deletes the shared cloud config.
     func setSyncSetupEnabled(_ on: Bool) {
@@ -599,7 +612,10 @@ extension PlozziOSAppModel {
                 return
             }
         }
+        let isInitialSetup = on && syncSetup.needsOnboardingChoice
         syncSetup.setEnabled(on)
+        if isInitialSetup { restoreInitialICloudSetup() }
+        if !on { initialSetupRestoration.dismiss() }
         guard !isOfflineMode else { return }
         if !on {
             providerCredentialSync.cancel()
@@ -609,10 +625,12 @@ extension PlozziOSAppModel {
         let config = cloudSync
         guard let config else { return }
         if on {
-            Task {
-                guard !isOfflineMode else { return }
-                await config.activate()
-                await refreshSyncedTrackerSignIns()
+            if !isInitialSetup {
+                Task {
+                    guard !isOfflineMode else { return }
+                    await config.activate()
+                    await refreshSyncedTrackerSignIns()
+                }
             }
             armCloudConfigObservation()
             scheduleCloudPublish()

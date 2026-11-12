@@ -793,6 +793,17 @@ extension AppState {
         await malService.refreshStatus()
     }
 
+    public func restoreInitialICloudSetup() {
+        initialSetupRestoration.start { [weak self] in
+            guard let self, self.syncSetup.isEnabled, let config = self.cloudSync else { return false }
+            let fetched = await config.activate()
+            self.providerCredentialSync.reconcile()
+            await self.providerCredentialSync.finishPendingRestoration()
+            await self.refreshSyncedTrackerSignIns()
+            return fetched && self.syncSetup.isEnabled && self.providerCredentialSync.isReadyForManualSetup
+        }
+    }
+
     /// Turn cross-device Sync & Setup on/off. Enabling activates CloudKit sync and
     /// starts observing; disabling stops publishing but NEVER deletes the shared
     /// cloud config (other devices keep syncing).
@@ -809,13 +820,18 @@ extension AppState {
                 return
             }
         }
+        let isInitialSetup = on && syncSetup.needsOnboardingChoice
         syncSetup.setEnabled(on)
+        if isInitialSetup { restoreInitialICloudSetup() }
+        if !on { initialSetupRestoration.dismiss() }
         let config = cloudSync
         guard let config else { return }
         if on {
-            Task {
-                await config.activate()
-                await refreshSyncedTrackerSignIns()
+            if !isInitialSetup {
+                Task {
+                    await config.activate()
+                    await refreshSyncedTrackerSignIns()
+                }
             }
             armCloudConfigObservation()
             scheduleCloudPublish()

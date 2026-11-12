@@ -384,7 +384,7 @@ public final class ProviderCredentialSync {
         return encoder
     }
 
-    func finishPendingRestoration() async {
+    public func finishPendingRestoration() async {
         while let task { await task.value }
     }
 

@@ -97,6 +97,14 @@ public struct PlozziOSRootView: View {
                 ICloudOnboardingView(onChoice: appModel.completeICloudOnboarding)
                     .environment(\.themePalette, resolvedPalette)
                     .environment(\.colorScheme, resolvedPalette.isLight ? .light : .dark)
+            } else if appModel.initialSetupRestoration.phase != .hidden {
+                ICloudRestorationView(
+                    hasFailed: appModel.initialSetupRestoration.phase == .unavailable,
+                    onRetry: appModel.restoreInitialICloudSetup,
+                    onContinue: appModel.initialSetupRestoration.dismiss
+                )
+                .environment(\.themePalette, resolvedPalette)
+                .environment(\.colorScheme, resolvedPalette.isLight ? .light : .dark)
             } else {
                 appContent
                     .task { consumeDeferredPairingURL() }
@@ -695,7 +703,8 @@ public struct PlozziOSRootView: View {
     /// with `pendingPairingInvite` left set so it is never re-requested, which
     /// means the link simply does nothing until relaunch.
     private func receivePairingURL(_ url: URL) {
-        guard !needsDiagnosticConsent, !appModel.syncSetup.needsOnboardingChoice else {
+        guard !needsDiagnosticConsent, !appModel.syncSetup.needsOnboardingChoice,
+              appModel.initialSetupRestoration.phase == .hidden else {
             deferredPairingURL = url
             return
         }

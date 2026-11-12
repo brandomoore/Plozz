@@ -65,7 +65,8 @@ final class CloudSyncRestorationTests: XCTestCase {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         let file = folder.appendingPathComponent("primary.json")
         let service = CloudConfigSyncService(configuration(file))
-        await service.activate()
+        let fetched = await service.activate()
+        XCTAssertFalse(fetched, "A disabled service must not report a completed initial restore.")
         let restored = await service.hasRestoredLocalState
         XCTAssertFalse(restored)
         XCTAssertFalse(FileManager.default.fileExists(atPath: folder.path))

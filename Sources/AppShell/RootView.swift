@@ -525,7 +525,8 @@ public struct RootView: View {
 
     public var body: some View {
         Group {
-            if needsDiagnosticConsent || appState.syncSetup.needsOnboardingChoice {
+            if needsDiagnosticConsent || appState.syncSetup.needsOnboardingChoice
+                || appState.initialSetupRestoration.phase != .hidden {
                 Group {
                     if !startupLogoIntroCompleted {
                         launchView
@@ -534,8 +535,14 @@ public struct RootView: View {
                         CrashReportingConsentView { enabled in
                             appState.crashReportingModel.isEnabled = enabled
                         }
-                    } else {
+                    } else if appState.syncSetup.needsOnboardingChoice {
                         ICloudOnboardingView(onChoice: appState.completeICloudOnboarding)
+                    } else {
+                        ICloudRestorationView(
+                            hasFailed: appState.initialSetupRestoration.phase == .unavailable,
+                            onRetry: appState.restoreInitialICloudSetup,
+                            onContinue: appState.initialSetupRestoration.dismiss
+                        )
                     }
                 }
                 .environment(\.themePalette, resolvedPalette)
@@ -554,7 +561,8 @@ public struct RootView: View {
             }
         }
         .onOpenURL { url in
-            if needsDiagnosticConsent || appState.syncSetup.needsOnboardingChoice || showsStartupLogo {
+            if needsDiagnosticConsent || appState.syncSetup.needsOnboardingChoice
+                || appState.initialSetupRestoration.phase != .hidden || showsStartupLogo {
                 deferredStartupURL = url
             } else {
                 appState.handle(url: url)

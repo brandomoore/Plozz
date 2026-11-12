@@ -502,12 +502,14 @@ public actor CloudConfigSyncService {
     /// device learns the truth before it can publish stale local data over a
     /// peer), then publish genuine local diffs for every channel. Safe to call
     /// repeatedly. Re-arms the service if a prior `deactivate()` had fenced it.
-    public func activate() async {
-        guard !isErasing else { return }
+    /// Returns whether this activation fetched the current account's cloud state.
+    @discardableResult
+    public func activate() async -> Bool {
+        guard !isErasing else { return false }
         isActive = true
         guard config.isEnabled() else {
             deactivate()
-            return
+            return false
         }
         // Reported as `disabled` rather than `signedOut`: the user has not signed
         // out of anything, this build simply cannot do cloud sync at all.
@@ -515,17 +517,19 @@ public actor CloudConfigSyncService {
             if config.installation.firstRunCaseID != nil {
                 setDiagnostic("First-run test blocked: the test CloudKit container is not provisioned.")
                 setStatus(.error, error: "First-run iCloud provisioning is missing.")
-                return
+                return false
             }
             PlozzLog.sync.info("CloudSync: disabled — this build carries no iCloud entitlement")
             setStatus(.disabled)
-            return
+            return false
         }
-        guard await accountIsAvailable() else { setStatus(.signedOut); return }
-        guard !isErasing, isActive, config.isEnabled() else { return }
-        guard await stageLocalChangesBeforeFetch() else { return }
+        guard await accountIsAvailable() else { setStatus(.signedOut); return false }
+        guard !isErasing, isActive, config.isEnabled() else { return false }
+        guard await stageLocalChangesBeforeFetch() else { return false }
         ensureEngine()
-        guard let engine else { return }
+        guard let engine else { return false }
+        let activationAccountGeneration = accountGeneration
+        var fetched = false
         setStatus(.idle)
         engine.state.add(pendingDatabaseChanges: channels.map { .saveZone(CKRecordZone(zoneID: $0.schema.zoneID)) })
         for channel in channels { await cleanupLegacyZonesIfNeeded(for: channel) }
@@ -534,6 +538,7 @@ public actor CloudConfigSyncService {
             try await fetchChangesDetached(engine)
             await markServerStateConfirmed()
             recordFirstRunCloudFetch()
+            fetched = true
         }
         catch { setDiagnostic("activate fetch: \(Self.describe(error))") }
         // publishLocalChanges enforces the suspend / baseline / resync gates itself, so
@@ -541,6 +546,8 @@ public actor CloudConfigSyncService {
         await publishLocalChanges()
         reportRecordCount()
         await reconcileServerInventoryIfDue()
+        return fetched && isActive && config.isEnabled() && engine === self.engine
+            && accountGeneration == activationAccountGeneration
     }
 
     /// Fences and drops the engine, and blocks every publish/delegate path, so a

@@ -862,6 +862,7 @@ public final class AppState {
 
     /// Observable CloudKit sync status for the iCloud Sync settings page.
     public let cloudSyncStatus = CloudSyncStatus()
+    public let initialSetupRestoration = InitialSetupRestoration()
 
     /// Observable facet for the CloudKit "needs sign-in" server UI, kept off
     /// `AppState` itself so its @Observable mutable-property budget stays flat.

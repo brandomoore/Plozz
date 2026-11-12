@@ -49,6 +49,15 @@ registry.
 
 ## Invariants
 
+- **First-run iCloud opt-in shows restoration, not an empty setup page.**
+  Both shells use `InitialSetupRestoration` and `ICloudRestorationView` until
+  the initial cloud fetch and queued provider sign-in restoration finish.
+  Failed/unavailable fetches offer Retry and Continue. Continue dismisses only
+  this presentation, leaving automatic sync enabled and running. Ordinary
+  launches and Settings toggles do not show this first-run interstitial.
+  A finished attempt does not assert every server signed in or another device
+  received changes; existing per-server manual setup remains available.
+
 - **Each root owns content-refresh coordination.** `RootView` and
   `PlozziOSRootView` inject `ContentRefreshCoordinator`, reset it on profile
   changes, and mount
