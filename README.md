@@ -4,8 +4,8 @@
 
 # Plozz — media player for Apple TV, iPhone and iPad
 
-**Free and open source. No ads or paywalls.** Movies, TV, music and live
-channels in one native Apple app. Connect **Jellyfin, Plex, Emby and Silo**,
+**Free and open source. No ads or paywalls.** Enjoy your movies, shows, music
+and live TV in one app built for Apple devices. Connect **Jellyfin, Plex, Emby and Silo**,
 play directly from **SMB and WebDAV shares**, and keep your setup in sync
 with **iCloud**.
 
@@ -45,9 +45,8 @@ with **iCloud**.
   <a href="https://plozz.app/silo/"><img src="docs/assets/integrations/silo.png" height="40" alt="Silo" /></a>
 </p>
 
-Connect multiple servers and bring their libraries together, or browse each
-one separately. Search across your collection, filter and sort, jump to a
-letter, and pick up from Continue Watching. Silo uses its native API.
+Bring your servers together or browse each one separately. Search, filter and
+sort your collection, jump to a letter, and pick up where you left off.
 
 ### Network shares
 
@@ -60,7 +59,7 @@ letter, and pick up from Continue Watching. Silo uses its native API.
 </p>
 
 Play directly from your NAS or file server over **SMB, WebDAV, NFS, SFTP or FTP**.
-Match movies and shows with artwork and metadata, use local sidecar files,
+Find artwork and details for your movies and shows, use your own artwork and metadata files,
 or browse personal videos as folders. No media server required.
 
 ### Live TV and IPTV
@@ -71,8 +70,8 @@ or browse personal videos as folders. No media server required.
   <a href="https://plozz.app/live-tv/"><img src="docs/assets/integrations/xmltv.png" height="40" alt="XMLTV guides" /></a>
 </p>
 
-Use your playlists, Xtream accounts, or authorized Plex, Jellyfin and Emby
-channels. Browse and search the guide, save favorites, watch up to four channels
+Bring your M3U playlists, Xtream accounts, or Plex, Jellyfin and Emby channels
+you have access to. Browse the guide, search channels, save favorites, watch up to four channels
 in **Multiview**, or build scheduled channels from your own library.
 Live TV is experimental; Plozz supplies no channels or IPTV subscription.
 
@@ -80,15 +79,29 @@ Live TV is experimental; Plozz supplies no channels or IPTV subscription.
 
 | Feature | What you get |
 | --- | --- |
-| **Music on iOS, iPadOS and tvOS** | Albums, artists, tracks and playlists from Plex, Jellyfin and Emby, with a mini-player, queue, shuffle, repeat and background audio. |
-| **Video playback** | HDR, HEVC and AV1 support, audio-track selection, playback speed, resume, and multichannel audio with compatible streams and equipment. |
-| **Playback shortcuts** | Manual or automatic intro/credits skipping and chapter navigation where available, plus optional next-episode autoplay. |
-| **Picture in Picture and AirPlay** | Watch on iPhone and iPad while multitasking or send video to another screen, depending on the playback path. Saved sidecar subtitles stay in the in-app player. |
-| **Subtitles** | Two tracks at once; adjustable font, size, color, background and position; subtitle search through supported servers. |
-| **Versions and quality** | Switch files or editions on the active server without leaving the player. Set streaming-quality limits on iPhone and iPad. |
-| **Offline downloads** | Save movies and episodes on iPhone and iPad, choose download quality, and browse saved artwork and metadata offline. |
-| **Library details** | Artwork, cast, ratings, collections, extras and trailers, with availability depending on your provider. |
-| **Watchlists and history** | Keep a watchlist across connected services, mark episodes or seasons watched, and optionally sync watch history across servers. |
+| **Music on iOS, iPadOS and tvOS** | Browse albums, artists, songs and playlists from Plex, Jellyfin and Emby. Use the mini-player, queue, shuffle or repeat, and keep listening in the background. |
+| **Video playback** | Pick an audio track, change playback speed and resume where you stopped. Enjoy HDR and surround sound with compatible files and equipment. |
+| **Playback shortcuts** | Skip intros and credits yourself or automatically, jump between chapters where available, and choose whether the next episode starts on its own. |
+| **Picture in Picture and AirPlay** | Watch while using other apps on iPhone and iPad, or send video to another screen. Availability depends on how the video plays; separately saved subtitles stay in Plozz. |
+| **Subtitles** | Show two tracks at once and adjust their font, size, color, background and position. Search for subtitles when your server supports it. |
+| **Versions and quality** | Switch between files or editions on the same server without leaving the player. Choose streaming quality on iPhone and iPad. |
+| **Offline downloads** | Save movies and episodes on iPhone and iPad, choose their quality, and browse saved artwork and details without a connection. |
+| **Library details** | Explore cast, ratings, collections, extras and trailers, depending on what your server provides. |
+| **Watchlists and history** | Keep a watchlist across services, mark episodes or seasons watched, and optionally sync watch history across servers. |
+
+### Supported formats
+
+| Type | Formats |
+| --- | --- |
+| **Video files** | MKV, MP4/M4V, MOV, WebM, AVI, MPEG-TS (TS, M2TS, MTS, M2T), MPEG-PS (MPG, VOB), 3GP/3G2, OGG/OGV, ASF/WMV, FLV, RealMedia (RM/RMVB). Decrypted DVD/Blu-ray ISO images and Blu-ray folders. |
+| **Video codecs** | H.264/AVC, H.265/HEVC, AV1, VP9, VP8, MPEG-2, MPEG-4 Part 2 (Xvid/DivX), VC-1, WMV 1–3, MS-MPEG4 v1–3, QuickTime RLE, FLV1 (Sorenson Spark), VP6, RealVideo 1–4, H.263, Theora. |
+| **Audio codecs** | AAC, HE-AAC/v2, AC-3 (Dolby Digital), E-AC-3 (Dolby Digital Plus, including JOC), TrueHD, MLP, DTS, DTS-HD MA, FLAC, ALAC, MP3, MP2, PCM/LPCM (including G.711), Opus, Vorbis, WMA (Standard, Pro, Lossless, Voice), Nellymoser, ADPCM-SWF, Speex, RealAudio (Cook, ATRAC3, Sipro, Lossless, 14.4/28.8), AMR-NB/WB. |
+| **HDR** | HDR10, HDR10+, HLG and supported Dolby Vision profiles. Dolby Vision Profile 7 plays as HDR10. |
+
+Your file, device, display and speakers all affect playback. TrueHD and DTS-HD MA
+play as regular surround audio, not height channels or bitstream passthrough.
+Some formats need more processing power; server conversion can change picture
+and sound quality. [Format details and limits](https://plozz.app/formats/).
 
 ## Your setup, on every device
 
@@ -97,11 +110,11 @@ Live TV is experimental; Plozz supplies no channels or IPTV subscription.
 </p>
 
 **iCloud sync across Apple TV, iPhone and iPad** keeps profiles, settings,
-server details, watchlists and supported Live TV setup together. Nearby-device,
-QR and pairing-code setup help you add another device.
+server connections, watchlists and supported Live TV settings together. Add
+another device with nearby-device setup, a QR code or a pairing code.
 
-Media files and offline downloads stay on their devices. Sign-in transfer
-depends on the service and platform; Silo requires approval on each device.
+Your media files and downloads don't move between devices. You may need to
+sign in again, depending on the service; Silo needs approval on each device.
 [Sync controls and limits](https://docs.plozz.app/profiles-and-sync/).
 
 ## Trackers and requests
@@ -116,9 +129,9 @@ depends on the service and platform; Silo requires approval on each device.
 </p>
 
 Connect **Trakt, Simkl and WeTrakr** for movies and TV, **AniList and
-MyAnimeList** for anime, and **Last.fm** for music scrobbling. Tracking and
-watchlist capabilities follow each service's supported media and account.
-Connections are optional and profile-scoped.
+MyAnimeList** for anime, and **Last.fm** to log the music you play.
+Tracking and watchlist features vary by service and account. Connect only
+the services you want, separately for each profile.
 
 <p>
   <a href="https://seerr.dev"><img src="docs/assets/integrations/seerr.png" height="40" alt="Seerr" /></a>
@@ -129,13 +142,14 @@ without leaving Plozz.
 
 ## Make it yours
 
-- **Profiles:** separate library choices, playback preferences and subtitle
-  settings. Server users still control access and watch history.
+- **Profiles:** give everyone their own library choices, playback preferences
+  and subtitle settings. Server accounts still control access and watch history.
 - **Viewing controls:** Kids profiles, parental PINs, profile locks and
   spoiler protection.
-- **Appearance:** light, dark and Pure Black themes, adjustable row density,
-  hero artwork and navigation layout.
-- **Circadian mode:** warm and dim the interface on your schedule.
+- **Appearance:** choose light, dark or Pure Black, and make room for more
+  posters or bigger artwork. Arrange navigation your way.
+- **Circadian mode:** automatically dim and warm Plozz, including video
+  playback, from sunset to sunrise or on your own schedule.
 - **Apple TV Top Shelf:** Continue Watching and Recently Added on the Home Screen.
 
 ## Diagnostics, with your permission
@@ -144,10 +158,10 @@ without leaving Plozz.
   <a href="https://sentry.io"><img src="docs/assets/integrations/sentry.png" height="40" alt="Sentry diagnostics" /></a>
 </p>
 
-**Optional diagnostics powered by Sentry** help investigate crashes, hangs and
-playback problems. Sharing is **off until you opt in**, and you can change it
-in Help &amp; Diagnostics. Reports can include app, device and filtered technical
-details; messages you submit are sent as written. No advertising or usage analytics.
+**Optional diagnostics powered by Sentry** help us troubleshoot crashes,
+freezes and playback problems. Sharing is **off unless you turn it on** in
+Help &amp; Diagnostics. Reports can include app, device and filtered technical
+details; messages you send are included as written. No advertising or usage analytics.
 [Privacy and diagnostic controls](https://plozz.app/privacy/#diagnostics).
 
 ## Get started
@@ -155,12 +169,12 @@ details; messages you submit are sent as written. No advertising or usage analyt
 Install **[Plozz Player](https://apps.apple.com/app/plozz-player/id6782668147)**
 on tvOS, iOS or iPadOS 18 or later, then connect your server, network share or
 IPTV source. **Plozz supplies no movies, music, channels or subscriptions.**
-Features vary by device and provider; server permissions and provider
-subscription requirements still apply.
+Features vary by device and service. Your server's access rules and any
+subscriptions it requires still apply.
 
-This README describes the current source. App Store and TestFlight builds may
-lag behind; mobile music is currently enabled in development/TestFlight builds,
-not App Store builds.
+This README covers what's implemented in the code. App Store and TestFlight
+releases may be behind; mobile music is enabled for development/TestFlight
+builds, but isn't in the App Store version yet.
 
 [Explore features](https://plozz.app/features/) ·
 [Supported formats](https://plozz.app/formats/) ·
