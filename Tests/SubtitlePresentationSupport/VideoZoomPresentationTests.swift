@@ -11,6 +11,68 @@ import XCTest
 @MainActor
 final class VideoZoomPresentationTests: XCTestCase {
     #if os(tvOS)
+    func testAudioBorderIsTwoPixelsAndOnlyVisibleWithoutFocus() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        let state = VideoAudioGlowState()
+        let fixture = { (focused: Bool, active: Bool, scale: CGFloat) in
+            VideoAudioGlow(state: state, isActive: active, cornerRadius: 20, isFocused: focused)
+                .frame(width: 640, height: 360)
+                .overlay { RoundedRectangle(cornerRadius: 20).fill(.black) }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(.black)
+                .environment(\.displayScale, scale)
+                .environment(\._accessibilityReduceMotion, true)
+                .ignoresSafeArea()
+        }
+        let host = UIHostingController(rootView: fixture(true, true, 1))
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        func intensity(scale: CGFloat, pixel: Int) throws -> Float {
+            let format = UIGraphicsImageRendererFormat()
+            format.scale = scale
+            let image = UIGraphicsImageRenderer(bounds: window.bounds, format: format).image { _ in
+                window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+            }
+            let region = CGRect(x: (window.bounds.midX - 100) * scale,
+                                y: (window.bounds.midY + 180) * scale + CGFloat(pixel),
+                                width: 200 * scale, height: 1)
+            let crop = try XCTUnwrap(image.cgImage?.cropping(to: region))
+            let ci = CIImage(cgImage: crop)
+            let average = ci.applyingFilter("CIAreaAverage", parameters: [kCIInputExtentKey: CIVector(cgRect: ci.extent)])
+            var value = [Float](repeating: 0, count: 4)
+            CIContext().render(average, toBitmap: &value, rowBytes: 16,
+                               bounds: CGRect(x: 0, y: 0, width: 1, height: 1),
+                               format: .RGBAf, colorSpace: CGColorSpaceCreateDeviceRGB())
+            return (value[0] + value[1] + value[2]) / 3
+        }
+        try await Task.sleep(for: .milliseconds(1300))
+        for scale: CGFloat in [1, 2] {
+            host.rootView = fixture(true, true, scale)
+            try await Task.sleep(for: .milliseconds(100))
+            let focused = try (0..<5).map { try intensity(scale: scale, pixel: $0) }
+            host.rootView = fixture(false, true, scale)
+            try await Task.sleep(for: .milliseconds(100))
+            let unfocused = try (0..<5).map { try intensity(scale: scale, pixel: $0) }
+            let border = zip(unfocused, focused).map { $0 - $1 }
+            XCTAssertGreaterThan(border[0], 0.02)
+            XCTAssertGreaterThan(border[1], 0.02)
+            XCTAssertLessThan(border[0], 0.12, "Keep the audio border subtle.")
+            for value in border.dropFirst(2) {
+                XCTAssertEqual(value, 0, accuracy: 0.004, "The border must end after two physical pixels.")
+            }
+        }
+        host.rootView = fixture(false, false, 1)
+        try await Task.sleep(for: .milliseconds(100))
+        XCTAssertEqual(try intensity(scale: 1, pixel: 0), 0, accuracy: 0.004)
+    }
+
     func testAudioGlowFadesOutsideTheNativeFocusedPictureWithoutResizingIt() async throws {
         try await assertAudioGlowTransitions(reduceMotion: false)
     }
@@ -31,8 +93,8 @@ final class VideoZoomPresentationTests: XCTestCase {
             let active: Bool
             var body: some View {
                 Surface(view: surface)
-                    .videoCardFocusSurface {
-                        VideoAudioGlow(state: glow, isActive: active, cornerRadius: 20)
+                    .videoCardFocusSurface { focused in
+                        VideoAudioGlow(state: glow, isActive: active, cornerRadius: 20, isFocused: focused)
                     }
                     .environment(\.videoCardFocus, VideoCardFocus(
                         identifier: "audio-glow-test", title: "Video", audible: active, presentsEffect: true,

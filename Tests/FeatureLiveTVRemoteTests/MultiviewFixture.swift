@@ -519,6 +519,19 @@ private struct MultiviewFocusDiagnostics: UIViewRepresentable {
         private let report = UILabel()
         private let focusHistory = UILabel()
         private var focusEvents: [String] = []
+        private let guideMotion = UILabel()
+        private var guideSamples: [[CGFloat]] = []
+        private weak var guide: UICollectionView?
+        private var displayLink: CADisplayLink?
+
+        private final class Clock: NSObject {
+            weak var probe: Probe?
+            init(_ probe: Probe) { self.probe = probe }
+            @objc func sample(_ link: CADisplayLink) {
+                guard let probe else { link.invalidate(); return }
+                probe.sampleGuide()
+            }
+        }
 
         init() {
             super.init(frame: .zero)
@@ -532,6 +545,11 @@ private struct MultiviewFocusDiagnostics: UIViewRepresentable {
             focusHistory.font = .systemFont(ofSize: 10)
             focusHistory.textColor = .white
             focusHistory.isUserInteractionEnabled = false
+            guideMotion.accessibilityIdentifier = "multiview-fixture-guide-motion"
+            guideMotion.text = "Guide motion"
+            guideMotion.font = .systemFont(ofSize: 10)
+            guideMotion.textColor = .white
+            guideMotion.isUserInteractionEnabled = false
         }
 
         required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
@@ -542,6 +560,13 @@ private struct MultiviewFocusDiagnostics: UIViewRepresentable {
             guard let window else { return }
             report.frame = CGRect(x: 80, y: window.bounds.height - 32, width: window.bounds.width - 160, height: 20)
             window.addSubview(report)
+            if ProcessInfo.processInfo.arguments.contains("--motion-fixture") {
+                guideMotion.frame = report.frame.offsetBy(dx: 0, dy: -44)
+                window.addSubview(guideMotion)
+                let link = CADisplayLink(target: Clock(self), selector: #selector(Clock.sample(_:)))
+                displayLink = link
+                link.add(to: .main, forMode: .common)
+            }
             if ProcessInfo.processInfo.arguments.contains("--focus-history-fixture") {
                 focusHistory.frame = report.frame.offsetBy(dx: 0, dy: -22)
                 window.addSubview(focusHistory)
@@ -560,7 +585,37 @@ private struct MultiviewFocusDiagnostics: UIViewRepresentable {
             timer = nil
             report.removeFromSuperview()
             focusHistory.removeFromSuperview()
+            guideMotion.removeFromSuperview()
+            displayLink?.invalidate()
+            displayLink = nil
             NotificationCenter.default.removeObserver(self)
+        }
+
+        private func sampleGuide() {
+            guard let window else { return }
+            if guide?.window !== window {
+                func find(_ view: UIView) -> UICollectionView? {
+                    if let collection = view as? UICollectionView,
+                       collection.collectionViewLayout is PrototypeGuideCollectionLayout { return collection }
+                    return view.subviews.lazy.compactMap(find).first
+                }
+                guide = find(window)
+            }
+            guard let guide, let presented = guide.layer.presentation() else { return }
+            let frame = presented.convert(presented.bounds, to: window.layer.presentation() ?? window.layer)
+            var opacity: CGFloat = 1
+            var layer: CALayer? = presented
+            while let current = layer {
+                opacity *= current.isHidden ? 0 : CGFloat(current.opacity)
+                layer = current.superlayer
+            }
+            let sample = [frame.minX, frame.minY, frame.width, frame.height, opacity]
+            guard guideSamples.last != sample else { return }
+            guideSamples.append(sample)
+            if guideSamples.count > 1_024 { guideSamples.removeFirst() }
+            guideMotion.accessibilityValue = guideSamples.map {
+                $0.map { String(format: "%.3f", Double($0)) }.joined(separator: ",")
+            }.joined(separator: ";")
         }
 
         @objc private func recordFocus(_ notification: Notification) {
@@ -773,10 +828,10 @@ private final class MultiviewMotionOutput: UIView {
         guard ancestorLayer != nil else { return }
         let frame = presented.convert(presented.bounds, to: window.layer.presentation() ?? window.layer)
         var opacity: CGFloat = 1
-        var ancestor: UIView? = self
+        var ancestor: CALayer? = presented
         while let current = ancestor {
-            opacity *= current.isHidden ? 0 : CGFloat(current.layer.presentation()?.opacity ?? Float(current.alpha))
-            ancestor = current.superview
+            opacity *= current.isHidden ? 0 : CGFloat(current.opacity)
+            ancestor = current.superlayer
         }
         let value = [frame.minX, frame.minY, frame.width, frame.height, opacity]
         guard frames.last != value else { return }

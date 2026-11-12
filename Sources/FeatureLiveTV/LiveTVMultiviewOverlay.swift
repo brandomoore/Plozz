@@ -790,8 +790,7 @@ private struct LiveTVMultiviewChrome: View {
     }
 
     private var televisionEditingInsets: EdgeInsets {
-        EdgeInsets(top: max(32, safeAreaInsets.top), leading: 24,
-                   bottom: toolbarHeight + 48, trailing: 24)
+        EdgeInsets(top: 24, leading: 24, bottom: toolbarHeight + 48, trailing: 24)
     }
 
     private func toolbarTop(in size: CGSize) -> CGFloat {
@@ -810,6 +809,19 @@ private struct LiveTVMultiviewChrome: View {
         }
         return min(bottom, LiveTVMultiviewGeometry.viewport(
             in: size, isEditing: true, editingInsets: televisionEditingInsets).maxY)
+    }
+}
+
+struct LiveTVMultiviewVideoEntrance: ViewModifier {
+    let enabled: Bool
+    let reduceMotion: Bool
+    @State private var appeared = false
+
+    func body(content: Content) -> some View {
+        content
+            .opacity(!enabled || appeared ? 1 : 0)
+            .animation(reduceMotion ? nil : MultiviewMotion.animation, value: appeared)
+            .onAppear { appeared = true }
     }
 }
 

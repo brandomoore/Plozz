@@ -418,10 +418,10 @@ public struct LiveChannelPlayerView: View {
                         ))
                     }
                 }
-                .videoCardFocusSurface {
+                .videoCardFocusSurface { focused in
                     #if os(tvOS)
                     VideoAudioGlow(state: audioGlow, isActive: showsAudioGlow,
-                                   cornerRadius: videoCardFocus?.cornerRadius ?? 0)
+                                   cornerRadius: videoCardFocus?.cornerRadius ?? 0, isFocused: focused)
                     #endif
                 }
                 #if os(tvOS)

@@ -75,17 +75,24 @@ public extension EnvironmentValues {
 
 public extension View {
     func videoCardFocusSurface() -> some View {
-        modifier(VideoCardFocusModifier(background: AnyView(EmptyView())))
+        modifier(VideoCardFocusModifier(background: { _ in AnyView(EmptyView()) }))
     }
 
     func videoCardFocusSurface<Background: View>(@ViewBuilder background: () -> Background) -> some View {
-        modifier(VideoCardFocusModifier(background: AnyView(background())))
+        let view = AnyView(background())
+        return modifier(VideoCardFocusModifier(background: { _ in view }))
+    }
+
+    func videoCardFocusSurface<Background: View>(
+        @ViewBuilder background: @escaping (_ isFocused: Bool) -> Background
+    ) -> some View {
+        modifier(VideoCardFocusModifier(background: { AnyView(background($0)) }))
     }
 }
 
 private struct VideoCardFocusModifier: ViewModifier {
     @Environment(\.videoCardFocus) private var configuration
-    let background: AnyView
+    let background: (Bool) -> AnyView
 
     func body(content: Content) -> some View {
         #if os(tvOS)
@@ -101,13 +108,13 @@ private struct VideoCardFocusModifier: ViewModifier {
 private struct VideoCardSurface<Content: View>: View {
     let configuration: VideoCardFocus?
     let content: Content
-    let background: AnyView
+    let background: (Bool) -> AnyView
     @FocusState private var focused: Bool
     @State private var interactionState = VideoCardInteractionState()
 
     var body: some View {
         NativeVideoCard(configuration: configuration, focus: $focused, interactionState: interactionState,
-                        background: background, content:
+                        background: background(focused && configuration?.presentsEffect == true), content:
             content
                 .clipShape(RoundedRectangle(cornerRadius: configuration?.cornerRadius ?? 0, style: .continuous))
                 .overlay(alignment: .bottomLeading) {

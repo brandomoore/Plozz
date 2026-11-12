@@ -513,6 +513,7 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
                     .accessibilityHidden(!expanded && layout.heroHeight == 0)
                     #endif
                     #if os(tvOS)
+                    .modifier(LiveTVMultiviewVideoEntrance(enabled: isMultiviewWorkspace, reduceMotion: reduceMotion))
                     .transition(reduceMotion ? .identity : .opacity)
                     .animation(playerTransition, value: multiview.expandedPaneID)
                     .animation(playerTransition, value: cornerRadius)
@@ -535,7 +536,7 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
                         y: layout.bounds.midY
                     )
                     .opacity(expanded || model.channels.isEmpty ? 0 : 1)
-                    .animation(playerTransition, value: expanded)
+                    .animation(isMultiviewWorkspace && expanded ? nil : playerTransition, value: expanded)
                 #endif
 
                 guideContent(layout, canvasWidth: geometry.size.width)
@@ -560,7 +561,7 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
                 .disabled(expanded || !isActive || showsPreviewIntroduction)
                 .allowsHitTesting(!expanded && isActive && !showsPreviewIntroduction)
                 .accessibilityHidden(expanded || !isActive || showsPreviewIntroduction)
-                .animation(playerTransition, value: expanded)
+                .animation(isMultiviewWorkspace && expanded ? nil : playerTransition, value: expanded)
                 .animation(reduceMotion ? nil : .easeInOut(duration: 0.18), value: isSearching)
                 if showingMultiview {
                     LiveTVMultiviewOverlay(

@@ -32,24 +32,35 @@ struct VideoAudioGlow: View {
     let state: VideoAudioGlowState
     let isActive: Bool
     let cornerRadius: CGFloat
+    let isFocused: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.displayScale) private var displayScale
     @State private var isPresented = false
 
     var body: some View {
-        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-            .stroke(LinearGradient(colors: state.colors, startPoint: .leading, endPoint: .trailing), lineWidth: 96)
-            .blur(radius: 96)
-            .opacity(isPresented ? 0.36 : 0)
-            .animation(reduceMotion ? nil : .easeInOut(duration: isPresented ? 3 : 1.5), value: isPresented)
-            .animation(reduceMotion ? nil : .easeInOut(duration: 1.5), value: state.colors)
-            .task(id: isActive) {
-                if isActive {
-                    try? await Task.sleep(for: .seconds(1))
-                    guard !Task.isCancelled else { return }
-                }
-                isPresented = isActive
+        let gradient = LinearGradient(colors: state.colors, startPoint: .leading, endPoint: .trailing)
+        let borderWidth = 2 / displayScale
+        ZStack {
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .stroke(gradient, lineWidth: 96)
+                .blur(radius: 96)
+                .opacity(0.36)
+            RoundedRectangle(cornerRadius: cornerRadius + borderWidth / 2, style: .continuous)
+                .stroke(gradient, lineWidth: borderWidth)
+                .padding(-borderWidth / 2)
+                .opacity(isFocused ? 0 : 0.32)
+        }
+        .opacity(isPresented ? 1 : 0)
+        .animation(reduceMotion ? nil : .easeInOut(duration: isPresented ? 3 : 1.5), value: isPresented)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 1.5), value: state.colors)
+        .task(id: isActive) {
+            if isActive {
+                try? await Task.sleep(for: .seconds(1))
+                guard !Task.isCancelled else { return }
             }
-            .onDisappear { isPresented = false }
+            isPresented = isActive
+        }
+        .onDisappear { isPresented = false }
     }
 }
 #endif

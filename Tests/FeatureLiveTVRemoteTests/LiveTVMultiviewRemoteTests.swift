@@ -113,6 +113,12 @@ final class LiveTVMultiviewRemoteTests: XCTestCase {
             XCTAssertLessThan(glow.mean, 0.18, "The indicator should remain soft rather than become a bright border.")
             XCTAssertGreaterThan(pixelDifference(first, second, region: outerGlow, screen: app.frame).mean, 0.008,
                                  "The wider glow must remain visible 72-80 points beyond the video.")
+            let border = CGRect(x: frame.midX - 100, y: frame.maxY, width: 200, height: 2 / first.scale)
+            let adjacent = border.offsetBy(dx: 0, dy: 3 / first.scale)
+            XCTAssertGreaterThan(
+                pixelDifference(first, second, region: border, screen: app.frame).mean,
+                pixelDifference(first, second, region: adjacent, screen: app.frame).mean + 0.01,
+                "The audible, unfocused picture must carry a subtle two-pixel rim in its sampled glow colors.")
             XCTAssertLessThan(pixelDifference(first, second, region: farEdge, screen: app.frame).mean, 1.0 / 255,
                               "At 300 points, the remaining glow must be less than one 8-bit intensity step.")
         }
@@ -642,6 +648,39 @@ final class LiveTVMultiviewRemoteTests: XCTestCase {
         XCTAssertTrue(app.staticTexts["live-multiview-guide-selection"].waitForExistence(timeout: 5))
         XCTAssertEqual(search.frame.minX, 32, accuracy: 1)
         XCTAssertLessThanOrEqual(search.frame.minY, 76)
+    }
+
+    @MainActor
+    func testGuideDismissalDoesNotFadeAcrossMultiviewPictures() throws {
+        continueAfterFailure = false
+        let app = fixtureApplication()
+        app.launchArguments = ["--live-root-fixture", "--visual-focus-fixture", "--motion-fixture"]
+        app.launch()
+        defer { app.terminate() }
+        startProductionChannel(in: app)
+        openMultiviewPicker(in: app)
+        func samples() -> [[Double]] {
+            let value = app.staticTexts["multiview-fixture-guide-motion"].value as? String ?? ""
+            return value.split(separator: ";").map { $0.split(separator: ",").compactMap { Double($0) } }
+        }
+        for count in 2...4 {
+            if count > 2 { select(app.buttons["live-multiview-add"], in: app) }
+            XCTAssertTrue(app.staticTexts["live-multiview-guide-selection"].waitForExistence(timeout: 5))
+            let before = samples()
+            XCTAssertGreaterThan(try XCTUnwrap(before.last?.last), 0.99)
+            chooseGuideChannel(count, in: app)
+            _ = settledVideoFrame(1, in: app)
+            let after = samples().dropFirst(before.count)
+            let evidence = XCTAttachment(string: after.map { "\($0)" }.joined(separator: "\n"))
+            evidence.name = "Guide dismissal adding picture \(count)"
+            evidence.lifetime = .keepAlways
+            add(evidence)
+            XCTAssertFalse(after.isEmpty)
+            XCTAssertLessThan(try XCTUnwrap(after.last?.last), 0.01)
+            XCTAssertFalse(after.contains { $0[4] > 0.01 && $0[4] < 0.99 },
+                           "The guide must leave atomically, not fade across moving pictures.")
+        }
+        assertMetrics("Engines 4 loads 4 stops 0 audible 1", in: app)
     }
 
     @MainActor
@@ -1759,6 +1798,7 @@ final class LiveTVMultiviewRemoteTests: XCTestCase {
                 XCTAssertEqual(bottomGap, 32, accuracy: 1)
                 if count > 2 && selected == 2 {
                     XCTAssertEqual(buttons.minY - pictureBounds.maxY, 32, accuracy: 1)
+                    XCTAssertEqual(pictures[0].minY - app.frame.minY, 24, accuracy: 1)
                 }
                 XCTAssertGreaterThan(buttons.minY - pictureBounds.maxY, 8)
                 if let centers {

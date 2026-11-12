@@ -1753,6 +1753,8 @@ profile model and loaded guide. There is no separate channel browser or
 horizontal all-channel shelf. On Apple TV, an existing multi-picture composition
 stays behind the guide in its current layout; opening Add or Replace never
 promotes the audible picture to a full-screen preview or hides the other streams.
+The TV picker guide and its scrim disappear together without sliding or fading
+across the returning pictures; the retained videos still animate into their slots.
 The initial single-picture picker and mobile guide use the audible preview.
 Browsing never retunes a Multiview player. Selecting a station or
 programme adds/replaces its live channel, then returns to setup. Already-added
@@ -1859,7 +1861,7 @@ cover them. TV focus controls and the retained players' full-screen geometry are
 unchanged.
 Apple TV multiview has no top-left title. The toolbar is bottom-aligned with
 32 points below its visible buttons (24 points outside and 8 points inside the
-toolbar). Pictures retain top safe-area clearance and reserve at least a 24-point
+toolbar). Pictures use a 24-point top inset and reserve at least a 24-point
 gap before the toolbar, plus its internal padding. Focus lift does not reposition the group. The toolbar
 contains Add channel, Layout and More. More holds
 Favorite and, while expanded, Show all. Holding Select on a picture opens its
@@ -1876,6 +1878,9 @@ promotion action. The video with sound has a broad, soft, live-color glow that
 waits one second before appearing on a newly audible video, then fades in over
 three seconds and out over 1.5 seconds. Rapid focus moves cancel pending glows without delaying
 audio. The glow remains visible when focus moves to the toolbar.
+An unfocused audible picture also has a subtle two-pixel border using the same
+live palette and activation fade. Native focus hides that border; idle playback
+shows it without adding focus chrome. Both indicators share the video's motion.
 It does not change picture geometry or replace the native focus treatment.
 Reduce Transparency hides the glow; Reduce Motion removes its fades.
 First focus after fullscreen or idle uses one whole-card transition to the

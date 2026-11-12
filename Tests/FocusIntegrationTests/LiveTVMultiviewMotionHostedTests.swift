@@ -969,6 +969,7 @@ final class LiveTVMultiviewMotionHostedTests: XCTestCase {
         let focused = output.convert(output.bounds, to: window)
         let focus = UIFocusSystem.focusSystem(for: window)?.focusedItem
         XCTAssertNotNil(focus)
+        XCTAssertTrue(model.backgroundFocused)
         XCTAssertGreaterThan(focused.width, 961, "Native card focus must lift the live video itself.")
         func capture(_ name: String) {
             let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
@@ -986,6 +987,7 @@ final class LiveTVMultiviewMotionHostedTests: XCTestCase {
         capture("native-live-video-effect-disabled")
         let idle = output.convert(output.bounds, to: window)
         XCTAssertEqual(idle.width, 960, accuracy: 1)
+        XCTAssertFalse(model.backgroundFocused, "Idle focus must not suppress the audio indicator.")
         XCTAssertNotNil(UIFocusSystem.focusSystem(for: window)?.focusedItem)
         XCTAssertTrue(output.window === window)
         XCTAssertEqual(model.engine.stops, 0)
@@ -994,6 +996,7 @@ final class LiveTVMultiviewMotionHostedTests: XCTestCase {
             model.presentsFocus = enabled
             try await Task.sleep(for: .milliseconds(500))
             window.layoutIfNeeded()
+            XCTAssertEqual(model.backgroundFocused, enabled)
             XCTAssertTrue(output.window === window, "Changing card ownership must preserve the windowed video.")
             XCTAssertEqual(model.engine.stops, 0)
         }
@@ -1004,6 +1007,7 @@ final class LiveTVMultiviewMotionHostedTests: XCTestCase {
         let engine = MotionEngine()
         var presentsFocus = true
         var enabled = true
+        var backgroundFocused = false
     }
 
     func testNativeFocusChromeStaysAttachedToTheVideoDuringEntry() async throws {
@@ -1243,7 +1247,11 @@ final class LiveTVMultiviewMotionHostedTests: XCTestCase {
             ZStack {
                 Color.black
                 VideoSurfaceContainer(engine: model.engine)
-                    .videoCardFocusSurface()
+                    .videoCardFocusSurface { focused in
+                        Color.clear.onChange(of: focused, initial: true) { _, value in
+                            model.backgroundFocused = value
+                        }
+                    }
                     .environment(\.videoCardFocus, model.enabled ? VideoCardFocus(
                         identifier: "native-video-card", title: "Live video", audible: true,
                         presentsEffect: model.presentsFocus, cornerRadius: 20, horizontalInset: 0,
